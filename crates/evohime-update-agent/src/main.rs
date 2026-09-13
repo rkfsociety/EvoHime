@@ -1041,13 +1041,19 @@ fn apply_updates_inner(
         command.args(["--ui-version", update.available.as_str()]);
     }
     progress("Применение модулей", 0);
-    let status = command.status();
+    // The worker is a Windows GUI binary, so its stderr is otherwise not
+    // visible to this headless process. Keep the worker's precise rollback or
+    // validation error instead of reducing every failure to exit code 1.
+    let output = command
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output();
     cleanup_worker_copy(&worker_copy);
-    let status = status.map_err(|error| error.to_string())?;
-    if !status.success() {
-        return Err(format!(
-            "updater: transaction worker завершился с кодом {}",
-            status.code().unwrap_or(-1)
+    let output = output.map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(transaction_worker_failure_message(
+            output.status.code(),
+            &output.stderr,
         ));
     }
     progress("Модули применены", 100);
@@ -1080,6 +1086,30 @@ fn cleanup_completed_staging(staging: &Path, keep_for_bootstrap: bool) {
 
 fn cleanup_worker_copy(worker_copy: &Path) {
     let _ = fs::remove_file(worker_copy);
+}
+
+const MAX_TRANSACTION_WORKER_DIAGNOSTIC_CHARS: usize = 16 * 1024;
+
+fn transaction_worker_failure_message(code: Option<i32>, stderr: &[u8]) -> String {
+    let detail = String::from_utf8_lossy(stderr)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let detail = detail
+        .chars()
+        .take(MAX_TRANSACTION_WORKER_DIAGNOSTIC_CHARS)
+        .collect::<String>();
+    let prefix = format!(
+        "updater: transaction worker завершился с кодом {}",
+        code.unwrap_or(-1)
+    );
+    if detail.is_empty() {
+        prefix
+    } else {
+        format!("{prefix}: {detail}")
+    }
 }
 
 fn apply_listener_runtime_if_needed(
@@ -1642,6 +1672,7 @@ fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[
             schema: "evohime.updater-status.v1",
             phase,
             message: message.to_owned(),
+            error: (phase == "failed").then(|| message.to_owned()),
             modules: updates.iter().map(|item| item.module.clone()).collect(),
             available: updates
                 .iter()
@@ -1702,10 +1733,11 @@ mod tests {
         cleanup_failed_staging, cleanup_worker_copy, copy_reader_bounded, is_github_api_url,
         is_github_release_asset_url, is_trusted_github_url, merge_installed_manifest_to,
         normalize_github_token, parse_json_body, read_installed_module_manifest,
-        read_update_config, resolve_github_token_with, stream_file_hash, updater_bootstrap_script,
-        updater_first_if_required, updater_http_client, validate_compatible_manifest,
-        validate_runtime_manifest, CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry,
-        RuntimeReleaseManifest, UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
+        read_update_config, resolve_github_token_with, stream_file_hash,
+        transaction_worker_failure_message, updater_bootstrap_script, updater_first_if_required,
+        updater_http_client, validate_compatible_manifest, validate_runtime_manifest,
+        CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest,
+        UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use sha2::Digest;
     use std::{
@@ -1996,6 +2028,26 @@ mod tests {
         cleanup_worker_copy(&worker);
         assert!(!worker.exists());
         fs::remove_dir_all(root).expect("remove temporary worker directory");
+    }
+
+    #[test]
+    fn worker_failure_preserves_the_child_diagnostic() {
+        let message = transaction_worker_failure_message(
+            Some(1),
+            b"EvoHime update failed: invalid or incomplete shell-host component\r\n",
+        );
+        assert_eq!(
+            message,
+            "updater: transaction worker завершился с кодом 1: EvoHime update failed: invalid or incomplete shell-host component"
+        );
+    }
+
+    #[test]
+    fn worker_failure_has_a_stable_fallback_when_stderr_is_empty() {
+        assert_eq!(
+            transaction_worker_failure_message(None, b"\n"),
+            "updater: transaction worker завершился с кодом -1"
+        );
     }
 
     #[test]

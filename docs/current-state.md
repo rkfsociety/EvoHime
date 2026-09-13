@@ -217,7 +217,7 @@ updater, supervisor, receipts, security-файлы и `.env*`. Push допуск
 - Core log: `%LOCALAPPDATA%\EvoHime\logs\core.jsonl`;
 - supervisor log: `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl`;
 - состояние shell: `%LOCALAPPDATA%\EvoHime\shell\`;
-- update transaction: `%LOCALAPPDATA%\EvoHime\update-state\`;
+- update transaction: `%LOCALAPPDATA%\EvoHime\update-state\`; при ошибке worker сохраняются точная причина и отдельное поле `error`, а Electron отображает явную фазу `failed`;
 - экспорт событий выполняется JSONL через `LocalDatabase::export_events_jsonl`.
 
 Persistent Agent Organization Registry v1 хранится в Core-owned SQLite schema

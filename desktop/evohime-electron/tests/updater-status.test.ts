@@ -77,4 +77,18 @@ describe('updaterUiStatus', () => {
     expect(view.heading).toBe('Проверка требует внимания')
     expect(view.badge).toBe('Ошибка')
   })
+
+  it('keeps the explicit failed worker phase failed even when updates are listed', () => {
+    const view = updaterUiStatus(status({
+      phase: 'failed',
+      message: 'updater: transaction worker завершился с кодом 1: invalid shell-host archive',
+      error: 'updater: transaction worker завершился с кодом 1: invalid shell-host archive',
+      availableModules: ['shell-host'],
+      availableModuleVersions: { 'shell-host': '0.0.000053' }
+    }))
+
+    expect(view.phase).toBe('failed')
+    expect(view.canApply).toBe(false)
+    expect(view.message).toContain('invalid shell-host archive')
+  })
 })

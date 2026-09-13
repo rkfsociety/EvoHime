@@ -8,6 +8,7 @@ export interface ModuleUpdaterStatus {
   readonly schema?: string
   readonly phase?: string
   readonly message?: string
+  readonly error?: string | null
   readonly modules?: readonly string[]
   readonly available?: readonly {
     readonly module?: string
@@ -110,6 +111,24 @@ export class ModuleUpdateService {
       child.once('error', () => {
         this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.', error: 'Updater worker недоступен.' })
       })
+      child.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
+        this.refresh()
+        if (code === 0 && !['checking', 'applying'].includes(this.current.phase)) return
+        // A correctly written Rust status is richer and is picked up above by
+        // refresh(). This fallback still makes a worker crash or an unwritable
+        // status file visible instead of leaving the UI in "applying" forever.
+        const reason = code === null
+          ? `сигналом ${signal ?? 'неизвестным'}`
+          : code === 0 ? 'успешно, но без диагностического статуса' : `кодом ${code}`
+        const action = mode === '--apply' ? 'применить' : 'проверить'
+        this.patchLocal({
+          phase: 'failed',
+          message: `Не удалось ${action} модульные обновления.`,
+          error: code === 0
+            ? `updater: worker завершился ${reason}.`
+            : `updater: worker завершился с ${reason} без диагностического статуса.`
+        })
+      })
       child.unref()
     } catch {
       this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.' })
@@ -146,7 +165,7 @@ export class ModuleUpdateService {
       installedModules: Object.fromEntries(available.map((item) => [item.module, item.installed])),
       remoteCommit: null,
       branch: this.options.branch,
-      error: phase === 'failed' ? parsed.message ?? 'Проверка модулей не удалась.' : null,
+      error: phase === 'failed' ? parsed.error ?? parsed.message ?? 'Проверка модулей не удалась.' : null,
       checkedAtMs: Date.now(),
       downloadProgress: null,
       selectedComponents: [],
@@ -177,6 +196,7 @@ function quoteShellArgument(value: string): string {
 
 function toUpdatePhase(value: string | undefined, hasAvailable: boolean): UpdateStatus['phase'] {
   switch (value) {
+    case 'failed':
     case 'check-failed':
       return 'failed'
     case 'available':

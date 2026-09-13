@@ -45,6 +45,7 @@ pub struct UpdaterStatus {
     pub schema: &'static str,
     pub phase: &'static str,
     pub message: String,
+    pub error: Option<String>,
     pub modules: Vec<String>,
     pub available: Vec<UpdaterModuleStatus>,
 }
