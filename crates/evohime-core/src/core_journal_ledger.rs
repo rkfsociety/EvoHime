@@ -247,13 +247,15 @@ impl EventJournal {
                 )
             })
             .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
-        let database_path = self.database_path.clone();
         let task_id = task_id.to_owned();
         let event_type = event_type.to_owned();
         let event_type_for_sql = event_type.clone();
-        let sql_started = std::time::Instant::now();
+        let queue_started = std::time::Instant::now();
+        let writer = self.writer.clone();
         let result = tokio::task::spawn_blocking(move || -> Result<i64, StorageError> {
-            let database = LocalDatabase::open(database_path.as_ref())?;
+            let (result_sender, result_receiver) = std::sync::mpsc::channel();
+            let queue_wait_ms = queue_started.elapsed().as_secs_f64() * 1000.0;
+            writer.send(JournalWrite(Box::new(move |database| {
             let mut last_sequence =
                 database.append_event(&task_id, &event_type_for_sql, &payload)?;
             if let Some((conversation_id, client_message_id, workspace_id)) =
@@ -293,11 +295,14 @@ impl EventJournal {
                 }
             }
             Ok(last_sequence)
+            }), result_sender)).map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
+            let result = result_receiver.recv().map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
+            tracing::debug!(queue_wait_ms, "core event journal queue wait completed");
+            result
         })
         .await
         .map_err(|error| StorageError::InvalidInput(format!("journal worker failed: {error}")))?;
         tracing::debug!(
-            sql_ms = sql_started.elapsed().as_secs_f64() * 1000.0,
             event_type,
             "core event SQL write completed"
         );

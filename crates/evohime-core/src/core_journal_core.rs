@@ -3,9 +3,19 @@ use super::*;
 impl EventJournal {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         let path = path.as_ref().to_path_buf();
+        let database = Arc::new(Mutex::new(LocalDatabase::open(&path)?));
+        let worker_database = database.clone();
+        let (sender, receiver) = std::sync::mpsc::sync_channel::<JournalWrite>(256);
+        std::thread::Builder::new().name("evohime-journal-writer".into()).spawn(move || {
+            while let Ok(JournalWrite(write, result)) = receiver.recv() {
+                let mut database = worker_database.blocking_lock();
+                let _ = result.send(write(&mut database));
+            }
+        }).map_err(|error| StorageError::InvalidInput(format!("journal writer failed to start: {error}")))?;
         Ok(Self {
-            database: Arc::new(Mutex::new(LocalDatabase::open(&path)?)),
+            database,
             database_path: Arc::new(path),
+            writer: Arc::new(sender),
         })
     }
 
