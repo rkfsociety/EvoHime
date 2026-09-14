@@ -643,7 +643,9 @@ impl LocalDatabase {
             }
             if let Err(error) = migrations::run(&connection, version, fail_migration) {
                 drop(connection);
-                fs::copy(path.with_extension("db.bak"), &path)?;
+                if existed {
+                    fs::copy(path.with_extension("db.bak"), &path)?;
+                }
                 return Err(error);
             }
         }
