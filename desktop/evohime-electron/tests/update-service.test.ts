@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -380,6 +380,39 @@ describe('background pass', () => {
     await test.service.prepare()
 
     expect(test.build).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('module staging', () => {
+  it('writes the protocol required by the transaction worker', async () => {
+    const test = harness({
+      downloadModule: vi.fn(async (_repository, module, destination) => {
+        const artifact = module === 'core' ? 'evohime-core.exe' : `${module}.exe`
+        mkdirSync(destination, { recursive: true })
+        writeFileSync(join(destination, artifact), 'module')
+        return {
+          manifest: {
+            schema: 'evohime.module-release.v1' as const,
+            module,
+            version: '1.0.0',
+            artifact,
+            size: 6,
+            sha256: 'a'.repeat(64),
+            dependencies: [],
+            restart: 'core'
+          },
+          file: join(destination, artifact)
+        }
+      })
+    })
+
+    await expect(test.service.prepareComponents(['core'])).resolves.toMatchObject({ phase: 'ready' })
+
+    const staged = JSON.parse(readFileSync(join(test.config.stagingDirectory, 'evohime.components.json'), 'utf8')) as {
+      components: Array<{ protocol?: string }>
+    }
+    expect(staged.components).toHaveLength(1)
+    expect(staged.components[0]?.protocol).toBe('desktop-ipc-v1')
   })
 })
 

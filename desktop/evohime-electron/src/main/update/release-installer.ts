@@ -40,6 +40,7 @@ export interface ReleaseComponentManifest {
     readonly size: number
     readonly sha256: string
     readonly required: boolean
+    readonly protocol: string
   }[]
 }
 
@@ -379,7 +380,7 @@ function parseComponentManifest(text: string): ReleaseComponentManifest {
     throw new Error('GitHub components: некорректный манифест.')
   }
   for (const component of components) {
-    if (typeof component?.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(component.id) || typeof component?.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(component.version) || typeof component?.artifact !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(component.artifact) || typeof component?.path !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(component.path) || component.path.includes('..') || component.path.includes('//') || !Number.isSafeInteger(component.size) || component.size <= 0 || component.size > MAX_INSTALLER_BYTES || typeof component.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(component.sha256)) {
+    if (typeof component?.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(component.id) || typeof component?.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(component.version) || typeof component?.artifact !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(component.artifact) || typeof component?.path !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(component.path) || component.path.includes('..') || component.path.includes('//') || !Number.isSafeInteger(component.size) || component.size <= 0 || component.size > MAX_INSTALLER_BYTES || typeof component.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(component.sha256) || typeof component?.protocol !== 'string' || component.protocol.length > 64) {
       throw new Error('GitHub components: небезопасная запись компонента.')
     }
   }

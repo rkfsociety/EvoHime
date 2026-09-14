@@ -506,7 +506,7 @@ export class UpdateService {
       merged.set(module.module, {
         id: module.module, version: module.version, artifact: module.artifact, path: module.artifact,
         size: module.size, sha256: module.sha256, dependencies: module.dependencies ?? [],
-        restart: module.restart ?? 'module', required: true
+        restart: module.restart ?? 'module', required: true, protocol: 'desktop-ipc-v1'
       })
     }
     writeFileSync(join(this.deps.config.stagingDirectory, 'evohime.components.json'), `${JSON.stringify({
