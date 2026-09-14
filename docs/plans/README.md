@@ -30,7 +30,6 @@
 | План | Тема | Состояние |
 | --- | --- | --- |
 
-| [168](168-0-hardware-fit-evidence-catalog.md) | Hardware Fit Evidence Catalog | незавершён |
 | [169](169-0-agent-client-protocol-bridge.md) | Agent Client Protocol Bridge | незавершён |
 | [170](170-0-multi-reviewer-ensemble-adjudication.md) | Multi-Reviewer Ensemble & Adjudication | незавершён |
 | [171](171-0-language-intelligence-runtime.md) | Language Intelligence Runtime | незавершён |

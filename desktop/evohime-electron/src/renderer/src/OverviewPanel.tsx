@@ -4,6 +4,7 @@ import type { ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { GoalPanel } from './GoalPanel'
+import { HardwareFitEvidencePanel } from './HardwareFitEvidencePanel'
 
 interface Props {
   readonly connection: ConnectionState
@@ -44,6 +45,7 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
   return (
     <section className="panel overview-panel" aria-label="Обзор состояния">
       <GoalPanel connection={connection} events={events} workspace={workspace} />
+      <HardwareFitEvidencePanel />
       <div className="panel__header overview-panel__heading">
         <div>
           <h2>Обзор</h2>

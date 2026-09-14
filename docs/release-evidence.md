@@ -1419,3 +1419,13 @@ before the explicitly forbidden push. Local tests/builds/linters were not run.
 Source module: `core` (и его local-storage schema boundary); patch version
 маршрутизирован только для `core`. CI evidence недоступен до push, который
 запрещён задачей; локальные tests/builds/linters/smoke не запускались.
+
+## Plan 168 — Hardware Fit Evidence Catalog (working-tree evidence)
+
+Изменены source paths `crates/evohime-core`, `crates/evohime-local-storage`,
+`crates/desktop-ipc`, Electron main/renderer и `release-versions/core.txt`.
+Локально PASS: Core unit contract tests 4/4, storage revision regression,
+`cargo check -p evohime-core --locked`, `npm run check:protocol` и
+`npm run typecheck`; Electron unit test UNAVAILABLE из-за Node 20 вместо
+требуемого Node 22. Текущий commit ещё не создан и не опубликован, поэтому
+exact-commit CI status — `UNAVAILABLE`.

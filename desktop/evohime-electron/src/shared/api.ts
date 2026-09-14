@@ -1434,6 +1434,9 @@ export const RENDERER_COMMANDS = [
   'teamSopProtocols.reviewSession',
   'teamSopProtocols.reviseSession',
   'teamSopProtocols.cancel',
+  'hardwareFitEvidence.list',
+  'hardwareFitEvidence.get',
+  'hardwareFitEvidence.import',
   'artifactHandoffRegistry.list',
   'artifactHandoffRegistry.get',
   'artifactHandoffRegistry.publish',
@@ -1989,6 +1992,9 @@ export interface CommandPayloads {
   'teamSopProtocols.reviewSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
   'teamSopProtocols.reviseSession': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; expectedVersion: number }
   'teamSopProtocols.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string }
+  'hardwareFitEvidence.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'hardwareFitEvidence.get': { requestId: string; ownerScope: string; idempotencyKey: string; observationId: string }
+  'hardwareFitEvidence.import': { requestId: string; ownerScope: string; idempotencyKey: string; observationId?: string; observation: Record<string, unknown> }
   'artifactHandoffRegistry.list': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string }
   'artifactHandoffRegistry.get': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifactId: string; revision: number }
   'artifactHandoffRegistry.publish': { requestId: string; projectId: string; correlationId: string; idempotencyKey: string; artifact: Record<string, unknown> }
@@ -2336,6 +2342,9 @@ export interface CommandResults {
   'teamSopProtocols.reviewSession': { accepted: boolean }
   'teamSopProtocols.reviseSession': { accepted: boolean }
   'teamSopProtocols.cancel': { accepted: boolean }
+  'hardwareFitEvidence.list': { accepted: boolean }
+  'hardwareFitEvidence.get': { accepted: boolean }
+  'hardwareFitEvidence.import': { accepted: boolean }
   'artifactHandoffRegistry.list': { accepted: boolean }
   'artifactHandoffRegistry.get': { accepted: boolean }
   'artifactHandoffRegistry.publish': { accepted: boolean }

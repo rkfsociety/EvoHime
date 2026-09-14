@@ -547,6 +547,16 @@ transcript не сохраняются и не проецируются; authent
 Electron panel остаются metadata-only. Локальные tests, builds, linters,
 smoke/E2E не запускались; CI недоступен до push.
 
+## Plan 168 — Hardware Fit Evidence Catalog (закрыт 2026-09-14)
+
+Текущий checkout содержит Core contract/matching/admission, SQLite schema v168,
+revision-fenced metadata storage, authenticated IPC 276/121 и bounded Electron
+projection. Core unit tests (4) и storage regression прошли; protocol check,
+TypeScript typecheck и `cargo check -p evohime-core --locked` прошли. Electron
+unit test недоступен в текущем окружении Node 20; проект требует Node 22 LTS.
+Stage-файлы плана удалены после переноса контракта в `architecture.md`.
+Exact-commit CI остаётся pending до push текущего task commit.
+
 ## Plan 147 — Offline Experience Consolidation Cycle (закрыт 2026-09-09)
 
 Добавлен bounded Core cycle с schema v115, revision/idempotency storage и

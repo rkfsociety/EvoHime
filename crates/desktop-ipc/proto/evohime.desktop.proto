@@ -1926,6 +1926,7 @@ message CommandEnvelope {
     VoiceInputDictationCommand voice_input_dictation = 273;
     OfflineExperienceConsolidationCommand offline_experience_consolidation = 274;
     DeterministicReviewExecutionPlanCommand deterministic_review_execution_plan = 275;
+    HardwareFitEvidenceCommand hardware_fit_evidence = 276;
   }
 }
 
@@ -2140,6 +2141,7 @@ message EventEnvelope {
     VoiceInputDictationEvent voice_input_dictation = 118;
     OfflineExperienceConsolidationEvent offline_experience_consolidation = 119;
     DeterministicReviewExecutionPlanEvent deterministic_review_execution_plan = 120;
+    HardwareFitEvidenceEvent hardware_fit_evidence = 121;
   }
 }
 
@@ -3445,4 +3447,26 @@ message ReplayGap {
 message FullSnapshot {
   uint64 sequence_id = 1;
   bytes snapshot_json = 2;
+}
+
+// Plan 168: bounded metadata-only hardware fit evidence projection.
+message HardwareFitEvidenceCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string observation_id = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+  string owner_scope = 8;
+}
+message HardwareFitEvidenceEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  uint64 revision = 4;
+  string status = 5;
+  string error_code = 6;
+  bytes projection_json = 7;
+  bool truncated = 8;
 }

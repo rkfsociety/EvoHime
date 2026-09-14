@@ -26,7 +26,7 @@ restart подтверждаются отдельно. Автоматическ�
 ## Исполняемая очередь
 
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог содержит планы 168–172; планы 01–167 перенесены; блокирующие и
+Текущий активный каталог содержит планы 169–172; планы 01–168 перенесены; блокирующие и
 опциональные зависимости указаны в overview каждого плана и сведены в
 [`plans/README.md`](plans/README.md). Закрытые MVP-планы `127–130` не входят в
 очередь повторно.
@@ -55,6 +55,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 140 | authorized security assessment lane | реализован 2026-09-09 |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
 | 149–167 | review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | реализованы 2026-09-09 |
+| 168 | Hardware Fit Evidence Catalog | реализован 2026-09-14 |
 | 172 | self-healing updater и recovery без нового модуля | незавершён |
 
 Планы 01–167 и 144 закрыты и удалены из временного каталога после переноса

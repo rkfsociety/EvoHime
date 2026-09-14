@@ -2933,6 +2933,21 @@ Authenticated additive IPC command 274/event 119 проецирует status, co
 hash prefix и effect boundary. Raw experience, prompts, transcripts, secrets
 и external outputs не проходят через storage или renderer; invalid/unknown
 состояния fail closed.
+
+### Hardware Fit Evidence Catalog v1 (план 168)
+
+Core владеет bounded portable hardware-fit observations: нормализованными
+hardware/model/runtime/context identity, агрегированными метриками,
+confidence и canonical SHA-256. Raw machine identifiers, prompts, credentials
+и внешний payload не сохраняются и не проецируются. Exact local calibration
+имеет приоритет над portable prior, а текущая conservative memory admission
+может заблокировать исторически подходящую конфигурацию.
+
+SQLite schema v168 хранит revisioned metadata с optimistic fencing и лимитом
+2048 observations. Authenticated additive desktop IPC использует command 276 и
+event 121; Electron получает только redacted metadata через main/preload API.
+Каталог не исполняет код, не загружает данные автоматически и не создаёт
+второй hardware profiler, model catalog или benchmark runner.
 ### Deterministic Review Execution Plan v1 (план 148)
 
 Core владеет bounded versioned review plan с canonical SHA-256, lifecycle,

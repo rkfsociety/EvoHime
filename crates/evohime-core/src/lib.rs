@@ -176,6 +176,7 @@ pub(crate) mod external_coding_agent_adapter;
 pub mod free_provider_reliability_routing;
 pub mod goal;
 pub mod guided_calibration_sessions;
+pub mod hardware_fit_evidence;
 pub mod host_resource_telemetry;
 pub mod human_work_items;
 pub(crate) mod incremental_change_protocol;

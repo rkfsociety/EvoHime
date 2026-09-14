@@ -367,6 +367,22 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::HardwareFitEvidence(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "list".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self
+                    .dispatch_hardware_fit_evidence(&operation, request)
+                    .await;
+                self.write_response(
+                    writer,
+                    "hardware_fit_evidence.result",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::WorkflowOptimizationLab(request)) => {
                 let operation = if request.operation.is_empty() {
                     "get_run".to_owned()
@@ -886,5 +902,109 @@ impl IpcBridge {
             _ => unreachable!("command routed to the wrong domain"),
         }
         Ok(())
+    }
+
+    async fn dispatch_hardware_fit_evidence(
+        &self,
+        operation: &str,
+        request: generated::HardwareFitEvidenceCommand,
+    ) -> serde_json::Value {
+        use crate::hardware_fit_evidence::{projection, validate_observation, SCHEMA_VERSION};
+        if request.schema_version != SCHEMA_VERSION
+            || request.request_id.is_empty()
+            || request.idempotency_key.is_empty()
+            || request.owner_scope.is_empty()
+            || request.payload.len() > 128 * 1024
+        {
+            return serde_json::json!({"schema_version":1,"status":"rejected","error_code":"invalid_request","raw_payload":false});
+        }
+        if operation != "import" && operation != "list" && operation != "get" {
+            return serde_json::json!({"schema_version":1,"status":"rejected","error_code":"unsupported_operation","raw_payload":false});
+        }
+        if operation == "list" {
+            let count = self
+                .journal
+                .database()
+                .try_lock()
+                .ok()
+                .and_then(|db| {
+                    evohime_local_storage::hardware_fit_evidence_store::count(db.connection()).ok()
+                })
+                .unwrap_or(0);
+            return serde_json::json!({"schema_version":1,"status":"ok","observation_count":count,"raw_payload":false,"external_upload":false});
+        }
+        if operation == "get" && request.payload.is_empty() {
+            if request.observation_id.is_empty() {
+                return serde_json::json!({"schema_version":1,"status":"rejected","error_code":"observation_id_required","raw_payload":false});
+            }
+            if let Ok(db) = self.journal.database().try_lock() {
+                if let Ok(Some((revision, json, _))) =
+                    evohime_local_storage::hardware_fit_evidence_store::get(
+                        db.connection(),
+                        &request.observation_id,
+                    )
+                {
+                    if let Ok(observation) = serde_json::from_slice::<
+                        crate::hardware_fit_evidence::HardwareFitObservation,
+                    >(&json)
+                    {
+                        return serde_json::json!({"schema_version":1,"status":"ok","revision":revision,"projection":projection(&observation).ok(),"raw_payload":false});
+                    }
+                }
+            }
+            return serde_json::json!({"schema_version":1,"status":"rejected","error_code":"observation_not_found","raw_payload":false});
+        }
+        let value: crate::hardware_fit_evidence::HardwareFitObservation =
+            match serde_json::from_slice(&request.payload) {
+                Ok(value) => value,
+                Err(_) => {
+                    return serde_json::json!({"schema_version":1,"status":"rejected","error_code":"invalid_payload","raw_payload":false})
+                }
+            };
+        if let Err(error) = validate_observation(&value) {
+            return serde_json::json!({"schema_version":1,"status":"rejected","error_code":error.to_string(),"raw_payload":false});
+        }
+        if operation == "get" && !request.observation_id.is_empty() {
+            if let Ok(journal) = self.journal.database().try_lock() {
+                if let Ok(Some((revision, json, _))) =
+                    evohime_local_storage::hardware_fit_evidence_store::get(
+                        journal.connection(),
+                        &request.observation_id,
+                    )
+                {
+                    if let Ok(observation) = serde_json::from_slice::<
+                        crate::hardware_fit_evidence::HardwareFitObservation,
+                    >(&json)
+                    {
+                        return serde_json::json!({"schema_version":1,"status":"ok","revision":revision,"projection":projection(&observation).ok(),"raw_payload":false});
+                    }
+                }
+            }
+        }
+        let id = if request.observation_id.is_empty() {
+            value.content_hash.clone()
+        } else {
+            request.observation_id
+        };
+        let json = serde_json::to_vec(&value).unwrap_or_default();
+        let saved = self
+            .journal
+            .database()
+            .try_lock()
+            .ok()
+            .and_then(|db| {
+                evohime_local_storage::hardware_fit_evidence_store::put(
+                    db.connection(),
+                    &id,
+                    request.expected_revision.max(1) as i64,
+                    &value.content_hash,
+                    &json,
+                    &value.source_class,
+                    chrono::Utc::now().timestamp_millis(),
+                )
+                .ok()
+            })
+            .unwrap_or(false);
+        serde_json::json!({"schema_version":1,"status":if saved {"accepted"} else {"rejected"},"observation_id":id,"revision":request.expected_revision.max(1),"projection":projection(&value).ok(),"raw_payload":false,"external_upload":false})
     }
 }

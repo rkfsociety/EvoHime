@@ -70,6 +70,7 @@ pub mod git_remote_publication_protocol_store;
 pub mod goal;
 pub mod grounded_research_store;
 pub mod guided_calibration_sessions_store;
+pub mod hardware_fit_evidence_store;
 pub mod human_work_items_store;
 pub mod ide_companion_bridge_store;
 pub mod incremental_change_protocol_store;
@@ -145,7 +146,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 167;
+pub const SCHEMA_VERSION: u32 = 168;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2968,6 +2969,7 @@ impl LocalDatabase {
         migrations::v165::apply(&transaction, current)?;
         migrations::v166::apply(&transaction, current)?;
         migrations::v167::apply(&transaction, current)?;
+        migrations::v168::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

@@ -2412,6 +2412,18 @@ function dispatch(
       return accepted(client.send(operation==='list'?{teamSopProtocolsList:body}:{teamSopProtocolsAction:body}))
     }
 
+    case 'hardwareFitEvidence.list':
+    case 'hardwareFitEvidence.get':
+    case 'hardwareFitEvidence.import': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры hardware evidence.')
+      const operation = command.slice('hardwareFitEvidence.'.length); const body: Record<string, unknown> = { schemaVersion: 1, requestId, ownerScope, operation, idempotencyKey, expectedRevision: 0 }
+      if (operation === 'get') { const id = asBoundedString(value['observationId']); if (id === null) return failure('invalid-payload', 'Не указано observationId.'); body.observationId = id }
+      if (operation === 'import') { const observation = value['observation']; if (!observation || typeof observation !== 'object' || Array.isArray(observation)) return failure('invalid-payload', 'Некорректное observation.'); body.observationId = asBoundedString(value['observationId']) ?? ''; body.payload = Buffer.from(JSON.stringify(observation), 'utf8') }
+      return accepted(client.send({ hardwareFitEvidence: body }))
+    }
+
     case 'artifactHandoffRegistry.list':
     case 'artifactHandoffRegistry.get':
     case 'artifactHandoffRegistry.publish':
