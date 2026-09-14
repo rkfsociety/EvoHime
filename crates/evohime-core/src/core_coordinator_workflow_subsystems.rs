@@ -144,6 +144,43 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
+        CoreCommand::LanguageIntelligence {
+            operation,
+            request_id,
+            payload,
+            expected_revision,
+            idempotency_key: _,
+            reply,
+        } => {
+            let event_operation = operation.clone();
+            let event_id = request_id.clone();
+            let result = async {
+                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "register_descriptor" => { let descriptor: crate::language_intelligence_runtime::LanguageServerDescriptor = serde_json::from_slice(&payload).map_err(|_| "invalid_language_descriptor".to_string())?; crate::language_intelligence_runtime::validate_descriptor(&descriptor).map_err(|e| e.to_string())?; let json=serde_json::to_vec(&descriptor).map_err(|e|e.to_string())?; let saved=evohime_local_storage::language_intelligence_store::put(database.connection(),&descriptor.id,"descriptor",descriptor.revision,&descriptor.content_hash,&json,"registered",crate::task_memory::now_millis() as i64).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if saved{"stored"}else{"duplicate"},"descriptor_id":descriptor.id,"revision":descriptor.revision})).map_err(|e|e.to_string()) }
+                    "get" | "session" | "query" | "proposal" | "start" | "stop" | "restart" => { if operation=="get" { let row=evohime_local_storage::language_intelligence_store::get(database.connection(),&request_id).map_err(|e|e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":if row.is_some(){"ok"}else{"not_found"},"request_id":request_id})).map_err(|e|e.to_string()) } else { serde_json::to_vec(&serde_json::json!({"status":"metadata_only","operation":operation,"request_id":request_id,"revision":expected_revision.saturating_add(1),"effect_owner":"supervisor_and_existing_policy"})).map_err(|e|e.to_string()) } }
+                    _ => Err("unsupported_language_intelligence_operation".into()),
+                }
+            }.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::LanguageIntelligence {
+                request_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
+        }
         CoreCommand::CodeReviewLane {
             operation,
             review_id,

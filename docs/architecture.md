@@ -2996,3 +2996,14 @@ IPC tags 275/120 добавлены аддитивно и проецируют �
 canonical SHA-256, lifecycle и revision-aware validation, а также отдельную
 SQLite migration/store. Все projections metadata-only и fail-closed; внешние
 устройства, сеть, IDE и voice adapters не получают implicit authority.
+
+### Language Intelligence Runtime v1 (план 171)
+
+Core владеет bounded registry/session/query/proposal metadata для managed LSP.
+Descriptor допускает только зарегистрированный stdio provider с проверенным
+trust boundary; session привязана к workspace/worktree и generation, query и
+semantic result — к exact document/provider revision и content hash. LSP
+WorkspaceEdit является proposal; raw JSON-RPC, arbitrary executable,
+automatic command execution и второй diagnostics store запрещены. Schema v171
+хранит только redacted metadata, а authenticated IPC 279/124 и Electron
+projection не расширяют filesystem grants или authority renderer.

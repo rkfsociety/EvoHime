@@ -599,3 +599,15 @@ TypeScript typecheck и `git diff --check`; Electron unit tests требуют N
 `e64eff14` успешен: Core `34901485643` (Windows tests, clippy, release build и
 publication), module router `34901436796`, compatible release manifest
 `34904053471`.
+
+## Plan 171 — Language Intelligence Runtime (реализован 2026-09-15)
+
+Добавлен Core-owned bounded language-intelligence contract для descriptor,
+session, document/query snapshot, semantic result и WorkspaceEdit proposal.
+Raw LSP JSON-RPC, untrusted executable paths и автоматическое применение edit
+не разрешены; lifecycle/provenance/freshness остаются Core/supervisor/policy
+границами. SQLite schema v171 использует metadata-only storage с revision
+fence; authenticated IPC 279/event 124 и Electron Settings projection
+показывают только bounded status/provenance. Локально прошли Core check/clippy,
+focused Core 2/2 и storage 1/1, protocol check, TypeScript typecheck и
+diff-check. Exact-commit CI evidence будет добавлена после push.

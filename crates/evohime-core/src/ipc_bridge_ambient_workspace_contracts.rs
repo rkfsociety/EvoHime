@@ -397,6 +397,20 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::LanguageIntelligence(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "get".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_language_intelligence(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("language_intelligence.{operation}"),
+                    result,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::WorkflowOptimizationLab(request)) => {
                 let operation = if request.operation.is_empty() {
                     "get_run".to_owned()

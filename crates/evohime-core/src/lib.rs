@@ -184,6 +184,7 @@ pub(crate) mod integration_provider_runtime;
 pub(crate) mod integration_provider_sdk;
 pub(crate) mod invocation_presets;
 pub mod kernel_capability_facade;
+pub mod language_intelligence_runtime;
 #[cfg(windows)]
 mod listener_pipe;
 pub mod local_model_performance_calibration;

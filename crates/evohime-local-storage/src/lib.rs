@@ -79,6 +79,7 @@ pub mod interactive_model_compare_workbench_store;
 pub mod invocation_presets_store;
 pub mod kernel_capability_facade_store;
 pub mod knowledge_source_registry_project_role_store;
+pub mod language_intelligence_store;
 pub mod local_model_compatibility_gateway_store;
 pub mod local_model_performance_calibration_store;
 pub mod local_model_runtime_manager_store;
@@ -147,7 +148,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 170;
+pub const SCHEMA_VERSION: u32 = 171;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2975,6 +2976,7 @@ impl LocalDatabase {
         migrations::v168::apply(&transaction, current)?;
         migrations::v169::apply(&transaction, current)?;
         migrations::v170::apply(&transaction, current)?;
+        migrations::v171::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

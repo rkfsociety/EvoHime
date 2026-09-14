@@ -30,7 +30,6 @@
 | План | Тема | Состояние |
 | --- | --- | --- |
 
-| [171](171-0-language-intelligence-runtime.md) | Language Intelligence Runtime | незавершён |
 | [172](172-0-updater-recovery-and-self-healing.md) | Self-healing updater и recovery без нового модуля | незавершён |
 
 Номера `149–167` теперь являются закрытыми идентификаторами

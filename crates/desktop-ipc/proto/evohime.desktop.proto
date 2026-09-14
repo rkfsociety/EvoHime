@@ -1929,6 +1929,7 @@ message CommandEnvelope {
     HardwareFitEvidenceCommand hardware_fit_evidence = 276;
     AgentClientProtocolBridgeCommand agent_client_protocol_bridge = 277;
     MultiReviewerEnsembleCommand multi_reviewer_ensemble = 278;
+    LanguageIntelligenceCommand language_intelligence = 279;
   }
 }
 
@@ -1949,6 +1950,16 @@ message MultiReviewerEnsembleCommand {
   string idempotency_key = 7;
 }
 message MultiReviewerEnsembleEvent {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string status = 4; uint64 revision = 5; bytes projection_json = 6;
+  string error_code = 7; bool truncated = 8;
+}
+message LanguageIntelligenceCommand {
+  uint32 schema_version = 1; string request_id = 2; string operation = 3;
+  string language_request_id = 4; bytes payload = 5; uint64 expected_revision = 6;
+  string idempotency_key = 7;
+}
+message LanguageIntelligenceEvent {
   uint32 schema_version = 1; string request_id = 2; string operation = 3;
   string status = 4; uint64 revision = 5; bytes projection_json = 6;
   string error_code = 7; bool truncated = 8;
@@ -2156,6 +2167,7 @@ message EventEnvelope {
     HardwareFitEvidenceEvent hardware_fit_evidence = 121;
     AgentClientProtocolBridgeEvent agent_client_protocol_bridge = 122;
     MultiReviewerEnsembleEvent multi_reviewer_ensemble = 123;
+    LanguageIntelligenceEvent language_intelligence = 124;
   }
 }
 

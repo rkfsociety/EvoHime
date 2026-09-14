@@ -34,6 +34,7 @@ impl EventJournal {
             } => workspace_root_id,
             CoreEvent::CodeReviewLane { review_id, .. } => review_id,
             CoreEvent::MultiReviewerEnsemble { ensemble_id, .. } => ensemble_id,
+            CoreEvent::LanguageIntelligence { request_id, .. } => request_id,
             CoreEvent::StaticAnalysisPacks { pack_id, .. } => pack_id,
             CoreEvent::ContextLoadouts { profile_id, .. } => profile_id,
             CoreEvent::SkillSourceLifecycle {
@@ -124,6 +125,7 @@ impl EventJournal {
             }
             CoreEvent::CodeReviewLane { .. } => "code_review_lane.result",
             CoreEvent::MultiReviewerEnsemble { .. } => "multi_reviewer_ensemble.result",
+            CoreEvent::LanguageIntelligence { .. } => "language_intelligence.result",
             CoreEvent::StaticAnalysisPacks { .. } => "static_analysis_packs.result",
             CoreEvent::ContextLoadouts { .. } => "context_loadouts.result",
             CoreEvent::SkillSourceLifecycle { .. } => "skill_source_lifecycle.result",

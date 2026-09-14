@@ -1454,3 +1454,11 @@ tests 391/391, `npm run check:protocol`, `npm run typecheck` and
 under the current Node 20 runtime. Exact-commit `e64eff14` GitHub Actions PASS:
 Core `34901485643` (Windows tests, clippy, release build and publication),
 module router `34901436796`, compatible release manifest `34904053471`.
+
+## Plan 171 — Language Intelligence Runtime
+
+Local verification passed: `cargo check --locked -p evohime-core
+-p evohime-local-storage`, Core clippy with `-D warnings`, focused Core tests
+2/2, storage test 1/1, `npm run check:protocol`, `npm run typecheck` and
+`git diff --check`. Electron unit tests require Node 22 and were unavailable
+under the current Node 20 runtime. Exact-commit CI evidence is pending push.

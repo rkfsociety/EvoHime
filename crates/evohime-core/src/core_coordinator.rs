@@ -512,6 +512,9 @@ impl TaskCoordinator {
             c @ CoreCommand::MultiReviewerEnsemble { .. } => {
                 workflow_subsystems::handle(state, c).await
             }
+            c @ CoreCommand::LanguageIntelligence { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
             c @ CoreCommand::StaticAnalysisPacks { .. } => {
                 workflow_subsystems::handle(state, c).await
             }

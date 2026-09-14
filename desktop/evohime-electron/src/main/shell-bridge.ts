@@ -476,6 +476,12 @@ function dispatch(
       if (operation === null || ensembleId === null || ensemblePayload === null || idempotencyKey === null || expectedRevision === null || ensembleId.length > 256 || ensemblePayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Multi-Reviewer Ensemble.')
       return accepted(client.send({ multiReviewerEnsemble: { schemaVersion: 1, requestId: randomUUID(), operation, ensembleId, payload: Buffer.from(ensemblePayload, 'utf8'), expectedRevision, idempotencyKey } }))
     }
+    case 'core.languageIntelligence': {
+      const value = asRecord(payload); const operation = ['register_descriptor', 'get', 'start', 'stop', 'restart', 'session', 'query', 'proposal'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const requestId = asBoundedString(value['requestId']); const languagePayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey']); const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      if (operation === null || requestId === null || languagePayload === null || idempotencyKey === null || expectedRevision === null || requestId.length > 256 || languagePayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Language Intelligence.')
+      return accepted(client.send({ languageIntelligence: { schemaVersion: 1, requestId: randomUUID(), operation, languageRequestId: requestId, payload: Buffer.from(languagePayload, 'utf8'), expectedRevision, idempotencyKey } }))
+    }
     case 'core.staticAnalysisPacks': {
       const value = asRecord(payload); const operation = ['register', 'inspect', 'evaluate'].includes(String(value['operation'])) ? String(value['operation']) : null
       const packId = asBoundedString(value['packId']); const packPayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey']); const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
