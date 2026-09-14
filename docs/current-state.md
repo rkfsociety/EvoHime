@@ -615,7 +615,7 @@ Exact-commit CI для `ed879822` успешен: Core `34905875176`, shell-host
 `34905873117`, UI bundle `34905877063`, module router `34905820570` и
 compatible release manifest `34908038913`.
 
-## Plan 172 — Self-healing updater и recovery (в реализации 2026-09-15)
+## Plan 172 — Self-healing updater и recovery (закрыт 2026-09-15)
 
 Updater получает bounded versioned recovery journal в `update-state/recovery.json`,
 persistent `updater-fallback.exe`, headless `--self-test`/launch preflight,
