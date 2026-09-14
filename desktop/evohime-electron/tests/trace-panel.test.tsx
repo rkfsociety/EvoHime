@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CommandOutcome, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import { disabledUpdateStatus, type UpdateStatus } from '../src/shared/update'
 import { formatTrace, TracePanel } from '../src/renderer/src/TracePanel'
 
 let taskIds = ['task-1']
@@ -140,14 +141,26 @@ describe('trace panel', () => {
   })
 
   it('formats diagnostics and every event for sharing', () => {
-    const trace = formatTrace(null, 'G:/github/EvoHime', [{
+    const update: UpdateStatus = { ...disabledUpdateStatus('main'), installedModules: { core: '0.0.000243' } }
+    const trace = formatTrace({
+      connection: 'connected',
+      protocol: { major: 1, minor: 0 },
+      capabilities: [],
+      coreVersion: '0.1.0',
+      lastSequence: 4,
+      reason: null,
+      availability: null,
+      reconnectAttempts: 0
+    }, 'G:/github/EvoHime', [{
       sequenceId: 4,
       taskId: 'task-1',
       eventType: 'task.failed',
       payload: '{"error":"boom"}'
-    }])
+    }], update)
 
     expect(trace).toContain('workspace: G:/github/EvoHime')
+    expect(trace).toContain('core_module_version: 0.0.000243')
+    expect(trace).toContain('core_runtime_version: 0.1.0')
     expect(trace).toContain('[4] task.failed task=task-1')
     expect(trace).toContain('"error": "boom"')
   })

@@ -438,6 +438,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         : null
 
     const sequence = Number(event.sequenceId ?? 0)
+    let sequenceAdvanced = false
     if (sequence > 0) {
       if (sequence > this.lastSequence + 1 && this.lastSequence > 0) {
         // A skipped sequence is never treated as a successful recovery.
@@ -446,7 +447,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         this.autoResync(true)
         return
       }
+      const previousSequence = this.lastSequence
       this.lastSequence = Math.max(this.lastSequence, sequence)
+      sequenceAdvanced = this.lastSequence !== previousSequence
     }
     if (resyncEnd) {
       this.resyncPendingAfter = null
@@ -456,6 +459,9 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       } else {
         this.setState('connected', null)
       }
+    }
+    if (sequenceAdvanced) {
+      this.emit('state', this.state)
     }
     if (!this.shouldEmit(event)) {
       return

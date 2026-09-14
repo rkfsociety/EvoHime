@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { ChatRecord, CoreEvent, ShellState } from '@shared/api'
+import type { UpdateStatus } from '@shared/update'
 
 import { useShellApi } from './shell-api'
 import { filterEventsForChat } from './trace-filter'
@@ -13,11 +14,12 @@ interface Props {
   readonly chatRevision?: number
   readonly events: readonly CoreEvent[]
   readonly state: ShellState | null
+  readonly update?: UpdateStatus | null
   readonly workspace: string | null
   readonly onClose: () => void
 }
 
-export function TracePanel({ chatId, chatRevision = 0, events, state, workspace, onClose }: Props): React.JSX.Element {
+export function TracePanel({ chatId, chatRevision = 0, events, state, update = null, workspace, onClose }: Props): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
@@ -49,7 +51,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, workspace,
   const save = async () => {
     if (!api) return
     setSaveStatus('Сохраняю…')
-    const outcome = await api.invoke('trace.export', { content: formatTrace(state, workspace, traceEvents) })
+    const outcome = await api.invoke('trace.export', { content: formatTrace(state, workspace, traceEvents, update) })
     if (!outcome.ok) {
       setSaveStatus(outcome.message)
       return
@@ -71,7 +73,8 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, workspace,
         </header>
         <dl className="trace-panel__summary">
           <div><dt>Подключение</dt><dd>{state?.connection ?? 'неизвестно'}</dd></div>
-          <div><dt>Core</dt><dd>{state?.coreVersion ?? '—'}</dd></div>
+          <div><dt>Core модуль</dt><dd>{update?.installedModules?.core ?? '—'}</dd></div>
+          <div><dt>Core runtime</dt><dd>{state?.coreVersion ?? '—'}</dd></div>
           <div><dt>Протокол</dt><dd>{state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</dd></div>
           <div><dt>Последний sequence</dt><dd>{state?.lastSequence ?? 0}</dd></div>
           <div><dt>Workspace</dt><dd title={workspace ?? undefined}>{workspace ?? 'не выбран'}</dd></div>
@@ -109,12 +112,18 @@ function formatPayload(payload: string): string {
   }
 }
 
-export function formatTrace(state: ShellState | null, workspace: string | null, events: readonly CoreEvent[]): string {
+export function formatTrace(
+  state: ShellState | null,
+  workspace: string | null,
+  events: readonly CoreEvent[],
+  update: UpdateStatus | null = null
+): string {
   const lines = [
     'EvoHime trace',
     `captured_at: ${new Date().toISOString()}`,
     `connection: ${state?.connection ?? 'unknown'}`,
-    `core_version: ${state?.coreVersion ?? 'unknown'}`,
+    `core_module_version: ${update?.installedModules?.core ?? 'unknown'}`,
+    `core_runtime_version: ${state?.coreVersion ?? 'unknown'}`,
     `protocol: ${state?.protocol ? `${state.protocol.major}.${state.protocol.minor}` : 'unknown'}`,
     `last_sequence: ${state?.lastSequence ?? 0}`,
     `reconnect_attempts: ${state?.reconnectAttempts ?? 0}`,

@@ -279,7 +279,8 @@ Component manifest metadata совместима с legacy staged updates: trans
 модуля, чья локальная версия новее опубликованной.
 Статусбар показывает установленную версию Core из component manifest отдельно
 от версии runtime-пакета и IPC protocol; `seq` обозначает позицию последнего
-события в журнале, а commit сборки отображается отдельным полем.
+события в журнале, а commit сборки отображается отдельным полем. Экспорт
+трейса сохраняет те же два Core version fields и актуальный `last_sequence`.
 В текущем checkout добавлен fixed release `compatibility` с дешёвым asset
 `evohime.compatible.json`: он фиксирует конкретный release tag, версию, artifact,
 размер, SHA-256, зависимости и минимальную версию updater для каждого модуля.

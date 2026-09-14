@@ -410,12 +410,15 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     })
 
     const target = createClient(pipeName)
+    const states: ShellState[] = []
+    target.on('state', (state) => states.push(state))
     const completed = waitForEvent(target, (event) => event.eventType === 'task.completed')
     target.start()
     const event = await completed
 
     expect(event.sequenceId).toBe(2)
     expect(target.state.lastSequence).toBe(2)
+    expect(states.at(-1)?.lastSequence).toBe(2)
     expect(event.executionEvent).toBeNull()
   })
 

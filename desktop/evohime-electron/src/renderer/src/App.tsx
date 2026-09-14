@@ -409,6 +409,7 @@ export function App(): React.JSX.Element {
           chatRevision={chatRevision}
           events={events}
           state={state}
+          update={update}
           workspace={workspace}
           onClose={() => setTraceOpen(false)}
         />
