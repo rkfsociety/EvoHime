@@ -248,11 +248,18 @@ fn launch_preflight(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
     let state = data_dir.join("update-state");
     fs::create_dir_all(&state).map_err(|e| e.to_string())?;
     ensure_fallback(install_dir, data_dir)?;
+    let current = env::current_exe().map_err(|e| e.to_string())?;
+    let current_hash = hash_file(&current)?;
+    let fallback = state.join("updater-fallback.exe");
+    let fallback_metadata = fs::metadata(&fallback).map_err(|e| e.to_string())?;
+    validate_pe_artifact(&fallback, fallback_metadata.len(), &hash_file(&fallback)?)?;
     let journal_path = state.join("recovery.json");
     if let Some(journal) = read_recovery_journal(&journal_path)? {
         if journal.phase == "replaced" || journal.phase == "self-tested" {
             let mut committed = journal;
             committed.phase = "committed".into();
+            committed.active_sha256 = current_hash.clone();
+            committed.fallback_available = true;
             write_recovery_journal(&journal_path, &committed)?;
         }
     }
@@ -271,14 +278,28 @@ fn launch_preflight(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
         }
         validate_pe_artifact(&worker, metadata.len(), &format!("{:x}", digest.finalize()))?;
     }
-    self_test_inner(install_dir)
+    self_test_inner(install_dir)?;
+    let mut tested = read_recovery_journal(&journal_path)?.unwrap_or_else(|| {
+        evohime_update_agent::RecoveryJournal::new(
+            format!("launch-{}", std::process::id()),
+            "self-tested",
+        )
+    });
+    tested.phase = "self-tested".into();
+    tested.active_sha256 = current_hash;
+    tested.fallback_available = true;
+    write_recovery_journal(&journal_path, &tested)
 }
 
 fn ensure_fallback(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
     let current = env::current_exe().map_err(|e| e.to_string())?;
     let fallback = data_dir.join("update-state").join("updater-fallback.exe");
     if fallback.is_file() {
-        return Ok(());
+        let metadata = fs::metadata(&fallback).map_err(|e| e.to_string())?;
+        if validate_pe_artifact(&fallback, metadata.len(), &hash_file(&fallback)?).is_ok() {
+            return Ok(());
+        }
+        fs::remove_file(&fallback).map_err(|e| e.to_string())?;
     }
     if !install_dir.is_absolute() {
         return Err("install directory must be absolute".into());
@@ -288,6 +309,20 @@ fn ensure_fallback(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
     let temporary = fallback.with_extension("exe.part");
     fs::copy(&current, &temporary).map_err(|e| e.to_string())?;
     fs::rename(&temporary, &fallback).map_err(|e| e.to_string())
+}
+
+fn hash_file(path: &Path) -> Result<String, String> {
+    let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut digest = sha2::Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 const MODULE_IDS: &[&str] = &[
@@ -1311,6 +1346,28 @@ fn download_verified_file(
     update: &UpdateCandidate,
     target: &Path,
     on_progress: impl Fn(u64),
+) -> Result<(), String> {
+    let mut last_error = String::new();
+    for attempt in 1..=3 {
+        match download_verified_file_once(client, update, target, &on_progress) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last_error = error;
+                let _ = fs::remove_file(target.with_extension("part"));
+            }
+        }
+        if attempt < 3 {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+    }
+    Err(format!("{} (после 3 попыток)", last_error))
+}
+
+fn download_verified_file_once(
+    client: &UpdaterHttpClient,
+    update: &UpdateCandidate,
+    target: &Path,
+    on_progress: &dyn Fn(u64),
 ) -> Result<(), String> {
     let temporary = target.with_extension("part");
     if let Some(parent) = target.parent() {

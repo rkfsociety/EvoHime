@@ -82,6 +82,17 @@ if ($marker.commit -ne $commit) { throw 'build marker commit mismatch' }
 if ($marker.branch -ne 'main') { throw 'build marker branch mismatch' }
 if ($marker.builtAtMs -le 0) { throw 'build marker timestamp is missing' }
 
+# Recovery slot smoke: first launch persists a second copy of the same updater
+# artifact outside the install tree; package creation itself must not add a
+# second release module or a web runtime.
+$recoveryState = Join-Path $packageRoot 'update-state'
+New-Item -ItemType Directory -Force -Path $recoveryState | Out-Null
+$activeUpdater = Join-Path $packageRoot 'evohime-updater.exe'
+$fallbackUpdater = Join-Path $recoveryState 'updater-fallback.exe'
+Copy-Item -LiteralPath $activeUpdater -Destination $fallbackUpdater
+if ((Get-FileHash -LiteralPath $activeUpdater -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $fallbackUpdater -Algorithm SHA256).Hash) { throw 'Recovery fallback hash mismatch.' }
+if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'EvoHimeUpdater.exe') -PathType Leaf)) { throw 'Shortcut updater entrypoint is missing.' }
+
 # Неизвестный коммит не подделывается: маркер просто не пишется.
 Remove-Item -LiteralPath $markerPath -Force
 & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit 'HEAD' -WarningAction SilentlyContinue | Out-Null

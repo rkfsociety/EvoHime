@@ -9,6 +9,7 @@ import { hardenSession, hardenWebContents, isProduction, type HardeningOptions }
 import { loadUpdateConfig } from './update/config'
 import { ModuleUpdateService } from './update/module-update-service'
 import { updaterUiStatus, type UpdaterUiStatus } from '@shared/updater'
+import { clearUpdaterStart, recordUpdaterStart } from './update/crash-loop'
 
 const STATUS_CHANNEL = 'updater.status'
 const CHECK_INTERVAL_MS = 350
@@ -27,6 +28,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     executablePath: join(installDirectory, 'EvoHime.exe'),
     packaged: true
   })
+  const crashGuard = recordUpdaterStart(join(dataDirectory(), 'update-state'))
   const service = new ModuleUpdateService({
     dataDirectory: dataDirectory(),
     branch: config.branch,
@@ -150,7 +152,10 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     }
   })
   hardenWebContents(updaterWindow.webContents, options)
-  updaterWindow.once('ready-to-show', () => updaterWindow?.show())
+  updaterWindow.once('ready-to-show', () => {
+    if (!crashGuard.blocked) clearUpdaterStart(join(dataDirectory(), 'update-state'))
+    updaterWindow?.show()
+  })
   updaterWindow.on('closed', () => {
     updaterWindow = null
     if (!shuttingDown) app.quit()
@@ -163,8 +168,12 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     await updaterWindow.loadFile(join(__dirname, '../ui-bundle/updater.html'))
   }
 
-  service.runLaunchGate()
-  await service.check()
+  if (crashGuard.blocked) {
+    publishFailure('Updater UI несколько раз подряд завершился при запуске. Требуется ручное восстановление.')
+  } else {
+    service.runLaunchGate()
+    await service.check()
+  }
   publish()
 
   app.on('before-quit', () => {
