@@ -1,13 +1,14 @@
 # EvoHime — roadmap
 
-Обновлено: 2026-09-09.
+Обновлено: 2026-09-14.
 
 Это краткая продуктовая карта, а не список отдельных задач. Исполняемый порядок
 находится в [`development-plan.md`](development-plan.md), подтверждённое
 состояние — в [`current-state.md`](current-state.md), а детализация очереди — в
 [`plans/README.md`](plans/README.md).
 
-Текущая активная очередь implementation contracts закрыта; планы `149–167` перенесены в canonical docs.
+Текущая активная очередь содержит незавершённые implementation contracts
+`168–172`; планы `149–167` перенесены в canonical docs.
 
 ## Текущий продукт
 
@@ -24,6 +25,8 @@ EvoHime — один локальный Windows-клиент Ева, распр�
 - развивать credential, backup/restore и diagnostic UX внутри текущих границ;
 - поддерживать authenticated Core startup, single-instance и Job Object checks;
 - проверять upgrade path на поддерживаемых Windows 10 и Windows 11.
+- усилить self-healing существующего updater и control-plane recovery без
+  нового модуля или второго update channel.
 
 ### 2. Desktop quality и совместимость
 

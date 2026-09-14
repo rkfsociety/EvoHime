@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Обновлено: 2026-09-09.
+Обновлено: 2026-09-14.
 
 Этот каталог описывает поддерживаемый Windows desktop-продукт. Корневой [`README.md`](../README.md) — пользовательское описание продукта и установка; главный источник команд запуска, требований и критериев проверки — [`AGENTS.md`](../AGENTS.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md), а технические release evidence — в [`release-evidence.md`](release-evidence.md).
 
@@ -30,7 +30,7 @@
 ## Планы
 
 Планы отдельных направлений живут в каталоге [`plans/`](plans/); текущий
-активный каталог закрыт; планы `01–167` перенесены в canonical docs. Числовой порядок, граф зависимостей
+активный каталог содержит незавершённые направления `168–172`; планы `01–167` перенесены в canonical docs. Числовой порядок, граф зависимостей
 и правило нумерации описаны в [`plans/README.md`](plans/README.md). Один файл —
 один этап (`NN-M-slug.md`, где `M = 0` — обзор плана), а порядок реализации
 задаётся зависимостями. Реализованный план из каталога удаляется: его контракт
@@ -72,7 +72,7 @@
 
 ## Рабочие правила
 
-Для текущей разработки используйте `start-dev.ps1` (нужен PowerShell 7 или новее: в Windows PowerShell 5.1 сборка не работает), быстрые локальные проверки и Windows CI. Полный Rust/Electron/package/installer acceptance-прогон локально не запускается: его выполняет GitHub Actions. Electron shell живёт в `desktop/evohime-electron`; protocol check, typecheck и узкие проверки изменённых модулей допустимы локально, полный набор и real-Core E2E входят в CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`.
+Для текущей разработки используйте `start-dev.ps1` (нужен PowerShell 7 или новее: в Windows PowerShell 5.1 сборка не работает), быстрые локальные проверки и Windows CI. Полный Rust/Electron/package/installer acceptance-прогон локально не запускается: его выполняет GitHub Actions. Electron shell живёт в `desktop/evohime-electron`; protocol check, typecheck и узкие проверки изменённых модулей допустимы локально, полный набор и real-Core E2E входят в CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`; план 172 отдельно описывает recovery entrypoint существующего updater без нового web-runtime.
 
 Electron renderer — встроенный desktop UI, а отдельный сетевой web-runtime не используется. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. Для установки updater поставляется отдельным Electron-процессом `EvoHimeUpdater.exe`, его Rust worker работает скрыто. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 

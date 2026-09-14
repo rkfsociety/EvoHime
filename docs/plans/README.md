@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-09-09. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-09-14. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -34,6 +34,7 @@
 | [169](169-0-agent-client-protocol-bridge.md) | Agent Client Protocol Bridge | незавершён |
 | [170](170-0-multi-reviewer-ensemble-adjudication.md) | Multi-Reviewer Ensemble & Adjudication | незавершён |
 | [171](171-0-language-intelligence-runtime.md) | Language Intelligence Runtime | незавершён |
+| [172](172-0-updater-recovery-and-self-healing.md) | Self-healing updater и recovery без нового модуля | незавершён |
 
 Номера `149–167` теперь являются закрытыми идентификаторами
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
