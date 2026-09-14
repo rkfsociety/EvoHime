@@ -1420,12 +1420,15 @@ Source module: `core` (и его local-storage schema boundary); patch version
 маршрутизирован только для `core`. CI evidence недоступен до push, который
 запрещён задачей; локальные tests/builds/linters/smoke не запускались.
 
-## Plan 168 — Hardware Fit Evidence Catalog (working-tree evidence)
+## Plan 168 — Hardware Fit Evidence Catalog (exact-commit evidence)
 
 Изменены source paths `crates/evohime-core`, `crates/evohime-local-storage`,
 `crates/desktop-ipc`, Electron main/renderer и `release-versions/core.txt`.
-Локально PASS: Core unit contract tests 4/4, storage revision regression,
+Локально PASS: Core unit contract tests 5/5, storage regressions 2/2 и
+атомарная migration regression,
 `cargo check -p evohime-core --locked`, `npm run check:protocol` и
 `npm run typecheck`; Electron unit test UNAVAILABLE из-за Node 20 вместо
-требуемого Node 22. Текущий commit ещё не создан и не опубликован, поэтому
-exact-commit CI status — `UNAVAILABLE`.
+требуемого Node 22. Exact-commit `0ebdde23` PASS: module router
+`34878668073`, Core `34878724254`, compatible release manifest `34881572843`;
+UI/shell-host tests, build, package и publication для исходного task commit
+`b77bb00a` прошли (`34876365464`, `34876370453`).

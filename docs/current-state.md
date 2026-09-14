@@ -551,11 +551,14 @@ smoke/E2E не запускались; CI недоступен до push.
 
 Текущий checkout содержит Core contract/matching/admission, SQLite schema v168,
 revision-fenced metadata storage, authenticated IPC 276/121 и bounded Electron
-projection. Core unit tests (4) и storage regression прошли; protocol check,
+projection. Core unit tests (5) и storage regressions (2 + migration) прошли; protocol check,
 TypeScript typecheck и `cargo check -p evohime-core --locked` прошли. Electron
 unit test недоступен в текущем окружении Node 20; проект требует Node 22 LTS.
 Stage-файлы плана удалены после переноса контракта в `architecture.md`.
-Exact-commit CI остаётся pending до push текущего task commit.
+Exact-commit CI успешен для `0ebdde23`: module router `34878668073`, Core
+`34878724254`, UI/shell-host предыдущего task commit `34876365464`/`34876370453`,
+compatible release manifest `34881572843`; clippy, tests, release build и
+module publication прошли.
 
 ## Plan 147 — Offline Experience Consolidation Cycle (закрыт 2026-09-09)
 
