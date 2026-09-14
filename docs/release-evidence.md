@@ -1433,8 +1433,14 @@ Source module: `core` (и его local-storage schema boundary); patch version
 UI/shell-host tests, build, package и publication для исходного task commit
 `b77bb00a` прошли (`34876365464`, `34876370453`).
 
-## Plan 169 — Agent Client Protocol Bridge (exact-commit evidence pending)
+## Plan 169 — Agent Client Protocol Bridge (exact-commit evidence)
 
 Current source changes add typed ACP metadata, schema v169, authenticated IPC
-277/122 and redacted Electron projection. Exact CI evidence is pending until
-the task-only commit is pushed and all module-router/Core/Electron gates pass.
+277/122 and redacted Electron projection. The task-only implementation commit
+`24853ae9` initially exposed a non-idempotent v169 migration on Windows; the
+follow-up fix commit `e65b9da7` made column installation conditional and added
+a regression test. For `e65b9da7`, module router `34890711685`, Core module
+`34890773504` (Windows tests, clippy, release build and publication) and
+compatible release manifest `34893277334` all passed. UI and shell-host had
+already passed for the implementation commit (`34886520319`, `34886522460`);
+the follow-up changed only local-storage/Core migration handling.

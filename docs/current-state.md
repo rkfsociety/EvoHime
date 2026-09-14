@@ -571,7 +571,10 @@ redacted ACP metadata. Локально прошли ACP contract 7/7, migration
 diff-check; Electron unit test недоступен из-за Node 20 вместо Node 22. Полный
 Core lib-набор дал 898/903: пять старых Linux receipt-key IPC tests получили
 `UnsupportedPlatform`, что не относится к ACP и проверяется Windows CI.
-Exact CI evidence будет добавлено после push task commit.
+После исправления идемпотентности миграции v169 task commit `e65b9da7`
+подтверждён module router `34890711685`, Core module `34890773504`
+(Windows tests, clippy, release build и publication) и compatible release
+manifest `34893277334`.
 
 ## Plan 147 — Offline Experience Consolidation Cycle (закрыт 2026-09-09)
 
