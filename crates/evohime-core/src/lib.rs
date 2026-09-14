@@ -198,6 +198,7 @@ pub mod message_intervention_policies;
 pub mod model_edit_protocol_registry;
 pub mod model_purpose_routing;
 pub mod model_resilience_policy;
+pub mod multi_reviewer_ensemble;
 pub(crate) mod observability;
 pub mod permission_rules;
 pub(crate) mod persistent_agent_registry;

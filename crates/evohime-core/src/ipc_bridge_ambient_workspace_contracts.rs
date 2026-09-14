@@ -383,6 +383,20 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::MultiReviewerEnsemble(request)) => {
+                let operation = if request.operation.is_empty() {
+                    "status".to_owned()
+                } else {
+                    request.operation.clone()
+                };
+                let result = self.dispatch_multi_reviewer_ensemble(request).await?;
+                self.write_response(
+                    writer,
+                    &format!("multi_reviewer_ensemble.{operation}"),
+                    result,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::WorkflowOptimizationLab(request)) => {
                 let operation = if request.operation.is_empty() {
                     "get_run".to_owned()

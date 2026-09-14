@@ -1444,3 +1444,12 @@ a regression test. For `e65b9da7`, module router `34890711685`, Core module
 compatible release manifest `34893277334` all passed. UI and shell-host had
 already passed for the implementation commit (`34886520319`, `34886522460`);
 the follow-up changed only local-storage/Core migration handling.
+
+## Plan 170 — Multi-Reviewer Ensemble & Adjudication
+
+Local verification passed: `cargo check --locked -p evohime-core
+-p evohime-local-storage`, Core clippy with `-D warnings`, storage library
+tests 391/391, `npm run check:protocol`, `npm run typecheck` and
+`git diff --check`. Electron unit tests require Node 22 and were unavailable
+under the current Node 20 runtime. Exact-commit GitHub Actions evidence is
+pending the task-only commit and push.

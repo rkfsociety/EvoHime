@@ -33,6 +33,7 @@ impl EventJournal {
                 workspace_root_id, ..
             } => workspace_root_id,
             CoreEvent::CodeReviewLane { review_id, .. } => review_id,
+            CoreEvent::MultiReviewerEnsemble { ensemble_id, .. } => ensemble_id,
             CoreEvent::StaticAnalysisPacks { pack_id, .. } => pack_id,
             CoreEvent::ContextLoadouts { profile_id, .. } => profile_id,
             CoreEvent::SkillSourceLifecycle {
@@ -122,6 +123,7 @@ impl EventJournal {
                 "code_diagnostics_feedback_loop.result"
             }
             CoreEvent::CodeReviewLane { .. } => "code_review_lane.result",
+            CoreEvent::MultiReviewerEnsemble { .. } => "multi_reviewer_ensemble.result",
             CoreEvent::StaticAnalysisPacks { .. } => "static_analysis_packs.result",
             CoreEvent::ContextLoadouts { .. } => "context_loadouts.result",
             CoreEvent::SkillSourceLifecycle { .. } => "skill_source_lifecycle.result",

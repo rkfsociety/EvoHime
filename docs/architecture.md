@@ -2972,6 +2972,18 @@ SQLite schema v168 хранит revisioned metadata с optimistic fencing и л�
 event 121; Electron получает только redacted metadata через main/preload API.
 Каталог не исполняет код, не загружает данные автоматически и не создаёт
 второй hardware profiler, model catalog или benchmark runner.
+
+### Multi-Reviewer Ensemble & Adjudication v1 (план 170)
+
+Core владеет bounded orchestration metadata для reviewer ensemble: immutable
+profile и input snapshot, reviewer slots с independence snapshot, run revision,
+normalized finding candidates, conservative clusters и proof-gated completion.
+Существующие Code Review Lane, model-purpose routing и ACP остаются владельцами
+исполнения reviewer slots; ensemble не создаёт второй review lane, gateway или
+majority authority. SQLite schema v170 и authenticated desktop IPC 278/123
+хранят и проецируют только bounded refs, hashes, statuses, classifications и
+evidence refs. Renderer не может подделать verdict, а cancellation и повторный
+запуск защищены revision/hash boundaries.
 ### Deterministic Review Execution Plan v1 (план 148)
 
 Core владеет bounded versioned review plan с canonical SHA-256, lifecycle,

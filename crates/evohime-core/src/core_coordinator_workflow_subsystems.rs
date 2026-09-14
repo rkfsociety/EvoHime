@@ -74,6 +74,76 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             TaskCoordinator::emit_state_event(&state, event).await;
             let _ = reply.send(result);
         }
+        CoreCommand::MultiReviewerEnsemble {
+            operation,
+            ensemble_id,
+            payload,
+            expected_revision,
+            idempotency_key: _,
+            reply,
+        } => {
+            let event_operation = operation.clone();
+            let event_id = ensemble_id.clone();
+            let result = async {
+                let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
+                let database = journal.database().lock().await;
+                match operation.as_str() {
+                    "save_profile" => {
+                        let profile: crate::multi_reviewer_ensemble::ReviewerEnsembleProfile = serde_json::from_slice(&payload).map_err(|_| "invalid_ensemble_profile".to_string())?;
+                        crate::multi_reviewer_ensemble::validate_profile(&profile).map_err(|e| e.to_string())?;
+                        let json = serde_json::to_vec(&profile).map_err(|e| e.to_string())?;
+                        let saved = evohime_local_storage::multi_reviewer_ensemble_store::put_profile(database.connection(), &profile.id, profile.revision, &profile.content_hash, &json, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status": if saved {"stored"} else {"duplicate"}, "ensemble_id": profile.id, "revision": profile.revision})).map_err(|e| e.to_string())
+                    }
+                    "start" | "status" => {
+                        if operation == "start" {
+                            let mut run: crate::multi_reviewer_ensemble::ReviewerEnsembleRun = serde_json::from_slice(&payload).map_err(|_| "invalid_ensemble_run".to_string())?;
+                            crate::multi_reviewer_ensemble::validate_run(&run).map_err(|e| e.to_string())?;
+                            run.revision = expected_revision.saturating_add(1).max(run.revision);
+                            run.status = crate::multi_reviewer_ensemble::RunStatus::Running;
+                            run.content_hash = crate::multi_reviewer_ensemble::run_hash(&run).map_err(|e| e.to_string())?;
+                            let json = serde_json::to_vec(&run).map_err(|e| e.to_string())?;
+                            evohime_local_storage::multi_reviewer_ensemble_store::put_run(database.connection(), &run.id, &run.profile_ref, run.profile_revision, &run.content_hash, &json, "running", crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":"running","ensemble_id":run.id,"revision":run.revision})).map_err(|e| e.to_string())
+                        } else {
+                            let (json, status) = evohime_local_storage::multi_reviewer_ensemble_store::get_run(database.connection(), &ensemble_id).map_err(|e| e.to_string())?.ok_or_else(|| "ensemble_not_found".to_string())?;
+                            let run: crate::multi_reviewer_ensemble::ReviewerEnsembleRun = serde_json::from_slice(&json).map_err(|_| "corrupt_ensemble_run".to_string())?;
+                            crate::multi_reviewer_ensemble::validate_run(&run).map_err(|e| e.to_string())?;
+                            serde_json::to_vec(&serde_json::json!({"status":status,"ensemble_id":run.id,"revision":run.profile_revision,"slot_count":run.slot_statuses.len()})).map_err(|e| e.to_string())
+                        }
+                    }
+                    "reconcile" => { let candidates: Vec<crate::multi_reviewer_ensemble::NormalizedReviewFindingCandidate> = serde_json::from_slice(&payload).map_err(|_| "invalid_candidates".to_string())?; let clusters = crate::multi_reviewer_ensemble::reconcile_candidates(&candidates).map_err(|e| e.to_string())?; serde_json::to_vec(&serde_json::json!({"status":"reconciled","ensemble_id":ensemble_id,"cluster_count":clusters.len(),"clusters":clusters})).map_err(|e| e.to_string()) }
+                    "cancel" => {
+                        let (json, _) = evohime_local_storage::multi_reviewer_ensemble_store::get_run(database.connection(), &ensemble_id).map_err(|e| e.to_string())?.ok_or_else(|| "ensemble_not_found".to_string())?;
+                        let mut run: crate::multi_reviewer_ensemble::ReviewerEnsembleRun = serde_json::from_slice(&json).map_err(|_| "corrupt_ensemble_run".to_string())?;
+                        crate::multi_reviewer_ensemble::validate_run(&run).map_err(|e| e.to_string())?;
+                        if expected_revision != 0 && expected_revision != run.revision { return Err("stale_ensemble_revision".into()); }
+                        run.revision = run.revision.saturating_add(1); run.status = crate::multi_reviewer_ensemble::RunStatus::Cancelled; run.content_hash = crate::multi_reviewer_ensemble::run_hash(&run).map_err(|e| e.to_string())?;
+                        let updated = serde_json::to_vec(&run).map_err(|e| e.to_string())?;
+                        evohime_local_storage::multi_reviewer_ensemble_store::put_run(database.connection(), &run.id, &run.profile_ref, run.revision, &run.content_hash, &updated, "cancelled", crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
+                        serde_json::to_vec(&serde_json::json!({"status":"cancelled","ensemble_id":run.id,"revision":run.revision})).map_err(|e| e.to_string())
+                    },
+                    _ => Err("unsupported_ensemble_operation".into()),
+                }
+            }.await;
+            let projection_json = result
+                .as_ref()
+                .ok()
+                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .unwrap_or_else(|| "{}".into());
+            let event = CoreEvent::MultiReviewerEnsemble {
+                ensemble_id: event_id,
+                operation: event_operation,
+                revision: expected_revision,
+                projection_json,
+            };
+            let journal = state.lock().await.journal.clone();
+            if let Some(journal) = journal {
+                let _ = journal.record(&event).await;
+            }
+            TaskCoordinator::emit_state_event(&state, event).await;
+            let _ = reply.send(result);
+        }
         CoreCommand::CodeReviewLane {
             operation,
             review_id,

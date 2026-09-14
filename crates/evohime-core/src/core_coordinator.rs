@@ -509,6 +509,9 @@ impl TaskCoordinator {
                 workflow_subsystems::handle(state, c).await
             }
             c @ CoreCommand::CodeReviewLane { .. } => workflow_subsystems::handle(state, c).await,
+            c @ CoreCommand::MultiReviewerEnsemble { .. } => {
+                workflow_subsystems::handle(state, c).await
+            }
             c @ CoreCommand::StaticAnalysisPacks { .. } => {
                 workflow_subsystems::handle(state, c).await
             }

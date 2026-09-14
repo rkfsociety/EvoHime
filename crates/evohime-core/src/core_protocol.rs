@@ -229,6 +229,14 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    MultiReviewerEnsemble {
+        operation: String,
+        ensemble_id: String,
+        payload: Vec<u8>,
+        expected_revision: u64,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     StaticAnalysisPacks {
         operation: String,
         pack_id: String,
@@ -1350,6 +1358,12 @@ pub enum CoreEvent {
     },
     CodeReviewLane {
         review_id: String,
+        operation: String,
+        revision: u64,
+        projection_json: String,
+    },
+    MultiReviewerEnsemble {
+        ensemble_id: String,
         operation: String,
         revision: u64,
         projection_json: String,

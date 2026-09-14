@@ -1191,6 +1191,7 @@ export const RENDERER_COMMANDS = [
   'core.runtimeInterventionPipeline',
   'core.codeDiagnosticsFeedbackLoop',
   'core.codeReviewLane',
+  'core.multiReviewerEnsemble',
   'core.staticAnalysisPacks',
   'core.contextLoadouts',
   'core.skillSourceLifecycle',
@@ -1551,6 +1552,7 @@ export interface CommandPayloads {
   'core.runtimeInterventionPipeline': { operation: 'evaluate'; runId: string; payload: string; idempotencyKey: string }
   'core.codeDiagnosticsFeedbackLoop': { operation: 'register_provider' | 'snapshot' | 'delta' | 'gate'; workspaceRootId: string; payload: string; baselineSnapshotId?: string; expectedRevision?: number; idempotencyKey: string }
   'core.codeReviewLane': { operation: 'save' | 'get' | 'reconcile' | 'interrupt'; reviewId: string; targetId?: string; payload: string; expectedRevision?: number; idempotencyKey: string }
+  'core.multiReviewerEnsemble': { operation: 'save_profile' | 'start' | 'status' | 'reconcile' | 'adjudicate' | 'complete' | 'cancel'; ensembleId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.staticAnalysisPacks': { operation: 'register' | 'inspect' | 'evaluate'; packId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.contextLoadouts': { operation: 'save' | 'get' | 'resolve'; profileId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
   'core.skillSourceLifecycle': { operation: 'save' | 'get' | 'check_update'; installationId: string; payload: string; expectedRevision?: number; idempotencyKey: string }
@@ -2095,6 +2097,7 @@ export interface CommandResults {
   'core.runtimeInterventionPipeline': { accepted: boolean }
   'core.codeDiagnosticsFeedbackLoop': { accepted: boolean }
   'core.codeReviewLane': { accepted: boolean }
+  'core.multiReviewerEnsemble': { accepted: boolean }
   'core.staticAnalysisPacks': { accepted: boolean }
   'core.contextLoadouts': { accepted: boolean }
   'core.skillSourceLifecycle': { accepted: boolean }

@@ -470,6 +470,12 @@ function dispatch(
       if (operation === null || reviewId === null || targetId === null || reviewPayload === null || idempotencyKey === null || expectedRevision === null || reviewId.length > 256 || reviewPayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Code Review Lane.')
       return accepted(client.send({ codeReviewLane: { schemaVersion: 1, requestId: randomUUID(), operation, reviewId, targetId, payload: Buffer.from(reviewPayload, 'utf8'), expectedRevision, idempotencyKey } }))
     }
+    case 'core.multiReviewerEnsemble': {
+      const value = asRecord(payload); const operation = ['save_profile', 'start', 'status', 'reconcile', 'adjudicate', 'complete', 'cancel'].includes(String(value['operation'])) ? String(value['operation']) : null
+      const ensembleId = asBoundedString(value['ensembleId']); const ensemblePayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey']); const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])
+      if (operation === null || ensembleId === null || ensemblePayload === null || idempotencyKey === null || expectedRevision === null || ensembleId.length > 256 || ensemblePayload.length > 512 * 1024) return failure('invalid-payload', 'Некорректная операция Multi-Reviewer Ensemble.')
+      return accepted(client.send({ multiReviewerEnsemble: { schemaVersion: 1, requestId: randomUUID(), operation, ensembleId, payload: Buffer.from(ensemblePayload, 'utf8'), expectedRevision, idempotencyKey } }))
+    }
     case 'core.staticAnalysisPacks': {
       const value = asRecord(payload); const operation = ['register', 'inspect', 'evaluate'].includes(String(value['operation'])) ? String(value['operation']) : null
       const packId = asBoundedString(value['packId']); const packPayload = asBoundedString(value['payload']); const idempotencyKey = asBoundedString(value['idempotencyKey']); const expectedRevision = value['expectedRevision'] === undefined ? 0 : asNonNegativeInteger(value['expectedRevision'])

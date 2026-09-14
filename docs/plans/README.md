@@ -16,7 +16,7 @@
 ## Закрытые направления
 
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–167` и
+и evidence в канонические документы. К закрытым относятся планы `01–170` и
 `144`; планы `127–130` закрыты как MVP-контуры с явно сохранёнными
 `unavailable` deployment/adapter gates. Их отсутствие из каталога не означает
 отсутствие контракта: он находится в `architecture.md` и `current-state.md`.
@@ -30,8 +30,6 @@
 | План | Тема | Состояние |
 | --- | --- | --- |
 
-| [169](169-0-agent-client-protocol-bridge.md) | Agent Client Protocol Bridge | незавершён |
-| [170](170-0-multi-reviewer-ensemble-adjudication.md) | Multi-Reviewer Ensemble & Adjudication | незавершён |
 | [171](171-0-language-intelligence-runtime.md) | Language Intelligence Runtime | незавершён |
 | [172](172-0-updater-recovery-and-self-healing.md) | Self-healing updater и recovery без нового модуля | незавершён |
 

@@ -583,3 +583,17 @@ offline metadata-only evaluation. External effects, raw experience,
 transcripts и secrets не сохраняются; authenticated IPC 274/119 и Electron
 panel проецируют только redacted state. Локальные tests, builds, linters,
 smoke/E2E не запускались; CI недоступен до push.
+
+## Plan 170 — Multi-Reviewer Ensemble & Adjudication (реализован 2026-09-14)
+
+Добавлен Core-owned bounded ensemble contract: immutable profile/snapshot/run,
+independence metadata, normalized candidates, conservative clusters,
+metadata-only adjudication/completion projection и proof-gated verdicts без
+majority authority. SQLite schema v170 хранит только bounded JSON metadata;
+run revision и cancel fenced, а existing review/model lanes остаются владельцами
+исполнения и findings. Добавлены authenticated IPC command 278/event 123,
+Electron settings panel и protocol types. Локально прошли `cargo check`,
+Core clippy, storage lib tests 391/391, protocol generation/check,
+TypeScript typecheck и `git diff --check`; Electron unit tests требуют Node 22
+и в текущем Node 20 окружении не запускались. CI exact-commit evidence будет
+добавлена после push.

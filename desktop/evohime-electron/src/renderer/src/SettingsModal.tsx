@@ -10,6 +10,7 @@ import { EventTriggerRuntimePanel } from './EventTriggerRuntimePanel'
 import { AdaptiveToolCatalogPanel } from './AdaptiveToolCatalogPanel'
 import { DiagnosticsAndSupportBundlePanel } from './DiagnosticsAndSupportBundlePanel'
 import { ExternalCodingAgentAdapterPanel } from './ExternalCodingAgentAdapterPanel'
+import { MultiReviewerEnsemblePanel } from './MultiReviewerEnsemblePanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
@@ -94,7 +95,7 @@ export function SettingsModal({ workspace, connection, events, initialTab = 'pro
                 {providerSurface === 'api' ? <ProviderForm connection={connection} events={events} /> : <CodexPanel />}
               </section>
             ) : null}
-            {tab === 'agents' ? <ExternalCodingAgentAdapterPanel /> : null}
+            {tab === 'agents' ? <><ExternalCodingAgentAdapterPanel /><MultiReviewerEnsemblePanel connection={connection} /></> : null}
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'integrations' ? <IntegrationProviderPanel /> : null}
             {tab === 'triggers' ? <EventTriggerRuntimePanel /> : null}
