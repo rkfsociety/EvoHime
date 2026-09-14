@@ -340,6 +340,281 @@ impl IpcBridge {
         Ok(())
     }
 
+    pub(crate) async fn dispatch_agent_client_protocol_bridge(
+        &self,
+        request: generated::AgentClientProtocolBridgeCommand,
+    ) -> serde_json::Value {
+        use crate::external_coding_agent_adapter::{
+            capability_snapshot, validate_acp_frame, AcpSessionState, ACP_PROTOCOL_VERSION,
+        };
+        let invalid = || serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","state":"failed","error_code":"invalid_request","projection_json":{"raw_payload":false}});
+        if request.schema_version != 1
+            || request.request_id.is_empty()
+            || request.owner_scope != "external-agent-acp"
+            || request.idempotency_key.is_empty()
+            || request.payload.len() > 64 * 1024
+        {
+            return invalid();
+        }
+        let mut registry = self.external_agents.lock().await;
+        let mut state = AcpSessionState::Ready;
+        let mut status = "ok";
+        let mut error_code = "";
+        let mut projection = serde_json::json!({"raw_payload":false,"credentials":false,"backend_class":"external_agent_backend","control_level":"supervised_opaque"});
+        match request.operation.as_str() {
+            "status" | "list" => {
+                projection["preset_count"] = serde_json::json!(registry.presets.len());
+                projection["active_run_count"] = serde_json::json!(registry.runs.len());
+                projection["protocol"] = serde_json::json!("acp");
+            }
+            "handshake" => {
+                #[derive(Deserialize)]
+                struct Handshake {
+                    protocol_version: u32,
+                    agent_identity: String,
+                    agent_version: Option<String>,
+                    capabilities: Vec<String>,
+                    negotiated_at_ms: u64,
+                }
+                let payload: Handshake = match serde_json::from_slice(&request.payload) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"handshake","status":"rejected","state":"failed","error_code":"invalid_handshake","projection_json":{"raw_payload":false}});
+                    }
+                };
+                let caps = payload
+                    .capabilities
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>();
+                match capability_snapshot(
+                    payload.protocol_version,
+                    payload.agent_identity,
+                    payload.agent_version,
+                    &caps,
+                    payload.negotiated_at_ms,
+                ) {
+                    Ok(snapshot) => {
+                        projection["protocol_version"] =
+                            serde_json::json!(snapshot.protocol_version);
+                        projection["agent_identity"] = serde_json::json!(snapshot.agent_identity);
+                        projection["capability_hash"] = serde_json::json!(snapshot.content_hash);
+                        projection["auth_state"] = serde_json::json!("ready");
+                    }
+                    Err(_) => {
+                        status = "rejected";
+                        state = AcpSessionState::Failed;
+                        error_code = "capability_negotiation_failed";
+                    }
+                }
+            }
+            "start" => {
+                #[derive(Deserialize)]
+                struct Start {
+                    session_id: String,
+                    preset_id: String,
+                    preset_revision: u64,
+                }
+                let payload: Start = match serde_json::from_slice::<Start>(&request.payload) {
+                    Ok(v) if !v.session_id.is_empty() && !v.preset_id.is_empty() => v,
+                    _ => {
+                        return invalid();
+                    }
+                };
+                if registry.runs.contains_key(&payload.session_id) {
+                    status = "duplicate";
+                    error_code = "duplicate_session";
+                    state = AcpSessionState::Interrupted;
+                } else {
+                    if request.expected_revision != 0
+                        && request.expected_revision != payload.preset_revision
+                    {
+                        status = "conflict";
+                        state = AcpSessionState::NeedsReview;
+                        error_code = "stale_preset_revision";
+                    }
+                    if status != "conflict" {
+                        #[cfg(windows)]
+                        let supervisor_accepted =
+                            crate::analysis_kernel::supervisor_command(serde_json::json!({
+                                "op": "external_agent_start",
+                                "run_id": payload.session_id,
+                                "executable_ref": payload.preset_id,
+                            }))
+                            .await
+                            .ok()
+                            .and_then(|value| {
+                                value.get("accepted").and_then(serde_json::Value::as_bool)
+                            })
+                            .unwrap_or(false);
+                        #[cfg(not(windows))]
+                        let supervisor_accepted = false;
+                        if !supervisor_accepted {
+                            status = "unavailable";
+                            state = AcpSessionState::Interrupted;
+                            error_code = "supervisor_unavailable";
+                        } else {
+                            registry.runs.insert(
+                                payload.session_id.clone(),
+                                crate::external_coding_agent_adapter::AgentState::Handshaking,
+                            );
+                            state = AcpSessionState::Initialize;
+                            projection["session_id"] = serde_json::json!(payload.session_id);
+                            projection["preset_id"] = serde_json::json!(payload.preset_id);
+                            projection["preset_revision"] =
+                                serde_json::json!(payload.preset_revision);
+                            if let Ok(database) = self.journal.database().try_lock() {
+                                let _ = evohime_local_storage::external_coding_agent_adapter_store::upsert_acp_session_projection(
+                                    database.connection(),
+                                    evohime_local_storage::external_coding_agent_adapter_store::AcpSessionProjectionInput {
+                                        session_id: &payload.session_id,
+                                        preset_id: &payload.preset_id,
+                                        preset_revision: payload.preset_revision,
+                                        protocol_version: ACP_PROTOCOL_VERSION,
+                                        agent_identity: "unknown",
+                                        capability_hash: "",
+                                        auth_state: "auth_unknown",
+                                        control_level: "supervised_opaque",
+                                        privacy_state: "unknown",
+                                        state: "initialize",
+                                        provenance_json: "{\"raw_payload\":false}",
+                                        expires_at_ms: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                                        updated_at_ms: chrono::Utc::now().timestamp_millis(),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            "cancel" => {
+                #[derive(Deserialize)]
+                struct Cancel {
+                    session_id: String,
+                }
+                let payload: Cancel = match serde_json::from_slice(&request.payload) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return invalid();
+                    }
+                };
+                if registry.runs.contains_key(&payload.session_id) {
+                    #[cfg(windows)]
+                    let stopped = crate::analysis_kernel::supervisor_command(
+                        serde_json::json!({"op":"external_agent_cancel","run_id":payload.session_id}),
+                    ).await.ok().and_then(|value| value.get("accepted").and_then(serde_json::Value::as_bool)).unwrap_or(false);
+                    #[cfg(not(windows))]
+                    let stopped = false;
+                    if stopped {
+                        registry.runs.remove(&payload.session_id);
+                        state = AcpSessionState::Cancelled;
+                        projection["session_id"] = serde_json::json!(payload.session_id);
+                    } else {
+                        status = "unavailable";
+                        state = AcpSessionState::Interrupted;
+                        error_code = "supervisor_unavailable";
+                    }
+                } else {
+                    status = "not_found";
+                    state = AcpSessionState::Interrupted;
+                    error_code = "session_not_found";
+                }
+            }
+            "frame_validate" => match validate_acp_frame(&request.payload) {
+                Ok(frame) => {
+                    projection["message_kind"] = serde_json::json!(if frame.method.is_some() {
+                        "request"
+                    } else {
+                        "response"
+                    });
+                }
+                Err(_) => {
+                    status = "rejected";
+                    state = AcpSessionState::Failed;
+                    error_code = "protocol_violation";
+                }
+            },
+            _ => {
+                status = "rejected";
+                state = AcpSessionState::Failed;
+                error_code = "unsupported_operation";
+            }
+        }
+        serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"state":state,"protocol":"acp","protocol_version":ACP_PROTOCOL_VERSION,"error_code":error_code,"projection_json":projection})
+    }
+
+    pub(crate) async fn write_agent_client_protocol_bridge_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        let value: serde_json::Value = serde_json::from_slice(&payload)?;
+        let projection = serde_json::to_vec(
+            value
+                .get("projection_json")
+                .unwrap_or(&serde_json::json!({"raw_payload":false})),
+        )?;
+        let event = generated::AgentClientProtocolBridgeEvent {
+            schema_version: 1,
+            request_id: value["request_id"].as_str().unwrap_or_default().into(),
+            operation: value["operation"].as_str().unwrap_or_default().into(),
+            status: value["status"].as_str().unwrap_or_default().into(),
+            state: value["state"].as_str().unwrap_or_default().into(),
+            session_id: value["projection_json"]["session_id"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            preset_id: value["projection_json"]["preset_id"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            preset_revision: value["projection_json"]["preset_revision"]
+                .as_u64()
+                .unwrap_or_default(),
+            protocol_version: value["protocol_version"]
+                .as_u64()
+                .unwrap_or_default()
+                .to_string(),
+            auth_state: value["projection_json"]["auth_state"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            backend_class: value["projection_json"]["backend_class"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            control_level: value["projection_json"]["control_level"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            capability_hash: value["projection_json"]["capability_hash"]
+                .as_str()
+                .unwrap_or_default()
+                .into(),
+            provenance_hash: String::new(),
+            error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            projection_json: projection,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "agent_client_protocol_bridge.result".into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::AgentClientProtocolBridge(
+                    event,
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn write_execution_backend_registry_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,

@@ -229,6 +229,14 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::AgentClientProtocolBridge(request)) => {
+                let result = self.dispatch_agent_client_protocol_bridge(request).await;
+                self.write_agent_client_protocol_bridge_response(
+                    writer,
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::AgentRoleProfilesList(request))
             | Some(generated::command_envelope::Command::AgentRoleProfilesAction(request)) => {
                 let result = self.dispatch_agent_role_profiles(request).await;

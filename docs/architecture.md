@@ -1617,6 +1617,30 @@ Authenticated additive IPC использует commands 191–192/event 46. Ele
 (`full`/`supervised_opaque`/`unavailable`); raw external frames не пересекают
 desktop boundary.
 
+## Agent Client Protocol Bridge v1 (план 169)
+
+ACP является typed transport/interop расширением существующего external-agent
+owner: `ExternalAgentProtocolKind::Acp { protocol_version: 1 }` не меняет
+старый `EvoHimeV1` и по умолчанию сохраняет `ExternalAgentBackend`. Core
+валидирует bounded stdio/framed JSON-RPC, correlation, handshake,
+capability snapshot и state transitions; malformed, oversized, unsupported,
+stale, interrupted и unknown outcomes остаются non-success. Auth mode
+`ExistingLocalSession` проверяет только documented readiness и не читает,
+копирует или сохраняет чужие token/cookie/session files.
+
+ACP session projection в schema v169 хранит только revision/hash, identity,
+capabilities, auth/control/privacy state и provenance metadata. Запуск pin-ит
+точный preset/executable/capability snapshot, а restart не re-adopt-ит процесс
+по одному PID. Opaque/observed tools не получают ложную CoreMediated approval;
+unknown privacy блокирует Restricted/Sensitive, LocalOnly запрещает
+cloud-backed subscription, а FreeOnly не считает paid subscription бесплатной.
+
+Authenticated additive IPC использует command 277/event 122. Electron
+`ExternalCodingAgentAdapterPanel` показывает только Core-derived protocol,
+backend, auth, capability hash, control/privacy state и next-action metadata;
+raw ACP frames, stderr, paths, workspace payload и credentials не пересекают
+desktop boundary.
+
 ## Agent Role Profiles v1 (план 46)
 
 `evohime-core::agent_role_profiles` определяет versioned bounded profile с

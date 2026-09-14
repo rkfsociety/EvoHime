@@ -11,6 +11,7 @@ describe('ExternalCodingAgentAdapterPanel', () => {
     render(<ExternalCodingAgentAdapterPanel />)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(invoke).toHaveBeenCalledWith('externalCodingAgentAdapter.status', expect.any(Object))
+    expect(invoke).toHaveBeenCalledWith('agentClientProtocolBridge.status', expect.any(Object))
     expect(screen.getByText(/declared slots/)).toBeTruthy()
     expect(document.body.textContent).not.toMatch(/password|Bearer |raw output|absolute path/i)
   })

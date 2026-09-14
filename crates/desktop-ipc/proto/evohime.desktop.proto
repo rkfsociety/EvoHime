@@ -1927,6 +1927,7 @@ message CommandEnvelope {
     OfflineExperienceConsolidationCommand offline_experience_consolidation = 274;
     DeterministicReviewExecutionPlanCommand deterministic_review_execution_plan = 275;
     HardwareFitEvidenceCommand hardware_fit_evidence = 276;
+    AgentClientProtocolBridgeCommand agent_client_protocol_bridge = 277;
   }
 }
 
@@ -2142,6 +2143,7 @@ message EventEnvelope {
     OfflineExperienceConsolidationEvent offline_experience_consolidation = 119;
     DeterministicReviewExecutionPlanEvent deterministic_review_execution_plan = 120;
     HardwareFitEvidenceEvent hardware_fit_evidence = 121;
+    AgentClientProtocolBridgeEvent agent_client_protocol_bridge = 122;
   }
 }
 
@@ -3007,6 +3009,37 @@ message ExternalCodingAgentAdapterEvent {
   string snapshot_hash = 10;
   string error_code = 11;
   bytes projection_json = 12;
+}
+
+// Plan 169: ACP metadata/provenance projection. Raw ACP frames, stderr,
+// credentials, executable paths and workspace payload never cross IPC.
+message AgentClientProtocolBridgeCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string owner_scope = 3;
+  string operation = 4;
+  bytes payload = 5;
+  uint64 expected_revision = 6;
+  string idempotency_key = 7;
+  string correlation_id = 8;
+}
+message AgentClientProtocolBridgeEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  string state = 5;
+  string session_id = 6;
+  string preset_id = 7;
+  uint64 preset_revision = 8;
+  string protocol_version = 9;
+  string auth_state = 10;
+  string backend_class = 11;
+  string control_level = 12;
+  string capability_hash = 13;
+  string provenance_hash = 14;
+  string error_code = 15;
+  bytes projection_json = 16;
 }
 
 // Plan 37: bounded metadata-only middleware pipeline surface. Raw prompts,

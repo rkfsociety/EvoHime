@@ -56,6 +56,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
 | 149–167 | review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | реализованы 2026-09-09 |
 | 168 | Hardware Fit Evidence Catalog | реализован 2026-09-14 |
+| 169 | Agent Client Protocol Bridge | реализован 2026-09-14 |
 | 172 | self-healing updater и recovery без нового модуля | незавершён |
 
 Планы 01–167 и 144 закрыты и удалены из временного каталога после переноса

@@ -1420,6 +1420,12 @@ export const RENDERER_COMMANDS = [
   'externalCodingAgentAdapter.status',
   'externalCodingAgentAdapter.start',
   'externalCodingAgentAdapter.cancel',
+  'agentClientProtocolBridge.list',
+  'agentClientProtocolBridge.status',
+  'agentClientProtocolBridge.handshake',
+  'agentClientProtocolBridge.start',
+  'agentClientProtocolBridge.cancel',
+  'agentClientProtocolBridge.frameValidate',
   'agentRoleProfiles.list',
   'agentRoleProfiles.get',
   'agentRoleProfiles.create',
@@ -1978,6 +1984,12 @@ export interface CommandPayloads {
   'externalCodingAgentAdapter.status': { requestId: string; ownerScope: string; idempotencyKey: string }
   'externalCodingAgentAdapter.start': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string; conversationId: string; executableRef: string }
   'externalCodingAgentAdapter.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; runId: string }
+  'agentClientProtocolBridge.list': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'agentClientProtocolBridge.status': { requestId: string; ownerScope: string; idempotencyKey: string }
+  'agentClientProtocolBridge.handshake': { requestId: string; ownerScope: string; idempotencyKey: string; protocolVersion: number; agentIdentity: string; capabilities: string[] }
+  'agentClientProtocolBridge.start': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string; presetId: string; presetRevision: number }
+  'agentClientProtocolBridge.cancel': { requestId: string; ownerScope: string; idempotencyKey: string; sessionId: string }
+  'agentClientProtocolBridge.frameValidate': { requestId: string; ownerScope: string; idempotencyKey: string; frame: string }
   'agentRoleProfiles.list': { requestId: string; ownerScope: string; idempotencyKey: string }
   'agentRoleProfiles.get': { requestId: string; ownerScope: string; idempotencyKey: string; profileId: string }
   'agentRoleProfiles.create': { requestId: string; ownerScope: string; idempotencyKey: string; profile: Record<string, unknown> }
@@ -2328,6 +2340,12 @@ export interface CommandResults {
   'externalCodingAgentAdapter.status': { accepted: boolean }
   'externalCodingAgentAdapter.start': { accepted: boolean }
   'externalCodingAgentAdapter.cancel': { accepted: boolean }
+  'agentClientProtocolBridge.list': { accepted: boolean }
+  'agentClientProtocolBridge.status': { accepted: boolean }
+  'agentClientProtocolBridge.handshake': { accepted: boolean }
+  'agentClientProtocolBridge.start': { accepted: boolean }
+  'agentClientProtocolBridge.cancel': { accepted: boolean }
+  'agentClientProtocolBridge.frameValidate': { accepted: boolean }
   'agentRoleProfiles.list': { accepted: boolean }
   'agentRoleProfiles.get': { accepted: boolean }
   'agentRoleProfiles.create': { accepted: boolean }

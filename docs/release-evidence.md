@@ -1432,3 +1432,9 @@ Source module: `core` (и его local-storage schema boundary); patch version
 `34878668073`, Core `34878724254`, compatible release manifest `34881572843`;
 UI/shell-host tests, build, package и publication для исходного task commit
 `b77bb00a` прошли (`34876365464`, `34876370453`).
+
+## Plan 169 — Agent Client Protocol Bridge (exact-commit evidence pending)
+
+Current source changes add typed ACP metadata, schema v169, authenticated IPC
+277/122 and redacted Electron projection. Exact CI evidence is pending until
+the task-only commit is pushed and all module-router/Core/Electron gates pass.

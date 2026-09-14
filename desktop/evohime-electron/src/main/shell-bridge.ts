@@ -2372,6 +2372,28 @@ function dispatch(
       return accepted(client.send(operation === 'list' || operation === 'status' ? { externalCodingAgentAdapterList: commandBody } : { externalCodingAgentAdapterAction: commandBody }))
     }
 
+    case 'agentClientProtocolBridge.list':
+    case 'agentClientProtocolBridge.status':
+    case 'agentClientProtocolBridge.handshake':
+    case 'agentClientProtocolBridge.start':
+    case 'agentClientProtocolBridge.cancel':
+    case 'agentClientProtocolBridge.frameValidate': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId']); const ownerScope = asBoundedString(value['ownerScope']); const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null) return failure('invalid-payload', 'Некорректные параметры ACP bridge.')
+      const operation = command.slice('agentClientProtocolBridge.'.length)
+      const json: Record<string, unknown> = {}
+      if (operation === 'handshake') { const protocolVersion = Number(value['protocolVersion']); const agentIdentity = asBoundedString(value['agentIdentity']); const capabilities = Array.isArray(value['capabilities']) ? value['capabilities'].filter((v): v is string => typeof v === 'string' && v.length <= 96) : []; if (!Number.isSafeInteger(protocolVersion) || agentIdentity === null || capabilities.length > 32) return failure('invalid-payload', 'Некорректный ACP handshake.'); Object.assign(json, { protocol_version: protocolVersion, agent_identity: agentIdentity, agent_version: null, capabilities, negotiated_at_ms: Date.now() }) }
+      if (operation === 'start') { const sessionId = asBoundedString(value['sessionId']); const presetId = asBoundedString(value['presetId']); const presetRevision = Number(value['presetRevision']); if (sessionId === null || presetId === null || !Number.isSafeInteger(presetRevision)) return failure('invalid-payload', 'Некорректная ACP session.'); Object.assign(json, { session_id: sessionId, preset_id: presetId, preset_revision: presetRevision }) }
+      if (operation === 'cancel') { const sessionId = asBoundedString(value['sessionId']); if (sessionId === null) return failure('invalid-payload', 'Некорректная ACP session.'); Object.assign(json, { session_id: sessionId }) }
+      if (operation === 'frameValidate') { const frame = asBoundedString(value['frame']); if (frame === null || frame.length > 65536) return failure('invalid-payload', 'Некорректный ACP frame.'); Object.assign(json, { frame }) }
+      const payloadBytes = operation === 'frameValidate'
+        ? Buffer.from(String(json['frame'] ?? ''), 'utf8')
+        : Buffer.from(JSON.stringify(json), 'utf8')
+      const commandBody = { schemaVersion: 1, requestId, ownerScope, operation, payload: payloadBytes, expectedRevision: 0, idempotencyKey, correlationId: requestId }
+      return accepted(client.send({ agentClientProtocolBridge: commandBody }))
+    }
+
     case 'agentRoleProfiles.list':
     case 'agentRoleProfiles.get':
     case 'agentRoleProfiles.create':

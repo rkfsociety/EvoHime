@@ -9,10 +9,11 @@ import { IntegrationProviderPanel } from './IntegrationProviderPanel'
 import { EventTriggerRuntimePanel } from './EventTriggerRuntimePanel'
 import { AdaptiveToolCatalogPanel } from './AdaptiveToolCatalogPanel'
 import { DiagnosticsAndSupportBundlePanel } from './DiagnosticsAndSupportBundlePanel'
+import { ExternalCodingAgentAdapterPanel } from './ExternalCodingAgentAdapterPanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
-export type SettingsTab = 'provider' | 'integrations' | 'triggers' | 'workspace' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
+export type SettingsTab = 'provider' | 'agents' | 'integrations' | 'triggers' | 'workspace' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
 
 interface SettingsModalProps {
   readonly workspace: string | null
@@ -24,6 +25,7 @@ interface SettingsModalProps {
 
 const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
   { id: 'provider', label: 'Провайдер и модели' },
+  { id: 'agents', label: 'Внешние агенты' },
   { id: 'integrations', label: 'Интеграции' },
   { id: 'triggers', label: 'Триггеры событий' },
   { id: 'workspace', label: 'Рабочая область' },
@@ -92,6 +94,7 @@ export function SettingsModal({ workspace, connection, events, initialTab = 'pro
                 {providerSurface === 'api' ? <ProviderForm connection={connection} events={events} /> : <CodexPanel />}
               </section>
             ) : null}
+            {tab === 'agents' ? <ExternalCodingAgentAdapterPanel /> : null}
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'integrations' ? <IntegrationProviderPanel /> : null}
             {tab === 'triggers' ? <EventTriggerRuntimePanel /> : null}

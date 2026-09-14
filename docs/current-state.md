@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-13.
+Обновлено: 2026-09-14.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -559,6 +559,19 @@ Exact-commit CI успешен для `0ebdde23`: module router `34878668073`, C
 `34878724254`, UI/shell-host предыдущего task commit `34876365464`/`34876370453`,
 compatible release manifest `34881572843`; clippy, tests, release build и
 module publication прошли.
+
+## Plan 169 — Agent Client Protocol Bridge (закрыт 2026-09-14)
+
+В checkout уже добавлены typed ACP protocol/auth/backend contracts, bounded
+JSON-RPC validation, capability hash snapshot, ACP session state transitions,
+schema migration v169 и additive authenticated IPC 277/122. Existing
+`EvoHimeV1` preset остаётся обратно совместимым; Electron показывает только
+redacted ACP metadata. Локально прошли ACP contract 7/7, migration/storage
+полный набор 388/388, clippy, format, protocol check, TypeScript typecheck и
+diff-check; Electron unit test недоступен из-за Node 20 вместо Node 22. Полный
+Core lib-набор дал 898/903: пять старых Linux receipt-key IPC tests получили
+`UnsupportedPlatform`, что не относится к ACP и проверяется Windows CI.
+Exact CI evidence будет добавлено после push task commit.
 
 ## Plan 147 — Offline Experience Consolidation Cycle (закрыт 2026-09-09)
 
