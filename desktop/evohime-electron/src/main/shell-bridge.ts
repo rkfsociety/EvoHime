@@ -83,6 +83,7 @@ export interface ShellBridgeOptions {
    */
   readonly ambientHotkey: () => AmbientHotkeyStatus
   readonly exportDiagnostics: () => Promise<{ cancelled: boolean; path: string }>
+  readonly submitDiagnostics?: () => Promise<{ url: string }>
   readonly log: ShellLog
 }
 
@@ -128,7 +129,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, codex, repair, chats, restartCore, updates, listenerRuntime, ollamaRuntime, ambientHotkey, exportDiagnostics, log } =
+  const { client, workspaces, providers, codex, repair, chats, restartCore, updates, listenerRuntime, ollamaRuntime, ambientHotkey, exportDiagnostics, submitDiagnostics, log } =
     options
   switch (command) {
     case 'shell.getState':
@@ -141,6 +142,11 @@ function dispatch(
       return exportDiagnostics()
         .then((value) => ({ ok: true, value }))
         .catch(() => failure('protocol-error', 'Не удалось сохранить диагностический bundle.'))
+
+    case 'shell.submitDiagnostics':
+      return submitDiagnostics
+        ? submitDiagnostics().then((value) => ({ ok: true, value })).catch((error) => failure('protocol-error', error instanceof Error ? error.message : 'Не удалось отправить диагностический bundle.'))
+        : failure('protocol-error', 'Отправка диагностического bundle недоступна в этой сборке.')
 
     case 'trace.export': {
       const content = asTraceContent(asRecord(payload)['content'])

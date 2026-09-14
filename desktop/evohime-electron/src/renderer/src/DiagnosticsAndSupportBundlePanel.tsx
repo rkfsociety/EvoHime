@@ -9,6 +9,7 @@ interface Props { readonly connection: ConnectionState; readonly events: readonl
 export function DiagnosticsAndSupportBundlePanel({ connection, events }: Props): React.JSX.Element {
   const api = useShellApi()
   const [notice, setNotice] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
   const [conversationId, setConversationId] = useState('')
   const [runId, setRunId] = useState('')
   const event = events.find((item) => item.eventType === 'diagnostics.snapshot')
@@ -41,17 +42,33 @@ export function DiagnosticsAndSupportBundlePanel({ connection, events }: Props):
     setNotice(await api.writeClipboardText(draft) ? 'Issue draft скопирован.' : 'Не удалось скопировать issue draft.')
   }
 
+  async function submit(): Promise<void> {
+    if (!api || sending) return
+    if (!window.confirm('Отправить redacted support bundle в публичный GitHub issue для анализа?')) return
+    setSending(true)
+    setNotice('Отправляю redacted support bundle…')
+    const result = await api.invoke('shell.submitDiagnostics', {})
+    setSending(false)
+    if (!result.ok) {
+      setNotice(result.message)
+      return
+    }
+    const opened = await api.openExternal(result.value.url)
+    setNotice(opened ? `Issue создан и открыт: ${result.value.url}` : `Issue создан: ${result.value.url}`)
+  }
+
   const health = Array.isArray(snapshot?.['health']) ? snapshot['health'] as readonly Record<string, unknown>[] : []
   const redaction = snapshot?.['redaction'] as Record<string, unknown> | undefined
   return (
     <section className="settings-info" aria-label="Диагностика и support bundle">
       <h3>Диагностика и support bundle</h3>
-      <p>Core собирает bounded health snapshot. Сохранение локального ZIP выполняет main после финального scan.</p>
+      <p>Core собирает bounded health snapshot. Main делает финальный redaction scan; отправка выполняется только после нажатия кнопки и подтверждения.</p>
       <div className="safety__actions">
         <input aria-label="Идентификатор conversation" placeholder="conversation id (необязательно)" value={conversationId} onChange={(event) => setConversationId(event.target.value)} />
         <input aria-label="Идентификатор failed run" placeholder="failed run id (необязательно)" value={runId} onChange={(event) => setRunId(event.target.value)} />
         <button type="button" disabled={!api || !connected} onClick={() => void refresh()}>Обновить preview</button>
         <button type="button" disabled={!api || !connected} onClick={() => void save()}>Сохранить support bundle</button>
+        <button type="button" disabled={!api || sending} onClick={() => void submit()}>{sending ? 'Отправка…' : 'Отправить в GitHub issue'}</button>
         <button type="button" disabled={!api || !snapshot} onClick={() => void copyDraft()}>Скопировать issue draft</button>
       </div>
       {snapshot ? <>

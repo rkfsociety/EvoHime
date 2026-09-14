@@ -1158,6 +1158,7 @@ export const RENDERER_COMMANDS = [
   'shell.getState',
   'shell.requestResync',
   'shell.exportDiagnostics',
+  'shell.submitDiagnostics',
   'trace.export',
   'workspace.list',
   'workspace.pick',
@@ -1501,6 +1502,7 @@ export interface CommandPayloads {
   'shell.getState': Record<string, never>
   'shell.requestResync': Record<string, never>
   'shell.exportDiagnostics': Record<string, never>
+  'shell.submitDiagnostics': Record<string, never>
   'trace.export': { content: string }
   'workspace.list': Record<string, never>
   'workspace.pick': Record<string, never>
@@ -2041,6 +2043,7 @@ export interface CommandResults {
   'shell.getState': ShellState
   'shell.requestResync': { accepted: boolean }
   'shell.exportDiagnostics': { cancelled: boolean; path: string }
+  'shell.submitDiagnostics': { url: string }
   'trace.export': { cancelled: boolean; path: string }
   'workspace.list': WorkspaceSelection
   /** `cancelled` when the user closed the native folder dialog. */

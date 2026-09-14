@@ -1221,8 +1221,13 @@ omissions, bounds and optional conversation/run metadata references, and
 computes a SHA-256 fingerprint. It does not create a store or migration, does
 not include raw prompts/files/tool payloads/credentials, and does not perform
 repair or any external effect. Electron main may include the result in the ZIP
-only after the user reviews the preview; no upload or automatic issue
-publication exists.
+only after the user reviews the preview. The diagnostics settings panel also
+offers an explicit, confirmed `shell.submitDiagnostics` action: main performs
+the same final redaction scan, resolves the existing GitHub credential, and
+creates one issue containing a readable draft plus the bounded ZIP as base64;
+the created issue is opened for the user. There is no automatic support-bundle
+publication; automatic reporting remains limited to short deduplicated update
+failure issues.
 
 Recovery UI consumes Core events as the source of truth and preserves typed `reason_code`, correlation, sequence and `UNKNOWN_OUTCOME`. Terminal task IDs are indexed once per projection, cancellation is offered only when Core explicitly marks `can_cancel`, and user-visible recovery details use a bounded allowlist of non-secret fields. Database operations use `core.cancelDatabaseOperation`, task operations use `core.stopTask`.
 

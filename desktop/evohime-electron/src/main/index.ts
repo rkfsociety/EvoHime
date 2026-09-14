@@ -27,6 +27,7 @@ import { ListenerRuntimeService } from './update/listener-runtime'
 import { OllamaRuntimeService } from './ollama-runtime'
 import { ModuleUpdateService } from './update/module-update-service'
 import { UpdateService, type UpdateController } from './update/update-service'
+import { reportSupportBundle } from './update/update-issue-reporter'
 import { createOverlay, type OverlayController } from './overlay'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
@@ -194,6 +195,21 @@ if (process.argv.includes('--evohime-browser-backend')) {
     listenerRuntime = createListenerRuntimeService()
     ollamaRuntime = createOllamaRuntimeService()
 
+    const buildCurrentSupportBundle = (): { readonly archive: Buffer; readonly issueDraft: string } => {
+      const snapshotEvent = recentCoreEvents.find((event) => event.eventType === 'diagnostics.snapshot')
+      let snapshot: unknown = { unavailable: true, reason: 'core_snapshot_not_received' }
+      if (snapshotEvent) {
+        try { snapshot = JSON.parse(snapshotEvent.payload) as unknown } catch { snapshot = { unavailable: true, reason: 'malformed_core_snapshot' } }
+      }
+      const files = buildSupportBundleFiles({
+        snapshot,
+        runtime: { appVersion: app.getVersion(), platform: process.platform, architecture: process.arch, state: lastShellState, update: lastUpdateStatus, repair: lastRepairStatus },
+        events: recentCoreEvents,
+        logs: [logger.path]
+      })
+      return { archive: serializeSupportBundle(files), issueDraft: files.issueDraft }
+    }
+
     // The picker dialog is owned by the main process and opens modal to the
     // shell window; the renderer only ever receives the chosen path.
     registerShellBridge({
@@ -217,19 +233,18 @@ if (process.argv.includes('--evohime-browser-backend')) {
           ? await dialog.showSaveDialog(window, { defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
           : await dialog.showSaveDialog({ defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
         if (save.canceled || !save.filePath) return { cancelled: true, path: '' }
-        const snapshotEvent = recentCoreEvents.find((event) => event.eventType === 'diagnostics.snapshot')
-        let snapshot: unknown = { unavailable: true, reason: 'core_snapshot_not_received' }
-        if (snapshotEvent) {
-          try { snapshot = JSON.parse(snapshotEvent.payload) as unknown } catch { snapshot = { unavailable: true, reason: 'malformed_core_snapshot' } }
-        }
-        const files = buildSupportBundleFiles({
-          snapshot,
-          runtime: { appVersion: app.getVersion(), platform: process.platform, architecture: process.arch, state: lastShellState, update: lastUpdateStatus, repair: lastRepairStatus },
-          events: recentCoreEvents,
-          logs: [logger.path]
-        })
-        writeFileSync(save.filePath, serializeSupportBundle(files), { mode: 0o600 })
+        writeFileSync(save.filePath, buildCurrentSupportBundle().archive, { mode: 0o600 })
         return { cancelled: false, path: save.filePath }
+      },
+      submitDiagnostics: async () => {
+        const bundle = buildCurrentSupportBundle()
+        const token = await resolveGithubToken({ configured: updateConfig.githubToken })
+        const url = await reportSupportBundle(updateConfig, bundle, {
+          token: token?.token ?? null,
+          fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
+        })
+        log('info', 'shell.diagnostics_issue_created', { url })
+        return { url }
       },
       log
     })

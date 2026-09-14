@@ -296,6 +296,7 @@ beforeEach(() => {
     ollamaRuntime: ollamaRuntime as never,
     ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
     exportDiagnostics: async () => ({ cancelled: false, path: 'C:\\diagnostics.json' }),
+    submitDiagnostics: async () => ({ url: 'https://github.com/rkfsociety/EvoHime/issues/2' }),
     log: () => {}
   })
   listenerCalls.length = 0
@@ -354,6 +355,14 @@ describe('renderer command surface', () => {
     await expect(invoke('shell.exportDiagnostics', {})).resolves.toEqual({
       ok: true,
       value: { cancelled: false, path: 'C:\\diagnostics.json' }
+    })
+    expect(sent).toHaveLength(0)
+  })
+
+  it('submits diagnostics through the explicit main-process action', async () => {
+    await expect(invoke('shell.submitDiagnostics', {})).resolves.toEqual({
+      ok: true,
+      value: { url: 'https://github.com/rkfsociety/EvoHime/issues/2' }
     })
     expect(sent).toHaveLength(0)
   })
