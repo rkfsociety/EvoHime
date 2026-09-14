@@ -510,7 +510,8 @@ export class UpdateService {
       })
     }
     writeFileSync(join(this.deps.config.stagingDirectory, 'evohime.components.json'), `${JSON.stringify({
-      schema: 'evohime.component-manifest.v1', os: 'windows', architecture: 'x64',
+      schema: 'evohime.component-manifest.v1', product: 'EvoHime', release_id: 'module-update',
+      os: 'windows', architecture: 'x64', release_commit: '0'.repeat(40),
       components: [...merged.values()]
     }, null, 2)}\n`, 'utf8')
   }

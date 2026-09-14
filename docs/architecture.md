@@ -823,6 +823,12 @@ Native package дополнительно содержит `evohime.components.j
 зависимости, цикле, неверном размере или хеше. Legacy `evohime.manifest.json`
 остаётся bootstrap-контрактом.
 
+Metadata component manifest развивается обратно совместимо: transaction worker
+принимает пропущенные legacy-поля с безопасными значениями по умолчанию и
+игнорирует additive metadata, а Electron перед staged apply записывает полный
+canonical marker. Поэтому исправления описательных полей не требуют полной
+пересборки installer для уже установленного клиента.
+
 Electron renderer собирается в отдельный `out/ui-bundle`; component downloader
 проверяет bounded archive, распаковывает его в versioned UI directory, а main
 process выбирает только validated version из `ui-active.json`. Повреждённый или

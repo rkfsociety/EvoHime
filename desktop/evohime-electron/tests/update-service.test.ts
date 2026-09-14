@@ -409,8 +409,14 @@ describe('module staging', () => {
     await expect(test.service.prepareComponents(['core'])).resolves.toMatchObject({ phase: 'ready' })
 
     const staged = JSON.parse(readFileSync(join(test.config.stagingDirectory, 'evohime.components.json'), 'utf8')) as {
+      product: string
+      release_id: string
+      release_commit: string
       components: Array<{ protocol?: string }>
     }
+    expect(staged.product).toBe('EvoHime')
+    expect(staged.release_id).toBe('module-update')
+    expect(staged.release_commit).toBe('0'.repeat(40))
     expect(staged.components).toHaveLength(1)
     expect(staged.components[0]?.protocol).toBe('desktop-ipc-v1')
   })

@@ -8,20 +8,37 @@ pub const SCHEMA: &str = "evohime.component-manifest.v1";
 pub const MAX_COMPONENTS: usize = 32;
 pub const MAX_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
 
+fn default_product() -> String {
+    "EvoHime".into()
+}
+
+fn default_release_id() -> String {
+    "legacy-component-update".into()
+}
+
+fn default_release_commit() -> String {
+    "0".repeat(40)
+}
+
+fn default_protocol() -> String {
+    "desktop-ipc-v1".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct Manifest {
     pub schema: String,
+    #[serde(default = "default_product")]
     pub product: String,
+    #[serde(default = "default_release_id")]
     pub release_id: String,
     pub os: String,
     pub architecture: String,
+    #[serde(default = "default_release_commit")]
     pub release_commit: String,
     pub components: Vec<Component>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 pub struct Component {
     pub id: String,
     pub version: String,
@@ -32,6 +49,7 @@ pub struct Component {
     #[serde(default)]
     pub dependencies: Vec<String>,
     pub required: bool,
+    #[serde(default = "default_protocol")]
     pub protocol: String,
     pub restart: String,
 }
@@ -238,6 +256,30 @@ mod tests {
     fn accepts_valid_manifest() {
         assert!(manifest().validate().is_ok());
     }
+
+    #[test]
+    fn accepts_legacy_manifest_and_additive_metadata() {
+        let mut value = serde_json::to_value(manifest()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("product");
+        object.remove("release_id");
+        object.remove("release_commit");
+        object.insert("future_metadata".into(), serde_json::json!({"version": 2}));
+        let component = object
+            .get_mut("components")
+            .and_then(serde_json::Value::as_array_mut)
+            .and_then(|components| components.first_mut())
+            .and_then(serde_json::Value::as_object_mut)
+            .unwrap();
+        component.remove("protocol");
+        component.insert("future_component_metadata".into(), serde_json::json!(true));
+
+        let parsed = Manifest::parse(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(parsed.product, "EvoHime");
+        assert_eq!(parsed.release_id, "legacy-component-update");
+        assert_eq!(parsed.release_commit, "0".repeat(40));
+        assert_eq!(parsed.components[0].protocol, "desktop-ipc-v1");
+    }
     #[test]
     fn rejects_escape_and_cycle() {
         let mut m = manifest();
@@ -264,13 +306,13 @@ mod tests {
     }
 
     #[test]
-    fn canonical_bytes_are_stable_and_unknown_fields_are_rejected() {
+    fn canonical_bytes_are_stable_and_unknown_fields_are_ignored() {
         let m = manifest();
         assert_eq!(m.canonical_bytes().unwrap(), m.canonical_bytes().unwrap());
         let json = String::from_utf8(m.canonical_bytes().unwrap())
             .unwrap()
             .to_string();
-        let invalid = json.trim_end_matches('}').to_owned() + ",\"extra\":true}";
-        assert!(Manifest::parse(invalid.as_bytes()).is_err());
+        let with_extra = json.trim_end_matches('}').to_owned() + ",\"extra\":true}";
+        assert!(Manifest::parse(with_extra.as_bytes()).is_ok());
     }
 }

@@ -270,6 +270,9 @@ Authenticated-core/real-Core/source-update E2E и полный Windows acceptanc
 native package генерирует `evohime.components.json` для первоначальной поставки;
 каждый runtime-модуль имеет отдельную semver-версию и собственный versioned Release
 `module-<module>-v<semver>` с manifest, размером, SHA-256, зависимостями и restart policy.
+Component manifest metadata совместима с legacy staged updates: transaction worker
+использует безопасные defaults для пропущенных полей и принимает additive metadata,
+а module updater формирует полный marker перед применением.
 После успешной публикации старый Release этого модуля удаляется. Router не
 использует commit diff или SHA: он сравнивает `release-versions/<module>.txt`
 с последним тегом `module-<module>-v<semver>` и запускает workflow только для
