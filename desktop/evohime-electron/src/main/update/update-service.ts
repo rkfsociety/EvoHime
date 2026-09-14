@@ -99,15 +99,19 @@ export class UpdateService {
   private selectedModuleVersions: Readonly<Record<string, string>> = {}
 
   constructor(private readonly deps: UpdateServiceDeps) {
+    const installedModules = this.installedModules()
     this.current = deps.config.enabled
       ? {
           ...disabledUpdateStatus(deps.config.branch),
           phase: 'idle',
           message: 'Обновления не проверялись.',
-          installedCommit: this.installedCommit()
-          , installedModules: this.installedModules()
+          installedCommit: this.installedCommit(),
+          installedModules
         }
-      : disabledUpdateStatus(deps.config.branch)
+      : {
+          ...disabledUpdateStatus(deps.config.branch),
+          installedModules
+        }
   }
 
   get status(): UpdateStatus {

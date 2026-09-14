@@ -416,12 +416,14 @@ export function App(): React.JSX.Element {
 
       <footer className="statusbar">
         <span>Протокол {state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</span>
-        <span>Core {state?.coreVersion ?? '—'}</span>
-        {/* Сборка опознаётся коммитом: релизный номер — только ярлык установщика. */}
+        <span title={state?.coreVersion ? `Версия runtime-пакета Core: ${state.coreVersion}` : undefined}>
+          Core модуль {update.installedModules?.core ?? '—'}
+        </span>
+        {/* Сборка опознаётся commit: релизная версия модуля показана отдельно. */}
         {update && update.phase !== 'disabled' ? (
-          <span title={`Ветка ${update.branch}`}>сборка {shortCommit(update.installedCommit)}</span>
+          <span title={`Commit сборки, ветка ${update.branch}`}>сборка {shortCommit(update.installedCommit)}</span>
         ) : null}
-        <span>seq {state?.lastSequence ?? 0}</span>
+        <span title="Последнее событие в журнале Core">seq {state?.lastSequence ?? 0}</span>
         {(state?.reconnectAttempts ?? 0) > 0 ? <span>переподключений: {state?.reconnectAttempts}</span> : null}
         <span className="statusbar__spacer" />
         {state?.reason ? <span className="statusbar__reason">{state.reason}</span> : null}

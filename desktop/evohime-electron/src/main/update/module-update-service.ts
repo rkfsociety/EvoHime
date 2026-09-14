@@ -47,9 +47,13 @@ export class ModuleUpdateService {
       ? {
           ...disabledUpdateStatus(options.branch),
           phase: 'idle',
-          message: 'Состояние модульных обновлений ещё не прочитано.'
+          message: 'Состояние модульных обновлений ещё не прочитано.',
+          installedModules: readInstalledModules(options.installDirectory)
         }
-      : disabledUpdateStatus(options.branch)
+      : {
+          ...disabledUpdateStatus(options.branch),
+          installedModules: readInstalledModules(options.installDirectory)
+        }
   }
 
   get status(): UpdateStatus {
@@ -154,6 +158,10 @@ export class ModuleUpdateService {
       (item): item is Required<Pick<typeof item, 'module' | 'installed' | 'available'>> & typeof item =>
         typeof item.module === 'string' && typeof item.installed === 'string' && typeof item.available === 'string'
     )
+    const installedModules = {
+      ...readInstalledModules(this.options.installDirectory),
+      ...Object.fromEntries(available.map((item) => [item.module, item.installed]))
+    }
     const phase = toUpdatePhase(parsed.phase, available.length > 0)
     const next: UpdateStatus = {
       phase,
@@ -162,7 +170,7 @@ export class ModuleUpdateService {
       detail: '',
       steps: initialUpdateSteps().map((step) => ({ ...step, state: 'skipped' as const })),
       installedCommit: null,
-      installedModules: Object.fromEntries(available.map((item) => [item.module, item.installed])),
+      installedModules,
       remoteCommit: null,
       branch: this.options.branch,
       error: phase === 'failed' ? parsed.error ?? parsed.message ?? 'Проверка модулей не удалась.' : null,
@@ -187,6 +195,23 @@ export class ModuleUpdateService {
     this.lastSerialized = serialized
     this.current = next
     this.options.emit(next)
+  }
+}
+
+function readInstalledModules(installDirectory: string): Readonly<Record<string, string>> {
+  try {
+    const value = JSON.parse(readFileSync(join(installDirectory, 'evohime.components.json'), 'utf8')) as {
+      components?: Array<{ id?: unknown; version?: unknown }>
+    }
+    const result: Record<string, string> = {}
+    for (const component of value.components ?? []) {
+      if (typeof component.id === 'string' && typeof component.version === 'string') {
+        result[component.id] = component.version
+      }
+    }
+    return result
+  } catch {
+    return {}
   }
 }
 

@@ -95,4 +95,39 @@ describe('ModuleUpdateService', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('keeps installed module versions when no update is available', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-module-version-'))
+    try {
+      const state = join(root, 'update-state')
+      const install = join(root, 'install')
+      mkdirSync(state)
+      mkdirSync(install)
+      writeFileSync(join(install, 'evohime.components.json'), JSON.stringify({
+        components: [{ id: 'core', version: '0.0.000243' }]
+      }))
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'up-to-date',
+        message: 'Модули актуальны.',
+        available: []
+      }))
+
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: install,
+        emit: () => {},
+        intervalMs: 60_000
+      })
+
+      await service.runLaunchGate()
+
+      expect(service.status.installedModules).toEqual({ core: '0.0.000243' })
+      service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
