@@ -77,6 +77,24 @@ export function RecoveryBanner({
     setStatus(!outcome.ok ? outcome.message : outcome.value.cancelled ? 'Экспорт отменён.' : `Диагностика сохранена: ${outcome.value.path}`)
   }
 
+  const submitDiagnostics = async (): Promise<void> => {
+    if (!api) {
+      setStatus('Мост оболочки недоступен: перезапусти приложение.')
+      return
+    }
+    if (!window.confirm('Отправить redacted support bundle в публичный GitHub issue для анализа?')) return
+    setBusy(true)
+    setStatus('Отправляю redacted support bundle…')
+    const outcome = await api.invoke('shell.submitDiagnostics', {})
+    setBusy(false)
+    if (!outcome.ok) {
+      setStatus(outcome.message)
+      return
+    }
+    const opened = await api.openExternal(outcome.value.url)
+    setStatus(opened ? `Issue создан и открыт: ${outcome.value.url}` : `Issue создан: ${outcome.value.url}`)
+  }
+
   const cancel = async (): Promise<void> => {
     if (!api || !notice.canCancel) return
     setBusy(true)
@@ -123,6 +141,9 @@ export function RecoveryBanner({
         {notice.canCancel ? <button type="button" onClick={() => void cancel()} disabled={busy}>Отменить</button> : null}
         {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
           <button type="button" onClick={() => void exportDiagnostics()}>Сохранить диагностику</button>
+        ) : null}
+        {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
+          <button type="button" onClick={() => void submitDiagnostics()} disabled={busy}>Отправить диагностику в issue</button>
         ) : null}
         {notice.state === 'FAILED' ? (
           <button type="button" aria-expanded={detailsOpen} onClick={openDetails}>

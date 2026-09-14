@@ -94,6 +94,7 @@ describe('recovery contract', () => {
     render(<RecoveryBanner connection="connected" events={[event('task.failed', { error: 'safe error', request_id: 'request-1' })]} onOpenTask={vi.fn()} />)
     expect(screen.getByText('FAILED')).toBeTruthy()
     expect(screen.getByText('Перезапросить состояние')).toBeTruthy()
+    expect(screen.getByText('Отправить диагностику в issue')).toBeTruthy()
     expect(screen.getByText('Открыть детали')).toBeTruthy()
     expect(screen.queryByText('Открыть подтверждение')).toBeNull()
   })
