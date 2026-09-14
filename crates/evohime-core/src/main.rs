@@ -994,6 +994,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::ExecutionEnvironmentProfile { profile_id, operation, revision, .. } => console_line!("execution_environment_profile.result {profile_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ContextNamespace { operation, revision, .. } => console_line!("context_namespace.result {operation} revision={revision}"),
         evohime_core::CoreEvent::DurableBackgroundExecution { run_id, operation, revision, .. } => console_line!("background_execution.result {run_id}: {operation} revision={revision}"),
+        evohime_core::CoreEvent::MultiReviewerEnsemble { ensemble_id, operation, revision, .. } => console_line!("multi_reviewer_ensemble.result {ensemble_id}: {operation} revision={revision}"),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             console_line!("review.history_cleared {marker_id}")
         }
