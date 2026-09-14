@@ -984,21 +984,12 @@ fn apply_updates_inner(
         write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
         return Ok(());
     }
-    let manifest = serde_json::json!({
-        "schema": "evohime.component-manifest.v1", "os": "windows", "architecture": "x64",
-        "product": "EvoHime", "release_id": format!("module-update-{}", std::process::id()),
-        "release_commit": "0000000000000000000000000000000000000000",
-        "components": applied.iter().chain(ui_update.iter()).map(|item| serde_json::json!({
-            "id": item.module, "version": item.available, "artifact": item.artifact,
-            "path": item.artifact, "size": item.size, "sha256": item.sha256,
-            "dependencies": item.dependencies, "required": true, "restart": item.restart
-        })).collect::<Vec<_>>()
-    });
-    fs::write(
-        staging.join("evohime.components.json"),
-        serde_json::to_vec_pretty(&manifest).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
+    write_staged_manifest(
+        install_dir,
+        &staging.join("evohime.components.json"),
+        &applied,
+        ui_update,
+    )?;
     let worker = install_dir.join("evohime-transaction.exe");
     if !worker.is_file() {
         return Err("updater: transaction worker отсутствует".into());
@@ -1555,6 +1546,55 @@ fn merge_installed_manifest_to(
     Ok(())
 }
 
+/// Builds the transaction marker from the complete installed inventory.
+///
+/// The transaction validator checks dependencies across the whole marker, not
+/// only across files selected for replacement. Keeping unchanged components in
+/// staging is therefore required when an update references an already
+/// installed dependency (for example shell-host -> core).
+fn write_staged_manifest(
+    install_dir: &Path,
+    destination: &Path,
+    applied: &[&UpdateCandidate],
+    ui_update: Option<&UpdateCandidate>,
+) -> Result<(), String> {
+    let path = install_dir.join("evohime.components.json");
+    let existing = if path.exists() {
+        read_bounded_text(&path)?
+    } else {
+        "{\"components\":[]}".into()
+    };
+    let mut root = serde_json::from_str::<serde_json::Value>(&existing)
+        .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
+    let installed = serde_json::from_value::<InstalledManifest>(root.clone())
+        .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
+    select_outdated(&installed, &[])
+        .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
+    let components = root
+        .get_mut("components")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or_else(|| "updater: component manifest повреждён".to_owned())?;
+    for update in applied.iter().copied().chain(ui_update) {
+        let value = serde_json::json!({
+            "id": update.module, "version": update.available, "artifact": update.artifact,
+            "path": update.artifact, "size": update.size, "sha256": update.sha256,
+            "dependencies": update.dependencies, "required": true, "restart": update.restart
+        });
+        if let Some(existing) = components.iter_mut().find(|item| {
+            item.get("id").and_then(serde_json::Value::as_str) == Some(update.module.as_str())
+        }) {
+            *existing = value;
+        } else {
+            components.push(value);
+        }
+    }
+    fs::write(
+        destination,
+        serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())
+}
+
 fn stream_file_hash(path: &Path) -> Result<(u64, String), String> {
     let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
     let mut digest = sha2::Sha256::new();
@@ -1736,8 +1776,8 @@ mod tests {
         read_update_config, resolve_github_token_with, stream_file_hash,
         transaction_worker_failure_message, updater_bootstrap_script, updater_first_if_required,
         updater_http_client, validate_compatible_manifest, validate_runtime_manifest,
-        CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest,
-        UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
+        write_staged_manifest, CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry,
+        RuntimeReleaseManifest, UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
     };
     use sha2::Digest;
     use std::{
@@ -1862,6 +1902,51 @@ mod tests {
             .expect_err("duplicate installed components must be rejected");
         assert!(error.contains("duplicate or invalid installed module id"));
         assert!(!destination.exists());
+        fs::remove_dir_all(root).expect("remove temporary install directory");
+    }
+
+    #[test]
+    fn staged_manifest_keeps_unchanged_dependencies() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-staged-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(
+            root.join("evohime.components.json"),
+            br#"{"components":[
+                {"id":"core","version":"1.0.0","artifact":"core.exe","path":"core.exe","size":1,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","required":true,"restart":"core"}
+            ]}"#,
+        )
+        .expect("write installed manifest");
+        let update = UpdateCandidate {
+            module: "shell-host".into(),
+            installed: "1.0.0".into(),
+            available: "1.1.0".into(),
+            summary: String::new(),
+            changes: vec![],
+            dependencies: vec!["core".into()],
+            restart: "shell".into(),
+            artifact: "shell-host.zip".into(),
+            size: 1,
+            sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+            download_url: String::new(),
+        };
+        let destination = root.join("staging").join("evohime.components.json");
+        fs::create_dir_all(destination.parent().expect("staging parent")).unwrap();
+
+        write_staged_manifest(&root, &destination, &[&update], None).expect("write marker");
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(destination).expect("read marker")).unwrap();
+        let components = value["components"].as_array().unwrap();
+        assert_eq!(components.len(), 2);
+        assert!(components.iter().any(|item| item["id"] == "core"));
+        assert!(components
+            .iter()
+            .any(|item| { item["id"] == "shell-host" && item["dependencies"][0] == "core" }));
         fs::remove_dir_all(root).expect("remove temporary install directory");
     }
 
