@@ -622,6 +622,8 @@ persistent `updater-fallback.exe`, headless `--self-test`/launch preflight,
 fail-closed PE/size/SHA validation и redacted recovery projection в status/UI.
 Обычный transaction worker rollback сохраняется; новый executable/module или
 web-runtime не добавляются. Локально прошли updater tests, clippy, Electron
-typecheck, protocol check и `git diff --check`; Windows CI выполняется после
-task-only push. Exact-commit CI PASS for `acd96542`: updater `34909257525`,
-module router `34909209590`, compatible release manifest `34909543474`.
+typecheck, protocol check и `git diff --check`. Follow-up `a1561ba6` добавил
+fallback hash validation, bounded download retry, updater UI crash-loop guard
+и package recovery-slot smoke. Exact-commit CI PASS: updater `34910315890`,
+UI bundle `34910317294`, shell-host `34910314115`, module router `34910263599`,
+compatible release manifest `34910682285`.

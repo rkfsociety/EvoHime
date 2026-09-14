@@ -1471,8 +1471,8 @@ compatible release manifest `34908038913`.
 Local PASS: updater unit tests, clippy, Electron typecheck, protocol check и
 `git diff --check`. Contract evidence includes atomic bounded recovery journal,
 last-known-good updater fallback slot, PE/size/SHA validation, headless launch
-preflight and redacted recovery status projection. Exact-commit `acd96542`
-GitHub Actions PASS: updater `34909257525`, module router `34909209590`,
-compatible release manifest `34909543474`; updater workflow includes Windows
-tests, clippy and release build, while installer smoke remains the manual
-full-installer fallback.
+preflight and redacted recovery status projection. Follow-up `a1561ba6`
+adds fallback hash validation, bounded download retry, updater UI crash-loop
+guard and recovery-slot package smoke. Exact-commit GitHub Actions PASS:
+updater `34910315890`, UI bundle `34910317294`, shell-host `34910314115`,
+module router `34910263599`, compatible release manifest `34910682285`.
