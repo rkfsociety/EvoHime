@@ -1451,5 +1451,6 @@ Local verification passed: `cargo check --locked -p evohime-core
 -p evohime-local-storage`, Core clippy with `-D warnings`, storage library
 tests 391/391, `npm run check:protocol`, `npm run typecheck` and
 `git diff --check`. Electron unit tests require Node 22 and were unavailable
-under the current Node 20 runtime. Exact-commit GitHub Actions evidence is
-pending the task-only commit and push.
+under the current Node 20 runtime. Exact-commit `e64eff14` GitHub Actions PASS:
+Core `34901485643` (Windows tests, clippy, release build and publication),
+module router `34901436796`, compatible release manifest `34904053471`.

@@ -595,5 +595,7 @@ run revision и cancel fenced, а existing review/model lanes остаются �
 Electron settings panel и protocol types. Локально прошли `cargo check`,
 Core clippy, storage lib tests 391/391, protocol generation/check,
 TypeScript typecheck и `git diff --check`; Electron unit tests требуют Node 22
-и в текущем Node 20 окружении не запускались. CI exact-commit evidence будет
-добавлена после push.
+и в текущем Node 20 окружении не запускались. Exact-commit CI для follow-up
+`e64eff14` успешен: Core `34901485643` (Windows tests, clippy, release build и
+publication), module router `34901436796`, compatible release manifest
+`34904053471`.
