@@ -3,6 +3,15 @@
 Статус: предложено по запросу Романа. Это implementation contract; функционал
 этим документом не считается реализованным.
 
+Ревью перед реализацией (2026-09-15): текущие `evohime-update-agent` и
+`evohime-updater` уже предоставляют проверку component/compatible manifest,
+SHA-256, bounded retries и rollback обычной транзакции, но не предоставляют
+versioned recovery journal, persistent fallback slot, `--self-test` или
+ограничение updater crash-loop. Поэтому требования этапов 172.1–172.3 не
+дублируют существующий контракт и остаются блокирующими. Публичный issue #152
+по URL репозитория в этом checkout не разрешается GitHub; дополнительные
+требования принимаются только при подтверждении исходными документами и CI.
+
 ## Цель
 
 Сделать существующий `evohime-updater.exe` самовосстанавливающимся control-plane

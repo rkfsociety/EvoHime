@@ -1465,3 +1465,11 @@ under the current Node 20 runtime. Exact-commit CI evidence is pending push.
 Exact-commit `ed879822` GitHub Actions PASS: Core `34905875176`, shell-host
 `34905873117`, UI bundle `34905877063`, module router `34905820570` and
 compatible release manifest `34908038913`.
+
+## Plan 172 — Self-healing updater и recovery
+
+Local PASS: updater unit tests, clippy, Electron typecheck, protocol check и
+`git diff --check`. Contract evidence includes atomic bounded recovery journal,
+last-known-good updater fallback slot, PE/size/SHA validation, headless launch
+preflight and redacted recovery status projection. Windows package smoke and
+module-only CI evidence остаются обязательными до закрытия плана.

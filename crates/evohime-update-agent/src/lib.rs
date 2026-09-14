@@ -4,8 +4,181 @@ use serde::{
 };
 use sha2::Digest;
 use std::cmp::Ordering;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+
+pub const RECOVERY_SCHEMA: u32 = 1;
+pub const MAX_RECOVERY_BYTES: usize = 32 * 1024;
+pub const MAX_RECOVERY_ATTEMPTS: u32 = 3;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RecoveryJournal {
+    pub schema: u32,
+    pub operation_id: String,
+    pub phase: String,
+    pub active_slot: String,
+    pub active_version: String,
+    pub active_sha256: String,
+    pub fallback_available: bool,
+    pub retry_count: u32,
+    pub reason_code: Option<String>,
+}
+
+impl RecoveryJournal {
+    pub fn new(operation_id: impl Into<String>, phase: impl Into<String>) -> Self {
+        Self {
+            schema: RECOVERY_SCHEMA,
+            operation_id: operation_id.into(),
+            phase: phase.into(),
+            active_slot: "active".into(),
+            active_version: String::new(),
+            active_sha256: String::new(),
+            fallback_available: false,
+            retry_count: 0,
+            reason_code: None,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schema != RECOVERY_SCHEMA
+            || self.operation_id.is_empty()
+            || self.operation_id.len() > 128
+            || !matches!(
+                self.phase.as_str(),
+                "prepared"
+                    | "downloaded"
+                    | "verified"
+                    | "replaced"
+                    | "self-tested"
+                    | "committed"
+                    | "rolled-back"
+                    | "manual-recovery"
+            )
+            || !matches!(self.active_slot.as_str(), "active" | "fallback")
+            || self.active_version.len() > 64
+            || self.active_sha256.len() > 64
+            || self.retry_count > MAX_RECOVERY_ATTEMPTS
+        {
+            return Err("invalid recovery journal".into());
+        }
+        if !self.active_sha256.is_empty()
+            && (self.active_sha256.len() != 64
+                || !self.active_sha256.bytes().all(|b| b.is_ascii_hexdigit()))
+        {
+            return Err("invalid recovery hash".into());
+        }
+        Ok(())
+    }
+}
+
+pub fn write_recovery_journal(path: &Path, journal: &RecoveryJournal) -> Result<(), String> {
+    journal.validate()?;
+    let bytes = serde_json::to_vec(journal).map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_RECOVERY_BYTES {
+        return Err("recovery journal exceeds bounds".into());
+    }
+    let temporary = path.with_extension("json.tmp");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let result = (|| {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&temporary).map_err(|e| e.to_string())?;
+        file.write_all(&bytes).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        std::fs::rename(&temporary, path).map_err(|e| e.to_string())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
+pub fn read_recovery_journal(path: &Path) -> Result<Option<RecoveryJournal>, String> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_RECOVERY_BYTES {
+        return Err("recovery journal exceeds bounds".into());
+    }
+    let journal: RecoveryJournal = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    journal.validate()?;
+    Ok(Some(journal))
+}
+
+pub fn validate_pe_artifact(
+    path: &Path,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<(), String> {
+    let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    if !metadata.is_file()
+        || metadata.len() != expected_size
+        || expected_size == 0
+        || expected_size > 1024 * 1024 * 1024
+    {
+        return Err("artifact size mismatch".into());
+    }
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut header = [0u8; 2];
+    file.read_exact(&mut header).map_err(|e| e.to_string())?;
+    if header != *b"MZ" {
+        return Err("artifact is not a PE executable".into());
+    }
+    let mut digest = sha2::Sha256::new();
+    file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    let actual = format!("{:x}", digest.finalize());
+    if actual != expected_sha256.to_ascii_lowercase() {
+        return Err("artifact hash mismatch".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn journal_round_trips_atomically_and_rejects_unknown_phase() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("recovery.json");
+        let journal = RecoveryJournal::new("op-1", "prepared");
+        write_recovery_journal(&path, &journal).unwrap();
+        assert_eq!(read_recovery_journal(&path).unwrap(), Some(journal));
+        std::fs::write(&path, br#"{"schema":1,"operation_id":"x","phase":"unsafe","active_slot":"active","active_version":"","active_sha256":"","fallback_available":false,"retry_count":0,"reason_code":null}"#).unwrap();
+        assert!(read_recovery_journal(&path).is_err());
+    }
+
+    #[test]
+    fn pe_validation_checks_header_size_and_hash() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("updater.exe");
+        std::fs::write(&path, b"MZpayload").unwrap();
+        let hash = format!("{:x}", sha2::Sha256::digest(b"MZpayload"));
+        validate_pe_artifact(&path, 9, &hash).unwrap();
+        assert!(validate_pe_artifact(&path, 8, &hash).is_err());
+        assert!(validate_pe_artifact(&path, 9, &"00".repeat(32)).is_err());
+    }
+
+    #[test]
+    fn journal_size_and_retry_limits_are_fail_closed() {
+        let mut journal = RecoveryJournal::new("x", "prepared");
+        journal.retry_count = MAX_RECOVERY_ATTEMPTS + 1;
+        assert!(journal.validate().is_err());
+        journal.retry_count = 0;
+        journal.operation_id = "x".repeat(129);
+        assert!(journal.validate().is_err());
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ModuleRecord {
@@ -48,6 +221,18 @@ pub struct UpdaterStatus {
     pub error: Option<String>,
     pub modules: Vec<String>,
     pub available: Vec<UpdaterModuleStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<RecoveryStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RecoveryStatus {
+    pub phase: String,
+    pub active_slot: String,
+    pub active_version: String,
+    pub fallback_available: bool,
+    pub retry_count: u32,
+    pub reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

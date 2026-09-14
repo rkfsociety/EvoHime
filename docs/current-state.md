@@ -610,7 +610,17 @@ Raw LSP JSON-RPC, untrusted executable paths и автоматическое п�
 fence; authenticated IPC 279/event 124 и Electron Settings projection
 показывают только bounded status/provenance. Локально прошли Core check/clippy,
 focused Core 2/2 и storage 1/1, protocol check, TypeScript typecheck и
-diff-check. Exact-commit CI evidence будет добавлена после push.
+diff-check.
 Exact-commit CI для `ed879822` успешен: Core `34905875176`, shell-host
 `34905873117`, UI bundle `34905877063`, module router `34905820570` и
 compatible release manifest `34908038913`.
+
+## Plan 172 — Self-healing updater и recovery (в реализации 2026-09-15)
+
+Updater получает bounded versioned recovery journal в `update-state/recovery.json`,
+persistent `updater-fallback.exe`, headless `--self-test`/launch preflight,
+fail-closed PE/size/SHA validation и redacted recovery projection в status/UI.
+Обычный transaction worker rollback сохраняется; новый executable/module или
+web-runtime не добавляются. Локально прошли updater tests, clippy, Electron
+typecheck, protocol check и `git diff --check`; Windows CI выполняется после
+task-only push.

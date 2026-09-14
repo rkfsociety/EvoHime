@@ -17,6 +17,7 @@ export interface ModuleUpdaterStatus {
     readonly summary?: string
     readonly changes?: readonly string[]
   }[]
+  readonly recovery?: UpdateStatus['recovery']
 }
 
 export interface ModuleUpdateServiceOptions {
@@ -188,7 +189,8 @@ export class ModuleUpdateService {
       downloadedBytes: null,
       totalBytes: null,
       restartRequired: false,
-      evidence: []
+      evidence: [],
+      ...(parsed.recovery ? { recovery: parsed.recovery } : {})
     }
     const serialized = JSON.stringify(next)
     if (serialized === this.lastSerialized) return

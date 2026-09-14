@@ -1,6 +1,6 @@
 import type { UpdateStatus } from './update'
 
-export type UpdaterUiPhase = 'checking' | 'ready' | 'available' | 'applying' | 'failed'
+export type UpdaterUiPhase = 'checking' | 'ready' | 'available' | 'applying' | 'recovering' | 'manual-recovery' | 'failed'
 
 export interface UpdaterUiModule {
   readonly id: string
@@ -19,6 +19,7 @@ export interface UpdaterUiStatus {
   readonly percent: number | null
   readonly modules: readonly UpdaterUiModule[]
   readonly canApply: boolean
+  readonly recovery?: UpdateStatus['recovery']
 }
 
 export interface EvoHimeUpdaterApi {
@@ -47,7 +48,7 @@ const MODULE_LABELS: Readonly<Record<string, string>> = {
 const DEFAULT_MODULES = ['core', 'shell-host', 'supervisor', 'listener']
 
 export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
-  const phase = status.error ? 'failed' : toUiPhase(status.phase)
+  const phase = status.error ? 'failed' : toUiPhase(status.phase, status.recovery)
   const available = status.availableModules ?? []
   const installed = status.installedModules ?? {}
   const versions = status.availableModuleVersions ?? {}
@@ -69,14 +70,17 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
     detail: status.detail,
     percent: phase === 'applying' ? parsePercent(status.message) : null,
     modules,
-    canApply: phase === 'available' && available.length > 0
+    canApply: phase === 'available' && available.length > 0,
+    ...(status.recovery ? { recovery: status.recovery } : {})
   }
 }
 
-function toUiPhase(phase: UpdateStatus['phase']): UpdaterUiPhase {
+function toUiPhase(phase: UpdateStatus['phase'], recovery: UpdateStatus['recovery']): UpdaterUiPhase {
   if (phase === 'available') return 'available'
   if (phase === 'applying') return 'applying'
   if (phase === 'failed') return 'failed'
+  if (recovery?.phase === 'manual-recovery') return 'manual-recovery'
+  if (recovery && recovery.phase !== 'committed' && recovery.phase !== 'rolled-back') return 'recovering'
   if (phase === 'checking' || phase === 'idle') return 'checking'
   return 'ready'
 }
@@ -86,6 +90,8 @@ function phaseHeading(phase: UpdaterUiPhase): string {
   if (phase === 'available') return 'Доступно обновление'
   if (phase === 'applying') return 'Устанавливаю обновление'
   if (phase === 'failed') return 'Проверка требует внимания'
+  if (phase === 'recovering') return 'Восстанавливаю updater'
+  if (phase === 'manual-recovery') return 'Требуется ручное восстановление'
   return 'Модули проверены'
 }
 
@@ -94,6 +100,8 @@ function phaseBadge(phase: UpdaterUiPhase): string {
   if (phase === 'available') return 'Доступно'
   if (phase === 'applying') return 'Установка'
   if (phase === 'failed') return 'Ошибка'
+  if (phase === 'recovering') return 'Восстановление'
+  if (phase === 'manual-recovery') return 'Ручное действие'
   return 'Готово к запуску'
 }
 

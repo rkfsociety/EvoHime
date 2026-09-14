@@ -1,8 +1,9 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 use evohime_update_agent::{
-    compare_semver, deserialize_nullable_vec, is_valid_semver, select_outdated, InstalledManifest,
-    ModuleRecord, UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
+    compare_semver, deserialize_nullable_vec, is_valid_semver, read_recovery_journal,
+    select_outdated, validate_pe_artifact, write_recovery_journal, InstalledManifest, ModuleRecord,
+    UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::Digest;
@@ -17,6 +18,9 @@ use std::{
 
 fn main() -> ExitCode {
     let args = env::args().collect::<Vec<_>>();
+    if args.iter().any(|arg| arg == "--self-test") {
+        return self_test(&args);
+    }
     if args.iter().any(|arg| arg == "--launch") {
         return launch_shell(&args);
     }
@@ -59,14 +63,18 @@ fn control_update(args: &[String]) -> ExitCode {
         return fail("cannot determine install directory");
     };
     let data_dir = data_directory(&install_dir);
+    let _ = ensure_fallback(&install_dir, &data_dir);
+    write_recovery_phase(&data_dir, "prepared", None);
     let updates = match remote_updates(&data_dir, &install_dir) {
         Ok(updates) => updates,
         Err(error) => {
+            write_recovery_phase(&data_dir, "manual-recovery", Some("manifest-or-network"));
             write_status(&data_dir, "failed", &error, &[]);
             return fail(error);
         }
     };
     if args.iter().any(|arg| arg == "--check") {
+        write_recovery_phase(&data_dir, "verified", None);
         write_status(
             &data_dir,
             if updates.is_empty() {
@@ -89,6 +97,7 @@ fn control_update(args: &[String]) -> ExitCode {
         "Применяю выбранные модульные обновления…",
         &updates,
     );
+    write_recovery_phase(&data_dir, "downloaded", None);
     let result = apply_updates(&install_dir, &data_dir, &updates, &|message, percent| {
         write_status(
             &data_dir,
@@ -98,12 +107,42 @@ fn control_update(args: &[String]) -> ExitCode {
         );
     });
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => {
+            write_recovery_phase(&data_dir, "committed", None);
+            ExitCode::SUCCESS
+        }
         Err(error) => {
+            write_recovery_phase(&data_dir, "rolled-back", Some("apply-failed"));
             write_status(&data_dir, "failed", &error, &updates);
             fail(error)
         }
     }
+}
+
+fn write_recovery_phase(data_dir: &Path, phase: &str, reason: Option<&str>) {
+    let path = data_dir.join("update-state").join("recovery.json");
+    let mut journal = read_recovery_journal(&path)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| {
+            evohime_update_agent::RecoveryJournal::new(
+                format!("update-{}", std::process::id()),
+                phase,
+            )
+        });
+    journal.phase = phase.to_owned();
+    journal.fallback_available = data_dir
+        .join("update-state")
+        .join("updater-fallback.exe")
+        .is_file();
+    journal.reason_code = reason.map(str::to_owned);
+    if reason.is_some() {
+        journal.retry_count = journal
+            .retry_count
+            .saturating_add(1)
+            .min(evohime_update_agent::MAX_RECOVERY_ATTEMPTS);
+    }
+    let _ = write_recovery_journal(&path, &journal);
 }
 
 /// Compatibility entry point for older shortcuts. The visible updater is a
@@ -120,6 +159,24 @@ fn launch_shell(args: &[String]) -> ExitCode {
     let Some(install_dir) = install_dir else {
         return fail("cannot determine install directory");
     };
+    let data_dir = data_directory(&install_dir);
+    if let Err(error) = launch_preflight(&install_dir, &data_dir) {
+        let fallback = data_dir.join("update-state").join("updater-fallback.exe");
+        if fallback.is_file() && fallback != env::current_exe().unwrap_or_default() {
+            let _ = Command::new(fallback)
+                .args(["--launch", "--install-dir"])
+                .arg(&install_dir)
+                .spawn();
+            return ExitCode::SUCCESS;
+        }
+        write_status(
+            &data_dir,
+            "manual-recovery",
+            &format!("Автоматическое восстановление остановлено: {error}"),
+            &[],
+        );
+        return fail("updater recovery requires manual action");
+    }
     let updater = install_dir.join("EvoHimeUpdater.exe");
     if !updater.is_file() {
         return fail(format!(
@@ -136,6 +193,101 @@ fn launch_shell(args: &[String]) -> ExitCode {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => fail(error),
     }
+}
+
+fn self_test(args: &[String]) -> ExitCode {
+    let Some(install_dir) = argument_value(args, "--install-dir")
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(PathBuf::from))
+        })
+    else {
+        return fail("cannot determine install directory");
+    };
+    match self_test_inner(&install_dir) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => fail(error),
+    }
+}
+
+fn self_test_inner(install_dir: &Path) -> Result<(), String> {
+    if !install_dir.is_absolute() || !install_dir.is_dir() {
+        return Err("invalid install directory".into());
+    }
+    let current = env::current_exe().map_err(|e| e.to_string())?;
+    let metadata = fs::metadata(&current).map_err(|e| e.to_string())?;
+    let mut file = fs::File::open(&current).map_err(|e| e.to_string())?;
+    let mut digest = sha2::Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    validate_pe_artifact(
+        &current,
+        metadata.len(),
+        &format!("{:x}", digest.finalize()),
+    )?;
+    let data = data_directory(install_dir);
+    fs::create_dir_all(data.join("update-state")).map_err(|e| e.to_string())?;
+    if let Some(journal) = read_recovery_journal(&data.join("update-state").join("recovery.json"))?
+    {
+        if journal.phase == "manual-recovery" {
+            return Err("recovery journal requires manual action".into());
+        }
+    }
+    Ok(())
+}
+
+fn launch_preflight(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
+    let state = data_dir.join("update-state");
+    fs::create_dir_all(&state).map_err(|e| e.to_string())?;
+    ensure_fallback(install_dir, data_dir)?;
+    let journal_path = state.join("recovery.json");
+    if let Some(journal) = read_recovery_journal(&journal_path)? {
+        if journal.phase == "replaced" || journal.phase == "self-tested" {
+            let mut committed = journal;
+            committed.phase = "committed".into();
+            write_recovery_journal(&journal_path, &committed)?;
+        }
+    }
+    let worker = install_dir.join("evohime-transaction.exe");
+    if worker.is_file() {
+        let metadata = fs::metadata(&worker).map_err(|e| e.to_string())?;
+        let mut file = fs::File::open(&worker).map_err(|e| e.to_string())?;
+        let mut digest = sha2::Sha256::new();
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+            if count == 0 {
+                break;
+            }
+            digest.update(&buffer[..count]);
+        }
+        validate_pe_artifact(&worker, metadata.len(), &format!("{:x}", digest.finalize()))?;
+    }
+    self_test_inner(install_dir)
+}
+
+fn ensure_fallback(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
+    let current = env::current_exe().map_err(|e| e.to_string())?;
+    let fallback = data_dir.join("update-state").join("updater-fallback.exe");
+    if fallback.is_file() {
+        return Ok(());
+    }
+    if !install_dir.is_absolute() {
+        return Err("install directory must be absolute".into());
+    }
+    fs::create_dir_all(fallback.parent().expect("fallback has parent"))
+        .map_err(|e| e.to_string())?;
+    let temporary = fallback.with_extension("exe.part");
+    fs::copy(&current, &temporary).map_err(|e| e.to_string())?;
+    fs::rename(&temporary, &fallback).map_err(|e| e.to_string())
 }
 
 const MODULE_IDS: &[&str] = &[
@@ -992,6 +1144,11 @@ fn apply_updates_inner(
     )?;
     let worker = install_dir.join("evohime-transaction.exe");
     if !worker.is_file() {
+        if let Some(update) = applied.iter().find(|item| item.module == "transaction") {
+            repair_transaction_worker(&worker, &staging.join(&update.artifact), update)?;
+        }
+    }
+    if !worker.is_file() {
         return Err("updater: transaction worker отсутствует".into());
     }
     let staging_arg = staging.to_string_lossy().into_owned();
@@ -1066,6 +1223,33 @@ fn apply_updates_inner(
     apply_listener_runtime_if_needed(&client, runtime_update, data_dir, progress)?;
     cleanup_completed_staging(&staging, updater_update.is_some());
     write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
+    Ok(())
+}
+
+fn repair_transaction_worker(
+    target: &Path,
+    staged: &Path,
+    update: &UpdateCandidate,
+) -> Result<(), String> {
+    validate_pe_artifact(staged, update.size, &update.sha256)?;
+    let temporary = target.with_extension("exe.repair");
+    let backup = target.with_extension("exe.recovery-backup");
+    fs::copy(staged, &temporary).map_err(|e| e.to_string())?;
+    if let Err(error) = validate_pe_artifact(&temporary, update.size, &update.sha256) {
+        let _ = fs::remove_file(&temporary);
+        return Err(format!(
+            "updater: transaction repair validation failed: {error}"
+        ));
+    }
+    if target.exists() {
+        fs::rename(target, &backup).map_err(|e| e.to_string())?;
+    }
+    if let Err(error) = fs::rename(&temporary, target) {
+        let _ = fs::rename(&backup, target);
+        let _ = fs::remove_file(&temporary);
+        return Err(error.to_string());
+    }
+    let _ = fs::remove_file(backup);
     Ok(())
 }
 
@@ -1724,12 +1908,29 @@ fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[
                     changes: item.changes.clone(),
                 })
                 .collect(),
+            recovery: recovery_status(data_dir),
         };
         let path = state.join("updater.json");
         if let Ok(value) = serde_json::to_vec_pretty(&status) {
             let _ = fs::write(path, value);
         }
     }
+}
+
+fn recovery_status(data_dir: &Path) -> Option<evohime_update_agent::RecoveryStatus> {
+    let state = data_dir.join("update-state");
+    let journal = read_recovery_journal(&state.join("recovery.json"))
+        .ok()
+        .flatten()?;
+    Some(evohime_update_agent::RecoveryStatus {
+        phase: journal.phase,
+        active_slot: journal.active_slot,
+        active_version: journal.active_version,
+        fallback_available: journal.fallback_available
+            || state.join("updater-fallback.exe").is_file(),
+        retry_count: journal.retry_count,
+        reason_code: journal.reason_code,
+    })
 }
 
 fn read<T: serde::de::DeserializeOwned>(path: &str) -> Result<T, String> {

@@ -94,6 +94,15 @@ export interface UpdateStatus {
   readonly restartRequired: boolean
   /** Bounded stage evidence retained for rollback/update diagnostics. */
   readonly evidence?: readonly UpdateEvidenceEntry[]
+  /** Bounded updater recovery projection; never contains paths or network data. */
+  readonly recovery?: {
+    readonly phase: string
+    readonly active_slot: string
+    readonly active_version: string
+    readonly fallback_available: boolean
+    readonly retry_count: number
+    readonly reason_code: string | null
+  } | undefined
 }
 
 export const UPDATE_STEP_LABELS: Record<UpdateStepId, string> = {

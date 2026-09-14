@@ -96,6 +96,11 @@ export function UpdaterApp(): React.JSX.Element {
           </div>
 
           <p className="updater-message" aria-live="polite">{status.message}</p>
+          {status.recovery ? <p className="updater-detail" role="status">
+            Recovery: {status.recovery.phase}; слот {status.recovery.active_slot}
+            {status.recovery.active_version ? ` · версия ${status.recovery.active_version}` : ''}
+            {status.recovery.fallback_available ? ' · fallback сохранён' : ''}
+          </p> : null}
 
           <div className={`updater-progress${status.percent === null ? ' updater-progress--indeterminate' : ''}`} role="progressbar" aria-label="Прогресс обновления" {...(status.percent === null ? {} : { 'aria-valuenow': status.percent, 'aria-valuemin': 0, 'aria-valuemax': 100 })}>
             <div className="updater-progress__value" style={progressStyle} />
