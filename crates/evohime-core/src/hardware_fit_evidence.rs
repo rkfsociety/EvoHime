@@ -332,7 +332,7 @@ pub fn robust_median(values: &mut [f64]) -> Option<f64> {
         return None;
     }
     values.sort_by(f64::total_cmp);
-    Some(if values.len() % 2 == 0 {
+    Some(if values.len().is_multiple_of(2) {
         (values[values.len() / 2 - 1] + values[values.len() / 2]) / 2.0
     } else {
         values[values.len() / 2]
