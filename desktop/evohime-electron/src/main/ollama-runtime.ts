@@ -203,16 +203,29 @@ export class OllamaRuntimeService {
   private async probe(): Promise<{ available: boolean; version: string | null }> {
     const request = this.deps.fetch ?? globalThis.fetch
     try {
-      const response = await request(OLLAMA_API_URL, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
-      if (!response.ok) return { available: false, version: null }
-      const body = await response.text()
-      if (Buffer.byteLength(body, 'utf8') > MAX_VERSION_RESPONSE_BYTES) return { available: false, version: null }
-      const value = JSON.parse(body) as { version?: unknown }
-      const version = typeof value.version === 'string' && value.version.length <= 128 ? value.version : null
-      return { available: true, version }
-    } catch {
-      return { available: false, version: null }
+      return await this.probeWith(request)
+    } catch (error) {
+      const fallback = this.deps.fallbackFetch
+      if (!fallback || fallback === request) return { available: false, version: null }
+      this.deps.log('warn', 'shell.ollama_probe_fallback', {
+        reason: describeOllamaError(error)
+      })
+      try {
+        return await this.probeWith(fallback)
+      } catch {
+        return { available: false, version: null }
+      }
     }
+  }
+
+  private async probeWith(request: FetchLike): Promise<{ available: boolean; version: string | null }> {
+    const response = await request(OLLAMA_API_URL, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
+    if (!response.ok) return { available: false, version: null }
+    const body = await response.text()
+    if (Buffer.byteLength(body, 'utf8') > MAX_VERSION_RESPONSE_BYTES) return { available: false, version: null }
+    const value = JSON.parse(body) as { version?: unknown }
+    const version = typeof value.version === 'string' && value.version.length <= 128 ? value.version : null
+    return { available: true, version }
   }
 
   private patch(patch: Partial<OllamaRuntimeStatus>): OllamaRuntimeStatus {
