@@ -1461,7 +1461,7 @@ Local verification passed: `cargo check --locked -p evohime-core
 -p evohime-local-storage`, Core clippy with `-D warnings`, focused Core tests
 2/2, storage test 1/1, `npm run check:protocol`, `npm run typecheck` and
 `git diff --check`. Electron unit tests require Node 22 and were unavailable
-under the current Node 20 runtime. Exact-commit CI evidence is pending push.
+under the current Node 20 runtime.
 Exact-commit `ed879822` GitHub Actions PASS: Core `34905875176`, shell-host
 `34905873117`, UI bundle `34905877063`, module router `34905820570` and
 compatible release manifest `34908038913`.
@@ -1471,5 +1471,8 @@ compatible release manifest `34908038913`.
 Local PASS: updater unit tests, clippy, Electron typecheck, protocol check и
 `git diff --check`. Contract evidence includes atomic bounded recovery journal,
 last-known-good updater fallback slot, PE/size/SHA validation, headless launch
-preflight and redacted recovery status projection. Windows package smoke and
-module-only CI evidence остаются обязательными до закрытия плана.
+preflight and redacted recovery status projection. Exact-commit `acd96542`
+GitHub Actions PASS: updater `34909257525`, module router `34909209590`,
+compatible release manifest `34909543474`; updater workflow includes Windows
+tests, clippy and release build, while installer smoke remains the manual
+full-installer fallback.

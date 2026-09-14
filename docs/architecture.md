@@ -861,8 +861,19 @@ rollback-транзакцией, сохраняя Core и остальные н�
 update.json          репозиторий, ветка, launchPolicy, интервал проверки
 %LOCALAPPDATA%\EvoHime\source           git checkout, которым владеет обновление
 %LOCALAPPDATA%\EvoHime\update-staging   собранный пакет до подмены
-%LOCALAPPDATA%\EvoHime\update-state     журнал транзакции и backup
+%LOCALAPPDATA%\EvoHime\update-state     журнал транзакции, recovery journal и backup
 ```
+
+Recovery control-plane использует `recovery.json` schema 1 с bounded
+идемпотентными фазами `prepared`/`downloaded`/`verified`/`replaced`/
+`self-tested`/`committed`/`rolled-back`/`manual-recovery`. Первый запуск Rust
+updater создаёт persistent `updater-fallback.exe` как last-known-good копию;
+`--launch` выполняет headless preflight, а `--self-test` проверяет собственный
+PE header, размер/hash, state paths и recovery state без запуска Core или UI.
+Повреждённый transaction worker может быть восстановлен только из полностью
+проверенного module artifact с атомарной заменой. Status/UI получают лишь
+bounded phase, slot/version, fallback, retry count и typed reason code; после
+исчерпания retry updater переходит в manual recovery.
 
 - `evohime.build.json` рядом с бинарниками хранит коммит и ветку сборки; без маркера версия считается неизвестной и клиент пересобирается;
 - коммит, не трогающий код клиента (документация, планы, CI-конфиг), не вызывает пересборку: клиент сравнивает установленный коммит с целевым через compare API и пропускает обновление, если ни один изменённый путь не влияет на сборку. Любая неопределённость — обрезанный diff, незнакомый путь, недоступный API — трактуется как «код менялся»: лишняя пересборка дешевле устаревшего клиента;

@@ -623,4 +623,5 @@ fail-closed PE/size/SHA validation и redacted recovery projection в status/UI.
 Обычный transaction worker rollback сохраняется; новый executable/module или
 web-runtime не добавляются. Локально прошли updater tests, clippy, Electron
 typecheck, protocol check и `git diff --check`; Windows CI выполняется после
-task-only push.
+task-only push. Exact-commit CI PASS for `acd96542`: updater `34909257525`,
+module router `34909209590`, compatible release manifest `34909543474`.
