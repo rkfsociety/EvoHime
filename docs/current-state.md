@@ -611,3 +611,6 @@ fence; authenticated IPC 279/event 124 и Electron Settings projection
 показывают только bounded status/provenance. Локально прошли Core check/clippy,
 focused Core 2/2 и storage 1/1, protocol check, TypeScript typecheck и
 diff-check. Exact-commit CI evidence будет добавлена после push.
+Exact-commit CI для `ed879822` успешен: Core `34905875176`, shell-host
+`34905873117`, UI bundle `34905877063`, module router `34905820570` и
+compatible release manifest `34908038913`.

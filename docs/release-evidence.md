@@ -1462,3 +1462,6 @@ Local verification passed: `cargo check --locked -p evohime-core
 2/2, storage test 1/1, `npm run check:protocol`, `npm run typecheck` and
 `git diff --check`. Electron unit tests require Node 22 and were unavailable
 under the current Node 20 runtime. Exact-commit CI evidence is pending push.
+Exact-commit `ed879822` GitHub Actions PASS: Core `34905875176`, shell-host
+`34905873117`, UI bundle `34905877063`, module router `34905820570` and
+compatible release manifest `34908038913`.
