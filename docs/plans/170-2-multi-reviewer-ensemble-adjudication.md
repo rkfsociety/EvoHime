@@ -27,4 +27,3 @@
 ## Не входит
 
 Новая параллельная authority, arbitrary shell/network execution, silent policy relaxation, renderer-owned business logic и автоматическая публикация.
-
