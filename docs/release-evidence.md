@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-13.
+Обновлено: 2026-09-15.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -1476,3 +1476,7 @@ adds fallback hash validation, bounded download retry, updater UI crash-loop
 guard and recovery-slot package smoke. Exact-commit GitHub Actions PASS:
 updater `34910315890`, UI bundle `34910317294`, shell-host `34910314115`,
 module router `34910263599`, compatible release manifest `34910682285`.
+Полный Windows workflow `34912288572` PASS: real-Core IPC E2E, Electron
+bundles и bundle security, native package, acceptance matrix, единственный
+installer, install/upgrade, rollback, staged rebuild, выборочный UI apply и
+публикация fixed release.

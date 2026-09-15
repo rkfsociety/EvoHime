@@ -627,3 +627,7 @@ fallback hash validation, bounded download retry, updater UI crash-loop guard
 и package recovery-slot smoke. Exact-commit CI PASS: updater `34910315890`,
 UI bundle `34910317294`, shell-host `34910314115`, module router `34910263599`,
 compatible release manifest `34910682285`.
+Полный Windows workflow `34912288572` также завершён успешно: real-Core IPC
+E2E, Electron bundles и bundle security, native package, acceptance matrix,
+единственный installer, install/upgrade, rollback, staged rebuild,
+выборочный UI apply и публикация прошли без ошибок.
