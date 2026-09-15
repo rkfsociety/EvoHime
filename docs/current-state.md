@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-14.
+Обновлено: 2026-09-15.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -8,15 +8,17 @@ release-gates и результаты отдельных завершённых 
 [`plans/README.md`](plans/README.md).
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
-`src/migrations.rs` с numbered installers для v1–v26 и v32–v104, а также
+`src/migrations.rs` с numbered installers для v001–v026, v032–v039,
+v042–v116 и v149–v171, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
 должны проходить через фасады.
 В Core внутренние workflow/runtime-модули также закрыты на уровне crate;
 проверка ссылок в workspace используется как критерий дальнейшего сужения API.
-На текущем этапе `evohime-local-storage` экспортирует 63 модуля (остальные
-реализации закрыты на уровне crate), а `evohime-core` — 62; дальнейшее
+На текущем этапе `evohime-local-storage` экспортирует 109 публичных модулей
+(остальные реализации закрыты на уровне crate), а `evohime-core` — 113;
+дальнейшее
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
 
@@ -103,7 +105,16 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 
 ## Граница текущего checkout и CI
 
-Перед закрытием плана 132 проверены refs: базовый checkout был на
+Продуктовый baseline этой документационной актуализации зафиксирован на
+`958a7102d2ce6df459d80d549297a8efa4aa034d` в ветке `main`; последующие
+изменения этой задачи затрагивают только документацию и не меняют runtime.
+Полный Windows workflow `34912288572` прошёл успешно, включая real-Core IPC
+E2E, Electron bundles и bundle security, native package, acceptance matrix,
+installer, install/upgrade, rollback, staged rebuild, выборочный UI apply и
+публикацию fixed release. Подробное redacted evidence находится в
+[`release-evidence.md`](release-evidence.md).
+
+Исторически перед закрытием плана 132 проверены refs: базовый checkout был на
 `cc91346d0b546149e2268ca40ae947426a9d9c7f`, а `origin/main` — на
 `93e5babf9a090f22f36f609333203dd68ed72c8b`; checkout был на `main` и ahead на
 пять локальных коммитов. Итоговый task-only commit плана 132 создаётся без push,
@@ -584,7 +595,7 @@ transcripts и secrets не сохраняются; authenticated IPC 274/119 и
 panel проецируют только redacted state. Локальные tests, builds, linters,
 smoke/E2E не запускались; CI недоступен до push.
 
-## Plan 170 — Multi-Reviewer Ensemble & Adjudication (реализован 2026-09-14)
+## Plan 170 — Multi-Reviewer Ensemble & Adjudication (закрыт 2026-09-14)
 
 Добавлен Core-owned bounded ensemble contract: immutable profile/snapshot/run,
 independence metadata, normalized candidates, conservative clusters,
@@ -600,7 +611,7 @@ TypeScript typecheck и `git diff --check`; Electron unit tests требуют N
 publication), module router `34901436796`, compatible release manifest
 `34904053471`.
 
-## Plan 171 — Language Intelligence Runtime (реализован 2026-09-15)
+## Plan 171 — Language Intelligence Runtime (закрыт 2026-09-15)
 
 Добавлен Core-owned bounded language-intelligence contract для descriptor,
 session, document/query snapshot, semantic result и WorkspaceEdit proposal.

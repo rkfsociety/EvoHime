@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-09.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-15.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -808,7 +808,7 @@ Base URL принимается только по `https` либо по `http` �
 .\scripts\build-windows-native.ps1
 ```
 
-Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для пользователя GitHub Actions собирает единственный `EvoHime-Setup.exe`. Установщик размещает внутренние `EvoHime.exe`, `evohime-core.exe`, `evohime-supervisor.exe`, `eva.exe`, `evohime-analysis-worker.exe`, `evohime-listener.exe`, `evohime-transaction.exe`, `evohime-verify.exe` и manifest в каталоге приложения и создаёт ровно один ярлык `EvoHime` на рабочем столе.
+Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для пользователя GitHub Actions собирает единственный `EvoHime-Setup.exe`. Установщик размещает внутренние `EvoHime.exe`, `EvoHimeUpdater.exe`, `evohime-core.exe`, `evohime-supervisor.exe`, `eva.exe`, `evohime-analysis-worker.exe`, `evohime-listener.exe`, `evohime-transaction.exe`, `evohime-updater.exe`, `evohime-verify.exe` и manifest в каталоге приложения и создаёт ровно один ярлык `EvoHime` на рабочем столе.
 
 Пакет x64 предназначен для Windows 10 2004+ и Windows 11 и содержит bundled Electron runtime, Rust runtime и локальные компоненты; отдельная установка Node.js или браузера не требуется.
 
@@ -864,6 +864,8 @@ update.json          репозиторий, ветка, launchPolicy, инте�
 %LOCALAPPDATA%\EvoHime\update-state     журнал транзакции, recovery journal и backup
 ```
 
+### Self-healing updater и recovery v1 (план 172, реализован 2026-09-15)
+
 Recovery control-plane использует `recovery.json` schema 1 с bounded
 идемпотентными фазами `prepared`/`downloaded`/`verified`/`replaced`/
 `self-tested`/`committed`/`rolled-back`/`manual-recovery`. Первый запуск Rust
@@ -874,6 +876,14 @@ PE header, размер/hash, state paths и recovery state без запуск�
 проверенного module artifact с атомарной заменой. Status/UI получают лишь
 bounded phase, slot/version, fallback, retry count и typed reason code; после
 исчерпания retry updater переходит в manual recovery.
+
+JSON-запросы updater повторяются не более двух раз, скачивание артефакта — не
+более трёх раз с удалением `.part` после ошибки; неполный или несовпавший по
+размеру, SHA-256 или PE header файл не становится active. Electron updater UI
+хранит bounded `updater-crash-loop.json`: три старта в течение десяти минут
+блокируют новый цикл и показывают manual recovery. Успешный старт сбрасывает
+счётчик. Полная потеря recovery-копии или дерева установки остаётся случаем
+для ручного восстановления через installer или repair bridge.
 
 - `evohime.build.json` рядом с бинарниками хранит коммит и ветку сборки; без маркера версия считается неизвестной и клиент пересобирается;
 - коммит, не трогающий код клиента (документация, планы, CI-конфиг), не вызывает пересборку: клиент сравнивает установленный коммит с целевым через compare API и пропускает обновление, если ни один изменённый путь не влияет на сборку. Любая неопределённость — обрезанный diff, незнакомый путь, недоступный API — трактуется как «код менялся»: лишняя пересборка дешевле устаревшего клиента;

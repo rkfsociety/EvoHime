@@ -7,6 +7,14 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
+Последний синхронизированный продуктовый checkout перед этой
+документационной актуализацией — `958a7102d2ce6df459d80d549297a8efa4aa034d` в
+`main`; он совпадал с `origin/main`. Полный Windows workflow `34912288572` завершён с
+PASS: real-Core IPC E2E, Electron bundles и bundle security, native package,
+acceptance matrix, installer, install/upgrade, rollback, staged rebuild,
+выборочный UI apply и публикация fixed release. Исторические разделы ниже
+сохраняют evidence своих исходных commit и run ID.
+
 ## Статус выпуска
 
 Этот файл разделяет локальную проверку и историческое GitHub evidence. Перед

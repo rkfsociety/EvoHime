@@ -1,6 +1,6 @@
 # EvoHime — security threat model
 
-Дата: 2026-09-09. Новые пользовательские версионные релизы для текущего цикла
+Дата: 2026-09-15. Новые пользовательские версионные релизы для текущего цикла
 не создаются; модульные compatibility releases не меняют это правило.
 
 ## Граница доверия
@@ -18,7 +18,7 @@
 | Credentials | Credential Manager/DPAPI, redaction в logs/events |
 | IPC | owner-only DACL на pipe, непредсказуемое имя endpoint, одноразовый nonce и HMAC-proof из launch context, OS-идентичность клиента, major/minor compatibility, bounded frames |
 | Storage | SQLite WAL, transactional migrations, backup перед upgrade |
-| Recovery | event journal, sequence replay, supervisor restart budget |
+| Recovery | event journal, sequence replay, supervisor restart budget, bounded updater recovery journal, verified fallback slot и manual-recovery gate |
 | External tools | отдельные permission scopes, host/path validation и approval |
 | Self-repair/update | user-only FSM, обязательные provider/model, isolated canonical checkout, protected-path gate, separate commit/push approvals, CI check and post-restart health rollback |
 
@@ -36,6 +36,8 @@
   repair-run или публикация непроверенного commit;
 - успешная подмена файлов установки при том, что новая версия не подняла
   authenticated Core.
+- бесконечный цикл падения Electron updater UI или принятие повреждённого
+  updater-артефакта без bounded retry и проверки PE/размера/SHA-256.
 
 ## Аутентификация desktop IPC
 

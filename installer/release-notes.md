@@ -29,6 +29,13 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 - перед self-repair пользователь выбирает provider и model; эта пара сохраняется
   в repair-run и используется на всех его этапах.
 
+Updater также хранит проверенную last-known-good копию, bounded recovery journal
+и headless preflight. Ошибка проверки или частичное скачивание не подменяет
+активный файл; после ограниченного числа попыток окно показывает manual
+recovery. Три аварийных старта окна updater за десять минут блокируются, чтобы
+не получить бесконечный цикл перезапусков. Если потеряны и recovery-копия, и
+дерево установки, используется полный installer.
+
 ## Восстановление старого updater без переустановки
 
 Если уже установленная версия показывает `GitHub вернул HTTP 302 Found` на

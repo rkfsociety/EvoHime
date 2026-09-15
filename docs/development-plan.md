@@ -1,6 +1,6 @@
 # План разработки EvoHime Desktop
 
-Обновлено: 2026-09-14.
+Обновлено: 2026-09-15.
 
 ## Цель
 
@@ -26,8 +26,9 @@ restart подтверждаются отдельно. Автоматическ�
 ## Исполняемая очередь
 
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог содержит планы 169–172; планы 01–168 перенесены; блокирующие и
-опциональные зависимости указаны в overview каждого плана и сведены в
+Текущий активный каталог пуст: планы 01–172 перенесены в канонические
+документы; блокирующие и опциональные зависимости новых направлений будут
+указаны в их overview и сведены в
 [`plans/README.md`](plans/README.md). Закрытые MVP-планы `127–130` не входят в
 очередь повторно.
 
@@ -55,11 +56,13 @@ restart подтверждаются отдельно. Автоматическ�
 | 140 | authorized security assessment lane | реализован 2026-09-09 |
 | 144 | модульный manifest и выборочное обновление компонентов | реализовано 2026-09-04 |
 | 149–167 | review, model compare, policy, suggestions, experiments, computer use, execution board, grounding, temporal memory, IDE, checkpoints, diagrams, compatibility, motion, recipes, voice output, command center | реализованы 2026-09-09 |
-| 168 | Hardware Fit Evidence Catalog | реализован 2026-09-14 |
-| 169 | Agent Client Protocol Bridge | реализован 2026-09-14 |
-| 172 | self-healing updater и recovery без нового модуля | незавершён |
+| 168 | Hardware Fit Evidence Catalog | закрыт 2026-09-14 |
+| 169 | Agent Client Protocol Bridge | закрыт 2026-09-14 |
+| 170 | Multi-Reviewer Ensemble & Adjudication | закрыт 2026-09-14 |
+| 171 | Language Intelligence Runtime | закрыт 2026-09-15 |
+| 172 | self-healing updater и recovery без нового модуля | закрыт 2026-09-15 |
 
-Планы 01–167 и 144 закрыты и удалены из временного каталога после переноса
+Планы 01–172 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым
 по одному stage-файлу или по наличию кода: закрытие требует реализации,
 recovery, IPC/UI при наличии, focused tests, release evidence и обновления
