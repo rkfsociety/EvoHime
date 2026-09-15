@@ -17,11 +17,9 @@ acceptance matrix, installer, install/upgrade, rollback, staged rebuild,
 
 ## Статус выпуска
 
-Этот файл разделяет локальную проверку и историческое GitHub evidence. Перед
-закрытием плана 132 базовый checkout был на `cc91346d0b546149e2268ca40ae947426a9d9c7f`,
-а `origin/main` — на `93e5babf9a090f22f36f609333203dd68ed72c8b`; итоговый
-task-only commit не публиковался. Для него текущий GitHub release status не
-утверждается.
+Этот файл разделяет локальную проверку и историческое GitHub evidence.
+Актуальный статус текущего checkout фиксируется в `current-state.md`; старые
+снимки ниже сохраняются только как evidence исходных запусков.
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
 
@@ -61,13 +59,13 @@ shell-tree с rollback. Полный Windows workflow передаёт native и
 | Module releases | отдельные релизы для shell-host, ui-bundle, core, supervisor, cli, analysis-worker, listener, listener-runtime, transaction, verifier и updater |
 | Installer | [release `installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer), только `EvoHime-Setup.exe` и `EvoHime-Setup.json` |
 
-Эта таблица не описывает текущий незапушенный checkout. Полный
-Rust/Electron/package/installer acceptance-прогон выполняется только в
-GitHub Actions.
+Эта таблица является историческим снимком и не описывает текущий checkout.
+Полный Rust/Electron/package/installer acceptance-прогон остаётся обязательным
+источником проверки в GitHub Actions.
 
-## Свежая локальная проверка текущего checkout
+## Историческая локальная проверка до документационной синхронизации
 
-Перед обновлением документации выполнены на коммите `4f7eea76`:
+Старый локальный набор был выполнен на коммите `4f7eea76`:
 
 | Проверка | Результат |
 | --- | --- |
@@ -80,8 +78,8 @@ GitHub Actions.
 
 Protocol/typecheck, полный Electron regression, package/installer и
 `authenticated-core.e2e`/`real-core.e2e`/`source-update.e2e` в этом прогоне не
-запускались. Локальные результаты не заменяют полный Windows
-package/installer acceptance.
+запускались. Эти результаты не являются свежим evidence и не заменяют полный
+Windows package/installer acceptance.
 
 ## Историческое evidence завершённых планов
 

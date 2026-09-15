@@ -47,34 +47,6 @@ E2E запускается отдельным обязательным шаго�
 `EVOHIME_REQUIRE_REAL_CORE_E2E=1`; локальный режим по-прежнему может пропускать
 этот тест без собранного Windows Core.
 
-## Agent Git Change Sets v1 (план 102, реализован)
-
-Текущий checkout содержит Core-owned change-set flow: `observe` захватывает
-точный Git baseline и workspace binding, `candidate` повторно проверяет
-precondition и включает только attributed agent/tool paths, а pre-existing,
-external, secret и ambiguous paths исключаются. `commit` сначала точечно
-stage-ит только approved paths, затем использует `git commit --only` с bounded
-pathspec и запускаемыми hooks; `keep` и `undo`
-проходят через Core, optimistic revision и durable idempotency. Неизвестный
-результат Git не ретраится вслепую, а требует reconciliation. Операция
-`reconcile` проверяет parent/message/path evidence без повторного Git effect и
-различает no-effect, доказанный commit и unknown. Idempotency key
-сначала durable claim-ится; конкурентный duplicate не запускает второй effect,
-а pending claim после crash остаётся reconciliation-required. Git subprocess
-ограничен 120 секундами.
-
-Change sets могут быть привязаны к существующим Incremental Change run и Task
-Worktree record. Core проверяет наличие и незавершённость run, состояние
-worktree и совпадение его base HEAD до durable записи change set; отдельной
-Git-authority для этих consumers нет.
-
-На момент реализации плана 102 storage schema была v94. Authenticated IPC command 233/event 78 и generated
-Electron bindings передают только bounded redacted metadata; renderer не
-получает workspace authority, секреты или raw Git payload. Локально после
-реализации обновлены и прошли protocol check, TypeScript typecheck и
-компиляционная проверка затронутых Rust crates. Полный acceptance-набор
-оставлен GitHub Actions согласно правилу проекта.
-
 ## Продуктовая граница
 
 EvoHime — локальное Windows desktop-приложение с одним пользовательским
@@ -114,17 +86,13 @@ installer, install/upgrade, rollback, staged rebuild, выборочный UI ap
 публикацию fixed release. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
-Исторически перед закрытием плана 132 проверены refs: базовый checkout был на
-`cc91346d0b546149e2268ca40ae947426a9d9c7f`, а `origin/main` — на
-`93e5babf9a090f22f36f609333203dd68ed72c8b`; checkout был на `main` и ahead на
-пять локальных коммитов. Итоговый task-only commit плана 132 создаётся без push,
-поэтому GitHub workflow для них не утверждается до push и отдельной проверки
-результата CI. Исторические workflow и release-gates сохранены в
+Исторические refs и workflow закрытых планов сохранены в
 [`release-evidence.md`](release-evidence.md) с их исходными commit и run ID.
 
 Постоянные каналы поставки разделены по назначению: [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer) — первая установка, [`listener`](https://github.com/rkfsociety/EvoHime/releases/tag/listener) — отдельный модульный release listener runtime.
-Локально выполняются только быстрые проверки; полный acceptance-прогон Rust,
-Electron, native package и installer выполняется в GitHub Actions.
+Локально по умолчанию выполняются быстрые проверки; полный acceptance-прогон
+Rust, Electron, native package и installer является обязательным в GitHub
+Actions и может запускаться локально при необходимости.
 
 Core pipe работает fail-closed: отсутствие authenticated context вне явного
 `EVOHIME_DEV_MODE=1` останавливает процесс до открытия базы и pipe. Негативные
@@ -258,58 +226,22 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Исторический локальный прогон до плана 132 относится к коммиту `4f7eea76`:
+Текущий checkout находится в `main` и синхронизирован с `origin/main`.
+Последний продуктовый baseline до этой документационной синхронизации —
+`958a7102d2ce6df459d80d549297a8efa4aa034d`. Полный Windows workflow
+`34912288572` завершён с PASS; подробный release evidence находится в
+[`release-evidence.md`](release-evidence.md).
 
 | Проверка | Результат |
 | --- | --- |
-| `pwsh -NoProfile -File scripts/documentation.tests.ps1` | PASS, 231 tracked text files |
-| `cargo test -p evohime-core --lib --quiet` | PASS, 844/844 |
-| `cargo test -p evohime-local-storage --lib --quiet` | PASS, 293/293 |
-| `cargo test -p evohime-remote` | PASS, 2/2 |
-| `cargo fmt --all -- --check` | PASS |
+| `pwsh -NoProfile -File scripts/documentation.tests.ps1` | PASS, 65 tracked text files |
 | `git diff --check` | PASS |
 
-По плану 132 локальные tests/builds/linters/package/smoke/E2E и runtime не
-запускались по прямому запрету Романа. Выполнены только разрешённые статические
-сверки; исторические результаты выше не являются свежим evidence текущего
-плана. GitHub acceptance для нового commit недоступен до push.
+## Исторические сведения о закрытых планах
 
-Authenticated-core/real-Core/source-update E2E и полный Windows acceptance не
-входили в этот локальный прогон.
-
-В текущем checkout реализован план 144:
-native package генерирует `evohime.components.json` для первоначальной поставки;
-каждый runtime-модуль имеет отдельную semver-версию и собственный versioned Release
-`module-<module>-v<semver>` с manifest, размером, SHA-256, зависимостями и restart policy.
-Component manifest metadata совместима с legacy staged updates: transaction worker
-использует безопасные defaults для пропущенных полей и принимает additive metadata,
-а module updater формирует полный marker перед применением.
-После успешной публикации старый Release этого модуля удаляется. Router не
-использует commit diff или SHA: он сравнивает `release-versions/<module>.txt`
-с последним тегом `module-<module>-v<semver>` и запускает workflow только для
-модуля, чья локальная версия новее опубликованной.
-Статусбар показывает установленную версию Core из component manifest отдельно
-от версии runtime-пакета и IPC protocol; `seq` обозначает позицию последнего
-события в журнале, а commit сборки отображается отдельным полем. Экспорт
-трейса сохраняет те же два Core version fields и актуальный `last_sequence`.
-В текущем checkout добавлен fixed release `compatibility` с дешёвым asset
-`evohime.compatible.json`: он фиксирует конкретный release tag, версию, artifact,
-размер, SHA-256, зависимости и минимальную версию updater для каждого модуля.
-Updater принимает только этот согласованный набор; если установленная версия
-updater ниже требования, сначала обновляется сам updater, после чего новый worker
-применяет остальные модули.
-`shell-host` теперь публикуется полным ZIP из `win-unpacked`, включая
-`resources/app.asar`; native package собирается из артефактов Rust/Electron,
-переданных из проверочных jobs, без повторного Cargo/npm package.
-Отдельное Electron-приложение `EvoHimeUpdater.exe` следует утверждённому референсу
-[`update-window-design.md`](update-window-design.md): тёмная оболочка EvoHime,
-отдельные состояния проверки и обновления, а при ошибке releases окно остаётся
-открытым для явного действия пользователя. Его невидимый Rust worker собирается
-без Windows console subsystem и не рисует пользовательский интерфейс.
-`installer` оставлен только для первоначальной установки или полного
-восстановления; его отсутствие в router трактуется как «релиз ещё не создан»
-только при подтверждённом HTTP 404, а сетевые и повреждённые ответы останавливают
-маршрутизацию. Общий component Release не используется.
+Следующие краткие записи сохранены для навигации по ранее закрытым планам. Они
+не являются текущей очередью, свежим тестовым отчётом или заменой
+`release-evidence.md`.
 
 ## Plan 119 — Execution Environment Profiles v1 (закрыт 2026-09-08)
 
@@ -322,13 +254,14 @@ owner kinds остаются typed `unavailable_owner` до появления �
 versioned lookup и не могут незаметно активироваться.
 
 IPC command 260/event 105 проходит authenticated Core path, replay/resync и
-Electron metadata-only projection. Свежие проверки: Core profile 6/6,
+Electron metadata-only projection. В исходном release evidence зафиксированы
+проверки: Core profile 6/6,
 local-storage profile 3/3, protocol/typecheck/focused UI 1/1, полный Electron
 suite 129 files / 572 tests passed / 1 skipped file / 4 skipped tests,
 production build и bundle check, native package smoke. Полный Rust suite для
 затронутых crates также прошёл до финального documentation-only переноса.
 
-## Следующий незавершённый порядок
+## Статус очереди на момент синхронизации
 
 Незавершённый каталог пуст. Планы `149–167` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
@@ -344,8 +277,8 @@ generation-fenced wake transitions, authenticated IPC 262/107, generated
 Electron bindings, deterministic OneShot/Interval/Cron fire polling и
 Core-owned redacted projection без отдельной вкладки renderer. Существующие automation,
 workflow, agent, goal, human-work и remote-task owners не дублируются.
-Локальные тесты, сборки, линтеры и smoke/E2E по прямому запрету Романа не
-запускались; CI для нового commit станет доступен только после push.
+Локальные тесты, сборки, линтеры и smoke/E2E в исходном task snapshot не
+запускались; эта запись не является текущим CI evidence.
 
 ## Plan 133 — Built-in Deterministic Developer Utilities (закрыт 2026-09-09)
 
@@ -372,8 +305,8 @@ Elevated/High/Critical с conservative fail-closed поведением. Service
 `TaskCoordinator::record_host_resource_snapshot`; отдельная SQLite authority,
 network telemetry, shell polling и renderer-owned pressure не добавлены.
 
-Локальные tests/builds/linters/smoke/E2E не запускались; live CI для
-неопубликованного commit отсутствует.
+Локальные tests/builds/linters/smoke/E2E в исходном task snapshot не
+запускались; эта запись не является текущим CI evidence.
 
 ## Plan 131 — Unified Context Namespace (закрыт 2026-09-09)
 
@@ -520,8 +453,8 @@ canonical hash. Schema v110 хранит только metadata и idempotency ke
 исполнения node. Authenticated IPC command 269/event 114 и Electron panel
 показывают только redacted projection; второй scheduler, permission system,
 внешний service и renderer authority не добавлены. Локальные tests, builds,
-linters, smoke/E2E по запрету Романа не запускались; live CI для локального
-commit недоступен до push.
+linters, smoke/E2E в исходном task snapshot не запускались; эта запись не
+является текущим CI evidence.
 
 ## Plan 142 — Agent Program Optimizer (закрыт 2026-09-09)
 
@@ -529,8 +462,8 @@ commit недоступен до push.
 deterministic metadata-only score и durable run pin. Schema v111 хранит только
 program metadata, idempotency и pin; optimizer не исполняет шаги и не создаёт
 новый scheduler/gateway. Authenticated IPC command 270/event 115 и Electron
-panel дают redacted projection. Локальные tests, builds, linters, smoke/E2E
-не запускались; CI для локального commit недоступен до push.
+panel дают redacted projection. Локальные tests, builds, linters, smoke/E2E в
+исходном task snapshot не запускались; эта запись не является текущим CI evidence.
 
 ## Plan 145 — Git Remote Publication Protocol (закрыт 2026-09-09)
 
@@ -538,8 +471,8 @@ panel дают redacted projection. Локальные tests, builds, linters, s
 revision/idempotency storage и redacted IPC 272/117. Внешний Git transport,
 credentials и push не реализованы: результат остаётся typed
 `transport_unavailable`, effect owner — существующий Git/change-set subsystem.
-Локальные tests, builds, linters, smoke/E2E не запускались; CI недоступен до
-push.
+Локальные tests, builds, linters, smoke/E2E в исходном task snapshot не
+запускались; эта запись не является текущим CI evidence.
 
 ## Plan 143 — Project Knowledge Notebook (закрыт 2026-09-09)
 
@@ -547,8 +480,8 @@ push.
 immutable revision/hash, schema v112, idempotency и durable active-run pin.
 Raw note body, secrets и knowledge authority не переносятся в новый слой.
 Authenticated IPC command 271/event 116 и Electron panel дают только
-redacted projection. Локальные tests, builds, linters, smoke/E2E не
-запускались; CI для локального commit недоступен до push.
+redacted projection. Локальные tests, builds, linters, smoke/E2E в исходном task
+snapshot не запускались; эта запись не является текущим CI evidence.
 
 ## Plan 146 — Voice Input & Dictation (закрыт 2026-09-09)
 
@@ -556,7 +489,8 @@ redacted projection. Локальные tests, builds, linters, smoke/E2E не
 idempotent metadata storage и typed `unavailable` availability. Raw audio и
 transcript не сохраняются и не проецируются; authenticated IPC 273/118 и
 Electron panel остаются metadata-only. Локальные tests, builds, linters,
-smoke/E2E не запускались; CI недоступен до push.
+smoke/E2E в исходном task snapshot не запускались; эта запись не является
+текущим CI evidence.
 
 ## Plan 168 — Hardware Fit Evidence Catalog (закрыт 2026-09-14)
 
@@ -564,7 +498,8 @@ smoke/E2E не запускались; CI недоступен до push.
 revision-fenced metadata storage, authenticated IPC 276/121 и bounded Electron
 projection. Core unit tests (5) и storage regressions (2 + migration) прошли; protocol check,
 TypeScript typecheck и `cargo check -p evohime-core --locked` прошли. Electron
-unit test недоступен в текущем окружении Node 20; проект требует Node 22 LTS.
+В исходном task snapshot Electron unit test был недоступен из-за Node 20;
+проект требует Node 22 LTS.
 Stage-файлы плана удалены после переноса контракта в `architecture.md`.
 Exact-commit CI успешен для `0ebdde23`: module router `34878668073`, Core
 `34878724254`, UI/shell-host предыдущего task commit `34876365464`/`34876370453`,
@@ -579,7 +514,8 @@ schema migration v169 и additive authenticated IPC 277/122. Existing
 `EvoHimeV1` preset остаётся обратно совместимым; Electron показывает только
 redacted ACP metadata. Локально прошли ACP contract 7/7, migration/storage
 полный набор 388/388, clippy, format, protocol check, TypeScript typecheck и
-diff-check; Electron unit test недоступен из-за Node 20 вместо Node 22. Полный
+diff-check; в исходном task snapshot Electron unit test был недоступен из-за
+Node 20 вместо Node 22. Полный
 Core lib-набор дал 898/903: пять старых Linux receipt-key IPC tests получили
 `UnsupportedPlatform`, что не относится к ACP и проверяется Windows CI.
 После исправления идемпотентности миграции v169 task commit `e65b9da7`
@@ -593,7 +529,8 @@ manifest `34893277334`.
 offline metadata-only evaluation. External effects, raw experience,
 transcripts и secrets не сохраняются; authenticated IPC 274/119 и Electron
 panel проецируют только redacted state. Локальные tests, builds, linters,
-smoke/E2E не запускались; CI недоступен до push.
+smoke/E2E в исходном task snapshot не запускались; эта запись не является
+текущим CI evidence.
 
 ## Plan 170 — Multi-Reviewer Ensemble & Adjudication (закрыт 2026-09-14)
 

@@ -68,79 +68,10 @@ restart подтверждаются отдельно. Автоматическ�
 recovery, IPC/UI при наличии, focused tests, release evidence и обновления
 канонической документации.
 
-## План 102: Agent Git Change Sets v1 (реализован)
-
-План 102 закрыт после Core/storage/runtime vertical slice, additive
-authenticated IPC 233/78, bounded Electron projection, Incremental Change и
-Task Worktree references, staged-path isolation, durable commit reconciliation,
-safe undo, durable idempotency claim, bounded Git timeout и redacted release evidence. Контракт перенесён в
-`architecture.md`, подтверждённое состояние — в `current-state.md`, а
-временный комплект этапов отсутствует.
-
-## План 118: Persistent Agent Organization Registry
-
-План 118 закрыт после итерационного ревью и реализации Core/storage/runtime,
-authenticated IPC 259/104, Electron projection/UI, startup recovery,
-focused/regression checks и переноса контракта в `architecture.md` и состояния
-в `current-state.md`. Schema v92 также активирует пропущенную migration v91.
-
-## План 119: Execution Environment Profiles (реализован)
-
-План закрыт после итерационного ревью, Core/storage vertical slice, schema v93,
-authenticated IPC 260/105, replay/resync, metadata-only Electron projection,
-fail-closed owner resolution, focused/full Rust and Electron checks, production
-bundle и native-package smoke. Контракт и ограничения перенесены в
-`architecture.md` и `current-state.md`; evidence находится в
-`release-evidence.md`. Следующие планы используют этот canonical contract, а
-не удалённые stage-файлы.
-
-## План 131: Unified Context Namespace (реализован 2026-09-09)
-
-План закрыт после итерационного ревью и реализации Core/storage/runtime,
-schema v102, authenticated IPC 261/106, redacted Electron Context Explorer,
-typed detail-resolver unavailable gate, deterministic bounded retrieval и
-restart-safe metadata persistence. В соответствии с текущим ограничением
-Романа локальные тесты, сборки, линтеры и smoke-тесты не выполнялись; контракт
-перенесён в `architecture.md`, подтверждённое состояние и evidence — в
-канонические документы; комплект временных stage-файлов удалён.
-
-## План 132: Durable Background Execution Plane (реализован 2026-09-09)
-
-План закрыт после итерационного ревью и реализации Core/storage/runtime,
-schema v103, authenticated IPC 262/107, generated Electron bindings и
-developer-only Background Execution panel. Контракт расширяет существующий
-`automation/v1`, а не создаёт второй scheduler/queue/lease/event authority;
-recovery восстанавливает durable wakeups, fenced transitions и immutable
-attempt outcomes. Локальные tests/builds/linters/smoke/E2E не запускались по
-явному ограничению задачи; свежий CI остаётся unavailable до push.
-
-## План 133: Built-in Deterministic Developer Utilities (реализован 2026-09-09)
-
-План закрыт через обычный `ToolRegistry`: добавлены 9 bounded stateless
-utility tools с typed manifest schemas и safe handling pure/random semantics.
-Отдельные SQLite/runtime/IPC authorities не добавлялись; существующие Core
-permission, receipt, cancellation, timeout, provenance и adaptive catalog
-границы остаются владельцами. Core module version повышена только для
-изменённого `tool-runtime`; UI/shell и другие модули не менялись.
-
-## План 134: Host Resource Telemetry & Pressure Guard (реализован 2026-09-09)
-
-Добавлены Core-owned bounded metric/sensor/pressure contracts, conservative
-pressure evaluator и in-memory history ring. Service подключён к
-`TaskCoordinator`; storage persistence, active probes и privileged collectors
-остаются вне scope, а unavailable/stale/invalid signals не считаются healthy.
-
-## План 144: модульные релизы (реализован)
-
-План 144 реализован в текущем checkout. Его scope:
-
-1. манифест компонентов с версиями, совместимостью и hash/signature metadata;
-2. выборочная транзакция обновления одного или нескольких компонентов;
-3. recovery, backup, health marker и rollback для частичного обновления;
-4. build pipeline, shell UI, verification и release evidence.
-
-Full installer-релиз `installer` сохранён как fallback; реализация не меняет
-release channel, установленный клиент или security boundary.
+Подробности закрытых планов не дублируются здесь: их контракты находятся в
+`architecture.md`, подтверждённое состояние — в `current-state.md`, а проверки
+и release-gates — в `release-evidence.md`. Каталог `docs/plans/` содержит только
+незавершённые планы.
 
 ## Правила реализации
 
@@ -151,7 +82,8 @@ release channel, установленный клиент или security boundar
 - новые Rust-функции и исправления покрывать тестами;
 - сохранять sandbox, timeout, cancellation, approval и bounded resource limits;
 - после изменений запускать быстрые релевантные checks и `git diff --check`;
-- изменения коммитить task-only; `git push` выполнять только по прямому запросу.
+- изменения коммитить task-only; push выполнять по правилам корневого
+  `AGENTS.md`.
 
 ## Gate для каждого этапа
 
