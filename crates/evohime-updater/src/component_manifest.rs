@@ -302,12 +302,17 @@ mod tests {
     #[test]
     fn accepts_legacy_dependency_shapes() {
         let mut value = serde_json::to_value(manifest().components[0].clone()).unwrap();
-        let component = value.as_object_mut().unwrap();
-        component.insert("dependencies".into(), serde_json::Value::Null);
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("dependencies".into(), serde_json::Value::Null);
         let parsed: Component = serde_json::from_value(value.clone()).unwrap();
         assert!(parsed.dependencies.is_empty());
 
-        component.insert("dependencies".into(), serde_json::json!("core"));
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("dependencies".into(), serde_json::json!("core"));
         let parsed: Component = serde_json::from_value(value).unwrap();
         assert_eq!(parsed.dependencies, vec!["core"]);
     }
