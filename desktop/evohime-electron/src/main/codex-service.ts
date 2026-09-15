@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { delimiter, join, dirname } from 'node:path'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 
 import type { CodexModel, CodexRateLimit, CodexRateLimitWindow, CodexStatus } from '@shared/api'
@@ -38,10 +38,11 @@ export class CodexService {
   private nextId = 1
   private initialized = false
   private readonly pending = new Map<number, PendingRequest>()
-  private status: CodexStatus = emptyStatus()
+  private status: CodexStatus
   private selectedModel: string
   private readonly run: CommandRunner
   private readonly launchLogin: CodexLoginLauncher
+  private readonly environment: NodeJS.ProcessEnv
 
   constructor(
     private readonly filePath: string,
@@ -49,7 +50,10 @@ export class CodexService {
     private readonly onModelSelected?: (model: string) => Promise<void> | void,
     run?: CommandRunner,
     launchLogin?: CodexLoginLauncher,
+    environment: NodeJS.ProcessEnv = process.env,
   ) {
+    this.environment = environment
+    this.status = emptyStatus(environment)
     this.selectedModel = readSelectedModel(filePath)
     this.run = run ?? runCommand
     this.launchLogin = launchLogin ?? launchCodexLogin
@@ -95,7 +99,7 @@ export class CodexService {
       this.log('warn', 'shell.codex_status_failed', { reason: safeReason(message) })
       this.status = {
         ...this.status,
-        installed: isKnownCodexInstallation(),
+        installed: isKnownCodexInstallation(this.environment),
         installing: false,
         loggingIn: false,
         available: false,
@@ -122,7 +126,7 @@ export class CodexService {
       timeoutMs: 45 * 60_000,
       onLine: (line) => this.log('info', 'shell.codex_install_output', { line: line.slice(0, 240) })
     })
-    if (result.code !== 0) {
+    if (result.code !== 0 && !isKnownCodexInstallation(this.environment)) {
       this.status = {
         ...this.status,
         installing: false,
@@ -132,12 +136,12 @@ export class CodexService {
       return this.status
     }
     this.dispose()
-    this.status = emptyStatus()
+    this.status = emptyStatus(this.environment)
     return this.refresh()
   }
 
   async login(): Promise<CodexStatus> {
-    if (!isKnownCodexInstallation()) {
+    if (!isKnownCodexInstallation(this.environment)) {
       return this.refresh()
     }
     try {
@@ -182,7 +186,7 @@ export class CodexService {
   private async ensureServer(): Promise<void> {
     if (this.process && this.initialized) return
     this.dispose()
-    const executable = resolveCodexExecutable()
+    const executable = resolveCodexExecutable(this.environment)
     const child = spawn(executable, ['app-server', '--stdio'], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe']
@@ -266,21 +270,61 @@ export class CodexService {
   }
 }
 
-function resolveCodexExecutable(): string {
-  const localAppData = process.env['LOCALAPPDATA']?.trim()
+export function resolveCodexExecutableForEnvironment(environment: NodeJS.ProcessEnv = process.env): string {
+  const localAppData = environment['LOCALAPPDATA']?.trim()
   const installed = localAppData ? join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe') : ''
-  const npmCodex = process.env['APPDATA']?.trim() ? join(process.env['APPDATA']!, 'npm', 'codex.cmd') : ''
+  const npmCodex = environment['APPDATA']?.trim() ? join(environment['APPDATA']!, 'npm', 'codex.cmd') : ''
   if (installed && existsSync(installed)) return installed
   if (npmCodex && existsSync(npmCodex)) return npmCodex
+  if (localAppData) {
+    const versioned = findVersionedCodex(localAppData)
+    if (versioned) return versioned
+  }
+  const onPath = findCodexOnPath(environment)
+  if (onPath) return onPath
   return 'codex'
 }
 
-function isKnownCodexInstallation(): boolean {
-  return resolveCodexExecutable() !== 'codex'
+function resolveCodexExecutable(environment: NodeJS.ProcessEnv = process.env): string {
+  return resolveCodexExecutableForEnvironment(environment)
 }
 
-function emptyStatus(): CodexStatus {
-  return { installed: isKnownCodexInstallation(), installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }
+function isKnownCodexInstallation(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return resolveCodexExecutable(environment) !== 'codex'
+}
+
+function emptyStatus(environment: NodeJS.ProcessEnv = process.env): CodexStatus {
+  return { installed: isKnownCodexInstallation(environment), installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: null, error: null }
+}
+
+function findVersionedCodex(localAppData: string): string | null {
+  const root = join(localAppData, 'OpenAI', 'Codex', 'bin')
+  try {
+    const candidates = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) => {
+        const executable = join(root, entry.name, 'codex.exe')
+        return existsSync(executable) ? [executable] : []
+      })
+      .map((executable) => ({ executable, modifiedAt: statSync(executable).mtimeMs }))
+      .sort((left, right) => right.modifiedAt - left.modifiedAt)
+    return candidates[0]?.executable ?? null
+  } catch {
+    return null
+  }
+}
+
+function findCodexOnPath(environment: NodeJS.ProcessEnv): string | null {
+  const pathValue = environment['PATH'] ?? environment['Path'] ?? ''
+  for (const directory of pathValue.split(delimiter)) {
+    const normalized = directory.trim()
+    if (!normalized) continue
+    for (const name of ['codex.exe', 'codex.cmd', 'codex']) {
+      const candidate = join(normalized, name)
+      if (existsSync(candidate)) return candidate
+    }
+  }
+  return null
 }
 
 function launchCodexLogin(executable: string): void {

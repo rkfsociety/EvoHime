@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { CodexService, normalizeModels } from '../src/main/codex-service'
+import { CodexService, normalizeModels, resolveCodexExecutableForEnvironment } from '../src/main/codex-service'
 
 const directories: string[] = []
 
@@ -13,6 +13,16 @@ afterEach(() => {
 })
 
 describe('Codex CLI installation', () => {
+  it('finds the versioned WinGet installation under LocalAppData', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evohime-codex-'))
+    directories.push(directory)
+    const executable = join(directory, 'OpenAI', 'Codex', 'bin', 'versioned', 'codex.exe')
+    mkdirSync(join(executable, '..'), { recursive: true })
+    writeFileSync(executable, 'codex')
+
+    expect(resolveCodexExecutableForEnvironment({ LOCALAPPDATA: directory, PATH: '' })).toBe(executable)
+  })
+
   it('keeps the Codex 5.6 family visible when app-server has not published it yet', () => {
     const models = normalizeModels({ data: [{ id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', hidden: false }] })
 
@@ -30,7 +40,7 @@ describe('Codex CLI installation', () => {
     const service = new CodexService(join(directory, 'codex.json'), () => undefined, undefined, async (options) => {
       calls.push({ file: options.file, args: options.args })
       return { code: 1, tail: ['winget unavailable'], raw: [], timedOut: false }
-    })
+    }, undefined, { LOCALAPPDATA: directory, APPDATA: directory, PATH: '' })
 
     const status = await service.install()
     expect(calls[0]).toEqual(expect.objectContaining({ file: 'winget' }))
