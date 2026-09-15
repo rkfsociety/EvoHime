@@ -1,4 +1,7 @@
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{Deserializer, Error as DeError},
+    Deserialize, Serialize,
+};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Read};
@@ -24,6 +27,21 @@ fn default_protocol() -> String {
     "desktop-ipc-v1".into()
 }
 
+fn deserialize_nullable_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::String(value) => Ok(vec![value]),
+        serde_json::Value::Array(value) => serde_json::from_value(serde_json::Value::Array(value))
+            .map_err(|error| D::Error::custom(format!("expected string array: {error}"))),
+        value => Err(D::Error::custom(format!(
+            "expected null, string, or string array, got {value}"
+        ))),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
     pub schema: String,
@@ -46,7 +64,7 @@ pub struct Component {
     pub path: String,
     pub size: u64,
     pub sha256: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_vec")]
     pub dependencies: Vec<String>,
     pub required: bool,
     #[serde(default = "default_protocol")]
@@ -280,6 +298,20 @@ mod tests {
         assert_eq!(parsed.release_commit, "0".repeat(40));
         assert_eq!(parsed.components[0].protocol, "desktop-ipc-v1");
     }
+
+    #[test]
+    fn accepts_legacy_dependency_shapes() {
+        let mut value = serde_json::to_value(manifest().components[0].clone()).unwrap();
+        let component = value.as_object_mut().unwrap();
+        component.insert("dependencies".into(), serde_json::Value::Null);
+        let parsed: Component = serde_json::from_value(value.clone()).unwrap();
+        assert!(parsed.dependencies.is_empty());
+
+        component.insert("dependencies".into(), serde_json::json!("core"));
+        let parsed: Component = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed.dependencies, vec!["core"]);
+    }
+
     #[test]
     fn rejects_escape_and_cycle() {
         let mut m = manifest();

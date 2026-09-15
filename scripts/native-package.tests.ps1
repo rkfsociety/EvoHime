@@ -54,6 +54,16 @@ if ($componentMarker.schema -ne 'evohime.component-manifest.v1') { throw 'compon
 if ($componentMarker.components.Count -ne 10) { throw 'component manifest inventory mismatch' }
 if ($componentMarker.components[0].sha256.Length -ne 64) { throw 'component manifest hash is missing' }
 if ($componentMarker.release_commit -ne $commit) { throw 'component manifest release commit mismatch' }
+$componentMarkerDocument = [System.Text.Json.JsonDocument]::Parse((Get-Content -LiteralPath $componentMarkerPath -Raw))
+try {
+    foreach ($component in $componentMarkerDocument.RootElement.GetProperty('components').EnumerateArray()) {
+        if ($component.GetProperty('dependencies').ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
+            throw "component dependencies must be JSON arrays: $($component.GetProperty('id').GetString())"
+        }
+    }
+} finally {
+    $componentMarkerDocument.Dispose()
+}
 
 # Native-упаковка может только собрать уже проверенные результаты CI и не
 # должна повторно запускать Cargo или Electron.

@@ -131,10 +131,15 @@ function Write-ComponentManifest {
         if ($moduleVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
             throw "Invalid module version for $($item.id): $moduleVersion"
         }
+        $dependencyList = if ($dependencies.ContainsKey($item.id)) {
+            [string[]]@($dependencies[$item.id])
+        } else {
+            [string[]]@()
+        }
         [pscustomobject]@{
             id = $item.id; version = $moduleVersion; artifact = $item.path; path = $item.path
             size = [int64](Get-Item -LiteralPath $file).Length; sha256 = $hash
-            dependencies = if ($dependencies.ContainsKey($item.id)) { $dependencies[$item.id] } else { @() }
+            dependencies = $dependencyList
             required = $true; protocol = 'desktop-ipc-v1'; restart = $item.restart
         }
     }
