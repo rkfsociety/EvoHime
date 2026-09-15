@@ -54,6 +54,12 @@ Electron — единственная пользовательская обол�
 процессы Electron используют authenticated named-pipe transport к Rust Core;
 второй desktop runtime в продукте не предусмотрен.
 
+Исходящие IPC-кадры Core проходят через bounded `mpsc`-очередь ёмкостью 128.
+`ChannelWriter` применяет backpressure и ждёт свободный слот через
+`PollSender`, поэтому большой replay/resync не закрывает валидную сессию при
+временном заполнении очереди. Соединение завершается только при закрытии
+канала или фактической ошибке записи в pipe.
+
 Конфигурация Core pipe закрыта по умолчанию: без authenticated launch context
 Core завершается с ошибкой до открытия SQLite и создания endpoint. Legacy
 handshake разрешён только при точном `EVOHIME_DEV_MODE=1`; заданный, но

@@ -47,6 +47,12 @@ E2E запускается отдельным обязательным шаго�
 `EVOHIME_REQUIRE_REAL_CORE_E2E=1`; локальный режим по-прежнему может пропускать
 этот тест без собранного Windows Core.
 
+Исходящая IPC-очередь Core остаётся bounded (`128` кадров), но при заполнении
+теперь применяет асинхронный backpressure через `PollSender`, а не закрывает
+валидное соединение с ошибкой `outbound IPC frame queue is full`. Регрессионный
+тест `channel_writer_waits_for_capacity_instead_of_closing` подтверждает, что
+последовательные кадры replay дожидаются чтения writer-задачей.
+
 ## Продуктовая граница
 
 EvoHime — локальное Windows desktop-приложение с одним пользовательским

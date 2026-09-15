@@ -68,25 +68,36 @@ impl PipeServerConfig {
 
 /// Writer that hands frames to the single task owning the pipe's write half.
 /// Ordering is preserved, so a frame written in several calls stays contiguous.
-struct ChannelWriter(tokio::sync::mpsc::Sender<Vec<u8>>);
+/// When the bounded queue is full, the writer waits for capacity instead of
+/// turning normal replay backpressure into a broken IPC connection.
+struct ChannelWriter(tokio_util::sync::PollSender<Vec<u8>>);
+
+impl ChannelWriter {
+    fn new(sender: tokio::sync::mpsc::Sender<Vec<u8>>) -> Self {
+        Self(tokio_util::sync::PollSender::new(sender))
+    }
+}
 
 impl tokio::io::AsyncWrite for ChannelWriter {
     fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        _context: &mut std::task::Context<'_>,
+        mut self: std::pin::Pin<&mut Self>,
+        context: &mut std::task::Context<'_>,
         buffer: &[u8],
     ) -> std::task::Poll<std::io::Result<usize>> {
-        match self.0.try_send(buffer.to_vec()) {
-            Ok(()) => std::task::Poll::Ready(Ok(buffer.len())),
-            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+        match self.0.poll_reserve(context) {
+            std::task::Poll::Ready(Ok(())) => {
+                if self.0.send_item(buffer.to_vec()).is_ok() {
+                    std::task::Poll::Ready(Ok(buffer.len()))
+                } else {
+                    std::task::Poll::Ready(Err(std::io::Error::from(
+                        std::io::ErrorKind::BrokenPipe,
+                    )))
+                }
+            }
+            std::task::Poll::Ready(Err(_)) => {
                 std::task::Poll::Ready(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))
             }
-            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-                std::task::Poll::Ready(Err(std::io::Error::new(
-                    std::io::ErrorKind::BrokenPipe,
-                    "outbound IPC frame queue is full",
-                )))
-            }
+            std::task::Poll::Pending => std::task::Poll::Pending,
         }
     }
 
@@ -188,7 +199,7 @@ pub async fn run_windows_pipe(
 
         let pump = bridge.journalled().map(|mut journalled| {
             let bridge = Arc::clone(&bridge);
-            let mut sink = ChannelWriter(frames.clone());
+            let mut sink = ChannelWriter::new(frames.clone());
             tokio::spawn(async move {
                 let mut pushed = bridge.latest_sequence().await;
                 while journalled.changed().await.is_ok() {
@@ -200,7 +211,7 @@ pub async fn run_windows_pipe(
             })
         });
 
-        let mut sink = ChannelWriter(frames);
+        let mut sink = ChannelWriter::new(frames);
         loop {
             if let Err(error) = bridge.process_once(&mut reader, &mut sink).await {
                 let _ = logger.write(
@@ -384,16 +395,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn channel_writer_rejects_a_full_outbound_queue() {
-        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
-        let mut writer = ChannelWriter(sender);
-        tokio::io::AsyncWriteExt::write_all(&mut writer, b"first")
-            .await
-            .unwrap();
-        let error = tokio::io::AsyncWriteExt::write_all(&mut writer, b"second")
-            .await
-            .expect_err("full queue must fail closed");
-        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
-        assert!(error.to_string().contains("queue is full"));
+    async fn channel_writer_waits_for_capacity_instead_of_closing() {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let mut writer = ChannelWriter::new(sender);
+        let write_task = tokio::spawn(async move {
+            tokio::io::AsyncWriteExt::write_all(&mut writer, b"first")
+                .await
+                .unwrap();
+            tokio::io::AsyncWriteExt::write_all(&mut writer, b"second")
+                .await
+                .unwrap();
+        });
+
+        assert_eq!(receiver.recv().await.as_deref(), Some(&b"first"[..]));
+        assert_eq!(receiver.recv().await.as_deref(), Some(&b"second"[..]));
+        write_task.await.unwrap();
     }
 }
