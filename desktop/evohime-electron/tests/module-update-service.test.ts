@@ -14,6 +14,7 @@ import { ModuleUpdateService } from '../src/main/update/module-update-service'
 
 describe('ModuleUpdateService', () => {
   it('starts the Windows worker through the shell with quoted paths', async () => {
+    let quitForApply = false
     const service = new ModuleUpdateService({
       dataDirectory: 'C:\\data\\EvoHime',
       branch: 'main',
@@ -21,7 +22,8 @@ describe('ModuleUpdateService', () => {
       updaterPath: 'C:\\Program Files\\EvoHime\\evohime-updater.exe',
       installDirectory: 'C:\\Program Files\\EvoHime',
       emit: () => {},
-      intervalMs: 60_000
+      intervalMs: 60_000,
+      quitForApply: () => { quitForApply = true }
     })
 
     await service.prepareComponents(['listener-runtime'])
@@ -29,7 +31,9 @@ describe('ModuleUpdateService', () => {
     const windows = process.platform === 'win32'
     expect(spawnMock).toHaveBeenCalledWith(
       windows ? '"C:\\Program Files\\EvoHime\\evohime-updater.exe"' : 'C:\\Program Files\\EvoHime\\evohime-updater.exe',
-      windows ? ['--apply', '--install-dir', '"C:\\Program Files\\EvoHime"'] : ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime'],
+      windows
+        ? ['--apply', '--install-dir', '"C:\\Program Files\\EvoHime"', '--wait-pid', String(process.pid), '--relaunch', '"C:\\Program Files\\EvoHime\\EvoHime.exe"']
+        : ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime', '--wait-pid', String(process.pid), '--relaunch', 'C:\\Program Files\\EvoHime\\EvoHime.exe'],
       expect.objectContaining({
         detached: true,
         windowsHide: true,
@@ -37,6 +41,7 @@ describe('ModuleUpdateService', () => {
         stdio: 'ignore'
       })
     )
+    expect(quitForApply).toBe(true)
   })
 
   it('marks a crashed worker failed when no status file was written', async () => {

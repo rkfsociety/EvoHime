@@ -63,6 +63,11 @@ fn control_update(args: &[String]) -> ExitCode {
         return fail("cannot determine install directory");
     };
     let data_dir = data_directory(&install_dir);
+    let wait_pid = match optional_process_id(args, "--wait-pid") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let relaunch = argument_value(args, "--relaunch").map(PathBuf::from);
     let _ = ensure_fallback(&install_dir, &data_dir);
     write_recovery_phase(&data_dir, "prepared", None);
     let updates = match remote_updates(&data_dir, &install_dir) {
@@ -98,14 +103,21 @@ fn control_update(args: &[String]) -> ExitCode {
         &updates,
     );
     write_recovery_phase(&data_dir, "downloaded", None);
-    let result = apply_updates(&install_dir, &data_dir, &updates, &|message, percent| {
-        write_status(
-            &data_dir,
-            "applying",
-            &format!("{message} — {percent}%"),
-            &updates,
-        );
-    });
+    let result = apply_updates(
+        &install_dir,
+        &data_dir,
+        &updates,
+        wait_pid,
+        relaunch.as_deref(),
+        &|message, percent| {
+            write_status(
+                &data_dir,
+                "applying",
+                &format!("{message} — {percent}%"),
+                &updates,
+            );
+        },
+    );
     match result {
         Ok(()) => {
             write_recovery_phase(&data_dir, "committed", None);
@@ -351,6 +363,16 @@ fn argument_value<'a>(args: &'a [String], name: &str) -> Option<&'a String> {
         .find(|pair| pair[0] == name)
         .filter(|pair| !pair[1].starts_with("--"))
         .map(|pair| &pair[1])
+}
+
+fn optional_process_id(args: &[String], name: &str) -> Result<Option<u32>, String> {
+    argument_value(args, name)
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .map_err(|_| format!("{name} must be a process id"))
+        })
+        .transpose()
 }
 
 #[derive(serde::Deserialize)]
@@ -1032,10 +1054,19 @@ fn apply_updates(
     install_dir: &Path,
     data_dir: &Path,
     updates: &[UpdateCandidate],
+    wait_pid: Option<u32>,
+    relaunch: Option<&Path>,
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
-    let result = apply_updates_inner(install_dir, data_dir, updates, progress);
+    let result = apply_updates_inner(
+        install_dir,
+        data_dir,
+        updates,
+        wait_pid,
+        relaunch,
+        progress,
+    );
     cleanup_failed_staging(&staging, result)
 }
 
@@ -1043,6 +1074,8 @@ fn apply_updates_inner(
     install_dir: &Path,
     data_dir: &Path,
     updates: &[UpdateCandidate],
+    wait_pid: Option<u32>,
+    relaunch: Option<&Path>,
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
@@ -1222,6 +1255,16 @@ fn apply_updates_inner(
     }
     if let Some(update) = ui_update {
         command.args(["--ui-version", update.available.as_str()]);
+    }
+    if let Some(pid) = wait_pid {
+        command.arg("--wait-pid").arg(pid.to_string());
+    }
+    // When the updater itself is being replaced, its bootstrap script owns the
+    // next launch. Otherwise restart the new shell after the old GUI exits.
+    if updater_update.is_none() {
+        if let Some(path) = relaunch {
+            command.arg("--relaunch").arg(path);
+        }
     }
     progress("Применение модулей", 0);
     // The worker is a Windows GUI binary, so its stderr is otherwise not
@@ -2122,6 +2165,23 @@ mod tests {
         ];
         assert!(super::argument_value(&args, "--manifest").is_none());
         assert!(super::argument_value(&args, "--available").is_none());
+    }
+
+    #[test]
+    fn parses_optional_apply_wait_process_id() {
+        let args = vec![
+            "evohime-updater".into(),
+            "--apply".into(),
+            "--wait-pid".into(),
+            "42".into(),
+        ];
+        assert_eq!(
+            super::optional_process_id(&args, "--wait-pid").unwrap(),
+            Some(42)
+        );
+
+        let invalid = vec!["--wait-pid".into(), "not-a-pid".into()];
+        assert!(super::optional_process_id(&invalid, "--wait-pid").is_err());
     }
 
     #[test]

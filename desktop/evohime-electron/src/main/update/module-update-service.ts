@@ -28,6 +28,8 @@ export interface ModuleUpdateServiceOptions {
   readonly installDirectory: string
   readonly emit: (status: UpdateStatus) => void
   readonly intervalMs: number
+  /** Closes the visible updater after the detached apply worker is started. */
+  readonly quitForApply?: () => void
 }
 
 /**
@@ -103,14 +105,22 @@ export class ModuleUpdateService {
     }
   }
 
-  private startUpdater(mode: '--check' | '--apply'): void {
-    if (!this.options.enabled) return
+  private startUpdater(mode: '--check' | '--apply'): boolean {
+    if (!this.options.enabled) return false
+    const args = [
+      mode,
+      '--install-dir',
+      process.platform === 'win32' ? quoteShellArgument(this.options.installDirectory) : this.options.installDirectory
+    ]
+    if (mode === '--apply') {
+      args.push('--wait-pid', String(process.pid), '--relaunch', process.platform === 'win32'
+        ? quoteShellArgument(join(this.options.installDirectory, 'EvoHime.exe'))
+        : join(this.options.installDirectory, 'EvoHime.exe'))
+    }
     try {
       const child = spawn(
         process.platform === 'win32' ? quoteShellArgument(this.options.updaterPath) : this.options.updaterPath,
-        process.platform === 'win32'
-          ? [mode, '--install-dir', quoteShellArgument(this.options.installDirectory)]
-          : [mode, '--install-dir', this.options.installDirectory],
+        args,
         { detached: true, stdio: 'ignore', windowsHide: true, shell: process.platform === 'win32' }
       )
       child.once('error', () => {
@@ -135,8 +145,11 @@ export class ModuleUpdateService {
         })
       })
       child.unref()
+      if (mode === '--apply') this.options.quitForApply?.()
+      return true
     } catch {
       this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.' })
+      return false
     }
   }
 

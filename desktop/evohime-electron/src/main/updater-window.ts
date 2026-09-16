@@ -29,6 +29,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     packaged: true
   })
   const crashGuard = recordUpdaterStart(join(dataDirectory(), 'update-state'))
+  let shuttingDown = false
   const service = new ModuleUpdateService({
     dataDirectory: dataDirectory(),
     branch: config.branch,
@@ -36,12 +37,15 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     updaterPath: join(installDirectory, 'evohime-updater.exe'),
     installDirectory,
     intervalMs: CHECK_INTERVAL_MS,
-    emit: () => publish()
+    emit: () => publish(),
+    quitForApply: () => {
+      shuttingDown = true
+      app.exit(0)
+    }
   })
 
   let updaterWindow: BrowserWindow | null = null
   let completionTimer: NodeJS.Timeout | null = null
-  let shuttingDown = false
 
   const publish = (): void => {
     if (updaterWindow && !updaterWindow.isDestroyed()) {
