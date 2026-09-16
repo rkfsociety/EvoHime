@@ -1,5 +1,7 @@
 import type { ConversationEventProjection, CoreEvent } from '@shared/api'
 
+const MAX_LIVE_EVENTS = 400
+
 export interface OptimisticConversationMessage {
   readonly clientMessageId: string
   readonly taskId: string
@@ -16,14 +18,32 @@ export type ConversationSync =
 export interface ConversationProjectionState {
   readonly conversationId: string
   readonly cacheKey: string
-  readonly events: readonly ConversationEventProjection[]
+  /** Pages explicitly loaded by the user or by the initial history request. */
+  readonly historyEvents: readonly ConversationEventProjection[]
+  /** Events received from the current subscription/catch-up stream. */
+  readonly liveEvents: readonly ConversationEventProjection[]
   readonly optimistic: readonly OptimisticConversationMessage[]
   readonly lastSequence: number
   readonly sync: ConversationSync
 }
 
 export function createConversationProjection(conversationId: string, cacheKey = ''): ConversationProjectionState {
-  return { conversationId, cacheKey, events: [], optimistic: [], lastSequence: 0, sync: { state: 'complete' } }
+  return {
+    conversationId,
+    cacheKey,
+    historyEvents: [],
+    liveEvents: [],
+    optimistic: [],
+    lastSequence: 0,
+    sync: { state: 'complete' }
+  }
+}
+
+export function conversationEvents(
+  state: ConversationProjectionState
+): readonly ConversationEventProjection[] {
+  return [...state.historyEvents, ...state.liveEvents]
+    .sort((left, right) => left.sequence - right.sequence)
 }
 
 export function addOptimisticMessage(
@@ -66,7 +86,8 @@ export function resumeAtRetainedBoundary(
 ): ConversationProjectionState {
   return {
     ...state,
-    events: [],
+    historyEvents: [],
+    liveEvents: [],
     lastSequence: Math.max(0, earliestAvailableSequence - 1),
     sync: { state: 'complete' }
   }
@@ -79,14 +100,16 @@ export function applyConversationEvents(
   let next = state
   for (const event of [...incoming].sort((left, right) => left.sequence - right.sequence)) {
     if (event.conversationId !== next.conversationId || event.schemaVersion !== 1) continue
-    const byId = next.events.find((known) => known.eventId === event.eventId)
+    const knownEvents = conversationEvents(next)
+    const byId = knownEvents.find((known) => known.eventId === event.eventId)
     if (byId) {
       if (!sameConversationEvent(byId, event)) {
         next = { ...next, sync: { state: 'conflict', sequence: event.sequence } }
       }
+      next = reconcileOptimisticMessage(next, event)
       continue
     }
-    const atSequence = next.events.find((known) => known.sequence === event.sequence)
+    const atSequence = knownEvents.find((known) => known.sequence === event.sequence)
     if (atSequence) {
       next = { ...next, sync: { state: 'conflict', sequence: event.sequence } }
       continue
@@ -102,7 +125,7 @@ export function applyConversationEvents(
     }
     next = {
       ...next,
-      events: [...next.events, event].slice(-400),
+      liveEvents: [...next.liveEvents, event].slice(-MAX_LIVE_EVENTS),
       optimistic:
         event.kind === 'user_message_accepted' && event.clientMessageId.length > 0
           ? next.optimistic.filter((message) => message.clientMessageId !== event.clientMessageId)
@@ -114,16 +137,59 @@ export function applyConversationEvents(
   return next
 }
 
-/** Adds a page fetched with `beforeSequence` without moving the live cursor. */
+/** Adds a history page without moving the live cursor. */
 export function prependConversationEvents(
   state: ConversationProjectionState,
   incoming: readonly ConversationEventProjection[]
 ): ConversationProjectionState {
-  const known = new Set(state.events.map((event) => event.eventId))
+  let next = state
   const older = incoming
-    .filter((event) => event.conversationId === state.conversationId && event.schemaVersion === 1 && !known.has(event.eventId))
+    .filter((event) => event.conversationId === state.conversationId && event.schemaVersion === 1)
     .sort((left, right) => left.sequence - right.sequence)
-  return older.length === 0 ? state : { ...state, events: [...older, ...state.events] }
+  for (const event of older) {
+    const knownEvents = conversationEvents(next)
+    const byId = knownEvents.find((knownEvent) => knownEvent.eventId === event.eventId)
+    if (byId) {
+      if (!sameConversationEvent(byId, event)) {
+        next = { ...next, sync: { state: 'conflict', sequence: event.sequence } }
+      }
+      next = reconcileOptimisticMessage(next, event)
+      continue
+    }
+    const atSequence = knownEvents.find((knownEvent) => knownEvent.sequence === event.sequence)
+    if (atSequence) {
+      if (!sameConversationEvent(atSequence, event)) {
+        next = { ...next, sync: { state: 'conflict', sequence: event.sequence } }
+      }
+      next = reconcileOptimisticMessage(next, event)
+      continue
+    }
+    next = reconcileOptimisticMessage(
+      { ...next, historyEvents: [...next.historyEvents, event].sort((left, right) => left.sequence - right.sequence) },
+      event
+    )
+  }
+  return next
+}
+
+function reconcileOptimisticMessage(
+  state: ConversationProjectionState,
+  event: ConversationEventProjection
+): ConversationProjectionState {
+  return event.kind === 'user_message_accepted' && event.clientMessageId.length > 0
+    ? { ...state, optimistic: state.optimistic.filter((message) => message.clientMessageId !== event.clientMessageId) }
+    : state
+}
+
+/** Adds the first history page and advances the live cursor to its newest event. */
+export function applyInitialConversationHistory(
+  state: ConversationProjectionState,
+  incoming: readonly ConversationEventProjection[]
+): ConversationProjectionState {
+  const next = prependConversationEvents(state, incoming)
+  if (next === state || state.historyEvents.length > 0 || state.liveEvents.length > 0) return next
+  const newestSequence = Math.max(0, ...next.historyEvents.map((event) => event.sequence))
+  return { ...next, lastSequence: newestSequence }
 }
 
 function sameConversationEvent(

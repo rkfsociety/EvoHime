@@ -16,7 +16,9 @@ import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
 import {
   addOptimisticMessage,
+  applyInitialConversationHistory,
   applyConversationEvents,
+  conversationEvents,
   conversationEventsToCoreEvents,
   createConversationProjection,
   markOptimisticFailed,
@@ -28,6 +30,9 @@ import {
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
+const TIMELINE_WINDOW_OVERSCAN = 16
+const TIMELINE_ITEM_HEIGHT_ESTIMATE_PX = 72
+const TIMELINE_BOTTOM_THRESHOLD_PX = 48
 const MAX_COMPOSER_HEIGHT_PX = 200
 const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
   hour: '2-digit',
@@ -87,7 +92,14 @@ export function TaskTimeline({
   const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
   const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
-  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+  const [timelineWindowStart, setTimelineWindowStart] = useState(0)
+  const followLiveRef = useRef(true)
+  const previousTimelineRef = useRef<{ firstKey: string | null; length: number; scrollHeight: number }>({
+    firstKey: null,
+    length: 0,
+    scrollHeight: 0
+  })
   const entryTimes = useRef(new Map<string, number>())
   const cancelRequestedTaskId = useRef<string | null>(null)
 
@@ -132,6 +144,9 @@ export function TaskTimeline({
     setSentPrompt(null)
     setSentPromptAtMs(null)
     setCommandError(null)
+    setTimelineWindowStart(0)
+    followLiveRef.current = true
+    previousTimelineRef.current = { firstKey: null, length: 0, scrollHeight: 0 }
     setConversationLog((current) => chatId === null
       ? null
       : current?.conversationId === chatId
@@ -190,13 +205,19 @@ export function TaskTimeline({
         if (next.sync.state === 'cursor-expired' && page.events[0]?.sequence === page.earliestAvailableSequence) {
           next = resumeAtRetainedBoundary(next, page.earliestAvailableSequence)
         }
-        if (next.lastSequence === 0 && page.oldestSequence > 1) {
-          next = resumeAtRetainedBoundary(next, page.oldestSequence)
-        }
         const previousSequence = next.lastSequence
-        const isOlderPage = next.events.length > 0 && page.events.length > 0
-          && page.events.every((event) => event.sequence < (next.events[0]?.sequence ?? Number.MAX_SAFE_INTEGER))
-        next = isOlderPage ? prependConversationEvents(next, page.events) : applyConversationEvents(next, page.events)
+        const knownEvents = conversationEvents(next)
+        const isOlderPage = knownEvents.length > 0 && page.events.length > 0
+          && page.events.every((event) => event.sequence < (knownEvents[0]?.sequence ?? Number.MAX_SAFE_INTEGER))
+        if (isOlderPage) {
+          next = prependConversationEvents(next, page.events)
+        } else if (page.operation === 'live' || page.operation === 'subscribed') {
+          next = applyConversationEvents(next, page.events)
+        } else if (next.historyEvents.length === 0 && next.liveEvents.length === 0) {
+          next = applyInitialConversationHistory(next, page.events)
+        } else {
+          next = applyConversationEvents(next, page.events)
+        }
         if (next.sync.state === 'complete' && next.lastSequence > previousSequence) {
           resumeAfter = next.lastSequence
         }
@@ -229,8 +250,8 @@ export function TaskTimeline({
   }, [api, chatId, conversationLog])
 
   const loadOlderHistory = useCallback(() => {
-    if (!api || chatId === null || !conversationLog || loadingOlderHistory || conversationLog.events.length === 0) return
-    const beforeSequence = conversationLog.events[0]?.sequence
+    if (!api || chatId === null || !conversationLog || loadingOlderHistory) return
+    const beforeSequence = conversationEvents(conversationLog)[0]?.sequence
     if (beforeSequence === undefined || beforeSequence <= 1) return
     setLoadingOlderHistory(true)
     void api.invoke('core.getConversationEvents', {
@@ -253,16 +274,21 @@ export function TaskTimeline({
 
   // A chat shows only its own tasks; before the first prompt only the task
   // just started from here belongs to it.
+  const projectedConversationEvents = useMemo(
+    () => conversationLog === null ? [] : conversationEvents(conversationLog),
+    [conversationLog?.historyEvents, conversationLog?.liveEvents]
+  )
+
   const taskEvents = useMemo(() => {
     const known = new Set(chat?.taskIds ?? [])
     if (taskId) known.add(taskId)
-    if (conversationLog?.events.length) {
-      return [...conversationEventsToCoreEvents(conversationLog.events)]
+    if (projectedConversationEvents.length) {
+      return [...conversationEventsToCoreEvents(projectedConversationEvents)]
         .reverse()
     }
     return events
       .filter((event) => event.taskId.length > 0 && known.has(event.taskId))
-  }, [chat?.taskIds, conversationLog?.events, events, taskId])
+  }, [chat?.taskIds, events, projectedConversationEvents, taskId])
 
   const activeTaskEvents = useMemo(
     () => taskId === null ? taskEvents : taskEvents.filter((event) => event.taskId === taskId),
@@ -295,7 +321,7 @@ export function TaskTimeline({
   )
 
   const conversation = useMemo(() => {
-    const authoritativeMessages = (conversationLog?.events ?? [])
+    const authoritativeMessages = projectedConversationEvents
       .filter((event) => event.kind === 'user_message_accepted')
       .map((event): ChatMessage => ({
         taskId: event.taskId,
@@ -334,7 +360,7 @@ export function TaskTimeline({
       ) ?? null,
       transcript: buildTranscript(eventsByTask.get(message.taskId) ?? [])
     }))
-  }, [chat?.messages, conversationLog?.events, conversationLog?.optimistic, sentPrompt, sentPromptAtMs, taskId, taskEvents])
+  }, [chat?.messages, conversationLog?.optimistic, projectedConversationEvents, sentPrompt, sentPromptAtMs, taskId, taskEvents])
 
   const retryMessage = useCallback(async (clientMessageId: string) => {
     if (!api || !conversationLog) return
@@ -357,13 +383,83 @@ export function TaskTimeline({
     }
   }, [api, conversationLog, providerMode, workspace])
 
-  useEffect(() => {
-    // scrollIntoView отсутствует в jsdom, поэтому вызов защищён проверкой.
-    const anchor = bottomRef.current
-    if (typeof anchor?.scrollIntoView === 'function') {
-      anchor.scrollIntoView({ block: 'end' })
+  const timelineItems = useMemo(() => {
+    if (conversation.length > 0) {
+      return conversation.flatMap(({ message, transcript, delivery }) => {
+        const messageId = `user-${message.taskId}-${message.atMs}`
+        return [
+          <li key={messageId} className="message message--user">
+            <div className="message__bubble">{message.prompt}</div>
+            {delivery ? (
+              <small className="message__delivery" role="status">
+                {delivery.status === 'sending' ? 'Отправляется…' : null}
+                {delivery.status === 'retry' ? 'Повторная отправка…' : null}
+                {delivery.status === 'failed' ? (
+                  <button type="button" onClick={() => void retryMessage(delivery.clientMessageId)}>
+                    Повторить отправку
+                  </button>
+                ) : null}
+              </small>
+            ) : null}
+            <MessageActions
+              id={messageId}
+              text={message.prompt}
+              atMs={message.atMs}
+              copied={copiedMessageId === messageId}
+              onCopy={setCopiedMessageId}
+            />
+          </li>,
+          ...transcript.entries.map((entry, index) =>
+            renderTranscriptEntry(entry, `${message.taskId}-${index}`, entryTimes, copiedMessageId, setCopiedMessageId)
+          )
+        ]
+      })
     }
-  }, [entries.length, approval])
+    return entries.map((entry, index) =>
+      renderTranscriptEntry(entry, String(index), entryTimes, copiedMessageId, setCopiedMessageId)
+    )
+  }, [conversation, copiedMessageId, entries, retryMessage])
+
+  const timelineItemKeys = useMemo(
+    () => timelineItems.map((item) => item.key === null ? '' : String(item.key)),
+    [timelineItems]
+  )
+  const maxTimelineWindowStart = Math.max(0, timelineItems.length - MAX_RENDERED_ITEMS)
+  const renderedTimelineStart = Math.min(timelineWindowStart, maxTimelineWindowStart)
+  const renderedTimelineItems = timelineItems.slice(renderedTimelineStart, renderedTimelineStart + MAX_RENDERED_ITEMS)
+
+  const handleTimelineScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget
+    const maxStart = Math.max(0, timelineItems.length - MAX_RENDERED_ITEMS)
+    const estimatedFirstVisible = Math.floor(element.scrollTop / TIMELINE_ITEM_HEIGHT_ESTIMATE_PX)
+    setTimelineWindowStart(Math.min(
+      maxStart,
+      Math.max(0, estimatedFirstVisible - TIMELINE_WINDOW_OVERSCAN)
+    ))
+    followLiveRef.current = element.scrollHeight - element.scrollTop - element.clientHeight <= TIMELINE_BOTTOM_THRESHOLD_PX
+  }, [timelineItems.length])
+
+  useLayoutEffect(() => {
+    const element = scrollRef.current
+    const firstKey = timelineItemKeys[0] ?? null
+    const previous = previousTimelineRef.current
+    if (element && timelineItems.length > 0) {
+      const previousFirstIndex = previous.firstKey === null ? -1 : timelineItemKeys.indexOf(previous.firstKey)
+      const prependedCount = previous.firstKey !== null && previousFirstIndex >= 0
+        ? previousFirstIndex
+        : previous.firstKey !== null ? Math.max(0, timelineItems.length - previous.length) : 0
+      if (prependedCount > 0) {
+        setTimelineWindowStart((start) => Math.min(maxTimelineWindowStart, start + prependedCount))
+        element.scrollTop += Math.max(0, element.scrollHeight - previous.scrollHeight)
+      } else if (previous.length === 0 || followLiveRef.current) {
+        setTimelineWindowStart(maxTimelineWindowStart)
+        element.scrollTop = element.scrollHeight
+      }
+      previousTimelineRef.current = { firstKey, length: timelineItems.length, scrollHeight: element.scrollHeight }
+    } else {
+      previousTimelineRef.current = { firstKey, length: timelineItems.length, scrollHeight: element?.scrollHeight ?? 0 }
+    }
+  }, [maxTimelineWindowStart, timelineItemKeys, timelineItems.length])
 
   const start = useCallback(async () => {
     if (!api || prompt.trim().length === 0) return
@@ -488,7 +584,7 @@ export function TaskTimeline({
       {conversationLog?.sync.state === 'cursor-expired' ? (
         <p role="alert" className="shell__reason">Старая часть истории свёрнута; загружаю доступный диапазон…</p>
       ) : null}
-      <div className="chat__scroll">
+      <div ref={scrollRef} className="chat__scroll" onScroll={handleTimelineScroll}>
         {empty ? (
           <HomeScreen
             workspace={workspace}
@@ -498,82 +594,55 @@ export function TaskTimeline({
             revision={chatRevision}
           />
         ) : (
-          <ol className="chat__stream">
-            {conversationLog?.events[0]?.sequence && conversationLog.events[0].sequence > 1 ? (
-              <li>
+          <>
+            {conversationLog && projectedConversationEvents[0]?.sequence && projectedConversationEvents[0].sequence > 1 ? (
+              <div className="chat__history-controls">
                 <button type="button" onClick={loadOlderHistory} disabled={loadingOlderHistory}>
                   {loadingOlderHistory ? 'Загружаю историю…' : 'Загрузить более старую историю'}
                 </button>
-              </li>
+              </div>
             ) : null}
-            {conversation.flatMap(({ message, transcript, delivery }) => {
-              const messageId = `user-${message.taskId}-${message.atMs}`
-              return [
-                <li key={messageId} className="message message--user">
-                  <div className="message__bubble">{message.prompt}</div>
-                  {delivery ? (
-                    <small className="message__delivery" role="status">
-                      {delivery.status === 'sending' ? 'Отправляется…' : null}
-                      {delivery.status === 'retry' ? 'Повторная отправка…' : null}
-                      {delivery.status === 'failed' ? (
-                        <button type="button" onClick={() => void retryMessage(delivery.clientMessageId)}>
-                          Повторить отправку
-                        </button>
-                      ) : null}
-                    </small>
-                  ) : null}
-                  <MessageActions
-                    id={messageId}
-                    text={message.prompt}
-                    atMs={message.atMs}
-                    copied={copiedMessageId === messageId}
-                    onCopy={setCopiedMessageId}
-                  />
-                </li>,
-                ...transcript.entries.map((entry, index) =>
-                  renderTranscriptEntry(entry, `${message.taskId}-${index}`, entryTimes, copiedMessageId, setCopiedMessageId)
-                )
-              ]
-            }).slice(-MAX_RENDERED_ITEMS)}
+            <ol className="chat__stream">
+              {renderedTimelineStart > 0 ? (
+                <li className="chat__window-spacer" aria-hidden="true" style={{ height: `${renderedTimelineStart * TIMELINE_ITEM_HEIGHT_ESTIMATE_PX}px` }} />
+              ) : null}
+              {renderedTimelineItems}
+              {renderedTimelineStart + renderedTimelineItems.length < timelineItems.length ? (
+                <li className="chat__window-spacer" aria-hidden="true" style={{ height: `${(timelineItems.length - renderedTimelineStart - renderedTimelineItems.length) * TIMELINE_ITEM_HEIGHT_ESTIMATE_PX}px` }} />
+              ) : null}
 
-            {conversation.length === 0
-              ? entries.slice(-MAX_RENDERED_ITEMS).map((entry, index) =>
-                  renderTranscriptEntry(entry, String(index), entryTimes, copiedMessageId, setCopiedMessageId)
-                )
-              : null}
+              {conversation.length > 0 && running && !approval && !conversation.at(-1)?.transcript.entries.some(
+                (entry) => entry.kind === 'activity' && entry.running
+              ) ? (
+                <li className="message message--working" role="status" aria-label="Агент формирует ответ">
+                  <span className="working-indicator" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </li>
+              ) : null}
 
-            {conversation.length > 0 && running && !approval && !conversation.at(-1)?.transcript.entries.some(
-              (entry) => entry.kind === 'activity' && entry.running
-            ) ? (
-              <li className="message message--working" role="status" aria-label="Агент формирует ответ">
-                <span className="working-indicator" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </span>
-              </li>
-            ) : null}
-
-            {approval ? (
-              <li className="approval task-timeline__approval" role="alert">
-                <strong>Нужно разрешение: {approval.toolName}</strong>
-                <span>{approval.permission} · {approval.scope}</span>
-                <strong>{approval.preview.summary}</strong>
-                {approval.preview.command ? <code>Команда: {approval.preview.command}</code> : null}
-                {approval.preview.cwd ? <code>cwd: {approval.preview.cwd}</code> : null}
-                {approval.preview.path ? <code>Файл: {approval.preview.path}</code> : null}
-                {approval.preview.details ? <pre className="approval__details">{approval.preview.details}</pre> : null}
-                {approval.preview.truncated ? <small>Preview ограничен по размеру.</small> : null}
-                <div>
-                  <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>Разрешить</button>
-                  <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>Отклонить</button>
-                  <button type="button" onClick={() => void resolveApproval(false, true)} disabled={busy}>Отменить</button>
-                </div>
-              </li>
-            ) : null}
-          </ol>
+              {approval ? (
+                <li className="approval task-timeline__approval" role="alert">
+                  <strong>Нужно разрешение: {approval.toolName}</strong>
+                  <span>{approval.permission} · {approval.scope}</span>
+                  <strong>{approval.preview.summary}</strong>
+                  {approval.preview.command ? <code>Команда: {approval.preview.command}</code> : null}
+                  {approval.preview.cwd ? <code>cwd: {approval.preview.cwd}</code> : null}
+                  {approval.preview.path ? <code>Файл: {approval.preview.path}</code> : null}
+                  {approval.preview.details ? <pre className="approval__details">{approval.preview.details}</pre> : null}
+                  {approval.preview.truncated ? <small>Preview ограничен по размеру.</small> : null}
+                  <div>
+                    <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>Разрешить</button>
+                    <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>Отклонить</button>
+                    <button type="button" onClick={() => void resolveApproval(false, true)} disabled={busy}>Отменить</button>
+                  </div>
+                </li>
+              ) : null}
+            </ol>
+          </>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <div className="composer">

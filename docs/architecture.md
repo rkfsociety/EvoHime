@@ -1735,7 +1735,11 @@ usage и batch-ит delta исключительно для отображени
 history, продолжает cursor catch-up и показывает sending/retry/failed. При
 переключении conversation projection сбрасывается; global Core events остаются
 compatibility fallback. Renderer не читает SQLite, не решает recovery и не
-запускает effect.
+запускает effect. Загруженные history pages и текущий `subscribed`/`live` поток
+хранятся в projection раздельно: новые live events не вытесняют уже загруженную
+историю. Пользовательский timeline рендерит перемещаемое окно до 80 строк с
+overscan, сохраняет якорь `scrollTop` при prepend старой страницы и не меняет
+позицию чтения при новых событиях, если пользователь ушёл от нижнего края.
 # Team SOP Protocols v1 (plan 48)
 
 `evohime-core::team_sop_protocols` provides bounded versioned TeamProtocol

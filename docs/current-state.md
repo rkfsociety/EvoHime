@@ -87,14 +87,24 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 
 ## Граница текущего checkout и CI
 
-Продуктовый baseline этой документационной актуализации зафиксирован на
-`958a7102d2ce6df459d80d549297a8efa4aa034d` в ветке `main`; последующие
-изменения этой задачи затрагивают только документацию и не меняют runtime.
+Документационный baseline этой актуализации был зафиксирован на
+`958a7102d2ce6df459d80d549297a8efa4aa034d` в ветке `main`; текущий checkout
+дополнительно содержит исправление renderer-проекции истории чата, описанное
+ниже.
 Полный Windows workflow `34912288572` прошёл успешно, включая real-Core IPC
 E2E, Electron bundles и bundle security, native package, acceptance matrix,
 installer, install/upgrade, rollback, staged rebuild, выборочный UI apply и
 публикацию fixed release. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
+
+## История чата в renderer
+
+`conversation-projection` хранит загруженные history pages отдельно от
+текущих `subscribed`/`live` событий и сохраняет монотонный cursor подписки.
+Новые события не удаляют ранее загруженную историю. `TaskTimeline` отображает
+её через перемещаемое окно до 80 строк, сохраняет позицию чтения при prepend
+старой страницы и не автопрокручивает пользователя, если он читает старый
+участок ленты.
 
 Исторические refs и workflow закрытых планов сохранены в
 [`release-evidence.md`](release-evidence.md) с их исходными commit и run ID.

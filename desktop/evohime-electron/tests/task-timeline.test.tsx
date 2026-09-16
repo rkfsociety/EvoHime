@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import type { CommandOutcome, ConversationEventProjection, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { TaskTimeline } from '../src/renderer/src/TaskTimeline'
 
 const calls: Array<{ command: string; payload: unknown }> = []
@@ -33,6 +33,51 @@ function installApi(): void {
 
 function event(eventType: string, payload: Record<string, unknown>, taskId = 'task-1'): CoreEvent {
   return { sequenceId: 1, taskId, eventType, payload: JSON.stringify(payload) }
+}
+
+function conversationProjection(sequence: number, eventId: string, kind: string, taskId = 'task-1', payload: unknown = {}): ConversationEventProjection {
+  return {
+    schemaVersion: 1,
+    conversationId: 'chat-1',
+    eventId,
+    sequence,
+    timestampMs: sequence,
+    kind,
+    category: 'message',
+    payload,
+    correlationId: '',
+    causationId: '',
+    taskId,
+    runId: taskId,
+    turnId: taskId,
+    clientMessageId: '',
+    persistenceClass: 'durable',
+    sensitivity: 'internal'
+  }
+}
+
+function conversationPage(operation: string, projected: ConversationEventProjection): CoreEvent {
+  return {
+    sequenceId: projected.sequence,
+    coreInstanceId: 'core-a',
+    sessionEpoch: 1,
+    taskId: projected.taskId,
+    eventType: 'conversation.event',
+    payload: '',
+    executionEvent: null,
+    conversationEventLog: {
+      schemaVersion: 1,
+      operation,
+      conversationId: projected.conversationId,
+      events: [projected],
+      oldestSequence: projected.sequence,
+      newestSequence: projected.sequence,
+      hasOlder: false,
+      hasNewer: false,
+      earliestAvailableSequence: 1,
+      errorCode: ''
+    }
+  }
 }
 
 beforeEach(() => {
@@ -97,6 +142,100 @@ describe('task timeline', () => {
     const fullAnswer = Array.from({ length: 100 }, (_, index) => String(index).padStart(2, '0') + 'аб').join('')
     await waitFor(() => expect(screen.getByText(fullAnswer)).toBeTruthy())
     expect(screen.getByText('Второй ответ')).toBeTruthy()
+  })
+
+  it('moves the rendered timeline window when the user reads older messages', async () => {
+    const atMs = 1
+    const chat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: atMs,
+      updatedMs: atMs,
+      taskIds: Array.from({ length: 120 }, (_, index) => `task-${index + 1}`),
+      messages: Array.from({ length: 120 }, (_, index) => ({
+        taskId: `task-${index + 1}`,
+        prompt: `Вопрос ${index + 1}`,
+        atMs: atMs + index
+      }))
+    }
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('Вопрос 120')).toBeTruthy())
+    expect(screen.queryByText('Вопрос 1')).toBeNull()
+
+    const scroll = document.querySelector('.chat__scroll') as HTMLDivElement
+    Object.defineProperty(scroll, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(scroll, 'scrollHeight', { configurable: true, value: 9_000 })
+    scroll.scrollTop = 0
+    fireEvent.scroll(scroll)
+
+    await waitFor(() => expect(screen.getByText('Вопрос 1')).toBeTruthy())
+    expect(screen.queryByText('Вопрос 120')).toBeNull()
+  })
+
+  it('keeps the reading position when a live conversation event arrives', async () => {
+    const chat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: 1,
+      updatedMs: 1,
+      taskIds: ['task-1'],
+      messages: [{ taskId: 'task-1', prompt: 'Старый вопрос', atMs: 1 }]
+    }
+    const initial = conversationPage('history', conversationProjection(1, 'event-1', 'task_progress'))
+    const live = conversationPage('live', conversationProjection(2, 'event-2', 'assistant_message_delta', 'task-1', { content: 'Новый ответ' }))
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+    const view = render(
+      <TaskTimeline
+        connection="connected"
+        events={[initial]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    const scroll = await waitFor(() => {
+      const element = document.querySelector('.chat__scroll')
+      expect(element).not.toBeNull()
+      return element as HTMLDivElement
+    })
+    Object.defineProperty(scroll, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(scroll, 'scrollHeight', { configurable: true, value: 9_000 })
+    scroll.scrollTop = 2_000
+    fireEvent.scroll(scroll)
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[initial, live]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('Новый ответ')).toBeTruthy())
+    expect(scroll.scrollTop).toBe(2_000)
   })
 
   it('keeps the composer usable without a project', async () => {

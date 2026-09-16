@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   addOptimisticMessage,
+  applyInitialConversationHistory,
   applyConversationEvents,
   batchAssistantDeltas,
   createConversationProjection,
@@ -72,7 +73,8 @@ describe('conversation projection', () => {
   it('never applies events from another conversation', () => {
     const other = { ...event(1, 'foreign', 'task_started'), conversationId: 'conversation-2' }
     const state = applyConversationEvents(createConversationProjection('conversation-1'), [other])
-    expect(state.events).toEqual([])
+    expect(state.historyEvents).toEqual([])
+    expect(state.liveEvents).toEqual([])
   })
 
   it('resumes from the earliest retained sequence after cursor expiry', () => {
@@ -88,17 +90,30 @@ describe('conversation projection', () => {
   it('prepends an older page without moving the live cursor', () => {
     const current = applyConversationEvents(createConversationProjection('conversation-1'), [event(1, 'event-1', 'task_started')])
     const projected = prependConversationEvents(current, [event(0, 'event-0', 'task_started')])
-    expect(projected.events.map((item) => item.sequence)).toEqual([0, 1])
+    expect(projected.historyEvents.map((item) => item.sequence)).toEqual([0])
+    expect(projected.liveEvents.map((item) => item.sequence)).toEqual([1])
     expect(projected.lastSequence).toBe(1)
   })
 
-  it('bounds projected history and isolates Core generations in the cache key', () => {
+  it('keeps loaded history when live events arrive and isolates Core generations in the cache key', () => {
     const first = createConversationProjection('conversation-1', 'core-a:1:1')
     const events = Array.from({ length: 600 }, (_, index) => event(index + 1, `event-${index + 1}`, 'task_progress'))
-    const projected = applyConversationEvents(first, events)
-    expect(projected.events).toHaveLength(400)
-    expect(projected.lastSequence).toBe(600)
+    const loaded = applyInitialConversationHistory(first, events)
+    const projected = applyConversationEvents(loaded, [event(601, 'event-601', 'task_progress')])
+    expect(projected.historyEvents).toHaveLength(600)
+    expect(projected.liveEvents.map((item) => item.sequence)).toEqual([601])
+    expect(projected.historyEvents[0]?.sequence).toBe(1)
+    expect(projected.lastSequence).toBe(601)
     expect(projected.cacheKey).toBe('core-a:1:1')
-    expect(createConversationProjection('conversation-1', 'core-b:2:1').events).toEqual([])
+    const fresh = createConversationProjection('conversation-1', 'core-b:2:1')
+    expect(fresh.historyEvents).toEqual([])
+    expect(fresh.liveEvents).toEqual([])
+
+    const liveOnly = applyConversationEvents(
+      createConversationProjection('conversation-1'),
+      events
+    )
+    expect(liveOnly.liveEvents).toHaveLength(400)
+    expect(liveOnly.liveEvents[0]?.sequence).toBe(201)
   })
 })
