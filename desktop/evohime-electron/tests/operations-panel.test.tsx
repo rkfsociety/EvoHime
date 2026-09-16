@@ -198,6 +198,19 @@ describe('operations panel', () => {
     expect(screen.getByText(/9 активных · 1 истекло/)).toBeTruthy()
   })
 
+  it('не объявляет Pulse исправным во время переподключения Core', () => {
+    render(
+      <OperationsPanel
+        connection="reconnecting"
+        events={[event('runtime.schedule_completed', {}), event('runtime.schedule_failed', {})]}
+      />
+    )
+
+    expect(screen.getByText('состояние Pulse не подтверждено')).toBeTruthy()
+    expect(screen.getAllByText('Core недоступен — ожидается актуальная проекция').length).toBeGreaterThan(0)
+    expect(screen.queryByText('ошибок не обнаружено')).toBeNull()
+  })
+
   it('never renders a body and marks sensitive candidates as hidden', async () => {
     render(
       <OperationsPanel

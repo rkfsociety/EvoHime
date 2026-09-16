@@ -202,7 +202,10 @@ Core
 
 `OperationsPanel` объединяет пользовательский self-repair, память и pending
 items, child-задачи, Pulse, инструменты, локальный индекс workspace, refinement
-и ambient proposals. Ошибки недоступных optional adapters остаются typed
+и ambient proposals. Пока Core не находится в полностью подключённом состоянии,
+карточки памяти, child jobs, Pulse и инструментов показывают состояние как не
+подтверждённое, а не подменяют отсутствующую проекцию нулевыми счётчиками или
+успешным статусом. Ошибки недоступных optional adapters остаются typed
 `unavailable` и не превращаются в успешный эффект.
 
 ## Пользовательский self-repair

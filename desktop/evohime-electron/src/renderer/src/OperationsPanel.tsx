@@ -260,6 +260,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
   const [knowledgeQuery, setKnowledgeQuery] = useState('')
 
   const connected = CONNECTED_STATES.includes(connection)
+  const projectionReady = connection === 'connected'
   const eventSummary = useMemo(() => {
     const counts = new Map<string, number>()
     const childProjection: { readonly event: CoreEvent; readonly item: ChildTimelineItem }[] = []
@@ -561,38 +562,49 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
       </div>
       <div className="operations-grid">
         {repair ? <RepairCard status={repair} connection={connection} events={events} /> : null}
-        <article className={`operations-card ${pending.length ? 'operations-card--warning' : ''}`}>
+        <article className={`operations-card ${projectionReady && pending.length ? 'operations-card--warning' : ''}`}>
           <h3>Память: подтверждение</h3>
-          <strong>{counts['pending_confirmation'] ?? 0}</strong>
-          <span>ждут решения</span>
+          <strong>{projectionReady ? (counts['pending_confirmation'] ?? 0) : '—'}</strong>
+          <span>{projectionReady ? 'ждут решения' : 'состояние не подтверждено'}</span>
           <small>
-            {counts['confirmed'] ?? 0} активных · {counts['expired'] ?? 0} истекло ·{' '}
-            {counts['rejected'] ?? 0} отклонено
+            {projectionReady
+              ? `${counts['confirmed'] ?? 0} активных · ${counts['expired'] ?? 0} истекло · ${counts['rejected'] ?? 0} отклонено`
+              : 'Core недоступен — ожидается актуальная проекция'}
           </small>
         </article>
-        <article className={`operations-card ${conflicts.length ? 'operations-card--warning' : ''}`}>
+        <article className={`operations-card ${projectionReady && conflicts.length ? 'operations-card--warning' : ''}`}>
           <h3>Конфликты памяти</h3>
-          <strong>{conflicts.length}</strong>
-          <span>неразрешённых</span>
-          <small>Старая запись остаётся активной, пока выбор не сделан</small>
+          <strong>{projectionReady ? conflicts.length : '—'}</strong>
+          <span>{projectionReady ? 'неразрешённых' : 'состояние не подтверждено'}</span>
+          <small>{projectionReady ? 'Старая запись остаётся активной, пока выбор не сделан' : 'Core недоступен — ожидается актуальная проекция'}</small>
         </article>
         <article className="operations-card">
           <h3>Child jobs</h3>
-          <strong>{activeChildren}</strong>
-          <span>активных children</span>
-          <small>{liveLeases} leases · {deadLetters} dead-letter · {count('child.report.accepted')} принятых отчётов</small>
+          <strong>{projectionReady ? activeChildren : '—'}</strong>
+          <span>{projectionReady ? 'активных children' : 'состояние не подтверждено'}</span>
+          <small>{projectionReady ? `${liveLeases} leases · ${deadLetters} dead-letter · ${count('child.report.accepted')} принятых отчётов` : 'Core недоступен — ожидается актуальная проекция'}</small>
         </article>
-        <article className={`operations-card ${pulseFailed ? 'operations-card--warning' : ''}`}>
+        <article className={`operations-card ${!projectionReady || pulseFailed ? 'operations-card--warning' : ''}`}>
           <h3>Pulse</h3>
-          <strong>{pulseFailed ? 'Внимание' : 'OK'}</strong>
-          <span>{pulseFailed ? 'есть ошибки расписаний' : 'ошибок не обнаружено'}</span>
-          <small>{count('runtime.schedule_completed')} completed · {count('runtime.schedule_requeued')} requeued · {count('runtime.schedule_dead_letter')} dead-letter</small>
+          <strong>{!projectionReady ? (CONNECTED_STATES.includes(connection) ? 'Синхронизация' : 'Недоступно') : pulseFailed ? 'Внимание' : 'OK'}</strong>
+          <span>
+            {!projectionReady
+              ? 'состояние Pulse не подтверждено'
+              : pulseFailed
+                ? 'есть ошибки расписаний'
+                : 'ошибок не обнаружено'}
+          </span>
+          <small>
+            {projectionReady
+              ? `${count('runtime.schedule_completed')} completed · ${count('runtime.schedule_requeued')} requeued · ${count('runtime.schedule_dead_letter')} dead-letter`
+              : 'Core недоступен — ожидается актуальная проекция'}
+          </small>
         </article>
         <article className={`operations-card ${toolCalls !== toolOutputs ? 'operations-card--warning' : ''}`}>
           <h3>Инструменты</h3>
-          <strong>{toolCalls}</strong>
-          <span>вызовов в текущем replay</span>
-          <small>{toolOutputs} результатов · {approvalRequests} запросов approval</small>
+          <strong>{projectionReady ? toolCalls : '—'}</strong>
+          <span>{projectionReady ? 'вызовов в текущем replay' : 'состояние не подтверждено'}</span>
+          <small>{projectionReady ? `${toolOutputs} результатов · ${approvalRequests} запросов approval` : 'Core недоступен — ожидается актуальная проекция'}</small>
         </article>
       </div>
 
