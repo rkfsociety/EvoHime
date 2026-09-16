@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CommandOutcome, ConversationEventProjection, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
@@ -107,6 +109,64 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('task timeline', () => {
+  it('re-renders only the streamed message Markdown when another answer arrives', async () => {
+    const chat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: 1,
+      updatedMs: 1,
+      taskIds: ['task-1', 'task-2'],
+      messages: [
+        { taskId: 'task-1', prompt: 'Старый вопрос', atMs: 1 },
+        { taskId: 'task-2', prompt: 'Текущий вопрос', atMs: 2 }
+      ]
+    }
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+    const initialEvents = [
+      event('agent.message.delta', { content: 'Текущий ответ.' }, 'task-2'),
+      event('task.completed', { final_message: 'Старый ответ.' }, 'task-1')
+    ]
+    const parse = vi.spyOn(marked, 'parse')
+    const sanitize = vi.spyOn(DOMPurify, 'sanitize')
+    const view = render(
+      <TaskTimeline
+        connection="connected"
+        events={initialEvents}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('Старый ответ.')).toBeTruthy())
+    parse.mockClear()
+    sanitize.mockClear()
+
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[
+          event('agent.message.delta', { content: ' продолжение.' }, 'task-2'),
+          ...initialEvents
+        ]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('Текущий ответ. продолжение.')).toBeTruthy())
+    expect(parse).toHaveBeenCalledTimes(1)
+    expect(sanitize).toHaveBeenCalledTimes(1)
+  })
+
   it('projects the complete streamed answer before limiting rendered items', async () => {
     const chat = {
       id: 'chat-1',

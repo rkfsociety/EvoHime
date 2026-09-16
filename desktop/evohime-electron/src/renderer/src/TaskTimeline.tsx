@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, ConversationEventProjection, CoreEvent, WorkspaceOption } from '@shared/api'
 
@@ -865,21 +865,61 @@ function renderTranscriptEntry(
   }
   const messageId = `${entry.kind}-${entry.id}-${keySuffix}`
   return (
-    <li
+    <TranscriptMessage
       key={messageId}
-      className={`message message--agent${entry.kind === 'result' && entry.failed ? ' message--error' : ''}`}
+      kind={entry.kind}
+      id={messageId}
+      text={entry.text}
+      failed={entry.kind === 'result' && entry.failed}
+      entryTimes={entryTimes}
+      copied={copiedMessageId === messageId}
+      onCopy={onCopy}
+    />
+  )
+}
+
+interface TranscriptMessageProps {
+  readonly kind: 'agent' | 'result'
+  readonly id: string
+  readonly text: string
+  readonly failed: boolean
+  readonly entryTimes: React.MutableRefObject<Map<string, number>>
+  readonly copied: boolean
+  readonly onCopy: (id: string) => void
+}
+
+const TranscriptMessage = memo(function TranscriptMessage({
+  kind,
+  id,
+  text,
+  failed,
+  entryTimes,
+  copied,
+  onCopy
+}: TranscriptMessageProps): React.JSX.Element {
+  return (
+    <li
+      className={`message message--agent${kind === 'result' && failed ? ' message--error' : ''}`}
     >
-      <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
+      <div className="message__bubble"><MarkdownMessage text={text} /></div>
       <MessageActions
-        id={messageId}
-        text={entry.text}
-        atMs={messageTime(entryTimes, messageId)}
-        copied={copiedMessageId === messageId}
+        id={id}
+        text={text}
+        atMs={messageTime(entryTimes, id)}
+        copied={copied}
         onCopy={onCopy}
       />
     </li>
   )
-}
+}, (previous, next) =>
+  previous.kind === next.kind
+  && previous.id === next.id
+  && previous.text === next.text
+  && previous.failed === next.failed
+  && previous.entryTimes === next.entryTimes
+  && previous.copied === next.copied
+  && previous.onCopy === next.onCopy
+)
 
 function messageTime(times: React.MutableRefObject<Map<string, number>>, id: string): number {
   const existing = times.current.get(id)

@@ -1,15 +1,16 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import { memo } from 'react'
 
 interface MarkdownMessageProps {
   readonly text: string
 }
 
 /** Renders model output as safe, readable Markdown inside the transcript. */
-export function MarkdownMessage({ text }: MarkdownMessageProps): React.JSX.Element {
+export const MarkdownMessage = memo(function MarkdownMessage({ text }: MarkdownMessageProps): React.JSX.Element {
   const html = renderMarkdown(text)
   return <div className="markdown-message" dangerouslySetInnerHTML={{ __html: html }} />
-}
+}, (previous, next) => previous.text === next.text)
 
 function renderMarkdown(text: string): string {
   const rendered = marked.parse(text, {
