@@ -1840,8 +1840,9 @@ fn write_staged_manifest(
 
 /// Normalizes legacy dependency values before handing the marker to a worker.
 ///
-/// Older installers wrote a single dependency as a JSON string instead of an
-/// array, while older transaction workers only accept the array shape. Also,
+/// Older installers wrote a single dependency as a JSON string or `null`
+/// instead of an array, while older transaction workers only accept the array
+/// shape. Also,
 /// `listener-runtime` is stored and updated under the data directory, not in
 /// the install tree. Older installers nevertheless recorded it as a component
 /// dependency of `listener`, which made the transaction worker reject any
@@ -1856,9 +1857,15 @@ fn normalize_legacy_component_manifest(root: &mut serde_json::Value) {
     };
     for component in components {
         if let Some(dependencies) = component.get_mut("dependencies") {
-            if let serde_json::Value::String(value) = dependencies {
-                *dependencies =
-                    serde_json::Value::Array(vec![serde_json::Value::String(value.clone())]);
+            match dependencies {
+                serde_json::Value::String(value) => {
+                    *dependencies =
+                        serde_json::Value::Array(vec![serde_json::Value::String(value.clone())]);
+                }
+                serde_json::Value::Null => {
+                    *dependencies = serde_json::Value::Array(Vec::new());
+                }
+                _ => {}
             }
         }
         if component.get("id").and_then(serde_json::Value::as_str) != Some("listener") {
@@ -2313,7 +2320,8 @@ mod tests {
             root.join("evohime.components.json"),
             br#"{"components":[
                 {"id":"core","version":"1.0.0","dependencies":"supervisor"},
-                {"id":"cli","version":"1.0.0","dependencies":"core"}
+                {"id":"cli","version":"1.0.0","dependencies":"core"},
+                {"id":"listener","version":"1.0.0","dependencies":null}
             ]}"#,
         )
         .expect("write legacy installed manifest");
@@ -2334,6 +2342,11 @@ mod tests {
             .expect("cli component");
         assert_eq!(core["dependencies"], serde_json::json!(["supervisor"]));
         assert_eq!(cli["dependencies"], serde_json::json!(["core"]));
+        let listener = components
+            .iter()
+            .find(|item| item["id"] == "listener")
+            .expect("listener component");
+        assert_eq!(listener["dependencies"], serde_json::json!([]));
         fs::remove_dir_all(root).expect("remove temporary install directory");
     }
 
