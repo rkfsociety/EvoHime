@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-15.
+Обновлено: 2026-09-16.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -38,6 +38,10 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 `Lagged` у клиента не прерывает запись. Journal SQL, backup и restore выполняются
 в blocking worker; ошибка journal или audit удерживается в Core как
 `persistence_error` и публикуется событием `EventPersistenceFailed`.
+Для событий, связанных с разговором, основной journal, conversation history и
+`conversation.event` delivery записываются одним SQLite transaction/commit;
+искусственный сбой между вставками проверяется regression-тестом и после
+reopen не оставляет частичных строк.
 
 Добавлены проверки очереди размера 1 с потоком событий, задержкой чтения и
 финальным `task.completed`, а также проверка явного уведомления об ошибке audit.

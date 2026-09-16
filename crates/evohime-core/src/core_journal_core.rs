@@ -21,7 +21,15 @@ impl EventJournal {
             database,
             database_path: Arc::new(path),
             writer: Arc::new(sender),
+            #[cfg(test)]
+            test_fail_after_primary: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fail_next_record_after_primary(&self) {
+        self.test_fail_after_primary
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Startup gate for Core: reconcile active dispatchable requests before

@@ -2229,6 +2229,19 @@ impl LocalDatabase {
         Ok(self.connection.last_insert_rowid())
     }
 
+    pub fn append_event_in_transaction(
+        transaction: &rusqlite::Transaction<'_>,
+        task_id: &str,
+        event_type: &str,
+        payload: &[u8],
+    ) -> Result<i64, StorageError> {
+        transaction.execute(
+            "INSERT INTO events(task_id, event_type, payload) VALUES (?1, ?2, ?3)",
+            rusqlite::params![task_id, event_type, payload],
+        )?;
+        Ok(transaction.last_insert_rowid())
+    }
+
     /// Appends one journal row with explicit timing boundaries for the Core
     /// journal writer. SQL execution and transaction commit are intentionally
     /// reported separately from the legacy autocommit helper above.
@@ -2240,12 +2253,9 @@ impl LocalDatabase {
     ) -> Result<(i64, f64, f64), StorageError> {
         let transaction = self.connection.transaction()?;
         let sql_started = std::time::Instant::now();
-        transaction.execute(
-            "INSERT INTO events(task_id, event_type, payload) VALUES (?1, ?2, ?3)",
-            rusqlite::params![task_id, event_type, payload],
-        )?;
+        let sequence =
+            Self::append_event_in_transaction(&transaction, task_id, event_type, payload)?;
         let sql_ms = sql_started.elapsed().as_secs_f64() * 1000.0;
-        let sequence = transaction.last_insert_rowid();
         let commit_started = std::time::Instant::now();
         transaction.commit()?;
         let commit_ms = commit_started.elapsed().as_secs_f64() * 1000.0;

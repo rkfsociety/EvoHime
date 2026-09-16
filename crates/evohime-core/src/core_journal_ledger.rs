@@ -256,23 +256,42 @@ impl EventJournal {
         let event_type_for_sql = event_type.clone();
         let queue_started = std::time::Instant::now();
         let writer = self.writer.clone();
+        #[cfg(test)]
+        let test_fail_after_primary = self.test_fail_after_primary.clone();
         let result = tokio::task::spawn_blocking(move || -> Result<i64, StorageError> {
             let (result_sender, result_receiver) = std::sync::mpsc::channel();
             let queue_wait_ms = queue_started.elapsed().as_secs_f64() * 1000.0;
             writer
                 .send(JournalWrite(
                     Box::new(move |database| {
-                        let (mut last_sequence, mut sql_ms, mut commit_ms) =
-                            database.append_event_timed(&task_id, &event_type_for_sql, &payload)?;
+                        let transaction = database.connection_mut().transaction()?;
+                        let sql_started = std::time::Instant::now();
+                        let mut last_sequence =
+                            evohime_local_storage::LocalDatabase::append_event_in_transaction(
+                                &transaction,
+                                &task_id,
+                                &event_type_for_sql,
+                                &payload,
+                            )?;
+                        let mut sql_ms = sql_started.elapsed().as_secs_f64() * 1000.0;
+                        #[cfg(test)]
+                        if test_fail_after_primary.swap(
+                            false,
+                            std::sync::atomic::Ordering::SeqCst,
+                        ) {
+                            return Err(StorageError::InvalidInput(
+                                "injected journal failure after primary event".into(),
+                            ));
+                        }
                         if let Some((conversation_id, client_message_id, workspace_id)) =
                             evohime_local_storage::domains::audit::task_binding(
-                                database.connection(),
+                                &transaction,
                                 &task_id,
                             )?
                         {
                             for draft in projected {
-                                let stored = evohime_local_storage::domains::audit::append_event(
-                                    database.connection(),
+                                let stored = evohime_local_storage::domains::audit::append_event_in_transaction(
+                                    &transaction,
                                     evohime_local_storage::domains::audit::NewConversationEvent {
                                         conversation_id: &conversation_id,
                                         workspace_id: &workspace_id,
@@ -296,17 +315,20 @@ impl EventJournal {
                                         .map_err(|error| {
                                             StorageError::InvalidInput(error.to_string())
                                         })?;
-                                let (sequence, event_sql_ms, event_commit_ms) = database
-                                    .append_event_timed(
+                                let event_sql_started = std::time::Instant::now();
+                                let sequence = evohime_local_storage::LocalDatabase::append_event_in_transaction(
+                                    &transaction,
                                         &task_id,
                                         "conversation.event",
                                         &serde_json::to_vec(&renderer)?,
                                     )?;
                                 last_sequence = sequence;
-                                sql_ms += event_sql_ms;
-                                commit_ms += event_commit_ms;
+                                sql_ms += event_sql_started.elapsed().as_secs_f64() * 1000.0;
                             }
                         }
+                        let commit_started = std::time::Instant::now();
+                        transaction.commit()?;
+                        let commit_ms = commit_started.elapsed().as_secs_f64() * 1000.0;
                         tracing::debug!(
                             sql_ms,
                             commit_ms,

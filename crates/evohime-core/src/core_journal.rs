@@ -5,6 +5,8 @@ pub struct EventJournal {
     pub(crate) database: Arc<Mutex<LocalDatabase>>,
     pub(crate) database_path: Arc<std::path::PathBuf>,
     pub(crate) writer: Arc<std::sync::mpsc::SyncSender<JournalWrite>>,
+    #[cfg(test)]
+    pub(crate) test_fail_after_primary: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub(crate) type JournalWriteFn =

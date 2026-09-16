@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -317,6 +317,16 @@ pub fn append_event(
     connection: &Connection,
     event: NewConversationEvent<'_>,
 ) -> Result<StoredConversationEvent, ConversationStoreError> {
+    let transaction = connection.unchecked_transaction()?;
+    let stored = append_event_in_transaction(&transaction, event)?;
+    transaction.commit()?;
+    Ok(stored)
+}
+
+pub fn append_event_in_transaction(
+    transaction: &Transaction<'_>,
+    event: NewConversationEvent<'_>,
+) -> Result<StoredConversationEvent, ConversationStoreError> {
     validate_id(event.conversation_id)?;
     validate_id(event.workspace_id)?;
     validate_id(event.kind)?;
@@ -348,14 +358,13 @@ pub fn append_event(
         validate_id(client_message_id)?;
     }
 
-    let transaction = connection.unchecked_transaction()?;
     ensure_conversation(
-        &transaction,
+        transaction,
         event.conversation_id,
         event.workspace_id,
         event.timestamp_ms,
     )?;
-    let sequence = allocate_sequence(&transaction, event.conversation_id, event.timestamp_ms)?;
+    let sequence = allocate_sequence(transaction, event.conversation_id, event.timestamp_ms)?;
     let stored = StoredConversationEvent {
         conversation_id: event.conversation_id.to_owned(),
         event_id: Uuid::now_v7().to_string(),
@@ -375,8 +384,7 @@ pub fn append_event(
         sensitivity: event.sensitivity.to_owned(),
         schema_version: CONTRACT_VERSION,
     };
-    insert_event(&transaction, &stored)?;
-    transaction.commit()?;
+    insert_event(transaction, &stored)?;
     Ok(stored)
 }
 

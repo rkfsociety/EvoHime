@@ -551,4 +551,70 @@ mod tests {
         assert!(retry.deduplicated);
         assert_eq!(retry.task_id, "task-1");
     }
+
+    #[tokio::test]
+    async fn event_projection_bundle_rolls_back_and_recovers_after_injected_failure() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("conversation-atomic.db");
+        let journal = crate::EventJournal::open(&path).unwrap();
+        journal
+            .accept_conversation_message(
+                "conversation-atomic",
+                "workspace-atomic",
+                "task-atomic",
+                "client-atomic",
+                "hello",
+            )
+            .await
+            .unwrap();
+
+        journal.fail_next_record_after_primary();
+        let error = journal
+            .record(&crate::CoreEvent::TaskCompleted {
+                task_id: "task-atomic".into(),
+                final_message: "done".into(),
+            })
+            .await
+            .expect_err("injected failure must abort the transaction");
+        assert!(error
+            .to_string()
+            .contains("injected journal failure after primary event"));
+        drop(journal);
+
+        let reopened = crate::EventJournal::open(&path).unwrap();
+        let replay = reopened.replay(0, 20).await.unwrap();
+        assert!(replay
+            .iter()
+            .all(|event| event.event_type != "task.completed"));
+        let history = reopened
+            .conversation_history_after("conversation-atomic", 0, 20)
+            .await
+            .unwrap();
+        assert_eq!(history.events.len(), 1);
+        assert_eq!(history.events[0].kind, "user_message_accepted");
+
+        reopened
+            .record(&crate::CoreEvent::TaskCompleted {
+                task_id: "task-atomic".into(),
+                final_message: "done".into(),
+            })
+            .await
+            .unwrap();
+        let recovered_history = reopened
+            .conversation_history_after("conversation-atomic", 0, 20)
+            .await
+            .unwrap();
+        assert_eq!(
+            recovered_history
+                .events
+                .iter()
+                .map(|event| event.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "user_message_accepted",
+                "assistant_message_finalized",
+                "task_completed"
+            ]
+        );
+    }
 }
