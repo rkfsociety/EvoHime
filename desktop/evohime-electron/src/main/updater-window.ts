@@ -127,9 +127,9 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   ipcMain.handle('updater.minimize', () => updaterWindow?.minimize())
 
   updaterWindow = new BrowserWindow({
-    width: 1_020,
+    width: 520,
     height: 680,
-    minWidth: 760,
+    minWidth: 420,
     minHeight: 560,
     show: false,
     frame: false,

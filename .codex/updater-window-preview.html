@@ -1,167 +1,111 @@
 <div id="evohime-updater-preview">
   <style>
     #evohime-updater-preview {
-      --eu-bg: #0b1020;
-      --eu-window: #11182a;
-      --eu-panel: #182238;
-      --eu-panel-soft: #202d48;
-      --eu-border: rgba(148, 163, 184, .18);
-      --eu-text: #f8fafc;
-      --eu-muted: #91a1bb;
-      --eu-blue: #69a8ff;
-      --eu-cyan: #7de3e5;
-      --eu-green: #73e0a1;
-      --eu-red: #ff8f9f;
-      --eu-shadow: 0 26px 80px rgba(0, 0, 0, .38);
-      min-height: 640px;
-      padding: 32px;
-      box-sizing: border-box;
+      --eu-bg: #0d0d11;
+      --eu-panel: #15151b;
+      --eu-border: rgba(255, 255, 255, .09);
+      --eu-text: #e8e8ef;
+      --eu-muted: #9b9baa;
+      --eu-dim: #6d6d7c;
+      --eu-violet: #8d82e8;
+      --eu-green: #4ec9a4;
+      min-height: 680px;
       display: grid;
       place-items: center;
+      padding: 16px;
       color: var(--eu-text);
-      font: 400 14px/1.45 "Segoe UI", Inter, system-ui, sans-serif;
-      background:
-        radial-gradient(circle at 15% 10%, rgba(83, 126, 255, .18), transparent 32%),
-        radial-gradient(circle at 88% 84%, rgba(0, 216, 212, .1), transparent 30%),
-        var(--eu-bg);
+      font: 400 13px/1.5 "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      background: #09090c;
     }
 
     #evohime-updater-preview * { box-sizing: border-box; }
-    #evohime-updater-preview button { font: inherit; cursor: pointer; }
 
-    .eu-stage { width: min(100%, 920px); }
     .eu-window {
+      width: min(520px, 100%);
+      height: 680px;
       overflow: hidden;
-      border: 1px solid rgba(148, 163, 184, .24);
-      border-radius: 18px;
-      background: var(--eu-window);
-      box-shadow: var(--eu-shadow);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 8px;
+      background: var(--eu-bg);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, .45);
     }
+
     .eu-titlebar {
-      height: 58px;
       display: flex;
+      height: 48px;
       align-items: center;
-      justify-content: space-between;
-      padding: 0 22px;
       border-bottom: 1px solid var(--eu-border);
-      background: rgba(255, 255, 255, .025);
     }
-    .eu-brand { display: flex; align-items: center; gap: 11px; font-weight: 600; letter-spacing: .01em; }
-    .eu-mark {
-      width: 27px; height: 27px; display: grid; place-items: center;
-      border-radius: 9px; color: #071323; font-weight: 700;
-      background: linear-gradient(135deg, var(--eu-cyan), var(--eu-blue));
-      box-shadow: 0 0 20px rgba(105, 168, 255, .35);
-    }
-    .eu-window-controls { display: flex; gap: 7px; color: var(--eu-muted); }
-    .eu-window-controls span { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .7; }
 
-    .eu-content { display: grid; grid-template-columns: 220px 1fr; min-height: 468px; }
-    .eu-rail { padding: 35px 25px; border-right: 1px solid var(--eu-border); background: linear-gradient(180deg, rgba(104, 153, 255, .08), transparent 70%); }
-    .eu-rail-kicker { margin: 0 0 15px; color: var(--eu-cyan); font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
-    .eu-rail h2 { margin: 0; font-size: 23px; line-height: 1.15; letter-spacing: -.03em; }
-    .eu-rail p { margin: 13px 0 0; color: var(--eu-muted); font-size: 13px; }
-    .eu-orbit { width: 104px; height: 104px; margin: 45px auto 0; display: grid; place-items: center; border: 1px solid rgba(125, 227, 229, .22); border-radius: 50%; background: radial-gradient(circle, rgba(105, 168, 255, .18), transparent 67%); box-shadow: 0 0 0 15px rgba(105, 168, 255, .035), 0 0 35px rgba(105, 168, 255, .18); }
-    .eu-orbit-inner { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 17px; color: var(--eu-cyan); background: rgba(125, 227, 229, .12); font-size: 27px; }
+    .eu-brand { display: flex; min-width: 0; flex: 1; align-items: center; gap: 10px; padding: 0 16px; font-weight: 650; }
+    .eu-mark { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: #fff; background: var(--eu-violet); font-size: 12px; font-weight: 700; }
+    .eu-brand-section { overflow: hidden; color: var(--eu-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .eu-divider { color: var(--eu-dim); }
+    .eu-window-controls { display: flex; height: 100%; flex: 0 0 auto; }
+    .eu-window-controls span { display: grid; width: 44px; height: 100%; place-items: center; color: var(--eu-dim); font-size: 18px; line-height: 1; }
 
-    .eu-main { padding: 35px 38px 30px; }
-    .eu-main-top { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
-    .eu-eyebrow { margin: 0 0 6px; color: var(--eu-muted); font-size: 12px; }
-    .eu-main h1 { margin: 0; font-size: 26px; line-height: 1.15; letter-spacing: -.035em; }
-    .eu-state { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid rgba(115, 224, 161, .25); border-radius: 999px; color: var(--eu-green); background: rgba(115, 224, 161, .09); font-size: 12px; white-space: nowrap; }
-    .eu-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
-    .eu-summary { margin: 12px 0 25px; color: var(--eu-muted); }
-    .eu-modules { display: grid; gap: 9px; }
-    .eu-module { display: grid; grid-template-columns: 29px 1fr auto; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--eu-border); border-radius: 11px; background: rgba(255, 255, 255, .025); }
-    .eu-module-icon { width: 23px; height: 23px; display: grid; place-items: center; border-radius: 50%; color: var(--eu-green); background: rgba(115, 224, 161, .13); font-size: 13px; }
-    .eu-module strong { display: block; font-size: 13px; font-weight: 500; }
-    .eu-module small { display: block; margin-top: 2px; color: var(--eu-muted); font-size: 12px; }
-    .eu-version { color: var(--eu-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-    .eu-progress-head { display: flex; justify-content: space-between; margin: 26px 0 9px; color: var(--eu-muted); font-size: 12px; }
-    .eu-progress { height: 7px; overflow: hidden; border-radius: 99px; background: var(--eu-panel-soft); }
-    .eu-progress span { display: block; width: 100%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--eu-blue), var(--eu-cyan)); box-shadow: 0 0 14px rgba(125, 227, 229, .38); }
-    .eu-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 29px; }
-    .eu-footnote { color: var(--eu-muted); font-size: 12px; }
-    .eu-actions { display: flex; gap: 9px; }
-    .eu-button { padding: 10px 15px; border: 1px solid var(--eu-border); border-radius: 9px; color: var(--eu-text); background: transparent; }
-    .eu-button.primary { border-color: transparent; color: #071323; font-weight: 600; background: linear-gradient(135deg, var(--eu-cyan), var(--eu-blue)); box-shadow: 0 7px 20px rgba(105, 168, 255, .2); }
-    .eu-button:focus-visible { outline: 2px solid var(--eu-cyan); outline-offset: 3px; }
-    .eu-switcher { display: flex; justify-content: center; gap: 8px; margin-top: 17px; }
-    .eu-switcher button { padding: 7px 11px; border: 1px solid rgba(148, 163, 184, .22); border-radius: 7px; color: var(--eu-muted); background: rgba(17, 24, 42, .72); font-size: 12px; }
-    .eu-switcher button[aria-pressed="true"] { border-color: rgba(125, 227, 229, .45); color: var(--eu-cyan); }
+    .eu-content { display: flex; height: calc(100% - 48px); flex-direction: column; padding: 24px; }
+    .eu-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .eu-heading h1 { min-width: 0; margin: 0; color: var(--eu-text); font-size: 22px; font-weight: 650; letter-spacing: -.035em; line-height: 1.15; }
+    .eu-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid rgba(78, 201, 164, .25); border-radius: 999px; color: var(--eu-green); background: rgba(78, 201, 164, .09); font-size: 11px; font-weight: 650; white-space: nowrap; }
+    .eu-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px rgba(78, 201, 164, .12); }
+    .eu-summary { min-height: 20px; margin: 9px 0 0; color: var(--eu-muted); }
+    .eu-progress-block { margin-top: 24px; }
+    .eu-progress-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--eu-muted); font-size: 12px; }
+    .eu-progress-value { color: var(--eu-text); font-family: Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .eu-progress { height: 6px; overflow: hidden; border-radius: 6px; background: #0a0a0d; }
+    .eu-progress span { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--eu-violet); box-shadow: 0 0 14px rgba(141, 130, 232, .5); }
 
-    @media (max-width: 680px) {
-      #evohime-updater-preview { padding: 12px; min-height: 580px; }
-      .eu-content { grid-template-columns: 1fr; }
-      .eu-rail { display: none; }
-      .eu-main { padding: 27px 22px 24px; }
-      .eu-footer { align-items: stretch; flex-direction: column; }
-      .eu-actions { justify-content: stretch; }
-      .eu-button { flex: 1; }
+    .eu-module-heading { margin-top: 28px; color: var(--eu-text); font-size: 12px; font-weight: 650; }
+    .eu-modules { display: grid; gap: 8px; margin-top: 10px; }
+    .eu-module { display: flex; min-height: 56px; align-items: center; gap: 11px; padding: 10px 12px; border: 1px solid var(--eu-border); border-radius: 10px; background: var(--eu-panel); }
+    .eu-module-icon { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: var(--eu-green); background: rgba(78, 201, 164, .12); font-size: 14px; font-weight: 700; }
+    .eu-module-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
+    .eu-module-copy strong { overflow: hidden; color: var(--eu-text); font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .eu-module-copy span { overflow: hidden; color: var(--eu-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    .eu-version { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; margin-left: auto; color: var(--eu-dim); font: 10px Consolas, monospace; font-variant-numeric: tabular-nums; }
+    .eu-version em { color: var(--eu-green); font-style: normal; }
+
+    .eu-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--eu-border); }
+    .eu-button { min-height: 40px; padding: 0 16px; border: 1px solid var(--eu-border); border-radius: 7px; color: var(--eu-muted); background: var(--eu-panel); font: 650 12px "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; }
+    .eu-button.primary { border-color: transparent; color: #fff; background: var(--eu-violet); box-shadow: 0 7px 18px rgba(141, 130, 232, .24); }
+    .eu-button:first-child { margin-right: auto; }
+
+    @media (max-width: 460px) {
+      #evohime-updater-preview { min-height: 560px; padding: 8px; }
+      .eu-window { height: 680px; }
+      .eu-content { padding: 18px; }
+      .eu-heading { flex-direction: column; gap: 10px; }
+      .eu-module { align-items: flex-start; }
+      .eu-version { margin-top: 2px; }
+      .eu-footer { align-items: stretch; }
+      .eu-button { flex: 1 1 auto; }
+      .eu-button:first-child { margin-right: 0; }
     }
   </style>
 
-  <div class="eu-stage">
-    <section class="eu-window" aria-label="Окно обновления EvoHime">
-      <header class="eu-titlebar">
-        <div class="eu-brand"><span class="eu-mark">E</span><span>EvoHime</span><span style="color:var(--eu-muted)">/ Обновление</span></div>
-        <div class="eu-window-controls" aria-hidden="true"><span></span><span></span><span></span></div>
-      </header>
-      <div class="eu-content">
-        <aside class="eu-rail">
-          <p class="eu-rail-kicker">Надёжный запуск</p>
-          <h2>Всё готово<br>для работы.</h2>
-          <p>Проверяем модули и целостность локальной установки.</p>
-          <div class="eu-orbit" aria-hidden="true"><div class="eu-orbit-inner">✓</div></div>
-        </aside>
-        <main class="eu-main">
-          <div class="eu-main-top">
-            <div><p class="eu-eyebrow">Проверка перед запуском</p><h1>Модули проверены</h1></div>
-            <div class="eu-state" id="eu-state">Готово к запуску</div>
-          </div>
-          <p class="eu-summary" id="eu-summary">Manifest, размеры и SHA-256 подтверждены. Все модули актуальны.</p>
-          <div class="eu-modules" aria-label="Состояние модулей">
-            <div class="eu-module"><span class="eu-module-icon">✓</span><span><strong>Core runtime</strong><small>Основной агент EvoHime</small></span><span class="eu-version">v0.8.4</span></div>
-            <div class="eu-module"><span class="eu-module-icon">✓</span><span><strong>Desktop shell</strong><small>Интерфейс приложения</small></span><span class="eu-version">v0.8.4</span></div>
-            <div class="eu-module"><span class="eu-module-icon">✓</span><span><strong>Listener runtime</strong><small>Голосовой ввод</small></span><span class="eu-version">v0.3.1</span></div>
-          </div>
-          <div class="eu-progress-head"><span id="eu-progress-label">Проверка завершена</span><span id="eu-progress-value">100%</span></div>
-          <div class="eu-progress" role="progressbar" aria-label="Прогресс проверки" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"><span id="eu-progress-bar"></span></div>
-          <footer class="eu-footer"><span class="eu-footnote" id="eu-footnote">Последняя проверка только что</span><div class="eu-actions"><button class="eu-button" type="button">Закрыть</button><button class="eu-button primary" type="button">Запустить EvoHime</button></div></footer>
-        </main>
+  <section class="eu-window" aria-label="Окно обновления EvoHime">
+    <header class="eu-titlebar">
+      <div class="eu-brand"><span class="eu-mark">E</span><span>EvoHime</span><span class="eu-divider">/</span><span class="eu-brand-section">Обновление</span></div>
+      <div class="eu-window-controls" aria-hidden="true"><span>—</span><span>×</span></div>
+    </header>
+    <main class="eu-content">
+      <div class="eu-heading">
+        <h1>Модули проверены</h1>
+        <div class="eu-state">Готово к запуску</div>
       </div>
-    </section>
-    <div class="eu-switcher" aria-label="Состояние окна">
-      <button type="button" aria-pressed="true" data-eu-state="ready">Готово</button>
-      <button type="button" aria-pressed="false" data-eu-state="updates">Есть обновления</button>
-      <button type="button" aria-pressed="false" data-eu-state="error">Ошибка проверки</button>
-    </div>
-  </div>
-
-  <script>
-    (() => {
-      const root = document.getElementById("evohime-updater-preview");
-      const state = root.querySelector("#eu-state");
-      const summary = root.querySelector("#eu-summary");
-      const label = root.querySelector("#eu-progress-label");
-      const value = root.querySelector("#eu-progress-value");
-      const bar = root.querySelector("#eu-progress-bar");
-      const footnote = root.querySelector("#eu-footnote");
-      const states = {
-        ready: ["Готово к запуску", "Manifest, размеры и SHA-256 подтверждены. Все модули актуальны.", "Проверка завершена", "100%", "100%", "Последняя проверка только что"],
-        updates: ["Доступно обновление", "Найдены новые версии модулей. Обновление можно установить безопасно.", "Готово к обновлению", "100%", "100%", "3 модуля ожидают обновления"],
-        error: ["Нужна проверка", "Не удалось проверить releases. Локальная установка не изменена.", "Проверка остановлена", "—", "42%", "Можно повторить проверку позже"]
-      };
-      root.querySelectorAll("[data-eu-state]").forEach((button) => {
-        button.addEventListener("click", () => {
-          root.querySelectorAll("[data-eu-state]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
-          const next = states[button.dataset.euState];
-          [state.textContent, summary.textContent, label.textContent, value.textContent, footnote.textContent] = [next[0], next[1], next[2], next[3], next[5]];
-          bar.style.width = next[4];
-          state.style.color = button.dataset.euState === "error" ? "var(--eu-red)" : button.dataset.euState === "updates" ? "var(--eu-blue)" : "var(--eu-green)";
-          state.style.borderColor = button.dataset.euState === "error" ? "rgba(255,143,159,.3)" : "rgba(115,224,161,.25)";
-        });
-      });
-    })();
-  </script>
+      <p class="eu-summary">Все компоненты EvoHime установлены и готовы к работе.</p>
+      <div class="eu-progress-block">
+        <div class="eu-progress-head"><span>Применение модулей</span><span class="eu-progress-value">—</span></div>
+        <div class="eu-progress" role="progressbar" aria-label="Прогресс обновления"><span></span></div>
+      </div>
+      <div class="eu-module-heading">Компоненты</div>
+      <div class="eu-modules" aria-label="Состояние модулей">
+        <div class="eu-module"><span class="eu-module-icon">✓</span><span class="eu-module-copy"><strong>EvoHime Core</strong><span>Основной агент приложения</span></span><span class="eu-version">0.0.000251 <em>актуально</em></span></div>
+        <div class="eu-module"><span class="eu-module-icon">✓</span><span class="eu-module-copy"><strong>Интерфейс EvoHime</strong><span>Рабочая оболочка приложения</span></span><span class="eu-version">0.0.000073 <em>актуально</em></span></div>
+        <div class="eu-module"><span class="eu-module-icon">✓</span><span class="eu-module-copy"><strong>Голосовой модуль</strong><span>Распознавание речи</span></span><span class="eu-version">0.0.000040 <em>актуально</em></span></div>
+      </div>
+      <footer class="eu-footer"><button class="eu-button" type="button">Закрыть</button><button class="eu-button primary" type="button">Запустить EvoHime</button></footer>
+    </main>
+  </section>
 </div>

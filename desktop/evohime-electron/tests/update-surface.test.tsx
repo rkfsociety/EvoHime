@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import { disabledUpdateStatus, initialUpdateSteps, updateProgress, type UpdateStatus } from '@shared/update'
 import { UpdateGate } from '../src/renderer/src/UpdateGate'
 import { UpdateIndicator } from '../src/renderer/src/UpdateIndicator'
+import { UpdaterApp } from '../src/renderer/src/UpdaterApp'
+import type { UpdaterUiStatus } from '../src/shared/updater'
 
 function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
   return { ...disabledUpdateStatus('main'), phase: 'idle', ...overrides }
@@ -19,9 +21,41 @@ function installApi(): ReturnType<typeof vi.fn> {
   return invoke
 }
 
+function installUpdaterApi(view: UpdaterUiStatus): void {
+  ;(window as unknown as { evohimeUpdater: unknown }).evohimeUpdater = {
+    getStatus: vi.fn().mockResolvedValue(view),
+    subscribe: vi.fn(() => () => {}),
+    apply: vi.fn().mockResolvedValue(undefined),
+    launch: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    minimize: vi.fn().mockResolvedValue(undefined)
+  }
+}
+
+function updaterStatus(overrides: Partial<UpdaterUiStatus> = {}): UpdaterUiStatus {
+  return {
+    phase: 'ready',
+    heading: 'Модули проверены',
+    badge: 'Готово к запуску',
+    message: 'Все компоненты EvoHime установлены и готовы к работе.',
+    detail: '',
+    percent: null,
+    modules: [{
+      id: 'shell-host',
+      label: 'Оболочка Electron',
+      installed: '0.0.00068',
+      available: null,
+      summary: 'Работает в установленной версии.'
+    }],
+    canApply: false,
+    ...overrides
+  }
+}
+
 afterEach(() => {
   cleanup()
   delete (window as unknown as { evohime?: unknown }).evohime
+  delete (window as unknown as { evohimeUpdater?: unknown }).evohimeUpdater
 })
 
 describe('update progress', () => {
@@ -121,6 +155,33 @@ describe('sidebar update indicator', () => {
   it('keeps the compact control out of the sidebar when there is no update to show', () => {
     const { container } = render(<UpdateIndicator status={status({ phase: 'up-to-date' })} />)
     expect(container.firstChild).toBeNull()
+  })
+})
+
+describe('standalone updater window', () => {
+  it('keeps the ready state compact and hides internal recovery details', async () => {
+    installUpdaterApi(updaterStatus({ detail: 'Recovery: committed; слот A; fallback сохранён' }))
+    render(<UpdaterApp />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Модули проверены' })).toBeTruthy())
+    expect(screen.getByText('Применение модулей')).toBeTruthy()
+    expect(screen.getByText('Компоненты')).toBeTruthy()
+    expect(screen.queryByText(/Recovery:/)).toBeNull()
+    expect(screen.queryByText('Надёжный запуск')).toBeNull()
+  })
+
+  it('shows useful detail only when the updater needs attention', async () => {
+    installUpdaterApi(updaterStatus({
+      phase: 'failed',
+      heading: 'Проверка требует внимания',
+      badge: 'Ошибка',
+      message: 'Не удалось проверить обновление.',
+      detail: 'Проверьте подключение и повторите попытку.'
+    }))
+    render(<UpdaterApp />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Проверка требует внимания' })).toBeTruthy())
+    expect(screen.getByText('Проверьте подключение и повторите попытку.')).toBeTruthy()
   })
 })
 
