@@ -1857,9 +1857,8 @@ fn normalize_legacy_component_manifest(root: &mut serde_json::Value) {
     for component in components {
         if let Some(dependencies) = component.get_mut("dependencies") {
             if let serde_json::Value::String(value) = dependencies {
-                *dependencies = serde_json::Value::Array(vec![serde_json::Value::String(
-                    value.clone(),
-                )]);
+                *dependencies =
+                    serde_json::Value::Array(vec![serde_json::Value::String(value.clone())]);
             }
         }
         if component.get("id").and_then(serde_json::Value::as_str) != Some("listener") {
