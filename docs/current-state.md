@@ -93,10 +93,10 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 
 ## Граница текущего checkout и CI
 
-Документационный baseline этой актуализации был зафиксирован на
-`958a7102d2ce6df459d80d549297a8efa4aa034d` в ветке `main`; текущий checkout
-дополнительно содержит исправление renderer-проекции истории чата, описанное
-ниже.
+Пять связанных исправлений этой актуализации зафиксированы в локальной ветке
+`main` коммитами `42e575a0`, `a3dd078f`, `45d87f65`, `b8adf1fa` и
+`3f5de640`; `origin/main` пока указывает на `42e575a0`, поэтому четыре
+последних коммита ожидают отдельного push.
 Полный Windows workflow `34912288572` прошёл успешно, включая real-Core IPC
 E2E, Electron bundles и bundle security, native package, acceptance matrix,
 installer, install/upgrade, rollback, staged rebuild, выборочный UI apply и
@@ -255,15 +255,18 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Текущий checkout находится в `main` и синхронизирован с `origin/main`.
-Последний продуктовый baseline до этой документационной синхронизации —
+Текущий checkout находится в `main` и опережает `origin/main` на четыре
+локальных коммита; точное расхождение и unavailable CI для них описаны в
+[`release-evidence.md`](release-evidence.md). Последний продуктовый baseline
+до этой документационной синхронизации —
 `958a7102d2ce6df459d80d549297a8efa4aa034d`. Полный Windows workflow
-`34912288572` завершён с PASS; подробный release evidence находится в
+`34912288572` является историческим evidence предыдущего опубликованного
+baseline; подробный release evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 | Проверка | Результат |
 | --- | --- |
-| `pwsh -NoProfile -File scripts/documentation.tests.ps1` | PASS, 65 tracked text files |
+| Статическая сверка исходников, тестов и workflow | Выполнена; runtime gates для локальной серии не запускались |
 | `git diff --check` | PASS |
 
 ## Исторические сведения о закрытых планах

@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-15.
+Обновлено: 2026-09-16.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -12,7 +12,8 @@ output, transcripts, absolute paths и PII запрещены.
 `main`; он совпадал с `origin/main`. Полный Windows workflow `34912288572` завершён с
 PASS: real-Core IPC E2E, Electron bundles и bundle security, native package,
 acceptance matrix, installer, install/upgrade, rollback, staged rebuild,
-выборочный UI apply и публикация fixed release. Исторические разделы ниже
+выборочный UI apply и публикация fixed release. Текущая локальная серия
+`42e575a0` → `3f5de640` ещё не опубликована; исторические разделы ниже
 сохраняют evidence своих исходных commit и run ID.
 
 ## Статус выпуска
@@ -1486,3 +1487,28 @@ module router `34910263599`, compatible release manifest `34910682285`.
 bundles и bundle security, native package, acceptance matrix, единственный
 installer, install/upgrade, rollback, staged rebuild, выборочный UI apply и
 публикация fixed release.
+
+## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
+
+Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
+
+- Core записывает основной event journal, conversation history и
+  `conversation.event` delivery в одной SQLite-транзакции; regression-тест
+  вводит отказ после primary insert, переоткрывает базу и проверяет отсутствие
+  частичной проекции и успешную повторную запись.
+- Renderer разделяет загруженную историю и live-поток, ограничивает только
+  live-буфер, сохраняет окно чтения и обрабатывает только новые события через
+  cursors и индексы conversation event IDs; Markdown и изменяемое transcript
+  сообщение мемоизированы по стабильным входам с сохранённым DOMPurify.
+- Startup `EventJournal::open` выполняет migration/installers, а workspace RAG
+  использует bounded pool через `LocalDatabase::open_prepared`; restore
+  инвалидирует старые pool connections.
+
+Затронуты модули `core` и `ui-bundle`: `core` повышен с `0.0.000250` до
+`0.0.000251`, `ui-bundle` — с `0.0.000068` до `0.0.000071`. В checkout
+добавлены regression-контракты Core/storage и Electron renderer. Локальные
+tests, builds, linters, smoke/E2E и runtime в этом plan-implementation маршруте
+не запускались; `git diff --check` выполнен успешно. Exact-commit CI для
+`3f5de640` недоступен до push (`UNAVAILABLE`); после push module-router должен
+увидеть `core` и `ui-bundle` по их version files и dispatch-ить соответствующие
+workflow. Установленный клиент не изменялся.
