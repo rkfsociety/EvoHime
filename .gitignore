@@ -13,6 +13,8 @@ node_modules/
 .launcher-logs/
 desktop/**/bin/
 desktop/**/obj/
+# Временные журналы тестов crash-loop updater.
+desktop/evohime-electron/.tmp-updater-crash-loop*/
 .env
 .DS_Store
 *.log
