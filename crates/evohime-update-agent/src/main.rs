@@ -1838,8 +1838,10 @@ fn write_staged_manifest(
     .map_err(|error| error.to_string())
 }
 
-/// Removes the pre-runtime installer dependency from the install-tree marker.
+/// Normalizes legacy dependency values before handing the marker to a worker.
 ///
+/// Older installers wrote a single dependency as a JSON string instead of an
+/// array, while older transaction workers only accept the array shape. Also,
 /// `listener-runtime` is stored and updated under the data directory, not in
 /// the install tree. Older installers nevertheless recorded it as a component
 /// dependency of `listener`, which made the transaction worker reject any
@@ -1853,6 +1855,13 @@ fn normalize_legacy_component_manifest(root: &mut serde_json::Value) {
         return;
     };
     for component in components {
+        if let Some(dependencies) = component.get_mut("dependencies") {
+            if let serde_json::Value::String(value) = dependencies {
+                *dependencies = serde_json::Value::Array(vec![serde_json::Value::String(
+                    value.clone(),
+                )]);
+            }
+        }
         if component.get("id").and_then(serde_json::Value::as_str) != Some("listener") {
             continue;
         }
@@ -2288,6 +2297,44 @@ mod tests {
             .find(|item| item["id"] == "listener")
             .expect("merged listener component");
         assert_eq!(merged_listener["dependencies"], serde_json::json!(["core"]));
+        fs::remove_dir_all(root).expect("remove temporary install directory");
+    }
+
+    #[test]
+    fn staged_manifest_repairs_legacy_single_dependency_values() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-legacy-dependency-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after UNIX epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(
+            root.join("evohime.components.json"),
+            br#"{"components":[
+                {"id":"core","version":"1.0.0","dependencies":"supervisor"},
+                {"id":"cli","version":"1.0.0","dependencies":"core"}
+            ]}"#,
+        )
+        .expect("write legacy installed manifest");
+        let destination = root.join("staging").join("evohime.components.json");
+        fs::create_dir_all(destination.parent().expect("staging parent")).unwrap();
+
+        write_staged_manifest(&root, &destination, &[], None).expect("write marker");
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(destination).expect("read marker")).unwrap();
+        let components = value["components"].as_array().unwrap();
+        let core = components
+            .iter()
+            .find(|item| item["id"] == "core")
+            .expect("core component");
+        let cli = components
+            .iter()
+            .find(|item| item["id"] == "cli")
+            .expect("cli component");
+        assert_eq!(core["dependencies"], serde_json::json!(["supervisor"]));
+        assert_eq!(cli["dependencies"], serde_json::json!(["core"]));
         fs::remove_dir_all(root).expect("remove temporary install directory");
     }
 
