@@ -144,6 +144,144 @@ describe('task timeline', () => {
     expect(screen.getByText('Второй ответ')).toBeTruthy()
   })
 
+  it('ignores unrelated conversations and deduplicates chat pages across rerenders', async () => {
+    const page = {
+      conversationId: 'chat-1',
+      schemaVersion: 1,
+      errorCode: '',
+      oldestSequence: 1,
+      earliestAvailableSequence: 1,
+      events: [{
+        schemaVersion: 1,
+        conversationId: 'chat-1',
+        eventId: 'event-1',
+        sequence: 1,
+        timestampMs: 1,
+        kind: 'task_started',
+        category: 'message',
+        payload: { content: 'Привет' },
+        correlationId: '',
+        causationId: '',
+        taskId: 'task-1',
+        runId: 'task-1',
+        turnId: 'task-1',
+        clientMessageId: '',
+        persistenceClass: 'durable',
+        sensitivity: 'internal'
+      }]
+    }
+    const unrelated = {
+      conversationId: 'chat-2',
+      schemaVersion: 1,
+      errorCode: '',
+      oldestSequence: 1,
+      earliestAvailableSequence: 1,
+      events: [{
+        schemaVersion: 1,
+        conversationId: 'chat-2',
+        eventId: 'foreign-1',
+        sequence: 1,
+        timestampMs: 1,
+        kind: 'task_started',
+        category: 'message',
+        payload: { content: 'другой чат' },
+        correlationId: '',
+        causationId: '',
+        taskId: 'task-9',
+        runId: 'task-9',
+        turnId: 'task-9',
+        clientMessageId: '',
+        persistenceClass: 'durable',
+        sensitivity: 'internal'
+      }]
+    }
+    const initial = [
+      { sequenceId: 1, taskId: 'task-9', eventType: 'task.started', payload: '{}', conversationEventLog: unrelated },
+      { sequenceId: 2, taskId: 'task-1', eventType: 'task.started', payload: '{}', conversationEventLog: page, coreInstanceId: 'core-a', sessionEpoch: 1 }
+    ]
+    const { rerender } = render(
+      <TaskTimeline
+        connection="connected"
+        events={initial}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(calls.filter((call) => call.command === 'core.subscribeConversationEvents')).toHaveLength(1))
+    const countBefore = calls.filter((call) => call.command === 'core.subscribeConversationEvents').length
+    rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[
+          { sequenceId: 1, taskId: 'task-9', eventType: 'task.started', payload: '{}', conversationEventLog: unrelated },
+          { sequenceId: 2, taskId: 'task-1', eventType: 'task.started', payload: '{}', conversationEventLog: page, coreInstanceId: 'core-a', sessionEpoch: 1 },
+          { sequenceId: 3, taskId: 'task-1', eventType: 'task.completed', payload: '{}' }
+        ]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    expect(calls.filter((call) => call.command === 'core.subscribeConversationEvents')).toHaveLength(countBefore)
+  })
+
+  it('resubscribes from the current conversation cursor after reconnecting', async () => {
+    const history = conversationPage('history', conversationProjection(4, 'event-4', 'task_progress'))
+    const view = render(
+      <TaskTimeline
+        connection="connected"
+        events={[history]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(calls.filter((call) => call.command === 'core.subscribeConversationEvents')).toHaveLength(1))
+    view.rerender(
+      <TaskTimeline
+        connection="disconnected"
+        events={[history]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[history]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(calls.filter((call) => call.command === 'core.subscribeConversationEvents')).toHaveLength(2))
+    expect(calls.filter((call) => call.command === 'core.subscribeConversationEvents').at(-1)).toMatchObject({
+      command: 'core.subscribeConversationEvents',
+      payload: { conversationId: 'chat-1', afterSequence: 4 }
+    })
+  })
+
   it('moves the rendered timeline window when the user reads older messages', async () => {
     const atMs = 1
     const chat = {

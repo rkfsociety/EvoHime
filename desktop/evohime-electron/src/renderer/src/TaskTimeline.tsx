@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEvent, WorkspaceOption } from '@shared/api'
+import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, ConversationEventProjection, CoreEvent, WorkspaceOption } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -38,6 +38,36 @@ const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
   hour: '2-digit',
   minute: '2-digit'
 })
+
+function buildConversationPageKey(page: { conversationId: string; oldestSequence: number; earliestAvailableSequence?: number; errorCode?: string; events: readonly { eventId: string; sequence: number }[] }): string {
+  const signature = page.events.map((entry) => `${entry.sequence}:${entry.eventId}`).join('|')
+  return `${page.conversationId}:${page.oldestSequence}:${page.earliestAvailableSequence ?? 0}:${page.errorCode ?? ''}:${signature}`
+}
+
+interface ConversationEventCursor {
+  readonly pages: Set<string>
+  readonly eventsById: Map<string, ConversationEventProjection>
+}
+
+function createConversationEventCursor(): ConversationEventCursor {
+  return { pages: new Set<string>(), eventsById: new Map<string, ConversationEventProjection>() }
+}
+
+function buildCoreEventKey(event: CoreEvent): string {
+  const instance = `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}`
+  if (event.conversationEventLog) {
+    return `conversation:${instance}:${JSON.stringify(event.conversationEventLog)}`
+  }
+  return `core:${instance}:${event.sequenceId}:${event.taskId}:${event.eventType}:${event.payload}`
+}
+
+function conversationEventIndexKey(event: ConversationEventProjection): string {
+  return event.eventId.length > 0 ? event.eventId : `${event.sequence}:${event.kind}:${event.taskId}`
+}
+
+function sameConversationEvent(left: ConversationEventProjection, right: ConversationEventProjection): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
 
 export interface TaskTimelineProps {
   readonly connection: ConnectionState
@@ -102,6 +132,23 @@ export function TaskTimeline({
   })
   const entryTimes = useRef(new Map<string, number>())
   const cancelRequestedTaskId = useRef<string | null>(null)
+  const eventCursorRef = useRef<{ seenKeys: Set<string>; firstKey: string | null; length: number }>({
+    seenKeys: new Set<string>(),
+    firstKey: null,
+    length: 0
+  })
+  const conversationEventCursorRef = useRef(new Map<string, ConversationEventCursor>())
+  const subscriptionCursorRef = useRef<string | null>(null)
+  const previousConnectionRef = useRef<ConnectionState>(connection)
+  const conversationLogRef = useRef<ConversationProjectionState | null>(null)
+
+  const setConversationProjection = useCallback((updater: (current: ConversationProjectionState | null) => ConversationProjectionState | null) => {
+    setConversationLog((current) => {
+      const next = updater(current)
+      conversationLogRef.current = next
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     if (!api) return
@@ -147,11 +194,18 @@ export function TaskTimeline({
     setTimelineWindowStart(0)
     followLiveRef.current = true
     previousTimelineRef.current = { firstKey: null, length: 0, scrollHeight: 0 }
-    setConversationLog((current) => chatId === null
+    eventCursorRef.current.seenKeys.clear()
+    eventCursorRef.current.firstKey = null
+    eventCursorRef.current.length = 0
+    conversationEventCursorRef.current.clear()
+    subscriptionCursorRef.current = null
+    const nextConversationLog = chatId === null
       ? null
-      : current?.conversationId === chatId
-        ? current
-        : createConversationProjection(chatId))
+      : conversationLogRef.current?.conversationId === chatId
+        ? conversationLogRef.current
+        : createConversationProjection(chatId)
+    conversationLogRef.current = nextConversationLog
+    setConversationLog(nextConversationLog)
 
     if (!api || chatId === null) {
       return
@@ -174,65 +228,131 @@ export function TaskTimeline({
   }, [api, chatId])
 
   useEffect(() => {
+    const previous = previousConnectionRef.current
+    const resumed = !CONNECTED_STATES.includes(previous) && CONNECTED_STATES.includes(connection)
+    previousConnectionRef.current = connection
+    if (!resumed) return
+    eventCursorRef.current.seenKeys.clear()
+    eventCursorRef.current.firstKey = null
+    eventCursorRef.current.length = 0
+    conversationEventCursorRef.current.clear()
+    subscriptionCursorRef.current = null
+  }, [connection])
+
+  useEffect(() => {
     if (chatId === null) return
-    const pageEnvelopes = events.filter((event) => event.conversationEventLog != null && event.conversationEventLog.conversationId === chatId)
-    const newest = pageEnvelopes[0]
-    const cacheKey = newest
-      ? `${newest.coreInstanceId ?? 'legacy'}:${newest.sessionEpoch ?? 0}:${newest.conversationEventLog?.schemaVersion ?? 0}`
-      : ''
-    const pages = pageEnvelopes
-      .filter((event) => `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${event.conversationEventLog?.schemaVersion ?? 0}` === cacheKey)
-      .map((event) => event.conversationEventLog!)
-      .reverse()
-    if (pages.length === 0) return
-    let resumeAfter: number | null = null
-    setConversationLog((current) => {
-      let next = current !== null && current.conversationId === chatId && current.cacheKey === cacheKey
-        ? current : createConversationProjection(chatId, cacheKey)
-      for (const page of pages) {
-        if (page.errorCode === 'cursor_expired') {
-          next = { ...next, sync: { state: 'cursor-expired', earliestAvailableSequence: page.earliestAvailableSequence } }
-          continue
-        }
-        if (page.errorCode === 'idempotency_conflict') {
-          next = { ...next, sync: { state: 'conflict', sequence: next.lastSequence + 1 } }
-          continue
-        }
-        if (page.errorCode.length > 0) {
-          next = { ...next, optimistic: next.optimistic.map((message) => ({ ...message, status: 'failed' as const })) }
-          continue
-        }
-        if (next.sync.state === 'cursor-expired' && page.events[0]?.sequence === page.earliestAvailableSequence) {
-          next = resumeAtRetainedBoundary(next, page.earliestAvailableSequence)
-        }
-        const previousSequence = next.lastSequence
-        const knownEvents = conversationEvents(next)
-        const isOlderPage = knownEvents.length > 0 && page.events.length > 0
-          && page.events.every((event) => event.sequence < (knownEvents[0]?.sequence ?? Number.MAX_SAFE_INTEGER))
-        if (isOlderPage) {
-          next = prependConversationEvents(next, page.events)
-        } else if (page.operation === 'live' || page.operation === 'subscribed') {
-          next = applyConversationEvents(next, page.events)
-        } else if (next.historyEvents.length === 0 && next.liveEvents.length === 0) {
-          next = applyInitialConversationHistory(next, page.events)
-        } else {
-          next = applyConversationEvents(next, page.events)
-        }
-        if (next.sync.state === 'complete' && next.lastSequence > previousSequence) {
-          resumeAfter = next.lastSequence
-        }
+
+    const cursor = conversationEventCursorRef.current.get(chatId) ?? createConversationEventCursor()
+    conversationEventCursorRef.current.set(chatId, cursor)
+    const newEvents: CoreEvent[] = []
+    const eventCursor = eventCursorRef.current
+    const firstKey = events[0] ? buildCoreEventKey(events[0]) : null
+    if (eventCursor.seenKeys.size === 0) {
+      newEvents.push(...events)
+    } else if (firstKey === eventCursor.firstKey && events.length > eventCursor.length) {
+      // The test/replay path can append events while the live App prepends
+      // them. Both paths have a stable old boundary, so only inspect the new
+      // suffix here.
+      newEvents.push(...events.slice(eventCursor.length))
+    } else if (firstKey !== eventCursor.firstKey) {
+      // App prepends new events. Stop at the first known boundary instead of
+      // walking the retained global history.
+      for (const event of events) {
+        const key = buildCoreEventKey(event)
+        if (eventCursor.seenKeys.has(key)) break
+        newEvents.push(event)
       }
-      if (resumeAfter === null) resumeAfter = next.lastSequence
-      return next
-    })
-    if (resumeAfter !== null) {
-      void api?.invoke('core.subscribeConversationEvents', {
-        conversationId: chatId,
-        afterSequence: resumeAfter,
-        limit: 200
+    }
+    for (const event of newEvents) {
+      eventCursor.seenKeys.add(buildCoreEventKey(event))
+    }
+    eventCursor.firstKey = firstKey
+    eventCursor.length = events.length
+
+    const pageEnvelopes: Array<{ event: CoreEvent; page: NonNullable<CoreEvent['conversationEventLog']> }> = []
+    for (const event of newEvents) {
+      const page = event.conversationEventLog
+      if (page == null || page.conversationId !== chatId) continue
+      const pageKey = buildConversationPageKey(page)
+      const isNewPage = !cursor.pages.has(pageKey)
+      const newPageEvents = page.events.filter((entry) => {
+        const indexKey = conversationEventIndexKey(entry)
+        const previous = cursor.eventsById.get(indexKey)
+        if (previous && sameConversationEvent(previous, entry)) return false
+        cursor.eventsById.set(indexKey, entry)
+        return true
+      })
+      cursor.pages.add(pageKey)
+      if (!isNewPage && newPageEvents.length === 0) continue
+      if (isNewPage && page.events.length > 0 && newPageEvents.length === 0) continue
+      pageEnvelopes.push({
+        event,
+        page: newPageEvents.length === page.events.length ? page : { ...page, events: newPageEvents }
       })
     }
-  }, [api, chatId, events])
+    if (pageEnvelopes.length === 0) return
+
+    const newest = pageEnvelopes[0]
+    const cacheKey = newest
+      ? `${newest.event.coreInstanceId ?? 'legacy'}:${newest.event.sessionEpoch ?? 0}:${newest.page.schemaVersion ?? 0}`
+      : ''
+    const pages = pageEnvelopes
+      .filter(({ event, page }) => `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${page.schemaVersion ?? 0}` === cacheKey)
+      .map(({ page }) => page)
+      .reverse()
+    let next = conversationLogRef.current !== null && conversationLogRef.current.conversationId === chatId && conversationLogRef.current.cacheKey === cacheKey
+      ? conversationLogRef.current
+      : createConversationProjection(chatId, cacheKey)
+    for (const page of pages) {
+      if (page.errorCode === 'cursor_expired') {
+        next = { ...next, sync: { state: 'cursor-expired', earliestAvailableSequence: page.earliestAvailableSequence } }
+        continue
+      }
+      if (page.errorCode === 'idempotency_conflict') {
+        next = { ...next, sync: { state: 'conflict', sequence: next.lastSequence + 1 } }
+        continue
+      }
+      if (page.errorCode.length > 0) {
+        next = { ...next, optimistic: next.optimistic.map((message) => ({ ...message, status: 'failed' as const })) }
+        continue
+      }
+      if (next.sync.state === 'cursor-expired' && page.events[0]?.sequence === page.earliestAvailableSequence) {
+        next = resumeAtRetainedBoundary(next, page.earliestAvailableSequence)
+      }
+      const knownEvents = conversationEvents(next)
+      const isOlderPage = knownEvents.length > 0 && page.events.length > 0
+        && page.events.every((event) => event.sequence < (knownEvents[0]?.sequence ?? Number.MAX_SAFE_INTEGER))
+      if (isOlderPage) {
+        next = prependConversationEvents(next, page.events)
+      } else if (page.operation === 'live' || page.operation === 'subscribed') {
+        next = applyConversationEvents(next, page.events)
+      } else if (next.historyEvents.length === 0 && next.liveEvents.length === 0) {
+        next = applyInitialConversationHistory(next, page.events)
+      } else {
+        next = applyConversationEvents(next, page.events)
+      }
+    }
+    conversationLogRef.current = next
+    setConversationLog(next)
+  }, [chatId, connection, events])
+
+  useEffect(() => {
+    if (chatId === null || !api || !CONNECTED_STATES.includes(connection)) return
+    const current = conversationLogRef.current
+    const afterSequence = current?.sync.state === 'gap'
+      ? current.lastSequence
+      : current?.sync.state === 'cursor-expired'
+        ? Math.max(0, current.sync.earliestAvailableSequence - 1)
+        : current?.lastSequence ?? 0
+    const subscriptionKey = `${chatId}:${connection}`
+    if (subscriptionCursorRef.current === subscriptionKey) return
+    subscriptionCursorRef.current = subscriptionKey
+    void api.invoke('core.subscribeConversationEvents', {
+      conversationId: chatId,
+      afterSequence,
+      limit: 200
+    })
+  }, [api, chatId, connection])
 
   useEffect(() => {
     if (!api || chatId === null || !conversationLog) return
@@ -366,7 +486,7 @@ export function TaskTimeline({
     if (!api || !conversationLog) return
     const message = conversationLog.optimistic.find((item) => item.clientMessageId === clientMessageId)
     if (!message) return
-    setConversationLog((current) => current ? markOptimisticRetry(current, clientMessageId) : current)
+    setConversationProjection((current) => current ? markOptimisticRetry(current, clientMessageId) : current)
     setCommandError(null)
     const outcome = await api.invoke('core.startTask', {
       taskId: message.taskId,
@@ -378,10 +498,10 @@ export function TaskTimeline({
       executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue'
     })
     if (!outcome.ok) {
-      setConversationLog((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
+      setConversationProjection((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
       setCommandError(outcome.message)
     }
-  }, [api, conversationLog, providerMode, workspace])
+  }, [api, conversationLog, providerMode, setConversationProjection, workspace])
 
   const timelineItems = useMemo(() => {
     if (conversation.length > 0) {
@@ -490,7 +610,7 @@ export function TaskTimeline({
       onChatOpened(targetChatId)
     }
 
-    setConversationLog((current) => addOptimisticMessage(
+    setConversationProjection((current) => addOptimisticMessage(
       current?.conversationId === targetChatId ? current : createConversationProjection(targetChatId),
       { clientMessageId, taskId: nextTaskId, content: text, status: 'sending' }
     ))
@@ -510,7 +630,7 @@ export function TaskTimeline({
       setStartingTaskId(null)
       setStopRequested(false)
       cancelRequestedTaskId.current = null
-      setConversationLog((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
+      setConversationProjection((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
       setCommandError(outcome.message)
       return
     }
@@ -530,7 +650,7 @@ export function TaskTimeline({
     if (cancelRequestedTaskId.current === nextTaskId) {
       await api.invoke('core.stopTask', { taskId: nextTaskId })
     }
-  }, [api, chatId, onChatOpened, onChatTouched, prompt, providerMode, workspace])
+  }, [api, chatId, onChatOpened, onChatTouched, prompt, providerMode, setConversationProjection, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !activeTaskId) return
