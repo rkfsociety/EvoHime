@@ -621,7 +621,38 @@ pub struct ToolMetricInput<'a> {
 
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        Self::open_with_migrations(path)
+    }
+
+    /// Opens the application database and applies pending migrations.
+    ///
+    /// This is the startup path. Callers that only need a connection to an
+    /// already prepared database should use [`Self::open_prepared`] instead.
+    pub fn open_with_migrations(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Self::open_internal(path.as_ref(), false)
+    }
+
+    /// Opens a database whose schema was prepared by the startup migration
+    /// path. No migrations or idempotent schema installers are run here.
+    pub fn open_prepared(path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        let path = path.as_ref().to_path_buf();
+        if !path.is_file() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("prepared database does not exist: {}", path.display()),
+            )
+            .into());
+        }
+        let connection = Connection::open(&path)?;
+        connection.pragma_update(None, "foreign_keys", true)?;
+        let version = Self::read_schema_version(&connection)?;
+        if version != SCHEMA_VERSION {
+            return Err(StorageError::InvalidInput(format!(
+                "prepared database schema mismatch: expected {}, got {version}",
+                SCHEMA_VERSION
+            )));
+        }
+        Ok(Self { path, connection })
     }
 
     fn open_internal(path: &Path, fail_migration: bool) -> Result<Self, StorageError> {
@@ -3023,6 +3054,24 @@ mod tests {
             )
             .expect("index query");
         assert_eq!(count, 3);
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(path.with_extension("db-shm"));
+    }
+
+    #[test]
+    fn prepared_open_does_not_install_schema() {
+        let path = temp_database_path("prepared-open");
+        let _ = std::fs::remove_file(&path);
+        let connection = rusqlite::Connection::open(&path).expect("database opens");
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION)
+            .expect("schema version is writable");
+        drop(connection);
+
+        let database = LocalDatabase::open_prepared(&path).expect("prepared database opens");
+        assert!(!database.has_events_table().expect("events table query"));
         drop(database);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db-wal"));

@@ -1,9 +1,15 @@
 use super::*;
 
+mod database_pool;
+use database_pool::PreparedDatabasePool;
+
+pub(crate) const WORKSPACE_DATABASE_POOL_SIZE: usize = 4;
+
 #[derive(Clone)]
 pub struct EventJournal {
     pub(crate) database: Arc<Mutex<LocalDatabase>>,
     pub(crate) database_path: Arc<std::path::PathBuf>,
+    pub(crate) workspace_database_pool: Arc<PreparedDatabasePool>,
     pub(crate) writer: Arc<std::sync::mpsc::SyncSender<JournalWrite>>,
     #[cfg(test)]
     pub(crate) test_fail_after_primary: Arc<std::sync::atomic::AtomicBool>,

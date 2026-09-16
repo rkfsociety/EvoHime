@@ -505,11 +505,13 @@ impl EventJournal {
         let safety_path = safety_path.as_ref().to_owned();
         let app_version = app_version.to_owned();
         let mut database = Arc::clone(&self.database).lock_owned().await;
-        tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             database.restore_backup(backup_path, safety_path, &app_version, progress)
         })
         .await
-        .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?
+        .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?;
+        self.workspace_database_pool.invalidate();
+        result
     }
 
     pub async fn restore_database_with_cancel(
@@ -524,7 +526,7 @@ impl EventJournal {
         let safety_path = safety_path.as_ref().to_owned();
         let app_version = app_version.to_owned();
         let mut database = Arc::clone(&self.database).lock_owned().await;
-        tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             database.restore_backup_with_cancel(
                 backup_path,
                 safety_path,
@@ -534,7 +536,9 @@ impl EventJournal {
             )
         })
         .await
-        .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?
+        .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?;
+        self.workspace_database_pool.invalidate();
+        result
     }
 
     /// Bounded, read-only storage facts for diagnostics (Core Doctor).

@@ -21,6 +21,12 @@ evohime-transaction.exe   transactional update worker
 
 Renderer не имеет node integration, не выполняет shell-команды и не открывает базу. Electron main ограничен окном, lifecycle, локальным состоянием оболочки и IPC adapter. Core владеет workspace, инструментами, моделью, секретами и локальным состоянием. Supervisor запускает core в Job Object и завершает дочернее дерево при остановке.
 
+SQLite schema migration и idempotent installers выполняются на startup при
+открытии `EventJournal`. Workspace RAG index/search/vector workers используют
+ограниченный pool уже подготовленных connections; обычный search path не
+запускает миграции и installers. После database restore pool сбрасывается,
+чтобы новые workers подключались к заменённому файлу.
+
 Ревью планов — отдельный read-only pipeline Core. Electron main выбирает и
 ограниченно читает Markdown-файл через native dialog, затем передаёт его Core.
 Core вызывает 2–8 моделей текущего provider catalog по очереди, по одному

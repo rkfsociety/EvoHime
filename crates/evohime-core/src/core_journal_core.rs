@@ -3,7 +3,8 @@ use super::*;
 impl EventJournal {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         let path = path.as_ref().to_path_buf();
-        let database = Arc::new(Mutex::new(LocalDatabase::open(&path)?));
+        let database = Arc::new(Mutex::new(LocalDatabase::open_with_migrations(&path)?));
+        let workspace_database_pool = PreparedDatabasePool::new(&path)?;
         let worker_database = database.clone();
         let (sender, receiver) = std::sync::mpsc::sync_channel::<JournalWrite>(256);
         std::thread::Builder::new()
@@ -20,6 +21,7 @@ impl EventJournal {
         Ok(Self {
             database,
             database_path: Arc::new(path),
+            workspace_database_pool,
             writer: Arc::new(sender),
             #[cfg(test)]
             test_fail_after_primary: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -165,15 +167,15 @@ impl EventJournal {
         cancellation: &CancellationToken,
         progress: impl FnMut(crate::workspace_rag::IndexProgress) + Send + 'static,
     ) -> Result<crate::workspace_rag::IndexSummary, crate::workspace_rag::RagError> {
-        let database_path = self.database_path.as_ref().clone();
+        let workspace_database_pool = Arc::clone(&self.workspace_database_pool);
         let workspace_root = workspace_root.to_path_buf();
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
-            let mut database = LocalDatabase::open(database_path).map_err(|error| {
+            let mut database = workspace_database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
             crate::workspace_rag::index_workspace(
-                database.connection_mut(),
+                database.database_mut().connection_mut(),
                 &workspace_root,
                 &crate::workspace_rag::IndexConfig::default(),
                 rebuild,
@@ -218,16 +220,16 @@ impl EventJournal {
         hybrid: bool,
         progress: impl FnMut(crate::workspace_rag::RetrievalProgress) + Send + 'static,
     ) -> Result<crate::workspace_rag::SearchResult, crate::workspace_rag::RagError> {
-        let database_path = self.database_path.as_ref().clone();
+        let workspace_database_pool = Arc::clone(&self.workspace_database_pool);
         let workspace_root = workspace_root.to_path_buf();
         let query = query.to_owned();
         tokio::task::spawn_blocking(move || {
-            let database = LocalDatabase::open(database_path).map_err(|error| {
+            let mut database = workspace_database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
             crate::workspace_rag::search_workspace_with_progress(
                 crate::workspace_rag::SearchWorkspaceInput {
-                    connection: database.connection(),
+                    connection: database.database_mut().connection(),
                     workspace_root: &workspace_root,
                     query: &query,
                     filters,
@@ -287,15 +289,15 @@ impl EventJournal {
         workspace_root: &std::path::Path,
         cancellation: &CancellationToken,
     ) -> Result<Option<String>, crate::workspace_rag::RagError> {
-        let database_path = self.database_path.as_ref().clone();
+        let workspace_database_pool = Arc::clone(&self.workspace_database_pool);
         let workspace_root = workspace_root.to_path_buf();
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
-            let mut database = LocalDatabase::open(database_path).map_err(|error| {
+            let mut database = workspace_database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
             crate::workspace_rag::build_vector_index(
-                database.connection_mut(),
+                database.database_mut().connection_mut(),
                 &workspace_root,
                 &crate::workspace_rag::HybridConfig {
                     enabled: true,

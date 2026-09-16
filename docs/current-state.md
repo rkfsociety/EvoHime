@@ -22,6 +22,12 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
 
+Startup `EventJournal::open` выполняет миграции и idempotent schema installers
+один раз. Длительные workspace RAG index/search/vector операции используют
+bounded pool из подготовленных SQLite connections через `LocalDatabase::open_prepared`;
+поисковый запрос больше не устанавливает схему. Pool инвалидируется после
+database restore, чтобы следующие операции открыли заменённый файл.
+
 Путь typed execution ledger не выполняет отдельный `BEGIN`/`COMMIT` для каждой
 строки: `LocalDatabase::append_ledger_events` валидирует bounded batch, переиспользует
 подготовленные SQLite statements и публикует весь batch одной транзакцией. При
