@@ -1059,14 +1059,7 @@ fn apply_updates(
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
-    let result = apply_updates_inner(
-        install_dir,
-        data_dir,
-        updates,
-        wait_pid,
-        relaunch,
-        progress,
-    );
+    let result = apply_updates_inner(install_dir, data_dir, updates, wait_pid, relaunch, progress);
     cleanup_failed_staging(&staging, result)
 }
 
