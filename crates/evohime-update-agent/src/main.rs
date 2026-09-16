@@ -1739,6 +1739,7 @@ fn merge_installed_manifest_to(
     };
     let mut root =
         serde_json::from_str::<serde_json::Value>(&existing).map_err(|error| error.to_string())?;
+    normalize_legacy_component_manifest(&mut root);
     let installed = serde_json::from_value::<InstalledManifest>(root.clone())
         .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
     select_outdated(&installed, &[])
@@ -1807,6 +1808,7 @@ fn write_staged_manifest(
     };
     let mut root = serde_json::from_str::<serde_json::Value>(&existing)
         .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
+    normalize_legacy_component_manifest(&mut root);
     let installed = serde_json::from_value::<InstalledManifest>(root.clone())
         .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
     select_outdated(&installed, &[])
@@ -1834,6 +1836,39 @@ fn write_staged_manifest(
         serde_json::to_vec_pretty(&root).map_err(|error| error.to_string())?,
     )
     .map_err(|error| error.to_string())
+}
+
+/// Removes the pre-runtime installer dependency from the install-tree marker.
+///
+/// `listener-runtime` is stored and updated under the data directory, not in
+/// the install tree. Older installers nevertheless recorded it as a component
+/// dependency of `listener`, which made the transaction worker reject any
+/// later native update because that external component was absent from the
+/// staged install marker.
+fn normalize_legacy_component_manifest(root: &mut serde_json::Value) {
+    let Some(components) = root
+        .get_mut("components")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for component in components {
+        if component.get("id").and_then(serde_json::Value::as_str) != Some("listener") {
+            continue;
+        }
+        let Some(dependencies) = component.get_mut("dependencies") else {
+            continue;
+        };
+        match dependencies {
+            serde_json::Value::Array(values) => {
+                values.retain(|value| value.as_str() != Some("listener-runtime"));
+            }
+            serde_json::Value::String(value) if value == "listener-runtime" => {
+                *dependencies = serde_json::Value::Array(Vec::new());
+            }
+            _ => {}
+        }
+    }
 }
 
 fn stream_file_hash(path: &Path) -> Result<(u64, String), String> {
@@ -2205,6 +2240,54 @@ mod tests {
         assert!(components
             .iter()
             .any(|item| { item["id"] == "shell-host" && item["dependencies"][0] == "core" }));
+        fs::remove_dir_all(root).expect("remove temporary install directory");
+    }
+
+    #[test]
+    fn staged_manifest_repairs_legacy_listener_runtime_dependency() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-legacy-runtime-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(
+            root.join("evohime.components.json"),
+            br#"{"components":[
+                {"id":"core","version":"1.0.0","dependencies":[]},
+                {"id":"listener","version":"1.0.0","dependencies":["core","listener-runtime"]}
+            ]}"#,
+        )
+        .expect("write legacy installed manifest");
+        let destination = root.join("staging").join("evohime.components.json");
+        fs::create_dir_all(destination.parent().expect("staging parent")).unwrap();
+
+        write_staged_manifest(&root, &destination, &[], None).expect("write marker");
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(destination).expect("read marker")).unwrap();
+        let listener = value["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "listener")
+            .expect("listener component");
+        assert_eq!(listener["dependencies"], serde_json::json!(["core"]));
+
+        let merged_destination = root.join("evohime.components.json.next");
+        merge_installed_manifest_to(&root, &[], &merged_destination).expect("merge marker");
+        let merged: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(merged_destination).expect("read merged marker"),
+        )
+        .unwrap();
+        let merged_listener = merged["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "listener")
+            .expect("merged listener component");
+        assert_eq!(merged_listener["dependencies"], serde_json::json!(["core"]));
         fs::remove_dir_all(root).expect("remove temporary install directory");
     }
 

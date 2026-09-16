@@ -105,7 +105,7 @@ function Write-ComponentManifest {
     $dependencies = @{
         'shell-host' = @('ui-bundle', 'core', 'supervisor', 'transaction', 'verifier')
         'ui-bundle' = @(); 'core' = @('supervisor'); 'supervisor' = @('transaction', 'verifier')
-        'cli' = @('core'); 'analysis-worker' = @('core'); 'listener' = @('core', 'listener-runtime')
+        'cli' = @('core'); 'analysis-worker' = @('core'); 'listener' = @('core')
         'transaction' = @(); 'verifier' = @(); 'updater' = @()
     }
     $componentFiles = @(
@@ -131,10 +131,11 @@ function Write-ComponentManifest {
         if ($moduleVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
             throw "Invalid module version for $($item.id): $moduleVersion"
         }
-        $dependencyList = if ($dependencies.ContainsKey($item.id)) {
-            [string[]]@($dependencies[$item.id])
-        } else {
-            [string[]]@()
+        $dependencyList = [System.Collections.Generic.List[string]]::new()
+        if ($dependencies.ContainsKey($item.id)) {
+            foreach ($dependency in @($dependencies[$item.id])) {
+                [void]$dependencyList.Add([string]$dependency)
+            }
         }
         [pscustomobject]@{
             id = $item.id; version = $moduleVersion; artifact = $item.path; path = $item.path

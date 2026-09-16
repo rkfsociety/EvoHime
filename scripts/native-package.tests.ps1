@@ -54,6 +54,10 @@ if ($componentMarker.schema -ne 'evohime.component-manifest.v1') { throw 'compon
 if ($componentMarker.components.Count -ne 10) { throw 'component manifest inventory mismatch' }
 if ($componentMarker.components[0].sha256.Length -ne 64) { throw 'component manifest hash is missing' }
 if ($componentMarker.release_commit -ne $commit) { throw 'component manifest release commit mismatch' }
+$listenerComponent = $componentMarker.components | Where-Object id -eq 'listener' | Select-Object -First 1
+if (($listenerComponent.dependencies -join ',') -ne 'core') {
+    throw 'listener component must not depend on data-directory listener-runtime'
+}
 $componentMarkerDocument = [System.Text.Json.JsonDocument]::Parse((Get-Content -LiteralPath $componentMarkerPath -Raw))
 try {
     foreach ($component in $componentMarkerDocument.RootElement.GetProperty('components').EnumerateArray()) {

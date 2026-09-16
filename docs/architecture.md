@@ -838,7 +838,9 @@ Base URL принимается только по `https` либо по `http` �
 
 Native package дополнительно содержит `evohime.components.json` с bounded
 `evohime.component-manifest.v1`: identity релиза, component inventory, размеры
-и SHA-256 артефактов, зависимости и restart class. `evohime-updater` проверяет
+и SHA-256 артефактов, зависимости и restart class. `listener-runtime` является
+отдельным data-directory runtime и поэтому не входит в этот install-tree граф;
+его версия и целостность проверяются отдельным runtime manifest. `evohime-updater` проверяет
 этот marker до staged apply и отказывает при небезопасном пути, неизвестной
 зависимости, цикле, неверном размере или хеше. Legacy `evohime.manifest.json`
 остаётся bootstrap-контрактом.
