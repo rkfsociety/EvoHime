@@ -626,3 +626,6 @@ E2E, Electron bundles и bundle security, native package, acceptance matrix,
 этого исправления без пересборки installer добавлен двухфазный bootstrap:
 compatibility manifest сначала требует новый updater, а затем update-agent
 заменяет существующий transaction worker до применения остальных модулей.
+Дополнительно выборочный native apply теперь получает PID текущей оболочки и
+перед backup ждёт её завершения и освобождения всего Electron-дерева; основное
+packaged-приложение также корректно закрывается при запуске module update.

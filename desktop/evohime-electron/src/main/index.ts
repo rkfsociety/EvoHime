@@ -502,7 +502,8 @@ function createUpdateService(): UpdateController {
       emit: (status) => {
         lastUpdateStatus = status
         broadcast({ kind: 'update', status })
-      }
+      },
+      quitForApply: quitForUpdate
     })
     lastUpdateStatus = service.status
     return service

@@ -76,6 +76,7 @@ fn main() -> ExitCode {
                     &staged.staging,
                     &staged.install_dir,
                     &staged.state_dir,
+                    staged.wait_pid,
                     &selected,
                 )
                 .map_err(|error| error.to_string());

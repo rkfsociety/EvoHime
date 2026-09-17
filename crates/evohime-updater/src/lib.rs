@@ -230,6 +230,7 @@ pub fn apply_selected_staged(
     staging: &Path,
     install_dir: &Path,
     state_dir: &Path,
+    wait_pid: Option<u32>,
     selected: &[String],
 ) -> io::Result<()> {
     validate_absolute(staging, "staging directory")?;
@@ -242,6 +243,10 @@ pub fn apply_selected_staged(
         ));
     }
     validate_selected_components(staging, selected)?;
+    if let Some(pid) = wait_pid {
+        wait_for_process_exit(pid, WAIT_FOR_SHELL);
+    }
+    wait_until_writable(install_dir, WAIT_FOR_UNLOCK)?;
     let transaction = UpdateTransaction::prepare_selected(install_dir, state_dir, selected)?;
     let result = selected
         .iter()
@@ -1577,11 +1582,17 @@ mod tests {
         write_components(&install, "old");
         write_components(&staging, "new");
         let duplicate = vec!["EvoHime.exe".to_owned(), "EvoHime.exe".to_owned()];
-        let error = super::apply_selected_staged(&staging, &install, &state, &duplicate)
+        let error = super::apply_selected_staged(&staging, &install, &state, None, &duplicate)
             .expect_err("duplicate selection must be rejected");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
-        super::apply_selected_staged(&staging, &install, &state, &["EvoHime.exe".to_owned()])
-            .unwrap();
+        super::apply_selected_staged(
+            &staging,
+            &install,
+            &state,
+            None,
+            &["EvoHime.exe".to_owned()],
+        )
+        .unwrap();
         assert_eq!(
             fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
             "new:EvoHime.exe"

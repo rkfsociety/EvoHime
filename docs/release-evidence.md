@@ -1505,6 +1505,15 @@ mixed apply заменяет существующий transaction worker про�
 manifest workflow `35195391877` также завершён успешно. Manifest содержит
 `minimum_version: 0.0.000097` и `update_first: true`.
 
+## Selected module file-lock follow-up (2026-09-17)
+
+После повторного отказа на `chrome_100_percent.pak` выборочный native apply
+получил тот же `wait_pid`/writable preflight, что и mixed apply. Основное
+packaged-приложение теперь закрывается через штатный update-quit path перед
+передачей файлов transaction worker. Изменены releases `transaction` и
+`shell-host`; локальные focused checks и публикация этих module releases
+ожидают push.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
