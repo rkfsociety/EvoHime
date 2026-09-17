@@ -1,6 +1,7 @@
 # План 174.0 — Empirical Free-Tier Verification
 
-Статус: предложено по [issue #152](https://github.com/rkfsociety/EvoHime/issues/152). Это implementation contract; функционал этим документом не считается реализованным.
+Статус: active implementation contract. Исторический источник постановки:
+issue #152; функционал этим документом не считается реализованным.
 
 ## Цель
 
@@ -57,10 +58,14 @@ dashboard activation автоматически не выполняются.
 - [ ] Limits имеют scope, unit, source, confidence и observed/reset time.
 - [ ] Strict `FreeOnly` fail-closed при stale/unknown/paid/trial/activation
   required; runtime 402/403/429 и catalog changes умеют invalidation/update.
+- [ ] Текущие catalog labels, `mode=free` и суффикс `:free` остаются только
+  advisory filter/display metadata и никогда не удовлетворяют `FreeOnly` без
+  свежего empirical evidence.
 - [ ] Нет пользовательских данных, secrets, raw responses или payment/signup
   actions в verification path.
 - [ ] После реализации contract/state/evidence перенесены в canonical docs,
-  issue #152 удалён и `174-*.md` удалены.
+  исторический issue #152 не является gate; после фактического завершения
+  `174-*.md` удалены.
 
 ## Non-goals
 
@@ -68,6 +73,6 @@ dashboard activation автоматически не выполняются.
 заменять reliability/quality оценку, строить central account telemetry или
 делать automatic paid fallback без explicit policy.
 
-## Связанный issue
+## Источник постановки
 
-- [#152 Empirical Free-Tier Verification](https://github.com/rkfsociety/EvoHime/issues/152)
+- issue #152 Empirical Free-Tier Verification (исторический идентификатор)

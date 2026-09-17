@@ -14,14 +14,20 @@
 
 ## Реализация
 
-- Ввести `CapabilityRecipeDescriptor`, definition и validation contract:
+- Ввести `CapabilityRecipeDescriptor` как metadata/index projection над
+  существующими `WorkflowTemplate`, `WorkflowPackage` и закрытым plan-165
+  contract; definition и validation contract должны ссылаться на их revision/
+  hash, а не дублировать их графы:
   stable id/version, category/difficulty, bounded inputs, required/optional
   capabilities, workflow/evidence bindings, safe preview and status.
-- Зарегистрировать восемь initial built-in definitions as versioned Core data;
-  definitions compile/validate against existing workflow graph and tool/role
-  registries, not arbitrary prompt blobs.
-- Ввести immutable `CapabilityRecipeRun` snapshot with recipe/workflow,
-  provider/model/context, verification and policy refs plus input hash/state.
+- Зарегистрировать восемь initial built-in descriptors as versioned Core data;
+  descriptors compile/validate against existing workflow graph and tool/role
+  registries, not arbitrary prompt blobs. Для отсутствующего underlying
+  contract используется typed `Unsupported`, а новый executor не создаётся.
+- Ввести immutable `CapabilityRecipeRun` metadata snapshot with
+  recipe/workflow, provider/model/context, verification and policy refs plus
+  input hash/state; execution remains owned by existing workflow run/snapshot
+  authority.
 - Persist only bounded metadata/revisions/idempotency/provenance via existing
   storage owner; no raw prompt, secret, transcript or response body.
 
@@ -32,7 +38,7 @@
 - Historical definition remains immutable; a built-in update creates a new
   version and never mutates old run snapshots.
 - Storage recovery preserves inspectable run metadata without becoming a second
-  workflow registry.
+  workflow registry or execution store.
 
 ## Non-goals
 

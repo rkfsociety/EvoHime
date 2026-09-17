@@ -1,6 +1,7 @@
 # План 175.0 — Memory Ingestion Integrity
 
-Статус: предложено по [issue #153](https://github.com/rkfsociety/EvoHime/issues/153). Это implementation contract; функционал этим документом не считается реализованным.
+Статус: active implementation contract. Исторический источник постановки:
+issue #153; функционал этим документом не считается реализованным.
 
 ## Цель
 
@@ -37,13 +38,16 @@ memory_store.rs`, `ambient_store.rs` и существующие migration/IPC d
 
 - Existing memory extraction/governance, ambient retention, memory store,
   Core journal, cancellation/recovery and authenticated IPC primitives.
+- Existing durable background execution/restart reconciliation owner (plan
+  132) is reused for deferred finalization; this plan does not add a second
+  queue, scheduler or general lease/fencing authority.
 - Existing Model Gateway and restricted tool/policy contexts; extractor cannot
   acquire generic tools or recursively invoke extraction.
 
 ### Опциональные
 
-- Existing RAG/provenance validators and background execution queue; отсутствие
-  optional validator даёт typed pending/unknown, а не self-promotion.
+- Existing RAG/provenance validators; отсутствие optional validator даёт typed
+  pending/unknown, а не self-promotion.
 
 ## Критерии готовности
 
@@ -65,6 +69,6 @@ memory_store.rs`, `ambient_store.rs` и существующие migration/IPC d
 полный transcript в memory, silent last-write-wins и обязательная блокировка
 user reply до non-critical finalization.
 
-## Связанный issue
+## Источник постановки
 
-- [#153 Memory Ingestion Integrity](https://github.com/rkfsociety/EvoHime/issues/153)
+- issue #153 Memory Ingestion Integrity (исторический идентификатор постановки)

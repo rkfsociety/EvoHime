@@ -19,12 +19,15 @@
 - Add guided flow `Goal -> Inputs -> Preflight -> What will happen -> Run ->
   Inspect evidence -> Compare/modify -> Save draft`, keeping all decisions in
   Core and payloads bounded/redacted.
+- Render the flow through existing ordinary Workbench/Operations/workflow
+  surfaces; do not add an internal Core/agent/model tab or a renderer-owned
+  recipe catalog.
 - Показывать expected steps, models/providers, context sources, tools,
   approval points, artifacts, verification contract and capability gaps without
   secrets, hidden reasoning or raw prompt/output.
 - Fork successful run into a new user-owned workflow/package draft with recipe
-  provenance and explicit credential refs only; never copy secrets/grants or
-  publish automatically.
+  provenance by reusing the existing package/draft path and explicit
+  credential refs only; never copy secrets/grants or publish automatically.
 
 ## Критерии
 

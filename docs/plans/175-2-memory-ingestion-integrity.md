@@ -19,6 +19,9 @@
 - Запускать extractor в restricted context: suppress recursive extraction and
   recall as configured, no arbitrary shell/MCP/filesystem/tools, explicit
   parent/root execution refs; unsupported isolation fail-closed.
+- Deferred capture/finalization uses the existing durable background execution
+  owner and its fencing/restart reconciliation; this plan adds only
+  extraction-specific state, not a second scheduler or lease authority.
 - Разделить capture, validation/governance и final reconciliation. Reply may be
   delivered without waiting for non-critical finalizer only when unfinished
   work is durable queued or typed deferred/failed.
@@ -36,6 +39,8 @@
   overwrite or duplicate semantic memory.
 - Crash between reply/capture/publish leaves inspectable durable state and
   bounded recovery outcome.
+- Recovery never re-adopts an extraction worker by PID or retries a committed
+  memory effect outside the existing generation/idempotency boundary.
 
 ## Non-goals
 

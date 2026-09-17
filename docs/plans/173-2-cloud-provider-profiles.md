@@ -15,9 +15,10 @@
 
 ## Реализация
 
-- Подключить profile registry к `ModelGateway::from_config`, route resolution и
-  `fetch_model_catalog`; endpoint и auth scheme разрешаются только из trusted
-  profile или явной пользовательской конфигурации.
+- Подключить единый profile/catalog registry к `ModelGateway::from_config`,
+  route resolution и существующему `fetch_model_catalog`; endpoint и auth
+  scheme разрешаются только из trusted profile или явной пользовательской
+  конфигурации.
 - Реализовать bounded authenticated discovery там, где provider API это
   поддерживает, normalization capabilities/limits/lifecycle, deterministic
   deduplication и cache states `Fresh`, `Stale`, `Unavailable`,

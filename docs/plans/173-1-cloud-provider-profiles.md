@@ -14,9 +14,16 @@
 
 ## Реализация
 
-- В `crates/model-gateway` ввести versioned `ProviderProfile`, opaque
-  credential binding, `ProviderModelDescriptor`, normalized capability flags с
-  provenance, typed limits/privacy/usage metadata и catalog snapshot/lifecycle.
+- Расширить существующий единый `ProviderProfile` из
+  `free_provider_reliability_routing.rs` до versioned contract; если часть
+  типов будет перенесена в `model-gateway`, оставить одну каноническую
+  definition и Core re-export вместо второго одноимённого типа. Добавить
+  opaque credential binding, `ProviderModelDescriptor`, normalized capability
+  flags с provenance, typed limits/privacy/usage metadata и catalog
+  snapshot/lifecycle.
+- `ProviderModelDescriptor` должен расширять или адаптировать существующий
+  `ModelCatalogEntry`/`fetch_model_catalog`; новый descriptor не создаёт второй
+  источник model catalog.
 - Разделить provider family, transport kind и native capability gaps; не
   передавать secrets, raw response или arbitrary endpoint из catalog payload.
 - Зарегистрировать bounded built-in profiles для OpenRouter, Groq, Gemini,
@@ -35,6 +42,8 @@
   serialized snapshots и storage projection.
 - Existing route config и old providers продолжают загружаться без миграции
   пользовательских secrets.
+- Старые `ProviderProfile`/`ModelCatalogEntry` consumers получают совместимый
+  adapter или re-export; параллельные profile/catalog registries запрещены.
 
 ## Non-goals
 

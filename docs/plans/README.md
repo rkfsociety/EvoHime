@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-09-15. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-09-17. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -29,10 +29,10 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| 173 | [Cloud Provider Profiles](173-0-cloud-provider-profiles.md) | предложено по issue #105 |
-| 174 | [Empirical Free-Tier Verification](174-0-empirical-free-tier-verification.md) | предложено по issue #152; зависит от 173 |
-| 175 | [Memory Ingestion Integrity](175-0-memory-ingestion-integrity.md) | предложено по issue #153 |
-| 176 | [Guided Capability Recipes](176-0-guided-capability-recipes.md) | предложено по issue #154 |
+| 173 | [Cloud Provider Profiles](173-0-cloud-provider-profiles.md) | active; исторический источник issue #105 |
+| 174 | [Empirical Free-Tier Verification](174-0-empirical-free-tier-verification.md) | active; blocking dependency 173; исторический источник issue #152 |
+| 175 | [Memory Ingestion Integrity](175-0-memory-ingestion-integrity.md) | active; исторический источник issue #153 |
+| 176 | [Guided Capability Recipes](176-0-guided-capability-recipes.md) | active; guided layer over closed recipe/workflow contracts; исторический источник issue #154 |
 
 Незавершённые numbered plans: 173–176.
 
@@ -40,6 +40,8 @@
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
 Новая работа получает следующий свободный номер только после проверки
 дубликатов и зависимостей; 173–176 являются текущим active catalog.
+Номера issues в активных планах — исторические идентификаторы постановок и не
+являются текущим источником статуса или критерием закрытия.
 
 ## Формат этапов
 

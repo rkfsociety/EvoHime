@@ -14,7 +14,8 @@
 
 ## Реализация
 
-- Расширить Core contract `FreeAccessEvidence` с provider/model/account scope,
+- Расширить существующий `FreeAccessState` из плана 125 через единый Core
+  contract `FreeAccessEvidence` с provider/model/account scope,
   advertised/observed/activation state, allowance kind, observed limits,
   successful sample count, confidence, TTL/expiry, failure reason и hash.
 - Ввести typed activation requirements, allowance kinds и `CreditUnit`; не
@@ -33,6 +34,8 @@
   `VerifiedFreeLimited` не схлопываются в bool.
 - Invalid/oversized/conflicting evidence отклоняется или получает typed
   invalidation без частичной записи.
+- `FreeAccessEvidence` является evidence authority для существующего free
+  state; отдельный boolean free registry не создаётся.
 
 ## Non-goals
 

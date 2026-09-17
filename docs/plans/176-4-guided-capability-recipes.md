@@ -32,7 +32,7 @@
 
 - Все критерии обзора 176 подтверждены кодом и CI evidence.
 - `git diff --check` проходит, task-only commit contains only related changes,
-  issue #154 удаляется only after the plan is saved and linked.
+  historical issue #154 is not a closure gate.
 
 ## Non-goals
 

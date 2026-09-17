@@ -31,8 +31,8 @@
 ## Критерии
 
 - Все критерии обзора 175 подтверждены кодом и CI evidence.
-- `git diff --check` и migration/recovery gates проходят; issue #153 удаляется
-  только после сохранения плана и фактической привязки.
+- `git diff --check` и migration/recovery gates проходят; исторический issue
+  #153 не является gate закрытия.
 
 ## Non-goals
 

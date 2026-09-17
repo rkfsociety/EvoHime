@@ -1,6 +1,7 @@
 # План 173.0 — Cloud Provider Profiles
 
-Статус: предложено по [issue #105](https://github.com/rkfsociety/EvoHime/issues/105). Это implementation contract; функционал этим документом не считается реализованным.
+Статус: active implementation contract. Исторический источник постановки:
+issue #105; функционал этим документом не считается реализованным.
 
 ## Цель
 
@@ -14,7 +15,10 @@ privacy metadata и credential references должны быть отделены
 Текущий checkout содержит `ProviderKind`, `ModelRouteConfig`, общий
 `OpenAICompatibleProvider`, LiteRouter/Ollama catalog и минимальный
 `free_provider_reliability_routing` contract. План расширяет эти владельцы, не
-создавая копий HTTP-клиента, второго gateway или renderer-owned routing.
+создавая копий HTTP-клиента, второго gateway, второго provider/catalog
+registry или renderer-owned routing. Существующий `ProviderProfile` и
+`ModelCatalogEntry` должны быть расширены или переиспользованы как единые
+канонические типы, а не продублированы под новыми именами.
 
 ## Архитектурная граница
 
@@ -43,7 +47,8 @@ Core projection.
 - Реализованные Model Gateway, credential boundary, capability/privacy policy,
   resilience/reliability routing (#125), authenticated IPC и SQLite migration/
   backup primitives.
-- Текущие `ProviderKind`/`ModelRouteConfig` и LiteRouter/Ollama catalog paths;
+- Текущие `ProviderKind`/`ModelRouteConfig`, `ModelCatalogEntry`/
+  `fetch_model_catalog` и LiteRouter/Ollama catalog paths;
   точные новые schema/IPC revisions назначаются после сверки свободных номеров.
 
 ### Опциональные
@@ -71,6 +76,6 @@ Billing/payment, автоматический signup, публичный proxy, 
 каталог провайдера, silent model replacement, arbitrary catalog URLs и новый
 HTTP stack на каждого провайдера.
 
-## Связанный issue
+## Источник постановки
 
-- [#105 Cloud Provider Profiles](https://github.com/rkfsociety/EvoHime/issues/105)
+- issue #105 Cloud Provider Profiles (исторический идентификатор постановки)

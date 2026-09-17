@@ -1,19 +1,23 @@
 # План 176.0 — Guided Capability Recipes
 
-Статус: предложено по [issue #154](https://github.com/rkfsociety/EvoHime/issues/154). Это implementation contract; функционал этим документом не считается реализованным.
+Статус: active implementation contract. Исторический источник постановки:
+issue #154; функционал этим документом не считается реализованным.
 
 ## Цель
 
-Добавить versioned runnable reference recipes, которые композируют уже
-существующие workflow templates/packages, model/provider resolver, approvals,
+Добавить versioned runnable guided reference layer поверх уже закрытого
+Domain Workflow Recipes contract. Этот слой композирует уже существующие
+workflow templates/packages, model/provider resolver, approvals,
 knowledge/context, benchmark/evals, observability и provenance. Recipe — это
-inspectable safe composition, а не новый workflow engine, playground или
-privileged shortcut.
+inspectable safe composition, а не новый recipe registry authority, workflow
+engine, playground или privileged shortcut. План не переоткрывает закрытый
+план 165, а добавляет guided catalog/preflight/projection над его контрактами.
 
-Текущий checkout содержит Core-owned `workflow_templates`, workflow package/
-registry, model routing, RAG/context, approval and benchmark/evaluation
-primitives. План добавляет descriptor/preflight/run snapshot и guided
-projection поверх них, сохраняя их ownership.
+Текущий checkout содержит Core-owned `domain_workflow_recipes`,
+`workflow_templates`, workflow package/registry, model routing, RAG/context,
+approval and benchmark/evaluation primitives. План добавляет только
+descriptor/preflight/run metadata и guided projection поверх них, сохраняя их
+ownership и не создавая второй definition/runtime store.
 
 ## Архитектурная граница
 
@@ -39,6 +43,9 @@ Renderer не является источником recipe definition, не ис
 
 - Existing workflow templates/packages/runtime, model resolver, context/RAG,
   tool registry/approval, benchmark/evals, provenance and authenticated IPC.
+- Closed Domain Workflow Recipes contract (plan 165) and existing
+  `workflow_templates`/`workflow_package`/`workflow_registry` owners; recipe
+  descriptors must bind to these contracts instead of defining parallel ones.
 - Existing cancellation, durable run/recovery and user-owned draft/package
   boundaries; no parallel execution authority.
 
@@ -50,6 +57,8 @@ Renderer не является источником recipe definition, не ис
 ## Критерии готовности
 
 - [ ] Core catalog is versioned, immutable and validates definitions before use.
+- [ ] Catalog is an additive guided index over existing workflow/template/
+  package definitions; it is not a second execution or definition authority.
 - [ ] Implemented initial recipes cover model comparison, prompt variants,
   structured output, tools, RAG, multi-agent review, local fit and trust
   boundaries.
@@ -67,6 +76,6 @@ Renderer не является источником recipe definition, не ис
 automatic publication, self-assessment-only quality verdict and permission
 escalation.
 
-## Связанный issue
+## Источник постановки
 
-- [#154 Guided Capability Recipes](https://github.com/rkfsociety/EvoHime/issues/154)
+- issue #154 Guided Capability Recipes (исторический идентификатор постановки)

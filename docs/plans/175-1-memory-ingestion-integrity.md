@@ -15,8 +15,11 @@
 ## Реализация
 
 - Ввести typed `MemoryExtractionOrigin`, eligibility, root/depth metadata,
-  extraction lease, candidate journal и finalization state; origin не выводить
-  из prompt/model metadata.
+  ingestion-scoped extraction lease, candidate journal и finalization state;
+  origin не выводить из prompt/model metadata.
+- Candidate/finalization rows остаются у существующего memory storage owner;
+  Core journal получает только metadata-only lifecycle events и не становится
+  второй memory store.
 - Добавить `MemorySourceBasis` и `MemoryPublishPrecondition` с source revision,
   event/turn/hash basis, expected record/head revision и idempotency key.
 - Расширить storage transaction primitives: candidate capture, lease acquire/
@@ -35,6 +38,8 @@
   повторному запуску.
 - Migration upgrade/rollback/fresh install и cleanup expired leases покрыты
   storage tests; raw statement/transcript не нужен для lifecycle diagnosis.
+- Lease expiry and idempotency use the existing generation/fencing semantics;
+  an extraction lease must not become a second global lease manager.
 
 ## Non-goals
 

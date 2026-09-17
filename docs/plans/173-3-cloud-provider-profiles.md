@@ -18,6 +18,10 @@
 - Добавить additive authenticated IPC projection для provider profiles,
   catalog freshness, capabilities, limits, privacy class, health и credential
   status; использовать свободные command/event tags после проверки proto.
+- Существующий `model.catalog` остаётся совместимой проекцией единого
+  Core-owned catalog. Новые поля добавляются совместимо либо вводится явно
+  версионированная typed projection; второй независимый catalog event не
+  создаётся.
 - Обновить generated Rust/TypeScript bindings и main bridge. Renderer не
   читает SQLite, workspace или provider API и не решает route compatibility.
 - В `ProviderForm` и `ModelPicker` показывать provider/model, capability

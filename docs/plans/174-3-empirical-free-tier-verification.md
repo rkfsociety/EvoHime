@@ -20,6 +20,9 @@
 - `FreeOnly` fail-closed при `PaidOnly`, `TrialOnly`, `ActivationRequired`,
   `QuotaExhausted`, stale или unknown; `PreferFree` использует отдельную явную
   fallback policy и никогда не маскирует paid request как free.
+- Текущие `mode=free`, `billing_mode` и model suffix `:free` допускаются только
+  как advisory display/filter hints; они не создают eligibility и не обходят
+  empirical evidence gate.
 - Добавить bounded reason codes/explanation (`activation incomplete`,
   `signup credit exhausted`, account quota, billing contradiction, stale) в
   existing routing trace/IPC projection без secrets/raw payload.
