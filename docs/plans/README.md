@@ -31,13 +31,15 @@
 | --- | --- | --- |
 | 173 | [Cloud Provider Profiles](173-0-cloud-provider-profiles.md) | предложено по issue #105 |
 | 174 | [Empirical Free-Tier Verification](174-0-empirical-free-tier-verification.md) | предложено по issue #152; зависит от 173 |
+| 175 | [Memory Ingestion Integrity](175-0-memory-ingestion-integrity.md) | предложено по issue #153 |
+| 176 | [Guided Capability Recipes](176-0-guided-capability-recipes.md) | предложено по issue #154 |
 
-Незавершённые numbered plans: 173–174.
+Незавершённые numbered plans: 173–176.
 
 Номера `149–172` теперь являются закрытыми идентификаторами
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
 Новая работа получает следующий свободный номер только после проверки
-дубликатов и зависимостей; 173–174 являются текущим active catalog.
+дубликатов и зависимостей; 173–176 являются текущим active catalog.
 
 ## Формат этапов
 
