@@ -163,7 +163,7 @@ pub fn run_update(
                     Ok(()) => Ok(()),
                     Err(error) => {
                         stop_relaunched_process(&mut relaunched);
-                        return rollback_after_failure(transaction, error);
+                        rollback_after_failure(transaction, error)
                     }
                 }
             }
