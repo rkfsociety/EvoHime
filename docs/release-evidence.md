@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-16.
+Обновлено: 2026-09-17.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -1487,6 +1487,17 @@ module router `34910263599`, compatible release manifest `34910682285`.
 bundles и bundle security, native package, acceptance matrix, единственный
 installer, install/upgrade, rollback, staged rebuild, выборочный UI apply и
 публикация fixed release.
+
+## Updater file-lock hardening (2026-09-17)
+
+После фактического отказа Windows при замене Electron DLL transaction worker
+усилен: перед tree-transaction он перечисляет все существующие файлы дерева и
+ждёт доступности на запись, а copy/rollback retry ограничен 120 секундами.
+Регрессионный сценарий с удерживаемой DLL и остальные focused tests прошли:
+`cargo test --locked -p evohime-updater` — 33 библиотечных и 3 бинарных теста.
+Также прошли rustfmt check и `git diff --check`. CI и публикация нового
+transaction release на момент записи ещё не запускались; установленная копия
+клиента не изменялась.
 
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 

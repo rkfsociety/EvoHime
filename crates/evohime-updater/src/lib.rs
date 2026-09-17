@@ -428,10 +428,6 @@ pub fn apply_ui_bundle_staged_with_restart(
 ) -> io::Result<()> {
     validate_absolute(staging, "UI staging directory")?;
     validate_absolute(install_root, "UI install root")?;
-    if let Some(pid) = wait_pid {
-        wait_for_process_exit(pid, WAIT_FOR_SHELL);
-    }
-    wait_until_writable(install_root, WAIT_FOR_UNLOCK)?;
     validate_component_marker_for(staging, Some(&["ui-bundle.zip".to_owned()]))?;
     if !is_safe_version(version) {
         return Err(io::Error::new(
@@ -446,6 +442,10 @@ pub fn apply_ui_bundle_staged_with_restart(
             "UI bundle is incomplete",
         ));
     }
+    if let Some(pid) = wait_pid {
+        wait_for_process_exit(pid, WAIT_FOR_SHELL);
+    }
+    wait_until_writable(install_root, WAIT_FOR_UNLOCK)?;
     let active = install_root.join("ui-active.json");
     let previous_pointer = if active.is_file() {
         Some(read_bounded_file(&active, MAX_UI_POINTER_BYTES)?)
@@ -720,25 +720,25 @@ fn health_marker_is_healthy(path: &Path) -> bool {
 /// retried rather than reported. After the deadline the caller still sees a
 /// plain error and the installation is left exactly as it was.
 fn wait_until_writable(install_dir: &Path, limit: Duration) -> io::Result<()> {
+    if !install_dir.is_dir() {
+        return Ok(());
+    }
+    let mut paths = Vec::new();
+    collect_install_files(install_dir, &mut paths, 0)?;
     let deadline = std::time::Instant::now() + limit;
     loop {
-        let error = match UpdateTransaction::COMPONENTS
-            .iter()
-            .chain(std::iter::once(&"resources/app.asar"))
-            .map(|component| install_dir.join(component))
-            .filter(|path| path.exists())
-            .try_for_each(|path| {
-                fs::OpenOptions::new()
-                    .write(true)
-                    .open(&path)
-                    .map(|_| ())
-                    .map_err(|error| {
-                        io::Error::new(
-                            error.kind(),
-                            format!("{} is still in use: {error}", path.display()),
-                        )
-                    })
-            }) {
+        let error = match paths.iter().try_for_each(|path| {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(path)
+                .map(|_| ())
+                .map_err(|error| {
+                    io::Error::new(
+                        error.kind(),
+                        format!("{} is still in use: {error}", path.display()),
+                    )
+                })
+        }) {
             Ok(()) => return Ok(()),
             Err(error) => error,
         };
@@ -747,6 +747,29 @@ fn wait_until_writable(install_dir: &Path, limit: Duration) -> io::Result<()> {
         }
         std::thread::sleep(RETRY_INTERVAL);
     }
+}
+
+fn collect_install_files(
+    directory: &Path,
+    files: &mut Vec<PathBuf>,
+    depth: usize,
+) -> io::Result<()> {
+    if depth > MAX_COPY_TREE_DEPTH {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "installation tree exceeds maximum directory depth",
+        ));
+    }
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            collect_install_files(&entry.path(), files, depth + 1)?;
+        } else if kind.is_file() {
+            files.push(entry.path());
+        }
+    }
+    Ok(())
 }
 
 fn rollback_after_failure(transaction: UpdateTransaction, failure: io::Error) -> io::Result<()> {
@@ -1048,7 +1071,7 @@ fn copy_tree_at_depth(source: &Path, destination: &Path, depth: usize) -> io::Re
 const SHARING_VIOLATION: i32 = 32;
 const LOCK_VIOLATION: i32 = 33;
 const ACCESS_DENIED: i32 = 5;
-const COPY_RETRY_LIMIT: Duration = Duration::from_secs(30);
+const COPY_RETRY_LIMIT: Duration = WAIT_FOR_UNLOCK;
 
 /// Copies one file, retrying while something still holds it open.
 ///
@@ -1475,6 +1498,8 @@ mod tests {
         let root = temp_dir("locked");
         let install = root.join("install");
         write_components(&install, "old");
+        let locked_path = install.join("d3dcompiler_47.dll");
+        fs::write(&locked_path, "old:d3dcompiler_47.dll").unwrap();
 
         // FILE_SHARE_READ is how Windows holds a running image: readable by
         // anyone, writable by no one. Electron's children keep the executable
@@ -1482,7 +1507,7 @@ mod tests {
         let held = fs::OpenOptions::new()
             .read(true)
             .share_mode(1)
-            .open(install.join("EvoHime.exe"))
+            .open(&locked_path)
             .unwrap();
 
         let started = Instant::now();
@@ -1491,8 +1516,8 @@ mod tests {
         assert!(started.elapsed() >= Duration::from_millis(500));
         assert!(error.to_string().contains("still in use"), "{error}");
         assert_eq!(
-            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
-            "old:EvoHime.exe"
+            fs::read_to_string(&locked_path).unwrap(),
+            "old:d3dcompiler_47.dll"
         );
 
         // Once the handle is gone the same check passes immediately.
