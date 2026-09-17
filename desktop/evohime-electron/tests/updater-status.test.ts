@@ -35,7 +35,7 @@ describe('updaterUiStatus', () => {
     const view = updaterUiStatus(status())
 
     expect(view.phase).toBe('ready')
-    expect(view.heading).toBe('Модули проверены')
+    expect(view.heading).toBe('Обновление завершено')
     expect(view.canApply).toBe(false)
     expect(view.modules.map((module) => module.id)).toEqual(['core', 'shell-host', 'supervisor', 'listener'])
   })
@@ -74,7 +74,7 @@ describe('updaterUiStatus', () => {
     }))
 
     expect(view.phase).toBe('failed')
-    expect(view.heading).toBe('Проверка требует внимания')
+    expect(view.heading).toBe('Обновление не завершено')
     expect(view.badge).toBe('Ошибка')
   })
 

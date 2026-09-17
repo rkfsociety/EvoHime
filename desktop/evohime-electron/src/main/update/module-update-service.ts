@@ -68,19 +68,30 @@ export class ModuleUpdateService {
     return this.current
   }
 
-  runLaunchGate(): Promise<'continue'> {
-    this.refresh()
-    if (this.options.enabled && this.timer === null) {
-      this.timer = setInterval(() => this.refresh(), this.options.intervalMs)
-      this.timer.unref?.()
+  async runLaunchGate(): Promise<'continue' | 'applying'> {
+    if (!this.options.enabled) {
+      this.scheduleRefresh()
+      return 'continue'
     }
-    return Promise.resolve('continue')
+
+    this.patchLocal({ blocking: true })
+    const checked = await this.check()
+    if (checked.phase === 'failed') return this.releaseGate()
+
+    const availableModules = checked.availableModules ?? []
+    if (availableModules.length === 0) return this.releaseGate()
+
+    // A module update is part of launching EvoHime. There is deliberately no
+    // user choice here: the regular shell remains closed until the detached
+    // worker has taken ownership of the apply transaction.
+    await this.prepareComponents(availableModules)
+    return 'applying'
   }
 
   async check(): Promise<UpdateStatus> {
     this.lastSerialized = ''
     this.patchLocal({ phase: 'checking', message: 'Проверяю версии и целостность модулей…', error: null })
-    this.startUpdater('--check')
+    await this.startUpdater('--check')
     return this.current
   }
 
@@ -91,7 +102,7 @@ export class ModuleUpdateService {
   async prepareComponents(_selected: readonly string[]): Promise<UpdateStatus> {
     this.lastSerialized = ''
     this.patchLocal({ phase: 'applying', message: 'Передаю обновление updater worker…' })
-    this.startUpdater('--apply')
+    void this.startUpdater('--apply')
     return this.current
   }
 
@@ -110,8 +121,21 @@ export class ModuleUpdateService {
     }
   }
 
-  private startUpdater(mode: '--check' | '--apply'): boolean {
-    if (!this.options.enabled) return false
+  private scheduleRefresh(): void {
+    if (this.options.enabled && this.timer === null) {
+      this.timer = setInterval(() => this.refresh(), this.options.intervalMs)
+      this.timer.unref?.()
+    }
+  }
+
+  private releaseGate(): 'continue' {
+    this.patchLocal({ blocking: false })
+    this.scheduleRefresh()
+    return 'continue'
+  }
+
+  private startUpdater(mode: '--check' | '--apply'): Promise<boolean> {
+    if (!this.options.enabled) return Promise.resolve(false)
     const args = [
       mode,
       '--install-dir',
@@ -120,6 +144,8 @@ export class ModuleUpdateService {
     if (mode === '--apply') {
       args.push('--wait-pid', String(process.pid), '--relaunch', join(this.options.installDirectory, 'EvoHime.exe'))
     }
+    let resolveCompletion: (succeeded: boolean) => void = () => {}
+    const completion = new Promise<boolean>((resolve) => { resolveCompletion = resolve })
     try {
       const child = spawn(
         this.options.updaterPath,
@@ -128,10 +154,14 @@ export class ModuleUpdateService {
       )
       child.once('error', () => {
         this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.', error: 'Updater worker недоступен.' })
+        resolveCompletion(false)
       })
       child.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
         this.refresh()
-        if (code === 0 && !['checking', 'applying'].includes(this.current.phase)) return
+        if (code === 0 && !['checking', 'applying'].includes(this.current.phase)) {
+          resolveCompletion(true)
+          return
+        }
         // A correctly written Rust status is richer and is picked up above by
         // refresh(). This fallback still makes a worker crash or an unwritable
         // status file visible instead of leaving the UI in "applying" forever.
@@ -146,13 +176,17 @@ export class ModuleUpdateService {
             ? `updater: worker завершился ${reason}.`
             : `updater: worker завершился с ${reason} без диагностического статуса.`
         })
+        resolveCompletion(false)
       })
+      if (mode === '--apply') {
+        child.once('spawn', () => this.options.quitForApply?.())
+      }
       child.unref()
-      if (mode === '--apply') this.options.quitForApply?.()
-      return true
+      return completion
     } catch {
       this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.' })
-      return false
+      resolveCompletion(false)
+      return completion
     }
   }
 

@@ -247,9 +247,9 @@ if (process.argv.includes('--evohime-browser-backend')) {
     registerAmbientHotkey()
 
     // Nothing may hold the installed binaries open while a staged rebuild is
-    // swapped in, so the gate runs before the supervisor is started. An updater
-    // that fails in an unforeseen way must never keep the client from starting:
-    // the installed build is always launchable.
+    // swapped in, so the gate runs before the supervisor is started. An
+    // available module release keeps the regular shell closed until the
+    // detached updater worker takes ownership of the apply transaction.
     let gate: Awaited<ReturnType<UpdateController['runLaunchGate']>> = 'continue'
     try {
       gate = await launchGate

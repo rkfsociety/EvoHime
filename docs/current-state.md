@@ -624,9 +624,11 @@ compatible release manifest `34910682285`.
 E2E, Electron bundles и bundle security, native package, acceptance matrix,
 единственный installer, install/upgrade, rollback, staged rebuild,
 выборочный UI apply и публикация прошли без ошибок.
-Текущее окно `updater\EvoHimeUpdater.exe` приведено к компактной вертикальной
-одно-колоночной компоновке: остаются только статус, краткое сообщение,
-прогресс, компоненты с версиями и необходимые действия.
+Текущее окно `updater\EvoHimeUpdater.exe` приведено к минималистичной
+вертикальной компоновке: остаются логотип, центральный статус, краткое
+сообщение и единая progress bar. Если при запуске обнаружены module releases,
+launch gate автоматически запускает их применение; отдельные действия
+«обновить» и «запустить текущую версию» из окна удалены.
 
 После воспроизведения отказа Windows при замене Electron DLL transaction worker
 усилен: перед tree-transaction он проверяет на запись все существующие файлы

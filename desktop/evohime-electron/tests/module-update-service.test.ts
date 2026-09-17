@@ -2,10 +2,16 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { spawnMock } = vi.hoisted(() => ({
-  spawnMock: vi.fn(() => ({ once: vi.fn(), unref: vi.fn() }))
+  spawnMock: vi.fn(() => ({
+    once: vi.fn((event: string, listener: (code?: number | null, signal?: NodeJS.Signals | null) => void) => {
+      if (event === 'spawn') queueMicrotask(() => listener())
+      if (event === 'close') queueMicrotask(() => listener(0, null))
+    }),
+    unref: vi.fn()
+  }))
 }))
 
 vi.mock('node:child_process', () => ({ spawn: spawnMock }))
@@ -13,6 +19,8 @@ vi.mock('node:child_process', () => ({ spawn: spawnMock }))
 import { ModuleUpdateService, shouldApplyBootstrap } from '../src/main/update/module-update-service'
 
 describe('ModuleUpdateService', () => {
+  beforeEach(() => spawnMock.mockClear())
+
   it('routes the launch action into apply while a bootstrap shell is missing', () => {
     expect(shouldApplyBootstrap(false, ['shell-host'])).toBe(true)
     expect(shouldApplyBootstrap(true, ['shell-host'])).toBe(false)
@@ -99,6 +107,49 @@ describe('ModuleUpdateService', () => {
       expect(service.status.message).toBe('Обновление не применено.')
       expect(service.status.error).toContain('invalid shell-host archive')
       service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('automatically applies available modules during the launch gate', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-module-launch-gate-'))
+    try {
+      const state = join(root, 'update-state')
+      const install = join(root, 'install')
+      mkdirSync(state)
+      mkdirSync(install)
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'available',
+        message: 'Доступны обновления модулей.',
+        available: [{ module: 'core', installed: '0.0.000243', available: '0.0.000244' }]
+      }))
+      let quitForApply = false
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: install,
+        emit: () => {},
+        intervalMs: 60_000,
+        quitForApply: () => { quitForApply = true }
+      })
+
+      await expect(service.runLaunchGate()).resolves.toBe('applying')
+
+      expect(quitForApply).toBe(true)
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      const applyCall = spawnMock.mock.calls[1] as unknown as [string, readonly string[]] | undefined
+      expect(applyCall?.[1]).toEqual([
+        '--apply',
+        '--install-dir',
+        install,
+        '--wait-pid',
+        String(process.pid),
+        '--relaunch',
+        join(install, 'EvoHime.exe')
+      ])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

@@ -25,8 +25,6 @@ function installUpdaterApi(view: UpdaterUiStatus): void {
   ;(window as unknown as { evohimeUpdater: unknown }).evohimeUpdater = {
     getStatus: vi.fn().mockResolvedValue(view),
     subscribe: vi.fn(() => () => {}),
-    apply: vi.fn().mockResolvedValue(undefined),
-    launch: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
     minimize: vi.fn().mockResolvedValue(undefined)
   }
@@ -35,7 +33,7 @@ function installUpdaterApi(view: UpdaterUiStatus): void {
 function updaterStatus(overrides: Partial<UpdaterUiStatus> = {}): UpdaterUiStatus {
   return {
     phase: 'ready',
-    heading: 'Модули проверены',
+    heading: 'Обновление завершено',
     badge: 'Готово к запуску',
     message: 'Все компоненты EvoHime установлены и готовы к работе.',
     detail: '',
@@ -159,13 +157,16 @@ describe('sidebar update indicator', () => {
 })
 
 describe('standalone updater window', () => {
-  it('keeps the ready state compact and hides internal recovery details', async () => {
+  it('renders a minimal ready state without launch or module controls', async () => {
     installUpdaterApi(updaterStatus({ detail: 'Recovery: committed; слот A; fallback сохранён' }))
     render(<UpdaterApp />)
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Модули проверены' })).toBeTruthy())
-    expect(screen.getByText('Применение модулей')).toBeTruthy()
-    expect(screen.getByText('Компоненты')).toBeTruthy()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Обновление завершено' })).toBeTruthy())
+    expect(screen.getByRole('progressbar')).toBeTruthy()
+    expect(screen.getByText('100%')).toBeTruthy()
+    expect(screen.queryByText('Компоненты')).toBeNull()
+    expect(screen.queryByText(/Запустить/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Закрыть' })).toBeTruthy()
     expect(screen.queryByText(/Recovery:/)).toBeNull()
     expect(screen.queryByText('Надёжный запуск')).toBeNull()
   })
@@ -173,14 +174,14 @@ describe('standalone updater window', () => {
   it('shows useful detail only when the updater needs attention', async () => {
     installUpdaterApi(updaterStatus({
       phase: 'failed',
-      heading: 'Проверка требует внимания',
+      heading: 'Обновление не завершено',
       badge: 'Ошибка',
       message: 'Не удалось проверить обновление.',
       detail: 'Проверьте подключение и повторите попытку.'
     }))
     render(<UpdaterApp />)
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Проверка требует внимания' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Обновление не завершено' })).toBeTruthy())
     expect(screen.getByText('Проверьте подключение и повторите попытку.')).toBeTruthy()
   })
 })

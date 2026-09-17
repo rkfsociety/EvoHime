@@ -107,11 +107,11 @@
       ],
       "fingerprints": {
         ".superdesign/design-system.md": "6f63b70dd5075ad07feab6127da86223795b8c59f17701e10e8d0a53a602af3f",
-        "desktop/evohime-electron/src/renderer/src/UpdaterApp.tsx": "58b9318ec0d3d7b8b1ab6a1ce68b64f95aebdf0a7ce9053f607b13633041a5a6",
-        "desktop/evohime-electron/src/renderer/src/UpdaterSurface.css": "0e0b68a251fc2f7ada95bfbf6e8ebbf5ad04f2497fee4658ed26b956d6b85369",
+        "desktop/evohime-electron/src/renderer/src/UpdaterApp.tsx": "28c9fedda840474fa0ff7ff13dcb7ee136d3af94fac6154d279a0b090427e9af",
+        "desktop/evohime-electron/src/renderer/src/UpdaterSurface.css": "989a6b1229a4fa03b85b217966eb850ff2908f7cbf6a7c5fcee178d3ee893137",
         "desktop/evohime-electron/src/renderer/updater.html": "828d781574a20a1fe30eb6d408ea6bf4d7b437eb8d7607a03f375e1ae6f5444f",
-        "desktop/evohime-electron/src/main/updater-window.ts": "aa182549cd7b778afd62b9402008bc589cddf7a073fb21e19014dcea99fae263",
-        "desktop/evohime-electron/src/shared/updater.ts": "f70140de067d7bbee524d096ab263d49d308d38fff004b6f2379909170d03fa9"
+        "desktop/evohime-electron/src/main/updater-window.ts": "0fe5a0c5c7f9a8788077ad9311a80559ce17129df4725c4a797887da01cedac8",
+        "desktop/evohime-electron/src/shared/updater.ts": "263e5413f7060124bbc3f607f0319b0e592fd597d95dab926312b14fd591f00d"
       },
       "drafts": {
         "04259c18-8805-4661-a6e2-6919ce981cfe": {

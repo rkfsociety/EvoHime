@@ -9,8 +9,6 @@ const api: EvoHimeUpdaterApi = {
     ipcRenderer.on('updater.status', handler)
     return () => ipcRenderer.removeListener('updater.status', handler)
   },
-  apply: () => ipcRenderer.invoke('updater.apply') as Promise<void>,
-  launch: () => ipcRenderer.invoke('updater.launch') as Promise<void>,
   close: () => ipcRenderer.invoke('updater.close') as Promise<void>,
   minimize: () => ipcRenderer.invoke('updater.minimize') as Promise<void>
 }

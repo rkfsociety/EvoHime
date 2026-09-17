@@ -45,7 +45,6 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   })
 
   let updaterWindow: BrowserWindow | null = null
-  let completionTimer: NodeJS.Timeout | null = null
 
   const publish = (): void => {
     if (updaterWindow && !updaterWindow.isDestroyed()) {
@@ -58,7 +57,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     publishToWindow({
       ...current,
       phase: 'failed',
-      heading: 'Проверка требует внимания',
+      heading: 'Обновление не завершено',
       badge: 'Ошибка',
       message,
       canApply: false
@@ -94,42 +93,10 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     }
   }
 
-  const waitForApply = (): void => {
-    if (completionTimer !== null) return
-    completionTimer = setInterval(() => {
-      publish()
-      const status = service.status
-      if (status.phase === 'failed') {
-        clearInterval(completionTimer!)
-        completionTimer = null
-        return
-      }
-      if (status.phase !== 'up-to-date') return
-      clearInterval(completionTimer!)
-      completionTimer = null
-      const pendingReplacement = existsSync(join(dataDirectory(), 'update-state', 'updater-relaunch.pending'))
-      if (pendingReplacement) {
-        shuttingDown = true
-        app.exit(0)
-      } else {
-        launchShell()
-      }
-    }, CHECK_INTERVAL_MS)
-    completionTimer.unref?.()
-  }
-
   ipcMain.removeHandler('updater.get-status')
-  ipcMain.removeHandler('updater.apply')
-  ipcMain.removeHandler('updater.launch')
   ipcMain.removeHandler('updater.close')
   ipcMain.removeHandler('updater.minimize')
   ipcMain.handle('updater.get-status', () => updaterUiStatus(service.status))
-  ipcMain.handle('updater.apply', async () => {
-    if (!service.status.availableModules?.length) return
-    await service.prepareComponents(service.status.availableModules)
-    waitForApply()
-  })
-  ipcMain.handle('updater.launch', () => launchShell())
   ipcMain.handle('updater.close', () => {
     shuttingDown = true
     app.quit()
@@ -139,11 +106,11 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   updaterWindow = new BrowserWindow({
     width: 520,
     height: 680,
-    minWidth: 420,
-    minHeight: 560,
     show: false,
     frame: false,
-    resizable: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     roundedCorners: true,
     backgroundColor: '#090b12',
     icon: join(app.getPath('exe').replace(/[\\/][^\\/]+$/, ''), 'resources', 'evohime-agent.ico'),
@@ -179,20 +146,17 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   }
 
   if (crashGuard.blocked) {
-    publishFailure('Updater UI несколько раз подряд завершился при запуске. Требуется ручное восстановление.')
+    publishFailure('Updater UI несколько раз подряд завершился при запуске. Требуется восстановление.')
   } else {
-    service.runLaunchGate()
-    await service.check()
+    const gate = await service.runLaunchGate()
+    if (gate === 'continue') launchShell()
   }
   publish()
 
   app.on('before-quit', () => {
     shuttingDown = true
     service.stop()
-    if (completionTimer !== null) clearInterval(completionTimer)
     ipcMain.removeHandler('updater.get-status')
-    ipcMain.removeHandler('updater.apply')
-    ipcMain.removeHandler('updater.launch')
     ipcMain.removeHandler('updater.close')
     ipcMain.removeHandler('updater.minimize')
   })

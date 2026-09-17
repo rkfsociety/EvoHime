@@ -25,8 +25,6 @@ export interface UpdaterUiStatus {
 export interface EvoHimeUpdaterApi {
   getStatus(): Promise<UpdaterUiStatus>
   subscribe(listener: (status: UpdaterUiStatus) => void): () => void
-  apply(): Promise<void>
-  launch(): Promise<void>
   close(): Promise<void>
   minimize(): Promise<void>
 }
@@ -86,13 +84,13 @@ function toUiPhase(phase: UpdateStatus['phase'], recovery: UpdateStatus['recover
 }
 
 function phaseHeading(phase: UpdaterUiPhase): string {
-  if (phase === 'checking') return 'Проверяю модули'
-  if (phase === 'available') return 'Доступно обновление'
+  if (phase === 'checking') return 'Проверяю обновления'
+  if (phase === 'available') return 'Готовлю обновление'
   if (phase === 'applying') return 'Устанавливаю обновление'
-  if (phase === 'failed') return 'Проверка требует внимания'
-  if (phase === 'recovering') return 'Восстанавливаю updater'
-  if (phase === 'manual-recovery') return 'Требуется ручное восстановление'
-  return 'Модули проверены'
+  if (phase === 'failed') return 'Обновление не завершено'
+  if (phase === 'recovering') return 'Восстанавливаю обновление'
+  if (phase === 'manual-recovery') return 'Требуется восстановление'
+  return 'Обновление завершено'
 }
 
 function phaseBadge(phase: UpdaterUiPhase): string {
