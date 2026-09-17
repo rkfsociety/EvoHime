@@ -108,10 +108,11 @@ apply не запускается. Полный `installer` workflow и его `
 ## Граница текущего checkout и CI
 
 Текущий checkout содержит task-only реализацию bootstrap-установщика в
-локальной ветке `main`, ожидающую push; GitHub CI для неё ещё не запускался. Узкие проверки
-transaction worker, bootstrap source/release contract, module-router и
-`git diff --check` прошли локально. Полный bootstrap/module release ожидает
-push; тяжёлый full Windows workflow намеренно не запускался. Подробное redacted evidence находится в
+локальной ветке `main`; она опубликована в `origin/main` на commit
+`eb0a42eaa27b254855d8a9e702688d0b41c8e71e`. Узкие проверки transaction worker,
+bootstrap source/release contract, module-router и `git diff --check` прошли
+локально. Bootstrap/module releases, router и compatibility manifest прошли
+GitHub Actions; тяжёлый full Windows workflow намеренно не запускался. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 ## История чата в renderer
@@ -269,18 +270,16 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Текущий checkout находится в `main` и опережает `origin/main` на четыре
-локальных коммита; точное расхождение и unavailable CI для них описаны в
-[`release-evidence.md`](release-evidence.md). Последний продуктовый baseline
-до этой документационной синхронизации —
-`958a7102d2ce6df459d80d549297a8efa4aa034d`. Полный Windows workflow
+Текущий checkout находится в `main` и синхронизирован с `origin/main` на
+commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e`. Полный Windows workflow
 `34912288572` является историческим evidence предыдущего опубликованного
-baseline; подробный release evidence находится в
+baseline; актуальные bootstrap/module/router/compatibility результаты и
+подробное release evidence находятся в
 [`release-evidence.md`](release-evidence.md).
 
 | Проверка | Результат |
 | --- | --- |
-| Статическая сверка исходников, тестов и workflow | Выполнена; runtime gates для локальной серии не запускались |
+| Статическая сверка исходников, тестов и workflow | Выполнена; узкие локальные tests/typecheck и GitHub Actions gates прошли |
 | `git diff --check` | PASS |
 
 ## Исторические сведения о закрытых планах

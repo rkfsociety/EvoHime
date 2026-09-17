@@ -7,12 +7,11 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий checkout содержит реализацию bootstrap-установщика и до push не имеет
-GitHub CI evidence для этого изменения. Локально подтверждены узкие проверки
-transaction worker, bootstrap source, bootstrap release contract, module-router
-и `git diff --check`; полная публикация bootstrap и module releases должна быть
-подтверждена GitHub Actions после push. Исторические разделы ниже сохраняют
-прежнее GitHub evidence.
+Текущий checkout содержит реализацию bootstrap-установщика. После follow-up
+commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e` все связанные GitHub Actions
+gates завершились успешно; первичный router run для предыдущего commit
+зафиксирован ниже как исправленный probe failure. Исторические разделы ниже
+сохраняют прежнее GitHub evidence.
 
 ## Статус выпуска
 
@@ -38,10 +37,24 @@ version.
 `npm test -- --run tests/module-update-service.test.ts` — 5/5, `npm run
 typecheck`, `actionlint` для bootstrap/router/full workflow, bootstrap source и
 release contract smoke, module-router smoke, installer release gate и
-`git diff --check`. GitHub CI для текущего checkout ещё не запускался до push;
-после него ожидаются bootstrap packaging, transaction/updater module releases,
-router и compatibility evidence. Тяжёлый full Windows installer workflow в
-этой задаче не запускается и не требуется для обычного bootstrap пути.
+`git diff --check`. Тяжёлый full Windows installer workflow в этой задаче не
+запускался.
+
+GitHub Actions для commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e`:
+
+| Gate | Result |
+| --- | --- |
+| Transaction module | PASS — [run 35218262467](https://github.com/rkfsociety/EvoHime/actions/runs/35218262467) |
+| Updater module | PASS — [run 35218260049](https://github.com/rkfsociety/EvoHime/actions/runs/35218260049) |
+| Bootstrap installer | PASS — [run 35219065720](https://github.com/rkfsociety/EvoHime/actions/runs/35219065720) |
+| Module router | PASS — [run 35218209005](https://github.com/rkfsociety/EvoHime/actions/runs/35218209005) |
+| Compatibility manifest | PASS — [run 35219362104](https://github.com/rkfsociety/EvoHime/actions/runs/35219362104) |
+
+Release `bootstrap` опубликован как `EvoHime bootstrap 0.0.000048` и содержит
+`EvoHime-Setup.exe` (105484571 bytes) и `EvoHime-Setup.json`. Первый router run
+`35218039229` для предыдущего commit остановился на некорректно обработанном
+ожидаемом HTTP 404 при probe отсутствующего fixed release; follow-up сбрасывает
+этот диагностический exit code только после подтверждённого 404.
 
 ## Контракт новой поставки
 
