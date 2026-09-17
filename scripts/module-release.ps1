@@ -54,7 +54,23 @@ $modulePaths = @{
     'listener-runtime' = @('scripts/build-listener-runtime.ps1', 'crates/evohime-listener/src/tools_dir.rs')
     'transaction' = @('crates/evohime-updater')
     'verifier' = @('crates/evohime-receipts')
-    'updater' = @('crates/evohime-update-agent')
+    'updater' = @(
+        'crates/evohime-update-agent',
+        'desktop/evohime-electron/src/main/updater.ts',
+        'desktop/evohime-electron/src/main/updater-window.ts',
+        'desktop/evohime-electron/src/main/update/module-update-service.ts',
+        'desktop/evohime-electron/src/main/update',
+        'desktop/evohime-electron/src/preload/updater.ts',
+        'desktop/evohime-electron/src/renderer/updater.html',
+        'desktop/evohime-electron/src/renderer/src/UpdaterApp.tsx',
+        'desktop/evohime-electron/src/renderer/src/UpdaterSurface.css',
+        'desktop/evohime-electron/src/renderer/src/updater-main.tsx',
+        'desktop/evohime-electron/src/shared/updater.ts',
+        'desktop/evohime-electron/src/shared/update.ts',
+        'desktop/evohime-electron/electron-builder-updater.yml',
+        'desktop/evohime-electron/electron.vite.config.ts',
+        'desktop/evohime-electron/scripts/build-electron.mjs'
+    )
 }
 $changes = [System.Collections.Generic.List[string]]::new()
 if ($modulePaths.ContainsKey($Module)) {
@@ -75,7 +91,7 @@ $summaryText = if ($Summary) { $Summary } else {
         'listener-runtime' { 'Библиотеки распознавания речи и модели, используемые модулем listener.'; break }
         'transaction' { 'Worker транзакционного обновления: безопасная замена файлов, backup и rollback.'; break }
         'verifier' { 'Проверяющий worker целостности и контрактов поставляемых файлов.'; break }
-        'updater' { 'Независимый агент проверки и координации модульных обновлений.'; break }
+        'updater' { 'Единый модуль обновления: Rust worker транзакций и самостоятельный Electron-интерфейс EvoHimeUpdater.'; break }
         default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
     }
 }

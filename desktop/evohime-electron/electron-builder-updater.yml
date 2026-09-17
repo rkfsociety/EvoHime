@@ -1,0 +1,26 @@
+appId: dev.evohime.updater
+productName: EvoHimeUpdater
+copyright: EvoHime
+directories:
+  output: release-updater
+  buildResources: build
+files:
+  - out/updater-main/**
+  - out/updater-preload/updater.js
+  - out/updater-renderer/**
+  - package.json
+extraMetadata:
+  main: out/updater-main/updater.js
+extraResources:
+  - from: resources
+    to: .
+asar: true
+win:
+  icon: resources/evohime-agent.ico
+  target:
+    - dir
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  signAndEditExecutable: true
+publish: null
+electronDownload:
+  cache: .electron-cache

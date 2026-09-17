@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Обновлено: 2026-09-15.
+Обновлено: 2026-09-17.
 
 Этот каталог описывает поддерживаемый Windows desktop-продукт. Корневой [`README.md`](../README.md) — пользовательское описание продукта и установка; главный источник команд запуска, требований и критериев проверки — [`AGENTS.md`](../AGENTS.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md), а технические release evidence — в [`release-evidence.md`](release-evidence.md).
 
@@ -74,6 +74,6 @@
 
 Для текущей разработки используйте `start-dev.ps1` (нужен PowerShell 7 или новее: в Windows PowerShell 5.1 сборка не работает), быстрые локальные проверки и Windows CI. Полный Rust/Electron/package/installer acceptance-прогон является обязательным источником проверки в GitHub Actions; локально запускайте только необходимый объём по риску задачи. Electron shell живёт в `desktop/evohime-electron`; protocol check, typecheck и узкие проверки изменённых модулей допустимы локально, полный набор и real-Core E2E входят в CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`; существующий updater имеет recovery entrypoint и bounded self-healing без нового web-runtime.
 
-Electron renderer — встроенный desktop UI, а отдельный сетевой web-runtime не используется. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. Для установки updater поставляется отдельным Electron-процессом `EvoHimeUpdater.exe`, его Rust worker работает скрыто. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
+Electron renderer — встроенный desktop UI, а отдельный сетевой web-runtime не используется. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. Updater поставляется единым модулем: `updater\EvoHimeUpdater.exe`, его `app.asar` и Rust worker входят в общий `updater.zip`. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 
 При изменении архитектуры, runtime-контрактов или статуса реализации обновляйте соответствующий канонический документ и дату состояния. Не дублируйте подробный план в `roadmap.md` и не добавляйте инструкции для отдельного web-продукта.

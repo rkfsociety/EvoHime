@@ -6,6 +6,21 @@ on:
   pull_request:
     paths:
       - 'crates/evohime-update-agent/**'
+      - 'desktop/evohime-electron/src/main/updater.ts'
+      - 'desktop/evohime-electron/src/main/updater-window.ts'
+      - 'desktop/evohime-electron/src/main/update/module-update-service.ts'
+      - 'desktop/evohime-electron/src/main/update/**'
+      - 'desktop/evohime-electron/src/preload/updater.ts'
+      - 'desktop/evohime-electron/src/renderer/updater.html'
+      - 'desktop/evohime-electron/src/renderer/src/UpdaterApp.tsx'
+      - 'desktop/evohime-electron/src/renderer/src/UpdaterSurface.css'
+      - 'desktop/evohime-electron/src/renderer/src/updater-main.tsx'
+      - 'desktop/evohime-electron/src/renderer/src/updater-api.d.ts'
+      - 'desktop/evohime-electron/src/shared/updater.ts'
+      - 'desktop/evohime-electron/src/shared/update.ts'
+      - 'desktop/evohime-electron/scripts/build-electron.mjs'
+      - 'desktop/evohime-electron/electron-builder-updater.yml'
+      - 'desktop/evohime-electron/electron.vite.config.ts'
       - 'release-versions/updater.txt'
       - '.github/workflows/update-agent.yml'
       - 'Cargo.toml'
@@ -27,14 +42,40 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Установка Electron-зависимостей без lifecycle scripts
+        working-directory: desktop/evohime-electron
+        run: npm ci --ignore-scripts
+      - name: Разрешённые установщики зависимостей
+        working-directory: desktop/evohime-electron
+        run: node scripts/postinstall-allowlist.mjs
       - run: cargo fmt --all -- --check
       - run: cargo test --locked -p evohime-update-agent
       - run: cargo clippy --locked -p evohime-update-agent --all-targets -- -D warnings
       - run: cargo build --locked --release -p evohime-update-agent
+      - name: Проверка updater Electron-контуров
+        working-directory: desktop/evohime-electron
+        run: npm run check:protocol; npm run typecheck; npm test
+      - name: Сборка updater Electron package
+        working-directory: desktop/evohime-electron
+        run: npm run build:updater; npm run package:updater:from-build
+      - name: Сборка единого updater package
+        shell: pwsh
+        run: |
+          $package = Join-Path $env:GITHUB_WORKSPACE 'updater-package'
+          $electron = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\release-updater\win-unpacked'
+          New-Item -ItemType Directory -Force -Path (Join-Path $package 'updater') | Out-Null
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'target\release\evohime-updater.exe') -Destination (Join-Path $package 'evohime-updater.exe') -Force
+          Get-ChildItem -LiteralPath $electron -Force | Copy-Item -Destination (Join-Path $package 'updater') -Force -Recurse
+          if (-not (Test-Path -LiteralPath (Join-Path $package 'updater\EvoHimeUpdater.exe'))) { throw 'EvoHimeUpdater.exe missing from updater package.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $package 'updater\resources\app.asar'))) { throw 'Updater app.asar missing from updater package.' }
+          Compress-Archive -Path (Join-Path $package '*') -DestinationPath (Join-Path $env:GITHUB_WORKSPACE 'updater.zip') -CompressionLevel Optimal
       - uses: actions/upload-artifact@v7
         with:
           name: module-updater
-          path: target/release/evohime-updater.exe
+          path: updater.zip
           if-no-files-found: error
 
   publish:
@@ -56,4 +97,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = (Get-Content -LiteralPath 'release-versions/updater.txt' -Raw).Trim()
-          ./scripts/module-release.ps1 -Module updater -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'updater-output\evohime-updater.exe') -Summary 'Независимый агент проверки и координации модульных обновлений.'
+          ./scripts/module-release.ps1 -Module updater -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'updater-output\updater.zip') -Summary 'Единый модуль обновления: Rust worker и самостоятельный Electron-интерфейс EvoHimeUpdater.'

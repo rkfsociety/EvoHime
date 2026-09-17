@@ -335,14 +335,23 @@ jobs:
         run: npm run check:bundle
       - name: Сборка распакованного Electron package из готовых bundles
         run: npm run package:from-build
+      - name: Сборка отдельного updater Electron package
+        run: npm run build:updater
+      - name: Упаковка отдельного updater Electron package
+        run: npm run package:updater:from-build
       - name: Загрузка Electron package для native-упаковки
         shell: pwsh
         run: |
           $source = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\release\win-unpacked'
+          $updaterSource = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\release-updater\win-unpacked'
           $output = Join-Path $env:GITHUB_WORKSPACE 'electron-build-output'
           if (-not (Test-Path -LiteralPath (Join-Path $source 'resources\app.asar'))) { throw "Electron app.asar missing: $source" }
           New-Item -ItemType Directory -Force -Path $output | Out-Null
           Get-ChildItem -LiteralPath $source -Force | Copy-Item -Destination $output -Recurse -Force
+          $updaterOutput = Join-Path $output 'updater'
+          New-Item -ItemType Directory -Force -Path $updaterOutput | Out-Null
+          Get-ChildItem -LiteralPath $updaterSource -Force | Copy-Item -Destination $updaterOutput -Recurse -Force
+          if (-not (Test-Path -LiteralPath (Join-Path $updaterOutput 'EvoHimeUpdater.exe'))) { throw 'Updater Electron executable missing.' }
           $uiSource = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\out\ui-bundle'
           $uiArchive = Join-Path $output 'ui-bundle.zip'
           if (-not (Test-Path -LiteralPath $uiSource -PathType Container)) { throw "UI bundle missing: $uiSource" }
@@ -411,7 +420,7 @@ jobs:
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.components.json', 'evohime.build.json')) {
+          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'updater\EvoHimeUpdater.exe', 'updater\resources\app.asar', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'updater.zip', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.components.json', 'evohime.build.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
           }
           # Маркер сборки — то, по чему установленный клиент понимает, отстал ли он от ветки.

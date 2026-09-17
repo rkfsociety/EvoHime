@@ -8,7 +8,10 @@ foreach ($required in @(
     'api.github.com/repos/$repository/releases?per_page=100',
     'updater.manifest.json',
     'Get-FileHash -LiteralPath $download -Algorithm SHA256',
-    '[IO.File]::Replace($download, $target, $backup',
+    '[IO.File]::Replace($expandedWorker, $target, $backup',
+    'Expand-Archive -LiteralPath $download',
+    "expectedArtifact -ne 'updater.zip'",
+    'Join-Path $expandedUi',
     'Get-CimInstance Win32_Process',
     'MaximumRedirection 5'
 )) {

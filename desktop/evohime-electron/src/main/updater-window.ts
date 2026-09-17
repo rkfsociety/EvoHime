@@ -140,7 +140,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     resizable: true,
     roundedCorners: true,
     backgroundColor: '#090b12',
-    icon: join(installDirectory, 'resources', 'evohime-agent.ico'),
+    icon: join(app.getPath('exe').replace(/[\\/][^\\/]+$/, ''), 'resources', 'evohime-agent.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/updater.js'),
       sandbox: true,
@@ -169,7 +169,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   if (!isProduction() && devServerUrl) {
     await updaterWindow.loadURL(new URL('updater.html', devServerUrl).toString())
   } else {
-    await updaterWindow.loadFile(join(__dirname, '../ui-bundle/updater.html'))
+    await updaterWindow.loadFile(join(__dirname, '../updater-renderer/updater.html'))
   }
 
   if (crashGuard.blocked) {

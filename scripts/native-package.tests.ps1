@@ -12,8 +12,7 @@ if ($manifest.components.cli -ne 'eva.exe') { throw 'CLI component is missing' }
 if ($manifest.components.supervisor -ne 'evohime-supervisor.exe') { throw 'supervisor component is missing' }
 if ($manifest.components.analysis_worker -ne 'evohime-analysis-worker.exe') { throw 'analysis worker component is missing' }
 if ($manifest.components.listener -ne 'evohime-listener.exe') { throw 'listener component is missing' }
-if ($manifest.components.updater -ne 'evohime-updater.exe') { throw 'updater component is missing' }
-if ($manifest.components.updater_ui -ne 'EvoHimeUpdater.exe') { throw 'Electron updater UI component is missing' }
+if ($manifest.components.updater -ne 'updater.zip') { throw 'updater package component is missing' }
 if ($manifest.components.verifier -ne 'evohime-verify.exe') { throw 'verifier component is missing' }
 if ($manifest.components.ui -ne 'EvoHime.exe') { throw 'UI component is missing' }
 if ($manifest.components.browser_backend -ne 'EvoHime.exe') { throw 'browser backend component is missing' }
@@ -37,6 +36,9 @@ Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-verify.exe') -Value 'v
 Set-Content -LiteralPath (Join-Path $packageRoot 'ui-bundle.zip') -Value 'ui-archive-fixture'
 New-Item -ItemType Directory -Force -Path (Join-Path $packageRoot 'resources') | Out-Null
 Set-Content -LiteralPath (Join-Path $packageRoot 'resources\app.asar') -Value 'electron-shell-fixture'
+New-Item -ItemType Directory -Force -Path (Join-Path $packageRoot 'updater\resources') | Out-Null
+Set-Content -LiteralPath (Join-Path $packageRoot 'updater\EvoHimeUpdater.exe') -Value 'electron-updater-fixture'
+Set-Content -LiteralPath (Join-Path $packageRoot 'updater\resources\app.asar') -Value 'electron-updater-asar-fixture'
 
 $commit = 'a' * 40
 & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit $commit | Out-Null
@@ -44,8 +46,11 @@ $commit = 'a' * 40
 if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'evohime.manifest.json'))) {
     throw 'package manifest was not written'
 }
-if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'EvoHimeUpdater.exe'))) {
+if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'updater\EvoHimeUpdater.exe'))) {
     throw 'Electron updater executable was not packaged'
+}
+if (Test-Path -LiteralPath (Join-Path $packageRoot 'EvoHimeUpdater.exe')) {
+    throw 'Legacy updater executable must not remain in the shell package'
 }
 $componentMarkerPath = Join-Path $packageRoot 'evohime.components.json'
 if (-not (Test-Path -LiteralPath $componentMarkerPath)) { throw 'component manifest was not written' }
@@ -73,19 +78,22 @@ try {
 # должна повторно запускать Cargo или Electron.
 $nativeInput = Join-Path $PSScriptRoot '..\artifacts\native-input-test'
 $electronInput = Join-Path $PSScriptRoot '..\artifacts\electron-input-test'
-New-Item -ItemType Directory -Force -Path $nativeInput, (Join-Path $electronInput 'resources') | Out-Null
+New-Item -ItemType Directory -Force -Path $nativeInput, (Join-Path $electronInput 'resources'), (Join-Path $electronInput 'updater\resources') | Out-Null
 Set-Content -LiteralPath (Join-Path $nativeInput 'evohime-core.exe') -Value 'native-input'
 foreach ($name in @('eva.exe', 'evohime-supervisor.exe', 'evohime-analysis-worker.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'evohime-verify.exe')) {
     Set-Content -LiteralPath (Join-Path $nativeInput $name) -Value "input:$name"
 }
 Set-Content -LiteralPath (Join-Path $electronInput 'EvoHime.exe') -Value 'electron-input'
 Set-Content -LiteralPath (Join-Path $electronInput 'resources\app.asar') -Value 'electron-input-asar'
+Set-Content -LiteralPath (Join-Path $electronInput 'updater\EvoHimeUpdater.exe') -Value 'electron-input-updater'
+Set-Content -LiteralPath (Join-Path $electronInput 'updater\resources\app.asar') -Value 'electron-input-updater-asar'
 $inputPackage = Join-Path $PSScriptRoot '..\artifacts\native-input-package-test'
 New-Item -ItemType Directory -Force -Path $inputPackage | Out-Null
 Set-Content -LiteralPath (Join-Path $inputPackage 'ui-bundle.zip') -Value 'ui-input'
 & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -NativeInputPath $nativeInput -ElectronInputPath $electronInput -OutputPath $inputPackage -Commit $commit | Out-Null
 if ((Get-Content -LiteralPath (Join-Path $inputPackage 'evohime-core.exe') -Raw).Trim() -ne 'native-input') { throw 'Native CI artifact was not reused.' }
 if ((Get-Content -LiteralPath (Join-Path $inputPackage 'resources\app.asar') -Raw).Trim() -ne 'electron-input-asar') { throw 'Electron CI artifact was not reused.' }
+if ((Get-Content -LiteralPath (Join-Path $inputPackage 'updater\resources\app.asar') -Raw).Trim() -ne 'electron-input-updater-asar') { throw 'Updater Electron CI artifact was not reused.' }
 Remove-Item -LiteralPath $nativeInput, $electronInput, $inputPackage -Recurse -Force
 
 # Маркер сборки: без него клиент не знает своей версии и пересобирается зря.
@@ -105,7 +113,7 @@ $activeUpdater = Join-Path $packageRoot 'evohime-updater.exe'
 $fallbackUpdater = Join-Path $recoveryState 'updater-fallback.exe'
 Copy-Item -LiteralPath $activeUpdater -Destination $fallbackUpdater
 if ((Get-FileHash -LiteralPath $activeUpdater -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $fallbackUpdater -Algorithm SHA256).Hash) { throw 'Recovery fallback hash mismatch.' }
-if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'EvoHimeUpdater.exe') -PathType Leaf)) { throw 'Shortcut updater entrypoint is missing.' }
+if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'updater\EvoHimeUpdater.exe') -PathType Leaf)) { throw 'Shortcut updater entrypoint is missing.' }
 
 # Неизвестный коммит не подделывается: маркер просто не пишется.
 Remove-Item -LiteralPath $markerPath -Force

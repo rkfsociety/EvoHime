@@ -22,8 +22,7 @@ function New-NativePackageManifest {
             supervisor = 'evohime-supervisor.exe'
             analysis_worker = 'evohime-analysis-worker.exe'
             listener   = 'evohime-listener.exe'
-            updater    = 'evohime-updater.exe'
-            updater_ui = 'EvoHimeUpdater.exe'
+            updater    = 'updater.zip'
             verifier   = 'evohime-verify.exe'
         }
     }
@@ -117,7 +116,7 @@ function Write-ComponentManifest {
         @{ id = 'analysis-worker'; path = 'evohime-analysis-worker.exe'; restart = 'core' },
         @{ id = 'listener'; path = 'evohime-listener.exe'; restart = 'listener' },
         @{ id = 'transaction'; path = 'evohime-transaction.exe'; restart = 'transaction' },
-        @{ id = 'updater'; path = 'evohime-updater.exe'; restart = 'updater' },
+        @{ id = 'updater'; path = 'updater.zip'; restart = 'updater' },
         @{ id = 'verifier'; path = 'evohime-verify.exe'; restart = 'none' }
     )
     $components = foreach ($item in $componentFiles) {

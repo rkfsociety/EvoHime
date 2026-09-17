@@ -7,14 +7,13 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Последний синхронизированный продуктовый checkout перед этой
-документационной актуализацией — `958a7102d2ce6df459d80d549297a8efa4aa034d` в
-`main`; он совпадал с `origin/main`. Полный Windows workflow `34912288572` завершён с
-PASS: real-Core IPC E2E, Electron bundles и bundle security, native package,
-acceptance matrix, installer, install/upgrade, rollback, staged rebuild,
-выборочный UI apply и публикация fixed release. Текущая локальная серия
-`42e575a0` → `3f5de640` ещё не опубликована; исторические разделы ниже
-сохраняют evidence своих исходных commit и run ID.
+Текущий checkout зафиксирован task-only коммитом в `main` и до push опережает
+`origin/main` на один коммит. Локальные проверки этого изменения: полный
+Electron suite `615 passed, 4 skipped`, Electron typecheck, protocol и bundle
+checks, native/recovery/module-router/documentation smoke, Rust `cargo check`
+и `cargo test --no-run`. Полный Windows workflow и публикация модулей должны
+подтвердить это после push; исторические разделы ниже сохраняют прежнее
+GitHub evidence.
 
 ## Статус выпуска
 
@@ -41,6 +40,13 @@ shell-tree с rollback. Полный Windows workflow передаёт native и
 артефакты из проверочных jobs в packaging job, поэтому Cargo и Electron package
 не запускаются повторно. Router выпускает installer только после различения
 подтверждённого HTTP 404 (релиза нет) и прочих ошибок получения manifest.
+
+`updater` публикуется как единый `updater.zip`, содержащий Rust
+`evohime-updater.exe` и самостоятельный Electron package
+`updater/EvoHimeUpdater.exe` с `updater/resources/app.asar`. Автоматический
+self-update сначала скачивает и проверяет весь архив, затем bootstrap меняет
+worker, UI-каталог и архив с rollback; старые клиенты мигрируют с корневого
+`EvoHimeUpdater.exe` без пересборки installer.
 
 Публикация `compatibility` запускается после успешного module workflow или
 вручную и не пересобирает installer. Уже установленный клиент остаётся

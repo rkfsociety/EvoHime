@@ -46,6 +46,7 @@ jobs:
           $source = Join-Path $env:GITHUB_WORKSPACE 'desktop\evohime-electron\release\win-unpacked'
           $archive = Join-Path $env:GITHUB_WORKSPACE 'shell-host.zip'
           if (-not (Test-Path -LiteralPath (Join-Path $source 'EvoHime.exe'))) { throw "Electron executable missing: $source" }
+          if (Test-Path -LiteralPath (Join-Path $source 'EvoHimeUpdater.exe')) { throw 'Shell host must not contain the updater executable.' }
           if (-not (Test-Path -LiteralPath (Join-Path $source 'resources\app.asar'))) { throw "Electron app.asar missing: $source" }
           if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
           Compress-Archive -Path (Join-Path $source '*') -DestinationPath $archive -CompressionLevel Optimal

@@ -66,8 +66,8 @@ E2E запускается отдельным обязательным шаго�
 ## Продуктовая граница
 
 EvoHime — локальное Windows desktop-приложение с одним пользовательским
-ярлыком `EvoHime`. Внутри пакета работают Electron shell, отдельный Electron
-updater `EvoHimeUpdater.exe`, `evohime-updater.exe`, `evohime-core.exe` и
+ярлыком `EvoHime`. Внутри пакета работают Electron shell, updater-модуль с
+каталогом `updater\EvoHimeUpdater.exe` и Rust worker `evohime-updater.exe`, `evohime-core.exe` и
 `evohime-supervisor.exe`; Core владеет состоянием, SQLite, правами и эффектами,
 а renderer получает только проекцию через authenticated versioned named pipe.
 
@@ -84,8 +84,8 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 | IPC | `desktop-ipc-v1`, protobuf bindings, HMAC-сессия supervisor | `crates/desktop-ipc/`, `npm run check:protocol` |
 | Core | Rust agent runtime, tools, SQLite и provider gateway | `crates/evohime-core/`, `crates/model-gateway/` |
 | Supervisor | mutex, Job Object, lifecycle и recovery | `crates/evohime-supervisor/` |
-| Native package | Electron shell `EvoHime.exe`, отдельный Electron updater `EvoHimeUpdater.exe`, Rust updater worker, Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
-| Installer | Electron shell и отдельный Electron updater в постоянном `EvoHime-Setup.exe` | `installer/`, `.github/workflows/windows.yml` |
+| Native package | Electron shell `EvoHime.exe`, updater-модуль `updater\EvoHimeUpdater.exe` + Rust worker, Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
+| Installer | Electron shell и единый updater package в постоянном `EvoHime-Setup.exe` | `installer/`, `.github/workflows/windows.yml` |
 
 Для разработки используется PowerShell 7+ и Node.js 22 LTS. В установленный
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
@@ -93,14 +93,11 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 
 ## Граница текущего checkout и CI
 
-Пять связанных исправлений этой актуализации зафиксированы в локальной ветке
-`main` коммитами `42e575a0`, `a3dd078f`, `45d87f65`, `b8adf1fa` и
-`3f5de640`; `origin/main` пока указывает на `42e575a0`, поэтому четыре
-последних коммита ожидают отдельного push.
-Полный Windows workflow `34912288572` прошёл успешно, включая real-Core IPC
-E2E, Electron bundles и bundle security, native package, acceptance matrix,
-installer, install/upgrade, rollback, staged rebuild, выборочный UI apply и
-публикацию fixed release. Подробное redacted evidence находится в
+Текущий checkout зафиксирован task-only коммитом в локальной ветке `main`;
+`origin/main` ожидает один push. Для переноса updater UI в единый модуль локально прошли полный Electron
+suite, typecheck, protocol и bundle checks, native/recovery/module-router/
+documentation smoke, Rust `cargo check` и `cargo test --no-run`. Полный
+Windows workflow и module releases ожидают push. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 ## История чата в renderer
@@ -614,7 +611,7 @@ compatible release manifest `34910682285`.
 E2E, Electron bundles и bundle security, native package, acceptance matrix,
 единственный installer, install/upgrade, rollback, staged rebuild,
 выборочный UI apply и публикация прошли без ошибок.
-Текущее окно `EvoHimeUpdater.exe` приведено к компактной вертикальной
+Текущее окно `updater\EvoHimeUpdater.exe` приведено к компактной вертикальной
 одно-колоночной компоновке: остаются только статус, краткое сообщение,
 прогресс, компоненты с версиями и необходимые действия.
 

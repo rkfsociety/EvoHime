@@ -51,19 +51,23 @@ const toolchain: ToolchainReport = {
 
 describe('staging assembly', () => {
   /** Sources, a packaged tree and the staging directory the swap reads. */
-  function scenario(): { source: string; unpacked: string; staging: string } {
+  function scenario(): { source: string; unpacked: string; updaterUnpacked: string; staging: string } {
     const root = temporaryRoot()
     const source = join(root, 'source')
     const unpacked = join(root, 'unpacked')
+    const updaterUnpacked = join(root, 'updater-unpacked')
     const staging = join(root, 'staging')
 
     for (const component of REQUIRED_NATIVE_COMPONENTS) {
       write(join(source, 'target', 'release', component), `native:${component}`)
     }
+    write(join(source, 'target', 'release', 'evohime-updater.exe'), 'native:evohime-updater.exe')
     write(join(unpacked, 'EvoHime.exe'), 'shell')
     write(join(unpacked, 'icudtl.dat'), 'runtime-data-that-never-changes')
     write(join(unpacked, 'resources', 'app.asar'), 'payload')
-    return { source, unpacked, staging }
+    write(join(updaterUnpacked, 'EvoHimeUpdater.exe'), 'updater-ui')
+    write(join(updaterUnpacked, 'resources', 'app.asar'), 'updater-payload')
+    return { source, unpacked, updaterUnpacked, staging }
   }
 
   async function assemble(paths: ReturnType<typeof scenario>): Promise<void> {
@@ -78,7 +82,8 @@ describe('staging assembly', () => {
       },
       join(paths.source, ELECTRON_SUBPATH),
       { exists: (path) => existsOnDisk(path) },
-      paths.unpacked
+      paths.unpacked,
+      paths.updaterUnpacked
     )
   }
 

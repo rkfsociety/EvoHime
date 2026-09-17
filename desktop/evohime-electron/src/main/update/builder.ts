@@ -24,7 +24,7 @@ import {
 
 export const ELECTRON_SUBPATH = join('desktop', 'evohime-electron')
 
-const CARGO_PACKAGES = ['evohime-core', 'evohime-supervisor', 'evohime-updater'] as const
+const CARGO_PACKAGES = ['evohime-core', 'evohime-supervisor', 'evohime-updater', 'evohime-update-agent'] as const
 
 export const REQUIRED_NATIVE_COMPONENTS = [
   'evohime-core.exe',
@@ -148,8 +148,38 @@ export async function buildStagedPackage(
       electronRoot,
       NPM_TIMEOUT_MS
     )
+    await exec(
+      'npm run build:updater',
+      npm.file,
+      [...npm.args, 'run', 'build:updater'],
+      electronRoot,
+      NPM_TIMEOUT_MS
+    )
+    const updaterOutputRoot = join(outputRoot, 'updater')
+    await exec(
+      'electron-builder updater',
+      npm.file,
+      [
+        ...npm.args,
+        'exec',
+        '--',
+        'electron-builder',
+        '--dir',
+        '--config',
+        'electron-builder-updater.yml',
+        `--config.directories.output=${updaterOutputRoot}`
+      ],
+      electronRoot,
+      NPM_TIMEOUT_MS
+    )
 
-    return await assembleStaging(inputs, electronRoot, { ...deps, exists }, join(outputRoot, 'win-unpacked'))
+    return await assembleStaging(
+      inputs,
+      electronRoot,
+      { ...deps, exists },
+      join(outputRoot, 'win-unpacked'),
+      join(updaterOutputRoot, 'win-unpacked')
+    )
   } finally {
     await withoutAsar(() => removeTreeResilient(outputRoot)).catch(() => undefined)
   }
@@ -164,17 +194,22 @@ export async function assembleStaging(
   inputs: BuildInputs,
   electronRoot: string,
   deps: BuildDeps & { readonly exists: (path: string) => boolean },
-  unpackedDirectory = join(electronRoot, 'release', 'win-unpacked')
+  unpackedDirectory = join(electronRoot, 'release', 'win-unpacked'),
+  updaterUnpackedDirectory = join(electronRoot, 'release-updater', 'win-unpacked')
 ): Promise<BuildMarker> {
   const cargoTarget = join(inputs.sourceDirectory, 'target', 'release')
   const unpacked = unpackedDirectory
   if (!deps.exists(unpacked)) {
     throw new BuildError('Electron package не собрался — каталог win-unpacked отсутствует.')
   }
+  if (!deps.exists(updaterUnpackedDirectory)) {
+    throw new BuildError('Electron updater package не собрался — каталог win-unpacked отсутствует.')
+  }
 
   await withoutAsar(async () => {
     await mkdir(inputs.stagingDirectory, { recursive: true })
     await syncTree(unpacked, inputs.stagingDirectory)
+    await syncTree(updaterUnpackedDirectory, join(inputs.stagingDirectory, 'updater'))
   })
 
   for (const component of REQUIRED_NATIVE_COMPONENTS) {
@@ -184,6 +219,12 @@ export async function assembleStaging(
     }
     await cp(source, join(inputs.stagingDirectory, component))
   }
+
+  const updaterWorker = join(cargoTarget, 'evohime-updater.exe')
+  if (!deps.exists(updaterWorker)) {
+    throw new BuildError('Native-компонент не собрался: evohime-updater.exe')
+  }
+  await cp(updaterWorker, join(inputs.stagingDirectory, 'evohime-updater.exe'))
 
   await writeFile(
     join(inputs.stagingDirectory, 'evohime.manifest.json'),
@@ -205,6 +246,10 @@ export async function assembleStaging(
   if (!deps.exists(join(inputs.stagingDirectory, 'EvoHime.exe'))) {
     throw new BuildError('В staging нет EvoHime.exe — пакет неполный.')
   }
+  if (!deps.exists(join(inputs.stagingDirectory, 'updater', 'EvoHimeUpdater.exe')) ||
+      !deps.exists(join(inputs.stagingDirectory, 'updater', 'resources', 'app.asar'))) {
+    throw new BuildError('В staging нет самостоятельного Electron updater UI — пакет неполный.')
+  }
   return marker
 }
 
@@ -219,7 +264,7 @@ export async function assembleStaging(
 export async function clearDerivedState(sourceDirectory: string): Promise<void> {
   const electronRoot = join(sourceDirectory, ELECTRON_SUBPATH)
   await withoutAsar(async () => {
-    for (const path of ['release', '.electron-cache', 'out']) {
+    for (const path of ['release', 'release-updater', '.electron-cache', 'out']) {
       await removeTreeResilient(join(electronRoot, path))
     }
   })
@@ -376,7 +421,8 @@ function nativeManifest(): Record<string, unknown> {
       ui: 'EvoHime.exe',
       core: 'evohime-core.exe',
       supervisor: 'evohime-supervisor.exe',
-      updater: 'evohime-transaction.exe'
+      transaction: 'evohime-transaction.exe',
+      updater: 'updater.zip'
     }
   }
 }

@@ -53,6 +53,8 @@ if (-not $SkipBuild) {
             Invoke-NativeCommand -Executable 'node' -Arguments @('scripts/postinstall-allowlist.mjs')
             Invoke-NativeCommand -Executable 'npm' -Arguments @('run', 'build')
             Invoke-NativeCommand -Executable 'npx' -Arguments $electronBuilderArguments
+            Invoke-NativeCommand -Executable 'npm' -Arguments @('run', 'build:updater')
+            Invoke-NativeCommand -Executable 'npm' -Arguments @('run', 'package:updater:from-build')
         }
         finally { Pop-Location }
     }
@@ -98,11 +100,35 @@ if (-not $SkipBuild -or $resolvedElectronInput) {
     }
 }
 if (-not (Test-Path -LiteralPath $uiPackaged)) { throw "Electron UI не найден: $uiPackaged" }
-# Обновлятор — отдельный Electron-процесс с тем же подписанным runtime. Он
-# использует отдельную точку входа `--evohime-updater`, поэтому обычная Eva и
-# окно обновления никогда не конкурируют за один BrowserWindow.
-$updaterUiPackaged = Join-Path $resolvedOutput 'EvoHimeUpdater.exe'
-Copy-Item -LiteralPath $uiPackaged -Destination $updaterUiPackaged -Force
+$legacyUpdaterUi = Join-Path $resolvedOutput 'EvoHimeUpdater.exe'
+if (Test-Path -LiteralPath $legacyUpdaterUi) { Remove-Item -LiteralPath $legacyUpdaterUi -Force }
+$updaterElectronPayload = if ($resolvedElectronInput) {
+    Join-Path $resolvedElectronInput 'updater'
+} elseif ($SkipBuild) {
+    Join-Path $resolvedOutput 'updater'
+} else {
+    Join-Path $electronRoot 'release-updater\win-unpacked'
+}
+if (-not (Test-Path -LiteralPath $updaterElectronPayload -PathType Container)) {
+    throw "Electron updater package не найден: $updaterElectronPayload"
+}
+$installedUpdaterUi = Join-Path $resolvedOutput 'updater'
+if ($resolvedElectronInput -or -not $SkipBuild) {
+    if (Test-Path -LiteralPath $installedUpdaterUi) { Remove-Item -LiteralPath $installedUpdaterUi -Recurse -Force }
+    Copy-Item -LiteralPath $updaterElectronPayload -Destination $installedUpdaterUi -Force -Recurse
+}
+if (-not (Test-Path -LiteralPath (Join-Path $installedUpdaterUi 'EvoHimeUpdater.exe'))) {
+    throw "Electron updater executable не найден: $installedUpdaterUi"
+}
+$updaterArchive = Join-Path $resolvedOutput 'updater.zip'
+$updaterArchiveRoot = Join-Path $resolvedOutput '.updater-archive'
+if (Test-Path -LiteralPath $updaterArchiveRoot) { Remove-Item -LiteralPath $updaterArchiveRoot -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $updaterArchiveRoot | Out-Null
+Copy-Item -LiteralPath (Join-Path $resolvedOutput 'evohime-updater.exe') -Destination (Join-Path $updaterArchiveRoot 'evohime-updater.exe') -Force
+Copy-Item -LiteralPath $installedUpdaterUi -Destination (Join-Path $updaterArchiveRoot 'updater') -Force -Recurse
+if (Test-Path -LiteralPath $updaterArchive) { Remove-Item -LiteralPath $updaterArchive -Force }
+Compress-Archive -Path (Join-Path $updaterArchiveRoot '*') -DestinationPath $updaterArchive -CompressionLevel Optimal
+Remove-Item -LiteralPath $updaterArchiveRoot -Recurse -Force
 $uiBundleSource = Join-Path $electronRoot 'out\ui-bundle'
 $uiBundleArchive = Join-Path $resolvedOutput 'ui-bundle.zip'
 if (-not $SkipBuild) {

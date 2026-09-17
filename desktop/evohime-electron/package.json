@@ -13,7 +13,10 @@
     "bootstrap": "npm ci --ignore-scripts && node scripts/postinstall-allowlist.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "package:from-build": "electron-builder --dir --config electron-builder.yml && node scripts/copy-updater-executable.mjs",
+    "build:shell": "node scripts/build-electron.mjs shell",
+    "build:updater": "node scripts/build-electron.mjs updater",
+    "package:from-build": "electron-builder --dir --config electron-builder.yml",
+    "package:updater:from-build": "electron-builder --dir --config electron-builder-updater.yml",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
@@ -24,7 +27,7 @@
     "check:bundle": "node scripts/check-production-bundle.mjs",
     "generate:protocol": "node scripts/generate-protocol.mjs",
     "check:protocol": "node scripts/generate-protocol.mjs --check",
-    "package": "npm run build && electron-builder --dir --config electron-builder.yml && node scripts/copy-updater-executable.mjs"
+    "package": "npm run build && npm run package:from-build"
   },
   "dependencies": {
     "dompurify": "3.4.13",

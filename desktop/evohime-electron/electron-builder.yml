@@ -5,7 +5,9 @@ directories:
   output: release
   buildResources: build
 files:
-  - out/**
+  - out/main/**
+  - out/preload/index.js
+  - out/ui-bundle/**
   - package.json
 # Tray and window icons ship as signed package resources; the shell never loads
 # them from a writable directory.

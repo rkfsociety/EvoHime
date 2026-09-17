@@ -158,7 +158,7 @@ fn write_recovery_phase(data_dir: &Path, phase: &str, reason: Option<&str>) {
 }
 
 /// Compatibility entry point for older shortcuts. The visible updater is a
-/// separate Electron application; this Rust process only forwards the launch
+/// standalone Electron package in the updater module; this Rust process only forwards the launch
 /// request and remains a headless worker.
 fn launch_shell(args: &[String]) -> ExitCode {
     let install_dir = argument_value(args, "--install-dir")
@@ -189,7 +189,7 @@ fn launch_shell(args: &[String]) -> ExitCode {
         );
         return fail("updater recovery requires manual action");
     }
-    let updater = install_dir.join("EvoHimeUpdater.exe");
+    let updater = updater_ui_executable(&install_dir);
     if !updater.is_file() {
         return fail(format!(
             "Electron updater is missing: {}",
@@ -204,6 +204,17 @@ fn launch_shell(args: &[String]) -> ExitCode {
     {
         Ok(_) => ExitCode::SUCCESS,
         Err(error) => fail(error),
+    }
+}
+
+fn updater_ui_executable(install_dir: &Path) -> PathBuf {
+    let packaged = install_dir.join("updater").join("EvoHimeUpdater.exe");
+    if packaged.is_file() {
+        packaged
+    } else {
+        // Clients installed before the module split keep the legacy entrypoint
+        // at the installation root until the first updater package succeeds.
+        install_dir.join("EvoHimeUpdater.exe")
     }
 }
 
@@ -289,6 +300,18 @@ fn launch_preflight(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
             digest.update(&buffer[..count]);
         }
         validate_pe_artifact(&worker, metadata.len(), &format!("{:x}", digest.finalize()))?;
+    }
+    let updater_ui = updater_ui_executable(install_dir);
+    if !updater_ui.is_file()
+        || !updater_ui
+            .parent()
+            .map(|parent| parent.join("resources").join("app.asar").is_file())
+            .unwrap_or(false)
+    {
+        return Err(format!(
+            "Electron updater UI is missing or incomplete: {}",
+            updater_ui.display()
+        ));
     }
     self_test_inner(install_dir)?;
     let mut tested = read_recovery_journal(&journal_path)?.unwrap_or_else(|| {
@@ -1173,7 +1196,7 @@ fn apply_updates_inner(
         download_verified_file(
             &client,
             update,
-            &staging.join("evohime-updater.exe.next"),
+            &staging.join("updater.zip"),
             |downloaded| {
                 progress(
                     "Скачивание updater",
@@ -1181,6 +1204,20 @@ fn apply_updates_inner(
                 )
             },
         )?;
+        extract_updater_package(
+            &staging.join("updater.zip"),
+            &staging.join("updater-package"),
+        )?;
+        fs::copy(
+            staging.join("updater-package").join("evohime-updater.exe"),
+            staging.join("evohime-updater.exe.next"),
+        )
+        .map_err(|error| error.to_string())?;
+        fs::rename(
+            staging.join("updater-package").join("updater"),
+            staging.join("updater"),
+        )
+        .map_err(|error| error.to_string())?;
         progress("updater подготовлен", 100);
     }
     if selected.is_empty() && ui_update.is_none() {
@@ -1588,6 +1625,77 @@ fn extract_shell_host_inner(archive_path: &Path, destination: &Path) -> Result<(
     Ok(())
 }
 
+fn extract_updater_package(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    let result = extract_updater_package_inner(archive_path, destination);
+    if result.is_err() {
+        let _ = fs::remove_dir_all(destination);
+    }
+    result
+}
+
+fn extract_updater_package_inner(archive_path: &Path, destination: &Path) -> Result<(), String> {
+    let archive_file = fs::File::open(archive_path).map_err(|error| error.to_string())?;
+    let mut archive = zip::ZipArchive::new(archive_file).map_err(|error| error.to_string())?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err("updater: updater package содержит слишком много записей".to_owned());
+    }
+    if destination.exists() {
+        fs::remove_dir_all(destination).map_err(|error| error.to_string())?;
+    }
+    fs::create_dir_all(destination).map_err(|error| error.to_string())?;
+    let mut extracted_paths = std::collections::HashSet::new();
+    let mut extracted_bytes = 0u64;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|error| error.to_string())?;
+        if entry.is_symlink() {
+            return Err("updater: updater package содержит symlink".to_owned());
+        }
+        let relative = entry
+            .enclosed_name()
+            .and_then(|path| normalize_archive_path(&path))
+            .ok_or_else(|| "updater: updater package содержит небезопасный путь".to_owned())?;
+        if !extracted_paths.insert(relative.to_owned()) {
+            return Err("updater: updater package содержит повторяющийся путь".to_owned());
+        }
+        let target = destination.join(relative);
+        if entry.is_dir() {
+            fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+        } else {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            let mut file = fs::File::create(&target).map_err(|error| error.to_string())?;
+            let remaining = MAX_ARCHIVE_UNCOMPRESSED_BYTES
+                .checked_sub(extracted_bytes)
+                .ok_or_else(|| "updater: updater package превышает лимит распаковки".to_owned())?;
+            if entry.size() > remaining {
+                return Err("updater: updater package превышает лимит распаковки".to_owned());
+            }
+            let written = copy_reader_bounded(&mut entry, &mut file, remaining)?;
+            if written != entry.size() {
+                return Err("updater: updater package содержит усечённый файл".to_owned());
+            }
+            extracted_bytes = extracted_bytes
+                .checked_add(written)
+                .ok_or_else(|| "updater: размер распаковки переполнен".to_owned())?;
+        }
+    }
+    if !destination.join("evohime-updater.exe").is_file()
+        || !destination
+            .join("updater")
+            .join("EvoHimeUpdater.exe")
+            .is_file()
+        || !destination
+            .join("updater")
+            .join("resources")
+            .join("app.asar")
+            .is_file()
+    {
+        return Err("updater: updater package не содержит полный worker и Electron UI".to_owned());
+    }
+    Ok(())
+}
+
 const MAX_ARCHIVE_UNCOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 4096;
 
@@ -1957,16 +2065,32 @@ fn schedule_updater_replacement(
     let script = state_dir.join(format!("updater-bootstrap-{}.cmd", std::process::id()));
     let marker = state_dir.join("updater-relaunch.pending");
     let updater = install_dir.join("evohime-updater.exe");
-    let updater_ui = install_dir.join("EvoHimeUpdater.exe");
+    let updater_ui_dir = install_dir.join("updater");
+    let legacy_updater_ui = install_dir.join("EvoHimeUpdater.exe");
     let staged = staging.join("evohime-updater.exe.next");
+    let staging_dir = staging.to_path_buf();
+    let staged_ui_dir = staging.join("updater");
+    let staged_package = staging.join("updater.zip");
+    let installed_package = install_dir.join("updater.zip");
     let backup = state_dir.join("updater-previous.exe");
+    let ui_backup = state_dir.join("updater-previous");
+    let package_backup = state_dir.join("updater-package-previous.zip");
+    let legacy_backup = state_dir.join("updater-legacy-previous.exe");
     let manifest_backup = state_dir.join("components-previous.json");
     let manifest = install_dir.join("evohime.components.json");
     let paths = UpdaterBootstrapPaths {
         updater: &updater,
-        updater_ui: &updater_ui,
+        updater_ui_dir: &updater_ui_dir,
+        legacy_updater_ui: &legacy_updater_ui,
         staged: &staged,
+        staging_dir: &staging_dir,
+        staged_ui_dir: &staged_ui_dir,
+        staged_package: &staged_package,
+        installed_package: &installed_package,
         backup: &backup,
+        ui_backup: &ui_backup,
+        package_backup: &package_backup,
+        legacy_backup: &legacy_backup,
         manifest: &manifest,
         manifest_next,
         manifest_backup: &manifest_backup,
@@ -2007,9 +2131,17 @@ fn cleanup_bootstrap_files(script: &Path, marker: &Path) {
 
 struct UpdaterBootstrapPaths<'a> {
     updater: &'a Path,
-    updater_ui: &'a Path,
+    updater_ui_dir: &'a Path,
+    legacy_updater_ui: &'a Path,
     staged: &'a Path,
+    staging_dir: &'a Path,
+    staged_ui_dir: &'a Path,
+    staged_package: &'a Path,
+    installed_package: &'a Path,
     backup: &'a Path,
+    ui_backup: &'a Path,
+    package_backup: &'a Path,
+    legacy_backup: &'a Path,
     manifest: &'a Path,
     manifest_next: &'a Path,
     manifest_backup: &'a Path,
@@ -2020,17 +2152,37 @@ struct UpdaterBootstrapPaths<'a> {
 fn updater_bootstrap_script(pid: u32, paths: &UpdaterBootstrapPaths<'_>) -> String {
     let quote = |path: &Path| format!("\"{}\"", path.display().to_string().replace('%', "%%"));
     format!(
-        "@echo off\r\nsetlocal\r\nset \"UPDATER={updater}\"\r\nset \"UPDATER_UI={updater_ui}\"\r\nset \"STAGED={staged}\"\r\nset \"BACKUP={backup}\"\r\nset \"MANIFEST={manifest}\"\r\nset \"MANIFEST_NEXT={manifest_next}\"\r\nset \"MANIFEST_BACKUP={manifest_backup}\"\r\nset \"MARKER={marker}\"\r\nset \"INSTALL_DIR={install_dir}\"\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>NUL | findstr /C:\"{pid}\" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\nif not exist \"%STAGED%\" goto fail\r\ncopy /Y \"%UPDATER%\" \"%BACKUP%\" >NUL\r\nif errorlevel 1 goto fail\r\nmove /Y \"%STAGED%\" \"%UPDATER%\" >NUL\r\nif errorlevel 1 goto restore\r\ncopy /Y \"%MANIFEST%\" \"%MANIFEST_BACKUP%\" >NUL\r\nif errorlevel 1 goto restore\r\nmove /Y \"%MANIFEST_NEXT%\" \"%MANIFEST%\" >NUL\r\nif errorlevel 1 goto restore_manifest\r\n\"%UPDATER%\" --check --install-dir \"%INSTALL_DIR%\" >NUL 2>NUL\r\nif errorlevel 1 goto restore_manifest\r\ndel /Q \"%BACKUP%\" 2>NUL\r\ndel /Q \"%MANIFEST_BACKUP%\" 2>NUL\r\ndel /Q \"%MARKER%\" 2>NUL\r\nstart \"\" \"%UPDATER_UI%\" --evohime-updater --install-dir \"%INSTALL_DIR%\"\r\ngoto cleanup\r\n:restore_manifest\r\nmove /Y \"%MANIFEST_BACKUP%\" \"%MANIFEST%\" >NUL\r\n:restore\r\nif exist \"%UPDATER%\" del /Q \"%UPDATER%\" 2>NUL\r\nif exist \"%BACKUP%\" move /Y \"%BACKUP%\" \"%UPDATER%\" >NUL\r\n:fail\r\ndel /Q \"%MARKER%\" 2>NUL\r\nstart \"\" \"%UPDATER_UI%\" --evohime-updater --install-dir \"%INSTALL_DIR%\"\r\n:cleanup\r\ndel /Q \"%~f0\" 2>NUL\r\n",
+        "@echo off\r\nsetlocal\r\nset \"UPDATER={updater}\"\r\nset \"UPDATER_UI_DIR={updater_ui_dir}\"\r\nset \"LEGACY_UI={legacy_updater_ui}\"\r\nset \"STAGED={staged}\"\r\nset \"STAGING_DIR={staging_dir}\"\r\nset \"STAGED_UI_DIR={staged_ui_dir}\"\r\nset \"STAGED_PACKAGE={staged_package}\"\r\nset \"INSTALLED_PACKAGE={installed_package}\"\r\nset \"BACKUP={backup}\"\r\nset \"UI_BACKUP={ui_backup}\"\r\nset \"PACKAGE_BACKUP={package_backup}\"\r\nset \"LEGACY_BACKUP={legacy_backup}\"\r\nset \"MANIFEST={manifest}\"\r\nset \"MANIFEST_NEXT={manifest_next}\"\r\nset \"MANIFEST_BACKUP={manifest_backup}\"\r\nset \"MARKER={marker}\"\r\nset \"INSTALL_DIR={install_dir}\"\r\n:wait\r\ntasklist /FI \"PID eq {pid}\" 2>NUL | findstr /C:\"{pid}\" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait)\r\nif not exist \"%STAGED%\" goto fail\r\nif not exist \"%STAGED_UI_DIR%\\EvoHimeUpdater.exe\" goto fail\r\nif not exist \"%STAGED_UI_DIR%\\resources\\app.asar\" goto fail\r\nif not exist \"%STAGED_PACKAGE%\" goto fail\r\ndel /Q \"%BACKUP%\" \"%PACKAGE_BACKUP%\" \"%LEGACY_BACKUP%\" 2>NUL\r\nif exist \"%UI_BACKUP%\" rmdir /S /Q \"%UI_BACKUP%\" 2>NUL\r\ncopy /Y \"%UPDATER%\" \"%BACKUP%\" >NUL\r\nif errorlevel 1 goto fail\r\nmove /Y \"%STAGED%\" \"%UPDATER%\" >NUL\r\nif errorlevel 1 goto restore\r\nif exist \"%UPDATER_UI_DIR%\" move /Y \"%UPDATER_UI_DIR%\" \"%UI_BACKUP%\" >NUL\r\nif errorlevel 1 goto restore\r\nmove /Y \"%STAGED_UI_DIR%\" \"%UPDATER_UI_DIR%\" >NUL\r\nif errorlevel 1 goto restore_ui\r\nif exist \"%LEGACY_UI%\" move /Y \"%LEGACY_UI%\" \"%LEGACY_BACKUP%\" >NUL\r\nif errorlevel 1 goto restore_ui\r\nif exist \"%INSTALLED_PACKAGE%\" move /Y \"%INSTALLED_PACKAGE%\" \"%PACKAGE_BACKUP%\" >NUL\r\nif errorlevel 1 goto restore_legacy\r\nmove /Y \"%STAGED_PACKAGE%\" \"%INSTALLED_PACKAGE%\" >NUL\r\nif errorlevel 1 goto restore_package\r\ncopy /Y \"%MANIFEST%\" \"%MANIFEST_BACKUP%\" >NUL\r\nif errorlevel 1 goto restore_package\r\nmove /Y \"%MANIFEST_NEXT%\" \"%MANIFEST%\" >NUL\r\nif errorlevel 1 goto restore_manifest\r\n\"%UPDATER%\" --check --install-dir \"%INSTALL_DIR%\" >NUL 2>NUL\r\nif errorlevel 1 goto restore_manifest\r\ndel /Q \"%BACKUP%\" \"%PACKAGE_BACKUP%\" \"%LEGACY_BACKUP%\" \"%MANIFEST_BACKUP%\" \"%MARKER%\" 2>NUL\r\nstart \"\" \"%UPDATER_UI_DIR%\\EvoHimeUpdater.exe\" --evohime-updater --install-dir \"%INSTALL_DIR%\"\r\ngoto cleanup\r\n:restore_manifest\r\nmove /Y \"%MANIFEST_BACKUP%\" \"%MANIFEST%\" >NUL\r\n:restore_package\r\nif exist \"%INSTALLED_PACKAGE%\" del /Q \"%INSTALLED_PACKAGE%\" 2>NUL\r\nif exist \"%PACKAGE_BACKUP%\" move /Y \"%PACKAGE_BACKUP%\" \"%INSTALLED_PACKAGE%\" >NUL\r\n:restore_legacy\r\nif exist \"%LEGACY_UI%\" del /Q \"%LEGACY_UI%\" 2>NUL\r\nif exist \"%LEGACY_BACKUP%\" move /Y \"%LEGACY_BACKUP%\" \"%LEGACY_UI%\" >NUL\r\n:restore_ui\r\nif exist \"%UPDATER_UI_DIR%\" rmdir /S /Q \"%UPDATER_UI_DIR%\" 2>NUL\r\nif exist \"%UI_BACKUP%\" move /Y \"%UI_BACKUP%\" \"%UPDATER_UI_DIR%\" >NUL\r\n:restore\r\nif exist \"%UPDATER%\" del /Q \"%UPDATER%\" 2>NUL\r\nif exist \"%BACKUP%\" move /Y \"%BACKUP%\" \"%UPDATER%\" >NUL\r\n:fail\r\ndel /Q \"%MARKER%\" 2>NUL\r\nif exist \"%UPDATER_UI_DIR%\\EvoHimeUpdater.exe\" start \"\" \"%UPDATER_UI_DIR%\\EvoHimeUpdater.exe\" --evohime-updater --install-dir \"%INSTALL_DIR%\"\r\nif exist \"%LEGACY_UI%\" start \"\" \"%LEGACY_UI%\" --evohime-updater --install-dir \"%INSTALL_DIR%\"\r\n:cleanup\r\nrmdir /S /Q \"%UI_BACKUP%\" 2>NUL\r\nrmdir /S /Q \"%STAGING_DIR%\" 2>NUL\r\ndel /Q \"%~f0\" 2>NUL\r\n",
         pid = pid,
         updater = quote(paths.updater),
-        updater_ui = quote(paths.updater_ui),
+        updater_ui_dir = quote(paths.updater_ui_dir),
+        legacy_updater_ui = quote(paths.legacy_updater_ui),
         staged = quote(paths.staged),
+        staging_dir = quote(paths.staging_dir),
+        staged_ui_dir = quote(paths.staged_ui_dir),
+        staged_package = quote(paths.staged_package),
+        installed_package = quote(paths.installed_package),
         backup = quote(paths.backup),
+        ui_backup = quote(paths.ui_backup),
+        package_backup = quote(paths.package_backup),
+        legacy_backup = quote(paths.legacy_backup),
         manifest = quote(paths.manifest),
         manifest_next = quote(paths.manifest_next),
         manifest_backup = quote(paths.manifest_backup),
         marker = quote(paths.marker),
         install_dir = quote(paths.install_dir),
+    )
+    .replace(
+        "setlocal\r\n",
+        "setlocal\r\nset \"COMMITTED=0\"\r\n",
+    )
+    .replace(
+        "del /Q \"%BACKUP%\" \"%PACKAGE_BACKUP%\" \"%LEGACY_BACKUP%\" \"%MANIFEST_BACKUP%\" \"%MARKER%\" 2>NUL\r\nstart",
+        "del /Q \"%BACKUP%\" \"%PACKAGE_BACKUP%\" \"%LEGACY_BACKUP%\" \"%MANIFEST_BACKUP%\" \"%MARKER%\" 2>NUL\r\nset \"COMMITTED=1\"\r\nstart",
+    )
+    .replace(
+        ":cleanup\r\nrmdir /S /Q \"%UI_BACKUP%\" 2>NUL\r\nrmdir /S /Q \"%STAGING_DIR%\" 2>NUL",
+        ":cleanup\r\nif \"%COMMITTED%\"==\"1\" rmdir /S /Q \"%UI_BACKUP%\" 2>NUL\r\nif \"%COMMITTED%\"==\"1\" rmdir /S /Q \"%STAGING_DIR%\" 2>NUL",
     )
 }
 
@@ -2491,6 +2643,41 @@ mod tests {
     }
 
     #[test]
+    fn updater_package_requires_worker_and_electron_ui() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-updater-package-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary updater package directory");
+        let archive_path = root.join("updater.zip");
+        let file = fs::File::create(&archive_path).expect("create updater archive");
+        let mut archive = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, content) in [
+            ("evohime-updater.exe", b"worker".as_slice()),
+            ("updater/EvoHimeUpdater.exe", b"ui".as_slice()),
+            ("updater/resources/app.asar", b"asar".as_slice()),
+        ] {
+            archive
+                .start_file(name, options)
+                .expect("start updater entry");
+            archive.write_all(content).expect("write updater entry");
+        }
+        archive.finish().expect("finish updater archive");
+
+        super::extract_updater_package(&archive_path, &root.join("destination"))
+            .expect("complete updater package must extract");
+        assert!(root.join("destination/evohime-updater.exe").is_file());
+        assert!(root
+            .join("destination/updater/EvoHimeUpdater.exe")
+            .is_file());
+        fs::remove_dir_all(root).expect("remove temporary updater package directory");
+    }
+
+    #[test]
     fn archive_entry_count_is_bounded() {
         let root = std::env::temp_dir().join(format!(
             "evohime-archive-entries-{}",
@@ -2721,7 +2908,7 @@ mod tests {
                     version: "1.1.0".into(),
                     release_tag: "module-updater-v1.1.0".into(),
                     manifest_asset: "updater.manifest.json".into(),
-                    artifact: Some("evohime-updater.exe".into()),
+                    artifact: Some("updater.zip".into()),
                     size: 10,
                     sha256: "a".repeat(64),
                     dependencies: vec![],
@@ -2843,7 +3030,7 @@ mod tests {
                 changes: vec![],
                 dependencies: vec![],
                 restart: "updater".into(),
-                artifact: "evohime-updater.exe".into(),
+                artifact: "updater.zip".into(),
                 size: 1,
                 sha256: "b".repeat(64),
                 download_url: "https://github.com/example/updater".into(),
@@ -3053,12 +3240,26 @@ mod tests {
     #[test]
     fn updater_bootstrap_validates_new_worker_before_removing_backup() {
         let updater = Path::new(r"C:\Program Files\EvoHime\evohime-updater.exe");
-        let updater_ui = Path::new(r"C:\Program Files\EvoHime\EvoHimeUpdater.exe");
+        let updater_ui_dir = Path::new(r"C:\Program Files\EvoHime\updater");
+        let legacy_updater_ui = Path::new(r"C:\Program Files\EvoHime\EvoHimeUpdater.exe");
         let staged = Path::new(
             r"C:\Users\Roman\AppData\Local\EvoHime\update-staging\evohime-updater.exe.next",
         );
+        let staged_ui_dir =
+            Path::new(r"C:\Users\Roman\AppData\Local\EvoHime\update-staging\updater");
+        let staged_package =
+            Path::new(r"C:\Users\Roman\AppData\Local\EvoHime\update-staging\updater.zip");
+        let installed_package = Path::new(r"C:\Program Files\EvoHime\updater.zip");
         let backup =
             Path::new(r"C:\Users\Roman\AppData\Local\EvoHime\update-state\updater-previous.exe");
+        let ui_backup =
+            Path::new(r"C:\Users\Roman\AppData\Local\EvoHime\update-state\updater-previous");
+        let package_backup = Path::new(
+            r"C:\Users\Roman\AppData\Local\EvoHime\update-state\updater-package-previous.zip",
+        );
+        let legacy_backup = Path::new(
+            r"C:\Users\Roman\AppData\Local\EvoHime\update-state\updater-legacy-previous.exe",
+        );
         let manifest = Path::new(r"C:\Program Files\EvoHime\evohime.components.json");
         let manifest_next = Path::new(r"C:\Program Files\EvoHime\evohime.components.json.next");
         let manifest_backup = Path::new(
@@ -3069,9 +3270,17 @@ mod tests {
         );
         let paths = UpdaterBootstrapPaths {
             updater,
-            updater_ui,
+            updater_ui_dir,
+            legacy_updater_ui,
             staged,
+            staging_dir: Path::new(r"C:\Users\Roman\AppData\Local\EvoHime\update-staging"),
+            staged_ui_dir,
+            staged_package,
+            installed_package,
             backup,
+            ui_backup,
+            package_backup,
+            legacy_backup,
             manifest,
             manifest_next,
             manifest_backup,
@@ -3083,10 +3292,17 @@ mod tests {
         let verify = script
             .find("--check --install-dir")
             .expect("new worker check");
-        let cleanup_backup = script.find("del /Q \"%BACKUP%\"").expect("backup cleanup");
+        let cleanup_backup = script
+            .rfind("del /Q \"%BACKUP%\" \"%PACKAGE_BACKUP%\"")
+            .expect("backup cleanup");
         assert!(verify < cleanup_backup);
         assert!(script.contains(":restore_manifest"));
         assert!(script.contains("move /Y \"%BACKUP%\" \"%UPDATER%\""));
+        assert!(script.contains("%STAGED_UI_DIR%\\EvoHimeUpdater.exe"));
+        assert!(script.contains("%UPDATER_UI_DIR%\\EvoHimeUpdater.exe"));
+        assert!(script.contains("%STAGED_PACKAGE%"));
+        assert!(script.contains("set \"COMMITTED=0\""));
+        assert!(script.contains("if \"%COMMITTED%\"==\"1\" rmdir /S /Q \"%STAGING_DIR%\""));
         assert!(script.contains("Program Files"));
     }
 }

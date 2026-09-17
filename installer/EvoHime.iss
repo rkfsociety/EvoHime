@@ -38,10 +38,10 @@ CloseApplicationsFilter=EvoHime.exe,EvoHimeUpdater.exe
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autodesktop}\EvoHime"; Filename: "{app}\EvoHimeUpdater.exe"; Parameters: "--evohime-updater --install-dir ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\resources\evohime-agent.ico"
+Name: "{autodesktop}\EvoHime"; Filename: "{app}\updater\EvoHimeUpdater.exe"; Parameters: "--evohime-updater --install-dir ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\updater\resources\evohime-agent.ico"
 
 [Run]
-Filename: "{app}\EvoHimeUpdater.exe"; Parameters: "--evohime-updater --install-dir ""{app}"""; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\updater\EvoHimeUpdater.exe"; Parameters: "--evohime-updater --install-dir ""{app}"""; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; Рабочая копия исходников и собранный пакет принадлежат обновлению, а не
