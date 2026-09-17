@@ -19,7 +19,7 @@ describe('ModuleUpdateService', () => {
     expect(shouldApplyBootstrap(false, [])).toBe(false)
   })
 
-  it('starts the Windows worker through the shell with quoted paths', async () => {
+  it('starts the native worker directly with paths kept as separate arguments', async () => {
     let quitForApply = false
     const service = new ModuleUpdateService({
       dataDirectory: 'C:\\data\\EvoHime',
@@ -34,16 +34,13 @@ describe('ModuleUpdateService', () => {
 
     await service.prepareComponents(['listener-runtime'])
 
-    const windows = process.platform === 'win32'
     expect(spawnMock).toHaveBeenCalledWith(
-      windows ? '"C:\\Program Files\\EvoHime\\evohime-updater.exe"' : 'C:\\Program Files\\EvoHime\\evohime-updater.exe',
-      windows
-        ? ['--apply', '--install-dir', '"C:\\Program Files\\EvoHime"', '--wait-pid', String(process.pid), '--relaunch', '"C:\\Program Files\\EvoHime\\EvoHime.exe"']
-        : ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime', '--wait-pid', String(process.pid), '--relaunch', 'C:\\Program Files\\EvoHime\\EvoHime.exe'],
+      'C:\\Program Files\\EvoHime\\evohime-updater.exe',
+      ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime', '--wait-pid', String(process.pid), '--relaunch', 'C:\\Program Files\\EvoHime\\EvoHime.exe'],
       expect.objectContaining({
         detached: true,
         windowsHide: true,
-        shell: windows,
+        shell: false,
         stdio: 'ignore'
       })
     )

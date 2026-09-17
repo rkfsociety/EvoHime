@@ -121,11 +121,7 @@ pub fn validate_pe_artifact(
         return Err("artifact size mismatch".into());
     }
     let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    let mut header = [0u8; 2];
-    file.read_exact(&mut header).map_err(|e| e.to_string())?;
-    if header != *b"MZ" {
-        return Err("artifact is not a PE executable".into());
-    }
+    validate_pe_headers(&mut file, metadata.len())?;
     let mut digest = sha2::Sha256::new();
     file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut buffer = [0u8; 64 * 1024];
@@ -139,6 +135,68 @@ pub fn validate_pe_artifact(
     let actual = format!("{:x}", digest.finalize());
     if actual != expected_sha256.to_ascii_lowercase() {
         return Err("artifact hash mismatch".into());
+    }
+    Ok(())
+}
+
+/// Validate the executable format before a downloaded worker can be launched.
+/// Checking only the DOS `MZ` marker lets a truncated or malformed PE reach
+/// Windows, which reports it as an unsupported 16-bit application.
+pub fn validate_pe_image(path: &Path) -> Result<(), String> {
+    let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > 1024 * 1024 * 1024 {
+        return Err("artifact size is outside bounds".into());
+    }
+    let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    validate_pe_headers(&mut file, metadata.len())
+}
+
+fn validate_pe_headers(file: &mut std::fs::File, file_len: u64) -> Result<(), String> {
+    const DOS_HEADER_SIZE: u64 = 64;
+    const COFF_HEADER_SIZE: u64 = 24;
+    if file_len < DOS_HEADER_SIZE {
+        return Err("artifact is not a PE executable".into());
+    }
+    let mut dos_header = [0u8; DOS_HEADER_SIZE as usize];
+    file.read_exact(&mut dos_header)
+        .map_err(|e| e.to_string())?;
+    if dos_header[..2] != *b"MZ" {
+        return Err("artifact is not a PE executable".into());
+    }
+    let pe_offset = u32::from_le_bytes(
+        dos_header[0x3c..0x40]
+            .try_into()
+            .expect("DOS header slice has fixed size"),
+    ) as u64;
+    let pe_end = pe_offset
+        .checked_add(COFF_HEADER_SIZE)
+        .ok_or_else(|| "artifact PE header offset overflowed".to_owned())?;
+    if pe_offset < DOS_HEADER_SIZE || pe_end > file_len {
+        return Err("artifact PE header is truncated".into());
+    }
+    file.seek(SeekFrom::Start(pe_offset))
+        .map_err(|e| e.to_string())?;
+    let mut coff = [0u8; COFF_HEADER_SIZE as usize];
+    file.read_exact(&mut coff).map_err(|e| e.to_string())?;
+    if coff[..4] != *b"PE\0\0" {
+        return Err("artifact PE signature is invalid".into());
+    }
+    let machine = u16::from_le_bytes([coff[4], coff[5]]);
+    if machine != 0x8664 {
+        return Err("artifact is not an x64 PE executable".into());
+    }
+    let optional_header_size = u16::from_le_bytes([coff[20], coff[21]]) as u64;
+    let optional_end = pe_end
+        .checked_add(optional_header_size)
+        .ok_or_else(|| "artifact optional header offset overflowed".to_owned())?;
+    if optional_header_size < 2 || optional_end > file_len {
+        return Err("artifact PE optional header is truncated".into());
+    }
+    let mut optional_magic = [0u8; 2];
+    file.read_exact(&mut optional_magic)
+        .map_err(|e| e.to_string())?;
+    if u16::from_le_bytes(optional_magic) != 0x20b {
+        return Err("artifact is not a PE32+ executable".into());
     }
     Ok(())
 }
@@ -162,11 +220,26 @@ mod recovery_tests {
     fn pe_validation_checks_header_size_and_hash() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("updater.exe");
-        std::fs::write(&path, b"MZpayload").unwrap();
-        let hash = format!("{:x}", sha2::Sha256::digest(b"MZpayload"));
-        validate_pe_artifact(&path, 9, &hash).unwrap();
-        assert!(validate_pe_artifact(&path, 8, &hash).is_err());
+        let mut payload = vec![0u8; 0x5a];
+        payload[..2].copy_from_slice(b"MZ");
+        payload[0x3c..0x40].copy_from_slice(&(0x40u32).to_le_bytes());
+        payload[0x40..0x44].copy_from_slice(b"PE\0\0");
+        payload[0x44..0x46].copy_from_slice(&0x8664u16.to_le_bytes());
+        payload[0x54..0x56].copy_from_slice(&2u16.to_le_bytes());
+        payload[0x58..0x5a].copy_from_slice(&0x20bu16.to_le_bytes());
+        std::fs::write(&path, &payload).unwrap();
+        let hash = format!("{:x}", sha2::Sha256::digest(&payload));
+        validate_pe_artifact(&path, payload.len() as u64, &hash).unwrap();
+        assert!(validate_pe_artifact(&path, payload.len() as u64 - 1, &hash).is_err());
         assert!(validate_pe_artifact(&path, 9, &"00".repeat(32)).is_err());
+    }
+
+    #[test]
+    fn pe_validation_rejects_dos_only_payload() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("updater.exe");
+        std::fs::write(&path, b"MZpayload").unwrap();
+        assert!(validate_pe_image(&path).is_err());
     }
 
     #[test]

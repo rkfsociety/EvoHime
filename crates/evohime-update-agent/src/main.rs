@@ -2,8 +2,8 @@
 
 use evohime_update_agent::{
     compare_semver, deserialize_nullable_vec, is_valid_semver, read_recovery_journal,
-    select_outdated, validate_pe_artifact, write_recovery_journal, InstalledManifest, ModuleRecord,
-    UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
+    select_outdated, validate_pe_artifact, validate_pe_image, write_recovery_journal,
+    InstalledManifest, ModuleRecord, UpdateCandidate, UpdaterModuleStatus, UpdaterStatus,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::Digest;
@@ -1213,6 +1213,8 @@ fn apply_updates_inner(
             staging.join("evohime-updater.exe.next"),
         )
         .map_err(|error| error.to_string())?;
+        validate_pe_image(&staging.join("evohime-updater.exe.next"))
+            .map_err(|error| format!("updater: staged worker PE validation failed: {error}"))?;
         fs::rename(
             staging.join("updater-package").join("updater"),
             staging.join("updater"),
@@ -1693,6 +1695,8 @@ fn extract_updater_package_inner(archive_path: &Path, destination: &Path) -> Res
     {
         return Err("updater: updater package не содержит полный worker и Electron UI".to_owned());
     }
+    validate_pe_image(&destination.join("evohime-updater.exe"))
+        .map_err(|error| format!("updater: worker PE validation failed: {error}"))?;
     Ok(())
 }
 
@@ -2656,8 +2660,9 @@ mod tests {
         let file = fs::File::create(&archive_path).expect("create updater archive");
         let mut archive = zip::ZipWriter::new(file);
         let options = zip::write::SimpleFileOptions::default();
+        let worker = fs::read(std::env::current_exe().expect("resolve test executable"))
+            .expect("read test executable");
         for (name, content) in [
-            ("evohime-updater.exe", b"worker".as_slice()),
             ("updater/EvoHimeUpdater.exe", b"ui".as_slice()),
             ("updater/resources/app.asar", b"asar".as_slice()),
         ] {
@@ -2666,6 +2671,12 @@ mod tests {
                 .expect("start updater entry");
             archive.write_all(content).expect("write updater entry");
         }
+        archive
+            .start_file("evohime-updater.exe", options)
+            .expect("start updater worker entry");
+        archive
+            .write_all(&worker)
+            .expect("write updater worker entry");
         archive.finish().expect("finish updater archive");
 
         super::extract_updater_package(&archive_path, &root.join("destination"))

@@ -115,18 +115,16 @@ export class ModuleUpdateService {
     const args = [
       mode,
       '--install-dir',
-      process.platform === 'win32' ? quoteShellArgument(this.options.installDirectory) : this.options.installDirectory
+      this.options.installDirectory
     ]
     if (mode === '--apply') {
-      args.push('--wait-pid', String(process.pid), '--relaunch', process.platform === 'win32'
-        ? quoteShellArgument(join(this.options.installDirectory, 'EvoHime.exe'))
-        : join(this.options.installDirectory, 'EvoHime.exe'))
+      args.push('--wait-pid', String(process.pid), '--relaunch', join(this.options.installDirectory, 'EvoHime.exe'))
     }
     try {
       const child = spawn(
-        process.platform === 'win32' ? quoteShellArgument(this.options.updaterPath) : this.options.updaterPath,
+        this.options.updaterPath,
         args,
-        { detached: true, stdio: 'ignore', windowsHide: true, shell: process.platform === 'win32' }
+        { detached: true, stdio: 'ignore', windowsHide: true, shell: false }
       )
       child.once('error', () => {
         this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.', error: 'Updater worker недоступен.' })
@@ -233,10 +231,6 @@ function readInstalledModules(installDirectory: string): Readonly<Record<string,
   } catch {
     return {}
   }
-}
-
-function quoteShellArgument(value: string): string {
-  return `"${value.replace(/"/g, '\\"')}"`
 }
 
 function toUpdatePhase(value: string | undefined, hasAvailable: boolean): UpdateStatus['phase'] {
