@@ -828,7 +828,15 @@ Base URL принимается только по `https` либо по `http` �
 .\scripts\build-windows-native.ps1
 ```
 
-Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для пользователя GitHub Actions собирает единственный `EvoHime-Setup.exe`. Установщик размещает shell `EvoHime.exe`, каталог `updater\` с `EvoHimeUpdater.exe`, Rust worker `evohime-updater.exe`, остальные native-компоненты и manifest в каталоге приложения и создаёт ровно один ярлык `EvoHime` на рабочем столе. Публикуемый `updater.zip` содержит worker и Electron-каталог вместе, поэтому видимый updater и worker всегда обновляются одной версией.
+Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для первой установки GitHub Actions собирает маленький сетевой `EvoHime-Setup.exe`: он размещает только `updater\EvoHimeUpdater.exe`, `evohime-updater.exe`, `evohime-transaction.exe` и bootstrap marker, создаёт ярлык и передаёт загрузку полного комплекта updater. Полный installer из fixed release `installer` остаётся отдельным fallback для восстановления. Публикуемый `updater.zip` содержит worker и Electron-каталог вместе, поэтому видимый updater и worker всегда обновляются одной версией.
+
+Bootstrap source имеет bounded marker `evohime.bootstrap.v1` и собирается из
+уже опубликованных `module-updater` и `module-transaction` artifacts. В нём
+нет shell, Core, supervisor, listener, verifier, component manifest или
+runtime-моделей: их exact versions, размеры и SHA-256 получает updater из
+fixed `compatibility` manifest. Поэтому обычное изменение module releases не
+пересобирает bootstrap installer; installer workflow запускает только узкий
+packaging gate, а полный Windows workflow остаётся ручным fallback.
 
 Пакет x64 предназначен для Windows 10 2004+ и Windows 11 и содержит bundled Electron runtime, Rust runtime и локальные компоненты; отдельная установка Node.js или браузера не требуется.
 
@@ -883,10 +891,18 @@ rollback-транзакцией, сохраняя Core и остальные н�
 клиент с корневым `EvoHimeUpdater.exe` остаётся совместимым до первого
 успешного обновления и затем мигрирует в новый каталог автоматически.
 
-Старый installer остаётся базовым способом первой установки и полного
-восстановления. После его запуска `EvoHimeUpdater.exe` проверяет совместимый
-набор; отсутствие локального component marker означает базовую версию `0.0.0`,
-поэтому старый клиент получает весь необходимый набор перед обычным запуском.
+Bootstrap installer является базовым способом первой установки. После его
+запуска `EvoHimeUpdater.exe` проверяет совместимый набор; отсутствие локального
+component marker означает базовую версию `0.0.0`, поэтому bootstrap получает
+весь необходимый набор перед обычным запуском. Полный installer остаётся
+отдельным способом полного восстановления.
+На пустом каталоге component transaction допускает отсутствующие до операции
+файлы: backup хранит только существующие компоненты, а rollback удаляет
+добавленные этой транзакцией файлы и сохраняет пользовательские дополнительные
+файлы. Старые transaction journals без этого поля восстанавливаются по старой
+семантике. Если shell ещё отсутствует, действие запуска в updater UI передаёт
+управление тому же verified module apply и не пытается запустить отсутствующий
+`EvoHime.exe`.
 Локальная пересборка остаётся dev-only fallback и сравнивает коммит своей
 сборки с вершиной отслеживаемой ветки.
 

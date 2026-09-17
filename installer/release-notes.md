@@ -1,4 +1,4 @@
-Здесь всегда лежат актуальные `EvoHime-Setup.exe` и его проверочный
+Здесь всегда лежит полный fallback `EvoHime-Setup.exe` и его проверочный
 `EvoHime-Setup.json`. Это постоянный fixed release с тегом `installer`:
 после успешной публикационной проверки старый release и его assets удаляются,
 затем создаётся новый release с тем же тегом.
@@ -8,9 +8,15 @@
 **Постоянная ссылка на установщик:**
 https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 
+Для обычной первой установки используется маленький сетевой bootstrap из
+[release `bootstrap`](https://github.com/rkfsociety/EvoHime/releases/tag/bootstrap).
+Этот fixed release не заменяет полный fallback и получает остальные модули через
+`compatibility` manifest после запуска updater.
+
 ## Что дальше
 
-Установщик нужен для первой установки и полного восстановления. После установки
+Bootstrap нужен для первой установки, а этот полный installer — для полного
+восстановления. После установки
 обновляющий компонент получает fixed `compatibility` manifest с конкретным
 совместимым набором module releases, проверяет их размер и SHA-256 и применяет
 только выбранные модули под транзакцией с backup и откатом. Если требуется новая

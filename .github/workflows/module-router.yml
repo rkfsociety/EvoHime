@@ -96,18 +96,19 @@ jobs:
           $installerLatest = $null
           $manifestPath = Join-Path $env:RUNNER_TEMP 'EvoHime-Setup.json'
           # gh использует ненулевой код и для HTTP 404, и для сетевого сбоя.
-          # Только подтверждённый 404 означает, что fixed installer release
+          # Только подтверждённый 404 означает, что fixed bootstrap release
           # ещё не создан; любой другой отказ должен остановить router.
-          $probeOutput = @(gh api "repos/$env:REPOSITORY/releases/tags/installer" 2>&1)
+          $bootstrapTag = 'bootstrap'
+          $probeOutput = @(gh api "repos/$env:REPOSITORY/releases/tags/$bootstrapTag" 2>&1)
           $probeExit = $LASTEXITCODE
           $probeText = $probeOutput -join "`n"
           $releaseAbsent = $probeExit -ne 0 -and $probeText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
           if ($probeExit -ne 0 -and -not $releaseAbsent) {
-            throw "Не удалось проверить installer release: $probeText"
+            throw "Не удалось проверить bootstrap release: $probeText"
           }
           if (-not $releaseAbsent) {
-            gh release download installer --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Installer release существует, но его manifest не удалось получить.' }
+            gh release download $bootstrapTag --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Bootstrap release существует, но его manifest не удалось получить.' }
           }
           if (-not $releaseAbsent -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $published = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -157,12 +158,12 @@ jobs:
             'installer' = '${{ needs.changes.outputs.installer }}'
           }
           $workflowFiles = @{
-            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'installer' = 'windows.yml'
+            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'installer' = 'bootstrap-installer.yml'
           }
           $dispatchStarted = [DateTime]::UtcNow
           $dispatched = [System.Collections.Generic.List[object]]::new()
           foreach ($module in $selected.Keys) {
-            if ($selected[$module] -ne 'true') { continue }
+            if ($module -eq 'installer' -or $selected[$module] -ne 'true') { continue }
             $workflow = $workflowFiles[$module]
             gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
             if ($LASTEXITCODE -ne 0) { throw "Не удалось запустить workflow модуля $module." }
@@ -203,6 +204,25 @@ jobs:
               throw "Workflow модуля $($run.Module), run $($run.RunId), завершился: $($state.conclusion)."
             }
             Write-Host "Workflow модуля $($run.Module) завершён успешно."
+          }
+
+          # Bootstrap скачивает опубликованные updater и transaction modules.
+          # Поэтому его нельзя запускать параллельно с их публикацией.
+          if ($selected['installer'] -eq 'true') {
+            $workflow = $workflowFiles['installer']
+            $dispatchStarted = [DateTime]::UtcNow
+            gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось запустить bootstrap installer workflow.' }
+            $installerItem = [PSCustomObject]@{ Module = 'installer'; Workflow = $workflow }
+            $installerRun = Resolve-DispatchedRun $installerItem
+            do {
+              $stateJson = gh run view $installerRun.RunId --repo $env:REPOSITORY --json status,conclusion
+              if ($LASTEXITCODE -ne 0) { throw "Не удалось прочитать состояние workflow installer, run $($installerRun.RunId)." }
+              $state = $stateJson | ConvertFrom-Json
+              if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
+            } while ($state.status -ne 'completed')
+            if ($state.conclusion -ne 'success') { throw "Workflow bootstrap installer, run $($installerRun.RunId), завершился: $($state.conclusion)." }
+            Write-Host 'Bootstrap installer workflow завершён успешно.'
           }
 
           gh workflow run compatible-manifest.yml --repo $env:REPOSITORY --ref $env:REF

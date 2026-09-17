@@ -10,9 +10,15 @@ const { spawnMock } = vi.hoisted(() => ({
 
 vi.mock('node:child_process', () => ({ spawn: spawnMock }))
 
-import { ModuleUpdateService } from '../src/main/update/module-update-service'
+import { ModuleUpdateService, shouldApplyBootstrap } from '../src/main/update/module-update-service'
 
 describe('ModuleUpdateService', () => {
+  it('routes the launch action into apply while a bootstrap shell is missing', () => {
+    expect(shouldApplyBootstrap(false, ['shell-host'])).toBe(true)
+    expect(shouldApplyBootstrap(true, ['shell-host'])).toBe(false)
+    expect(shouldApplyBootstrap(false, [])).toBe(false)
+  })
+
   it('starts the Windows worker through the shell with quoted paths', async () => {
     let quitForApply = false
     const service = new ModuleUpdateService({

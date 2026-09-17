@@ -7,13 +7,12 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий checkout зафиксирован task-only коммитом в `main` и до push опережает
-`origin/main` на один коммит. Локальные проверки этого изменения: полный
-Electron suite `615 passed, 4 skipped`, Electron typecheck, protocol и bundle
-checks, native/recovery/module-router/documentation smoke, Rust `cargo check`
-и `cargo test --no-run`. Полный Windows workflow и публикация модулей должны
-подтвердить это после push; исторические разделы ниже сохраняют прежнее
-GitHub evidence.
+Текущий checkout содержит реализацию bootstrap-установщика и до push не имеет
+GitHub CI evidence для этого изменения. Локально подтверждены узкие проверки
+transaction worker, bootstrap source, bootstrap release contract, module-router
+и `git diff --check`; полная публикация bootstrap и module releases должна быть
+подтверждена GitHub Actions после push. Исторические разделы ниже сохраняют
+прежнее GitHub evidence.
 
 ## Статус выпуска
 
@@ -24,13 +23,25 @@ GitHub evidence.
 являются живым статусом.
 
 Поставка разделена на versioned module releases с тегами
-`module-<module>-v<semver>` и один
-`installer` для первоначальной установки или полного восстановления.
-`installer` содержит только `EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники
-и runtime публикуются только в собственных релизах модулей. Fixed release
+`module-<module>-v<semver>`, `bootstrap` для первоначальной установки и
+`installer` для полного восстановления. `bootstrap` содержит маленький`EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники и runtime публикуются
+только в собственных релизах модулей. Fixed release
 `compatibility` содержит дешёвый `evohime.compatible.json`, который связывает
 конкретные module releases в один совместимый комплект и задаёт minimum updater
 version.
+
+## Bootstrap installer (current checkout)
+
+Изменение добавляет `bootstrap` release с маленьким `EvoHime-Setup.exe` и
+`EvoHime-Setup.json`; полный fixed `installer` release остаётся fallback.
+Локально PASS: `cargo test --locked -p evohime-updater --lib` — 35/35,
+`npm test -- --run tests/module-update-service.test.ts` — 5/5, `npm run
+typecheck`, `actionlint` для bootstrap/router/full workflow, bootstrap source и
+release contract smoke, module-router smoke, installer release gate и
+`git diff --check`. GitHub CI для текущего checkout ещё не запускался до push;
+после него ожидаются bootstrap packaging, transaction/updater module releases,
+router и compatibility evidence. Тяжёлый full Windows installer workflow в
+этой задаче не запускается и не требуется для обычного bootstrap пути.
 
 ## Контракт новой поставки
 
@@ -38,7 +49,7 @@ version.
 `EvoHime.exe` и `resources/app.asar`; transaction worker применяет его как
 shell-tree с rollback. Полный Windows workflow передаёт native и Electron
 артефакты из проверочных jobs в packaging job, поэтому Cargo и Electron package
-не запускаются повторно. Router выпускает installer только после различения
+не запускаются повторно. Router выпускает bootstrap после различения
 подтверждённого HTTP 404 (релиза нет) и прочих ошибок получения manifest.
 
 `updater` публикуется как единый `updater.zip`, содержащий Rust
@@ -68,7 +79,8 @@ worker, UI-каталог и архив с rollback; старые клиенты
 
 Эта таблица является историческим снимком и не описывает текущий checkout.
 Полный Rust/Electron/package/installer acceptance-прогон остаётся обязательным
-источником проверки в GitHub Actions.
+источником проверки fallback в GitHub Actions, а bootstrap имеет отдельный
+узкий build/smoke gate.
 
 ## Историческая локальная проверка до документационной синхронизации
 

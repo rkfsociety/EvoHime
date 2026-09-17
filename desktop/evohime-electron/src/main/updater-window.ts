@@ -7,7 +7,7 @@ import type { ShellLog } from './diagnostics/logger'
 import { dataDirectory } from './paths'
 import { hardenSession, hardenWebContents, isProduction, type HardeningOptions } from './security'
 import { loadUpdateConfig } from './update/config'
-import { ModuleUpdateService } from './update/module-update-service'
+import { ModuleUpdateService, shouldApplyBootstrap } from './update/module-update-service'
 import { updaterUiStatus, type UpdaterUiStatus } from '@shared/updater'
 import { clearUpdaterStart, recordUpdaterStart } from './update/crash-loop'
 
@@ -74,7 +74,13 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   const launchShell = (): void => {
     if (shuttingDown) return
     const shell = join(installDirectory, 'EvoHime.exe')
-    if (!existsSync(shell)) {
+    const shellExists = existsSync(shell)
+    if (!shellExists) {
+      const availableModules = service.status.availableModules ?? []
+      if (shouldApplyBootstrap(shellExists, availableModules)) {
+        void service.prepareComponents(availableModules)
+        return
+      }
       publishFailure(`Файл EvoHime.exe не найден в ${installDirectory}.`)
       return
     }

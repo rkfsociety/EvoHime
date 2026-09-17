@@ -1,0 +1,84 @@
+name: bootstrap installer
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'installer/EvoHimeBootstrap.iss'
+      - 'installer/bootstrap-release-notes.md'
+      - 'scripts/build-bootstrap-source.ps1'
+      - 'scripts/bootstrap-installer.tests.ps1'
+      - 'scripts/publish-bootstrap-release.ps1'
+      - 'release-versions/installer.txt'
+      - '.github/workflows/bootstrap-installer.yml'
+
+concurrency:
+  group: evohime-bootstrap-installer
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: bootstrap installer — build and smoke
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download published updater and transaction modules
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $updaterVersion = (Get-Content -LiteralPath 'release-versions\updater.txt' -Raw).Trim()
+          $transactionVersion = (Get-Content -LiteralPath 'release-versions\transaction.txt' -Raw).Trim()
+          if ($updaterVersion -notmatch '^\d+\.\d+\.\d+$' -or $transactionVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid updater or transaction version.' }
+          New-Item -ItemType Directory -Force -Path module-input | Out-Null
+          gh release download "module-updater-v$updaterVersion" --repo $env:GITHUB_REPOSITORY --pattern updater.zip --dir module-input --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Published updater module is unavailable.' }
+          gh release download "module-transaction-v$transactionVersion" --repo $env:GITHUB_REPOSITORY --pattern evohime-transaction.exe --dir module-input --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Published transaction module is unavailable.' }
+          ./scripts/build-bootstrap-source.ps1 -UpdaterArchivePath module-input/updater.zip -TransactionPath module-input/evohime-transaction.exe -OutputPath bootstrap-source -UpdaterVersion $updaterVersion -TransactionVersion $transactionVersion -Commit $env:GITHUB_SHA -Branch main
+      - name: Проверка bootstrap source
+        shell: pwsh
+        run: ./scripts/bootstrap-release.tests.ps1; ./scripts/bootstrap-installer.tests.ps1 -SourcePath bootstrap-source
+      - name: Установка Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+      - name: Сборка маленького bootstrap installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
+          $version = (Get-Content -LiteralPath 'release-versions\installer.txt' -Raw).Trim()
+          & $iscc "/Obootstrap-output" "/DSourceDir=$env:GITHUB_WORKSPACE\bootstrap-source" "/DAppVersion=$version" installer/EvoHimeBootstrap.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Проверка собранного installer
+        shell: pwsh
+        run: ./scripts/bootstrap-installer.tests.ps1 -SourcePath bootstrap-source -SetupPath bootstrap-output/EvoHime-Setup.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: evohime-bootstrap-installer
+          path: bootstrap-output/EvoHime-Setup.exe
+          if-no-files-found: error
+
+  publish:
+    name: bootstrap installer — release
+    needs: build
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: evohime-bootstrap-installer
+          path: bootstrap-output
+      - name: Publish bootstrap release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-bootstrap-release.ps1 -SetupPath bootstrap-output/EvoHime-Setup.exe -Version ((Get-Content -LiteralPath 'release-versions\installer.txt' -Raw).Trim()) -Commit $env:GITHUB_SHA

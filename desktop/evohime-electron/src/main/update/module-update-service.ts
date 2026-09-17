@@ -32,6 +32,11 @@ export interface ModuleUpdateServiceOptions {
   readonly quitForApply?: () => void
 }
 
+/** A bootstrap install has no shell to launch until its first module apply. */
+export function shouldApplyBootstrap(shellExists: boolean, availableModules?: readonly string[]): boolean {
+  return !shellExists && Boolean(availableModules?.length)
+}
+
 /**
  * Production-side view of the independent headless Rust updater worker.
  *

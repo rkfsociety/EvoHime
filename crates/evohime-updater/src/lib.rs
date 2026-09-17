@@ -38,6 +38,8 @@ struct TransactionState {
     #[serde(default)]
     components: Vec<String>,
     #[serde(default)]
+    backed_up_components: Option<Vec<String>>,
+    #[serde(default)]
     ui_target: Option<PathBuf>,
     #[serde(default)]
     ui_previous_pointer: Option<Vec<u8>>,
@@ -74,6 +76,7 @@ pub struct UpdateTransaction {
     state_path: PathBuf,
     scope: TransactionScope,
     components: Vec<String>,
+    backed_up_components: Vec<String>,
     ui_target: Option<PathBuf>,
     ui_previous_pointer: Option<Vec<u8>>,
 }
@@ -657,6 +660,17 @@ fn validate_recovered_state(state: &TransactionState, state_dir: &Path) -> io::R
             ));
         }
     }
+    if let Some(backed_up) = &state.backed_up_components {
+        let mut seen = HashSet::with_capacity(backed_up.len());
+        for component in backed_up {
+            if !components.contains(component.as_str()) || !seen.insert(component.as_str()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("invalid backed up transaction component: {component}"),
+                ));
+            }
+        }
+    }
     if let Some(target) = &state.ui_target {
         let bundles = state.install_dir.join("ui-bundles");
         let valid_target = target.parent() == Some(bundles.as_path())
@@ -867,13 +881,14 @@ impl UpdateTransaction {
             std::process::id()
         ));
         fs::create_dir_all(&backup_dir)?;
-        let transaction = Self {
+        let mut transaction = Self {
             operation_id: format!("tx-{}-{}", timestamp_nanos(), std::process::id()),
             install_dir: install_dir.to_path_buf(),
             backup_dir,
             state_path,
             scope,
             components,
+            backed_up_components: Vec::new(),
             ui_target: None,
             ui_previous_pointer: None,
         };
@@ -921,9 +936,17 @@ impl UpdateTransaction {
         match self.scope {
             TransactionScope::Components => {
                 for component in &self.components {
-                    let source = self.backup_dir.join(component);
                     let destination = self.install_dir.join(component);
-                    restore_file(&source, &destination)?;
+                    if self
+                        .backed_up_components
+                        .iter()
+                        .any(|backed_up| backed_up == component)
+                    {
+                        let source = self.backup_dir.join(component);
+                        restore_file(&source, &destination)?;
+                    } else if destination.exists() {
+                        fs::remove_file(destination)?;
+                    }
                 }
             }
             // Files the failed package added are left behind: overwriting the
@@ -961,6 +984,14 @@ impl UpdateTransaction {
         )?)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         validate_recovered_state(&state, state_dir)?;
+        let components = if state.components.is_empty() {
+            Self::COMPONENTS.iter().map(|s| (*s).to_owned()).collect()
+        } else {
+            state.components
+        };
+        let backed_up_components = state
+            .backed_up_components
+            .unwrap_or_else(|| components.clone());
         let transaction = Self {
             operation_id: if state.operation_id.is_empty() {
                 "legacy".to_owned()
@@ -971,11 +1002,8 @@ impl UpdateTransaction {
             backup_dir: state.backup_dir,
             state_path,
             scope: state.scope,
-            components: if state.components.is_empty() {
-                Self::COMPONENTS.iter().map(|s| (*s).to_owned()).collect()
-            } else {
-                state.components
-            },
+            components,
+            backed_up_components,
             ui_target: state.ui_target,
             ui_previous_pointer: state.ui_previous_pointer,
         };
@@ -999,9 +1027,12 @@ impl UpdateTransaction {
         Ok(RecoveryResult { recovered: true })
     }
 
-    fn copy_current_components(&self) -> io::Result<()> {
+    fn copy_current_components(&mut self) -> io::Result<()> {
         for component in &self.components {
             let source = self.install_dir.join(component);
+            if !source.exists() {
+                continue;
+            }
             if !source.is_file() {
                 return Err(io::Error::new(
                     io::ErrorKind::NotFound,
@@ -1012,6 +1043,7 @@ impl UpdateTransaction {
                 ));
             }
             fs::copy(&source, self.backup_dir.join(component))?;
+            self.backed_up_components.push(component.clone());
         }
         Ok(())
     }
@@ -1024,6 +1056,7 @@ impl UpdateTransaction {
             phase,
             scope: self.scope,
             components: self.components.clone(),
+            backed_up_components: Some(self.backed_up_components.clone()),
             ui_target: self.ui_target.clone(),
             ui_previous_pointer: self.ui_previous_pointer.clone(),
         })
@@ -1734,6 +1767,7 @@ mod tests {
             phase: super::TransactionPhase::Installing,
             scope: super::TransactionScope::Tree,
             components: Vec::new(),
+            backed_up_components: None,
             ui_target: None,
             ui_previous_pointer: None,
         };
@@ -1761,6 +1795,77 @@ mod tests {
             .expect_err("unexpected backup names must be rejected");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert!(local_backup.join("sentinel").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bootstrap_transaction_accepts_missing_components_and_rolls_back_new_files() {
+        let root = temp_dir("bootstrap-transaction");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        fs::create_dir_all(&install).unwrap();
+        fs::write(install.join("user-data.txt"), "keep").unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("EvoHime.exe"), "new-shell").unwrap();
+        let selected = vec!["EvoHime.exe".to_owned()];
+        let missing_shell = root.join("missing-shell.exe");
+
+        let error = super::apply_component_set_staged(super::ComponentSetApply {
+            staging: &staging,
+            install_dir: &install,
+            state_dir: &state,
+            native_selected: &selected,
+            ui_version: None,
+            shell_host: false,
+            wait_pid: None,
+            relaunch: Some(&missing_shell),
+            health_file: None,
+        })
+        .expect_err("failed bootstrap must roll back");
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(!install.join("EvoHime.exe").exists());
+        assert_eq!(
+            fs::read_to_string(install.join("user-data.txt")).unwrap(),
+            "keep"
+        );
+        assert!(!state.join("transaction.json").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn bootstrap_transaction_commits_missing_components() {
+        let root = temp_dir("bootstrap-commit");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        fs::create_dir_all(&install).unwrap();
+        fs::write(install.join("user-data.txt"), "keep").unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("EvoHime.exe"), "new-shell").unwrap();
+        let selected = vec!["EvoHime.exe".to_owned()];
+
+        super::apply_component_set_staged(super::ComponentSetApply {
+            staging: &staging,
+            install_dir: &install,
+            state_dir: &state,
+            native_selected: &selected,
+            ui_version: None,
+            shell_host: false,
+            wait_pid: None,
+            relaunch: None,
+            health_file: None,
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "new-shell"
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("user-data.txt")).unwrap(),
+            "keep"
+        );
+        assert!(!state.join("transaction.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
 

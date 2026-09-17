@@ -71,8 +71,9 @@ EvoHime — локальное Windows desktop-приложение с одни�
 `evohime-supervisor.exe`; Core владеет состоянием, SQLite, правами и эффектами,
 а renderer получает только проекцию через authenticated versioned named pipe.
 
-В текущий release scope входят Windows 10 2004+ / Windows 11 x64 и один
-постоянный installer-релиз `installer`. Новые версионные релизы, публичный HTTP
+В текущий release scope входят Windows 10 2004+ / Windows 11 x64, bootstrap-
+релиз `bootstrap` для первой установки и полный fallback-релиз `installer`.
+Новые версионные релизы, публичный HTTP
 server, внешний Node.js runtime, cloud control plane и обязательная GPU-зависимость
 не входят в продукт.
 
@@ -85,19 +86,32 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 | Core | Rust agent runtime, tools, SQLite и provider gateway | `crates/evohime-core/`, `crates/model-gateway/` |
 | Supervisor | mutex, Job Object, lifecycle и recovery | `crates/evohime-supervisor/` |
 | Native package | Electron shell `EvoHime.exe`, updater-модуль `updater\EvoHimeUpdater.exe` + Rust worker, Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
-| Installer | Electron shell и единый updater package в постоянном `EvoHime-Setup.exe` | `installer/`, `.github/workflows/windows.yml` |
+| Installer | Маленький bootstrap `EvoHime-Setup.exe`; полный fallback собирается отдельным Windows workflow | `installer/`, `.github/workflows/bootstrap-installer.yml` |
 
 Для разработки используется PowerShell 7+ и Node.js 22 LTS. В установленный
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
 временных каталогах или CI.
 
+## Bootstrap installer
+
+Упрощённый bootstrap-контур: bootstrap source собирается из
+опубликованных updater/transaction modules, проверяется marker- и content-gate
+и упаковывается `installer/EvoHimeBootstrap.iss`. Первый запуск открывает
+самостоятельный updater, получает fixed `compatibility` manifest и применяет
+полный комплект модулей через verified staging/rollback; shell до успешного
+apply не запускается. Полный `installer` workflow и его `EvoHime-Setup.exe`
+сохранены для ручного offline/full-recovery сценария.
+
+Версии затронутых публикуемых модулей: `updater` `0.0.000099`, `transaction`
+`0.0.000062`, bootstrap release version `0.0.000048`.
+
 ## Граница текущего checkout и CI
 
-Текущий checkout зафиксирован task-only коммитом в локальной ветке `main`;
-`origin/main` ожидает один push. Для переноса updater UI в единый модуль локально прошли полный Electron
-suite, typecheck, protocol и bundle checks, native/recovery/module-router/
-documentation smoke, Rust `cargo check` и `cargo test --no-run`. Полный
-Windows workflow и module releases ожидают push. Подробное redacted evidence находится в
+Текущий checkout содержит task-only реализацию bootstrap-установщика в
+локальной ветке `main`, ожидающую push; GitHub CI для неё ещё не запускался. Узкие проверки
+transaction worker, bootstrap source/release contract, module-router и
+`git diff --check` прошли локально. Полный bootstrap/module release ожидает
+push; тяжёлый full Windows workflow намеренно не запускался. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 ## История чата в renderer
@@ -115,7 +129,7 @@ conversation event IDs, и обновляет только затронутую 
 Исторические refs и workflow закрытых планов сохранены в
 [`release-evidence.md`](release-evidence.md) с их исходными commit и run ID.
 
-Постоянные каналы поставки разделены по назначению: [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer) — первая установка, [`listener`](https://github.com/rkfsociety/EvoHime/releases/tag/listener) — отдельный модульный release listener runtime.
+Постоянные каналы поставки разделены по назначению: [`bootstrap`](https://github.com/rkfsociety/EvoHime/releases/tag/bootstrap) — маленькая первая установка, [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer) — полный fallback, [`listener`](https://github.com/rkfsociety/EvoHime/releases/tag/listener) — отдельный модульный release listener runtime.
 Локально по умолчанию выполняются быстрые проверки; полный acceptance-прогон
 Rust, Electron, native package и installer является обязательным в GitHub
 Actions и может запускаться локально при необходимости.
