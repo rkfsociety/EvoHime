@@ -1497,7 +1497,9 @@ installer, install/upgrade, rollback, staged rebuild, выборочный UI ap
 `cargo test --locked -p evohime-updater` — 33 библиотечных и 3 бинарных теста.
 Также прошли rustfmt check и `git diff --check`. CI и публикация нового
 transaction release на момент записи ещё не запускались; установленная копия
-клиента не изменялась.
+клиента не изменялась. Добавлен двухфазный updater bootstrap: повышение
+minimum updater сначала доставляет только новый update-agent, который до
+mixed apply заменяет существующий transaction worker проверенным артефактом.
 
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 

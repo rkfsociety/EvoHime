@@ -1204,10 +1204,12 @@ fn apply_updates_inner(
         ui_update,
     )?;
     let worker = install_dir.join("evohime-transaction.exe");
-    if !worker.is_file() {
-        if let Some(update) = applied.iter().find(|item| item.module == "transaction") {
-            repair_transaction_worker(&worker, &staging.join(&update.artifact), update)?;
-        }
+    if let Some(update) = applied.iter().find(|item| item.module == "transaction") {
+        // Bootstrap the new worker before it is asked to replace the rest of
+        // the installation. The old worker cannot apply the update that fixes
+        // its own file-lock handling, because it would fail before reaching
+        // the staged transaction executable.
+        repair_transaction_worker(&worker, &staging.join(&update.artifact), update)?;
     }
     if !worker.is_file() {
         return Err("updater: transaction worker отсутствует".into());
@@ -2117,7 +2119,7 @@ mod tests {
         cleanup_failed_staging, cleanup_worker_copy, copy_reader_bounded, is_github_api_url,
         is_github_release_asset_url, is_trusted_github_url, merge_installed_manifest_to,
         normalize_github_token, parse_json_body, read_installed_module_manifest,
-        read_update_config, resolve_github_token_with, stream_file_hash,
+        read_update_config, repair_transaction_worker, resolve_github_token_with, stream_file_hash,
         transaction_worker_failure_message, updater_bootstrap_script, updater_first_if_required,
         updater_http_client, validate_compatible_manifest, validate_runtime_manifest,
         write_staged_manifest, CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry,
@@ -2417,6 +2419,46 @@ mod tests {
         assert_eq!(size, 10);
         assert_eq!(hash, format!("{:x}", sha2::Sha256::digest(b"shell-host")));
         fs::remove_file(path).expect("remove shell host");
+    }
+
+    #[test]
+    fn transaction_worker_repair_replaces_an_existing_worker() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-transaction-repair-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after Unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create repair directory");
+        let target = root.join("evohime-transaction.exe");
+        fs::write(&target, b"old-worker").expect("write old worker");
+        let staged = std::env::current_exe().expect("resolve test executable");
+        let (size, sha256) = stream_file_hash(&staged).expect("hash staged worker");
+        let update = UpdateCandidate {
+            module: "transaction".into(),
+            installed: "0.0.000059".into(),
+            available: "0.0.000060".into(),
+            summary: String::new(),
+            changes: Vec::new(),
+            dependencies: Vec::new(),
+            restart: "transaction".into(),
+            artifact: "evohime-transaction.exe".into(),
+            size,
+            sha256: sha256.clone(),
+            download_url: "https://github.com/example/transaction".into(),
+        };
+
+        repair_transaction_worker(&target, &staged, &update).expect("repair worker");
+
+        assert_eq!(
+            stream_file_hash(&target).expect("hash repaired worker"),
+            (size, sha256)
+        );
+        assert!(!root
+            .join("evohime-transaction.exe.recovery-backup")
+            .exists());
+        fs::remove_dir_all(root).expect("remove repair directory");
     }
 
     #[test]
