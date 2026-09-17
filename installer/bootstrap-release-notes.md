@@ -1,5 +1,5 @@
 Это маленький сетевой bootstrap-установщик EvoHime. Он содержит только
-updater UI, update-agent и transaction worker, после запуска получает точный
+самостоятельный updater UI и update-agent со встроенным transaction engine, после запуска получает точный
 совместимый комплект module releases через fixed `compatibility` manifest и
 проверяет SHA-256 каждого артефакта.
 

@@ -2,8 +2,8 @@
  * Contract of the updater, shared by main, preload and renderer.
  *
  * The default path downloads the CI installer for a green commit and swaps the
- * installed files through `evohime-transaction.exe`; a local source rebuild is
- * retained for development. This file must stay free of Electron and Node
+ * installed files through the updater's embedded transaction engine; a local
+ * source rebuild is retained for development. This file must stay free of Electron and Node
  * imports — it is compiled into the sandboxed renderer.
  */
 
@@ -41,7 +41,7 @@ export interface UpdateEvidenceEntry {
  * Where the update run currently is.
  *
  * `ready` means a rebuilt package is staged and only the restart is missing;
- * `applying` means the transaction worker was handed the staged package and the
+ * `applying` means the self-contained updater owns the staged package and the
  * shell is about to exit.
  */
 export type UpdatePhase =

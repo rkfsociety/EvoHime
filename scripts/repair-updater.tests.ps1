@@ -26,6 +26,12 @@ if ($script -notmatch "expectedHash -notmatch '\^\[0-9a-f\]\{64\}\$'") {
 foreach ($required in @('--self-test', 'launch_preflight', 'updater-fallback.exe', 'manual-recovery')) {
     if ($agent -notmatch [regex]::Escape($required)) { throw "Updater agent missing recovery contract: $required" }
 }
+if ($agent -notmatch 'evohime_tx::apply_component_set_staged') {
+    throw 'Updater agent does not own the embedded transaction engine.'
+}
+if ($agent -match 'install_dir\.join\("evohime-transaction\.exe"\)') {
+    throw 'Updater agent still depends on the installed transaction executable.'
+}
 foreach ($required in @('RECOVERY_SCHEMA', 'write_recovery_journal', 'validate_pe_artifact', 'MAX_RECOVERY_BYTES')) {
     if ($agentLib -notmatch [regex]::Escape($required)) { throw "Updater recovery library missing: $required" }
 }

@@ -44,7 +44,7 @@ describe('ModuleUpdateService', () => {
 
     expect(spawnMock).toHaveBeenCalledWith(
       'C:\\Program Files\\EvoHime\\evohime-updater.exe',
-      ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime', '--wait-pid', String(process.pid), '--relaunch', 'C:\\Program Files\\EvoHime\\EvoHime.exe'],
+      ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime', '--wait-pid', String(process.pid), '--relaunch', 'C:\\Program Files\\EvoHime\\EvoHime.exe', '--health-file', 'C:\\data\\EvoHime\\update-state\\health.json'],
       expect.objectContaining({
         detached: true,
         windowsHide: true,
@@ -88,7 +88,7 @@ describe('ModuleUpdateService', () => {
       writeFileSync(join(state, 'updater.json'), JSON.stringify({
         phase: 'failed',
         message: 'Обновление не применено.',
-        error: 'updater: transaction worker завершился с кодом 1: invalid shell-host archive',
+        error: 'updater: встроенное применение модулей не удалось: invalid shell-host archive',
         available: [{ module: 'shell-host', installed: '0.0.000052', available: '0.0.000053' }]
       }))
       const service = new ModuleUpdateService({
@@ -148,7 +148,9 @@ describe('ModuleUpdateService', () => {
         '--wait-pid',
         String(process.pid),
         '--relaunch',
-        join(install, 'EvoHime.exe')
+        join(install, 'EvoHime.exe'),
+        '--health-file',
+        join(root, 'update-state', 'health.json')
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })

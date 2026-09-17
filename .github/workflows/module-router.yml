@@ -207,8 +207,8 @@ jobs:
             Write-Host "Workflow модуля $($run.Module) завершён успешно."
           }
 
-          # Bootstrap скачивает опубликованные updater и transaction modules.
-          # Поэтому его нельзя запускать параллельно с их публикацией.
+          # Bootstrap скачивает опубликованный self-contained updater module.
+          # Поэтому его нельзя запускать параллельно с публикацией updater.
           if ($selected['installer'] -eq 'true') {
             $workflow = $workflowFiles['installer']
             $dispatchStarted = [DateTime]::UtcNow

@@ -56,6 +56,7 @@ $modulePaths = @{
     'verifier' = @('crates/evohime-receipts')
     'updater' = @(
         'crates/evohime-update-agent',
+        'crates/evohime-updater',
         'desktop/evohime-electron/src/main/updater.ts',
         'desktop/evohime-electron/src/main/updater-window.ts',
         'desktop/evohime-electron/src/main/update/module-update-service.ts',
@@ -91,7 +92,7 @@ $summaryText = if ($Summary) { $Summary } else {
         'listener-runtime' { 'Библиотеки распознавания речи и модели, используемые модулем listener.'; break }
         'transaction' { 'Worker транзакционного обновления: безопасная замена файлов, backup и rollback.'; break }
         'verifier' { 'Проверяющий worker целостности и контрактов поставляемых файлов.'; break }
-        'updater' { 'Единый модуль обновления: Rust worker транзакций и самостоятельный Electron-интерфейс EvoHimeUpdater.'; break }
+        'updater' { 'Самостоятельный модуль обновления: Rust worker с встроенной транзакцией и Electron-интерфейс EvoHimeUpdater.'; break }
         default { "Компонент `$Module` поставлен как самостоятельный модуль EvoHime."; break }
     }
 }

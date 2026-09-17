@@ -142,7 +142,11 @@ export class ModuleUpdateService {
       this.options.installDirectory
     ]
     if (mode === '--apply') {
-      args.push('--wait-pid', String(process.pid), '--relaunch', join(this.options.installDirectory, 'EvoHime.exe'))
+      args.push(
+        '--wait-pid', String(process.pid),
+        '--relaunch', join(this.options.installDirectory, 'EvoHime.exe'),
+        '--health-file', join(this.options.dataDirectory, 'update-state', 'health.json')
+      )
     }
     let resolveCompletion: (succeeded: boolean) => void = () => {}
     const completion = new Promise<boolean>((resolve) => { resolveCompletion = resolve })

@@ -59,14 +59,14 @@ Release `bootstrap` опубликован как `EvoHime bootstrap 0.0.000048`
 ## Контракт новой поставки
 
 `shell-host` публикуется как полный ZIP `win-unpacked` с обязательными
-`EvoHime.exe` и `resources/app.asar`; transaction worker применяет его как
+`EvoHime.exe` и `resources/app.asar`; встроенный transaction engine применяет его как
 shell-tree с rollback. Полный Windows workflow передаёт native и Electron
 артефакты из проверочных jobs в packaging job, поэтому Cargo и Electron package
 не запускаются повторно. Router выпускает bootstrap после различения
 подтверждённого HTTP 404 (релиза нет) и прочих ошибок получения manifest.
 
-`updater` публикуется как единый `updater.zip`, содержащий Rust
-`evohime-updater.exe` и самостоятельный Electron package
+`updater` публикуется как единый самодостаточный `updater.zip`, содержащий Rust
+`evohime-updater.exe` со встроенным transaction engine и самостоятельный Electron package
 `updater/EvoHimeUpdater.exe` с `updater/resources/app.asar`. Автоматический
 self-update сначала скачивает и проверяет весь архив, затем bootstrap меняет
 worker, UI-каталог и архив с rollback; старые клиенты мигрируют с корневого
@@ -187,7 +187,7 @@ Code signing не входит в текущий release scope; manifest/hash о
 | --- | --- | --- | --- | --- |
 | SQLite schema / automation tables | backup с checksum и schema version | restore safety backup; повторить migration только после проверки | удалить только expired snapshots/archive по retention | `evohime-local-storage` backup tests |
 | Automation archive | canonical run/events/snapshots JSON с SHA-256 и сроком retention | transaction restores only after checksum and identity validation | `sweep_expired_archives` удаляет только истёкшие archives | `automation_store` archive/restore test |
-| Core/supervisor package | полный install backup и transaction journal | transaction worker откатывает staging и очищает journal | остановить компонент, сохранить redacted diagnostic | `electron-fault` и installer rollback smoke |
+| Core/supervisor package | полный install backup и transaction journal | встроенный updater transaction engine откатывает staging и очищает journal | остановить компонент, сохранить redacted diagnostic | `electron-fault` и installer rollback smoke |
 | User-triggered self-repair update | isolated checkout, bounded diff/tests, commit SHA, CI state и installer marker | health timeout или failed startup возвращает полный backup | repair остаётся failed/recoverable, без повторного push или restart | Electron repair tests, updater health-marker tests, authenticated Core E2E |
 | Optional browser/voice/vision adapter | capability manifest/hash и typed availability | `backend_unavailable`, без Core state mutation | disable adapter, remove staging/runtime cache | `decision-register.md`, adapter contract tests |
 | Automation simulation | ephemeral state, fake-provider fixture | discard ephemeral state; no production recovery | delete temp workspace after run | automation A05/A06 fixtures |

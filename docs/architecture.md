@@ -828,10 +828,10 @@ Base URL принимается только по `https` либо по `http` �
 .\scripts\build-windows-native.ps1
 ```
 
-Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для первой установки GitHub Actions собирает маленький сетевой `EvoHime-Setup.exe`: он размещает только `updater\EvoHimeUpdater.exe`, `evohime-updater.exe`, `evohime-transaction.exe` и bootstrap marker, создаёт ярлык и передаёт загрузку полного комплекта updater. Полный installer из fixed release `installer` остаётся отдельным fallback для восстановления. Публикуемый `updater.zip` содержит worker и Electron-каталог вместе, поэтому видимый updater и worker всегда обновляются одной версией.
+Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для первой установки GitHub Actions собирает маленький сетевой `EvoHime-Setup.exe`: он размещает только `updater\EvoHimeUpdater.exe`, `evohime-updater.exe` и bootstrap marker, создаёт ярлык и передаёт загрузку полного комплекта модулей. Полный installer из fixed release `installer` остаётся отдельным fallback для восстановления. Публикуемый `updater.zip` содержит UI и worker со встроенным transaction engine, поэтому updater может восстановить полный install tree без установленного transaction-модуля.
 
 Bootstrap source имеет bounded marker `evohime.bootstrap.v1` и собирается из
-уже опубликованных `module-updater` и `module-transaction` artifacts. В нём
+уже опубликованного `module-updater` artifact. В нём
 нет shell, Core, supervisor, listener, verifier, component manifest или
 runtime-моделей: их exact versions, размеры и SHA-256 получает updater из
 fixed `compatibility` manifest. Поэтому обычное изменение module releases не
@@ -876,15 +876,17 @@ module release каждого компонента, его версию, artifac
 остальные компоненты. Повышение minimum updater поэтому служит двухфазным
 bootstrap для уже установленных клиентов: старая версия сначала доставляет
 только новый updater, а он перед смешанным обновлением атомарно заменяет уже
-существующий transaction worker проверенным артефактом.
+не зависит от существующего transaction worker: встроенный engine сначала
+восстанавливает незавершённую транзакцию, затем применяет выбранные модули,
+включая замену самого `evohime-transaction.exe` как обычного компонента.
 
 `shell-host` публикуется как полный `shell-host.zip` из `win-unpacked`, включая
 `EvoHime.exe`, `resources/app.asar` и зависимые Electron runtime-файлы. Его
 применение распаковывается во временное shell-tree и проходит общей backup/
 rollback-транзакцией, сохраняя Core и остальные невыбранные модули.
 
-`updater` публикуется как `updater.zip`: внутри лежат `evohime-updater.exe` и
-полный самостоятельный Electron package `updater/`, включая
+`updater` публикуется как `updater.zip`: внутри лежат `evohime-updater.exe` с
+встроенным transaction/recovery engine и полный самостоятельный Electron package `updater/`, включая
 `updater/EvoHimeUpdater.exe` и его `resources/app.asar`. При self-update архив
 распаковывается и проверяется до замены; bootstrap атомарно меняет worker,
 каталог UI, архив и component manifest с отдельными backup/rollback. Старый
@@ -921,8 +923,9 @@ Recovery control-plane использует `recovery.json` schema 1 с bounded
 updater создаёт persistent `updater-fallback.exe` как last-known-good копию;
 `--launch` выполняет headless preflight, а `--self-test` проверяет собственный
 PE header, размер/hash, state paths и recovery state без запуска Core или UI.
-Повреждённый transaction worker может быть восстановлен только из полностью
-проверенного module artifact с атомарной заменой. Status/UI получают лишь
+Повреждённый или отсутствующий transaction worker больше не блокирует recovery:
+встроенный transaction engine продолжает работу и заменяет этот compatibility-
+компонент проверенным module artifact в составе общей транзакции. Status/UI получают лишь
 bounded phase, slot/version, fallback, retry count и typed reason code; после
 исчерпания retry updater переходит в manual recovery.
 
@@ -940,8 +943,8 @@ JSON-запросы updater повторяются не более двух ра
 - проверка обновлений ходит в GitHub API с токеном пользователя, если он есть: анонимный лимит — 60 запросов в час на IP, и выбранный чужим трафиком с того же адреса лимит останавливает обновления с `403`, тогда как с токеном лимит 5000. Источники по убыванию явности: `EVOHIME_UPDATE_GITHUB_TOKEN`, поле `githubToken` в `update.json`, `GH_TOKEN`/`GITHUB_TOKEN`, `gh auth token`. Токен не обязателен — без него проверка работает как раньше; он уходит только на `api.github.com`, не пишется в логи и не сохраняется клиентом;
 - git обновления работает без интерактива: сохранённые на машине учётные данные (`gh`, credential manager) используются, но ни git, ни credential helper не могут открыть диалог или спросить пароль в терминале. Зависшее за невидимым окном обновление хуже упавшего — оно блокирует запуск;
 - `update.json` пишет установщик, репозиторий принимается только по `https`, ветка и интервал проверки нормализуются — конфигурация не может увести сборку на чужой источник или превратить проверку в busy loop;
-- установленный ярлык и post-install запуск вызывают `updater\EvoHimeUpdater.exe` с аргументом `--evohime-updater`. Это самостоятельный Electron package внутри модуля updater: он не поднимает Core, supervisor, трей или обычное окно. Проверку и применение он передаёт невидимому Rust worker `evohime-updater.exe`; перед запуском shell gate дожидается проверки, а при наличии модульных релизов автоматически передаёт их в apply и не предоставляет режима запуска без обновления. После успешного завершения worker запускает shell `EvoHime.exe`, а при обновлении самого модуля bootstrap сначала заменяет worker и UI, затем снова запускает `updater\EvoHimeUpdater.exe`. Main-процесс дополнительно проводит тот же gate до старта Core и supervisor, а внутри приложения остаётся компактная иконка с подробностями по версиям модулей;
-- updater/transaction worker запускается без консоли и напрямую как native process, без `cmd.exe`/shell-границы; перед установкой worker проверяется как полный x64 PE32+ с корректными DOS/PE-заголовками, а updater захватывает его stderr с ограничением размера и переносит точный текст rollback/validation failure в `update-state/updater.json#error`; ненулевое завершение без status-файла также переводит UI в `failed`, а не оставляет его в `applying` или ошибочно показывает доступное обновление;
+- установленный ярлык и post-install запуск вызывают `updater\EvoHimeUpdater.exe` с аргументом `--evohime-updater`. Это самостоятельный Electron package внутри модуля updater: он не поднимает Core, supervisor, трей или обычное окно. Проверку, скачивание и применение он передаёт невидимому Rust worker `evohime-updater.exe`, внутри которого статически доступен transaction/recovery engine; перед запуском shell gate дожидается проверки, а при наличии модульных релизов автоматически передаёт их в apply и не предоставляет режима запуска без обновления. После успешного commit и health-check worker запускает shell `EvoHime.exe`, а при обновлении самого модуля bootstrap сначала заменяет worker и UI, затем снова запускает `updater\EvoHimeUpdater.exe`. Main-процесс дополнительно проводит тот же gate до старта Core и supervisor, а внутри приложения остаётся компактная иконка с подробностями по версиям модулей;
+- updater worker запускается без консоли и напрямую как native process, без `cmd.exe`/shell-границы; перед установкой worker проверяется как полный x64 PE32+ с корректными DOS/PE-заголовками, а встроенный transaction engine пишет точный rollback/validation failure в `update-state/updater.json#error`; ошибка применения переводит UI в `failed`, а не оставляет его в `applying` или ошибочно показывает доступное обновление;
 - у уже запущенного клиента фоновая проверка собирает обновление в staging и предлагает перезапуск баннером, не прерывая работу;
 - пользовательский repair-run доступен в `OperationsPanel` после bounded digest из трёх ошибок задач. Перед `repair.start` пользователь выбирает provider и model; пара сохраняется в repair status и переносится через diagnose, commit, push и restart. Сама ошибка только показывает кнопку: `repair.start`, `repair.commit`, `repair.push`, `repair.refreshCI` и обновление запускаются отдельными кликами;
 - repair-run работает в `%LOCALAPPDATA%\\EvoHime\\repair\\<repair-id>`, проверяет origin выбранного workspace и канонический URL EvoHime, а изменения `AGENTS.md`, `.codex`, workflows, updater, supervisor, receipt, security и `.env*` останавливает до ручного review;
@@ -952,7 +955,7 @@ JSON-запросы updater повторяются не более двух ра
   сохраняется совместимость старого локального тестового режима;
 - недостающие Git, Node.js, Rust и MSVC Build Tools ставятся через winget по фиксированным идентификаторам пакетов;
 - локальная сборка падает транзиентно (оборванная загрузка Electron, недописанный `release/`), поэтому после первой неудачи производные каталоги удаляются и сборка повторяется один раз; вторая неудача показывается как есть. Полный вывод сборки лежит в `%LOCALAPPDATA%\EvoHime\logs\update-build.log` — UI показывает только последнюю строку;
-- подмену выполняет `evohime-transaction.exe --apply-staging`: он копирует себя во временный каталог, дожидается не только выхода оболочки, но и момента, когда все уже существующие файлы дерева установки действительно доступны на запись (включая Electron DLL, которые могут удерживаться дочерними процессами или защитным сканером), делает полный backup установки, переносит staging и при любой ошибке восстанавливает прежнюю установку. Копирование переживает блокировки повторами до 120 секунд, а незавершённая транзакция откатывается при следующем запуске. Валидатор component manifest принимает также старые `dependencies: null` и одиночные строковые зависимости, а новый native package всегда сериализует это поле массивом. При повышении версии transaction worker updater-agent сначала заменяет его в установочном дереве из проверенного staging, чтобы исправления самого worker доставлялись обычным module update без пересборки installer. Выборочное обновление отдельных native-модулей выполняет тот же preflight: updater дожидается выхода оболочки и доступности всего установленного дерева до создания backup и записи.
+- встроенный transaction engine выполняет тот же staged apply: дожидается не только выхода оболочки, но и момента, когда все уже существующие файлы дерева установки действительно доступны на запись (включая Electron DLL, которые могут удерживаться дочерними процессами или защитным сканером), делает полный backup установки, переносит staging и при любой ошибке восстанавливает прежнюю установку. Копирование переживает блокировки повторами до 120 секунд, а незавершённая транзакция откатывается при следующем запуске. Валидатор component manifest принимает также старые `dependencies: null` и одиночные строковые зависимости, а новый native package всегда сериализует это поле массивом. `evohime-transaction.exe` остаётся публикуемым compatibility-компонентом для старых пакетов и полного native package, но production updater не запускает его и не требует его наличия. Выборочное обновление отдельных native-модулей выполняет тот же preflight: updater дожидается выхода оболочки и доступности всего установленного дерева до создания backup и записи.
 
 Неудачное обновление не блокирует работу: установленная сборка запускается как обычно, а причина отказа показывается в UI.
 

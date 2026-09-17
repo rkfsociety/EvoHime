@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod component_manifest;
@@ -146,18 +146,26 @@ pub fn run_update(
     match status {
         Ok(status) if status.success() => match verify_installation(install_dir) {
             Ok(()) => {
+                let mut relaunched = None;
                 if let Some(executable) = relaunch {
                     let mut command = Command::new(executable);
                     configure_hidden_process(&mut command);
-                    if let Err(error) = command.current_dir(install_dir).spawn() {
-                        return rollback_after_failure(transaction, error);
+                    match command.current_dir(install_dir).spawn() {
+                        Ok(child) => relaunched = Some(child),
+                        Err(error) => return rollback_after_failure(transaction, error),
                     }
                 }
                 if let Err(error) = wait_for_health(health_file) {
+                    stop_relaunched_process(&mut relaunched);
                     return rollback_after_failure(transaction, error);
                 }
-                transaction.commit()?;
-                Ok(())
+                match transaction.commit() {
+                    Ok(()) => Ok(()),
+                    Err(error) => {
+                        stop_relaunched_process(&mut relaunched);
+                        return rollback_after_failure(transaction, error);
+                    }
+                }
             }
             Err(error) => rollback_after_failure(transaction, error),
         },
@@ -206,24 +214,29 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
     clear_health_file(options.health_file)?;
     let transaction = UpdateTransaction::prepare_tree(options.install_dir, options.state_dir)?;
 
+    let mut relaunched = None;
     let outcome = copy_tree(options.staging, options.install_dir)
-        .and_then(|()| verify_installation(options.install_dir));
-    match outcome {
-        Ok(()) => {
+        .and_then(|()| verify_installation(options.install_dir))
+        .and_then(|()| {
             if let Some(executable) = options.relaunch {
                 let mut command = Command::new(executable);
                 configure_hidden_process(&mut command);
-                if let Err(error) = command.current_dir(options.install_dir).spawn() {
-                    return rollback_after_failure(transaction, error);
-                }
+                relaunched = Some(command.current_dir(options.install_dir).spawn()?);
             }
-            if let Err(error) = wait_for_health(options.health_file) {
-                return rollback_after_failure(transaction, error);
+            wait_for_health(options.health_file)
+        });
+    match outcome {
+        Ok(()) => match transaction.commit() {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                stop_relaunched_process(&mut relaunched);
+                rollback_after_failure(transaction, error)
             }
-            transaction.commit()?;
-            Ok(())
+        },
+        Err(error) => {
+            stop_relaunched_process(&mut relaunched);
+            rollback_after_failure(transaction, error)
         }
-        Err(error) => rollback_after_failure(transaction, error),
     }
 }
 
@@ -355,6 +368,7 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
         )?;
     }
     let mut new_ui_target = None;
+    let mut relaunched = None;
     let outcome = (|| {
         if shell_host {
             copy_tree(&staging.join("shell-host"), install_dir)?;
@@ -389,13 +403,20 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
         if let Some(executable) = relaunch {
             let mut command = Command::new(executable);
             configure_hidden_process(&mut command);
-            command.current_dir(install_dir).spawn()?;
+            relaunched = Some(command.current_dir(install_dir).spawn()?);
         }
         wait_for_health(health_file)
     })();
     match outcome {
-        Ok(()) => transaction.commit(),
+        Ok(()) => match transaction.commit() {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                stop_relaunched_process(&mut relaunched);
+                rollback_after_failure(transaction, error)
+            }
+        },
         Err(error) => {
+            stop_relaunched_process(&mut relaunched);
             if let Some(target) = new_ui_target {
                 let _ = fs::remove_dir_all(target);
             }
@@ -490,16 +511,21 @@ pub fn apply_ui_bundle_staged_with_restart(
         let _ = fs::remove_file(&active_tmp);
         return Err(error);
     }
+    let mut relaunched = None;
     if let Some(executable) = relaunch {
         let mut command = Command::new(executable);
         configure_hidden_process(&mut command);
-        if let Err(error) = command.current_dir(install_root).spawn() {
-            let _ = fs::remove_dir_all(&target);
-            restore_ui_pointer(&active, previous_pointer.as_deref())?;
-            return Err(error);
+        match command.current_dir(install_root).spawn() {
+            Ok(child) => relaunched = Some(child),
+            Err(error) => {
+                let _ = fs::remove_dir_all(&target);
+                restore_ui_pointer(&active, previous_pointer.as_deref())?;
+                return Err(error);
+            }
         }
     }
     if let Err(error) = wait_for_health(health_file) {
+        stop_relaunched_process(&mut relaunched);
         let _ = fs::remove_dir_all(&target);
         restore_ui_pointer(&active, previous_pointer.as_deref())?;
         return Err(error);
@@ -797,6 +823,15 @@ fn rollback_after_failure(transaction: UpdateTransaction, failure: io::Error) ->
         Err(rollback_error) => Err(io::Error::other(format!(
             "update failed: {failure}; rollback failed: {rollback_error}"
         ))),
+    }
+}
+
+/// A failed health-check must not leave the just-started shell alive while its
+/// files are being restored. The next launch then sees a coherent old tree.
+fn stop_relaunched_process(child: &mut Option<Child>) {
+    if let Some(mut child) = child.take() {
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 

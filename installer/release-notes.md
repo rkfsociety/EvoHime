@@ -29,7 +29,7 @@ Bootstrap нужен для первой установки, а этот пол�
 - неудачное обновление не ломает установку: она остаётся прежней, а причина видна в интерфейсе.
 - после ручного запуска self-repair новая установка удерживает backup до
   authenticated Core health-check; если новая Ева не записала
-  `update-state/health.json` за 90 секунд, transaction worker выполняет rollback.
+  `update-state/health.json` за 90 секунд, встроенный updater transaction engine выполняет rollback.
 - self-repair не запускается по таймеру или автоматически после ошибки; commit,
   push и перезапуск требуют отдельных действий пользователя.
 - перед self-repair пользователь выбирает provider и model; эта пара сохраняется

@@ -1,10 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string]$UpdaterArchivePath,
-    [Parameter(Mandatory)] [string]$TransactionPath,
     [Parameter(Mandatory)] [string]$OutputPath,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$UpdaterVersion,
-    [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$TransactionVersion,
     [string]$Commit,
     [string]$Branch = 'main'
 )
@@ -18,10 +16,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $output = [System.IO.Path]::GetFullPath($OutputPath)
 if ($output -eq $repoRoot) { throw 'Bootstrap source нельзя собрать в корень репозитория.' }
 $archive = [System.IO.Path]::GetFullPath($UpdaterArchivePath)
-$transaction = [System.IO.Path]::GetFullPath($TransactionPath)
-foreach ($path in @($archive, $transaction)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Bootstrap input missing: $path" }
-}
+if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw "Bootstrap input missing: $archive" }
 
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
@@ -38,16 +33,14 @@ try {
     }
     Copy-Item -LiteralPath $worker -Destination (Join-Path $output 'evohime-updater.exe') -Force
     Copy-Item -LiteralPath $updaterUi -Destination (Join-Path $output 'updater') -Recurse -Force
-    Copy-Item -LiteralPath $transaction -Destination (Join-Path $output 'evohime-transaction.exe') -Force
 
     $marker = [ordered]@{
         schema = 'evohime.bootstrap.v1'
         product = 'EvoHime'
         updaterVersion = $UpdaterVersion
-        transactionVersion = $TransactionVersion
         commit = if ($Commit) { $Commit } else { (& git -C $repoRoot rev-parse HEAD).Trim() }
         branch = $Branch
-        requiredFiles = @('evohime-updater.exe', 'evohime-transaction.exe', 'updater\EvoHimeUpdater.exe', 'updater\resources\app.asar')
+        requiredFiles = @('evohime-updater.exe', 'updater\EvoHimeUpdater.exe', 'updater\resources\app.asar')
         nextStep = 'download-compatible-modules'
     }
     $marker | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'evohime.bootstrap.json') -Encoding utf8NoBOM

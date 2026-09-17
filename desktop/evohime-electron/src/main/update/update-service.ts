@@ -36,8 +36,9 @@ import { reportUpdateFailure } from './update-issue-reporter'
  * Orchestrates the update: check, download/build, stage, swap.
  *
  * Only this class decides what the user is told. It never applies anything
- * itself — the swap is handed to `evohime-transaction.exe`, which keeps its own
- * backup/rollback journal and outlives the shell it replaces.
+ * itself — the legacy source-build path hands the swap to the compatibility
+ * transaction executable; production module updates use the self-contained
+ * updater worker.
  *
  * A failed update is never fatal: the currently installed build stays in place
  * and the shell launches as usual with the failure reported in the UI.

@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'crates/evohime-update-agent/**'
+      - 'crates/evohime-updater/**'
       - 'desktop/evohime-electron/src/main/updater.ts'
       - 'desktop/evohime-electron/src/main/updater-window.ts'
       - 'desktop/evohime-electron/src/main/update/module-update-service.ts'
@@ -97,4 +98,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $version = (Get-Content -LiteralPath 'release-versions/updater.txt' -Raw).Trim()
-          ./scripts/module-release.ps1 -Module updater -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'updater-output\updater.zip') -Summary 'Единый модуль обновления: Rust worker и самостоятельный Electron-интерфейс EvoHimeUpdater.'
+          ./scripts/module-release.ps1 -Module updater -Version $version -Artifact (Join-Path $env:GITHUB_WORKSPACE 'updater-output\updater.zip') -Summary 'Самостоятельный модуль обновления: Rust worker с встроенной транзакцией и Electron-интерфейс EvoHimeUpdater.'

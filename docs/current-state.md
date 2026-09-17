@@ -95,24 +95,23 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 ## Bootstrap installer
 
 Упрощённый bootstrap-контур: bootstrap source собирается из
-опубликованных updater/transaction modules, проверяется marker- и content-gate
+опубликованного самодостаточного updater module, проверяется marker- и content-gate
 и упаковывается `installer/EvoHimeBootstrap.iss`. Первый запуск открывает
 самостоятельный updater, получает fixed `compatibility` manifest и применяет
 полный комплект модулей через verified staging/rollback; shell до успешного
 apply не запускается. Полный `installer` workflow и его `EvoHime-Setup.exe`
 сохранены для ручного offline/full-recovery сценария.
 
-Версии затронутых публикуемых модулей: `updater` `0.0.000099`, `transaction`
-`0.0.000062`, bootstrap release version `0.0.000048`.
+Для следующего набора выбран patch `updater 0.0.000102` и
+`transaction 0.0.000063`; последний опубликованный bootstrap release —
+`0.0.000048`.
 
 ## Граница текущего checkout и CI
 
-Текущий checkout содержит task-only реализацию bootstrap-установщика в
-локальной ветке `main`; она опубликована в `origin/main` на commit
-`eb0a42eaa27b254855d8a9e702688d0b41c8e71e`. Узкие проверки transaction worker,
-bootstrap source/release contract, module-router и `git diff --check` прошли
-локально. Bootstrap/module releases, router и compatibility manifest прошли
-GitHub Actions; тяжёлый full Windows workflow намеренно не запускался. Подробное redacted evidence находится в
+Текущий checkout содержит task-only реализацию bootstrap-установщика и
+self-contained updater в локальной ветке `main`; локальные проверки follow-up
+изменения не запускались по явному запросу, release evidence появится после
+GitHub Actions. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 ## История чата в renderer
@@ -613,7 +612,7 @@ compatible release manifest `34908038913`.
 Updater получает bounded versioned recovery journal в `update-state/recovery.json`,
 persistent `updater-fallback.exe`, headless `--self-test`/launch preflight,
 fail-closed PE/size/SHA validation и redacted recovery projection в status/UI.
-Обычный transaction worker rollback сохраняется; новый executable/module или
+Встроенный transaction engine сохраняет rollback; новый executable/module или
 web-runtime не добавляются. Локально прошли updater tests, clippy, Electron
 typecheck, protocol check и `git diff --check`. Follow-up `a1561ba6` добавил
 fallback hash validation, bounded download retry, updater UI crash-loop guard
@@ -636,8 +635,8 @@ launch gate автоматически запускает их применен�
 локальный прогон `evohime-updater` прошёл полностью (33 библиотечных и 3
 бинарных теста); установленный клиент для проверки не изменялся. Для доставки
 этого исправления без пересборки installer добавлен двухфазный bootstrap:
-compatibility manifest сначала требует новый updater, а затем update-agent
-заменяет существующий transaction worker до применения остальных модулей.
+compatibility manifest сначала требует новый updater, после чего update-agent
+сам применяет остальные модули без запуска установленного transaction worker.
 Дополнительно выборочный native apply теперь получает PID текущей оболочки и
 перед backup ждёт её завершения и освобождения всего Electron-дерева; основное
 packaged-приложение также корректно закрывается при запуске module update.

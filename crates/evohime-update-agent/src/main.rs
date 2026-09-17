@@ -68,6 +68,7 @@ fn control_update(args: &[String]) -> ExitCode {
         Err(error) => return fail(error),
     };
     let relaunch = argument_value(args, "--relaunch").map(PathBuf::from);
+    let health_file = argument_value(args, "--health-file").map(PathBuf::from);
     let _ = ensure_fallback(&install_dir, &data_dir);
     write_recovery_phase(&data_dir, "prepared", None);
     let updates = match remote_updates(&data_dir, &install_dir) {
@@ -109,6 +110,7 @@ fn control_update(args: &[String]) -> ExitCode {
         &updates,
         wait_pid,
         relaunch.as_deref(),
+        health_file.as_deref(),
         &|message, percent| {
             write_status(
                 &data_dir,
@@ -285,21 +287,6 @@ fn launch_preflight(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
             committed.fallback_available = true;
             write_recovery_journal(&journal_path, &committed)?;
         }
-    }
-    let worker = install_dir.join("evohime-transaction.exe");
-    if worker.is_file() {
-        let metadata = fs::metadata(&worker).map_err(|e| e.to_string())?;
-        let mut file = fs::File::open(&worker).map_err(|e| e.to_string())?;
-        let mut digest = sha2::Sha256::new();
-        let mut buffer = [0u8; 64 * 1024];
-        loop {
-            let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
-            if count == 0 {
-                break;
-            }
-            digest.update(&buffer[..count]);
-        }
-        validate_pe_artifact(&worker, metadata.len(), &format!("{:x}", digest.finalize()))?;
     }
     let updater_ui = updater_ui_executable(install_dir);
     if !updater_ui.is_file()
@@ -1079,10 +1066,19 @@ fn apply_updates(
     updates: &[UpdateCandidate],
     wait_pid: Option<u32>,
     relaunch: Option<&Path>,
+    health_file: Option<&Path>,
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
-    let result = apply_updates_inner(install_dir, data_dir, updates, wait_pid, relaunch, progress);
+    let result = apply_updates_inner(
+        install_dir,
+        data_dir,
+        updates,
+        wait_pid,
+        relaunch,
+        health_file,
+        progress,
+    );
     cleanup_failed_staging(&staging, result)
 }
 
@@ -1092,6 +1088,7 @@ fn apply_updates_inner(
     updates: &[UpdateCandidate],
     wait_pid: Option<u32>,
     relaunch: Option<&Path>,
+    health_file: Option<&Path>,
     progress: &dyn Fn(&str, u8),
 ) -> Result<(), String> {
     let staging = data_dir.join("update-staging");
@@ -1242,80 +1239,27 @@ fn apply_updates_inner(
         &applied,
         ui_update,
     )?;
-    let worker = install_dir.join("evohime-transaction.exe");
-    if let Some(update) = applied.iter().find(|item| item.module == "transaction") {
-        // Bootstrap the new worker before it is asked to replace the rest of
-        // the installation. The old worker cannot apply the update that fixes
-        // its own file-lock handling, because it would fail before reaching
-        // the staged transaction executable.
-        repair_transaction_worker(&worker, &staging.join(&update.artifact), update)?;
-    }
-    if !worker.is_file() {
-        return Err("updater: transaction worker отсутствует".into());
-    }
-    let staging_arg = staging.to_string_lossy().into_owned();
-    let install_arg = install_dir.to_string_lossy().into_owned();
-    let state_arg = state.to_string_lossy().into_owned();
-    let worker_copy = state.join(format!("transaction-{}-worker.exe", std::process::id()));
-    fs::create_dir_all(&state).map_err(|error| error.to_string())?;
-    fs::copy(&worker, &worker_copy).map_err(|error| error.to_string())?;
     let native_selected = selected
         .iter()
         .filter(|path| path.as_str() != "shell-host.zip")
         .cloned()
         .collect::<Vec<_>>();
-    let selected_arg = native_selected.join(",");
-    let mode = if shell_host_update.is_some() || ui_update.is_some() {
-        "--apply-components"
-    } else {
-        "--apply-staging"
-    };
-    let mut command = Command::new(&worker_copy);
-    command.args([
-        "--worker",
-        mode,
-        "--staging",
-        staging_arg.as_str(),
-        "--install-dir",
-        install_arg.as_str(),
-        "--state-dir",
-        state_arg.as_str(),
-    ]);
-    if !native_selected.is_empty() {
-        command.args(["--selected", selected_arg.as_str()]);
-    }
-    if shell_host_update.is_some() {
-        command.arg("--shell-host");
-    }
-    if let Some(update) = ui_update {
-        command.args(["--ui-version", update.available.as_str()]);
-    }
-    if let Some(pid) = wait_pid {
-        command.arg("--wait-pid").arg(pid.to_string());
-    }
-    // When the updater itself is being replaced, its bootstrap script owns the
-    // next launch. Otherwise restart the new shell after the old GUI exits.
-    if updater_update.is_none() {
-        if let Some(path) = relaunch {
-            command.arg("--relaunch").arg(path);
-        }
-    }
     progress("Применение модулей", 0);
-    // The worker is a Windows GUI binary, so its stderr is otherwise not
-    // visible to this headless process. Keep the worker's precise rollback or
-    // validation error instead of reducing every failure to exit code 1.
-    let output = command
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output();
-    cleanup_worker_copy(&worker_copy);
-    let output = output.map_err(|error| error.to_string())?;
-    if !output.status.success() {
-        return Err(transaction_worker_failure_message(
-            output.status.code(),
-            &output.stderr,
-        ));
-    }
+    // The recovery/update agent owns the transaction engine directly. It must
+    // not depend on the currently installed transaction executable: that file
+    // may be missing, corrupt, or be the very component being repaired.
+    evohime_tx::apply_component_set_staged(evohime_tx::ComponentSetApply {
+        staging: &staging,
+        install_dir,
+        state_dir: &state,
+        native_selected: &native_selected,
+        ui_version: ui_update.map(|update| update.available.as_str()),
+        shell_host: shell_host_update.is_some(),
+        wait_pid,
+        relaunch: if updater_update.is_none() { relaunch } else { None },
+        health_file,
+    })
+    .map_err(|error| format!("updater: встроенное применение модулей не удалось: {error}"))?;
     progress("Модули применены", 100);
     let mut component_updates = applied.into_iter().chain(ui_update).collect::<Vec<_>>();
     if let Some(update) = updater_update {
@@ -1338,64 +1282,9 @@ fn apply_updates_inner(
     Ok(())
 }
 
-fn repair_transaction_worker(
-    target: &Path,
-    staged: &Path,
-    update: &UpdateCandidate,
-) -> Result<(), String> {
-    validate_pe_artifact(staged, update.size, &update.sha256)?;
-    let temporary = target.with_extension("exe.repair");
-    let backup = target.with_extension("exe.recovery-backup");
-    fs::copy(staged, &temporary).map_err(|e| e.to_string())?;
-    if let Err(error) = validate_pe_artifact(&temporary, update.size, &update.sha256) {
-        let _ = fs::remove_file(&temporary);
-        return Err(format!(
-            "updater: transaction repair validation failed: {error}"
-        ));
-    }
-    if target.exists() {
-        fs::rename(target, &backup).map_err(|e| e.to_string())?;
-    }
-    if let Err(error) = fs::rename(&temporary, target) {
-        let _ = fs::rename(&backup, target);
-        let _ = fs::remove_file(&temporary);
-        return Err(error.to_string());
-    }
-    let _ = fs::remove_file(backup);
-    Ok(())
-}
-
 fn cleanup_completed_staging(staging: &Path, keep_for_bootstrap: bool) {
     if !keep_for_bootstrap {
         let _ = fs::remove_dir_all(staging);
-    }
-}
-
-fn cleanup_worker_copy(worker_copy: &Path) {
-    let _ = fs::remove_file(worker_copy);
-}
-
-const MAX_TRANSACTION_WORKER_DIAGNOSTIC_CHARS: usize = 16 * 1024;
-
-fn transaction_worker_failure_message(code: Option<i32>, stderr: &[u8]) -> String {
-    let detail = String::from_utf8_lossy(stderr)
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" | ");
-    let detail = detail
-        .chars()
-        .take(MAX_TRANSACTION_WORKER_DIAGNOSTIC_CHARS)
-        .collect::<String>();
-    let prefix = format!(
-        "updater: transaction worker завершился с кодом {}",
-        code.unwrap_or(-1)
-    );
-    if detail.is_empty() {
-        prefix
-    } else {
-        format!("{prefix}: {detail}")
     }
 }
 
@@ -1988,14 +1877,14 @@ fn write_staged_manifest(
     .map_err(|error| error.to_string())
 }
 
-/// Normalizes legacy dependency values before handing the marker to a worker.
+/// Normalizes legacy dependency values before handing the marker to the
+/// embedded transaction engine.
 ///
 /// Older installers wrote a single dependency as a JSON string or `null`
-/// instead of an array, while older transaction workers only accept the array
-/// shape. Also,
+/// instead of an array. Also,
 /// `listener-runtime` is stored and updated under the data directory, not in
 /// the install tree. Older installers nevertheless recorded it as a component
-/// dependency of `listener`, which made the transaction worker reject any
+/// dependency of `listener`, which made the transaction validator reject any
 /// later native update because that external component was absent from the
 /// staged install marker.
 fn normalize_legacy_component_manifest(root: &mut serde_json::Value) {
@@ -2272,11 +2161,11 @@ fn fail(error: impl std::fmt::Display) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        cleanup_failed_staging, cleanup_worker_copy, copy_reader_bounded, is_github_api_url,
+        cleanup_failed_staging, copy_reader_bounded, is_github_api_url,
         is_github_release_asset_url, is_trusted_github_url, merge_installed_manifest_to,
         normalize_github_token, parse_json_body, read_installed_module_manifest,
-        read_update_config, repair_transaction_worker, resolve_github_token_with, stream_file_hash,
-        transaction_worker_failure_message, updater_bootstrap_script, updater_first_if_required,
+        read_update_config, resolve_github_token_with, stream_file_hash,
+        updater_bootstrap_script, updater_first_if_required,
         updater_http_client, validate_compatible_manifest, validate_runtime_manifest,
         write_staged_manifest, CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry,
         RuntimeReleaseManifest, UpdateCandidate, UpdaterBootstrapPaths, UpdaterRequirement,
@@ -2578,46 +2467,6 @@ mod tests {
     }
 
     #[test]
-    fn transaction_worker_repair_replaces_an_existing_worker() {
-        let root = std::env::temp_dir().join(format!(
-            "evohime-transaction-repair-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after Unix epoch")
-                .as_nanos()
-        ));
-        fs::create_dir_all(&root).expect("create repair directory");
-        let target = root.join("evohime-transaction.exe");
-        fs::write(&target, b"old-worker").expect("write old worker");
-        let staged = std::env::current_exe().expect("resolve test executable");
-        let (size, sha256) = stream_file_hash(&staged).expect("hash staged worker");
-        let update = UpdateCandidate {
-            module: "transaction".into(),
-            installed: "0.0.000059".into(),
-            available: "0.0.000060".into(),
-            summary: String::new(),
-            changes: Vec::new(),
-            dependencies: Vec::new(),
-            restart: "transaction".into(),
-            artifact: "evohime-transaction.exe".into(),
-            size,
-            sha256: sha256.clone(),
-            download_url: "https://github.com/example/transaction".into(),
-        };
-
-        repair_transaction_worker(&target, &staged, &update).expect("repair worker");
-
-        assert_eq!(
-            stream_file_hash(&target).expect("hash repaired worker"),
-            (size, sha256)
-        );
-        assert!(!root
-            .join("evohime-transaction.exe.recovery-backup")
-            .exists());
-        fs::remove_dir_all(root).expect("remove repair directory");
-    }
-
-    #[test]
     fn bounded_archive_copy_rejects_expansion_over_limit() {
         let mut output = Vec::new();
         let error = copy_reader_bounded(&mut std::io::Cursor::new(b"1234"), &mut output, 3)
@@ -2788,44 +2637,6 @@ mod tests {
         super::cleanup_completed_staging(&staging, true);
         assert!(staging.exists());
         fs::remove_dir_all(root).expect("remove temporary staging directory");
-    }
-
-    #[test]
-    fn worker_copy_cleanup_is_idempotent() {
-        let root = std::env::temp_dir().join(format!(
-            "evohime-worker-cleanup-{}",
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("clock is after Unix epoch")
-                .as_nanos()
-        ));
-        fs::create_dir_all(&root).expect("create worker state directory");
-        let worker = root.join("transaction-worker.exe");
-        fs::write(&worker, b"worker").expect("write worker copy");
-        cleanup_worker_copy(&worker);
-        cleanup_worker_copy(&worker);
-        assert!(!worker.exists());
-        fs::remove_dir_all(root).expect("remove temporary worker directory");
-    }
-
-    #[test]
-    fn worker_failure_preserves_the_child_diagnostic() {
-        let message = transaction_worker_failure_message(
-            Some(1),
-            b"EvoHime update failed: invalid or incomplete shell-host component\r\n",
-        );
-        assert_eq!(
-            message,
-            "updater: transaction worker завершился с кодом 1: EvoHime update failed: invalid or incomplete shell-host component"
-        );
-    }
-
-    #[test]
-    fn worker_failure_has_a_stable_fallback_when_stderr_is_empty() {
-        assert_eq!(
-            transaction_worker_failure_message(None, b"\n"),
-            "updater: transaction worker завершился с кодом -1"
-        );
     }
 
     #[test]

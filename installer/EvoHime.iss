@@ -39,6 +39,7 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 
 [Icons]
 Name: "{autodesktop}\EvoHime"; Filename: "{app}\updater\EvoHimeUpdater.exe"; Parameters: "--evohime-updater --install-dir ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\updater\resources\evohime-agent.ico"
+Name: "{group}\EvoHime"; Filename: "{app}\updater\EvoHimeUpdater.exe"; Parameters: "--evohime-updater --install-dir ""{app}"""; WorkingDir: "{app}"; IconFilename: "{app}\updater\resources\evohime-agent.ico"
 
 [Run]
 Filename: "{app}\updater\EvoHimeUpdater.exe"; Parameters: "--evohime-updater --install-dir ""{app}"""; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent

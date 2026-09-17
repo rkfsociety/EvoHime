@@ -27,20 +27,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Download published updater and transaction modules
+      - name: Download published self-contained updater module
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $updaterVersion = (Get-Content -LiteralPath 'release-versions\updater.txt' -Raw).Trim()
-          $transactionVersion = (Get-Content -LiteralPath 'release-versions\transaction.txt' -Raw).Trim()
-          if ($updaterVersion -notmatch '^\d+\.\d+\.\d+$' -or $transactionVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid updater or transaction version.' }
+          if ($updaterVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid updater version.' }
           New-Item -ItemType Directory -Force -Path module-input | Out-Null
           gh release download "module-updater-v$updaterVersion" --repo $env:GITHUB_REPOSITORY --pattern updater.zip --dir module-input --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Published updater module is unavailable.' }
-          gh release download "module-transaction-v$transactionVersion" --repo $env:GITHUB_REPOSITORY --pattern evohime-transaction.exe --dir module-input --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'Published transaction module is unavailable.' }
-          ./scripts/build-bootstrap-source.ps1 -UpdaterArchivePath module-input/updater.zip -TransactionPath module-input/evohime-transaction.exe -OutputPath bootstrap-source -UpdaterVersion $updaterVersion -TransactionVersion $transactionVersion -Commit $env:GITHUB_SHA -Branch main
+          ./scripts/build-bootstrap-source.ps1 -UpdaterArchivePath module-input/updater.zip -OutputPath bootstrap-source -UpdaterVersion $updaterVersion -Commit $env:GITHUB_SHA -Branch main
       - name: Проверка bootstrap source
         shell: pwsh
         run: ./scripts/bootstrap-release.tests.ps1; ./scripts/bootstrap-installer.tests.ps1 -SourcePath bootstrap-source

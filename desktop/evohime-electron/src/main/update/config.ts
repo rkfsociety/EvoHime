@@ -50,7 +50,7 @@ export interface UpdateConfig {
   readonly sourceDirectory: string
   /** Rebuilt package waiting to be swapped in. */
   readonly stagingDirectory: string
-  /** Transaction journal and backups of `evohime-transaction.exe`. */
+  /** Updater transaction journal and backups. */
   readonly stateDirectory: string
   /** Directory holding the installed `EvoHime.exe`. */
   readonly installDirectory: string

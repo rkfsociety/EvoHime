@@ -4,7 +4,7 @@ $workflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\bootstr
 $publisher = Get-Content -LiteralPath (Join-Path $root 'scripts\publish-bootstrap-release.ps1') -Raw
 $iss = Get-Content -LiteralPath (Join-Path $root 'installer\EvoHimeBootstrap.iss') -Raw
 
-foreach ($required in @('module-updater-v$updaterVersion', 'module-transaction-v$transactionVersion', 'build-bootstrap-source.ps1', 'EvoHimeBootstrap.iss', 'bootstrap-installer.tests.ps1')) {
+foreach ($required in @('module-updater-v$updaterVersion', 'build-bootstrap-source.ps1', 'EvoHimeBootstrap.iss', 'bootstrap-installer.tests.ps1')) {
     if ($workflow -notmatch [regex]::Escape($required)) { throw "Bootstrap workflow misses: $required" }
 }
 if ($workflow -notmatch 'github\.ref == .refs/heads/main') { throw 'Bootstrap publication is not restricted to main.' }
