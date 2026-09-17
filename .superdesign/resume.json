@@ -94,7 +94,9 @@
       "baselineDraftId": "04259c18-8805-4661-a6e2-6919ce981cfe",
       "activeDraftId": "04259c18-8805-4661-a6e2-6919ce981cfe",
       "designSystemPath": ".superdesign/design-system.md",
-      "referenceIds": [],
+      "referenceIds": [
+        "20c85564-7faf-4f27-acc2-9a1856b0bd15"
+      ],
       "contextFiles": [
         ".superdesign/design-system.md",
         "desktop/evohime-electron/src/renderer/src/UpdaterApp.tsx",
@@ -113,12 +115,12 @@
       },
       "drafts": {
         "04259c18-8805-4661-a6e2-6919ce981cfe": {
-          "title": "EvoHime — вертикальное окно обновления",
-          "visualDirection": "узкое вертикальное окно обновления без лишней информации",
+          "title": "EvoHime — обязательное обновление",
+          "visualDirection": "минималистичный mandatory-update gate с центральным статусом и одной progress bar",
           "currentVersion": 3
         }
       },
-      "updatedAt": "2026-09-16T13:28:00.000Z"
+      "updatedAt": "2026-09-17T14:58:28.0338794+02:00"
     }
   }
 }
