@@ -11,6 +11,7 @@ if ($router -notmatch "'installer' = 'bootstrap-installer\.yml'") { throw 'Route
 if ($router -notmatch 'probeOutput = @\(gh api') { throw 'Router does not probe the installer release explicitly.' }
 if ($router -notmatch 'releaseAbsent.*HTTP.*404') { throw 'Router does not distinguish a missing installer release from other API failures.' }
 if ($router -notmatch 'Не удалось проверить bootstrap release') { throw 'Router does not fail closed on bootstrap release network errors.' }
+if ($router -notmatch '\$releaseAbsent\) \{ \$global:LASTEXITCODE = 0 \}') { throw 'Router does not clear the expected 404 exit code.' }
 if ($router -match 'gh release download bootstrap.*2>\$null') { throw 'Router hides bootstrap release errors.' }
 foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml')) {
     $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflow") -Raw

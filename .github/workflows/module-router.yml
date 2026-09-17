@@ -106,6 +106,7 @@ jobs:
           if ($probeExit -ne 0 -and -not $releaseAbsent) {
             throw "Не удалось проверить bootstrap release: $probeText"
           }
+          if ($releaseAbsent) { $global:LASTEXITCODE = 0 }
           if (-not $releaseAbsent) {
             gh release download $bootstrapTag --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Bootstrap release существует, но его manifest не удалось получить.' }
