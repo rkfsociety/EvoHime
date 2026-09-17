@@ -1500,6 +1500,10 @@ transaction release на момент записи ещё не запускал�
 клиента не изменялась. Добавлен двухфазный updater bootstrap: повышение
 minimum updater сначала доставляет только новый update-agent, который до
 mixed apply заменяет существующий transaction worker проверенным артефактом.
+Для этого опубликован `module-updater-v0.0.000097`; exact-commit CI updater
+`35195071508` завершён успешно (tests, clippy и release build), а compatible
+manifest workflow `35195391877` также завершён успешно. Manifest содержит
+`minimum_version: 0.0.000097` и `update_first: true`.
 
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
