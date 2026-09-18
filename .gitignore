@@ -13,6 +13,8 @@ node_modules/
 .launcher-logs/
 desktop/**/bin/
 desktop/**/obj/
+# Electron updater packaging output (generated win-unpacked trees).
+desktop/evohime-electron/release-updater*/
 # Временные журналы тестов crash-loop updater.
 desktop/evohime-electron/.tmp-updater-crash-loop*/
 .env
