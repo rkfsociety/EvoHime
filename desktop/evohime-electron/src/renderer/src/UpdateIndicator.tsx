@@ -26,14 +26,15 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
   const progress = status.downloadProgress ?? updateProgress(status)
   const percent = progress === null ? null : Math.round(progress * 100)
   const ready = status.phase === 'ready'
+  const available = status.phase === 'available' && (status.availableModules?.length ?? 0) > 0
 
   return (
     <div className="update-indicator">
       <button
         type="button"
         className={`update-indicator__button${failed ? ' update-indicator__button--failed' : ''}${ready ? ' update-indicator__button--ready' : ''}`}
-        aria-label={ready ? 'Подтвердить установку обновления' : 'Прогресс скачивания обновления'}
-        aria-expanded={ready ? confirmOpen : undefined}
+        aria-label={ready ? 'Подтвердить установку обновления' : available ? 'Открыть обновление' : 'Прогресс скачивания обновления'}
+        aria-expanded={ready || available ? confirmOpen : undefined}
         title={status.message}
         onClick={() => {
           setConfirmOpen(true)
@@ -75,6 +76,14 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
           <div className="update-confirm__actions">
             <button type="button" onClick={() => setConfirmOpen(false)}>Закрыть</button>
             {ready ? <button type="button" onClick={() => void api?.invoke('update.restart', {})}>Обновить</button> : null}
+            {available ? (
+              <button
+                type="button"
+                onClick={() => void api?.invoke('update.prepareComponents', { selected: status.availableModules ?? [] })}
+              >
+                Обновить сейчас
+              </button>
+            ) : null}
           </div>
         </section>
       ) : null}

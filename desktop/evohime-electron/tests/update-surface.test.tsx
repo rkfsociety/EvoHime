@@ -150,6 +150,21 @@ describe('sidebar update indicator', () => {
     expect(invoke).toHaveBeenCalledWith('update.restart', {})
   })
 
+  it('starts an available production module update from the running shell', () => {
+    const invoke = installApi()
+    render(<UpdateIndicator status={status({
+      phase: 'available',
+      message: 'Доступны обновления модулей.',
+      availableModules: ['shell-host', 'updater'],
+      installedModules: { 'shell-host': '0.0.000068', updater: '0.0.000101' },
+      availableModuleVersions: { 'shell-host': '0.0.000073', updater: '0.0.000103' }
+    })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть обновление' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить сейчас' }))
+    expect(invoke).toHaveBeenCalledWith('update.prepareComponents', { selected: ['shell-host', 'updater'] })
+  })
+
   it('keeps the compact control out of the sidebar when there is no update to show', () => {
     const { container } = render(<UpdateIndicator status={status({ phase: 'up-to-date' })} />)
     expect(container.firstChild).toBeNull()
