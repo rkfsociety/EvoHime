@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-09-17. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-09-18. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -33,13 +33,18 @@
 | 174 | [Empirical Free-Tier Verification](174-0-empirical-free-tier-verification.md) | active; blocking dependency 173; исторический источник issue #152 |
 | 175 | [Memory Ingestion Integrity](175-0-memory-ingestion-integrity.md) | active; исторический источник issue #153 |
 | 176 | [Guided Capability Recipes](176-0-guided-capability-recipes.md) | active; guided layer over closed recipe/workflow contracts; исторический источник issue #154 |
+| 177 | [Core-owned Image Generation and Editing](177-0-core-image-generation-editing.md) | active; исторический источник issue #155 |
+| 178 | [Core-owned Local Model Adaptation](178-0-core-local-model-adaptation.md) | active; исторический источник issue #156 |
+| 179 | [Core-owned Prompt Strategy Resolver](179-0-core-prompt-strategy-resolver.md) | active; исторический источник issue #157 |
+| 180 | [Core-owned A2A Bridge](180-0-core-a2a-bridge.md) | active; исторический источник issue #158 |
+| 181 | [Core-owned Sensitive Egress Guardrails](181-0-core-sensitive-egress-guardrails.md) | active; исторический источник issue #159 |
 
-Незавершённые numbered plans: 173–176.
+Незавершённые numbered plans: 173–181.
 
 Номера `149–172` теперь являются закрытыми идентификаторами
 очереди. Пропуск `144` намеренный: это закрытый план модульного обновления.
 Новая работа получает следующий свободный номер только после проверки
-дубликатов и зависимостей; 173–176 являются текущим active catalog.
+дубликатов и зависимостей; 173–181 являются текущим active catalog.
 Номера issues в активных планах — исторические идентификаторы постановок и не
 являются текущим источником статуса или критерием закрытия.
 
