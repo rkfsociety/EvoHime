@@ -101,8 +101,8 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 полный комплект модулей через verified staging/rollback; shell до успешного
 apply не запускается. Отдельного offline/full installer нет.
 
-Для следующего набора выбран patch `updater 0.0.000102` и
-`transaction 0.0.000063`; текущая версия web installer — `0.0.000049`.
+Для следующего набора выбран patch `updater 0.0.000104` и
+`transaction 0.0.000064`; текущая версия web installer — `0.0.000050`.
 
 ## Граница текущего checkout и CI
 
