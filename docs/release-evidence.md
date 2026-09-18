@@ -8,7 +8,7 @@ typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
 Текущий checkout содержит реализацию единственного web-установщика. После follow-up
-commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e` все связанные GitHub Actions
+commit `af6d33e9bd405c3cc6b3ee3471a965d1dd5f2596` все связанные GitHub Actions
 gates завершились успешно; первичный router run для предыдущего commit
 зафиксирован ниже как исправленный probe failure. Исторические разделы ниже
 сохраняют прежнее GitHub evidence.
@@ -45,18 +45,18 @@ release contract smoke, module-router smoke, installer release gate и
 `git diff --check`. Тяжёлый native package acceptance в этой задаче не
 запускался; web installer проверяется отдельным узким workflow.
 
-GitHub Actions для commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e`:
+GitHub Actions для commit `af6d33e9bd405c3cc6b3ee3471a965d1dd5f2596`:
 
 | Gate | Result |
 | --- | --- |
 | Transaction module | PASS — [run 35218262467](https://github.com/rkfsociety/EvoHime/actions/runs/35218262467) |
 | Updater module | PASS — [run 35218260049](https://github.com/rkfsociety/EvoHime/actions/runs/35218260049) |
-| Bootstrap installer | PASS — [run 35219065720](https://github.com/rkfsociety/EvoHime/actions/runs/35219065720) |
-| Module router | PASS — [run 35218209005](https://github.com/rkfsociety/EvoHime/actions/runs/35218209005) |
-| Compatibility manifest | PASS — [run 35219362104](https://github.com/rkfsociety/EvoHime/actions/runs/35219362104) |
+| Web installer | PASS — [run 35337328847](https://github.com/rkfsociety/EvoHime/actions/runs/35337328847) |
+| Module router | PASS — [run 35337266592](https://github.com/rkfsociety/EvoHime/actions/runs/35337266592) |
+| Compatibility manifest | PASS — [run 35337548875](https://github.com/rkfsociety/EvoHime/actions/runs/35337548875) |
 
-Release `bootstrap` опубликован как `EvoHime bootstrap 0.0.000048` и содержит
-`EvoHime-Setup.exe` (105484571 bytes) и `EvoHime-Setup.json`. Первый router run
+Единственный release `installer` опубликован как `EvoHime installer 0.0.000049`
+и содержит `EvoHime-Setup.exe` (105425356 bytes) и `EvoHime-Setup.json`. Первый router run
 `35218039229` для предыдущего commit остановился на некорректно обработанном
 ожидаемом HTTP 404 при probe отсутствующего fixed release; follow-up сбрасывает
 этот диагностический exit code только после подтверждённого 404.
