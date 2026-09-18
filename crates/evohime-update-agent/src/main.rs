@@ -1951,9 +1951,7 @@ fn normalize_legacy_component_manifest(root: &mut serde_json::Value) {
 fn transaction_dependencies(module: &str, dependencies: &[String]) -> Vec<String> {
     dependencies
         .iter()
-        .filter(|dependency| {
-            !(module == "listener" && dependency.as_str() == "listener-runtime")
-        })
+        .filter(|dependency| !(module == "listener" && dependency.as_str() == "listener-runtime"))
         .cloned()
         .collect()
 }
