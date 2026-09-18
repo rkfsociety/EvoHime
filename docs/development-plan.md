@@ -112,13 +112,11 @@ pwsh -File .\scripts\documentation.tests.ps1
 `AGENTS.md` предназначены для GitHub Actions и не являются локальным smoke
 прогоном.
 
-На `push`/PR Windows workflow вычисляет изменённые workspace-crates и замыкает
-граф их обратных зависимостей. Для этого набора выполняются format, Clippy,
-тесты и `cargo build`; Electron отдельно проверяется и собирается только при
-изменении Electron shell или desktop IPC proto. Полный Rust/Electron/native
-package, installer и Windows acceptance gates запускаются через центральный
-`module-router` (он dispatch’ит `workflow_dispatch`) либо вручную; installer
-также поддерживает reusable `workflow_call`. Полный локальный прогон запрещён рабочим процессом
-проекта; локально выполняются только документационные, protocol/typecheck и
-узкие проверки изменённых модулей. Описание workflow
+Windows native package acceptance workflow запускается только вручную через
+`workflow_dispatch`. Он не подписан на `push`/PR, не вызывается центральным
+`module-router` и не входит в release path. Центральный `module-router`
+dispatch’ит только затронутые module workflows, compatibility manifest и
+единственный web-installer workflow. Полный локальный прогон запрещён рабочим
+процессом проекта; локально выполняются только документационные,
+protocol/typecheck и узкие проверки изменённых модулей. Описание workflow
 находится в [`.github/workflows/`](../.github/workflows/).

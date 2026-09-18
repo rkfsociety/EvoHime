@@ -57,8 +57,8 @@ self-repair, обход approval или изменение установлен�
 1. Push или pull request запускает модульный workflow и быстрые проверки
    затронутых областей.
 2. Центральный `module-router` dispatch’ит workflow затронутых модулей и
-   быстрый web-installer workflow; native package acceptance запускается
-   отдельно при необходимости. Результат
+   быстрый web-installer workflow; native package acceptance остаётся только
+   ручной диагностической проверкой и не входит в release path. Результат
    фиксируется в `release-evidence.md`.
 3. Единственный release `installer` обновляется после зелёных module и
    compatibility gates; новые версионные теги текущим циклом не создаются.
