@@ -1809,7 +1809,18 @@ fn merge_installed_manifest_to(
                 update.sha256.clone(),
             )
         };
-        let value = serde_json::json!({"id": update.module, "version": update.available, "artifact": artifact, "path": path, "size": size, "sha256": sha256, "dependencies": update.dependencies, "required": true, "protocol": "desktop-ipc-v1", "restart": update.restart});
+        let value = serde_json::json!({
+            "id": update.module,
+            "version": update.available,
+            "artifact": artifact,
+            "path": path,
+            "size": size,
+            "sha256": sha256,
+            "dependencies": transaction_dependencies(&update.module, &update.dependencies),
+            "required": true,
+            "protocol": "desktop-ipc-v1",
+            "restart": update.restart
+        });
         if let Some(existing) = components.iter_mut().find(|item| {
             item.get("id").and_then(serde_json::Value::as_str) == Some(update.module.as_str())
         }) {
@@ -1864,7 +1875,9 @@ fn write_staged_manifest(
         let value = serde_json::json!({
             "id": update.module, "version": update.available, "artifact": update.artifact,
             "path": update.artifact, "size": update.size, "sha256": update.sha256,
-            "dependencies": update.dependencies, "required": true, "restart": update.restart
+            "dependencies": transaction_dependencies(&update.module, &update.dependencies),
+            "required": true,
+            "restart": update.restart
         });
         if let Some(existing) = components.iter_mut().find(|item| {
             item.get("id").and_then(serde_json::Value::as_str) == Some(update.module.as_str())
@@ -1927,6 +1940,22 @@ fn normalize_legacy_component_manifest(root: &mut serde_json::Value) {
             _ => {}
         }
     }
+}
+
+/// Keeps data-directory runtimes out of the install-tree transaction marker.
+///
+/// `listener-runtime` participates in the available-module dependency graph so
+/// that a listener update also selects a newer runtime. Its files are applied
+/// separately under the data directory, however, and it must not be listed as
+/// a dependency of an install-tree component in `evohime.components.json`.
+fn transaction_dependencies(module: &str, dependencies: &[String]) -> Vec<String> {
+    dependencies
+        .iter()
+        .filter(|dependency| {
+            !(module == "listener" && dependency.as_str() == "listener-runtime")
+        })
+        .cloned()
+        .collect()
 }
 
 fn stream_file_hash(path: &Path) -> Result<(u64, String), String> {
@@ -2362,6 +2391,50 @@ mod tests {
         assert!(components
             .iter()
             .any(|item| { item["id"] == "shell-host" && item["dependencies"][0] == "core" }));
+        fs::remove_dir_all(root).expect("remove temporary install directory");
+    }
+
+    #[test]
+    fn staged_manifest_strips_runtime_dependency_from_updated_listener() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-updated-listener-manifest-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock is after unix epoch")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("create temporary install directory");
+        fs::write(
+            root.join("evohime.components.json"),
+            br#"{"components":[{"id":"core","version":"1.0.0","dependencies":[]}]}"#,
+        )
+        .expect("write installed manifest");
+        let update = UpdateCandidate {
+            module: "listener".into(),
+            installed: "1.0.0".into(),
+            available: "1.1.0".into(),
+            summary: String::new(),
+            changes: vec![],
+            dependencies: vec!["core".into(), "listener-runtime".into()],
+            restart: "listener".into(),
+            artifact: "evohime-listener.exe".into(),
+            size: 1,
+            sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into(),
+            download_url: String::new(),
+        };
+        let destination = root.join("staging").join("evohime.components.json");
+        fs::create_dir_all(destination.parent().expect("staging parent")).unwrap();
+
+        write_staged_manifest(&root, &destination, &[&update], None).expect("write marker");
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(destination).expect("read marker")).unwrap();
+        let listener = value["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == "listener")
+            .expect("listener component");
+        assert_eq!(listener["dependencies"], serde_json::json!(["core"]));
         fs::remove_dir_all(root).expect("remove temporary install directory");
     }
 
