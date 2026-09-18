@@ -7,12 +7,13 @@ if ($router -notmatch 'gh workflow run') { throw 'Router does not dispatch indep
 if ($router -match 'git diff|git log|github\.event\.before|MANUAL_BASE|base:') { throw 'Router still uses commit/path diff as the production release criterion.' }
 if ($router -notmatch 'module-\$module-v|Latest-Version|release-versions/\$module\.txt') { throw 'Router does not compare module versions with module releases.' }
 if ($router -notmatch 'release-versions/installer\.txt') { throw 'Router does not track installer version.' }
-if ($router -notmatch "'installer' = 'bootstrap-installer\.yml'") { throw 'Router does not dispatch the bootstrap installer workflow.' }
+if ($router -notmatch "'installer' = 'bootstrap-installer\.yml'") { throw 'Router does not dispatch the web installer workflow.' }
+if ($router -notmatch 'installerTag = .installer.') { throw 'Router does not probe the single installer release explicitly.' }
 if ($router -notmatch 'probeOutput = @\(gh api') { throw 'Router does not probe the installer release explicitly.' }
 if ($router -notmatch 'releaseAbsent.*HTTP.*404') { throw 'Router does not distinguish a missing installer release from other API failures.' }
-if ($router -notmatch 'Не удалось проверить bootstrap release') { throw 'Router does not fail closed on bootstrap release network errors.' }
+if ($router -notmatch 'Не удалось проверить installer release') { throw 'Router does not fail closed on installer release network errors.' }
 if ($router -notmatch '\$releaseAbsent\) \{ \$global:LASTEXITCODE = 0 \}') { throw 'Router does not clear the expected 404 exit code.' }
-if ($router -match 'gh release download bootstrap.*2>\$null') { throw 'Router hides bootstrap release errors.' }
+if ($router -match 'gh release download installer.*2>\$null') { throw 'Router hides installer release errors.' }
 foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.yml','listener-module.yml','listener.yml','transaction.yml','verifier.yml','shell-host.yml','ui-bundle.yml','update-agent.yml')) {
     $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflow") -Raw
     if ($text -match '(?m)^\s{2}push:') { throw "$workflow still has a direct push trigger." }
@@ -28,16 +29,16 @@ if ($shellWorkflow -notmatch 'resources\\app\.asar') { throw 'Shell host workflo
 $nativeWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
 if ($nativeWorkflow -notmatch 'actions/download-artifact@v8' -or $nativeWorkflow -notmatch 'build-windows-native\.ps1 -SkipBuild') { throw 'Native workflow still rebuilds instead of consuming checked artifacts.' }
 $installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\bootstrap-installer.yml') -Raw
-if ($installer -match '(?m)^\s{2}push:') { throw 'bootstrap installer workflow still has a direct push trigger.' }
-if ($installer -notmatch '(?m)^\s{2}workflow_call:\s*$') { throw 'bootstrap installer workflow is not reusable.' }
+if ($installer -match '(?m)^\s{2}push:') { throw 'web installer workflow still has a direct push trigger.' }
+if ($installer -notmatch '(?m)^\s{2}workflow_call:\s*$') { throw 'web installer workflow is not reusable.' }
 if ($installer -notmatch "github\.event_name == 'workflow_dispatch'") { throw 'bootstrap installer publish job is not enabled for routed runs.' }
 if ($installer -notmatch "github\.event_name == 'workflow_call'") { throw 'bootstrap installer publish job is not enabled for reusable runs.' }
 if ($installer -notmatch 'github\.ref == .refs/heads/main') { throw 'bootstrap installer publish job is not restricted to main.' }
-if ($installer -notmatch [regex]::Escape('group: evohime-bootstrap-installer')) { throw 'bootstrap installer workflow does not use a fixed concurrency group.' }
-if ($installer -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw 'bootstrap installer workflow does not cancel the previous run.' }
-if ($installer -notmatch 'release-versions\\installer\.txt') { throw 'bootstrap installer workflow does not consume the canonical installer version.' }
-if ($installer -notmatch 'build-bootstrap-source\.ps1') { throw 'bootstrap installer workflow does not build the minimal source.' }
-if ($installer -notmatch 'bootstrap-installer\.tests\.ps1') { throw 'bootstrap installer workflow misses the bootstrap content gate.' }
+if ($installer -notmatch [regex]::Escape('group: evohime-web-installer')) { throw 'web installer workflow does not use a fixed concurrency group.' }
+if ($installer -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw 'web installer workflow does not cancel the previous run.' }
+if ($installer -notmatch 'release-versions\\installer\.txt') { throw 'web installer workflow does not consume the canonical installer version.' }
+if ($installer -notmatch 'build-bootstrap-source\.ps1') { throw 'web installer workflow does not build the minimal source.' }
+if ($installer -notmatch 'bootstrap-installer\.tests\.ps1') { throw 'web installer workflow misses the content gate.' }
 foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater')) {
     $expected = $module + ': ${{ steps.select.outputs.' + $module + ' }}'
     if ($router -notmatch [regex]::Escape($expected)) { throw "Router output is missing: $module" }

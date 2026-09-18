@@ -71,8 +71,8 @@ EvoHime — локальное Windows desktop-приложение с одни�
 `evohime-supervisor.exe`; Core владеет состоянием, SQLite, правами и эффектами,
 а renderer получает только проекцию через authenticated versioned named pipe.
 
-В текущий release scope входят Windows 10 2004+ / Windows 11 x64, bootstrap-
-релиз `bootstrap` для первой установки и полный fallback-релиз `installer`.
+В текущий release scope входят Windows 10 2004+ / Windows 11 x64 и один
+web-релиз `installer` для первой установки, обновления и восстановления.
 Новые версионные релизы, публичный HTTP
 server, внешний Node.js runtime, cloud control plane и обязательная GPU-зависимость
 не входят в продукт.
@@ -86,25 +86,23 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 | Core | Rust agent runtime, tools, SQLite и provider gateway | `crates/evohime-core/`, `crates/model-gateway/` |
 | Supervisor | mutex, Job Object, lifecycle и recovery | `crates/evohime-supervisor/` |
 | Native package | Electron shell `EvoHime.exe`, updater-модуль `updater\EvoHimeUpdater.exe` + Rust worker, Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
-| Installer | Маленький bootstrap `EvoHime-Setup.exe`; полный fallback собирается отдельным Windows workflow | `installer/`, `.github/workflows/bootstrap-installer.yml` |
+| Installer | Маленький web `EvoHime-Setup.exe`, который после запуска получает полный комплект модулей | `installer/EvoHimeBootstrap.iss`, `.github/workflows/bootstrap-installer.yml` |
 
 Для разработки используется PowerShell 7+ и Node.js 22 LTS. В установленный
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
 временных каталогах или CI.
 
-## Bootstrap installer
+## Web installer
 
-Упрощённый bootstrap-контур: bootstrap source собирается из
+Упрощённый web-контур: installer source собирается из
 опубликованного самодостаточного updater module, проверяется marker- и content-gate
 и упаковывается `installer/EvoHimeBootstrap.iss`. Первый запуск открывает
 самостоятельный updater, получает fixed `compatibility` manifest и применяет
 полный комплект модулей через verified staging/rollback; shell до успешного
-apply не запускается. Полный `installer` workflow и его `EvoHime-Setup.exe`
-сохранены для ручного offline/full-recovery сценария.
+apply не запускается. Отдельного offline/full installer нет.
 
 Для следующего набора выбран patch `updater 0.0.000102` и
-`transaction 0.0.000063`; последний опубликованный bootstrap release —
-`0.0.000048`.
+`transaction 0.0.000063`; текущая версия web installer — `0.0.000049`.
 
 ## Граница текущего checkout и CI
 
@@ -129,7 +127,7 @@ conversation event IDs, и обновляет только затронутую 
 Исторические refs и workflow закрытых планов сохранены в
 [`release-evidence.md`](release-evidence.md) с их исходными commit и run ID.
 
-Постоянные каналы поставки разделены по назначению: [`bootstrap`](https://github.com/rkfsociety/EvoHime/releases/tag/bootstrap) — маленькая первая установка, [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer) — полный fallback, [`listener`](https://github.com/rkfsociety/EvoHime/releases/tag/listener) — отдельный модульный release listener runtime.
+Постоянные каналы поставки разделены по назначению: [`installer`](https://github.com/rkfsociety/EvoHime/releases/tag/installer) — единственный web installer, [`listener`](https://github.com/rkfsociety/EvoHime/releases/tag/listener) — отдельный модульный release listener runtime.
 Локально по умолчанию выполняются быстрые проверки; полный acceptance-прогон
 Rust, Electron, native package и installer является обязательным в GitHub
 Actions и может запускаться локально при необходимости.

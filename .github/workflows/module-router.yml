@@ -96,20 +96,20 @@ jobs:
           $installerLatest = $null
           $manifestPath = Join-Path $env:RUNNER_TEMP 'EvoHime-Setup.json'
           # gh использует ненулевой код и для HTTP 404, и для сетевого сбоя.
-          # Только подтверждённый 404 означает, что fixed bootstrap release
+          # Только подтверждённый 404 означает, что fixed installer release
           # ещё не создан; любой другой отказ должен остановить router.
-          $bootstrapTag = 'bootstrap'
-          $probeOutput = @(gh api "repos/$env:REPOSITORY/releases/tags/$bootstrapTag" 2>&1)
+          $installerTag = 'installer'
+          $probeOutput = @(gh api "repos/$env:REPOSITORY/releases/tags/$installerTag" 2>&1)
           $probeExit = $LASTEXITCODE
           $probeText = $probeOutput -join "`n"
           $releaseAbsent = $probeExit -ne 0 -and $probeText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
           if ($probeExit -ne 0 -and -not $releaseAbsent) {
-            throw "Не удалось проверить bootstrap release: $probeText"
+            throw "Не удалось проверить installer release: $probeText"
           }
           if ($releaseAbsent) { $global:LASTEXITCODE = 0 }
           if (-not $releaseAbsent) {
-            gh release download $bootstrapTag --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw 'Bootstrap release существует, но его manifest не удалось получить.' }
+            gh release download $installerTag --repo $env:REPOSITORY --pattern EvoHime-Setup.json --dir $env:RUNNER_TEMP --clobber 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Installer release существует, но его manifest не удалось получить.' }
           }
           if (-not $releaseAbsent -and (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $published = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
@@ -207,13 +207,13 @@ jobs:
             Write-Host "Workflow модуля $($run.Module) завершён успешно."
           }
 
-          # Bootstrap скачивает опубликованный self-contained updater module.
+          # Web installer скачивает опубликованный self-contained updater module.
           # Поэтому его нельзя запускать параллельно с публикацией updater.
           if ($selected['installer'] -eq 'true') {
             $workflow = $workflowFiles['installer']
             $dispatchStarted = [DateTime]::UtcNow
             gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
-            if ($LASTEXITCODE -ne 0) { throw 'Не удалось запустить bootstrap installer workflow.' }
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось запустить web installer workflow.' }
             $installerItem = [PSCustomObject]@{ Module = 'installer'; Workflow = $workflow }
             $installerRun = Resolve-DispatchedRun $installerItem
             do {
@@ -222,8 +222,8 @@ jobs:
               $state = $stateJson | ConvertFrom-Json
               if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
             } while ($state.status -ne 'completed')
-            if ($state.conclusion -ne 'success') { throw "Workflow bootstrap installer, run $($installerRun.RunId), завершился: $($state.conclusion)." }
-            Write-Host 'Bootstrap installer workflow завершён успешно.'
+            if ($state.conclusion -ne 'success') { throw "Workflow web installer, run $($installerRun.RunId), завершился: $($state.conclusion)." }
+            Write-Host 'Web installer workflow завершён успешно.'
           }
 
           gh workflow run compatible-manifest.yml --repo $env:REPOSITORY --ref $env:REF

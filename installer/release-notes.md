@@ -1,79 +1,34 @@
-Здесь всегда лежит полный fallback `EvoHime-Setup.exe` и его проверочный
-`EvoHime-Setup.json`. Это постоянный fixed release с тегом `installer`:
-после успешной публикационной проверки старый release и его assets удаляются,
-затем создаётся новый release с тем же тегом.
+# EvoHime — единственный web installer
 
-**Канал поставки:** постоянный релиз `installer`.
+`EvoHime-Setup.exe` — единственный установщик EvoHime. Он содержит только
+самостоятельный updater UI, Rust update-agent с transaction engine и bootstrap
+marker. После запуска updater получает fixed `compatibility` manifest,
+скачивает точные module releases, проверяет SHA-256 и устанавливает полный
+клиент.
 
-**Постоянная ссылка на установщик:**
-https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
+**Постоянная ссылка:**
+https://github.com/rkfsociety/EvoHime/releases/tag/installer
 
-Для обычной первой установки используется маленький сетевой bootstrap из
-[release `bootstrap`](https://github.com/rkfsociety/EvoHime/releases/tag/bootstrap).
-Этот fixed release не заменяет полный fallback и получает остальные модули через
-`compatibility` manifest после запуска updater.
+Установщик используется и для первой установки, и для восстановления уже
+установленного клиента. Второго offline/full installer нет: для работы нужен
+доступ к GitHub Release проекта.
 
-## Что дальше
+## Поведение
 
-Bootstrap нужен для первой установки, а этот полный installer — для полного
-восстановления. После установки
-обновляющий компонент получает fixed `compatibility` manifest с конкретным
-совместимым набором module releases, проверяет их размер и SHA-256 и применяет
-только выбранные модули под транзакцией с backup и откатом. Если требуется новая
-версия updater, она устанавливается первой; установленная базовая версия остаётся
-пригодной для восстановления.
-
-- обновление модулей идёт **только по fixed compatibility manifest**, собранному из успешно опубликованных module releases;
-- при запуске обычный интерфейс не открывается, пока проверка и найденное обновление не завершены; при ошибке проверки или обновления остаётся доступной прежняя установка;
-- у уже запущенного клиента скачивание идёт в фоне, а после проверки перезапуск предлагается баннером;
-- неудачное обновление не ломает установку: она остаётся прежней, а причина видна в интерфейсе.
-- после ручного запуска self-repair новая установка удерживает backup до
-  authenticated Core health-check; если новая Ева не записала
-  `update-state/health.json` за 90 секунд, встроенный updater transaction engine выполняет rollback.
-- self-repair не запускается по таймеру или автоматически после ошибки; commit,
-  push и перезапуск требуют отдельных действий пользователя.
-- перед self-repair пользователь выбирает provider и model; эта пара сохраняется
-  в repair-run и используется на всех его этапах.
-
-Updater также хранит проверенную last-known-good копию, bounded recovery journal
-и headless preflight. Ошибка проверки или частичное скачивание не подменяет
-активный файл; после ограниченного числа попыток окно показывает manual
-recovery. Три аварийных старта окна updater за десять минут блокируются, чтобы
-не получить бесконечный цикл перезапусков. Если потеряны и recovery-копия, и
-дерево установки, используется полный installer.
-
-## Восстановление старого updater без переустановки
-
-Если уже установленная версия показывает `GitHub вернул HTTP 302 Found` на
-проверке compatible manifest, её updater слишком старый, чтобы обновить себя:
-он останавливается до первого скачивания нового updater. В этом единственном
-bootstrap-случае скачайте `scripts/repair-updater.ps1` из `main` и запустите его
-через PowerShell 7 с параметром `-InstallDirectory`, если каталог отличается от
-стандартного. Скрипт скачивает единый `updater.zip`, проверяет размер и
-SHA-256, проверяет наличие Rust worker и Electron UI, оставляет резервные копии
-старого worker/UI и не запускает installer.
-
-После этой одноразовой операции ярлык снова работает штатно: новый updater
-сам проходит GitHub signed redirect и может первым обновить себя. Полная
-переустановка для последующих мелких исправлений не требуется.
-
-## Требования
-
-- Windows 10 2004+ или Windows 11, x64;
-- для обычного обновления инструменты сборки не нужны; локальная пересборка остаётся только для режима разработки;
-- требуется доступ к GitHub Release проекта.
+- устанавливается один updater и создаётся один ярлык `EvoHime`;
+- shell, Core и supervisor скачиваются после проверки compatibility manifest;
+- пользовательские данные `%LOCALAPPDATA%\EvoHime` не удаляются;
+- старый клиент закрывается, а обновление выполняется через verified staging,
+  backup и rollback;
+- после успешного health-check запускается обычная Eva.
 
 ## Публикация и проверки
 
-Workflow Windows при каждом успешном запуске удаляет старый fixed release и
-создаёт новый с тем же тегом и каноническим описанием. Перед публикацией Windows CI проверяет Rust и
-supervisor, Electron protocol/typecheck/tests/bundle, deterministic evaluation
-и security gate, IPC, package startup, fault recovery, install/upgrade и
-rollback. Source-update E2E запускается отдельно с явным флагом и не требуется
-для обычной первой установки.
+Изменение версии `release-versions/installer.txt` запускает быстрый
+`bootstrap-installer.yml`. Workflow собирает только web installer из
+опубликованного updater module, проверяет marker/content gates и заменяет
+постоянный release `installer`. Module releases и compatibility manifest
+публикуются отдельными workflow; полный native package acceptance не является
+вторым установщиком.
 
-Версия установки определяется коммитом, из которого она собрана, а не номером версии: он виден в статус-баре клиента.
-
-Контракт модульных релизов и выборочного обновления компонентов описан в
-[`../docs/architecture.md`](../docs/architecture.md),
-а release evidence — в [`../docs/release-evidence.md`](../docs/release-evidence.md).
+Требования: Windows 10 2004+ или Windows 11 x64 и доступ к GitHub.

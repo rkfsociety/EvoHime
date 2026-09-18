@@ -828,15 +828,14 @@ Base URL принимается только по `https` либо по `http` �
 .\scripts\build-windows-native.ps1
 ```
 
-Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для первой установки GitHub Actions собирает маленький сетевой `EvoHime-Setup.exe`: он размещает только `updater\EvoHimeUpdater.exe`, `evohime-updater.exe` и bootstrap marker, создаёт ярлык и передаёт загрузку полного комплекта модулей. Полный installer из fixed release `installer` остаётся отдельным fallback для восстановления. Публикуемый `updater.zip` содержит UI и worker со встроенным transaction engine, поэтому updater может восстановить полный install tree без установленного transaction-модуля.
+Для разработки используется `start-dev.ps1`; он читает `.env` по allow-list имён из `.env.example` и передаёт их только дочерним native-процессам. Для первой установки GitHub Actions собирает единственный маленький сетевой `EvoHime-Setup.exe`: он размещает только `updater\EvoHimeUpdater.exe`, `evohime-updater.exe` и bootstrap marker, создаёт один ярлык и передаёт загрузку полного комплекта модулей. Публикуемый `updater.zip` содержит UI и worker со встроенным transaction engine, поэтому updater может восстановить полный install tree без второго installer.
 
 Bootstrap source имеет bounded marker `evohime.bootstrap.v1` и собирается из
 уже опубликованного `module-updater` artifact. В нём
 нет shell, Core, supervisor, listener, verifier, component manifest или
 runtime-моделей: их exact versions, размеры и SHA-256 получает updater из
 fixed `compatibility` manifest. Поэтому обычное изменение module releases не
-пересобирает bootstrap installer; installer workflow запускает только узкий
-packaging gate, а полный Windows workflow остаётся ручным fallback.
+пересобирает web installer; workflow запускает только узкий packaging gate.
 
 Пакет x64 предназначен для Windows 10 2004+ и Windows 11 и содержит bundled Electron runtime, Rust runtime и локальные компоненты; отдельная установка Node.js или браузера не требуется.
 
@@ -864,7 +863,7 @@ Electron renderer собирается в отдельный `out/ui-bundle`; co
 process выбирает только validated version из `ui-active.json`. Повреждённый или
 неполный pointer возвращает bundled fallback. Mixed UI+native apply использует
 общий transaction journal с backup native-файлов и восстановлением UI pointer;
-при неподдерживаемом manifest клиент сохраняет full-installer fallback.
+при неподдерживаемом manifest клиент сохраняет состояние для ручного recovery.
 
 Production-обновление использует fixed GitHub Release `compatibility` с asset
 `evohime.compatible.json`. Манифест фиксирует один совместимый набор: точный
@@ -893,11 +892,10 @@ rollback-транзакцией, сохраняя Core и остальные н�
 клиент с корневым `EvoHimeUpdater.exe` остаётся совместимым до первого
 успешного обновления и затем мигрирует в новый каталог автоматически.
 
-Bootstrap installer является базовым способом первой установки. После его
+Web installer является базовым способом первой установки и восстановления. После его
 запуска `EvoHimeUpdater.exe` проверяет совместимый набор; отсутствие локального
 component marker означает базовую версию `0.0.0`, поэтому bootstrap получает
-весь необходимый набор перед обычным запуском. Полный installer остаётся
-отдельным способом полного восстановления.
+весь необходимый набор перед обычным запуском. Отдельного полного installer нет.
 На пустом каталоге component transaction допускает отсутствующие до операции
 файлы: backup хранит только существующие компоненты, а rollback удаляет
 добавленные этой транзакцией файлы и сохраняет пользовательские дополнительные

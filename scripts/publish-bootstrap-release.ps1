@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)] [string]$SetupPath,
     [Parameter(Mandatory)] [ValidatePattern('^\d+\.\d+\.\d+$')] [string]$Version,
     [Parameter(Mandatory)] [string]$Commit,
-    [string]$Tag = 'bootstrap'
+    [string]$Tag = 'installer'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,7 +14,7 @@ $manifestPath = Join-Path (Split-Path -Parent $setup) 'EvoHime-Setup.json'
 $manifest = [ordered]@{
     version = 2
     product = 'EvoHime'
-    kind = 'bootstrap'
+    kind = 'web-installer'
     installerVersion = $Version
     asset = 'EvoHime-Setup.exe'
     commit = $Commit
@@ -25,24 +25,24 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
 $repo = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { (gh repo view --json nameWithOwner --jq .nameWithOwner) }
-$notes = Join-Path $env:TEMP 'evohime-bootstrap-release-notes.md'
-Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\installer\bootstrap-release-notes.md') | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
+$notes = Join-Path $env:TEMP 'evohime-installer-release-notes.md'
+Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\installer\release-notes.md') | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
 
 $releaseLookup = @(gh api "repos/$repo/releases/tags/$Tag" 2>&1)
 $releaseExit = $LASTEXITCODE
 $releaseText = $releaseLookup -join "`n"
 $releaseAbsent = $releaseExit -ne 0 -and $releaseText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
 if ($releaseExit -ne 0 -and -not $releaseAbsent) {
-    throw "Не удалось проверить bootstrap release: $releaseText"
+    throw "Не удалось проверить installer release: $releaseText"
 }
 if ($releaseAbsent) {
-    gh release create $Tag --repo $repo --target $Commit --title "EvoHime bootstrap $Version" --notes-file $notes
+    gh release create $Tag --repo $repo --target $Commit --title "EvoHime installer $Version" --notes-file $notes
 } else {
-    gh release edit $Tag --repo $repo --target $Commit --title "EvoHime bootstrap $Version" --notes-file $notes
+    gh release edit $Tag --repo $repo --target $Commit --title "EvoHime installer $Version" --notes-file $notes
 }
-if ($LASTEXITCODE -ne 0) { throw "Не удалось обновить bootstrap release $Tag." }
+if ($LASTEXITCODE -ne 0) { throw "Не удалось обновить installer release $Tag." }
 gh release upload $Tag --repo $repo $setup --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать bootstrap installer.' }
 gh release upload $Tag --repo $repo $manifestPath --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать bootstrap manifest.' }
-Write-Host "Published bootstrap installer $Version to $Tag ($($manifest.sha256))"
+Write-Host "Published web installer $Version to $Tag ($($manifest.sha256))"

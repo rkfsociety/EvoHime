@@ -56,12 +56,12 @@ self-repair, обход approval или изменение установлен�
 
 1. Push или pull request запускает модульный workflow и быстрые проверки
    затронутых областей.
-2. Центральный `module-router` dispatch’ит workflow затронутых модулей и полный
-   Windows acceptance; ручной `workflow_dispatch` для `windows.yml` и
-   `workflow_call` остаются доступными для полного прогона. Результат
+2. Центральный `module-router` dispatch’ит workflow затронутых модулей и
+   быстрый web-installer workflow; native package acceptance запускается
+   отдельно при необходимости. Результат
    фиксируется в `release-evidence.md`.
-3. Постоянный release `installer` обновляется только после зелёного полного
-   прогона; новые версионные теги текущим циклом не создаются.
+3. Единственный release `installer` обновляется после зелёных module и
+   compatibility gates; новые версионные теги текущим циклом не создаются.
 4. Локально по умолчанию выполняются быстрые проверки; полный прогон при
    необходимости выполняется в GitHub Actions как обязательный acceptance
    source.

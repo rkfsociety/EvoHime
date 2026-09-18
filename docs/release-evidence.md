@@ -7,7 +7,7 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий checkout содержит реализацию bootstrap-установщика. После follow-up
+Текущий checkout содержит реализацию единственного web-установщика. После follow-up
 commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e` все связанные GitHub Actions
 gates завершились успешно; первичный router run для предыдущего commit
 зафиксирован ниже как исправленный probe failure. Исторические разделы ниже
@@ -29,7 +29,12 @@ gates завершились успешно; первичный router run дл�
 конкретные module releases в один совместимый комплект и задаёт minimum updater
 version.
 
-## Bootstrap installer (current checkout)
+## Web installer (current checkout)
+
+Текущий контракт использует только release `installer`: это маленький web
+installer, который после запуска получает module releases через compatibility.
+Отдельного full/offline installer в текущем checkout нет. Следующие строки и
+таблицы сохраняют историческое evidence предыдущего bootstrap-контура.
 
 Изменение добавляет `bootstrap` release с маленьким `EvoHime-Setup.exe` и
 `EvoHime-Setup.json`; полный fixed `installer` release остаётся fallback.
@@ -37,8 +42,8 @@ version.
 `npm test -- --run tests/module-update-service.test.ts` — 5/5, `npm run
 typecheck`, `actionlint` для bootstrap/router/full workflow, bootstrap source и
 release contract smoke, module-router smoke, installer release gate и
-`git diff --check`. Тяжёлый full Windows installer workflow в этой задаче не
-запускался.
+`git diff --check`. Тяжёлый native package acceptance в этой задаче не
+запускался; web installer проверяется отдельным узким workflow.
 
 GitHub Actions для commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e`:
 

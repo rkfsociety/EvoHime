@@ -1,4 +1,4 @@
-name: bootstrap installer
+name: web installer
 
 on:
   workflow_call:
@@ -6,7 +6,7 @@ on:
   pull_request:
     paths:
       - 'installer/EvoHimeBootstrap.iss'
-      - 'installer/bootstrap-release-notes.md'
+      - 'installer/release-notes.md'
       - 'scripts/build-bootstrap-source.ps1'
       - 'scripts/bootstrap-installer.tests.ps1'
       - 'scripts/publish-bootstrap-release.ps1'
@@ -14,7 +14,7 @@ on:
       - '.github/workflows/bootstrap-installer.yml'
 
 concurrency:
-  group: evohime-bootstrap-installer
+  group: evohime-web-installer
   cancel-in-progress: true
 
 permissions:
@@ -74,7 +74,7 @@ jobs:
         with:
           name: evohime-bootstrap-installer
           path: bootstrap-output
-      - name: Publish bootstrap release
+      - name: Publish web installer release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

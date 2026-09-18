@@ -1,7 +1,6 @@
-name: installer workflow
+name: native package acceptance
 
-# Полный native-пакет и installer запускаются через dispatch от module-router.yml
-# либо вручную. Reusable-вызов оставлен для общего workflow-контракта модулей.
+# Native package acceptance запускается вручную или reusable-вызовом.
 on:
   pull_request:
   workflow_call:
@@ -47,9 +46,6 @@ jobs:
       - name: Регрессия совместимого release manifest
         shell: pwsh
         run: ./scripts/compatible-manifest.tests.ps1
-      - name: Регрессия описания installer release
-        shell: pwsh
-        run: ./scripts/installer-release.tests.ps1
       - name: Регрессия recovery updater
         shell: pwsh
         run: ./scripts/repair-updater.tests.ps1
@@ -105,7 +101,7 @@ jobs:
 
           $rust = $selected.Count -gt 0
           $electron = Match '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'
-          $tooling = Match '^(scripts/|installer/EvoHime\.iss$|\.github/workflows/)'
+          $tooling = Match '^(scripts/|\.github/workflows/)'
           $native = $rust -or $electron -or $tooling
           $docs = Match '^(docs/|README\.md$|AGENTS\.md$|SECURITY\.md$|\.codex/|installer/.*\.(md|txt)$|crates/.*/README\.md$|tests/.*/README\.md$)'
           $listener = Match '^(scripts/build-listener-runtime\.ps1|crates/evohime-listener/src/engine/whisper_dll\.rs|crates/evohime-listener/src/tools_dir\.rs|crates/evohime-listener/examples/)'
@@ -364,8 +360,7 @@ jobs:
 
   build-native:
     name: Сборка — native package и smoke
-    # electron-heavy тоже в needs: установщик упаковывает собранную им оболочку,
-    # поэтому его падение обязано останавливать публикацию.
+    # electron-heavy должен успешно собрать проверенный package.
     needs: [changes, documentation, rust-heavy, electron-heavy]
     # Пропущенная зависимость не должна пропускать этот job, а упавшая — должна
     # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
@@ -401,39 +396,6 @@ jobs:
       - name: Acceptance matrix Electron package
         shell: pwsh
         run: ./scripts/electron-matrix.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
-      - name: Установка Inno Setup
-        shell: pwsh
-        run: choco install innosetup --no-progress --yes
-      - name: Сборка единственного Windows-установщика
-        shell: pwsh
-        run: |
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
-          $installerVersion = (Get-Content -LiteralPath "$env:GITHUB_WORKSPACE\release-versions\installer.txt" -Raw).Trim()
-          if ($installerVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid installer version: $installerVersion" }
-          & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" "/DAppVersion=$installerVersion" installer/EvoHime.iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Smoke установки и обновления
-        shell: pwsh
-        run: |
-          $installPath = Join-Path $env:RUNNER_TEMP 'EvoHime-install-smoke'
-          $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
-          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'updater\EvoHimeUpdater.exe', 'updater\resources\app.asar', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-listener.exe', 'evohime-transaction.exe', 'evohime-updater.exe', 'updater.zip', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.components.json', 'evohime.build.json')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
-          }
-          # Маркер сборки — то, по чему установленный клиент понимает, отстал ли он от ветки.
-          $marker = Get-Content -LiteralPath (Join-Path $installPath 'evohime.build.json') -Raw | ConvertFrom-Json
-          if ($marker.commit -ne $env:GITHUB_SHA) { throw "Build marker commit mismatch: $($marker.commit)" }
-          # Установщик пишет конфигурацию обновления в профиль пользователя.
-          $updateConfig = Join-Path $env:LOCALAPPDATA 'EvoHime\update.json'
-          if (-not (Test-Path -LiteralPath $updateConfig)) { throw 'Installer did not write update.json.' }
-          $update = Get-Content -LiteralPath $updateConfig -Raw | ConvertFrom-Json
-          if ($update.branch -ne 'main') { throw "Unexpected update branch: $($update.branch)" }
-          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path -LiteralPath (Join-Path $installPath 'EvoHime.exe'))) { throw 'Upgrade removed the client executable.' }
       - name: Smoke отката после ошибки запуска установщика
         shell: pwsh
         run: |
@@ -504,33 +466,13 @@ jobs:
         shell: pwsh
         run: ./scripts/component-update.tests.ps1 -UpdaterPath "$env:GITHUB_WORKSPACE\native-package\evohime-transaction.exe"
 
-      - name: Запись manifest установщика
-        shell: pwsh
-        run: |
-          $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
-          $installerVersion = (Get-Content -LiteralPath "$env:GITHUB_WORKSPACE\release-versions\installer.txt" -Raw).Trim()
-          $manifest = [ordered]@{
-            version = 1
-            product = 'EvoHime'
-            installerVersion = $installerVersion
-            asset = 'EvoHime-Setup.exe'
-            commit = $env:GITHUB_SHA
-            branch = 'main'
-            size = (Get-Item -LiteralPath $setup).Length
-            sha256 = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
-          }
-          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.json') -Encoding utf8NoBOM
-
-      # Установщик нужен для первой установки и фоновых обновлений клиента.
-      # Каждый прогон оставляет его артефактом, а на main он также попадает в
-      # постоянный Release после успешной проверки.
-      - name: Загрузка единственного установщика
+      # Web installer собирается отдельным быстрым workflow из опубликованного
+      # updater module. Этот workflow проверяет только native package.
+      - name: Загрузка проверенного native package
         uses: actions/upload-artifact@v7
         with:
-          name: evohime-windows-installer
+          name: evohime-native-package
           path: |
-            installer-output\EvoHime-Setup.exe
-            installer-output\EvoHime-Setup.json
             native-package\evohime.components.json
             native-package\EvoHime.exe
             native-package\evohime-core.exe
@@ -543,15 +485,15 @@ jobs:
             native-package\evohime-verify.exe
           if-no-files-found: error
 
-  # Один постоянный релиз с фиксированным тегом. После успешной сборки старый
-  # release и его tag удаляются, затем создаётся новый release с тем же tag;
-  # публичная ссылка на installer при этом остаётся постоянной. Права на запись
-  # есть только у этого job после успешной сборки из main или ручного запуска.
-  publish-installer:
-    name: Публикация
+  # Исторический full-installer publisher оставлен только для прозрачности
+  # старых run'ов и навсегда отключён: единственный release публикует web
+  # installer workflow.
+  legacy-full-installer-disabled:
+    name: Legacy full installer (disabled)
     needs: build-native
     if: >-
-      !cancelled()
+      false
+      && !cancelled()
       && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
       && github.ref == 'refs/heads/main'
       && needs.build-native.result == 'success'
