@@ -5,13 +5,14 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'installer/EvoHimeBootstrap.iss'
+      - 'installer/EvoHime.iss'
       - 'installer/release-notes.md'
-      - 'scripts/build-bootstrap-source.ps1'
-      - 'scripts/bootstrap-installer.tests.ps1'
-      - 'scripts/publish-bootstrap-release.ps1'
+      - 'scripts/build-installer-source.ps1'
+      - 'scripts/installer-content.tests.ps1'
+      - 'scripts/installer-release.tests.ps1'
+      - 'scripts/publish-installer-release.ps1'
       - 'release-versions/installer.txt'
-      - '.github/workflows/bootstrap-installer.yml'
+      - '.github/workflows/installer.yml'
 
 concurrency:
   group: evohime-web-installer
@@ -22,7 +23,7 @@ permissions:
 
 jobs:
   build:
-    name: bootstrap installer — build and smoke
+    name: web installer — build and smoke
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -37,32 +38,32 @@ jobs:
           New-Item -ItemType Directory -Force -Path module-input | Out-Null
           gh release download "module-updater-v$updaterVersion" --repo $env:GITHUB_REPOSITORY --pattern updater.zip --dir module-input --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Published updater module is unavailable.' }
-          ./scripts/build-bootstrap-source.ps1 -UpdaterArchivePath module-input/updater.zip -OutputPath bootstrap-source -UpdaterVersion $updaterVersion -Commit $env:GITHUB_SHA -Branch main
-      - name: Проверка bootstrap source
+          ./scripts/build-installer-source.ps1 -UpdaterArchivePath module-input/updater.zip -OutputPath installer-source -UpdaterVersion $updaterVersion -Commit $env:GITHUB_SHA -Branch main
+      - name: Проверка содержимого web installer
         shell: pwsh
-        run: ./scripts/bootstrap-release.tests.ps1; ./scripts/bootstrap-installer.tests.ps1 -SourcePath bootstrap-source
+        run: ./scripts/installer-release.tests.ps1; ./scripts/installer-content.tests.ps1 -SourcePath installer-source
       - name: Установка Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress --yes
-      - name: Сборка маленького bootstrap installer
+      - name: Сборка web installer
         shell: pwsh
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
           $version = (Get-Content -LiteralPath 'release-versions\installer.txt' -Raw).Trim()
-          & $iscc "/Obootstrap-output" "/DSourceDir=$env:GITHUB_WORKSPACE\bootstrap-source" "/DAppVersion=$version" installer/EvoHimeBootstrap.iss
+          & $iscc "/Oinstaller-output" "/DSourceDir=$env:GITHUB_WORKSPACE\installer-source" "/DAppVersion=$version" installer/EvoHime.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Проверка собранного installer
         shell: pwsh
-        run: ./scripts/bootstrap-installer.tests.ps1 -SourcePath bootstrap-source -SetupPath bootstrap-output/EvoHime-Setup.exe
+        run: ./scripts/installer-content.tests.ps1 -SourcePath installer-source -SetupPath installer-output/EvoHime-Setup.exe
       - uses: actions/upload-artifact@v7
         with:
-          name: evohime-bootstrap-installer
-          path: bootstrap-output/EvoHime-Setup.exe
+          name: evohime-web-installer
+          path: installer-output/EvoHime-Setup.exe
           if-no-files-found: error
 
   publish:
-    name: bootstrap installer — release
+    name: web installer — release
     needs: build
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && github.ref == 'refs/heads/main'
     runs-on: windows-latest
@@ -72,10 +73,10 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: evohime-bootstrap-installer
-          path: bootstrap-output
+          name: evohime-web-installer
+          path: installer-output
       - name: Publish web installer release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./scripts/publish-bootstrap-release.ps1 -SetupPath bootstrap-output/EvoHime-Setup.exe -Version ((Get-Content -LiteralPath 'release-versions\installer.txt' -Raw).Trim()) -Commit $env:GITHUB_SHA
+        run: ./scripts/publish-installer-release.ps1 -SetupPath installer-output/EvoHime-Setup.exe -Version ((Get-Content -LiteralPath 'release-versions\installer.txt' -Raw).Trim()) -Commit $env:GITHUB_SHA

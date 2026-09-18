@@ -86,7 +86,7 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 | Core | Rust agent runtime, tools, SQLite и provider gateway | `crates/evohime-core/`, `crates/model-gateway/` |
 | Supervisor | mutex, Job Object, lifecycle и recovery | `crates/evohime-supervisor/` |
 | Native package | Electron shell `EvoHime.exe`, updater-модуль `updater\EvoHimeUpdater.exe` + Rust worker, Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
-| Installer | Маленький web `EvoHime-Setup.exe`, который после запуска получает полный комплект модулей | `installer/EvoHimeBootstrap.iss`, `.github/workflows/bootstrap-installer.yml` |
+| Installer | Маленький web `EvoHime-Setup.exe`, который после запуска получает полный комплект модулей | `installer/EvoHime.iss`, `.github/workflows/installer.yml` |
 
 Для разработки используется PowerShell 7+ и Node.js 22 LTS. В установленный
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,
@@ -96,7 +96,7 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 
 Упрощённый web-контур: installer source собирается из
 опубликованного самодостаточного updater module, проверяется marker- и content-gate
-и упаковывается `installer/EvoHimeBootstrap.iss`. Первый запуск открывает
+и упаковывается `installer/EvoHime.iss`. Первый запуск открывает
 самостоятельный updater, получает fixed `compatibility` manifest и применяет
 полный комплект модулей через verified staging/rollback; shell до успешного
 apply не запускается. Отдельного offline/full installer нет.
@@ -106,7 +106,7 @@ apply не запускается. Отдельного offline/full installer �
 
 ## Граница текущего checkout и CI
 
-Текущий checkout содержит task-only реализацию bootstrap-установщика и
+Текущий checkout содержит task-only реализацию единственного web-установщика и
 self-contained updater в локальной ветке `main`; локальные проверки follow-up
 изменения не запускались по явному запросу, release evidence появится после
 GitHub Actions. Подробное redacted evidence находится в
@@ -267,10 +267,10 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Текущий checkout находится в `main` и синхронизирован с `origin/main` на
-commit `eb0a42eaa27b254855d8a9e702688d0b41c8e71e`. Полный Windows workflow
+Текущий checkout находится в `main` и синхронизирован с `origin/main`.
+Полный Windows workflow
 `34912288572` является историческим evidence предыдущего опубликованного
-baseline; актуальные bootstrap/module/router/compatibility результаты и
+baseline; актуальные installer/module/router/compatibility результаты и
 подробное release evidence находятся в
 [`release-evidence.md`](release-evidence.md).
 

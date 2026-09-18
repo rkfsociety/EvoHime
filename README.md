@@ -21,7 +21,7 @@
 
 ## Как начать
 
-1. [Скачай маленький EvoHime-Setup.exe](https://github.com/rkfsociety/EvoHime/releases/download/bootstrap/EvoHime-Setup.exe). Он докачает проверенный комплект модулей при первой установке.
+1. [Скачай маленький EvoHime-Setup.exe](https://github.com/rkfsociety/EvoHime/releases/download/installer/EvoHime-Setup.exe). Он докачает проверенный комплект модулей при первой установке или восстановлении.
 2. Установи приложение и запусти Еву с рабочего стола.
 3. Выбери папку проекта.
 4. Открой настройки провайдера и выбери источник и модель. Можно подключить

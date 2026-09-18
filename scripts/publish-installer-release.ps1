@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not $env:GH_TOKEN) { throw 'GH_TOKEN is required.' }
 $setup = (Resolve-Path $SetupPath).Path
-if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "Bootstrap setup missing: $setup" }
+if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw "Installer setup missing: $setup" }
 $manifestPath = Join-Path (Split-Path -Parent $setup) 'EvoHime-Setup.json'
 $manifest = [ordered]@{
     version = 2
@@ -42,7 +42,7 @@ if ($releaseAbsent) {
 }
 if ($LASTEXITCODE -ne 0) { throw "Не удалось обновить installer release $Tag." }
 gh release upload $Tag --repo $repo $setup --clobber
-if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать bootstrap installer.' }
+if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать web installer.' }
 gh release upload $Tag --repo $repo $manifestPath --clobber
-if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать bootstrap manifest.' }
+if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать installer manifest.' }
 Write-Host "Published web installer $Version to $Tag ($($manifest.sha256))"

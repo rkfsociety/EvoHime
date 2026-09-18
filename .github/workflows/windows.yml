@@ -356,7 +356,7 @@ jobs:
         with:
           name: electron-build-output
           path: electron-build-output
-          if-no-files-found: error
+           if-no-files-found: error
 
   build-native:
     name: Сборка — native package и smoke
@@ -484,87 +484,4 @@ jobs:
             native-package\evohime-updater.exe
             native-package\evohime-verify.exe
           if-no-files-found: error
-
-  # Исторический full-installer publisher оставлен только для прозрачности
-  # старых run'ов и навсегда отключён: единственный release публикует web
-  # installer workflow.
-  legacy-full-installer-disabled:
-    name: Legacy full installer (disabled)
-    needs: build-native
-    if: >-
-      false
-      && !cancelled()
-      && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
-      && github.ref == 'refs/heads/main'
-      && needs.build-native.result == 'success'
-    runs-on: windows-latest
-    timeout-minutes: 20
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: installer
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: evohime-windows-installer
-          # Артефакт содержит installer-output/ и native-package/ относительно
-          # workspace: upload-artifact получил несколько путей из корня.
-          path: .
-      - name: Замена единственного release установщика
-        shell: pwsh
-        run: |
-          $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
-          $installerVersion = (Get-Content -LiteralPath "$env:GITHUB_WORKSPACE\release-versions\installer.txt" -Raw).Trim()
-          $manifest = [ordered]@{
-            version = 1
-            product = 'EvoHime'
-            installerVersion = $installerVersion
-            asset = 'EvoHime-Setup.exe'
-            commit = $env:GITHUB_SHA
-            branch = 'main'
-            size = (Get-Item -LiteralPath $setup).Length
-            sha256 = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
-          }
-          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.json') -Encoding utf8NoBOM
-          $releaseTitle = "installer $installerVersion"
-          $releaseLookup = @(gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" 2>&1)
-          $releaseLookupExit = $LASTEXITCODE
-          $releaseLookupText = $releaseLookup -join "`n"
-          $releaseAbsent = $releaseLookupExit -ne 0 -and $releaseLookupText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
-          if ($releaseLookupExit -ne 0 -and -not $releaseAbsent) {
-            throw "Не удалось проверить старый installer release: $releaseLookupText"
-          }
-          if (-not $releaseAbsent) {
-            $release = $releaseLookupText | ConvertFrom-Json
-            $releaseId = [string]$release.id
-            if ([string]::IsNullOrWhiteSpace($releaseId)) { throw 'Старый installer release не содержит корректный id.' }
-            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/releases/$releaseId"
-            if ($LASTEXITCODE -ne 0) { throw 'Не удалось удалить старый installer release.' }
-            Write-Host "Удалён старый installer release $env:RELEASE_TAG ($releaseId)."
-          }
-
-          # Удаляем также осиротевший tag, если предыдущий запуск успел удалить
-          # release, но остановился до очистки tag.
-          $tagLookup = @(gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:RELEASE_TAG" 2>&1)
-          $tagLookupExit = $LASTEXITCODE
-          $tagLookupText = $tagLookup -join "`n"
-          $tagAbsent = $tagLookupExit -ne 0 -and $tagLookupText -match '(?i)(HTTP/?[0-9.]*\s*404|HTTP 404|\(HTTP 404\)|404 Not Found)'
-          if ($tagLookupExit -ne 0 -and -not $tagAbsent) {
-            throw "Не удалось проверить старый installer tag: $tagLookupText"
-          }
-          if (-not $tagAbsent) {
-            gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$env:RELEASE_TAG"
-            if ($LASTEXITCODE -ne 0) { throw 'Не удалось удалить старый installer tag.' }
-            Write-Host "Удалён старый installer tag $env:RELEASE_TAG."
-          }
-
-          gh release create $env:RELEASE_TAG --target $env:GITHUB_SHA --title $releaseTitle --notes-file 'installer/release-notes.md'
-          if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать новый installer release.' }
-          gh release upload $env:RELEASE_TAG installer-output\EvoHime-Setup.exe
-          if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить установщик.' }
-          gh release upload $env:RELEASE_TAG installer-output\EvoHime-Setup.json
-          if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить манифест установщика.' }
-          Write-Host "Старый installer release заменён новым в $env:RELEASE_TAG; модульные артефакты публикуются отдельными workflow."
-          exit 0
+          # The web installer is published by installer.yml.

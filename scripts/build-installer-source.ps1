@@ -9,14 +9,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-    throw 'Нужен PowerShell 7 или новее. Run: pwsh -File .\scripts\build-bootstrap-source.ps1'
+    throw 'Нужен PowerShell 7 или новее. Run: pwsh -File .\scripts\build-installer-source.ps1'
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $output = [System.IO.Path]::GetFullPath($OutputPath)
-if ($output -eq $repoRoot) { throw 'Bootstrap source нельзя собрать в корень репозитория.' }
+if ($output -eq $repoRoot) { throw 'Installer source нельзя собрать в корень репозитория.' }
 $archive = [System.IO.Path]::GetFullPath($UpdaterArchivePath)
-if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw "Bootstrap input missing: $archive" }
+if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw "Installer input missing: $archive" }
 
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
@@ -44,7 +44,7 @@ try {
         nextStep = 'download-compatible-modules'
     }
     $marker | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $output 'evohime.bootstrap.json') -Encoding utf8NoBOM
-    Write-Output "EvoHime bootstrap source: $output"
+    Write-Output "EvoHime installer source: $output"
 }
 finally {
     if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }

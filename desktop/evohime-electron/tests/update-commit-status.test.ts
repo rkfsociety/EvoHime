@@ -210,7 +210,7 @@ describe('what counts as product code', () => {
     for (const path of [
       'crates/evohime-core/src/main.rs',
       'desktop/evohime-electron/src/main/index.ts',
-      'installer/EvoHimeBootstrap.iss',
+      'installer/EvoHime.iss',
       'scripts/build-windows-native.ps1',
       'Cargo.lock',
       'something/new/we/have/not/seen'

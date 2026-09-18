@@ -3,7 +3,7 @@
   #define AppVersion "0.0.000000"
 #endif
 #ifndef SourceDir
-  #define SourceDir "bootstrap-source"
+  #define SourceDir "installer-source"
 #endif
 #ifndef UpdateRepository
   #define UpdateRepository "https://github.com/rkfsociety/EvoHime.git"

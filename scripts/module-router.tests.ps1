@@ -7,7 +7,7 @@ if ($router -notmatch 'gh workflow run') { throw 'Router does not dispatch indep
 if ($router -match 'git diff|git log|github\.event\.before|MANUAL_BASE|base:') { throw 'Router still uses commit/path diff as the production release criterion.' }
 if ($router -notmatch 'module-\$module-v|Latest-Version|release-versions/\$module\.txt') { throw 'Router does not compare module versions with module releases.' }
 if ($router -notmatch 'release-versions/installer\.txt') { throw 'Router does not track installer version.' }
-if ($router -notmatch "'installer' = 'bootstrap-installer\.yml'") { throw 'Router does not dispatch the web installer workflow.' }
+if ($router -notmatch "'installer' = 'installer\.yml'") { throw 'Router does not dispatch the web installer workflow.' }
 if ($router -notmatch 'installerTag = .installer.') { throw 'Router does not probe the single installer release explicitly.' }
 if ($router -notmatch 'probeOutput = @\(gh api') { throw 'Router does not probe the installer release explicitly.' }
 if ($router -notmatch 'releaseAbsent.*HTTP.*404') { throw 'Router does not distinguish a missing installer release from other API failures.' }
@@ -28,17 +28,17 @@ if ($shellWorkflow -notmatch 'shell-host\.zip') { throw 'Shell host workflow doe
 if ($shellWorkflow -notmatch 'resources\\app\.asar') { throw 'Shell host workflow does not assert app.asar delivery.' }
 $nativeWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
 if ($nativeWorkflow -notmatch 'actions/download-artifact@v8' -or $nativeWorkflow -notmatch 'build-windows-native\.ps1 -SkipBuild') { throw 'Native workflow still rebuilds instead of consuming checked artifacts.' }
-$installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\bootstrap-installer.yml') -Raw
+$installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\installer.yml') -Raw
 if ($installer -match '(?m)^\s{2}push:') { throw 'web installer workflow still has a direct push trigger.' }
 if ($installer -notmatch '(?m)^\s{2}workflow_call:\s*$') { throw 'web installer workflow is not reusable.' }
-if ($installer -notmatch "github\.event_name == 'workflow_dispatch'") { throw 'bootstrap installer publish job is not enabled for routed runs.' }
-if ($installer -notmatch "github\.event_name == 'workflow_call'") { throw 'bootstrap installer publish job is not enabled for reusable runs.' }
-if ($installer -notmatch 'github\.ref == .refs/heads/main') { throw 'bootstrap installer publish job is not restricted to main.' }
+if ($installer -notmatch "github\.event_name == 'workflow_dispatch'") { throw 'web installer publish job is not enabled for routed runs.' }
+if ($installer -notmatch "github\.event_name == 'workflow_call'") { throw 'web installer publish job is not enabled for reusable runs.' }
+if ($installer -notmatch 'github\.ref == .refs/heads/main') { throw 'web installer publish job is not restricted to main.' }
 if ($installer -notmatch [regex]::Escape('group: evohime-web-installer')) { throw 'web installer workflow does not use a fixed concurrency group.' }
 if ($installer -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw 'web installer workflow does not cancel the previous run.' }
 if ($installer -notmatch 'release-versions\\installer\.txt') { throw 'web installer workflow does not consume the canonical installer version.' }
-if ($installer -notmatch 'build-bootstrap-source\.ps1') { throw 'web installer workflow does not build the minimal source.' }
-if ($installer -notmatch 'bootstrap-installer\.tests\.ps1') { throw 'web installer workflow misses the content gate.' }
+if ($installer -notmatch 'build-installer-source\.ps1') { throw 'web installer workflow does not build the minimal source.' }
+if ($installer -notmatch 'installer-content\.tests\.ps1') { throw 'web installer workflow misses the content gate.' }
 foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater')) {
     $expected = $module + ': ${{ steps.select.outputs.' + $module + ' }}'
     if ($router -notmatch [regex]::Escape($expected)) { throw "Router output is missing: $module" }

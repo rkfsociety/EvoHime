@@ -25,7 +25,7 @@ https://github.com/rkfsociety/EvoHime/releases/tag/installer
 ## Публикация и проверки
 
 Изменение версии `release-versions/installer.txt` запускает быстрый
-`bootstrap-installer.yml`. Workflow собирает только web installer из
+`installer.yml`. Workflow собирает только web installer из
 опубликованного updater module, проверяет marker/content gates и заменяет
 постоянный release `installer`. Module releases и compatibility manifest
 публикуются отдельными workflow; полный native package acceptance не является

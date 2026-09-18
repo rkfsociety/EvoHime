@@ -7,11 +7,10 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий checkout содержит реализацию единственного web-установщика. После follow-up
-commit `af6d33e9bd405c3cc6b3ee3471a965d1dd5f2596` все связанные GitHub Actions
-gates завершились успешно; первичный router run для предыдущего commit
-зафиксирован ниже как исправленный probe failure. Исторические разделы ниже
-сохраняют прежнее GitHub evidence.
+Текущий checkout содержит реализацию единственного web-установщика. Предыдущий
+installer commit прошёл связанные GitHub Actions gates; текущий cleanup workflow
+будет подтверждён после push. Исторические разделы ниже сохраняют прежнее
+GitHub evidence.
 
 ## Статус выпуска
 
@@ -35,6 +34,13 @@ version.
 installer, который после запуска получает module releases через compatibility.
 Отдельного full/offline installer в текущем checkout нет. Следующие строки и
 таблицы сохраняют историческое evidence предыдущего bootstrap-контура.
+
+Текущий release contract использует только tag `installer`: он публикует один
+маленький web installer для первой установки и восстановления. `windows.yml`
+проверяет native package отдельно и не публикует второй установщик.
+
+Следующий абзац сохранён только как историческое описание предыдущего
+bootstrap-перехода и не является текущим контрактом.
 
 Изменение добавляет `bootstrap` release с маленьким `EvoHime-Setup.exe` и
 `EvoHime-Setup.json`; полный fixed `installer` release остаётся fallback.
