@@ -32,6 +32,11 @@ export interface ModuleUpdateServiceOptions {
   readonly quitForApply?: () => void
 }
 
+/** The native updater worker is installed beside the packaged shell binary. */
+export function resolveInstalledUpdaterPath(installDirectory: string): string {
+  return join(installDirectory, 'evohime-updater.exe')
+}
+
 /** A bootstrap install has no shell to launch until its first module apply. */
 export function shouldApplyBootstrap(shellExists: boolean, availableModules?: readonly string[]): boolean {
   return !shellExists && Boolean(availableModules?.length)

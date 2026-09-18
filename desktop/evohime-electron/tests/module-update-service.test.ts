@@ -16,7 +16,11 @@ const { spawnMock } = vi.hoisted(() => ({
 
 vi.mock('node:child_process', () => ({ spawn: spawnMock }))
 
-import { ModuleUpdateService, shouldApplyBootstrap } from '../src/main/update/module-update-service'
+import {
+  ModuleUpdateService,
+  resolveInstalledUpdaterPath,
+  shouldApplyBootstrap
+} from '../src/main/update/module-update-service'
 
 describe('ModuleUpdateService', () => {
   beforeEach(() => spawnMock.mockClear())
@@ -25,6 +29,11 @@ describe('ModuleUpdateService', () => {
     expect(shouldApplyBootstrap(false, ['shell-host'])).toBe(true)
     expect(shouldApplyBootstrap(true, ['shell-host'])).toBe(false)
     expect(shouldApplyBootstrap(false, [])).toBe(false)
+  })
+
+  it('resolves the native worker beside the installed shell', () => {
+    expect(resolveInstalledUpdaterPath('C:\\Program Files\\EvoHime'))
+      .toBe('C:\\Program Files\\EvoHime\\evohime-updater.exe')
   })
 
   it('starts the native worker directly with paths kept as separate arguments', async () => {

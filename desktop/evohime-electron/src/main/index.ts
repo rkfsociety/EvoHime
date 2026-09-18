@@ -25,7 +25,7 @@ import { loadUpdateConfig } from './update/config'
 import { resolveGithubToken } from './update/github-token'
 import { ListenerRuntimeService } from './update/listener-runtime'
 import { OllamaRuntimeService } from './ollama-runtime'
-import { ModuleUpdateService } from './update/module-update-service'
+import { ModuleUpdateService, resolveInstalledUpdaterPath } from './update/module-update-service'
 import { UpdateService, type UpdateController } from './update/update-service'
 import { reportSupportBundle } from './update/update-issue-reporter'
 import { createOverlay, type OverlayController } from './overlay'
@@ -489,7 +489,7 @@ function createUpdateService(): UpdateController {
       dataDirectory: dataDirectory(),
       branch: config.branch,
       enabled: true,
-      updaterPath: join(app.getAppPath(), '..', 'evohime-updater.exe'),
+      updaterPath: resolveInstalledUpdaterPath(dirname(app.getPath('exe'))),
       installDirectory: dirname(app.getPath('exe')),
       intervalMs: config.checkIntervalMs,
       emit: (status) => {
