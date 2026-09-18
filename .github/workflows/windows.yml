@@ -356,7 +356,7 @@ jobs:
         with:
           name: electron-build-output
           path: electron-build-output
-           if-no-files-found: error
+          if-no-files-found: error
 
   build-native:
     name: Сборка — native package и smoke
