@@ -29,6 +29,8 @@ export interface ModuleUpdateServiceOptions {
   readonly installDirectory: string
   readonly emit: (status: UpdateStatus) => void
   readonly intervalMs: number
+  /** Skip only the first launch check when a transaction has just relaunched the shell. */
+  readonly skipLaunchGate?: boolean
   /** Closes the visible updater only after downloads finish and file replacement must begin. */
   readonly quitForApply?: () => void
 }
@@ -77,6 +79,15 @@ export class ModuleUpdateService {
 
   async runLaunchGate(): Promise<'continue' | 'applying'> {
     if (!this.options.enabled) {
+      this.scheduleRefresh()
+      return 'continue'
+    }
+
+    // The transaction worker starts the new shell before it can commit its
+    // state. Running the normal gate here would observe that still-open
+    // transaction, launch another updater, and prevent the health handshake.
+    // Resume periodic checks after the shell has authenticated with Core.
+    if (this.options.skipLaunchGate) {
       this.scheduleRefresh()
       return 'continue'
     }

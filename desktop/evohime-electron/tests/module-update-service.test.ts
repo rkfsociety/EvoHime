@@ -64,6 +64,34 @@ describe('ModuleUpdateService', () => {
     expect(quitForApply).toBe(false)
   })
 
+  it('skips the recursive launch gate after a transaction relaunch', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-post-update-launch-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'available',
+        available: [{ module: 'core', installed: '0.0.000243', available: '0.0.000244' }]
+      }))
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000,
+        skipLaunchGate: true
+      })
+
+      await expect(service.runLaunchGate()).resolves.toBe('continue')
+      expect(spawnMock).not.toHaveBeenCalled()
+      service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('marks a crashed worker failed when no status file was written', async () => {
     let close: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
     spawnMock.mockImplementationOnce(() => ({

@@ -64,6 +64,10 @@ let lastShellState: ShellState | null = null
 let lastRepairStatus: import('@shared/api').RepairStatus | null = null
 let lastUpdateStatus: import('@shared/update').UpdateStatus | null = null
 
+/** Passed only by the transaction worker while validating a fresh install. */
+const POST_UPDATE_ARGUMENT = '--evohime-post-update'
+const postUpdateLaunch = process.argv.includes(POST_UPDATE_ARGUMENT)
+
 // safeStorage is only usable after the app is ready, so the store is created
 // lazily inside whenReady rather than at module scope.
 let providers: ProviderStore | null = null
@@ -492,6 +496,7 @@ function createUpdateService(): UpdateController {
       updaterPath: resolveInstalledUpdaterPath(dirname(app.getPath('exe'))),
       installDirectory: dirname(app.getPath('exe')),
       intervalMs: config.checkIntervalMs,
+      skipLaunchGate: postUpdateLaunch,
       emit: (status) => {
         lastUpdateStatus = status
         broadcast({ kind: 'update', status })
@@ -502,7 +507,11 @@ function createUpdateService(): UpdateController {
     return service
   }
   const service = new UpdateService({
-    config: { ...config, enabled, launchPolicy: enabled ? config.launchPolicy : 'off' },
+    config: {
+      ...config,
+      enabled,
+      launchPolicy: postUpdateLaunch ? 'off' : enabled ? config.launchPolicy : 'off'
+    },
     emit: (status) => {
       lastUpdateStatus = status
       broadcast({ kind: 'update', status })

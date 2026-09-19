@@ -20,10 +20,21 @@ export function UpdaterApp(): React.JSX.Element {
 
   useEffect(() => {
     let active = true
-    void window.evohimeUpdater.getStatus().then((next) => {
+    const api = window.evohimeUpdater
+    if (!api) {
+      setStatus({
+        ...fallback,
+        phase: 'failed',
+        heading: 'Интерфейс обновления не запустился',
+        badge: 'Ошибка',
+        message: 'Не удалось подключить окно updater. Закройте его и повторите запуск.'
+      })
+      return () => { active = false }
+    }
+    void api.getStatus().then((next) => {
       if (active) setStatus(next)
     })
-    return window.evohimeUpdater.subscribe((next) => setStatus(next))
+    return api.subscribe((next) => setStatus(next))
   }, [])
 
   const progressStyle = useMemo(() => {

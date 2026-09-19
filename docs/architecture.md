@@ -947,6 +947,7 @@ JSON-запросы updater повторяются не более двух ра
 - пользовательский repair-run доступен в `OperationsPanel` после bounded digest из трёх ошибок задач. Перед `repair.start` пользователь выбирает provider и model; пара сохраняется в repair status и переносится через diagnose, commit, push и restart. Сама ошибка только показывает кнопку: `repair.start`, `repair.commit`, `repair.push`, `repair.refreshCI` и обновление запускаются отдельными кликами;
 - repair-run работает в `%LOCALAPPDATA%\\EvoHime\\repair\\<repair-id>`, проверяет origin выбранного workspace и канонический URL EvoHime, а изменения `AGENTS.md`, `.codex`, workflows, updater, supervisor, receipt, security и `.env*` останавливает до ручного review;
 - transaction worker сохраняет backup до post-restart health handshake. Новая оболочка пишет `%LOCALAPPDATA%\\EvoHime\\update-state\\health.json` только после authenticated Core connection; отсутствие marker за 90 секунд вызывает rollback;
+- transaction worker запускает проверяемую новую оболочку с внутренним аргументом `--evohime-post-update`: это пропускает только повторный launch gate, который иначе увидел бы ещё не закоммиченную транзакцию и снова передал управление updater, а периодическая проверка после старта остаётся включённой;
 - health-marker принимается только с точным bounded JSON-флагом `healthy:true`;
   при timeout worker возвращает прежнее дерево установки, оставляет причину в
   transaction error и не считает обновление применённым. Без `--health-file`

@@ -10,6 +10,11 @@
 html, body, #root { width: 100%; min-width: 0; height: 100%; margin: 0; overflow: hidden; }
 button { font: inherit; }
 
+.updater-boot-fallback { display: flex; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 40px; border: 1px solid rgb(141 130 232 / 55%); border-radius: 14px; background: radial-gradient(ellipse at bottom, rgb(93 75 224 / 22%), transparent 52%), #0d0d11; color: #e8e8ef; text-align: center; }
+.updater-boot-fallback__icon { display: grid; width: 96px; height: 96px; place-items: center; border: 1px solid rgb(255 255 255 / 15%); border-radius: 24px; background: linear-gradient(135deg, #a197f5, #5e50d2); color: #fff; font-size: 52px; font-weight: 700; box-shadow: 0 0 0 14px rgb(113 96 223 / 12%), 0 14px 34px rgb(87 69 220 / 48%); }
+.updater-boot-fallback h1 { margin: 0; font-size: 24px; font-weight: 650; }
+.updater-boot-fallback p { max-width: 340px; margin: 0; color: #9b9baa; font-size: 14px; line-height: 1.55; }
+
 .updater-shell {
   display: flex;
   width: 100%;

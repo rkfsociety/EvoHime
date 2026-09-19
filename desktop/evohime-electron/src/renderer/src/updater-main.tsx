@@ -6,6 +6,8 @@ import { UpdaterApp } from './UpdaterApp'
 const container = document.getElementById('root')
 if (!container) throw new Error('updater renderer root element is missing')
 
+document.getElementById('boot-fallback')?.remove()
+
 createRoot(container).render(
   <StrictMode>
     <UpdaterApp />

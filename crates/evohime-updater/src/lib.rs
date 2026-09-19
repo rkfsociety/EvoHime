@@ -150,6 +150,7 @@ pub fn run_update(
                 if let Some(executable) = relaunch {
                     let mut command = Command::new(executable);
                     configure_hidden_process(&mut command);
+                    command.arg(POST_UPDATE_ARGUMENT);
                     match command.current_dir(install_dir).spawn() {
                         Ok(child) => relaunched = Some(child),
                         Err(error) => return rollback_after_failure(transaction, error),
@@ -221,6 +222,7 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
             if let Some(executable) = options.relaunch {
                 let mut command = Command::new(executable);
                 configure_hidden_process(&mut command);
+                command.arg(POST_UPDATE_ARGUMENT);
                 relaunched = Some(command.current_dir(options.install_dir).spawn()?);
             }
             wait_for_health(options.health_file)
@@ -403,6 +405,7 @@ pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<
         if let Some(executable) = relaunch {
             let mut command = Command::new(executable);
             configure_hidden_process(&mut command);
+            command.arg(POST_UPDATE_ARGUMENT);
             relaunched = Some(command.current_dir(install_dir).spawn()?);
         }
         wait_for_health(health_file)
@@ -515,6 +518,7 @@ pub fn apply_ui_bundle_staged_with_restart(
     if let Some(executable) = relaunch {
         let mut command = Command::new(executable);
         configure_hidden_process(&mut command);
+        command.arg(POST_UPDATE_ARGUMENT);
         match command.current_dir(install_root).spawn() {
             Ok(child) => relaunched = Some(child),
             Err(error) => {
@@ -556,6 +560,12 @@ const WAIT_FOR_SHELL: Duration = Duration::from_secs(60);
 const WAIT_FOR_UNLOCK: Duration = Duration::from_secs(120);
 const RETRY_INTERVAL: Duration = Duration::from_millis(250);
 const WAIT_FOR_HEALTH: Duration = Duration::from_secs(90);
+
+/// Internal launch marker used by a transaction worker when it starts the
+/// freshly installed shell. That shell must authenticate with Core and write
+/// the health marker before it runs another update gate; otherwise it sees the
+/// still-open transaction and immediately hands control back to the updater.
+pub const POST_UPDATE_ARGUMENT: &str = "--evohime-post-update";
 
 fn clear_health_file(path: Option<&Path>) -> io::Result<()> {
     if let Some(path) = path {

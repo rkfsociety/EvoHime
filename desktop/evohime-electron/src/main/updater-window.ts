@@ -129,6 +129,26 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     }
   })
   hardenWebContents(updaterWindow.webContents, options)
+  updaterWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    options.log('error', 'updater.renderer_load_failed', {
+      errorCode,
+      errorDescription,
+      validatedURL,
+      isMainFrame
+    })
+  })
+  updaterWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    options.log('error', 'updater.preload_error', { preloadPath, error })
+  })
+  updaterWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    options.log(level >= 2 ? 'error' : 'warn', 'updater.renderer_console', { level, message, line, sourceId })
+  })
+  updaterWindow.webContents.on('render-process-gone', (_event, details) => {
+    options.log('error', 'updater.renderer_gone', { reason: details.reason, exitCode: details.exitCode })
+  })
+  updaterWindow.webContents.on('did-finish-load', () => {
+    options.log('info', 'updater.renderer_loaded', { url: updaterWindow?.webContents.getURL() ?? '' })
+  })
   updaterWindow.once('ready-to-show', () => {
     if (!crashGuard.blocked) clearUpdaterStart(join(dataDirectory(), 'update-state'))
     updaterWindow?.show()
