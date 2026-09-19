@@ -3249,9 +3249,9 @@ mod tests {
             .expect("backup cleanup");
         assert!(verify < cleanup_backup);
         assert!(script.contains(":restore_manifest"));
-        assert!(script.contains(
-            "if exist \"%MANIFEST%\" copy /Y \"%MANIFEST%\" \"%MANIFEST_BACKUP%\""
-        ));
+        assert!(
+            script.contains("if exist \"%MANIFEST%\" copy /Y \"%MANIFEST%\" \"%MANIFEST_BACKUP%\"")
+        );
         assert!(script.contains("if exist \"%MANIFEST%\" del /Q \"%MANIFEST%\""));
         assert!(script.contains(
             "if exist \"%MANIFEST_BACKUP%\" move /Y \"%MANIFEST_BACKUP%\" \"%MANIFEST%\""
