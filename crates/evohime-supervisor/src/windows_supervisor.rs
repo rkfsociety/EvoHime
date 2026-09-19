@@ -759,26 +759,40 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _instance = SingleInstance::acquire("Local\\EvoHime.Supervisor")?;
     let logger = std::sync::Arc::new(SupervisorLogger::open()?);
     let state_dir = update_state_dir();
-    match recover_pending_update(&state_dir) {
-        Ok(true) => {
-            let _ = logger.write(
-                "update.recovered",
-                json!({"state_dir": state_dir.display().to_string()}),
-            );
-        }
-        Ok(false) => {}
-        Err(error) => {
-            let event = if is_deferred_update_recovery_error(&error) {
-                "update.recovery_deferred"
-            } else {
-                "update.recovery_failed"
-            };
-            let _ = logger.write(
-                event,
-                json!({"state_dir": state_dir.display().to_string(), "error": error.to_string()}),
-            );
-            if !is_deferred_update_recovery_error(&error) {
-                return Err(error.into());
+    if std::env::var_os("EVOHIME_POST_UPDATE").is_some() {
+        // The transaction worker intentionally keeps transaction.json and its
+        // backup alive while this freshly launched shell authenticates with
+        // Core. Recovering it here would race the worker and roll back the
+        // installation before the health handshake can complete.
+        let _ = logger.write(
+            "update.recovery_deferred",
+            json!({
+                "state_dir": state_dir.display().to_string(),
+                "reason": "post-update-health"
+            }),
+        );
+    } else {
+        match recover_pending_update(&state_dir) {
+            Ok(true) => {
+                let _ = logger.write(
+                    "update.recovered",
+                    json!({"state_dir": state_dir.display().to_string()}),
+                );
+            }
+            Ok(false) => {}
+            Err(error) => {
+                let event = if is_deferred_update_recovery_error(&error) {
+                    "update.recovery_deferred"
+                } else {
+                    "update.recovery_failed"
+                };
+                let _ = logger.write(
+                    event,
+                    json!({"state_dir": state_dir.display().to_string(), "error": error.to_string()}),
+                );
+                if !is_deferred_update_recovery_error(&error) {
+                    return Err(error.into());
+                }
             }
         }
     }

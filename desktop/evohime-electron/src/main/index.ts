@@ -612,6 +612,10 @@ async function ensureSupervisorSession(
     env: supervisorEnvironment(
       {
         ...process.env,
+        // The transaction worker starts this shell while its transaction is
+        // still open. Supervisor must not recover that live transaction before
+        // the shell reports health and the worker commits it.
+        EVOHIME_POST_UPDATE: postUpdateLaunch ? '1' : process.env['EVOHIME_POST_UPDATE'],
         // Credentials stored through the settings surface win over anything
         // the ambient environment carries, so the UI is the single source of
         // truth.
