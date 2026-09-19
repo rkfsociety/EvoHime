@@ -142,8 +142,14 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   updaterWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
     options.log('error', 'updater.preload_error', { preloadPath, error })
   })
-  updaterWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    options.log(level >= 2 ? 'error' : 'warn', 'updater.renderer_console', { level, message, line, sourceId })
+  updaterWindow.webContents.on('console-message', (details) => {
+    const severity = details.level === 'error' ? 'error' : details.level === 'warning' ? 'warn' : 'info'
+    options.log(severity, 'updater.renderer_console', {
+      level: details.level,
+      message: details.message,
+      line: details.lineNumber,
+      sourceId: details.sourceId
+    })
   })
   updaterWindow.webContents.on('render-process-gone', (_event, details) => {
     options.log('error', 'updater.renderer_gone', { reason: details.reason, exitCode: details.exitCode })
