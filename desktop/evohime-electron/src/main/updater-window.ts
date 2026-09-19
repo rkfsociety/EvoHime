@@ -115,7 +115,9 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     backgroundColor: '#090b12',
     icon: join(app.getPath('exe').replace(/[\\/][^\\/]+$/, ''), 'resources', 'evohime-agent.ico'),
     webPreferences: {
-      preload: join(__dirname, '../preload/updater.js'),
+      // The updater target has its own output directory (`updater-preload`),
+      // separate from the regular shell preload bundle.
+      preload: join(__dirname, '../updater-preload/updater.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
