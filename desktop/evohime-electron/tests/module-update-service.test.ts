@@ -61,7 +61,7 @@ describe('ModuleUpdateService', () => {
         stdio: 'ignore'
       })
     )
-    expect(quitForApply).toBe(true)
+    expect(quitForApply).toBe(false)
   })
 
   it('marks a crashed worker failed when no status file was written', async () => {
@@ -147,7 +147,7 @@ describe('ModuleUpdateService', () => {
 
       await expect(service.runLaunchGate()).resolves.toBe('applying')
 
-      expect(quitForApply).toBe(true)
+      expect(quitForApply).toBe(false)
       expect(spawnMock).toHaveBeenCalledTimes(2)
       const applyCall = spawnMock.mock.calls[1] as unknown as [string, readonly string[]] | undefined
       expect(applyCall?.[1]).toEqual([
@@ -161,6 +161,51 @@ describe('ModuleUpdateService', () => {
         '--health-file',
         join(root, 'update-state', 'health.json')
       ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the updater visible while downloading and exits only for file replacement', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-visible-download-'))
+    try {
+      const state = join(root, 'update-state')
+      const install = join(root, 'install')
+      mkdirSync(state)
+      mkdirSync(install)
+      let quitCount = 0
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: install,
+        emit: () => {},
+        intervalMs: 60_000,
+        quitForApply: () => { quitCount += 1 }
+      })
+
+      await service.prepareComponents(['updater'])
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'applying',
+        message: 'Скачивание updater — 58%',
+        requires_exit: false,
+        available: [{ module: 'updater', installed: '0.0.000106', available: '0.0.000107' }]
+      }))
+      ;(service as unknown as { refresh(): void }).refresh()
+      expect(service.status.message).toBe('Скачивание updater — 58%')
+      expect(quitCount).toBe(0)
+
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'applying',
+        message: 'Загрузка завершена. Перезапускаю updater для применения…',
+        requires_exit: true,
+        available: [{ module: 'updater', installed: '0.0.000106', available: '0.0.000107' }]
+      }))
+      ;(service as unknown as { refresh(): void }).refresh()
+      ;(service as unknown as { refresh(): void }).refresh()
+      expect(quitCount).toBe(1)
+      service.stop()
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

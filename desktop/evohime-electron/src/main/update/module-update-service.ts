@@ -17,6 +17,7 @@ export interface ModuleUpdaterStatus {
     readonly summary?: string
     readonly changes?: readonly string[]
   }[]
+  readonly requires_exit?: boolean
   readonly recovery?: UpdateStatus['recovery']
 }
 
@@ -28,7 +29,7 @@ export interface ModuleUpdateServiceOptions {
   readonly installDirectory: string
   readonly emit: (status: UpdateStatus) => void
   readonly intervalMs: number
-  /** Closes the visible updater after the detached apply worker is started. */
+  /** Closes the visible updater only after downloads finish and file replacement must begin. */
   readonly quitForApply?: () => void
 }
 
@@ -54,6 +55,7 @@ export class ModuleUpdateService {
   private current: UpdateStatus
   private timer: NodeJS.Timeout | null = null
   private lastSerialized = ''
+  private exitRequested = false
 
   constructor(private readonly options: ModuleUpdateServiceOptions) {
     this.current = options.enabled
@@ -106,7 +108,9 @@ export class ModuleUpdateService {
 
   async prepareComponents(_selected: readonly string[]): Promise<UpdateStatus> {
     this.lastSerialized = ''
+    this.exitRequested = false
     this.patchLocal({ phase: 'applying', message: 'Передаю обновление updater worker…' })
+    this.scheduleRefresh()
     void this.startUpdater('--apply')
     return this.current
   }
@@ -187,9 +191,6 @@ export class ModuleUpdateService {
         })
         resolveCompletion(false)
       })
-      if (mode === '--apply') {
-        child.once('spawn', () => this.options.quitForApply?.())
-      }
       child.unref()
       return completion
     } catch {
@@ -256,6 +257,10 @@ export class ModuleUpdateService {
     this.lastSerialized = serialized
     this.current = next
     this.options.emit(next)
+    if (parsed.requires_exit === true && !this.exitRequested) {
+      this.exitRequested = true
+      this.options.quitForApply?.()
+    }
   }
 }
 

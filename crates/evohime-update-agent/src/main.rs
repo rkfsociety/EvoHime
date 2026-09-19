@@ -1227,10 +1227,24 @@ fn apply_updates_inner(
             let manifest_next = install_dir.join("evohime.components.json.next");
             let component_updates = vec![update];
             merge_installed_manifest_to(install_dir, &component_updates, &manifest_next)?;
-            schedule_updater_replacement(install_dir, data_dir, &staging, &manifest_next, update)?;
+            write_status_requiring_exit(
+                data_dir,
+                "Загрузка завершена. Перезапускаю updater для применения…",
+                updates,
+            );
+            schedule_updater_replacement(
+                install_dir,
+                data_dir,
+                &staging,
+                &manifest_next,
+                update,
+                wait_pid,
+            )?;
         }
         cleanup_completed_staging(&staging, updater_update.is_some());
-        write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
+        if updater_update.is_none() {
+            write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
+        }
         return Ok(());
     }
     write_staged_manifest(
@@ -1245,6 +1259,11 @@ fn apply_updates_inner(
         .cloned()
         .collect::<Vec<_>>();
     progress("Применение модулей", 0);
+    write_status_requiring_exit(
+        data_dir,
+        "Загрузка завершена. Закрываю окно на время применения…",
+        updates,
+    );
     // The recovery/update agent owns the transaction engine directly. It must
     // not depend on the currently installed transaction executable: that file
     // may be missing, corrupt, or be the very component being repaired.
@@ -1271,7 +1290,14 @@ fn apply_updates_inner(
         component_updates.push(update);
         merge_installed_manifest_to(install_dir, &component_updates, &manifest_next)?;
         apply_listener_runtime_if_needed(&client, runtime_update, data_dir, progress)?;
-        schedule_updater_replacement(install_dir, data_dir, &staging, &manifest_next, update)?;
+        schedule_updater_replacement(
+            install_dir,
+            data_dir,
+            &staging,
+            &manifest_next,
+            update,
+            wait_pid,
+        )?;
         write_status(data_dir, "ready", "Обновления модулей применены.", &[]);
         return Ok(());
     }
@@ -1983,6 +2009,7 @@ fn schedule_updater_replacement(
     staging: &Path,
     manifest_next: &Path,
     update: &UpdateCandidate,
+    wait_pid: Option<u32>,
 ) -> Result<(), String> {
     let state_dir = data_dir.join("update-state");
     fs::create_dir_all(&state_dir).map_err(|error| error.to_string())?;
@@ -2020,6 +2047,7 @@ fn schedule_updater_replacement(
         manifest_backup: &manifest_backup,
         marker: &marker,
         install_dir,
+        wait_pid,
     };
     let content = updater_bootstrap_script(std::process::id(), &paths);
     if let Err(error) = fs::write(&script, content) {
@@ -2071,6 +2099,7 @@ struct UpdaterBootstrapPaths<'a> {
     manifest_backup: &'a Path,
     marker: &'a Path,
     install_dir: &'a Path,
+    wait_pid: Option<u32>,
 }
 
 fn updater_bootstrap_script(pid: u32, paths: &UpdaterBootstrapPaths<'_>) -> String {
@@ -2101,7 +2130,14 @@ fn updater_bootstrap_script(pid: u32, paths: &UpdaterBootstrapPaths<'_>) -> Stri
     )
     .replace(
         "setlocal\r\n",
-        "setlocal\r\nset \"COMMITTED=0\"\r\n",
+        &format!(
+            "setlocal\r\nset \"COMMITTED=0\"\r\nset \"UI_PID={}\"\r\n",
+            paths.wait_pid.map(|pid| pid.to_string()).unwrap_or_default()
+        ),
+    )
+    .replace(
+        "if not exist \"%STAGED%\" goto fail",
+        ":wait_ui\r\nif \"%UI_PID%\"==\"\" goto after_wait_ui\r\ntasklist /FI \"PID eq %UI_PID%\" 2>NUL | findstr /C:\"%UI_PID%\" >NUL\r\nif not errorlevel 1 (timeout /t 1 /nobreak >NUL & goto wait_ui)\r\n:after_wait_ui\r\nif not exist \"%STAGED%\" goto fail",
     )
     .replace(
         "del /Q \"%BACKUP%\" \"%PACKAGE_BACKUP%\" \"%LEGACY_BACKUP%\" \"%MANIFEST_BACKUP%\" \"%MARKER%\" 2>NUL\r\nstart",
@@ -2114,6 +2150,20 @@ fn updater_bootstrap_script(pid: u32, paths: &UpdaterBootstrapPaths<'_>) -> Stri
 }
 
 fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[UpdateCandidate]) {
+    write_status_inner(data_dir, phase, message, updates, false);
+}
+
+fn write_status_requiring_exit(data_dir: &Path, message: &str, updates: &[UpdateCandidate]) {
+    write_status_inner(data_dir, "applying", message, updates, true);
+}
+
+fn write_status_inner(
+    data_dir: &Path,
+    phase: &'static str,
+    message: &str,
+    updates: &[UpdateCandidate],
+    requires_exit: bool,
+) {
     let state = data_dir.join("update-state");
     if fs::create_dir_all(&state).is_ok() {
         let status = UpdaterStatus {
@@ -2132,6 +2182,7 @@ fn write_status(data_dir: &Path, phase: &'static str, message: &str, updates: &[
                     changes: item.changes.clone(),
                 })
                 .collect(),
+            requires_exit,
             recovery: recovery_status(data_dir),
         };
         let path = state.join("updater.json");
@@ -3186,6 +3237,7 @@ mod tests {
             manifest_backup,
             marker,
             install_dir: Path::new(r"C:\Program Files\EvoHime"),
+            wait_pid: Some(4242),
         };
         let script = updater_bootstrap_script(42, &paths);
 
@@ -3209,6 +3261,9 @@ mod tests {
         assert!(script.contains("%UPDATER_UI_DIR%\\EvoHimeUpdater.exe"));
         assert!(script.contains("%STAGED_PACKAGE%"));
         assert!(script.contains("set \"COMMITTED=0\""));
+        assert!(script.contains("set \"UI_PID=4242\""));
+        assert!(script.contains(":wait_ui"));
+        assert!(script.contains("PID eq %UI_PID%"));
         assert!(script.contains("if \"%COMMITTED%\"==\"1\" rmdir /S /Q \"%STAGING_DIR%\""));
         assert!(script.contains("Program Files"));
         assert!(script.contains("set \"UPDATER=C:\\Program Files\\EvoHime\\evohime-updater.exe\""));

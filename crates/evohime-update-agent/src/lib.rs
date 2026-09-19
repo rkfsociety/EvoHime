@@ -294,8 +294,14 @@ pub struct UpdaterStatus {
     pub error: Option<String>,
     pub modules: Vec<String>,
     pub available: Vec<UpdaterModuleStatus>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub requires_exit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recovery: Option<RecoveryStatus>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
