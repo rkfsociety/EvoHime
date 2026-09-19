@@ -854,7 +854,7 @@ Native package дополнительно содержит `evohime.components.j
 
 Metadata component manifest развивается обратно совместимо: transaction worker
 принимает пропущенные legacy-поля с безопасными значениями по умолчанию и
-игнорирует additive metadata, а Electron перед staged apply записывает полный
+игнорирует additive metadata, а updater перед staged apply записывает полный
 canonical marker. Поэтому исправления описательных полей не требуют полной
 пересборки installer для уже установленного клиента.
 

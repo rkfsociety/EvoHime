@@ -106,8 +106,10 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Для следующего набора выбран patch `updater 0.0.000108` и
-`transaction 0.0.000064`; текущая версия web installer — `0.0.000053`.
+Для следующего набора выбран patch `updater 0.0.000109` и
+`transaction 0.0.000064`; текущая версия web installer — `0.0.000055`.
+Staging marker updater теперь всегда записывается как полный
+`evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 
 ## Граница текущего checkout и CI
 

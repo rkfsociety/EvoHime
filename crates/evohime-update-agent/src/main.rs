@@ -1889,6 +1889,33 @@ fn write_staged_manifest(
     let mut root = serde_json::from_str::<serde_json::Value>(&existing)
         .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
     normalize_legacy_component_manifest(&mut root);
+    let object = root
+        .as_object_mut()
+        .ok_or_else(|| "updater: component manifest должен быть JSON-объектом".to_owned())?;
+    object.insert(
+        "schema".to_owned(),
+        serde_json::Value::String("evohime.component-manifest.v1".to_owned()),
+    );
+    object.insert(
+        "product".to_owned(),
+        serde_json::Value::String("EvoHime".to_owned()),
+    );
+    object.insert(
+        "release_id".to_owned(),
+        serde_json::Value::String("module-update".to_owned()),
+    );
+    object.insert(
+        "os".to_owned(),
+        serde_json::Value::String("windows".to_owned()),
+    );
+    object.insert(
+        "architecture".to_owned(),
+        serde_json::Value::String("x64".to_owned()),
+    );
+    object.insert(
+        "release_commit".to_owned(),
+        serde_json::Value::String("0".repeat(40)),
+    );
     let installed = serde_json::from_value::<InstalledManifest>(root.clone())
         .map_err(|error| format!("updater: component manifest повреждён: {error}"))?;
     select_outdated(&installed, &[])
@@ -2433,7 +2460,11 @@ mod tests {
 
         write_staged_manifest(&root, &destination, &[&update], None).expect("write marker");
         let value: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(destination).expect("read marker")).unwrap();
+            serde_json::from_str(&fs::read_to_string(&destination).expect("read marker")).unwrap();
+        evohime_tx::component_manifest::Manifest::parse(
+            &fs::read(destination).expect("read transaction marker"),
+        )
+        .expect("staged marker matches transaction manifest schema");
         let components = value["components"].as_array().unwrap();
         assert_eq!(components.len(), 2);
         assert!(components.iter().any(|item| item["id"] == "core"));
@@ -2476,7 +2507,7 @@ mod tests {
 
         write_staged_manifest(&root, &destination, &[&update], None).expect("write marker");
         let value: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(destination).expect("read marker")).unwrap();
+            serde_json::from_str(&fs::read_to_string(&destination).expect("read marker")).unwrap();
         let listener = value["components"]
             .as_array()
             .unwrap()
