@@ -20,4 +20,10 @@ describe('navigation boundary', () => {
     expect(app).not.toContain("id: 'incremental-change'")
     expect(app).not.toContain("view === 'incremental-change'")
   })
+
+  it('returns to the chat surface when starting a new chat', () => {
+    const app = readFileSync(resolve(__dirname, '../src/renderer/src/App.tsx'), 'utf8')
+
+    expect(app).toMatch(/onChatChange=\{\(id\) => \{\s*setChatId\(id\)\s*\/\/ Starting or picking a chat means going back to the conversation\.\s*setView\('chat'\)\s*\}\}/)
+  })
 })

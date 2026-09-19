@@ -236,8 +236,8 @@ export function App(): React.JSX.Element {
             onWorkspaceChange={setWorkspace}
             onChatChange={(id) => {
               setChatId(id)
-              // Picking a chat means going back to the conversation.
-              if (id !== null) setView('chat')
+              // Starting or picking a chat means going back to the conversation.
+              setView('chat')
             }}
             onScheduled={() => {
               setView('scheduled')
