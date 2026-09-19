@@ -811,6 +811,9 @@ fn collect_install_files(
         if kind.is_dir() {
             collect_install_files(&entry.path(), files, depth + 1)?;
         } else if kind.is_file() {
+            if depth == 0 && entry.file_name() == "evohime-updater.exe" {
+                continue;
+            }
             files.push(entry.path());
         }
     }
@@ -1111,6 +1114,11 @@ impl UpdateTransaction {
 }
 
 /// Recursive copy that overwrites the destination and keeps extra files there.
+///
+/// The active update-agent executable is intentionally preserved. The worker
+/// runs from that path while applying shell-host/native updates, so copying or
+/// replacing it here would fail with a Windows sharing violation. Updater
+/// self-replacement is handled separately after this worker exits.
 fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
     copy_tree_at_depth(source, destination, 0)
 }
@@ -1127,6 +1135,9 @@ fn copy_tree_at_depth(source: &Path, destination: &Path, depth: usize) -> io::Re
     fs::create_dir_all(destination)?;
     for entry in fs::read_dir(source)? {
         let entry = entry?;
+        if depth == 0 && entry.file_name() == "evohime-updater.exe" {
+            continue;
+        }
         let target = destination.join(entry.file_name());
         let kind = entry.file_type()?;
         if kind.is_dir() {
@@ -1626,6 +1637,52 @@ mod tests {
         let error = super::copy_tree(&source, &destination)
             .expect_err("excessive tree depth must be rejected");
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_locked_active_update_agent_is_ignored() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::time::Duration;
+
+        let root = temp_dir("locked-updater");
+        write_components(&root, "old");
+        let locked_path = root.join("evohime-updater.exe");
+        fs::write(&locked_path, "active-worker").unwrap();
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&locked_path)
+            .unwrap();
+
+        super::wait_until_writable(&root, Duration::from_millis(100)).unwrap();
+
+        drop(held);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn copy_tree_preserves_active_update_agent() {
+        let root = temp_dir("active-updater");
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(source.join("evohime-updater.exe"), "new-worker").unwrap();
+        fs::write(source.join("EvoHime.exe"), "new-shell").unwrap();
+        fs::write(destination.join("evohime-updater.exe"), "active-worker").unwrap();
+
+        super::copy_tree(&source, &destination).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(destination.join("evohime-updater.exe")).unwrap(),
+            "active-worker"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("EvoHime.exe")).unwrap(),
+            "new-shell"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
