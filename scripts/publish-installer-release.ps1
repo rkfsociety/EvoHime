@@ -35,12 +35,19 @@ $releaseAbsent = $releaseExit -ne 0 -and $releaseText -match '(?i)(HTTP/?[0-9.]*
 if ($releaseExit -ne 0 -and -not $releaseAbsent) {
     throw "Не удалось проверить installer release: $releaseText"
 }
-if ($releaseAbsent) {
-    gh release create $Tag --repo $repo --target $Commit --title "EvoHime installer $Version" --notes-file $notes
-} else {
-    gh release edit $Tag --repo $repo --target $Commit --title "EvoHime installer $Version" --notes-file $notes
+if (-not $releaseAbsent) {
+    try {
+        $release = $releaseText | ConvertFrom-Json
+    } catch {
+        throw "Не удалось разобрать installer release: $releaseText"
+    }
+    $releaseId = [string]$release.id
+    if ($releaseId -notmatch '^\d+$') { throw "Installer release не содержит корректный id: $releaseText" }
+    gh api --method DELETE "repos/$repo/releases/$releaseId"
+    if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить старый installer release $Tag." }
 }
-if ($LASTEXITCODE -ne 0) { throw "Не удалось обновить installer release $Tag." }
+gh release create $Tag --repo $repo --target $Commit --title "EvoHime installer $Version" --notes-file $notes
+if ($LASTEXITCODE -ne 0) { throw "Не удалось создать installer release $Tag." }
 gh release upload $Tag --repo $repo $setup --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать web installer.' }
 gh release upload $Tag --repo $repo $manifestPath --clobber
