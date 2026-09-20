@@ -94,6 +94,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Protocol test harness вынесен в отдельный `tests` модуль; production-фасад
   `evohime-cli-protocol` теперь содержит только module wiring и публичный
   `CoreClient`, marker CLI повышен до `0.0.000065`.
+- CLI command model (`Command`/`ParseError`) вынесена из parser-а в отдельный
+  `command` модуль; корневые re-export paths сохранены, marker CLI повышен до
+  `0.0.000066`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.

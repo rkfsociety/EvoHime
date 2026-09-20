@@ -1,46 +1,7 @@
+use super::command::{Command, ParseError};
 use evohime_cli_contract::{MAX_PROMPT_BYTES, MAX_RUN_ID_BYTES, MAX_WORKSPACE_BYTES};
 
 const STDIN_PREFIX: &str = "\n\nInput from stdin:\n";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Command {
-    Run {
-        prompt: String,
-        workspace: String,
-        workflow: Option<String>,
-        json: bool,
-        detach: bool,
-    },
-    Status {
-        task_id: String,
-        json: bool,
-    },
-    Watch {
-        task_id: String,
-        json: bool,
-    },
-    Cancel {
-        task_id: String,
-        json: bool,
-    },
-    Resume {
-        task_id: String,
-        json: bool,
-    },
-    Doctor {
-        json: bool,
-    },
-}
-
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum ParseError {
-    #[error("usage: eva run [<prompt>] [--workflow <id>] [--workspace <path>] [--stdin] [--json] [--detach]")]
-    Usage,
-    #[error("unknown command or option")]
-    UnknownOption,
-    #[error("value is missing or exceeds the CLI bound")]
-    InvalidValue,
-}
 
 fn bounded(value: &str, max: usize) -> bool {
     !value.is_empty() && value.len() <= max && !value.bytes().any(|byte| byte.is_ascii_control())
