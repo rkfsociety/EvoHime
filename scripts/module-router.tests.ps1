@@ -35,6 +35,7 @@ if ($coreWorkflow -match 'crates/evohime-model-gateway|crates/evohime-permission
 $moduleRelease = Get-Content -LiteralPath (Join-Path $root 'scripts\module-release.ps1') -Raw
 if ($moduleRelease -notmatch "'crates/model-gateway'") { throw 'Core module release routing does not include model-gateway.' }
 if ($moduleRelease -notmatch "'crates/permissions'") { throw 'Core module release routing does not include permissions.' }
+if ($moduleRelease -notmatch "'crates/evohime-cli-protocol'") { throw 'CLI module release routing does not include evohime-cli-protocol.' }
 if ($moduleRelease -match 'crates/evohime-model-gateway|crates/evohime-permissions') { throw 'Core module release routing contains stale crate paths.' }
 $nativeWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
 if ($nativeWorkflow -notmatch 'actions/download-artifact@v8' -or $nativeWorkflow -notmatch 'build-windows-native\.ps1 -SkipBuild') { throw 'Native workflow still rebuilds instead of consuming checked artifacts.' }

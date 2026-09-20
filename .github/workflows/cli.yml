@@ -3,7 +3,7 @@ on:
   workflow_call:
   workflow_dispatch:
   pull_request:
-    paths: ['crates/evohime-cli/**', 'crates/evohime-cli-contract/**', 'release-versions/cli.txt', '.github/workflows/cli.yml', '.github/workflows/module-native.yml']
+    paths: ['crates/evohime-cli/**', 'crates/evohime-cli-protocol/**', 'crates/evohime-cli-contract/**', 'release-versions/cli.txt', '.github/workflows/cli.yml', '.github/workflows/module-native.yml']
 
 concurrency:
   group: evohime-module-${{ github.workflow }}
@@ -20,9 +20,11 @@ jobs:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
       - run: cargo test --locked -p evohime-cli-contract
+      - run: cargo test --locked -p evohime-cli-protocol
       - run: cargo test --locked -p evohime-cli
       - run: cargo test --locked -p evohime-desktop-ipc
       - run: cargo clippy --locked -p evohime-cli-contract --all-targets -- -D warnings
+      - run: cargo clippy --locked -p evohime-cli-protocol --all-targets -- -D warnings
       - run: cargo clippy --locked -p evohime-cli --all-targets -- -D warnings
       - run: cargo clippy --locked -p evohime-desktop-ipc --all-targets -- -D warnings
       - run: cargo build --locked --release -p evohime-cli
