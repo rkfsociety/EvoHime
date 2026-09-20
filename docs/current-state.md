@@ -9,7 +9,7 @@ release-gates и результаты отдельных завершённых 
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v173, а также
+v042–v116 и v149–v174, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -119,7 +119,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000273`, `ui-bundle 0.0.000090`,
+Текущий checkout содержит patch `core 0.0.000274`, `ui-bundle 0.0.000090`,
 `shell-host 0.0.000098`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -135,18 +135,22 @@ region с monotonic revision fence. Probes, `FreeOnly` routing, IPC и UI ещё
 разделяет provider family и transport, а `ProviderModelDescriptor` адаптирует
 существующий gateway `ModelCatalogEntry` с profile/catalog revision/hash,
 typed limits и fail-closed capability/privacy/usage metadata. Восемь
-built-in identities добавлены как bounded metadata. SQLite schema v173
+built-in identities добавлены как bounded metadata. SQLite schema v174
 атомарно хранит profile/catalog snapshot в provider/credential-binding/region
-scope с monotonic revision fence, bounded JSON и стандартным backup-before-
-migrate path; discovery, route wiring, IPC и UI остаются активными этапами
+scope с monotonic revision fence, bounded JSON, lifecycle state, observation/
+expiry timestamps и typed failure code; v174 additive migration совместима со
+старыми v173 таблицами. Core имеет validated read-back adapter, а startup
+recovery hydration, route preflight, IPC и UI остаются активными этапами
 173.2–173.4.
 `ProviderCatalogSnapshot` теперь задаёт bounded lifecycle
 `Fresh/Stale/Unavailable/CredentialRejected/DiscoveryUnsupported`, typed
 failure codes, deterministic gateway-catalog deduplication и fail-closed
 `route_eligible_at`; raw `ProviderError` text не переносится в snapshot.
 `model.catalog` IPC refresh строит redacted profile из route config и
-публикует success/failure snapshot в schema v173; recovery-read, route
-preflight и отдельная authenticated projection ещё не подключены.
+публикует success/failure snapshot в schema v174; восстановление проверяет
+profile/catalog identity, lifecycle и typed failure перед использованием, но
+startup recovery-read, route preflight и отдельная authenticated projection
+ещё не подключены.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и

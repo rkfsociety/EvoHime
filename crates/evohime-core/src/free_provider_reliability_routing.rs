@@ -224,6 +224,29 @@ pub enum ProviderCatalogState {
     DiscoveryUnsupported,
 }
 
+impl ProviderCatalogState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Fresh => "fresh",
+            Self::Stale => "stale",
+            Self::Unavailable => "unavailable",
+            Self::CredentialRejected => "credential_rejected",
+            Self::DiscoveryUnsupported => "discovery_unsupported",
+        }
+    }
+
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "fresh" => Some(Self::Fresh),
+            "stale" => Some(Self::Stale),
+            "unavailable" => Some(Self::Unavailable),
+            "credential_rejected" => Some(Self::CredentialRejected),
+            "discovery_unsupported" => Some(Self::DiscoveryUnsupported),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CatalogFailureCode {
@@ -237,6 +260,39 @@ pub enum CatalogFailureCode {
     ProtocolMismatch,
     DiscoveryUnsupported,
     Unknown,
+}
+
+impl CatalogFailureCode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::Timeout => "timeout",
+            Self::CredentialRejected => "credential_rejected",
+            Self::RateLimited => "rate_limited",
+            Self::MalformedResponse => "malformed_response",
+            Self::ResponseTooLarge => "response_too_large",
+            Self::EntryLimitExceeded => "entry_limit_exceeded",
+            Self::ProtocolMismatch => "protocol_mismatch",
+            Self::DiscoveryUnsupported => "discovery_unsupported",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    fn from_str(value: &str) -> Option<Self> {
+        match value {
+            "network" => Some(Self::Network),
+            "timeout" => Some(Self::Timeout),
+            "credential_rejected" => Some(Self::CredentialRejected),
+            "rate_limited" => Some(Self::RateLimited),
+            "malformed_response" => Some(Self::MalformedResponse),
+            "response_too_large" => Some(Self::ResponseTooLarge),
+            "entry_limit_exceeded" => Some(Self::EntryLimitExceeded),
+            "protocol_mismatch" => Some(Self::ProtocolMismatch),
+            "discovery_unsupported" => Some(Self::DiscoveryUnsupported),
+            "unknown" => Some(Self::Unknown),
+            _ => None,
+        }
+    }
 }
 
 /// Immutable, safe projection of one provider catalog observation. The
@@ -672,6 +728,16 @@ impl ProviderProfile {
                 catalog_json,
                 updated_at_ms: i64::try_from(updated_at_ms)
                     .map_err(|_| "invalid provider profile catalog")?,
+                state: ProviderCatalogState::Fresh.as_str().into(),
+                observed_at_ms: i64::try_from(updated_at_ms)
+                    .map_err(|_| "invalid provider profile catalog")?,
+                expires_at_ms: i64::try_from(
+                    updated_at_ms
+                        .checked_add(MAX_PROVIDER_CATALOG_TTL_MS)
+                        .ok_or("invalid provider profile catalog")?,
+                )
+                .map_err(|_| "invalid provider profile catalog")?,
+                failure_code: None,
             },
         )
     }
@@ -937,12 +1003,72 @@ impl ProviderCatalogSnapshot {
         {
             return Err("provider catalog profile mismatch");
         }
-        profile.to_storage_record(
+        let mut record = profile.to_storage_record(
             &self.models,
             self.revision,
             self.catalog_content_hash.clone(),
             self.observed_at_ms,
-        )
+        )?;
+        record.state = self.state.as_str().into();
+        record.observed_at_ms =
+            i64::try_from(self.observed_at_ms).map_err(|_| "invalid provider catalog snapshot")?;
+        record.expires_at_ms =
+            i64::try_from(self.expires_at_ms).map_err(|_| "invalid provider catalog snapshot")?;
+        record.failure_code = self.failure.map(|failure| failure.as_str().into());
+        Ok(record)
+    }
+
+    pub fn from_storage_record(
+        record: &evohime_local_storage::provider_profile_catalog_store::ProviderProfileCatalogRecord,
+    ) -> Result<Self, &'static str> {
+        if record.revision <= 0
+            || record.updated_at_ms <= 0
+            || record.observed_at_ms <= 0
+            || record.expires_at_ms <= record.observed_at_ms
+        {
+            return Err("invalid provider catalog snapshot");
+        }
+        let profile: ProviderProfile =
+            serde_json::from_slice(&record.profile_json).map_err(|_| "invalid provider profile")?;
+        profile.validate()?;
+        if profile.provider_id != record.provider_id
+            || profile.credential_binding != record.credential_binding
+            || profile.region != record.region
+            || profile.content_hash != record.profile_content_hash
+        {
+            return Err("provider catalog profile mismatch");
+        }
+        let models: Vec<ProviderModelDescriptor> = serde_json::from_slice(&record.catalog_json)
+            .map_err(|_| "invalid provider catalog snapshot")?;
+        let state = ProviderCatalogState::from_str(&record.state)
+            .ok_or("invalid provider catalog snapshot")?;
+        let failure = record
+            .failure_code
+            .as_deref()
+            .map(|value| {
+                CatalogFailureCode::from_str(value).ok_or("invalid provider catalog snapshot")
+            })
+            .transpose()?;
+        let snapshot = Self {
+            schema_version: PROVIDER_CATALOG_SCHEMA_VERSION,
+            provider_id: record.provider_id.clone(),
+            credential_binding: record.credential_binding.clone(),
+            region: record.region.clone(),
+            profile_revision: profile.revision,
+            profile_content_hash: record.profile_content_hash.clone(),
+            revision: u64::try_from(record.revision)
+                .map_err(|_| "invalid provider catalog snapshot")?,
+            catalog_content_hash: record.catalog_content_hash.clone(),
+            state,
+            models,
+            observed_at_ms: u64::try_from(record.observed_at_ms)
+                .map_err(|_| "invalid provider catalog snapshot")?,
+            expires_at_ms: u64::try_from(record.expires_at_ms)
+                .map_err(|_| "invalid provider catalog snapshot")?,
+            failure,
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
     }
 }
 
@@ -1385,6 +1511,78 @@ mod tests {
         assert!(!String::from_utf8(stored.catalog_json)
             .expect("catalog json")
             .contains("prompt"));
+        assert_eq!(stored.state, "fresh");
+        assert_eq!(stored.failure_code, None);
+    }
+
+    #[test]
+    fn catalog_snapshot_recovers_lifecycle_and_failure_from_store() {
+        let profile = profile();
+        let snapshot = ProviderCatalogSnapshot::fresh_from_catalog(
+            &profile,
+            &[ModelCatalogEntry {
+                id: "provider/model".into(),
+                context_tokens: Some(8_192),
+                max_output_tokens: Some(1_024),
+            }],
+            1,
+            "c".repeat(64),
+            1_000,
+            2_000,
+        )
+        .expect("fresh snapshot");
+        let database = rusqlite::Connection::open_in_memory().expect("sqlite");
+        evohime_local_storage::provider_profile_catalog_store::install_schema(&database)
+            .expect("schema");
+        let record = snapshot
+            .to_storage_record(&profile)
+            .expect("storage record");
+        assert!(
+            evohime_local_storage::provider_profile_catalog_store::put(&database, &record)
+                .expect("fresh write")
+        );
+        let stored = evohime_local_storage::provider_profile_catalog_store::get(
+            &database,
+            "openrouter",
+            "credential:openrouter",
+            "global",
+        )
+        .expect("fresh read")
+        .expect("fresh snapshot");
+        assert_eq!(
+            ProviderCatalogSnapshot::from_storage_record(&stored).expect("fresh recovery"),
+            snapshot
+        );
+
+        let failure = ProviderCatalogSnapshot::failure(
+            &profile,
+            2,
+            "d".repeat(64),
+            ProviderCatalogState::Unavailable,
+            CatalogFailureCode::Network,
+            2_000,
+            3_000,
+        )
+        .expect("failure snapshot");
+        let failure_record = failure.to_storage_record(&profile).expect("failure record");
+        assert!(evohime_local_storage::provider_profile_catalog_store::put(
+            &database,
+            &failure_record
+        )
+        .expect("failure write"));
+        let stored_failure = evohime_local_storage::provider_profile_catalog_store::get(
+            &database,
+            "openrouter",
+            "credential:openrouter",
+            "global",
+        )
+        .expect("failure read")
+        .expect("failure snapshot");
+        let recovered_failure =
+            ProviderCatalogSnapshot::from_storage_record(&stored_failure).expect("recovery");
+        assert_eq!(recovered_failure.state, ProviderCatalogState::Unavailable);
+        assert_eq!(recovered_failure.failure, Some(CatalogFailureCode::Network));
+        assert!(!recovered_failure.route_eligible_at("provider/model", 2_500));
     }
 
     #[test]

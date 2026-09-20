@@ -1924,3 +1924,20 @@ storage warning.
 evohime-core --all-targets -- -D warnings`, rustfmt и `git diff --check`.
 Startup recovery-read, route preflight, authenticated IPC projection и CI
 evidence ещё не заявляются; установленный клиент не изменялся.
+
+## Provider catalog snapshot recovery metadata (2026-09-20)
+
+Core patch повышен с `0.0.000273` до `0.0.000274`; local-storage schema
+поднята с v173 до v174. Snapshot row теперь сохраняет bounded lifecycle state,
+`observed_at_ms`, `expires_at_ms` и allow-listed `failure_code`. Additive
+migration v174 обновляет существующие v173 таблицы и остаётся безопасной для
+fresh installs, где v173 installer уже создал эти колонки; старые observation
+timestamps выводятся из bounded `updated_at_ms`. Core read-back валидирует profile scope/hash,
+descriptors, lifecycle consistency и typed failure до восстановления snapshot.
+Raw provider text, URL, prompt и secrets по-прежнему не входят в запись.
+
+Пройдены storage provider-profile tests, migration tests, Core contract tests,
+`cargo check --locked -p evohime-core -p evohime-local-storage`, rustfmt и
+`git diff --check`. Полный startup recovery hydration, route preflight,
+authenticated IPC projection и CI evidence ещё не заявляются; установленный
+клиент не изменялся.

@@ -12,6 +12,7 @@ pub const MAX_PROVIDER_PROFILE_ROWS: u32 = 256;
 pub const MAX_CATALOG_ENTRIES: usize = 2_048;
 pub const MAX_SCOPE_BYTES: usize = 256;
 pub const MAX_REGION_BYTES: usize = 64;
+pub const MAX_CATALOG_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderProfileCatalogRecord {
@@ -24,6 +25,10 @@ pub struct ProviderProfileCatalogRecord {
     pub catalog_content_hash: String,
     pub catalog_json: Vec<u8>,
     pub updated_at_ms: i64,
+    pub state: String,
+    pub observed_at_ms: i64,
+    pub expires_at_ms: i64,
+    pub failure_code: Option<String>,
 }
 
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
@@ -38,6 +43,10 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
            catalog_content_hash TEXT NOT NULL,
            catalog_json BLOB NOT NULL,
            updated_at_ms INTEGER NOT NULL,
+           state TEXT NOT NULL DEFAULT 'fresh',
+           observed_at_ms INTEGER NOT NULL DEFAULT 1,
+           expires_at_ms INTEGER NOT NULL DEFAULT 2,
+           failure_code TEXT,
            PRIMARY KEY(provider_id, credential_binding, region)
          );
          CREATE INDEX IF NOT EXISTS idx_provider_profile_catalog_revision
@@ -88,15 +97,20 @@ pub fn put(
         .execute(
             "INSERT INTO provider_profile_catalog_snapshots
              (provider_id,credential_binding,region,revision,profile_content_hash,
-              profile_json,catalog_content_hash,catalog_json,updated_at_ms)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+              profile_json,catalog_content_hash,catalog_json,updated_at_ms,state,
+              observed_at_ms,expires_at_ms,failure_code)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
              ON CONFLICT(provider_id,credential_binding,region)
              DO UPDATE SET revision=excluded.revision,
                profile_content_hash=excluded.profile_content_hash,
                profile_json=excluded.profile_json,
                catalog_content_hash=excluded.catalog_content_hash,
                catalog_json=excluded.catalog_json,
-               updated_at_ms=excluded.updated_at_ms
+               updated_at_ms=excluded.updated_at_ms,
+               state=excluded.state,
+               observed_at_ms=excluded.observed_at_ms,
+               expires_at_ms=excluded.expires_at_ms,
+               failure_code=excluded.failure_code
              WHERE excluded.revision =
                provider_profile_catalog_snapshots.revision + 1",
             params![
@@ -109,6 +123,10 @@ pub fn put(
                 record.catalog_content_hash,
                 record.catalog_json,
                 record.updated_at_ms,
+                record.state,
+                record.observed_at_ms,
+                record.expires_at_ms,
+                record.failure_code,
             ],
         )
         .map(|changed| changed == 1)
@@ -127,7 +145,8 @@ pub fn get(
         .query_row(
             "SELECT provider_id,credential_binding,region,revision,
                     profile_content_hash,profile_json,catalog_content_hash,
-                    catalog_json,updated_at_ms
+                    catalog_json,updated_at_ms,state,observed_at_ms,expires_at_ms,
+                    failure_code
              FROM provider_profile_catalog_snapshots
              WHERE provider_id=?1 AND credential_binding=?2 AND region=?3",
             params![provider_id, credential_binding, region],
@@ -142,6 +161,10 @@ pub fn get(
                     catalog_content_hash: row.get(6)?,
                     catalog_json: row.get(7)?,
                     updated_at_ms: row.get(8)?,
+                    state: row.get(9)?,
+                    observed_at_ms: row.get(10)?,
+                    expires_at_ms: row.get(11)?,
+                    failure_code: row.get(12)?,
                 })
             },
         )
@@ -168,7 +191,29 @@ fn validate_record(record: &ProviderProfileCatalogRecord) -> Result<(), &'static
         || record.catalog_json.is_empty()
         || record.catalog_json.len() > MAX_CATALOG_JSON_BYTES
         || record.updated_at_ms <= 0
+        || !valid_state(&record.state)
+        || record.observed_at_ms <= 0
+        || record.expires_at_ms <= record.observed_at_ms
+        || record.expires_at_ms.saturating_sub(record.observed_at_ms) > MAX_CATALOG_TTL_MS
+        || record
+            .failure_code
+            .as_deref()
+            .is_some_and(|value| !valid_failure_code(value))
     {
+        return Err("invalid provider profile catalog");
+    }
+
+    let state_consistent = match record.state.as_str() {
+        "fresh" | "stale" => record.failure_code.is_none(),
+        "unavailable" => record
+            .failure_code
+            .as_deref()
+            .is_some_and(|code| code != "credential_rejected" && code != "discovery_unsupported"),
+        "credential_rejected" => record.failure_code.as_deref() == Some("credential_rejected"),
+        "discovery_unsupported" => record.failure_code.as_deref() == Some("discovery_unsupported"),
+        _ => false,
+    };
+    if !state_consistent {
         return Err("invalid provider profile catalog");
     }
 
@@ -205,6 +250,29 @@ fn valid_credential_binding(value: &str) -> bool {
 
 fn valid_hash(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn valid_state(value: &str) -> bool {
+    matches!(
+        value,
+        "fresh" | "stale" | "unavailable" | "credential_rejected" | "discovery_unsupported"
+    )
+}
+
+fn valid_failure_code(value: &str) -> bool {
+    matches!(
+        value,
+        "network"
+            | "timeout"
+            | "credential_rejected"
+            | "rate_limited"
+            | "malformed_response"
+            | "response_too_large"
+            | "entry_limit_exceeded"
+            | "protocol_mismatch"
+            | "discovery_unsupported"
+            | "unknown"
+    )
 }
 
 fn contains_secret_like_material(value: &str) -> bool {
@@ -320,6 +388,10 @@ mod tests {
             catalog_json: br#"[{"model_id":"provider/model","limits":{"context_tokens":4096}}]"#
                 .to_vec(),
             updated_at_ms: 1_000,
+            state: "fresh".into(),
+            observed_at_ms: 1_000,
+            expires_at_ms: 2_000,
+            failure_code: None,
         }
     }
 

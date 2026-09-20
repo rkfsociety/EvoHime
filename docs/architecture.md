@@ -2780,10 +2780,13 @@ privacy, usage и lifecycle. Отсутствующие capability/privacy/usage
 `Unknown`, а raw catalog response, arbitrary endpoint и credential material в
 descriptor не попадают. Восемь bounded built-in profile identities описывают
 OpenRouter, Groq, Gemini, Mistral, Cloudflare Workers AI, NVIDIA NIM, Cerebras
-и Hugging Face. SQLite schema v173 атомарно хранит bounded profile/catalog
+и Hugging Face. SQLite schema v174 атомарно хранит bounded profile/catalog
 snapshot с provider/credential-binding/region scope, revision fence и
-idempotent publication через существующий local-storage owner; discovery,
-route wiring, IPC и UI остаются следующими этапами 173.2–173.4.
+idempotent publication через существующий local-storage owner. В той же строке
+сохраняются lifecycle state, observation/expiry timestamps и typed failure code;
+additive migration v174 переносит старые v173 таблицы без потери metadata, а
+validated read-back отбрасывает несовместимые profile/catalog identity.
+Discovery, route wiring, IPC и UI остаются следующими этапами 173.2–173.4.
 
 `ProviderCatalogSnapshot` задаёт lifecycle `Fresh`, `Stale`, `Unavailable`,
 `CredentialRejected` и `DiscoveryUnsupported`, а `CatalogFailureCode` скрывает
