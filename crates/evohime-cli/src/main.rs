@@ -6,6 +6,8 @@ mod windows_client;
 mod windows_endpoint;
 #[cfg(windows)]
 mod windows_output;
+#[cfg(windows)]
+mod windows_watch;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {

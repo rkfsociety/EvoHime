@@ -51,6 +51,9 @@ compatible-manifest runs; исторические разделы ниже со�
   behavior и `CoreClient` public facade не изменены.
 - CLI marker повышен до `0.0.000075`; Windows target check и Linux CLI tests
   являются обязательными проверками перед следующим module-router push.
+- Watch/event cursor filtering и bounded reconnect loop вынесены из command
+  dispatch в отдельный `windows_watch` module; sequence replay и five-attempt
+  reconnect policy не изменены, marker CLI повышен до `0.0.000076`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 
