@@ -1676,6 +1676,11 @@ The main-process `trace.export` boundary now rejects legacy or forged
 safe renderer-generated traces continue to save normally. `shell-host` is now
 `0.0.000092` (from `0.0.000091`).
 
+Shell diagnostics now redact URLs and prompt-shaped fields consistently; support
+bundle event payloads are parsed before redaction and malformed payloads are
+omitted rather than copied as raw text. `shell-host` is now `0.0.000093` (from
+`0.0.000092`).
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

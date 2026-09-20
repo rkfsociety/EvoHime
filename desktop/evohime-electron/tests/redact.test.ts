@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   REDACTED,
   REDACTED_PATH,
+  REDACTED_URL,
   isSensitiveName,
   redactArgv,
   redactError,
@@ -23,6 +24,15 @@ describe('redaction layer', () => {
       `opened ${REDACTED_PATH}`
     )
     expect(redactText('pipe \\\\.\\pipe\\evohime-core-v1')).toContain(REDACTED_PATH)
+  })
+
+  it('redacts URLs and prompt-shaped sensitive keys', () => {
+    expect(redactText('failed at https://example.test/path?token=sk-test')).toBe(`failed at ${REDACTED_URL}`)
+    expect(isSensitiveName('user_prompt')).toBe(true)
+    expect(redactValue({ prompt: 'private context', error: 'https://example.test' })).toEqual({
+      prompt: REDACTED,
+      error: REDACTED_URL
+    })
   })
 
   it('drops values of sensitive keys and keeps ordinary ones', () => {

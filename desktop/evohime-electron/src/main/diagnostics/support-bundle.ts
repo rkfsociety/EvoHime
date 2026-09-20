@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import { redactText, redactValue, type RedactedValue } from './redact'
+import { REDACTED, redactText, redactValue, type RedactedValue } from './redact'
 
 export interface SupportBundleFiles {
   readonly manifest: Record<string, unknown>
@@ -23,8 +23,8 @@ export function buildSupportBundleFiles(input: {
 }): SupportBundleFiles {
   const health = redactValue(input.snapshot)
   const runtime = redactValue(input.runtime)
-  const events = input.events.slice(0, 200).map((event) => JSON.stringify(redactValue({ sequenceId: event.sequenceId, eventType: event.eventType, payload: event.payload }))).join('\n')
-  const errors = input.events.filter((event) => /fail|error|refus/i.test(event.eventType)).slice(0, 32).map((event) => JSON.stringify(redactValue({ eventType: event.eventType, payload: event.payload }))).join('\n')
+  const events = input.events.slice(0, 200).map((event) => JSON.stringify(redactValue({ sequenceId: event.sequenceId, eventType: event.eventType, payload: redactEventPayload(event.payload) }))).join('\n')
+  const errors = input.events.filter((event) => /fail|error|refus/i.test(event.eventType)).slice(0, 32).map((event) => JSON.stringify(redactValue({ eventType: event.eventType, payload: redactEventPayload(event.payload) }))).join('\n')
   const logs = input.logs.slice(0, 120).map(redactText).join('\n')
   const issueDraft = [
     '### Problem',
@@ -58,6 +58,14 @@ export function buildSupportBundleFiles(input: {
     file_hashes: Object.fromEntries(Object.entries(filesWithoutManifest).map(([name, value]) => [name, sha256(JSON.stringify(value))]))
   }
   return { manifest, health, runtime, errors, events, logs, issueDraft, redactionReport }
+}
+
+function redactEventPayload(payload: string): RedactedValue {
+  try {
+    return redactValue(JSON.parse(payload))
+  } catch {
+    return REDACTED
+  }
 }
 
 export function serializeSupportBundle(files: SupportBundleFiles): Buffer {

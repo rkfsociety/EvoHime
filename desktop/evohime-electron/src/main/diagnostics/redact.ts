@@ -12,6 +12,7 @@
 
 export const REDACTED = '[REDACTED]'
 export const REDACTED_PATH = '[PATH]'
+export const REDACTED_URL = '[URL]'
 
 export const MAX_TEXT_CHARS = 2_000
 export const MAX_OBJECT_KEYS = 64
@@ -28,10 +29,12 @@ const SENSITIVE_NAME_MARKERS = [
   'credential',
   'cookie',
   'session_key',
-  'private_key'
+  'private_key',
+  'prompt'
 ]
 
 const SECRET_TOKEN_PREFIXES = ['bearer', 'sk-', 'ghp_', 'gho_', 'github_pat_', 'aiza', 'xoxb-']
+const URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/gi
 
 /** Windows drive paths, UNC paths, pipe paths and POSIX-looking absolute paths. */
 const PATH_PATTERN = /(?:[A-Za-z]:\\|\\\\[.?]?\\|\\\\)[^\s"'<>|]*|(?:\/[A-Za-z0-9._-]+){2,}/g
@@ -44,7 +47,7 @@ export function isSensitiveName(name: string): boolean {
 export function redactText(input: string): string {
   const bounded = input.length > MAX_TEXT_CHARS ? `${input.slice(0, MAX_TEXT_CHARS)}…` : input
   const credentialSafe = bounded.replace(/(?<![A-Za-z0-9])(?:bearer\s+|sk-|ghp_|gho_|github_pat_|aiza|xoxb-)[A-Za-z0-9._+\-/=]+/gi, REDACTED)
-  return credentialSafe
+  return credentialSafe.replace(URL_PATTERN, REDACTED_URL)
     .split(/(\s+)/)
     .map((token) => (isSecretToken(token) ? REDACTED : redactPaths(token)))
     .join('')

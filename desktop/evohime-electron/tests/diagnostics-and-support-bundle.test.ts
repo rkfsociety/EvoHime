@@ -22,4 +22,21 @@ describe('support bundle v2', () => {
     const files = buildSupportBundleFiles({ snapshot: {}, runtime: {}, events: [], logs: [] })
     expect(() => serializeSupportBundle({ ...files, issueDraft: 'bearer leaked-value' })).toThrow('final redaction scan')
   })
+
+  it('does not include prompts or URLs from structured and malformed event payloads', () => {
+    const files = buildSupportBundleFiles({
+      snapshot: {},
+      runtime: {},
+      events: [
+        { sequenceId: 1, eventType: 'task.failed', payload: JSON.stringify({ prompt: 'private context', error: 'https://example.test/path' }) },
+        { sequenceId: 2, eventType: 'task.failed', payload: 'raw prompt https://example.test/raw' }
+      ],
+      logs: []
+    })
+
+    expect(files.events).not.toContain('private context')
+    expect(files.events).not.toContain('example.test')
+    expect(files.errors).not.toContain('private context')
+    expect(files.errors).not.toContain('example.test')
+  })
 })
