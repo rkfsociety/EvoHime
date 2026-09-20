@@ -7,11 +7,10 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий checkout содержит реализацию единственного web-установщика. Последний
-опубликованный baseline находится в `origin/main`; локальный checkout после него
-опережает remote локальными task-only коммитами. Актуальный GitHub Actions результат для
-этих локальных изменений не утверждается без отдельной проверки run. Исторические
-разделы ниже сохраняют прежнее GitHub evidence.
+Текущий checkout содержит реализацию единственного web-установщика и
+синхронизирован с `origin/main` после task-only коммита. Актуальные GitHub
+Actions результаты для текущего checkout подтверждены отдельными module и
+compatible-manifest runs; исторические разделы ниже сохраняют прежнее evidence.
 
 ## Статус выпуска
 
