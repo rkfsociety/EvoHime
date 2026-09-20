@@ -1,5 +1,6 @@
 //! Schema-first model output with provider-native and synthetic-tool fallback.
 
+use crate::providers::ProviderError;
 use crate::{ChatMessage, ModelGateway, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -157,7 +158,7 @@ impl ModelGateway {
         contract.validate_schema()?;
         let native_supported = self
             .route_supports_structured_output(route)
-            .map_err(|error| ResponseError::Provider(error.to_string()))?;
+            .map_err(|error| ResponseError::Provider(provider_error_code(&error).into()))?;
         let strategy = match contract.strategy {
             ResponseStrategy::SyntheticTool => ResponseStrategy::SyntheticTool,
             ResponseStrategy::ProviderNative if native_supported => {
@@ -177,7 +178,7 @@ impl ModelGateway {
             let result = self
                 .chat_with_tools_for_route(route, model, messages, std::slice::from_ref(&tool))
                 .await
-                .map_err(|error| ResponseError::Provider(error.to_string()))?;
+                .map_err(|error| ResponseError::Provider(provider_error_code(&error).into()))?;
             let calls = result
                 .tool_calls
                 .iter()
@@ -206,6 +207,15 @@ impl ModelGateway {
     }
 }
 
+fn provider_error_code(error: &ProviderError) -> &'static str {
+    match error {
+        ProviderError::Config(_) => "provider_configuration",
+        ProviderError::Http(_) => "provider_http",
+        ProviderError::Api(_) => "provider_api",
+        ProviderError::Stream(_) => "provider_stream",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,5 +235,31 @@ mod tests {
             c.validate_value(&json!({})),
             Err(ResponseError::Validation(_))
         ));
+    }
+
+    #[test]
+    fn provider_failures_are_projected_to_stable_codes() {
+        let cases = [
+            (
+                ProviderError::Config("https://provider.test/?token=secret".into()),
+                "provider_configuration",
+            ),
+            (
+                ProviderError::Http("provider body with secret".into()),
+                "provider_http",
+            ),
+            (
+                ProviderError::Api("raw provider response".into()),
+                "provider_api",
+            ),
+            (
+                ProviderError::Stream("raw stream diagnostics".into()),
+                "provider_stream",
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(provider_error_code(&error), expected);
+            assert!(!provider_error_code(&error).contains("secret"));
+        }
     }
 }

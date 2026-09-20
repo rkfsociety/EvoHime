@@ -1687,6 +1687,13 @@ hashes, and applies the same capability bound to policy requirements. URL,
 prompt-like and malformed hash fixtures fail closed before compatibility or
 fallback selection; the Core source module is now `0.0.000262`.
 
+Structured-response provider failures now cross the model-gateway boundary as
+stable `provider_configuration`, `provider_http`, `provider_api` or
+`provider_stream` codes instead of serialized provider diagnostics. Regression
+coverage feeds URL-, body- and stream-like raw strings through every branch and
+confirms that only the safe code is retained; the Core source module is now
+`0.0.000263`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures
