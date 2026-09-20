@@ -49,6 +49,7 @@ output, transcripts, absolute paths и PII запрещены.
   build и smoke-проверка exit code `7`/`core_unavailable`.
 - Локально на Linux прошли `cargo test --locked -p evohime-cli` (4/4), включая
   duplex-тест HMAC-handshake, sequence cursor и `StartTask` protobuf-кадра,
+  `cargo test --locked -p evohime-desktop-ipc` (32/32) и его strict clippy,
   `cargo clippy --locked -p evohime-cli --all-targets -- -D warnings`,
   `cargo build --locked -p evohime-cli` и binary smoke `eva doctor --json`.
 

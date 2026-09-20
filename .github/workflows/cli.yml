@@ -20,7 +20,9 @@ jobs:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
       - run: cargo test --locked -p evohime-cli
+      - run: cargo test --locked -p evohime-desktop-ipc
       - run: cargo clippy --locked -p evohime-cli --all-targets -- -D warnings
+      - run: cargo clippy --locked -p evohime-desktop-ipc --all-targets -- -D warnings
       - run: cargo build --locked -p evohime-cli
       - name: Verify unsupported production transport fails closed
         shell: bash
