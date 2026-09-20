@@ -6,6 +6,7 @@
 
 use evohime_desktop_ipc::{generated, session, transport};
 use prost::Message;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncWrite};
 
 const MAX_SNAPSHOT_INTERLEAVED_EVENTS: usize = 128;
@@ -200,7 +201,13 @@ fn challenge_nonce(event: &generated::EventEnvelope) -> Result<String, String> {
     let Some(generated::event_envelope::Event::AuthChallenge(challenge)) = &event.event else {
         return Err("authentication_failed: challenge missing".into());
     };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| u64::try_from(duration.as_millis()).ok());
     if challenge.expires_at_ms == 0
+        || now_ms.is_none()
+        || now_ms.is_some_and(|now| challenge.expires_at_ms <= now)
         || challenge.nonce.len() != session::NONCE_BYTES * 2
         || !challenge.nonce.bytes().all(|byte| byte.is_ascii_hexdigit())
     {
@@ -216,6 +223,16 @@ mod tests {
 
     const TEST_NONCE: &str = "abababababababababababababababababababababababababababababababab";
 
+    fn test_expiry() -> u64 {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after Unix epoch")
+            .as_millis();
+        u64::try_from(now_ms)
+            .expect("test clock fits in u64")
+            .saturating_add(30_000)
+    }
+
     fn event_with_auth_challenge(sequence_id: u64) -> generated::EventEnvelope {
         generated::EventEnvelope {
             protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
@@ -228,7 +245,7 @@ mod tests {
             event: Some(generated::event_envelope::Event::AuthChallenge(
                 generated::AuthChallenge {
                     nonce: TEST_NONCE.into(),
-                    expires_at_ms: 9_999,
+                    expires_at_ms: test_expiry(),
                 },
             )),
         }
@@ -284,6 +301,20 @@ mod tests {
         if let Some(generated::event_envelope::Event::AuthChallenge(challenge)) = &mut event.event {
             challenge.nonce = TEST_NONCE.into();
             challenge.expires_at_ms = 0;
+        } else {
+            panic!("expected auth challenge");
+        }
+        assert_eq!(
+            challenge_nonce(&event).unwrap_err(),
+            "authentication_failed: challenge invalid"
+        );
+    }
+
+    #[test]
+    fn rejects_expired_auth_challenge() {
+        let mut event = event_with_auth_challenge(1);
+        if let Some(generated::event_envelope::Event::AuthChallenge(challenge)) = &mut event.event {
+            challenge.expires_at_ms = 1;
         } else {
             panic!("expected auth challenge");
         }

@@ -49,7 +49,7 @@ output, transcripts, absolute paths и PII запрещены.
   build, smoke-проверки exit code `7`/`core_unavailable` и exit code
   `2`/`unknown command or option`, а также oversized `--stdin`; Windows CLI
   publication зависит от успешного Linux contract job.
-- Локально на Linux прошли `cargo test --locked -p evohime-cli` (14/14), включая
+- Локально на Linux прошли `cargo test --locked -p evohime-cli` (15/15), включая
   duplex-тест HMAC-handshake, sequence cursor и bounded protobuf-кадров
   `StartTask`/`StartWorkflow`/`StopTask`/`GetTaskSnapshot`,
   `cargo test --locked -p evohime-cli-contract` (4/4), включая schema/byte
@@ -63,6 +63,8 @@ output, transcripts, absolute paths и PII запрещены.
 - После исправления stale assertions в trace projection локально прошли
   targeted Core tests `conversation_trace_` (7/7); полный Windows Core gate
   для текущего pushed commit остаётся ответственностью GitHub Actions.
+- CLI auth challenge теперь отклоняет не только malformed nonce/TTL, но и уже
+  истёкший `expires_at_ms`; marker CLI повышен до `0.0.000055`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
