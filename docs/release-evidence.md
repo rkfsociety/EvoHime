@@ -2204,10 +2204,13 @@ Dialog и ambient extraction теперь используют общий cancel
 `ExtractionLease`. Lease удерживается на всём async-вызове извлекателя и
 освобождается через `Drop`; конкурентный второй вызов не может обойти общие
 ограничения и получает bounded `reentrant` reason в
-`memory.extraction.skipped` либо `memory.ambient.skipped`. В trace не попадают
-текст кандидата, prompt, URL или секреты.
+`memory.extraction.skipped` либо `memory.ambient.skipped`; оба события имеют
+структурированные `error_code`, `source` и `operation`, поэтому TracePanel
+показывает их тем же безопасным блоком диагностики, что и `task.failed`. В
+trace не попадают текст кандидата, prompt, URL или секреты.
 
 Проверка: `cargo test --locked -p evohime-core memory_extraction --no-fail-fast`
 — 45 тестов модуля прошли; также выполнены `cargo fmt --all` и
-`git diff --check`. Core patch повышен `0.0.000290 -> 0.0.000291`; CI для
-нового коммита будет проверен после push.
+`git diff --check`; Electron `TracePanel` targeted suite — 14 тестов прошли.
+Core patch повышен `0.0.000291 -> 0.0.000292`; CI для нового коммита будет
+проверен после push.

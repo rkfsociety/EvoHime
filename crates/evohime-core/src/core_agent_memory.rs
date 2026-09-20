@@ -39,6 +39,9 @@ impl ToolAgent {
                 "memory.extraction.skipped",
                 serde_json::json!({
                     "task_id": task_id,
+                    "error_code": "memory_extraction_reentrant",
+                    "source": "core.memory_extraction",
+                    "operation": "dialog",
                     "reason": extraction::ExtractionError::Throttled {
                         reason: extraction::ThrottleReason::Reentrant,
                     }
@@ -328,6 +331,9 @@ impl ToolAgent {
                 "memory.ambient.skipped",
                 serde_json::json!({
                     "episode_id": episode_id,
+                    "error_code": "memory_extraction_reentrant",
+                    "source": "core.memory_extraction",
+                    "operation": "ambient",
                     "reason": extraction::ExtractionError::Throttled {
                         reason: extraction::ThrottleReason::Reentrant,
                     }

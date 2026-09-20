@@ -99,6 +99,28 @@ describe('trace panel', () => {
     expect(screen.getByText('network.request')).toBeTruthy()
   })
 
+  it('shows bounded memory reentrancy diagnostics as separate fields', async () => {
+    render(
+      <TracePanel
+        chatId="chat-1"
+        state={null}
+        workspace="G:/github/EvoHime"
+        onClose={() => {}}
+        events={[{
+          sequenceId: 18,
+          taskId: 'task-1',
+          eventType: 'memory.extraction.skipped',
+          payload: '{"error_code":"memory_extraction_reentrant","source":"core.memory_extraction","operation":"dialog","reason":"reentrant"}'
+        }]}
+      />
+    )
+
+    expect(await screen.findByText('Код ошибки')).toBeTruthy()
+    expect(screen.getByText('memory_extraction_reentrant')).toBeTruthy()
+    expect(screen.getByText('core.memory_extraction')).toBeTruthy()
+    expect(screen.getByText('dialog')).toBeTruthy()
+  })
+
   it('shows and exports the Ollama fallback marker separately', async () => {
     const diagnostic = {
       event: 'shell.ollama_download_fallback' as const,
