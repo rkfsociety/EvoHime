@@ -19,6 +19,7 @@ pub const MAX_FREE_ACCESS_SAMPLES: u32 = 256;
 pub const MAX_FREE_ACCESS_CONFIDENCE_BPS: u16 = 10_000;
 pub const MAX_FREE_ACCESS_TTL_MS: u64 = 31 * 24 * 60 * 60 * 1_000;
 pub const MAX_PROVIDER_MODEL_CAPABILITIES: usize = 16;
+pub const MAX_PROVIDER_CATALOG_ENTRIES: usize = 2_048;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -523,6 +524,51 @@ impl ProviderProfile {
         }
         parsed_transport_kind(&self.transport)
     }
+
+    pub fn to_storage_record(
+        &self,
+        descriptors: &[ProviderModelDescriptor],
+        revision: u64,
+        catalog_content_hash: impl Into<String>,
+        updated_at_ms: u64,
+    ) -> Result<
+        evohime_local_storage::provider_profile_catalog_store::ProviderProfileCatalogRecord,
+        &'static str,
+    > {
+        self.validate()?;
+        let catalog_content_hash = catalog_content_hash.into();
+        if revision == 0
+            || updated_at_ms == 0
+            || descriptors.len() > MAX_PROVIDER_CATALOG_ENTRIES
+            || !valid_content_hash(&catalog_content_hash)
+            || descriptors.iter().any(|descriptor| {
+                descriptor.validate().is_err()
+                    || descriptor.provider_id != self.provider_id
+                    || descriptor.profile_revision != self.revision
+            })
+        {
+            return Err("invalid provider profile catalog");
+        }
+        let profile_json =
+            serde_json::to_vec(self).map_err(|_| "invalid provider profile catalog")?;
+        let catalog_json =
+            serde_json::to_vec(descriptors).map_err(|_| "invalid provider profile catalog")?;
+        Ok(
+            evohime_local_storage::provider_profile_catalog_store::ProviderProfileCatalogRecord {
+                provider_id: self.provider_id.clone(),
+                credential_binding: self.credential_binding.clone(),
+                region: self.region.clone(),
+                revision: i64::try_from(revision)
+                    .map_err(|_| "invalid provider profile catalog")?,
+                profile_content_hash: self.content_hash.clone(),
+                profile_json,
+                catalog_content_hash,
+                catalog_json,
+                updated_at_ms: i64::try_from(updated_at_ms)
+                    .map_err(|_| "invalid provider profile catalog")?,
+            },
+        )
+    }
 }
 
 fn parsed_transport_kind(value: &str) -> TransportKind {
@@ -803,7 +849,7 @@ mod tests {
             transport_kind: TransportKind::OpenAiCompatible,
             endpoint: "https://openrouter.ai/api/v1".into(),
             region: "global".into(),
-            credential_binding: "cred:openrouter".into(),
+            credential_binding: "credential:openrouter".into(),
             content_hash: "a".repeat(64),
             revision: 1,
         }
@@ -948,6 +994,44 @@ mod tests {
             duplicate.validate(),
             Err("invalid provider model descriptor")
         );
+    }
+
+    #[test]
+    fn provider_profile_snapshot_round_trips_through_metadata_store() {
+        let entry = ModelCatalogEntry {
+            id: "provider/model".into(),
+            context_tokens: Some(8_192),
+            max_output_tokens: Some(1_024),
+        };
+        let profile = profile();
+        let descriptor =
+            ProviderModelDescriptor::from_catalog_entry(&profile, &entry, 1, "c".repeat(64))
+                .expect("descriptor");
+        let record = profile
+            .to_storage_record(&[descriptor], 1, "d".repeat(64), 1_000)
+            .expect("storage record");
+
+        let database = rusqlite::Connection::open_in_memory().expect("sqlite");
+        evohime_local_storage::provider_profile_catalog_store::install_schema(&database)
+            .expect("schema");
+        assert!(
+            evohime_local_storage::provider_profile_catalog_store::put(&database, &record)
+                .expect("write")
+        );
+        let stored = evohime_local_storage::provider_profile_catalog_store::get(
+            &database,
+            "openrouter",
+            "credential:openrouter",
+            "global",
+        )
+        .expect("read")
+        .expect("snapshot");
+        assert!(!String::from_utf8(stored.profile_json)
+            .expect("profile json")
+            .contains("secret"));
+        assert!(!String::from_utf8(stored.catalog_json)
+            .expect("catalog json")
+            .contains("prompt"));
     }
 
     #[test]

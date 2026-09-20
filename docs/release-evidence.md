@@ -1879,3 +1879,21 @@ free_provider_reliability_routing --no-fail-fast` (10 тестов),
 `cargo fmt --all` и `git diff --check`. Discovery, persistence, runtime route
 wiring, IPC/UI и CI evidence для этого среза ещё не заявляются; установленный
 клиент не изменялся.
+
+## Provider profile/catalog metadata storage (2026-09-20)
+
+Core patch повышен с `0.0.000270` до `0.0.000271`; local-storage schema
+поднята с v172 до v173. Один существующий transactional store сохраняет
+атомарную пару profile/catalog по provider, opaque credential binding и
+region, принимает только следующую revision, ограничивает 256 snapshot rows,
+2048 catalog entries и bounded JSON. Profile endpoint разрешён только как
+validated trusted metadata; URL, raw response, prompt, headers и secret-like
+материал из catalog snapshot отклоняются до SQL. Backup-before-migrate и
+recovery остаются общим `LocalDatabase` путём.
+
+Пройдены `cargo test --locked -p evohime-local-storage
+provider_profile_catalog_store --no-fail-fast` (3 теста), migration-группа
+local-storage (15 тестов), Core contract tests (11 тестов), clippy Core и
+local-storage с `-D warnings`, rustfmt и `git diff --check`. Runtime discovery,
+route preflight, IPC/UI и CI evidence ещё не заявляются; установленный клиент
+не изменялся.
