@@ -69,6 +69,12 @@ mod tests {
     }
 
     #[test]
+    fn redacts_sensitive_projection_keys() {
+        let value = redact_payload(br#"{"prompt":"x","secret":"y","status":"done"}"#);
+        assert_eq!(value, json!({"status":"done"}));
+    }
+
+    #[test]
     fn bounds_nested_projection_depth() {
         let mut value = json!("safe");
         for _ in 0..=MAX_REDACTION_DEPTH {
