@@ -39,13 +39,7 @@ where
             session_epoch: 0,
         };
         let challenge = client.read_event().await?;
-        let nonce = challenge
-            .event
-            .and_then(|event| match event {
-                generated::event_envelope::Event::AuthChallenge(value) => Some(value.nonce),
-                _ => None,
-            })
-            .ok_or_else(|| "authentication_failed: challenge missing".to_string())?;
+        let nonce = challenge_nonce(&challenge)?;
         let proof = context.secret.proof("cli", &client_id, &nonce);
         client
             .write(generated::CommandEnvelope {
@@ -202,10 +196,25 @@ fn ready_generation(event: &generated::EventEnvelope) -> Result<(String, u64), S
     Ok((event.core_instance_id.clone(), event.session_epoch))
 }
 
+fn challenge_nonce(event: &generated::EventEnvelope) -> Result<String, String> {
+    let Some(generated::event_envelope::Event::AuthChallenge(challenge)) = &event.event else {
+        return Err("authentication_failed: challenge missing".into());
+    };
+    if challenge.expires_at_ms == 0
+        || challenge.nonce.len() != session::NONCE_BYTES * 2
+        || !challenge.nonce.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("authentication_failed: challenge invalid".into());
+    }
+    Ok(challenge.nonce.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::duplex;
+
+    const TEST_NONCE: &str = "abababababababababababababababababababababababababababababababab";
 
     fn event_with_auth_challenge(sequence_id: u64) -> generated::EventEnvelope {
         generated::EventEnvelope {
@@ -218,7 +227,7 @@ mod tests {
             session_epoch: 7,
             event: Some(generated::event_envelope::Event::AuthChallenge(
                 generated::AuthChallenge {
-                    nonce: "nonce-1".into(),
+                    nonce: TEST_NONCE.into(),
                     expires_at_ms: 9_999,
                 },
             )),
@@ -259,6 +268,31 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rejects_malformed_auth_challenge() {
+        let mut event = event_with_auth_challenge(1);
+        if let Some(generated::event_envelope::Event::AuthChallenge(challenge)) = &mut event.event {
+            challenge.nonce = "nonce-1".into();
+        } else {
+            panic!("expected auth challenge");
+        }
+        assert_eq!(
+            challenge_nonce(&event).unwrap_err(),
+            "authentication_failed: challenge invalid"
+        );
+
+        if let Some(generated::event_envelope::Event::AuthChallenge(challenge)) = &mut event.event {
+            challenge.nonce = TEST_NONCE.into();
+            challenge.expires_at_ms = 0;
+        } else {
+            panic!("expected auth challenge");
+        }
+        assert_eq!(
+            challenge_nonce(&event).unwrap_err(),
+            "authentication_failed: challenge invalid"
+        );
+    }
+
     #[tokio::test(flavor = "current_thread")]
     async fn authenticates_and_sends_commands_over_duplex_transport() {
         let context = session::LaunchContext::generate(String::new(), String::new(), 1)
@@ -287,7 +321,7 @@ mod tests {
             assert_eq!(handshake.capabilities, ["headless-cli", "replay", "resync"]);
             assert_eq!(
                 handshake.proof,
-                expected_secret.proof("cli", &handshake.client_id, "nonce-1")
+                expected_secret.proof("cli", &handshake.client_id, TEST_NONCE)
             );
 
             transport::write_frame(&mut writer, &ready_event(42).encode_to_vec())

@@ -109,6 +109,14 @@ output, transcripts, absolute paths и PII запрещены.
 - Добавлен parser regression test; source module `cli` повышен до
   `0.0.000053`.
 
+### CLI authentication challenge validation follow-up (2026-09-20)
+
+- До вычисления HMAC CLI проверяет, что `AuthChallenge` содержит hex nonce
+  ровно 32 bytes и ненулевой expiry; malformed challenge завершается
+  `authentication_failed` без отправки handshake.
+- Duplex fixture переведён на production-shaped nonce, добавлен malformed
+  challenge regression test; source module `cli` повышен до `0.0.000054`.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:
