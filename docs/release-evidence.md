@@ -1632,6 +1632,14 @@ Updater path routing дополнительно использует Windows-с�
 контракте Windows независимо от host OS, с regression coverage в
 `module-update-service.test.ts`.
 
+## Core module routing path correction (2026-09-20)
+
+Core workflow и `module-release.ps1` теперь используют реальные workspace paths
+`crates/model-gateway` и `crates/permissions`; прежние `crates/evohime-*`
+пути не существовали и могли пропустить provider/permission изменения мимо
+Core release gate. Router smoke contract закрепляет оба пути и отвергает stale
+варианты. Это CI/routing-only изменение, поэтому module version не повышалась.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

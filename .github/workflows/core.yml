@@ -6,8 +6,8 @@ on:
   pull_request:
     paths:
       - 'crates/evohime-core/**'
-      - 'crates/evohime-model-gateway/**'
-      - 'crates/evohime-permissions/**'
+      - 'crates/model-gateway/**'
+      - 'crates/permissions/**'
       - 'crates/tool-runtime/**'
       - 'crates/evohime-local-storage/**'
       - 'Cargo.toml'

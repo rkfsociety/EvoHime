@@ -26,6 +26,14 @@ foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.y
 $shellWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\shell-host.yml') -Raw
 if ($shellWorkflow -notmatch 'shell-host\.zip') { throw 'Shell host workflow does not publish a complete archive.' }
 if ($shellWorkflow -notmatch 'resources\\app\.asar') { throw 'Shell host workflow does not assert app.asar delivery.' }
+$coreWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\core.yml') -Raw
+if ($coreWorkflow -notmatch "crates/model-gateway/\*\*") { throw 'Core workflow does not watch the model-gateway crate.' }
+if ($coreWorkflow -notmatch "crates/permissions/\*\*") { throw 'Core workflow does not watch the permissions crate.' }
+if ($coreWorkflow -match 'crates/evohime-model-gateway|crates/evohime-permissions') { throw 'Core workflow contains stale crate paths.' }
+$moduleRelease = Get-Content -LiteralPath (Join-Path $root 'scripts\module-release.ps1') -Raw
+if ($moduleRelease -notmatch "'crates/model-gateway'") { throw 'Core module release routing does not include model-gateway.' }
+if ($moduleRelease -notmatch "'crates/permissions'") { throw 'Core module release routing does not include permissions.' }
+if ($moduleRelease -match 'crates/evohime-model-gateway|crates/evohime-permissions') { throw 'Core module release routing contains stale crate paths.' }
 $nativeWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
 if ($nativeWorkflow -notmatch 'actions/download-artifact@v8' -or $nativeWorkflow -notmatch 'build-windows-native\.ps1 -SkipBuild') { throw 'Native workflow still rebuilds instead of consuming checked artifacts.' }
 $installer = Get-Content -LiteralPath (Join-Path $root '.github\workflows\installer.yml') -Raw
