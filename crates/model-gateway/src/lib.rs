@@ -40,7 +40,11 @@ use async_stream::stream;
 use serde::{Deserialize, Serialize};
 #[cfg(not(test))]
 use std::sync::OnceLock;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
+pub const MAX_MODEL_CATALOG_BYTES: usize = 512 * 1024;
+pub const MAX_MODEL_CATALOG_ENTRIES: usize = 2_048;
+pub const MAX_MODEL_ID_CHARS: usize = 256;
 
 // Ниже — хелперы политики маршрутизации, к которым обращается только ветка
 // `#[cfg(not(test))]` в `chat_with_tools_with_policy_and_route`: в тестовой
@@ -165,6 +169,40 @@ struct ProviderModelTop {
     max_completion_tokens: Option<u64>,
 }
 
+pub(crate) async fn read_bounded_response(
+    response: reqwest::Response,
+    label: &str,
+) -> Result<Vec<u8>, ProviderError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_MODEL_CATALOG_BYTES as u64)
+    {
+        return Err(ProviderError::Api(format!(
+            "{label} response exceeds size limit"
+        )));
+    }
+    let mut bytes = Vec::with_capacity(
+        response
+            .content_length()
+            .unwrap_or_default()
+            .try_into()
+            .unwrap_or(0)
+            .min(MAX_MODEL_CATALOG_BYTES),
+    );
+    let mut stream = response.bytes_stream();
+    use futures_util::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| ProviderError::Stream(error.to_string()))?;
+        if bytes.len().saturating_add(chunk.len()) > MAX_MODEL_CATALOG_BYTES {
+            return Err(ProviderError::Api(format!(
+                "{label} response exceeds size limit"
+            )));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
 /// A model as the provider describes it: identifier plus the limits that decide
 /// whether a request can fit at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -201,7 +239,12 @@ pub async fn fetch_model_catalog(
     }
 
     let url = format!("{}/models", route.literouter.base_url.trim_end_matches('/'));
-    let response = reqwest::Client::new()
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| ProviderError::Http(error.to_string()))?;
+    let response = client
         .get(url)
         .bearer_auth(&route.literouter.api_key)
         .send()
@@ -209,20 +252,33 @@ pub async fn fetch_model_catalog(
         .map_err(|error| ProviderError::Http(error.to_string()))?;
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(ProviderError::Api(format!("{status}: {body}")));
+        return Err(ProviderError::Api(format!(
+            "provider model catalog request failed with HTTP {status}"
+        )));
     }
 
-    let payload = response
-        .json::<ProviderModelsResponse>()
-        .await
-        .map_err(|error| ProviderError::Api(error.to_string()))?;
+    let body = read_bounded_response(response, "provider model catalog").await?;
+    let payload = serde_json::from_slice::<ProviderModelsResponse>(&body)
+        .map_err(|_| ProviderError::Api("provider model catalog response is invalid".into()))?;
+    if payload.data.len() > MAX_MODEL_CATALOG_ENTRIES {
+        return Err(ProviderError::Api(
+            "provider model catalog contains too many entries".into(),
+        ));
+    }
+    if payload.data.iter().any(|entry| {
+        let id = entry.id.trim();
+        id.chars().count() > MAX_MODEL_ID_CHARS || id.chars().any(char::is_control)
+    }) {
+        return Err(ProviderError::Api(
+            "provider model catalog contains an invalid model id".into(),
+        ));
+    }
     let mut models: Vec<_> = payload
         .data
         .into_iter()
         .filter(|entry| !entry.id.trim().is_empty())
         .map(|entry| ModelCatalogEntry {
-            id: entry.id,
+            id: entry.id.trim().to_string(),
             context_tokens: entry.context_length.and_then(clamp_tokens),
             max_output_tokens: entry
                 .top_provider

@@ -237,13 +237,30 @@ pub async fn fetch_installed_models(
         .map_err(|error| ProviderError::Http(error.to_string()))?;
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(ProviderError::Api(format!("{status}: {body}")));
+        return Err(ProviderError::Api(format!(
+            "Ollama model catalog request failed with HTTP {status}"
+        )));
     }
-    let payload = response
-        .json::<TagsResponse>()
-        .await
-        .map_err(|error| ProviderError::Api(error.to_string()))?;
+    let body = crate::read_bounded_response(response, "Ollama model catalog").await?;
+    let payload = serde_json::from_slice::<TagsResponse>(&body)
+        .map_err(|_| ProviderError::Api("Ollama model catalog response is invalid".into()))?;
+    if payload.models.len() > crate::MAX_MODEL_CATALOG_ENTRIES {
+        return Err(ProviderError::Api(
+            "Ollama model catalog contains too many entries".into(),
+        ));
+    }
+    if payload.models.iter().any(|model| {
+        let id = if model.name.trim().is_empty() {
+            model.model.trim()
+        } else {
+            model.name.trim()
+        };
+        id.chars().count() > crate::MAX_MODEL_ID_CHARS || id.chars().any(char::is_control)
+    }) {
+        return Err(ProviderError::Api(
+            "Ollama model catalog contains an invalid model id".into(),
+        ));
+    }
     let mut models: Vec<_> = payload
         .models
         .into_iter()
@@ -254,7 +271,7 @@ pub async fn fetch_installed_models(
                 model.name
             };
             (!id.trim().is_empty()).then_some(crate::ModelCatalogEntry {
-                id,
+                id: id.trim().to_string(),
                 context_tokens: None,
                 max_output_tokens: None,
             })
@@ -449,7 +466,10 @@ fn validate_model_id(model: &str) -> Result<(), ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     fn device(ram_gib: u64) -> OllamaDeviceProfile {
         OllamaDeviceProfile {
@@ -519,6 +539,31 @@ mod tests {
         assert!(validate_loopback("http://10.0.0.2:11434/v1").is_err());
         assert!(validate_loopback(DEFAULT_BASE_URL).is_ok());
         assert!(validate_model_id("two words").is_err());
+    }
+
+    #[tokio::test]
+    async fn installed_catalog_is_sorted_deduplicated_and_trimmed() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/tags"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"{"models":[{"name":" z "},{"model":"a"},{"name":"a"},{"name":""}]}"#,
+            ))
+            .mount(&server)
+            .await;
+
+        let models = fetch_installed_models(&LiteRouterConfig {
+            api_key: "provider-secret".into(),
+            base_url: format!("{}/v1", server.uri()),
+            model: "a".into(),
+        })
+        .await
+        .expect("Ollama catalog");
+
+        assert_eq!(
+            models.into_iter().map(|model| model.id).collect::<Vec<_>>(),
+            vec!["a", "z"]
+        );
     }
 
     #[tokio::test]

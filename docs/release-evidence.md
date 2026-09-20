@@ -1640,6 +1640,15 @@ Core workflow и `module-release.ps1` теперь используют реал
 Core release gate. Router smoke contract закрепляет оба пути и отвергает stale
 варианты. Это CI/routing-only изменение, поэтому module version не повышалась.
 
+## Bounded provider model catalog follow-up (2026-09-20)
+
+OpenAI-compatible и Ollama model catalog responses теперь читаются потоково с
+лимитом 512 KiB и 2048 entries, ограничивают model ID 256 символами, имеют
+bounded timeout и не включают HTTP response body в provider error. Regression
+coverage в `evohime-model-gateway` проверяет сортировку/deduplication, size и
+count limits и отсутствие provider body/secret в ошибке. Source module `core`
+повышен с `0.0.000254` до `0.0.000255`.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
