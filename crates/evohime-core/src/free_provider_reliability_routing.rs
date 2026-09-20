@@ -1213,13 +1213,18 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
         match snapshot.state {
             ProviderCatalogState::Fresh if snapshot.route_eligible_at(model_id, now_ms) => Ok(()),
             ProviderCatalogState::Fresh => {
-                Err(ProviderError::Config("provider_model_not_cataloged".into()))
+                Err(ProviderError::Config("provider_model_not_found".into()))
             }
             ProviderCatalogState::Stale => {
                 Err(ProviderError::Config("provider_catalog_stale".into()))
             }
             ProviderCatalogState::CredentialRejected => {
                 Err(ProviderError::Config("provider_credential_rejected".into()))
+            }
+            ProviderCatalogState::Unavailable
+                if snapshot.failure == Some(CatalogFailureCode::ModelNotFound) =>
+            {
+                Err(ProviderError::Config("provider_model_not_found".into()))
             }
             ProviderCatalogState::Unavailable => {
                 Err(ProviderError::Config("provider_catalog_unavailable".into()))
@@ -1262,6 +1267,11 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
         | ProviderError::Stream(message) => message.to_ascii_lowercase(),
     };
     match error {
+        ProviderError::Config(_)
+            if message.contains("model_not_found") || message.contains("model not found") =>
+        {
+            CatalogFailureCode::ModelNotFound
+        }
         ProviderError::Config(_) if message.contains("key") || message.contains("credential") => {
             CatalogFailureCode::CredentialRejected
         }
@@ -1506,11 +1516,30 @@ mod tests {
             default_route: "default".into(),
             routes: std::collections::HashMap::from([("default".into(), route)]),
         };
-        let preflight = ProviderCatalogRoutePreflight::new(config, cache);
+        let preflight = ProviderCatalogRoutePreflight::new(config, cache.clone());
         let error = preflight
             .check("default", Some("model-a"), 1_500)
             .expect_err("stale catalog must fail closed");
         assert!(matches!(error, ProviderError::Config(code) if code == "provider_catalog_stale"));
+
+        let unavailable = ProviderCatalogSnapshot::failure(
+            &profile,
+            3,
+            "d".repeat(64),
+            ProviderCatalogState::Unavailable,
+            CatalogFailureCode::ModelNotFound,
+            3_000,
+            4_000,
+        )
+        .expect("model-not-found snapshot");
+        cache
+            .write()
+            .expect("cache write")
+            .insert(provider_catalog_scope_key(&profile), unavailable);
+        let error = preflight
+            .check("default", Some("model-a"), 3_500)
+            .expect_err("missing model must fail closed");
+        assert!(matches!(error, ProviderError::Config(code) if code == "provider_model_not_found"));
     }
 
     fn profile() -> ProviderProfile {

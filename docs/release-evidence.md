@@ -2097,3 +2097,13 @@ observation и `false` только для известного неeligible sna
 
 Проверка: provider-catalog projection regression до/после startup hydration;
 CI evidence для локального коммита ещё не заявляется.
+
+## Typed missing-model route preflight (2026-09-20)
+
+Fresh catalog без выбранной модели и unavailable snapshot с
+`model_not_found` теперь дают bounded `provider_model_not_found` непосредственно
+перед provider dispatch; общий outage code сохраняется для остальных ошибок.
+Core patch повышен `0.0.000282 -> 0.0.000283`.
+
+Проверка: Core route-preflight regression для stale и missing-model states;
+CI evidence для локального коммита ещё не заявляется.

@@ -2823,7 +2823,8 @@ Route preflight
 свежесть и присутствие выбранной модели; неизвестный snapshot означает
 `unobserved`, оставляет `configured_model_eligible=null` и сохраняет
 совместимость первого запуска, а известный stale или failed snapshot даёт
-bounded `false` и fail-closed до provider dispatch.
+bounded `false` и fail-closed до provider dispatch. Missing model остаётся
+отдельным `provider_model_not_found`, а не generic catalog outage.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 
