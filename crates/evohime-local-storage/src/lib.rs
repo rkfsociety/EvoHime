@@ -66,6 +66,7 @@ pub mod experience_replay_library_store;
 pub mod external_coding_agent_adapter_store;
 pub mod external_source_acquisition_runtime_store;
 pub mod feedback_store;
+pub mod free_access_evidence_store;
 pub mod git_remote_publication_protocol_store;
 pub mod goal;
 pub mod grounded_research_store;
@@ -148,7 +149,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 171;
+pub const SCHEMA_VERSION: u32 = 172;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -3018,6 +3019,7 @@ impl LocalDatabase {
         migrations::v169::apply(&transaction, current)?;
         migrations::v170::apply(&transaction, current)?;
         migrations::v171::apply(&transaction, current)?;
+        migrations::v172::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

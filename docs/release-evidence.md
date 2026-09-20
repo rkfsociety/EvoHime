@@ -1848,3 +1848,16 @@ prompt и token-like текстом проверяет, что эти значе
 Transcript и recovery projection не используют raw `error` даже для legacy/live
 payload без safe code. Core patch повышен с `0.0.000267` до `0.0.000268`, UI
 bundle — с `0.0.000089` до `0.0.000090`.
+
+## Free-access evidence foundation (2026-09-20)
+
+Stage 174.1 now has a bounded Core contract for scoped empirical evidence:
+advertised and observed access are separate, activation and allowance kind are
+typed, credit units are not converted, limits carry scope/source, and expiry or
+invalidation cannot satisfy a future strict `FreeOnly` gate. The new SQLite
+schema v172 stores only one metadata snapshot per provider/model/
+credential-binding/region scope with a monotonic revision fence. Storage tests
+cover idempotency, revision gaps, scope separation and rejection of raw
+provider response/prompt/secret-like material. Probe, routing, IPC and UI work
+remain explicitly active in stages 174.2–174.4. Core patch is now
+`0.0.000269` from `0.0.000268`.

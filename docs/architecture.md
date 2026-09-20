@@ -2765,6 +2765,23 @@ reliability snapshot; Model Gateway остаётся transport/retry authority.
 не становятся Healthy, а credentials и raw provider payloads не сохраняются.
 SQLite schema v100 добавляет только reliability metadata.
 
+## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
+
+`FreeAccessEvidence` — единый Core-owned metadata contract поверх advisory
+`FreeAccessState`. Он хранит раздельно advertised и observed state, activation,
+allowance kind, opaque credential binding, region, typed limit/unit/source,
+successful samples, confidence, expiry, invalidation и content hash. Trial,
+one-time credit, activation-required, paid-only и verified recurring free
+состояния не схлопываются в boolean; strict predicate fail-closed при stale,
+expired, invalidated или unknown evidence. JSON snapshot не принимает raw
+provider response, prompt, headers или secret-like scope.
+
+SQLite schema v172 хранит последнюю revision для составного
+provider/model/credential-binding/region scope, принимает только следующую
+revision и сохраняет bounded metadata. Probe execution, route eligibility,
+authenticated IPC и renderer projection ещё не подключены; этот foundation не
+объявляет provider free tier подтверждённым сам по себе.
+
 ## Design Intent Review Lane v1 (план 126, реализован 2026-09-09)
 
 Design Intent — bounded Core-owned statement с exact scope/hash/revision;

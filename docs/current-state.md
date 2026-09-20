@@ -9,7 +9,7 @@ release-gates и результаты отдельных завершённых 
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v171, а также
+v042–v116 и v149–v172, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -119,11 +119,18 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000268`, `ui-bundle 0.0.000090`,
+Текущий checkout содержит patch `core 0.0.000269`, `ui-bundle 0.0.000090`,
 `shell-host 0.0.000098`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
 installer — `0.0.000061`.
+
+План 174.1 получил первый рабочий срез: Core-owned `FreeAccessEvidence`
+разделяет advertised/observed/activation/allowance состояния, типизированные
+units/limits, confidence, expiry и invalidation; SQLite schema v172 хранит
+только bounded metadata snapshot в scope provider/model/credential-binding/
+region с monotonic revision fence. Probes, `FreeOnly` routing, IPC и UI ещё не
+реализованы и остаются активными этапами 174.2–174.4.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и

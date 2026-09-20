@@ -9,6 +9,11 @@ pub const MAX_PROVIDER_PROFILE_REGION_BYTES: usize = 64;
 pub const MAX_PROVIDER_PROFILE_CREDENTIAL_BINDING_BYTES: usize = 128;
 pub const MAX_PROVIDER_MODEL_ID_BYTES: usize = 256;
 pub const MAX_RELIABILITY_LATENCY_MS: f64 = 86_400_000.0;
+pub const FREE_ACCESS_EVIDENCE_SCHEMA_VERSION: u16 = 1;
+pub const MAX_FREE_ACCESS_LIMITS: usize = 16;
+pub const MAX_FREE_ACCESS_SAMPLES: u32 = 256;
+pub const MAX_FREE_ACCESS_CONFIDENCE_BPS: u16 = 10_000;
+pub const MAX_FREE_ACCESS_TTL_MS: u64 = 31 * 24 * 60 * 60 * 1_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderProfile {
@@ -29,6 +34,247 @@ pub enum FreeAccessState {
     Unknown,
     Experimental,
     UnknownNeedsRefresh,
+}
+
+/// Evidence state is deliberately more precise than the historical advisory
+/// `FreeAccessState`: trial credit, one-time credit and recurring free access
+/// must never collapse into one boolean.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservedFreeAccessState {
+    VerifiedFreeLimited,
+    TrialOnly,
+    CreditOnly,
+    ActivationRequired,
+    PaidOnly,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivationState {
+    NotRequired,
+    Required,
+    Completed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AllowanceKind {
+    Recurring,
+    TrialCredit,
+    OneTimeCredit,
+    None,
+    Unknown,
+}
+
+/// Units remain typed and opaque. In particular, credits are never converted
+/// to tokens or currency without an authoritative provider contract.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CreditUnit {
+    Requests,
+    Tokens,
+    Characters,
+    Seconds,
+    CurrencyMicros,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceLimitScope {
+    Account,
+    Provider,
+    Model,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceLimitSource {
+    ProviderDeclared,
+    Observed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceInvalidation {
+    BillingRequired,
+    AccountRestricted,
+    QuotaExhausted,
+    CatalogChanged,
+    CredentialChanged,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceFreshness {
+    Fresh,
+    Stale,
+    Expired,
+    Invalidated,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FreeAccessLimit {
+    pub scope: EvidenceLimitScope,
+    pub source: EvidenceLimitSource,
+    pub unit: CreditUnit,
+    pub allowance: AllowanceKind,
+    pub limit: Option<u64>,
+    pub remaining: Option<u64>,
+    pub observed_at_ms: u64,
+    pub resets_at_ms: Option<u64>,
+}
+
+impl FreeAccessLimit {
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.observed_at_ms == 0
+            || self.limit.is_some_and(|value| value == 0)
+            || self
+                .remaining
+                .zip(self.limit)
+                .is_some_and(|(remaining, limit)| remaining > limit)
+            || self
+                .resets_at_ms
+                .is_some_and(|resets_at| resets_at <= self.observed_at_ms)
+        {
+            return Err("invalid free access limit");
+        }
+        Ok(())
+    }
+}
+
+/// Core-owned, metadata-only evidence used by later probe and routing stages.
+/// `credential_binding` is an opaque scope handle, never credential material.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FreeAccessEvidence {
+    pub schema_version: u16,
+    pub provider_id: String,
+    pub model_id: String,
+    pub credential_binding: String,
+    pub region: String,
+    pub advertised_state: FreeAccessState,
+    pub observed_state: ObservedFreeAccessState,
+    pub activation: ActivationState,
+    pub allowance: AllowanceKind,
+    pub limits: Vec<FreeAccessLimit>,
+    pub successful_sample_count: u32,
+    pub confidence_bps: u16,
+    pub observed_at_ms: u64,
+    pub expires_at_ms: u64,
+    pub invalidation: Option<EvidenceInvalidation>,
+    pub failure_reason: Option<String>,
+    pub content_hash: String,
+    pub revision: u64,
+}
+
+impl FreeAccessEvidence {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.schema_version != FREE_ACCESS_EVIDENCE_SCHEMA_VERSION
+            || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
+            || !valid_model_id(&self.model_id)
+            || !valid_credential_binding(&self.credential_binding)
+            || !valid_profile_token(&self.region, MAX_PROVIDER_PROFILE_REGION_BYTES)
+            || self.limits.len() > MAX_FREE_ACCESS_LIMITS
+            || self.successful_sample_count > MAX_FREE_ACCESS_SAMPLES
+            || self.confidence_bps > MAX_FREE_ACCESS_CONFIDENCE_BPS
+            || self.observed_at_ms == 0
+            || self.expires_at_ms <= self.observed_at_ms
+            || self.expires_at_ms.saturating_sub(self.observed_at_ms) > MAX_FREE_ACCESS_TTL_MS
+            || self.revision == 0
+            || !valid_content_hash(&self.content_hash)
+            || self
+                .failure_reason
+                .as_deref()
+                .is_some_and(|reason| !valid_profile_token(reason, 128))
+            || self.limits.iter().any(|limit| limit.validate().is_err())
+        {
+            return Err("invalid free access evidence");
+        }
+
+        let consistent = match self.observed_state {
+            ObservedFreeAccessState::VerifiedFreeLimited => {
+                self.allowance == AllowanceKind::Recurring && self.successful_sample_count > 0
+            }
+            ObservedFreeAccessState::TrialOnly => self.allowance == AllowanceKind::TrialCredit,
+            ObservedFreeAccessState::CreditOnly => self.allowance == AllowanceKind::OneTimeCredit,
+            ObservedFreeAccessState::ActivationRequired => {
+                self.activation == ActivationState::Required
+            }
+            ObservedFreeAccessState::PaidOnly => self.allowance == AllowanceKind::None,
+            ObservedFreeAccessState::Unknown => true,
+        };
+        if !consistent {
+            return Err("inconsistent free access evidence");
+        }
+        Ok(())
+    }
+
+    pub fn freshness_at(&self, now_ms: u64) -> EvidenceFreshness {
+        if self.invalidation.is_some() {
+            EvidenceFreshness::Invalidated
+        } else if now_ms < self.observed_at_ms {
+            EvidenceFreshness::Stale
+        } else if now_ms >= self.expires_at_ms {
+            EvidenceFreshness::Expired
+        } else {
+            EvidenceFreshness::Fresh
+        }
+    }
+
+    /// The strict gate used by a future `FreeOnly` resolver. Advisory labels,
+    /// trial credits, one-time credits and stale evidence do not pass it.
+    pub fn is_strictly_free_at(&self, now_ms: u64) -> bool {
+        self.validate().is_ok()
+            && self.freshness_at(now_ms) == EvidenceFreshness::Fresh
+            && self.observed_state == ObservedFreeAccessState::VerifiedFreeLimited
+            && matches!(
+                self.activation,
+                ActivationState::NotRequired | ActivationState::Completed
+            )
+            && self.allowance == AllowanceKind::Recurring
+            && self.successful_sample_count > 0
+    }
+
+    pub fn to_storage_record(
+        &self,
+    ) -> Result<
+        evohime_local_storage::free_access_evidence_store::FreeAccessEvidenceRecord,
+        &'static str,
+    > {
+        self.validate()?;
+        let evidence_json = serde_json::to_vec(self).map_err(|_| "invalid free access evidence")?;
+        Ok(
+            evohime_local_storage::free_access_evidence_store::FreeAccessEvidenceRecord {
+                provider_id: self.provider_id.clone(),
+                model_id: self.model_id.clone(),
+                credential_binding: self.credential_binding.clone(),
+                region: self.region.clone(),
+                revision: i64::try_from(self.revision)
+                    .map_err(|_| "invalid free access evidence")?,
+                content_hash: self.content_hash.clone(),
+                evidence_json,
+                observed_at_ms: i64::try_from(self.observed_at_ms)
+                    .map_err(|_| "invalid free access evidence")?,
+                expires_at_ms: i64::try_from(self.expires_at_ms)
+                    .map_err(|_| "invalid free access evidence")?,
+                invalidation: self.invalidation.map(|reason| {
+                    serde_json::to_string(&reason)
+                        .unwrap_or_else(|_| "unknown".to_string())
+                        .trim_matches('"')
+                        .to_string()
+                }),
+            },
+        )
+    }
+}
+
+fn valid_content_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -177,6 +423,38 @@ mod tests {
         }
     }
 
+    fn evidence() -> FreeAccessEvidence {
+        FreeAccessEvidence {
+            schema_version: FREE_ACCESS_EVIDENCE_SCHEMA_VERSION,
+            provider_id: "openrouter".into(),
+            model_id: "provider/model:free".into(),
+            credential_binding: "cred:openrouter".into(),
+            region: "global".into(),
+            advertised_state: FreeAccessState::FreeTierLimited,
+            observed_state: ObservedFreeAccessState::VerifiedFreeLimited,
+            activation: ActivationState::Completed,
+            allowance: AllowanceKind::Recurring,
+            limits: vec![FreeAccessLimit {
+                scope: EvidenceLimitScope::Model,
+                source: EvidenceLimitSource::Observed,
+                unit: CreditUnit::Requests,
+                allowance: AllowanceKind::Recurring,
+                limit: Some(20),
+                remaining: Some(19),
+                observed_at_ms: 1_000,
+                resets_at_ms: Some(2_000),
+            }],
+            successful_sample_count: 3,
+            confidence_bps: 9_000,
+            observed_at_ms: 1_000,
+            expires_at_ms: 2_000,
+            invalidation: None,
+            failure_reason: None,
+            content_hash: "b".repeat(64),
+            revision: 1,
+        }
+    }
+
     #[test]
     fn provider_profile_accepts_bounded_secret_free_metadata() {
         assert!(profile().validate().is_ok());
@@ -206,6 +484,51 @@ mod tests {
         let mut invalid = profile();
         invalid.content_hash = "z".repeat(64);
         assert_eq!(invalid.validate(), Err("invalid provider profile"));
+    }
+
+    #[test]
+    fn free_access_evidence_is_scoped_fresh_and_strict_only_when_verified() {
+        let value = evidence();
+        assert!(value.validate().is_ok());
+        assert_eq!(value.freshness_at(1_500), EvidenceFreshness::Fresh);
+        assert!(value.is_strictly_free_at(1_500));
+        assert_eq!(value.freshness_at(2_000), EvidenceFreshness::Expired);
+        assert!(!value.is_strictly_free_at(2_000));
+
+        let mut trial = value.clone();
+        trial.observed_state = ObservedFreeAccessState::TrialOnly;
+        trial.allowance = AllowanceKind::TrialCredit;
+        trial.activation = ActivationState::NotRequired;
+        assert!(trial.validate().is_ok());
+        assert!(!trial.is_strictly_free_at(1_500));
+    }
+
+    #[test]
+    fn free_access_evidence_rejects_conflicting_semantics_and_raw_storage() {
+        let mut invalid = evidence();
+        invalid.observed_state = ObservedFreeAccessState::CreditOnly;
+        assert_eq!(invalid.validate(), Err("inconsistent free access evidence"));
+
+        let database = rusqlite::Connection::open_in_memory().expect("sqlite");
+        evohime_local_storage::free_access_evidence_store::install_schema(&database)
+            .expect("schema");
+        let record = evidence().to_storage_record().expect("storage record");
+        assert!(
+            evohime_local_storage::free_access_evidence_store::put(&database, &record)
+                .expect("evidence write")
+        );
+        let stored = evohime_local_storage::free_access_evidence_store::get(
+            &database,
+            "openrouter",
+            "provider/model:free",
+            "cred:openrouter",
+            "global",
+        )
+        .expect("evidence read")
+        .expect("stored evidence");
+        let json = String::from_utf8(stored.evidence_json).expect("json");
+        assert!(!json.contains("prompt"));
+        assert!(!json.contains("secret"));
     }
 
     #[test]
