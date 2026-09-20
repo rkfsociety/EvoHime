@@ -1686,6 +1686,11 @@ Malformed non-terminal trace payloads now fail closed to `[REDACTED]` instead
 of being copied into the saved Markdown, covering raw prompt-like text that
 cannot be safely parsed. The UI bundle is now `0.0.000083`.
 
+Plan review failure notices now classify raw Core error text into bounded
+user-facing messages (timeout, rejected credentials, transport block,
+configuration or generic provider failure), so URLs and token-bearing details
+cannot be rendered in the review screen. The UI bundle is now `0.0.000084`.
+
 ## Trace reason redaction follow-up (2026-09-20)
 
 Trace UI/export now normalizes the connection `reason` to the same bounded

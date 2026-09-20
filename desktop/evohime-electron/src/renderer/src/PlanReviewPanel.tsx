@@ -788,10 +788,19 @@ function latestTaskFailure(events: readonly CoreEvent[], taskId: string, stopped
     const eventTaskId = event.taskId || String(payload?.task_id ?? '')
     if (eventTaskId !== taskId) continue
     if (event.eventType === 'task.stopped') return { kind: 'stopped', message: stoppedMessage }
-    const reason = payload?.error
-    return { kind: 'failed', message: typeof reason === 'string' && reason.length > 0 ? reason : 'Ядро не сообщило причину.' }
+    return { kind: 'failed', message: reviewFailureMessage(payload?.error) }
   }
   return null
+}
+
+function reviewFailureMessage(value: unknown): string {
+  if (typeof value !== 'string' || value.trim().length === 0) return 'Ядро не сообщило причину.'
+  const reason = value.toLowerCase()
+  if (reason.includes('timeout') || reason.includes('timed out')) return 'Провайдер не ответил вовремя. Повтори ревью позже.'
+  if (reason.includes('401') || reason.includes('unauthorized') || reason.includes('api key')) return 'Провайдер отклонил запрос. Проверь ключ в настройках.'
+  if (reason.includes('blocked_by_client') || reason.includes('blocked by client')) return 'Запрос заблокирован транспортом. Проверь сетевые ограничения.'
+  if (reason.includes('not configured') || reason.includes('не настро')) return 'Провайдер не настроен. Проверь параметры подключения.'
+  return 'Провайдер не выполнил запрос. Проверь настройки и повтори ревью.'
 }
 
 function latestReviewResult(events: readonly CoreEvent[]): PlanReviewResult | null {

@@ -273,10 +273,12 @@ describe('plan review panel', () => {
 
     await startReview(['a', 'b', 'main'])
     const reviewId = startedReviewId()
-    view.rerender(<PlanReviewPanel connection="connected" events={[catalog, event('task.failed', { error: 'provider error: 401 unauthorized' }, reviewId)]} />)
+    view.rerender(<PlanReviewPanel connection="connected" events={[catalog, event('task.failed', { error: 'provider error: 401 unauthorized https://provider.test?token=secret' }, reviewId)]} />)
 
     expect(screen.getByText('Ошибка')).toBeTruthy()
-    expect(screen.getByRole('alert').textContent).toContain('401 unauthorized')
+    expect(screen.getByRole('alert').textContent).toContain('Провайдер отклонил запрос. Проверь ключ в настройках.')
+    expect(screen.getByRole('alert').textContent).not.toContain('provider.test')
+    expect(screen.getByRole('alert').textContent).not.toContain('secret')
     expect(screen.queryByText('работает')).toBeNull()
     expect(screen.getByRole('button', { name: 'Повторить ревью' }).hasAttribute('disabled')).toBe(false)
   })
