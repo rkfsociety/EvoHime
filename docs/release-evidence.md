@@ -2150,3 +2150,12 @@ descriptor или capability остаётся явным `не подтверж�
 
 Проверки: ModelPicker и model-capabilities Vitest tests, Electron typecheck и
 `git diff --check`; GitHub CI для локального коммита ещё не запускался.
+
+## CI regression fixes (2026-09-20)
+
+Исторический workflow для SHA `30afabd6` выявил два FAIL: Core test target не
+мог вызвать startup hydration из `main.rs` из-за `pub(crate)`, а полный UI
+suite сохранял старое ожидание raw `task.failed` error text. Метод hydration
+сделан публичным для package binary target, UI expectation переведён на
+безопасный `error_code`. Новый CI run для исправляющего коммита должен
+подтвердить оба gate; старый FAIL не считается evidence успеха.

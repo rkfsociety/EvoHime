@@ -373,7 +373,7 @@ impl IpcBridge {
     /// Invalid, mismatched or stale-schema rows are ignored fail-closed; a
     /// later catalog refresh can replace them. No endpoint, prompt or secret
     /// is included in the recovery log.
-    pub(crate) async fn hydrate_provider_catalog_snapshots(&self) -> usize {
+    pub async fn hydrate_provider_catalog_snapshots(&self) -> usize {
         let routes = self
             .gateway_config
             .as_ref()

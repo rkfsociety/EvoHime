@@ -871,14 +871,18 @@ describe('task timeline', () => {
         events={[
           event('task.started', { prompt: 'Проверь' }),
           event('agent.message.delta', { content: 'Проверка выполнена' }),
-          event('task.failed', { error: 'Провайдер недоступен' })
+          event('task.failed', {
+            error_code: 'provider_unavailable',
+            source: 'provider',
+            operation: 'task.execute'
+          })
         ]}
       />
     )
 
-    // Служебные события не попадают в ленту, а ошибка читается текстом.
+    // Служебные события не попадают в ленту, а ошибка читается безопасным кодом.
     expect(await screen.findByText('Проверка выполнена')).toBeTruthy()
-    expect(screen.getAllByText('Провайдер недоступен')).toHaveLength(2)
+    expect(screen.getAllByText('provider_unavailable')).toHaveLength(2)
     expect(screen.getByRole('status', { name: 'Состояние восстановления: FAILED' })).toBeTruthy()
     expect(screen.queryByText('task.started')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Остановить' })).toBeNull()
