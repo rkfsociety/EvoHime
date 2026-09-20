@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import type { ChatRecord, CoreEvent, ShellState } from '@shared/api'
+import type { ChatRecord, CoreEvent, ShellDiagnostic, ShellState } from '@shared/api'
 import type { UpdateStatus } from '@shared/update'
 
 import { useShellApi } from './shell-api'
@@ -19,13 +19,14 @@ interface Props {
   /** Reloads the persisted task ids after a prompt or task changes the chat. */
   readonly chatRevision?: number
   readonly events: readonly CoreEvent[]
+  readonly shellDiagnostics?: readonly ShellDiagnostic[]
   readonly state: ShellState | null
   readonly update?: UpdateStatus | null
   readonly workspace: string | null
   readonly onClose: () => void
 }
 
-export function TracePanel({ chatId, chatRevision = 0, events, state, update = null, workspace, onClose }: Props): React.JSX.Element {
+export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics = [], state, update = null, workspace, onClose }: Props): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
@@ -57,7 +58,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, update = n
   const save = async () => {
     if (!api) return
     setSaveStatus('Сохраняю…')
-    const outcome = await api.invoke('trace.export', { content: formatTrace(state, workspace, traceEvents, update) })
+    const outcome = await api.invoke('trace.export', { content: formatTrace(state, workspace, traceEvents, update, shellDiagnostics) })
     if (!outcome.ok) {
       setSaveStatus(outcome.message)
       return
@@ -87,6 +88,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, update = n
         </dl>
         {saveStatus ? <p className="trace-panel__reason" role="status">{saveStatus}</p> : null}
         {state?.reason ? <p className="trace-panel__reason">Причина: {safeTraceReason(state.reason)}</p> : null}
+        <OllamaFallbackNotice events={traceEvents} shellDiagnostics={shellDiagnostics} />
         {chatId === null ? (
           <p className="trace-panel__empty">Выбери чат, чтобы открыть его трейс.</p>
         ) : traceEvents.length === 0 ? (
@@ -126,6 +128,17 @@ function TraceDiagnosticsView({ diagnostics }: { readonly diagnostics: TraceDiag
       <div><dt>Операция</dt><dd><code>{diagnostics.operation}</code></dd></div>
     </dl>
   )
+}
+
+function OllamaFallbackNotice({ events, shellDiagnostics }: { readonly events: readonly CoreEvent[]; readonly shellDiagnostics: readonly ShellDiagnostic[] }): React.JSX.Element | null {
+  const ollamaFailure = events.some((event) => {
+    if (event.eventType !== 'task.failed') return false
+    const diagnostics = parseTraceDiagnostics(formatTraceEventPayload(event.eventType, event.payload))
+    return diagnostics?.operation === 'ollama.download'
+  })
+  if (!ollamaFailure) return null
+  const observed = shellDiagnostics.some((diagnostic) => diagnostic.event === 'shell.ollama_download_fallback')
+  return <p className="trace-panel__reason" role="status">Ollama download fallback: {observed ? 'подтверждён' : 'не подтверждён в shell-событиях'}</p>
 }
 
 const TRACE_URL_PATTERN = /\b(?:https?|wss?|file|ftp):\/\/[^\s"'<>]+/gi
@@ -219,7 +232,8 @@ export function formatTrace(
   state: ShellState | null,
   workspace: string | null,
   events: readonly CoreEvent[],
-  update: UpdateStatus | null = null
+  update: UpdateStatus | null = null,
+  shellDiagnostics: readonly ShellDiagnostic[] = []
 ): string {
   const lines = [
     'EvoHime trace',
@@ -244,6 +258,22 @@ export function formatTrace(
     lines.push('diagnostics:')
     for (const { event, value } of diagnostics) {
       lines.push(`- sequence=${event.sequenceId} event=${event.eventType} error_code=${value.errorCode} source=${value.source} operation=${value.operation}`)
+    }
+    lines.push('')
+  }
+
+  const ollamaFailure = diagnostics.some(({ value }) => value.operation === 'ollama.download')
+  if (ollamaFailure) {
+    const observed = shellDiagnostics.some((diagnostic) => diagnostic.event === 'shell.ollama_download_fallback')
+    lines.push('ollama_fallback:')
+    lines.push(`- event=shell.ollama_download_fallback observed=${observed ? 'yes' : 'no'}`)
+    lines.push('')
+  }
+
+  if (shellDiagnostics.length > 0) {
+    lines.push('shell_diagnostics:')
+    for (const diagnostic of shellDiagnostics) {
+      lines.push(`- event=${diagnostic.event} error_code=${diagnostic.errorCode} source=${diagnostic.source} operation=${diagnostic.operation}`)
     }
     lines.push('')
   }

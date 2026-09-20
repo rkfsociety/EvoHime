@@ -6,6 +6,7 @@ import type {
   ListeningReason,
   ListeningState,
   RepairStatus,
+  ShellDiagnostic,
   ShellState,
   UserIdentity
 } from '@shared/api'
@@ -90,6 +91,7 @@ const SETTINGS_LABEL = 'Настройки'
 export function App(): React.JSX.Element {
   const [state, setState] = useState<ShellState | null>(null)
   const [events, setEvents] = useState<readonly CoreEvent[]>([])
+  const [shellDiagnostics, setShellDiagnostics] = useState<readonly ShellDiagnostic[]>([])
   const [apiMissing, setApiMissing] = useState(false)
   const [view, setView] = useState<ViewId>('chat')
   const [workspace, setWorkspace] = useState<string | null>(null)
@@ -129,6 +131,10 @@ export function App(): React.JSX.Element {
       }
       if (event.kind === 'repair') {
         setRepair(event.status)
+        return
+      }
+      if (event.kind === 'diagnostic') {
+        setShellDiagnostics((current) => [event.diagnostic, ...current.filter((item) => item.event !== event.diagnostic.event)].slice(0, 16))
         return
       }
       // Состояние речевого рантайма слушает только его собственный экран:
@@ -408,6 +414,7 @@ export function App(): React.JSX.Element {
           chatId={chatId}
           chatRevision={chatRevision}
           events={events}
+          shellDiagnostics={shellDiagnostics}
           state={state}
           update={update}
           workspace={workspace}

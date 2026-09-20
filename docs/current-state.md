@@ -64,6 +64,9 @@ Trace UI показывает диагностические поля отдел
 Обычные trace payloads после renderer-redaction сохраняются с маркером
 `[REDACTED]`; main bridge принимает только этот безопасный маркер и отклоняет
 необработанные URL, prompt и секретные значения.
+Для ошибки `ollama.download` trace отдельно показывает, был ли фактически
+получен allow-listed marker `shell.ollama_download_fallback`; URL установщика и
+raw shell-log payload в renderer не передаются.
 
 Добавлены проверки очереди размера 1 с потоком событий, задержкой чтения и
 финальным `task.completed`, а также проверка явного уведомления об ошибке audit.

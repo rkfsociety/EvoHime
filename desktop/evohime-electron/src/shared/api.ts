@@ -408,6 +408,14 @@ export interface CoreEvent {
   readonly outputGuardrailPipeline?: OutputGuardrailPipelineProjection | null
 }
 
+/** Safe main-process marker shown in the trace; raw shell log fields stay local. */
+export interface ShellDiagnostic {
+  readonly event: 'shell.ollama_download_fallback'
+  readonly errorCode: 'client_blocked'
+  readonly source: 'electron_transport'
+  readonly operation: 'ollama.download'
+}
+
 export interface CapabilityWorkbenchProjection {
   readonly schemaVersion: number
   readonly instanceId: string
@@ -577,6 +585,7 @@ export interface ConversationWorkbenchProjection {
 export type ShellEvent =
   | { readonly kind: 'state'; readonly state: ShellState }
   | { readonly kind: 'core-event'; readonly event: CoreEvent }
+  | { readonly kind: 'diagnostic'; readonly diagnostic: ShellDiagnostic }
   | { readonly kind: 'update'; readonly status: UpdateStatus }
   | { readonly kind: 'listener-runtime'; readonly status: ListenerRuntimeStatus }
   | { readonly kind: 'ollama-runtime'; readonly status: OllamaRuntimeStatus }

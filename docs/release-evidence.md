@@ -28,8 +28,11 @@ output, transcripts, absolute paths и PII запрещены.
   и `operation`.
 - Main bridge принимает только такой безопасный marker assignment и отклоняет
   необработанные URL, prompt и секретные значения до native save dialog.
-- UI module patch release: `0.0.000092 -> 0.0.000093`.
-- Проверки: `tests/trace-panel.test.tsx`, `tests/shell-bridge.test.ts`.
+- Для `ollama.download` trace отдельно сообщает `observed=yes/no` для
+  `shell.ollama_download_fallback`; raw URL и shell payload не передаются.
+- UI module patch release: `0.0.000093 -> 0.0.000094`.
+- Проверки: `tests/trace-panel.test.tsx`, `tests/shell-bridge.test.ts`,
+  `tests/ollama-runtime.test.ts`.
 
 Поставка разделена на versioned module releases с тегами
 `module-<module>-v<semver>`, `bootstrap` для первоначальной установки и

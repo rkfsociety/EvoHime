@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 
-import type { AmbientHotkeyStatus, ListeningState, ShellState } from '@shared/api'
+import type { AmbientHotkeyStatus, ListeningState, ShellDiagnostic, ShellState } from '@shared/api'
 
 import { ChatStore } from './chat-store'
 import { CodexService } from './codex-service'
@@ -485,7 +485,18 @@ function createOllamaRuntimeService(): OllamaRuntimeService {
     // specific error while the URL/redirect allowlist remains in the service.
     fallbackFetch: globalThis.fetch,
     emit: (status) => broadcast({ kind: 'ollama-runtime', status }),
-    log
+    log: (level, event, fields) => {
+      log(level, event, fields)
+      if (event === 'shell.ollama_download_fallback') {
+        const diagnostic: ShellDiagnostic = {
+          event,
+          errorCode: 'client_blocked',
+          source: 'electron_transport',
+          operation: 'ollama.download'
+        }
+        broadcast({ kind: 'diagnostic', diagnostic })
+      }
+    }
   })
 }
 

@@ -99,6 +99,30 @@ describe('trace panel', () => {
     expect(screen.getByText('network.request')).toBeTruthy()
   })
 
+  it('shows and exports the Ollama fallback marker separately', async () => {
+    const diagnostic = {
+      event: 'shell.ollama_download_fallback' as const,
+      errorCode: 'client_blocked' as const,
+      source: 'electron_transport' as const,
+      operation: 'ollama.download' as const
+    }
+    const trace = formatTrace(null, null, [{
+      sequenceId: 20,
+      taskId: 'task-1',
+      eventType: 'task.failed',
+      payload: '{"error_code":"client_blocked","source":"electron_transport","operation":"ollama.download"}'
+    }], null, [diagnostic])
+    expect(trace).toContain('event=shell.ollama_download_fallback observed=yes')
+    expect(trace).toContain('error_code=client_blocked source=electron_transport operation=ollama.download')
+    expect(trace).not.toContain('ollama.com')
+
+    render(
+      <TracePanel chatId="chat-1" state={null} workspace={null} shellDiagnostics={[diagnostic]} onClose={() => {}}
+        events={[{ sequenceId: 20, taskId: 'task-1', eventType: 'task.failed', payload: '{"error_code":"client_blocked","source":"electron_transport","operation":"ollama.download"}' }]} />
+    )
+    expect(await screen.findByText('Ollama download fallback: подтверждён')).toBeTruthy()
+  })
+
   it('normalizes a legacy failure payload before display', async () => {
     const view = render(
       <TracePanel

@@ -479,6 +479,9 @@ payload перед показом и экспортом, поэтому стар
 Обычные payloads renderer сначала рекурсивно редактирует: в экспорт допускается
 только маркер `[REDACTED]`, а main bridge отклоняет необработанные URL и
 чувствительные assignment-поля до native save dialog.
+Shell-owned Ollama fallback не маскируется под Core event: main broadcast
+передаёт в trace только allow-listed `shell.ollama_download_fallback` с typed
+`error_code/source/operation`, а trace явно различает `observed=yes/no`.
 
 ## Signed receipts
 
