@@ -202,7 +202,15 @@ if (process.argv.includes('--evohime-browser-backend')) {
         snapshot,
         runtime: { appVersion: app.getVersion(), platform: process.platform, architecture: process.arch, state: lastShellState, update: lastUpdateStatus, repair: lastRepairStatus },
         events: recentCoreEvents,
-        logs: [logger.path]
+        // Keep the shell stream first for the fallback marker, then include
+        // Core/Supervisor and one rotated shell generation. The bundle helper
+        // applies its own line, file and total-size bounds.
+        logs: [
+          logger.path,
+          join(logDirectory(), 'core.jsonl'),
+          join(logDirectory(), 'supervisor.jsonl'),
+          `${logger.path}.1`
+        ]
       })
       return { archive: serializeSupportBundle(files), issueDraft: files.issueDraft }
     }

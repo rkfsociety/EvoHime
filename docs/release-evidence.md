@@ -1685,6 +1685,11 @@ bundle event payloads are parsed before redaction and malformed payloads are
 omitted rather than copied as raw text. `shell-host` is now `0.0.000093` (from
 `0.0.000092`).
 
+Support bundle assembly now includes bounded excerpts from the current shell,
+Core and Supervisor logs plus one rotated shell generation, preserving the
+`shell.ollama_download_fallback` evidence path when the current file rotated.
+`shell-host` is now `0.0.000094` (from `0.0.000093`).
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
