@@ -1,6 +1,6 @@
 //! Stable, redaction-aware contract shared by the `eva` headless client.
 
-pub mod protocol;
+pub use evohime_cli_protocol as protocol;
 
 mod input;
 mod redaction;

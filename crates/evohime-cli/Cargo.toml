@@ -10,8 +10,8 @@ path = "src/main.rs"
 
 [dependencies]
 evohime-cli-contract = { path = "../evohime-cli-contract" }
+evohime-cli-protocol = { path = "../evohime-cli-protocol" }
 evohime-desktop-ipc = { path = "../desktop-ipc" }
-prost = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

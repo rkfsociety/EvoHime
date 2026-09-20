@@ -836,8 +836,8 @@ name = "evohime-cli"
 version = "0.1.0"
 dependencies = [
  "evohime-cli-contract",
+ "evohime-cli-protocol",
  "evohime-desktop-ipc",
- "prost",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -851,6 +851,16 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "evohime-cli-protocol"
+version = "0.1.0"
+dependencies = [
+ "evohime-desktop-ipc",
+ "prost",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
