@@ -35,7 +35,7 @@ output, transcripts, absolute paths и PII запрещены.
 - Instruction discovery больше не обходит VCS и generated directories
   (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
   поэтому служебные ACL не блокируют запуск агента до вызова модели.
-- Module versions: `core 0.0.000297`, `ui-bundle 0.0.000101`, `cli 0.0.000058`.
+- Module versions: `core 0.0.000298`, `ui-bundle 0.0.000101`, `cli 0.0.000059`.
 - Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
   (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
   прогона.
@@ -77,7 +77,8 @@ output, transcripts, absolute paths и PII запрещены.
   endpoint glue и output/parser, а marker поставляемого CLI повышен до
   `0.0.000058`.
 - `GetTaskSnapshot` теперь возвращает task-bound envelope, а CLI пропускает
-  interleaved `task.snapshot` другого run; Core marker повышен до `0.0.000298`.
+  interleaved `task.snapshot` другого run; Core marker повышен до `0.0.000298`,
+  CLI marker — до `0.0.000059`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
