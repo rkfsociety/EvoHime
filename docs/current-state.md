@@ -133,10 +133,10 @@ deprecated positional arguments в консольное окно.
 ## Граница текущего checkout и CI
 
 Текущий checkout содержит task-only реализацию единственного web-установщика и
-self-contained updater в `main`, синхронизированный с `origin/main` после
-последнего планового push. Узкие проверки updater и trace follow-up пройдены
-локально; live CI evidence для последнего checkout отдельно не заявляется до
-проверки GitHub Actions. Подробное redacted evidence находится в
+self-contained updater в `main`; после последнего push он опережает
+`origin/main` локальными task-only коммитами. Узкие проверки updater и trace follow-up пройдены
+локально; live CI evidence для этих локальных коммитов отдельно не заявляется
+до проверки GitHub Actions. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 ## История чата в renderer
