@@ -1,14 +1,14 @@
 # EvoHime — roadmap
 
-Обновлено: 2026-09-15.
+Обновлено: 2026-09-20.
 
 Это краткая продуктовая карта, а не список отдельных задач. Исполняемый порядок
 находится в [`development-plan.md`](development-plan.md), подтверждённое
 состояние — в [`current-state.md`](current-state.md), а детализация очереди — в
 [`plans/README.md`](plans/README.md).
 
-Текущая активная очередь не содержит незавершённых implementation contracts:
-планы `01–172` перенесены в canonical docs.
+Текущая активная очередь содержит незавершённые implementation contracts
+`173–181`; планы `01–172` перенесены в canonical docs.
 
 ## Текущий продукт
 

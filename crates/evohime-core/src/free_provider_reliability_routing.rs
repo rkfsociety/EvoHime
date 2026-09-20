@@ -636,6 +636,16 @@ impl ProviderProfile {
                 ("mock", ProviderFamily::Mock, TransportKind::Mock)
             }
         };
+        let (provider_id, provider_family) =
+            if route.provider == evohime_model_gateway::providers::ProviderKind::OpenAICompatible {
+                builtin_provider_profiles()
+                    .into_iter()
+                    .find(|profile| profile.endpoint == route.literouter.base_url)
+                    .map(|profile| (profile.provider_id, profile.provider_family))
+                    .unwrap_or_else(|| (provider_id.to_owned(), provider_family))
+            } else {
+                (provider_id.to_owned(), provider_family)
+            };
         let endpoint = if matches!(
             route.provider,
             evohime_model_gateway::providers::ProviderKind::Mock
@@ -644,15 +654,16 @@ impl ProviderProfile {
         } else {
             route.literouter.base_url.clone()
         };
+        let credential_binding = format!("credential:{provider_id}");
         let mut profile = Self {
             schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
-            provider_id: provider_id.to_string(),
+            provider_id,
             provider_family,
             transport: transport_kind.as_str().to_string(),
             transport_kind,
             endpoint,
             region: "global".into(),
-            credential_binding: format!("credential:{provider_id}"),
+            credential_binding,
             content_hash: String::new(),
             revision: 1,
         };
@@ -1636,6 +1647,22 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), profiles.len());
+    }
+
+    #[test]
+    fn trusted_builtin_endpoints_keep_provider_identity_separate_from_transport() {
+        for builtin in builtin_provider_profiles() {
+            let route = ModelRouteConfig::openai_compatible(
+                "provider-key",
+                builtin.endpoint.clone(),
+                "provider-model",
+            );
+            let profile = ProviderProfile::from_route_config(&route).expect("profile");
+            assert_eq!(profile.provider_id, builtin.provider_id);
+            assert_eq!(profile.provider_family, builtin.provider_family);
+            assert_eq!(profile.transport_kind, TransportKind::OpenAiCompatible);
+            assert_eq!(profile.credential_binding, builtin.credential_binding);
+        }
     }
 
     #[test]

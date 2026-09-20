@@ -2067,3 +2067,14 @@ Storage regression: `model_not_found` добавлен в allow-list failure cod
 `evohime-local-storage`, а Core patch повышен `0.0.000279 -> 0.0.000280`.
 Focused Core storage round-trip и local-storage provider-catalog tests проходят;
 CI evidence для локального коммита ещё не заявляется.
+
+## Built-in provider identity wiring (2026-09-20)
+
+Core route adaptation теперь сопоставляет только exact trusted endpoints
+восьми built-in profiles с их provider identity/family, сохраняя общий
+OpenAI-compatible transport. Произвольный compatible endpoint остаётся generic
+OpenAI; отдельный provider client и секреты не добавляются. Core patch повышен
+`0.0.000280 -> 0.0.000281`.
+
+Проверка: Core regression test для всех восьми endpoints и `git diff --check`;
+CI evidence для локального коммита ещё не заявляется.

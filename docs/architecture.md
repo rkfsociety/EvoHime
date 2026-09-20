@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-17.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-20.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -2786,7 +2786,9 @@ privacy, usage и lifecycle. Отсутствующие capability/privacy/usage
 `Unknown`, а raw catalog response, arbitrary endpoint и credential material в
 descriptor не попадают. Восемь bounded built-in profile identities описывают
 OpenRouter, Groq, Gemini, Mistral, Cloudflare Workers AI, NVIDIA NIM, Cerebras
-и Hugging Face. SQLite schema v174 атомарно хранит bounded profile/catalog
+и Hugging Face; trusted exact OpenAI-compatible endpoints сохраняют эту identity
+при адаптации route, а произвольный endpoint остаётся generic OpenAI. SQLite
+schema v174 атомарно хранит bounded profile/catalog
 snapshot с provider/credential-binding/region scope, revision fence и
 idempotent publication через существующий local-storage owner. В той же строке
 сохраняются lifecycle state, observation/expiry timestamps и typed failure code;
