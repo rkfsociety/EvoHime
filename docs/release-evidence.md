@@ -111,6 +111,9 @@ compatible-manifest runs; исторические разделы ниже со�
   marker CLI повышен до `0.0.000070`.
 - Event run-filter test вынесен в отдельный `event_tests` module; event
   serialization API не изменён, marker CLI повышен до `0.0.000071`.
+- Redaction boundary tests вынесены в отдельный `redaction_tests` module;
+  sensitive-key and depth invariants сохранены, marker CLI повышен до
+  `0.0.000072`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
