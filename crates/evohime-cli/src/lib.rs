@@ -125,6 +125,9 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                 .filter(|value| bounded(value, MAX_PROMPT_BYTES))
                 .ok_or(ParseError::InvalidValue)?;
             if stdin_requested {
+                if workflow.is_some() {
+                    return Err(ParseError::InvalidValue);
+                }
                 let remaining = MAX_PROMPT_BYTES
                     .checked_sub(prompt.len() + STDIN_PREFIX.len())
                     .ok_or(ParseError::InvalidValue)?;
@@ -289,5 +292,14 @@ mod tests {
             let args = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
             assert_eq!(parse_args(&args), Err(ParseError::InvalidValue));
         }
+    }
+
+    #[test]
+    fn rejects_stdin_for_workflows_until_inputs_are_supported() {
+        let args = ["run", "--workflow", "template-1", "--stdin"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(parse_args(&args), Err(ParseError::InvalidValue));
     }
 }

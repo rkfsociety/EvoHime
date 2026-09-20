@@ -101,6 +101,14 @@ output, transcripts, absolute paths и PII запрещены.
 - Usage дополнен `--workflow`/`--stdin`, добавлен parser regression test; source
   module `cli` повышен до `0.0.000052`.
 
+### CLI workflow stdin contract follow-up (2026-09-20)
+
+- `--workflow` вместе с `--stdin` теперь отклоняется до чтения stdin и
+  handshake: workflow command пока не передаёт prompt/input в Core, поэтому
+  комбинация больше не может silently discard пользовательский текст.
+- Добавлен parser regression test; source module `cli` повышен до
+  `0.0.000053`.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:
