@@ -290,7 +290,9 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Текущий checkout находится в `main` и синхронизирован с `origin/main`.
+Текущий checkout находится в `main`; локальные task-only commits перед
+плановым push могут временно опережать `origin/main`, поэтому live CI evidence
+для них не заявляется до публикации.
 Полный Windows workflow
 `34912288572` является историческим evidence предыдущего опубликованного
 baseline; актуальные installer/module/router/compatibility результаты и

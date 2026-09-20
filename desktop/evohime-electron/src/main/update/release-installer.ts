@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { unzipSync } from 'fflate'
 
@@ -14,6 +14,7 @@ const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_INSTALLER_BYTES = 2 * 1024 * 1024 * 1024
 const MAX_UI_FILES = 512
 const MAX_UI_BYTES = 512 * 1024 * 1024
+const MAX_UI_ARCHIVE_BYTES = 128 * 1024 * 1024
 const REQUEST_TIMEOUT_MS = 120_000
 
 export interface ReleaseInstallerManifest {
@@ -183,6 +184,9 @@ export async function downloadReleaseComponents(
     if (!url) throw new Error(`GitHub components: артефакт отсутствует: ${component.artifact}`)
     const target = join(destination, component.path)
     await mkdir(dirname(target), { recursive: true })
+    if (component.id === 'ui-bundle' && component.size > MAX_UI_ARCHIVE_BYTES) {
+      throw new Error('GitHub components: UI archive is too large before extraction.')
+    }
     const bytes = await downloadBytes(url, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, component.size, component.sha256)
     if (bytes !== component.size) throw new Error(`GitHub components: size mismatch: ${component.id}`)
     if (component.id === 'ui-bundle') await extractUiArchive(target, destination)
@@ -211,6 +215,9 @@ export async function downloadModuleRelease(
   const artifact = assets.find((asset) => asset.name === manifest.artifact)
   const artifactUrl = assetUrl(artifact?.url, apiBase)
   if (!artifactUrl) throw new Error(`GitHub module: артефакт ${manifest.artifact} отсутствует.`)
+  if (module === 'ui-bundle' && manifest.size > MAX_UI_ARCHIVE_BYTES) {
+    throw new Error('GitHub module: UI archive is too large before extraction.')
+  }
   await mkdir(destination, { recursive: true })
   const target = join(destination, manifest.artifact)
   const bytes = await downloadBytes(artifactUrl, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, manifest.size, manifest.sha256)
@@ -276,22 +283,64 @@ function compareModuleVersions(left: string, right: string): number {
 }
 
 async function extractUiArchive(archivePath: string, destination: string): Promise<void> {
-  const archive = unzipSync(await readFile(archivePath))
+  const archiveSize = (await stat(archivePath)).size
+  if (archiveSize > MAX_UI_ARCHIVE_BYTES) throw new Error('GitHub components: UI archive is too large before extraction.')
+  let fileCount = 0
+  let declaredBytes = 0
+  const archive = unzipSync(await readFile(archivePath), {
+    filter: ({ name, originalSize }) => {
+      fileCount += 1
+      if (fileCount > MAX_UI_FILES) throw new Error('GitHub components: UI archive file count is outside bounds.')
+      if (!isSafeUiArchivePath(name)) throw new Error('GitHub components: unsafe UI archive path.')
+      if (!Number.isSafeInteger(originalSize) || originalSize < 0 || originalSize > MAX_UI_BYTES - declaredBytes) {
+        throw new Error('GitHub components: UI archive is too large after extraction.')
+      }
+      declaredBytes += originalSize
+      return true
+    }
+  })
   const entries = Object.entries(archive)
   if (entries.length === 0 || entries.length > MAX_UI_FILES) throw new Error('GitHub components: UI archive file count is outside bounds.')
-  let total = 0
   let hasIndex = false
-  for (const [name, bytes] of entries) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(name) || name.includes('..') || name.includes('//') || name.endsWith('/')) throw new Error('GitHub components: unsafe UI archive path.')
-    const relativeName = name.startsWith('ui-bundle/') ? name.slice('ui-bundle/'.length) : name
-    if (relativeName === 'index.html') hasIndex = true
-    total += bytes.byteLength
-    if (total > MAX_UI_BYTES) throw new Error('GitHub components: UI archive is too large after extraction.')
-    const target = join(destination, 'ui-bundle', relativeName)
-    await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, bytes)
+  const extractionRoot = join(destination, `.ui-bundle-extract-${process.pid}-${Date.now()}`)
+  const publishedRoot = join(destination, 'ui-bundle')
+  const previousRoot = join(destination, `.ui-bundle-previous-${process.pid}-${Date.now()}`)
+  let previousMoved = false
+  await mkdir(extractionRoot, { recursive: true })
+  try {
+    for (const [name, bytes] of entries) {
+      if (!isSafeUiArchivePath(name)) throw new Error('GitHub components: unsafe UI archive path.')
+      const relativeName = name.startsWith('ui-bundle/') ? name.slice('ui-bundle/'.length) : name
+      if (relativeName === 'index.html') hasIndex = true
+      const target = join(extractionRoot, relativeName)
+      await mkdir(dirname(target), { recursive: true })
+      await writeFile(target, bytes)
+    }
+    if (!hasIndex) throw new Error('GitHub components: UI archive has no index.html.')
+    await rm(previousRoot, { recursive: true, force: true })
+    try {
+      await rename(publishedRoot, previousRoot)
+      previousMoved = true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    await rename(extractionRoot, publishedRoot)
+    await rm(previousRoot, { recursive: true, force: true })
+  } catch (error) {
+    await rm(extractionRoot, { recursive: true, force: true }).catch(() => {})
+    if (previousMoved) {
+      await rm(publishedRoot, { recursive: true, force: true }).catch(() => {})
+      await rename(previousRoot, publishedRoot).catch(() => {})
+    }
+    throw error
   }
-  if (!hasIndex) throw new Error('GitHub components: UI archive has no index.html.')
+}
+
+function isSafeUiArchivePath(name: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(name)
+    && !name.includes('..')
+    && !name.includes('//')
+    && !name.endsWith('/')
 }
 
 function releaseAssetUrl(release: any, name: string, apiBase: string): string | null {

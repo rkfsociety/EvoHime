@@ -867,8 +867,11 @@ canonical marker. Поэтому исправления описательных
 пересборки installer для уже установленного клиента.
 
 Electron renderer собирается в отдельный `out/ui-bundle`; component downloader
-проверяет bounded archive, распаковывает его в versioned UI directory, а main
-process выбирает только validated version из `ui-active.json`. Повреждённый или
+отвергает UI-архив больше 128 MiB до скачивания и больше 512 MiB после
+распаковки, проверяет имена файлов до декомпрессии и распаковывает bundle во
+временное дерево. Только полностью проверенное дерево публикуется в staging;
+частичный или повреждённый архив не заменяет предыдущий bundle. Main
+процесс выбирает только validated version из `ui-active.json`. Повреждённый или
 неполный pointer возвращает bundled fallback. Mixed UI+native apply использует
 общий transaction journal с backup native-файлов и восстановлением UI pointer;
 при неподдерживаемом manifest клиент сохраняет состояние для ручного recovery.

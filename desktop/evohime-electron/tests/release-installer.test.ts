@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
@@ -87,6 +87,57 @@ describe('release installer', () => {
     expect(result.files).toEqual([join(root, 'ui.zip')])
     expect(existsSync(join(root, 'ui-bundle', 'index.html'))).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('rejects an oversized UI archive before downloading its bytes', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-components-oversized-'))
+    roots.push(root)
+    const manifest = JSON.stringify({
+      schema: 'evohime.component-manifest.v1', release_commit: COMMIT,
+      components: [{ id: 'ui-bundle', version: '1.0.0', artifact: 'ui.zip', path: 'ui.zip', size: 128 * 1024 * 1024 + 1, sha256: '0'.repeat(64), required: true }]
+    })
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/releases/tags/installer')) return new Response(JSON.stringify({ assets: [
+        { name: 'evohime.components.json', url: 'https://api.github.com/repos/x/y/releases/assets/components' },
+        { name: 'ui.zip', url: 'https://api.github.com/repos/x/y/releases/assets/ui' }
+      ] }), { status: 200 })
+      if (url.endsWith('/components')) return new Response(manifest, { status: 200 })
+      throw new Error('UI bytes must not be downloaded')
+    })
+
+    await expect(downloadReleaseComponents('https://github.com/rkfsociety/EvoHime.git', root, ['ui-bundle'], null, { fetch }))
+      .rejects.toThrow('too large before extraction')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves the previous UI bundle when archive extraction is rejected', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-components-unsafe-'))
+    roots.push(root)
+    mkdirSync(join(root, 'ui-bundle'), { recursive: true })
+    writeFileSync(join(root, 'ui-bundle', 'old.html'), 'previous')
+    const bytes = zipSync({
+      'ui-bundle/index.html': new TextEncoder().encode('new'),
+      'ui-bundle/../escape.js': new TextEncoder().encode('unsafe')
+    })
+    const manifest = JSON.stringify({
+      schema: 'evohime.component-manifest.v1', release_commit: COMMIT,
+      components: [{ id: 'ui-bundle', version: '1.0.0', artifact: 'ui.zip', path: 'ui.zip', size: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex'), required: true }]
+    })
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/releases/tags/installer')) return new Response(JSON.stringify({ assets: [
+        { name: 'evohime.components.json', url: 'https://api.github.com/repos/x/y/releases/assets/components' },
+        { name: 'ui.zip', url: 'https://api.github.com/repos/x/y/releases/assets/ui' }
+      ] }), { status: 200 })
+      if (url.endsWith('/components')) return new Response(manifest, { status: 200 })
+      return new Response(bytes, { status: 200 })
+    })
+
+    await expect(downloadReleaseComponents('https://github.com/rkfsociety/EvoHime.git', root, ['ui-bundle'], null, { fetch }))
+      .rejects.toThrow('unsafe UI archive path')
+    expect(existsSync(join(root, 'ui-bundle', 'old.html'))).toBe(true)
+    expect(existsSync(join(root, 'escape.js'))).toBe(false)
   })
 
   it('downloads a module from its own versioned release', async () => {

@@ -1556,6 +1556,21 @@ packaged-приложение теперь закрывается через ш�
 `shell-host`; локальные focused checks и публикация этих module releases
 ожидают push.
 
+## UI archive bounds and atomic staging follow-up (2026-09-20)
+
+Component downloader теперь отвергает `ui-bundle` больше 128 MiB до загрузки,
+проверяет количество файлов и declared uncompressed size до декомпрессии,
+распаковывает только в уникальное временное дерево и публикует его после
+получения `index.html`. Ошибка пути, лимита или записи удаляет временное дерево
+и сохраняет предыдущий UI bundle.
+
+Локальное evidence: `tests/release-installer.test.ts` — 8/8, включая отказ до
+скачивания oversized archive и сохранение предыдущего bundle при unsafe path;
+`npm run typecheck` — PASS; `git diff --check` — PASS. Изменены source paths
+`desktop/evohime-electron/src/main/update/**`, поэтому повышены `shell-host`
+и `updater`; exact-commit CI и публикация module releases будут доступны после
+следующего планового push.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
