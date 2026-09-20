@@ -2165,3 +2165,19 @@ route-preflight wiring: `ModelGateway` перемещался в eager `unwrap_o
 и использовался повторно. Исправление переведено на явный `match`; следующий
 CI run должен подтвердить Core compile/test gate. Router FAIL был следствием
 этого module failure, а не отдельным provider/runtime failure.
+
+## CI acceptance matrix for `7640bba0` (2026-09-20)
+
+| Workflow | Trigger/path | Relevant SHA | Result |
+|---|---|---|---|
+| `core module` `35503169901` | `crates/evohime-core/**`, `release-versions/core.txt` | `7640bba0` | PASS: format, all Core package tests, clippy, release build, artifact |
+| Core module release | `35503169901` publish job | `7640bba0` | PASS: `module-core-v0.0.000289` опубликован |
+| `ui-bundle module` `35502737772` | UI paths from preceding UI commit | `c30b437c` | PASS: protocol, typecheck, full npm test, build/package |
+| `shell-host module` `35502735145` | shell paths from preceding UI commit | `c30b437c` | PASS: protocol, typecheck, full npm test, build/package |
+| `module router` `35503145176` | push `main` | `7640bba0` | PASS: selected Core, дочерний workflow завершён успешно |
+| `compatible release manifest` `35504423854` | router final dispatch | `7640bba0` | PASS: manifest published |
+
+UI и shell не запускались повторно для `7640bba0`, потому что после
+`c30b437c` этот commit изменял только Core и документацию; router подтвердил
+их опубликованные версии и выбрал только Core. Исторические FAIL на старых
+SHA не используются как PASS evidence.
