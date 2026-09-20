@@ -1207,7 +1207,7 @@ mod tests {
         );
         let started_value: Value =
             serde_json::from_slice(&started).expect("valid start projection");
-        assert_eq!(started_value["projection_version"], 2);
+        assert_eq!(started_value["projection_version"], 3);
         assert_eq!(started_value["projection_kind"], "tool_started");
         assert_eq!(started_value["tool_name"], "filesystem.search");
         assert_eq!(started_value["phase"], "started");
@@ -1273,7 +1273,7 @@ mod tests {
             br#"{"status":"failed","error":"internal"}"#,
         );
         let value: Value = serde_json::from_slice(&payload).expect("valid trace projection");
-        assert_eq!(value["projection_version"], 2);
+        assert_eq!(value["projection_version"], 3);
         assert_eq!(value["projection_kind"], "task_progress");
         assert_eq!(value["status"], "failed");
         assert!(value.get("error").is_none());
