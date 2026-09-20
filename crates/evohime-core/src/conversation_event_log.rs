@@ -370,7 +370,7 @@ pub(crate) fn failure_projection(value: &serde_json::Value) -> serde_json::Value
                 .map(str::to_owned)
                 .or_else(|| safe_error_token(error, key).map(str::to_owned));
             if let Some(token) = token {
-                object.insert(key.into(), serde_json::Value::String(token.into()));
+                object.insert(key.into(), serde_json::Value::String(token));
             }
         }
     }

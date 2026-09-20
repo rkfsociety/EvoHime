@@ -10,6 +10,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  linux-contract:
+    name: cli — Linux contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo test --locked -p evohime-cli
+      - run: cargo clippy --locked -p evohime-cli --all-targets -- -D warnings
+      - run: cargo build --locked -p evohime-cli
+      - name: Verify unsupported production transport fails closed
+        shell: bash
+        run: |
+          set +e
+          ./target/debug/eva doctor --json >stdout.log 2>stderr.log
+          status=$?
+          set -e
+          test "$status" -eq 7
+          grep -q '^core_unavailable:' stderr.log
+
   module:
     uses: ./.github/workflows/module-native.yml
     permissions: { contents: write }

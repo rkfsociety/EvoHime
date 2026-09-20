@@ -35,10 +35,21 @@ output, transcripts, absolute paths и PII запрещены.
 - Instruction discovery больше не обходит VCS и generated directories
   (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
   поэтому служебные ACL не блокируют запуск агента до вызова модели.
-- Module versions: `core 0.0.000295`, `ui-bundle 0.0.000101`.
+- Module versions: `core 0.0.000296`, `ui-bundle 0.0.000101`.
 - Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
   (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
   прогона.
+
+### Linux CLI contract verification (2026-09-20)
+
+- `eva` остаётся Windows-only companion binary: на Linux production transport
+  fail-closed возвращает `CoreUnavailable`, а не пытается открыть неподдержанный
+  named pipe или запускать второй Core runtime.
+- Для CLI добавлен отдельный Ubuntu workflow: format, tests, strict clippy,
+  build и smoke-проверка exit code `7`/`core_unavailable`.
+- Локально на Linux прошли `cargo test --locked -p evohime-cli` (3/3),
+  `cargo clippy --locked -p evohime-cli --all-targets -- -D warnings`,
+  `cargo build --locked -p evohime-cli` и binary smoke `eva doctor --json`.
 
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
