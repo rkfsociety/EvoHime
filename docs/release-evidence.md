@@ -63,6 +63,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Platform-neutral protocol session/write code отделён от event frame reading,
   cursor advancement и task snapshot filtering в `read` module; HMAC/framing
   behavior и `CoreClient` facade сохранены, marker CLI повышен до `0.0.000079`.
+- Core protocol command builders разделены на `task_commands` и
+  `workflow_commands`; envelope fields, idempotency key и public `CoreClient`
+  methods сохранены, marker CLI повышен до `0.0.000080`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 

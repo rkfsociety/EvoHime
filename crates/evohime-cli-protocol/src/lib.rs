@@ -6,8 +6,9 @@
 
 mod auth;
 mod client;
-mod commands;
 mod read;
+mod task_commands;
+mod workflow_commands;
 
 #[cfg(test)]
 mod tests;
