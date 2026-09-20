@@ -113,7 +113,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Для следующего набора выбран patch `shell-host 0.0.000076`, `updater 0.0.000113`,
+Текущий checkout содержит patch `shell-host 0.0.000087`, `updater 0.0.000119`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
 installer — `0.0.000061`.
 Staging marker updater теперь всегда записывается как полный
@@ -130,9 +130,10 @@ deprecated positional arguments в консольное окно.
 ## Граница текущего checkout и CI
 
 Текущий checkout содержит task-only реализацию единственного web-установщика и
-self-contained updater в локальной ветке `main`; локальные проверки follow-up
-изменения не запускались по явному запросу, release evidence появится после
-GitHub Actions. Подробное redacted evidence находится в
+self-contained updater в `main`, синхронизированный с `origin/main` после
+последнего планового push. Узкие проверки updater и trace follow-up пройдены
+локально; live CI evidence для последнего checkout отдельно не заявляется до
+проверки GitHub Actions. Подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 ## История чата в renderer

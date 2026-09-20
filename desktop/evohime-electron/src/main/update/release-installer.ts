@@ -83,7 +83,6 @@ export async function readReleaseInstallerCommit(
   const manifestUrl = releaseAssetUrl(release, MANIFEST_ASSET, apiBase)
   if (!manifestUrl) throw new Error('GitHub installer: релиз ещё не содержит манифест.')
   const manifestText = await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' })
-  if (manifestText.length > MAX_MANIFEST_BYTES) throw new Error('GitHub installer: манифест слишком большой.')
   const manifest = parseManifest(manifestText)
   if (manifest.branch !== branch) {
     throw new Error(`GitHub installer: манифест относится к ветке ${manifest.branch}, ожидалась ${branch}.`)
@@ -124,7 +123,6 @@ export async function downloadReleaseInstaller(
   }
 
   const manifestText = await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' })
-  if (manifestText.length > MAX_MANIFEST_BYTES) throw new Error('GitHub installer: манифест слишком большой.')
   const manifest = parseManifest(manifestText)
   if (manifest.commit !== normalized || manifest.branch !== branch) {
     throw new Error(`GitHub installer: манифест относится к ${manifest.commit}, ожидался ${normalized}.`)
@@ -169,8 +167,7 @@ export async function downloadReleaseComponents(
   const manifestAsset = assets.find((asset) => asset.name === COMPONENT_MANIFEST_ASSET)
   const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
   if (!manifestUrl) throw new Error('GitHub components: component manifest отсутствует.')
-  const text = await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' })
-  if (text.length > MAX_MANIFEST_BYTES) throw new Error('GitHub components: манифест слишком большой.')
+  const text = await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }, 'GitHub components: манифест слишком большой.')
   const manifest = parseComponentManifest(text)
   const chosen = selected.map((id) => {
     const component = manifest.components.find((candidate) => candidate.id === id)
@@ -254,7 +251,7 @@ async function readModuleReleaseManifestFromAssets(
   const manifestAsset = assets.find((asset) => asset.name === `${module}.manifest.json`)
   const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
   if (!manifestUrl) throw new Error(`GitHub module: manifest ${module} отсутствует.`)
-  const manifest = parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }), module)
+  const manifest = parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }, 'GitHub module: manifest слишком большой.'), module)
   if (manifest.version !== expectedVersion) throw new Error(`GitHub module: версия manifest ${manifest.version} не совпадает с release tag ${expectedVersion}.`)
   return manifest
 }
@@ -416,10 +413,37 @@ function nextPageUrl(linkHeader: string | null, currentUrl: string): string | nu
   return null
 }
 
-async function downloadText(url: string, request: typeof globalThis.fetch, headers: Record<string, string>): Promise<string> {
+async function downloadText(
+  url: string,
+  request: typeof globalThis.fetch,
+  headers: Record<string, string>,
+  tooLargeMessage = 'GitHub installer: манифест слишком большой.'
+): Promise<string> {
   const response = await request(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok) throw new Error(`GitHub installer: не удалось скачать манифест (${response.status}).`)
-  return response.text()
+  const contentLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(contentLength) && contentLength > MAX_MANIFEST_BYTES) throw new Error(tooLargeMessage)
+  if (!response.body) throw new Error('GitHub installer: ответ манифеста не содержит body.')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let downloadedBytes = 0
+  let text = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      downloadedBytes += value.byteLength
+      if (downloadedBytes > MAX_MANIFEST_BYTES) throw new Error(tooLargeMessage)
+      text += decoder.decode(value, { stream: true })
+    }
+    text += decoder.decode()
+    return text
+  } catch (error) {
+    if (error instanceof TypeError) throw new Error('GitHub installer: манифест содержит некорректный UTF-8.')
+    throw error
+  } finally {
+    await reader.cancel().catch(() => {})
+  }
 }
 
 async function downloadBytes(

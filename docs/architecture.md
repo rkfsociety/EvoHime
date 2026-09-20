@@ -859,7 +859,8 @@ Native package дополнительно содержит `evohime.components.j
 pagination, чтобы не пропускать релиз нужного модуля за первой страницей.
 Manifest version также обязана совпадать с версией в module release tag; при
 рассинхроне updater останавливается до загрузки бинарника. Draft и prerelease
-релизы не участвуют в выборе стабильного module update. `listener-runtime` является
+релизы не участвуют в выборе стабильного module update. Текстовые manifest-ы
+читаются потоково и ограничиваются 64 KiB до JSON-парсинга. `listener-runtime` является
 отдельным data-directory runtime и поэтому не входит в этот install-tree граф;
 его версия и целостность проверяются отдельным runtime manifest. `evohime-updater` проверяет
 этот marker до staged apply и отказывает при небезопасном пути, неизвестной

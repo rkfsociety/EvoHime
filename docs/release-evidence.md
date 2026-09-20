@@ -1,16 +1,16 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-17.
+Обновлено: 2026-09-20.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий checkout содержит реализацию единственного web-установщика. Предыдущий
-installer commit прошёл связанные GitHub Actions gates; текущий cleanup workflow
-будет подтверждён после push. Исторические разделы ниже сохраняют прежнее
-GitHub evidence.
+Текущий checkout содержит реализацию единственного web-установщика. Последние
+task-only updater changes опубликованы в `origin/main`; актуальный GitHub Actions
+результат для этого checkout не утверждается без отдельной проверки run. Исторические
+разделы ниже сохраняют прежнее GitHub evidence.
 
 ## Статус выпуска
 
@@ -1599,6 +1599,13 @@ module manifest и отвергает рассинхрон до загрузки
 Выбор module release теперь исключает GitHub draft и prerelease записи даже при
 валидном module tag и большей semver; в stable update участвуют только обычные
 релизы с корректным `module-<id>-v<version>` tag.
+
+## Bounded manifest streaming follow-up (2026-09-20)
+
+Installer, component и module manifest-ы теперь читаются потоково с лимитом
+64 KiB до JSON-парсинга; `content-length` проверяется заранее, а oversized body
+отменяется до загрузки следующего артефакта. Regression test подтверждает, что
+module artifact не запрашивается после превышения лимита.
 
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 

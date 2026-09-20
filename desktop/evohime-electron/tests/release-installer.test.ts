@@ -283,6 +283,32 @@ describe('release installer', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('bounds a module manifest while streaming before downloading its artifact', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-module-manifest-limit-'))
+    roots.push(root)
+    const encoder = new TextEncoder()
+    const oversizedBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('x'.repeat(64 * 1024)))
+        controller.enqueue(encoder.encode('x'))
+        controller.close()
+      }
+    })
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/releases?per_page=100')) return new Response(JSON.stringify([{ tag_name: 'module-core-v2.4.0', assets: [
+        { name: 'core.manifest.json', url: 'https://api.github.com/repos/x/y/releases/assets/core-manifest' },
+        { name: 'evohime-core.exe', url: 'https://api.github.com/repos/x/y/releases/assets/core' }
+      ] }]), { status: 200 })
+      if (url.endsWith('core-manifest')) return new Response(oversizedBody, { status: 200 })
+      throw new Error('oversized manifest must stop before artifact download')
+    })
+
+    await expect(downloadModuleRelease('https://github.com/rkfsociety/EvoHime.git', 'core', root, null, { fetch }))
+      .rejects.toThrow('manifest слишком большой')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('does not publish an artifact when its digest is invalid', async () => {
     const root = mkdtempSync(join(tmpdir(), 'evohime-module-invalid-digest-'))
     roots.push(root)
