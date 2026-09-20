@@ -86,6 +86,14 @@ output, transcripts, absolute paths и PII запрещены.
 - Добавлен Linux regression test для обоих malformed-вариантов; source module
   `cli` повышен до `0.0.000050`.
 
+### CLI redaction hardening follow-up (2026-09-20)
+
+- Redaction вынесен в отдельный `redaction`-модуль: alias-поля
+  `api_key`/`access_key`/`password`/`authorization`/`cookie`/`private_key`
+  удаляются из CLI projection, а JSON nesting ограничен 64 уровнями.
+- Добавлены regression tests для credential aliases и depth bound; публичный
+  `redact_payload` сохранён, source module `cli` повышен до `0.0.000051`.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:

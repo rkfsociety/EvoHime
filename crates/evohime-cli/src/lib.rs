@@ -3,9 +3,12 @@
 pub mod protocol;
 
 mod input;
+mod redaction;
 
 use serde::Serialize;
 use serde_json::Value;
+
+pub use redaction::redact_payload;
 
 pub const CLI_SCHEMA: &str = "evohime.cli.event/v1";
 pub const MAX_PROMPT_BYTES: usize = 128 * 1024;
@@ -172,41 +175,6 @@ pub struct CliEvent<'a> {
     pub kind: &'a str,
     pub run_id: &'a str,
     pub payload: Value,
-}
-
-pub fn redact_payload(bytes: &[u8]) -> Value {
-    if bytes.len() > MAX_EVENT_BYTES {
-        return serde_json::json!({"redacted":true,"reason_code":"event_too_large"});
-    }
-    let Ok(value) = serde_json::from_slice::<Value>(bytes) else {
-        return serde_json::json!({"redacted":true,"reason_code":"non_json_projection"});
-    };
-    redact_value(value)
-}
-
-fn redact_value(value: Value) -> Value {
-    match value {
-        Value::Object(map) => Value::Object(
-            map.into_iter()
-                .filter_map(|(key, value)| {
-                    let lower = key.to_ascii_lowercase();
-                    if lower.contains("secret")
-                        || lower.contains("credential")
-                        || lower.contains("prompt")
-                        || lower.contains("reasoning")
-                        || lower.contains("token")
-                        || lower == "raw_output"
-                    {
-                        None
-                    } else {
-                        Some((key, redact_value(value)))
-                    }
-                })
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(items.into_iter().map(redact_value).collect()),
-        other => other,
-    }
 }
 
 pub fn emit(event: &CliEvent<'_>) -> String {
