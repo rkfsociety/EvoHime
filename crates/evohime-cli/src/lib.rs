@@ -2,14 +2,16 @@
 
 pub mod protocol;
 
+mod input;
+
 use serde::Serialize;
 use serde_json::Value;
-use std::io::Read;
 
 pub const CLI_SCHEMA: &str = "evohime.cli.event/v1";
 pub const MAX_PROMPT_BYTES: usize = 128 * 1024;
 pub const MAX_WORKSPACE_BYTES: usize = 512;
 pub const MAX_EVENT_BYTES: usize = 256 * 1024;
+const STDIN_PREFIX: &str = "\n\nInput from stdin:\n";
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,14 +118,17 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                 .filter(|value| bounded(value, MAX_PROMPT_BYTES))
                 .ok_or(ParseError::InvalidValue)?;
             if stdin_requested {
-                let mut input = String::new();
-                std::io::stdin()
-                    .read_to_string(&mut input)
+                let remaining = MAX_PROMPT_BYTES
+                    .checked_sub(prompt.len() + STDIN_PREFIX.len())
+                    .ok_or(ParseError::InvalidValue)?;
+                let stdin = std::io::stdin();
+                let mut reader = stdin.lock();
+                let input = input::read_bounded(&mut reader, remaining)
                     .map_err(|_| ParseError::InvalidValue)?;
-                if !bounded(&input, MAX_PROMPT_BYTES) {
+                if !bounded(&input, remaining) {
                     return Err(ParseError::InvalidValue);
                 }
-                prompt = format!("{prompt}\n\nInput from stdin:\n{input}");
+                prompt = format!("{prompt}{STDIN_PREFIX}{input}");
                 if !bounded(&prompt, MAX_PROMPT_BYTES) {
                     return Err(ParseError::InvalidValue);
                 }

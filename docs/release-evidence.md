@@ -62,6 +62,14 @@ output, transcripts, absolute paths и PII запрещены.
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
 
+### Bounded CLI stdin follow-up (2026-09-20)
+
+- `eva run --stdin` теперь читает только остаток разрешённого prompt bound плюс
+  один sentinel byte: oversized stdin отклоняется до неограниченного накопления
+  в памяти, а итоговый prompt сохраняет общий лимит `128 KiB`.
+- Новые unit tests покрывают ровно допустимый размер и отказ на превышение;
+  source module `cli` повышен с `0.0.000047` до `0.0.000048`.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:
