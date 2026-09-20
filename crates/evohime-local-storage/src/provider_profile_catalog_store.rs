@@ -267,6 +267,7 @@ fn valid_failure_code(value: &str) -> bool {
             | "timeout"
             | "credential_rejected"
             | "rate_limited"
+            | "model_not_found"
             | "malformed_response"
             | "response_too_large"
             | "entry_limit_exceeded"

@@ -1782,6 +1782,43 @@ mod tests {
         assert_eq!(recovered_failure.state, ProviderCatalogState::Unavailable);
         assert_eq!(recovered_failure.failure, Some(CatalogFailureCode::Network));
         assert!(!recovered_failure.route_eligible_at("provider/model", 2_500));
+
+        let missing_model = ProviderCatalogSnapshot::failure(
+            &profile,
+            3,
+            "e".repeat(64),
+            ProviderCatalogState::Unavailable,
+            CatalogFailureCode::ModelNotFound,
+            3_000,
+            4_000,
+        )
+        .expect("model-not-found snapshot");
+        let missing_model_record = missing_model
+            .to_storage_record(&profile)
+            .expect("model-not-found record");
+        assert_eq!(
+            missing_model_record.failure_code.as_deref(),
+            Some("model_not_found")
+        );
+        assert!(evohime_local_storage::provider_profile_catalog_store::put(
+            &database,
+            &missing_model_record
+        )
+        .expect("model-not-found write"));
+        let stored_missing_model = evohime_local_storage::provider_profile_catalog_store::get(
+            &database,
+            "openrouter",
+            "credential:openrouter",
+            "global",
+        )
+        .expect("model-not-found read")
+        .expect("model-not-found snapshot");
+        assert_eq!(
+            ProviderCatalogSnapshot::from_storage_record(&stored_missing_model)
+                .expect("model-not-found recovery")
+                .failure,
+            Some(CatalogFailureCode::ModelNotFound)
+        );
     }
 
     #[test]

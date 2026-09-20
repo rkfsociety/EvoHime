@@ -2062,3 +2062,8 @@ ModelPicker и ProviderForm читают только bounded `failure_code` и�
 
 Проверки: focused ModelPicker/ProviderForm Vitest tests и Electron typecheck;
 CI evidence для локального коммита ещё не заявляется.
+
+Storage regression: `model_not_found` добавлен в allow-list failure codes
+`evohime-local-storage`, а Core patch повышен `0.0.000279 -> 0.0.000280`.
+Focused Core storage round-trip и local-storage provider-catalog tests проходят;
+CI evidence для локального коммита ещё не заявляется.

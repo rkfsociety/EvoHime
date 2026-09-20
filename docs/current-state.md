@@ -127,7 +127,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000279`, `ui-bundle 0.0.000096`,
+Текущий checkout содержит patch `core 0.0.000280`, `ui-bundle 0.0.000096`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -173,7 +173,8 @@ credential binding или raw provider errors; renderer только отобр�
 `Stale` с typed failure и может быть показан UI; `route_eligible_at` остаётся
 false. Credential rejection и unsupported discovery не используют stale cache.
 HTTP 404 и явный `model not found` теперь получают отдельный bounded
-`model_not_found` outcome, а не смешиваются с `protocol_mismatch`.
+`model_not_found` outcome, а не смешиваются с `protocol_mismatch`; storage
+boundary принимает и восстанавливает этот код.
 Renderer показывает этот код как «модель не найдена у провайдера» и не выводит
 сырой ответ каталога.
 Staging marker updater теперь всегда записывается как полный

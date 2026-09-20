@@ -2813,6 +2813,8 @@ entries как `Stale` с typed failure для отображения, но не
 credential rejection и unsupported discovery fail closed без stale fallback.
 HTTP 404 и явный `model not found` получают отдельный bounded
 `model_not_found` outcome и не маскируются под protocol mismatch.
+SQLite boundary принимает только этот bounded код из allow-list и сохраняет его
+при восстановлении снапшота.
 Capability filtering по provider-declared/observed metadata ещё расширяется.
 Route preflight
 проверяет configured credential, известное lifecycle-состояние snapshot,
