@@ -129,6 +129,28 @@ describe('plan review panel', () => {
     expect(screen.getByText('Готово')).toBeTruthy()
   })
 
+  it('classifies reviewer errors before showing them in the result', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = {
+      review_id: reviewId,
+      file_name: 'plan.md',
+      synthesis_model: 'main',
+      final_markdown: '# Итог',
+      reviewers: [{ model: 'a', status: 'failed', content: '', error: '401 unauthorized https://provider.test?token=secret' }]
+    }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)
+    ]} />)
+
+    expect(screen.getByText('Провайдер отклонил запрос. Проверь ключ в настройках.')).toBeTruthy()
+    expect(screen.queryByText(/provider\.test|secret/)).toBeNull()
+  })
+
   it('copies the final markdown to the clipboard', async () => {
     const copied: string[] = []
     const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
