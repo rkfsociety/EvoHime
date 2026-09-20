@@ -128,7 +128,7 @@ function TraceDiagnosticsView({ diagnostics }: { readonly diagnostics: TraceDiag
   )
 }
 
-const TRACE_URL_PATTERN = /\b(?:https?|wss?|file):\/\/[^\s"'<>]+/gi
+const TRACE_URL_PATTERN = /\b(?:https?|wss?|file|ftp):\/\/[^\s"'<>]+/gi
 const TRACE_SENSITIVE_FIELD_PATTERN = /^(?:prompt|secret|token|password|api[_-]?key|authorization|credential)$/i
 const TRACE_SENSITIVE_ASSIGNMENT_PATTERN = /(["']?(?:prompt|secret|token|password|api[_-]?key|authorization|credential)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi
 

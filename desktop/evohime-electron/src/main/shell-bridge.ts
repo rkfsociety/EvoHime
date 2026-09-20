@@ -52,7 +52,7 @@ const MAX_TEXT_FIELD_CHARS = 4_096
 const MAX_CLIPBOARD_CHARS = 64 * 1024
 const MAX_TRACE_EXPORT_BYTES = 16 * 1024 * 1024
 const MAX_REVIEW_PLAN_BYTES = 512 * 1024
-const TRACE_URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/i
+const TRACE_URL_PATTERN = /\b(?:https?|wss?|file|ftp):\/\/[^\s"'<>]+/i
 const TRACE_SENSITIVE_FIELD_PATTERN = /(?:["'](?:prompt|secret|token|password|api[_-]?key|authorization)["']|\b(?:prompt|secret|token|password|api[_-]?key|authorization))\s*[:=]/i
 
 function applyWorkspacePermissionMode(client: CorePipeClient, mode: PermissionMode | undefined): void {

@@ -1700,6 +1700,10 @@ classification before rendering, so a failed reviewer cannot reintroduce raw
 provider diagnostics through the result history. The UI bundle is now
 `0.0.000085`.
 
+Trace URL rejection now covers `http(s)`, `ws(s)`, `file` and `ftp` schemes
+consistently in renderer redaction and the main-process export boundary. The UI
+bundle is now `0.0.000086`.
+
 ## Trace reason redaction follow-up (2026-09-20)
 
 Trace UI/export now normalizes the connection `reason` to the same bounded

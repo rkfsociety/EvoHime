@@ -785,6 +785,17 @@ describe('trace export', () => {
       message: 'Трейс пуст, слишком большой или содержит небезопасные данные.'
     })
   })
+
+  it('rejects non-http URL schemes in trace content too', () => {
+    const result = invoke('trace.export', {
+      content: '[1] tool.output\n{"url":"file:///C:/private/prompt.txt"}'
+    })
+    expect(result).toEqual({
+      ok: false,
+      code: 'invalid-payload',
+      message: 'Трейс пуст, слишком большой или содержит небезопасные данные.'
+    })
+  })
 })
 
 describe('source update commands', () => {
