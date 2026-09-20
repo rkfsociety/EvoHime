@@ -54,6 +54,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Watch/event cursor filtering и bounded reconnect loop вынесены из command
   dispatch в отдельный `windows_watch` module; sequence replay и five-attempt
   reconnect policy не изменены, marker CLI повышен до `0.0.000076`.
+- `run` request validation, task/workflow start и detach projection вынесены в
+  отдельный `windows_run` handler; Core command envelopes и CLI exit mapping не
+  изменены, marker CLI повышен до `0.0.000077`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 
