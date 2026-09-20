@@ -127,7 +127,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000278`, `ui-bundle 0.0.000092`,
+Текущий checkout содержит patch `core 0.0.000279`, `ui-bundle 0.0.000095`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -172,6 +172,8 @@ credential binding или raw provider errors; renderer только отобр�
 При network/timeout/rate-limit ошибке имеющийся bounded catalog сохраняется как
 `Stale` с typed failure и может быть показан UI; `route_eligible_at` остаётся
 false. Credential rejection и unsupported discovery не используют stale cache.
+HTTP 404 и явный `model not found` теперь получают отдельный bounded
+`model_not_found` outcome, а не смешиваются с `protocol_mismatch`.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и

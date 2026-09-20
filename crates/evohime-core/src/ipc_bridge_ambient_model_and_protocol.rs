@@ -17,7 +17,12 @@ fn safe_model_catalog_error_code(
         }
         evohime_model_gateway::providers::ProviderError::Api(message) => {
             let message = message.to_ascii_lowercase();
-            if message.contains("too many") {
+            if message.contains("404")
+                || message.contains("model not found")
+                || message.contains("model_not_found")
+            {
+                "catalog_model_not_found"
+            } else if message.contains("too many") {
                 "catalog_too_many_entries"
             } else if message.contains("size limit") || message.contains("exceeds size") {
                 "catalog_response_too_large"
@@ -560,6 +565,12 @@ mod tests {
                 "provider model catalog response exceeds size limit".into(),
             )),
             "catalog_response_too_large"
+        );
+        assert_eq!(
+            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
+                "provider model catalog request failed with HTTP 404".into(),
+            )),
+            "catalog_model_not_found"
         );
     }
 }

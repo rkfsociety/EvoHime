@@ -2042,3 +2042,13 @@ ProviderForm отображают Core-owned stale/fresh/credential status и н
 Electron ModelPicker/ProviderForm tests (16 тестов), Electron typecheck,
 rustfmt и `git diff --check`. CI evidence для локального коммита ещё не
 заявляется; установленный клиент не изменялся.
+
+## Typed provider model-not-found outcome (2026-09-20)
+
+Catalog discovery теперь различает HTTP 404/`model not found` и protocol drift:
+Core хранит только bounded `model_not_found`, а `model.catalog` использует
+`catalog_model_not_found`; provider response body, URL и credentials не входят в
+projection. Core patch повышен `0.0.000278 -> 0.0.000279`.
+
+Проверки: Core catalog classification и IPC-safe error-code tests; CI evidence
+для локального коммита ещё не заявляется.

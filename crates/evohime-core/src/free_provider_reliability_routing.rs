@@ -261,6 +261,7 @@ pub enum CatalogFailureCode {
     Timeout,
     CredentialRejected,
     RateLimited,
+    ModelNotFound,
     MalformedResponse,
     ResponseTooLarge,
     EntryLimitExceeded,
@@ -276,6 +277,7 @@ impl CatalogFailureCode {
             Self::Timeout => "timeout",
             Self::CredentialRejected => "credential_rejected",
             Self::RateLimited => "rate_limited",
+            Self::ModelNotFound => "model_not_found",
             Self::MalformedResponse => "malformed_response",
             Self::ResponseTooLarge => "response_too_large",
             Self::EntryLimitExceeded => "entry_limit_exceeded",
@@ -291,6 +293,7 @@ impl CatalogFailureCode {
             "timeout" => Some(Self::Timeout),
             "credential_rejected" => Some(Self::CredentialRejected),
             "rate_limited" => Some(Self::RateLimited),
+            "model_not_found" => Some(Self::ModelNotFound),
             "malformed_response" => Some(Self::MalformedResponse),
             "response_too_large" => Some(Self::ResponseTooLarge),
             "entry_limit_exceeded" => Some(Self::EntryLimitExceeded),
@@ -1263,6 +1266,13 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
             CatalogFailureCode::RateLimited
         }
         ProviderError::Api(_)
+            if message.contains("404")
+                || message.contains("model not found")
+                || message.contains("model_not_found") =>
+        {
+            CatalogFailureCode::ModelNotFound
+        }
+        ProviderError::Api(_)
             if message.contains("exceeds size") || message.contains("too large") =>
         {
             CatalogFailureCode::ResponseTooLarge
@@ -1874,6 +1884,12 @@ mod tests {
         assert_eq!(
             classify_catalog_error(&error),
             CatalogFailureCode::MalformedResponse
+        );
+        assert_eq!(
+            classify_catalog_error(&ProviderError::Api(
+                "provider model catalog request failed with HTTP 404".into()
+            )),
+            CatalogFailureCode::ModelNotFound
         );
         let encoded = serde_json::to_string(&classify_catalog_error(&error)).expect("code json");
         assert!(!encoded.contains("provider.test"));

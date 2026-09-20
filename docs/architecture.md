@@ -2811,6 +2811,8 @@ immutable descriptors; expired/stale/failed snapshots не проходят
 `route_eligible_at`. При временной ошибке refresh уже сохраняет прежние bounded
 entries как `Stale` с typed failure для отображения, но не для маршрутизации;
 credential rejection и unsupported discovery fail closed без stale fallback.
+HTTP 404 и явный `model not found` получают отдельный bounded
+`model_not_found` outcome и не маскируются под protocol mismatch.
 Capability filtering по provider-declared/observed metadata ещё расширяется.
 Route preflight
 проверяет configured credential, известное lifecycle-состояние snapshot,
