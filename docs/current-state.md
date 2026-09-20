@@ -127,7 +127,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000280`, `ui-bundle 0.0.000096`,
+Текущий checkout содержит patch `core 0.0.000281`, `ui-bundle 0.0.000097`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -177,6 +177,8 @@ HTTP 404 и явный `model not found` теперь получают отде�
 boundary принимает и восстанавливает этот код.
 Renderer показывает этот код как «модель не найдена у провайдера» и не выводит
 сырой ответ каталога.
+Если Core помечает `configured_model_eligible=false`, ModelPicker отдельно
+показывает, что выбранная модель не подтверждена для текущего маршрута.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и

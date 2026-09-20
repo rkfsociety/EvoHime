@@ -107,7 +107,10 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     const credentialStatus = typeof providerProjection?.['credential_status'] === 'string'
       ? providerProjection['credential_status']
       : null
-    setCatalogStatus(state ? { state, credentialStatus, failureCode } : null)
+    const configuredModelEligible = typeof catalogProjection?.['configured_model_eligible'] === 'boolean'
+      ? catalogProjection['configured_model_eligible']
+      : null
+    setCatalogStatus(state ? { state, credentialStatus, failureCode, configuredModelEligible } : null)
   }, [catalog, provider, use])
 
   useEffect(() => {
@@ -179,9 +182,16 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         <span className="model-picker__hint" title={capabilityForModel(provider, current).reason}>агентские модели</span>
       ) : null}
       {provider !== 'codex_cli' && catalogStatus !== null ? (
-        <span className={`model-picker__catalog-status model-picker__catalog-status--${catalogStatus.state}`} role="status">
-          {catalogStatusLabel(catalogStatus)}
-        </span>
+        <>
+          <span className={`model-picker__catalog-status model-picker__catalog-status--${catalogStatus.state}`} role="status">
+            {catalogStatusLabel(catalogStatus)}
+          </span>
+          {catalogStatus.configuredModelEligible === false ? (
+            <span className="model-picker__catalog-status model-picker__catalog-status--unavailable" role="status">
+              Выбранная модель не подтверждена Core для этого маршрута
+            </span>
+          ) : null}
+        </>
       ) : null}
       {provider === 'codex_cli' ? <CodexRateLimits rateLimits={codexRateLimits} compact /> : null}
     </>
@@ -204,6 +214,7 @@ interface CatalogStatus {
   readonly state: string
   readonly credentialStatus: string | null
   readonly failureCode: string | null
+  readonly configuredModelEligible: boolean | null
 }
 
 function catalogStatusLabel(status: CatalogStatus): string {

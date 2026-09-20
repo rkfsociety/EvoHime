@@ -2078,3 +2078,12 @@ OpenAI; отдельный provider client и секреты не добавля
 
 Проверка: Core regression test для всех восьми endpoints и `git diff --check`;
 CI evidence для локального коммита ещё не заявляется.
+
+## Core-owned model eligibility status (2026-09-20)
+
+ModelPicker отображает bounded `configured_model_eligible=false` из
+`provider_catalog` отдельным статусом и не принимает это решение в renderer.
+UI patch повышен `0.0.000096 -> 0.0.000097`.
+
+Проверки: focused ModelPicker Vitest tests и Electron typecheck;
+CI evidence для локального коммита ещё не заявляется.

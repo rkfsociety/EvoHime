@@ -151,7 +151,7 @@ describe('model picker', () => {
           models: ['usable:free'],
           provider_catalog: {
             provider: { credential_status: 'configured' },
-            catalog: { state: 'stale' }
+            catalog: { state: 'stale', configured_model_eligible: false }
           }
         })]}
         use="text"
@@ -159,6 +159,7 @@ describe('model picker', () => {
     )
 
     expect(await screen.findByText(/Каталог из кэша; маршрут временно отключён/i)).toBeTruthy()
+    expect(screen.getByText(/Выбранная модель не подтверждена Core/i)).toBeTruthy()
   })
 
   it('tells Core about a selection without restarting anything', async () => {
