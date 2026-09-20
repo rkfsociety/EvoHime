@@ -228,7 +228,7 @@ export class OllamaRuntimeService {
     const body = await readBoundedResponseText(response, MAX_VERSION_RESPONSE_BYTES)
     if (body === null) return { available: false, version: null }
     const value = JSON.parse(body) as { version?: unknown }
-    const version = typeof value.version === 'string' && value.version.length <= 128 ? value.version : null
+    const version = typeof value.version === 'string' && isSafeVersionToken(value.version) ? value.version : null
     return { available: true, version }
   }
 
@@ -315,4 +315,10 @@ function describeOllamaError(error: unknown): string {
 function isElectronClientBlockedError(error: unknown): boolean {
   const message = error instanceof Error ? `${error.message} ${String(error.cause ?? '')}` : String(error)
   return message.toLowerCase().includes('err_blocked_by_client')
+}
+
+function isSafeVersionToken(value: string): boolean {
+  return value.length > 0
+    && value.length <= 128
+    && [...value].every((character) => /[A-Za-z0-9._+:-]/.test(character))
 }

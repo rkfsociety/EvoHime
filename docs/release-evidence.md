@@ -1667,6 +1667,10 @@ Install failures from the Ollama shell service also use bounded user-facing
 error classes; raw transport messages, URLs and query tokens are not exposed
 in status text. `shell-host` is now `0.0.000090` (from `0.0.000089`).
 
+The local Ollama version projection also accepts only a bounded version token;
+unsafe strings are treated as an unknown version instead of being rendered.
+`shell-host` is now `0.0.000091` (from `0.0.000090`).
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

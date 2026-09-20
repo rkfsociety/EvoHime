@@ -167,6 +167,22 @@ describe('Ollama runtime service', () => {
     expect(status.message).not.toContain('sk-test')
   })
 
+  it('does not expose an unsafe version returned by the local probe', async () => {
+    const service = new OllamaRuntimeService({
+      fetch: async () => new Response(JSON.stringify({ version: 'https://example.test/sk-test\n' }), { status: 200 }),
+      emit: () => {},
+      log: () => {},
+      exists: async () => true
+    })
+
+    const status = await service.check()
+
+    expect(status.state).toBe('ready')
+    expect(status.version).toBeNull()
+    expect(status.message).toBe('Ollama готова.')
+    expect(status.message).not.toContain('example.test')
+  })
+
   it('does not launch a non-executable response from the official URL', async () => {
     const launchInstaller = vi.fn(async () => 0)
     const service = new OllamaRuntimeService({
