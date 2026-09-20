@@ -182,7 +182,7 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
         </div>
         {catalog.device ? <span className="ollama-models__device">{formatDevice(catalog.device)}</span> : null}
       </div>
-      {catalog.error ? <p className="shell__reason" role="status">{catalog.error} Запусти Ollama и обнови настройки.</p> : null}
+      {catalog.error ? <p className="shell__reason" role="status">{catalogErrorMessage(catalog.error)} Открой Ollama и обнови каталог.</p> : null}
       {pullProgress ? (
         <div className="ollama-models__progress" role="status" aria-live="polite">
           <div>
@@ -259,10 +259,44 @@ function ollamaStateLabel(status: OllamaRuntimeStatus): string {
 function parseCatalog(payload: string | undefined): CatalogPayload {
   if (!payload) return {}
   try {
-    const value = JSON.parse(payload) as { ollama?: CatalogPayload }
-    return value.ollama ?? {}
+    const value = JSON.parse(payload) as { ollama?: unknown }
+    if (!value.ollama || typeof value.ollama !== 'object') return {}
+    const ollama = value.ollama as CatalogPayload
+    return { ...ollama, error: safeCatalogErrorCode(ollama.error) }
   } catch {
     return {}
+  }
+}
+
+function safeCatalogErrorCode(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim().length === 0) return null
+  switch (value) {
+    case 'provider_configuration_error':
+    case 'provider_timeout':
+    case 'provider_transport_error':
+    case 'catalog_too_many_entries':
+    case 'catalog_response_too_large':
+    case 'catalog_response_invalid':
+    case 'catalog_stream_error':
+    case 'hardware_discovery_failed':
+    case 'catalog_unavailable':
+      return value
+    default:
+      return 'catalog_unavailable'
+  }
+}
+
+function catalogErrorMessage(code: string): string {
+  switch (code) {
+    case 'provider_configuration_error': return 'Проверь настройки Ollama.'
+    case 'provider_timeout': return 'Ollama не ответила вовремя.'
+    case 'provider_transport_error': return 'Не удалось подключиться к Ollama.'
+    case 'hardware_discovery_failed': return 'Не удалось определить возможности устройства.'
+    case 'catalog_too_many_entries':
+    case 'catalog_response_too_large':
+    case 'catalog_response_invalid':
+    case 'catalog_stream_error': return 'Ollama вернула некорректный каталог моделей.'
+    default: return 'Не удалось получить каталог моделей.'
   }
 }
 

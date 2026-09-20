@@ -1653,6 +1653,17 @@ Conversation-bound failure projection now classifies a blocked Ollama installer
 as `operation=ollama.download` while retaining only safe diagnostic fields;
 the source module `core` is `0.0.000256` (from `0.0.000255`).
 
+## Safe model-catalog error projection (2026-09-20)
+
+The Core `model.catalog` IPC projection no longer serializes provider error
+strings. Network, timeout, configuration, response-size, entry-count and
+stream failures become bounded error codes; Ollama hardware discovery failures
+use the same safe projection. The Ollama model panel accepts only those codes,
+maps them to Russian user-facing messages, and falls back to a generic message
+for old or unknown events, so URLs, query tokens and provider diagnostics are
+not rendered from replayed history. Source modules are now `core 0.0.000257`
+and `ui-bundle 0.0.000080`.
+
 ## Trace reason redaction follow-up (2026-09-20)
 
 Trace UI/export now normalizes the connection `reason` to the same bounded

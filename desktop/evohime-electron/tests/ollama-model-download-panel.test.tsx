@@ -53,6 +53,19 @@ it('показывает размер модели и прогресса в пр
   expect(screen.getByText('установлена в Ollama · доступна в композиторе')).toBeTruthy()
 })
 
+it('показывает понятную ошибку каталога и не выводит сырой транспортный текст', () => {
+  const catalog = event('model.catalog', JSON.stringify({
+    ollama: {
+      error: 'http error: https://ollama.com/api/tags?token=secret-token'
+    }
+  }))
+
+  render(<OllamaModelDownloadPanel connection="disconnected" events={[catalog]} baseUrl="" />)
+
+  expect(screen.getByText(/Не удалось получить каталог моделей/i)).toBeTruthy()
+  expect(screen.queryByText(/ollama\.com|secret-token/i)).toBeNull()
+})
+
 it('предлагает скачать и запустить официальный установщик, когда Ollama отсутствует', async () => {
   const calls: string[] = []
   const api: EvoHimeApiV1 = {

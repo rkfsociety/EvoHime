@@ -1,5 +1,93 @@
 use super::*;
 
+fn safe_model_catalog_error_code(
+    error: &evohime_model_gateway::providers::ProviderError,
+) -> &'static str {
+    match error {
+        evohime_model_gateway::providers::ProviderError::Config(_) => {
+            "provider_configuration_error"
+        }
+        evohime_model_gateway::providers::ProviderError::Http(message) => {
+            let message = message.to_ascii_lowercase();
+            if message.contains("timeout") || message.contains("timed out") {
+                "provider_timeout"
+            } else {
+                "provider_transport_error"
+            }
+        }
+        evohime_model_gateway::providers::ProviderError::Api(message) => {
+            let message = message.to_ascii_lowercase();
+            if message.contains("too many") {
+                "catalog_too_many_entries"
+            } else if message.contains("size limit") || message.contains("exceeds size") {
+                "catalog_response_too_large"
+            } else {
+                "catalog_response_invalid"
+            }
+        }
+        evohime_model_gateway::providers::ProviderError::Stream(_) => "catalog_stream_error",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_catalog_error_projection_is_bounded_and_does_not_include_details() {
+        let cases = [
+            (
+                evohime_model_gateway::providers::ProviderError::Config(
+                    "provider API key is not configured".into(),
+                ),
+                "provider_configuration_error",
+            ),
+            (
+                evohime_model_gateway::providers::ProviderError::Http(
+                    "error sending request to https://provider.test/models: operation timed out"
+                        .into(),
+                ),
+                "provider_timeout",
+            ),
+            (
+                evohime_model_gateway::providers::ProviderError::Api(
+                    "provider model catalog response is invalid: secret-token".into(),
+                ),
+                "catalog_response_invalid",
+            ),
+            (
+                evohime_model_gateway::providers::ProviderError::Stream(
+                    "stream ended at https://provider.test".into(),
+                ),
+                "catalog_stream_error",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            let code = safe_model_catalog_error_code(&error);
+            assert_eq!(code, expected);
+            assert!(!code.contains("provider.test"));
+            assert!(!code.contains("secret"));
+        }
+    }
+
+    #[test]
+    fn model_catalog_limits_have_stable_safe_codes() {
+        assert_eq!(
+            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
+                "provider model catalog contains too many entries".into(),
+            )),
+            "catalog_too_many_entries"
+        );
+        assert_eq!(
+            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
+                "provider model catalog response exceeds size limit".into(),
+            )),
+            "catalog_response_too_large"
+        );
+    }
+}
+
 impl IpcBridge {
     pub(super) async fn dispatch_model_and_protocol<W: AsyncWrite + Unpin>(
         &self,
@@ -293,7 +381,11 @@ impl IpcBridge {
                     .gateway_config
                     .as_ref()
                     .and_then(|config| config.routes.get(&config.default_route));
-                let (entries, error, ollama) = match route {
+                let (entries, error, ollama): (
+                    Vec<evohime_model_gateway::ModelCatalogEntry>,
+                    Option<String>,
+                    Option<serde_json::Value>,
+                ) = match route {
                     Some(route)
                         if route.provider
                             == evohime_model_gateway::providers::ProviderKind::Ollama =>
@@ -331,20 +423,29 @@ impl IpcBridge {
                                                 &device,
                                                 &[],
                                             );
+                                        let error_code = safe_model_catalog_error_code(&error);
                                         (
                                             Vec::new(),
-                                            Some(error.to_string()),
+                                            Some(error_code.into()),
                                             Some(serde_json::json!({
                                                 "device": device,
                                                 "recommendations": recommendations,
                                                 "installed": [],
-                                                "error": error.to_string(),
+                                                "error": error_code,
                                             })),
                                         )
                                     }
                                 }
                             }
-                            Err(error) => (Vec::new(), Some(error), None),
+                            Err(_) => (
+                                Vec::new(),
+                                Some("hardware_discovery_failed".into()),
+                                Some(serde_json::json!({
+                                    "recommendations": [],
+                                    "installed": [],
+                                    "error": "hardware_discovery_failed",
+                                })),
+                            ),
                         }
                     }
                     Some(route) => match evohime_model_gateway::fetch_model_catalog(route).await {
@@ -362,9 +463,13 @@ impl IpcBridge {
                             None,
                             None,
                         ),
-                        Err(error) => (Vec::new(), Some(error.to_string()), None),
+                        Err(error) => (
+                            Vec::new(),
+                            Some(safe_model_catalog_error_code(&error).into()),
+                            None,
+                        ),
                     },
-                    None => (Vec::new(), Some("provider is not configured".into()), None),
+                    None => (Vec::new(), Some("provider_not_configured".into()), None),
                 };
                 // Лимиты переживают сессию: планировщик контекста и ревью
                 // должны знать окно модели ещё до первого обновления каталога,
