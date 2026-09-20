@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { unzipSync } from 'fflate'
 
@@ -340,37 +340,47 @@ async function downloadBytes(
   expectedBytes?: number,
   expectedSha256?: string
 ): Promise<number> {
+  if (expectedBytes !== undefined && (expectedBytes <= 0 || expectedBytes > MAX_INSTALLER_BYTES)) {
+    throw new Error('GitHub installer: установщик слишком большой.')
+  }
   const response = await request(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok || !response.body) throw new Error(`GitHub installer: не удалось скачать установщик (${response.status}).`)
   const totalBytes = Number(response.headers.get('content-length')) || expectedBytes || 0
   if (totalBytes > MAX_INSTALLER_BYTES) throw new Error('GitHub installer: установщик слишком большой.')
-  const chunks: Buffer[] = []
-  let downloadedBytes = 0
-  const reader = response.body.getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    const chunk = Buffer.from(value)
-    chunks.push(chunk)
-    downloadedBytes += chunk.byteLength
-    onProgress?.(downloadedBytes, totalBytes)
-  }
-  const data = Buffer.concat(chunks)
-  if (data.byteLength > MAX_INSTALLER_BYTES) throw new Error('GitHub installer: установщик слишком большой.')
-  if (expectedBytes !== undefined && data.byteLength !== expectedBytes) {
-    throw new Error('GitHub installer: размер загруженного файла не совпадает с манифестом.')
-  }
   const temporaryPath = join(dirname(path), `.${basename(path)}.part-${process.pid}-${Date.now()}`)
+  const digest = createHash('sha256')
+  let file: Awaited<ReturnType<typeof open>> | undefined = await open(temporaryPath, 'w')
+  let downloadedBytes = 0
   try {
-    await writeFile(temporaryPath, data)
-    if (expectedSha256 !== undefined && (await sha256(temporaryPath)) !== expectedSha256) {
+    const reader = response.body.getReader()
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const chunk = Buffer.from(value)
+      downloadedBytes += chunk.byteLength
+      if (downloadedBytes > MAX_INSTALLER_BYTES) throw new Error('GitHub installer: установщик слишком большой.')
+      if (expectedBytes !== undefined && downloadedBytes > expectedBytes) {
+        throw new Error('GitHub installer: размер загруженного файла не совпадает с манифестом.')
+      }
+      await file.write(chunk)
+      digest.update(chunk)
+      onProgress?.(downloadedBytes, totalBytes)
+    }
+    if (expectedBytes !== undefined && downloadedBytes !== expectedBytes) {
+      throw new Error('GitHub installer: размер загруженного файла не совпадает с манифестом.')
+    }
+    if (expectedSha256 !== undefined && digest.digest('hex') !== expectedSha256) {
       throw new Error('GitHub installer: SHA-256 загруженного файла не совпадает с манифестом.')
     }
+    await file.sync()
+    await file.close()
+    file = undefined
     await rename(temporaryPath, path)
   } finally {
+    await file?.close().catch(() => {})
     await rm(temporaryPath, { force: true }).catch(() => {})
   }
-  return data.byteLength
+  return downloadedBytes
 }
 
 function parseManifest(text: string): ReleaseInstallerManifest {
@@ -413,10 +423,4 @@ function parseModuleManifest(text: string, module: string): ModuleReleaseManifes
     throw new Error('GitHub module: некорректный manifest.')
   }
   return value as ModuleReleaseManifest
-}
-
-async function sha256(path: string): Promise<string> {
-  const hash = createHash('sha256')
-  hash.update(await readFile(path))
-  return hash.digest('hex')
 }
