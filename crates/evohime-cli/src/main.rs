@@ -5,198 +5,31 @@ use evohime_cli::{parse_args, ExitCode};
 #[cfg(windows)]
 mod windows_client {
     use super::*;
-    use evohime_desktop_ipc::{generated, session, transport};
-    use prost::Message;
+    use evohime_cli::protocol::CoreClient as ProtocolClient;
+    use evohime_desktop_ipc::generated;
     use std::path::PathBuf;
     use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 
-    pub struct CoreClient {
-        pipe: NamedPipeClient,
-        sequence: u64,
-        client_id: String,
-        core_instance_id: String,
-        session_epoch: u64,
-    }
+    type CoreClient = ProtocolClient<NamedPipeClient>;
 
-    impl CoreClient {
-        pub async fn connect(after_sequence: u64) -> Result<Self, String> {
-            let context_path = std::env::var_os("EVOHIME_LAUNCH_CONTEXT")
-                .map(PathBuf::from)
-                .or_else(|| {
-                    std::env::var_os("LOCALAPPDATA")
-                        .map(|value| PathBuf::from(value).join("EvoHime/runtime/session.json"))
-                })
-                .ok_or_else(|| "core_unavailable: launch context is not configured".to_string())?;
-            let context = session::read_launch_context(&context_path)
-                .map_err(|_| "core_unavailable: invalid launch context".to_string())?;
-            let pipe = ClientOptions::new()
-                .open(&context.pipe_name)
-                .map_err(|_| "core_unavailable: named pipe is unavailable".to_string())?;
-            let client_id = format!("cli-{}", uuid::Uuid::new_v4());
-            let mut client = Self {
-                pipe,
-                sequence: after_sequence,
-                client_id: client_id.clone(),
-                core_instance_id: String::new(),
-                session_epoch: 0,
-            };
-            let challenge = client.read_event().await?;
-            let nonce = challenge
-                .event
-                .and_then(|event| match event {
-                    generated::event_envelope::Event::AuthChallenge(value) => Some(value.nonce),
-                    _ => None,
-                })
-                .ok_or_else(|| "authentication_failed: challenge missing".to_string())?;
-            let proof = context.secret.proof("cli", &client_id, &nonce);
-            client
-                .write(generated::CommandEnvelope {
-                    protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                    request_id: uuid::Uuid::new_v4().to_string(),
-                    client_id: client_id.clone(),
-                    core_instance_id: String::new(),
-                    session_epoch: 0,
-                    command: Some(generated::command_envelope::Command::Handshake(
-                        generated::Handshake {
-                            protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                            client_id: client_id.clone(),
-                            session_id: client_id,
-                            session_epoch: 0,
-                            last_event_sequence: after_sequence,
-                            capabilities: vec![
-                                "headless-cli".into(),
-                                "replay".into(),
-                                "resync".into(),
-                            ],
-                            client_role: "cli".into(),
-                            nonce,
-                            proof,
-                        },
-                    )),
-                })
-                .await?;
-            let ready = client.read_event().await?;
-            if !matches!(
-                ready.event,
-                Some(generated::event_envelope::Event::Ready(_))
-            ) {
-                return Err("authentication_failed: Core did not become ready".into());
-            }
-            client.core_instance_id = ready.core_instance_id;
-            client.session_epoch = ready.session_epoch;
-            Ok(client)
-        }
-
-        async fn write(&mut self, command: generated::CommandEnvelope) -> Result<(), String> {
-            transport::write_frame(&mut self.pipe, &command.encode_to_vec())
-                .await
-                .map_err(|error| error.to_string())
-        }
-
-        async fn read_event(&mut self) -> Result<generated::EventEnvelope, String> {
-            let payload = transport::read_frame(&mut self.pipe)
-                .await
-                .map_err(|error| error.to_string())?;
-            let event = generated::EventEnvelope::decode(payload.as_slice())
-                .map_err(|error| format!("protocol_error: {error}"))?;
-            self.sequence = self.sequence.max(event.sequence_id);
-            Ok(event)
-        }
-
-        pub async fn start(
-            &mut self,
-            task_id: String,
-            prompt: String,
-            workspace: String,
-        ) -> Result<(), String> {
-            self.write(generated::CommandEnvelope {
-                protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                request_id: uuid::Uuid::new_v4().to_string(),
-                client_id: self.client_id.clone(),
-                core_instance_id: self.core_instance_id.clone(),
-                session_epoch: self.session_epoch,
-                command: Some(generated::command_envelope::Command::StartTask(
-                    generated::StartTask {
-                        task_id,
-                        prompt,
-                        workspace_path: workspace,
-                        preferred_route_hint: String::new(),
-                        execution_kind: "agent".into(),
-                        conversation_id: String::new(),
-                        client_message_id: String::new(),
-                    },
-                )),
+    async fn connect(after_sequence: u64) -> Result<CoreClient, String> {
+        let context_path = std::env::var_os("EVOHIME_LAUNCH_CONTEXT")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("LOCALAPPDATA")
+                    .map(|value| PathBuf::from(value).join("EvoHime/runtime/session.json"))
             })
-            .await
-        }
-
-        pub async fn start_workflow(
-            &mut self,
-            task_id: String,
-            template_id: String,
-            workspace: String,
-        ) -> Result<(), String> {
-            self.write(generated::CommandEnvelope {
-                protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                request_id: uuid::Uuid::new_v4().to_string(),
-                client_id: self.client_id.clone(),
-                core_instance_id: self.core_instance_id.clone(),
-                session_epoch: self.session_epoch,
-                command: Some(generated::command_envelope::Command::StartWorkflow(
-                    generated::StartWorkflow {
-                        template_id,
-                        task_id,
-                        workspace_path: workspace,
-                        inputs: Vec::new(),
-                        idempotency_key: uuid::Uuid::new_v4().to_string(),
-                    },
-                )),
-            })
-            .await
-        }
-
-        pub async fn stop(&mut self, task_id: String) -> Result<(), String> {
-            self.write(generated::CommandEnvelope {
-                protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                request_id: uuid::Uuid::new_v4().to_string(),
-                client_id: self.client_id.clone(),
-                core_instance_id: self.core_instance_id.clone(),
-                session_epoch: self.session_epoch,
-                command: Some(generated::command_envelope::Command::StopTask(
-                    generated::StopTask { task_id },
-                )),
-            })
-            .await
-        }
-
-        pub async fn snapshot(
-            &mut self,
-            task_id: String,
-        ) -> Result<generated::EventEnvelope, String> {
-            self.write(generated::CommandEnvelope {
-                protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                request_id: uuid::Uuid::new_v4().to_string(),
-                client_id: self.client_id.clone(),
-                core_instance_id: self.core_instance_id.clone(),
-                session_epoch: self.session_epoch,
-                command: Some(generated::command_envelope::Command::GetTaskSnapshot(
-                    generated::GetTaskSnapshot {
-                        project_id: String::new(),
-                        task_id,
-                    },
-                )),
-            })
-            .await?;
-            self.read_event().await
-        }
-
-        pub async fn next(&mut self) -> Result<generated::EventEnvelope, String> {
-            self.read_event().await
-        }
+            .ok_or_else(|| "core_unavailable: launch context is not configured".to_string())?;
+        let context = evohime_desktop_ipc::session::read_launch_context(&context_path)
+            .map_err(|_| "core_unavailable: invalid launch context".to_string())?;
+        let pipe = ClientOptions::new()
+            .open(&context.pipe_name)
+            .map_err(|_| "core_unavailable: named pipe is unavailable".to_string())?;
+        ProtocolClient::connect(pipe, &context, after_sequence).await
     }
 
     pub async fn run(command: Command) -> ExitCode {
-        let mut client = match CoreClient::connect(0).await {
+        let mut client = match connect(0).await {
             Ok(client) => client,
             Err(error) => {
                 eprintln!("{error}");
@@ -336,11 +169,11 @@ mod windows_client {
                     }
                 }
                 Err(error) => {
-                    eprintln!("{error}; переподключение по cursor={}", client.sequence);
-                    let cursor = client.sequence;
+                    eprintln!("{error}; переподключение по cursor={}", client.sequence());
+                    let cursor = client.sequence();
                     let mut replacement = None;
                     for _ in 0..5 {
-                        match CoreClient::connect(cursor).await {
+                        match connect(cursor).await {
                             Ok(next) => {
                                 replacement = Some(next);
                                 break;

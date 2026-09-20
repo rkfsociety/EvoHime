@@ -2198,7 +2198,10 @@ secrets, credentials, prompts, tokens, hidden reasoning и raw output.
 acceptance, watch с reconnect от последнего sequence, status, cancel и
 `resume` безопасно возобновляет наблюдение за существующим run через тот же
 event cursor; он не перезапускает агент и не повторяет effect. Exit codes versioned (0–8),
-а `eva.exe` включён в Windows package без Node/Python runtime.
+а `eva.exe` включён в Windows package без Node/Python runtime. Framing,
+HMAC-handshake и command envelopes CLI вынесены в платформенно-независимый
+протокольный модуль; Linux CI проверяет их через in-memory duplex transport,
+но production endpoint и Core runtime по-прежнему остаются Windows-only.
 
 ## Capability Workbench v1 (план 78)
 

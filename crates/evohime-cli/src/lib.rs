@@ -1,5 +1,7 @@
 //! Stable, redaction-aware contract shared by the `eva` headless client.
 
+pub mod protocol;
+
 use serde::Serialize;
 use serde_json::Value;
 use std::io::Read;

@@ -47,7 +47,8 @@ output, transcripts, absolute paths и PII запрещены.
   named pipe или запускать второй Core runtime.
 - Для CLI добавлен отдельный Ubuntu workflow: format, tests, strict clippy,
   build и smoke-проверка exit code `7`/`core_unavailable`.
-- Локально на Linux прошли `cargo test --locked -p evohime-cli` (3/3),
+- Локально на Linux прошли `cargo test --locked -p evohime-cli` (4/4), включая
+  duplex-тест HMAC-handshake, sequence cursor и `StartTask` protobuf-кадра,
   `cargo clippy --locked -p evohime-cli --all-targets -- -D warnings`,
   `cargo build --locked -p evohime-cli` и binary smoke `eva doctor --json`.
 
