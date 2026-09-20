@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 
 pub const STRUCTURED_RESPONSE_SCHEMA_VERSION: u32 = 1;
 pub const MAX_SCHEMA_BYTES: usize = 64 * 1024;
+pub const MAX_CONTRACT_ID_BYTES: usize = 128;
 pub const MAX_REPAIR_ATTEMPTS: u32 = 2;
 pub const MAX_TOTAL_ATTEMPTS: u32 = 3;
 
@@ -88,7 +89,7 @@ impl ResponseContract {
         if self.schema_version != STRUCTURED_RESPONSE_SCHEMA_VERSION {
             return Err(ResponseError::UnsupportedVersion(self.schema_version));
         }
-        if self.contract_id.trim().is_empty() || self.contract_id.chars().count() > 128 {
+        if !valid_contract_id(&self.contract_id) {
             return Err(ResponseError::Schema("contract_id".into()));
         }
         let bytes =
@@ -96,8 +97,16 @@ impl ResponseContract {
         if bytes.len() > MAX_SCHEMA_BYTES || !self.schema.is_object() {
             return Err(ResponseError::Schema("root_or_size".into()));
         }
-        if !self.contract_hash.is_empty() && self.contract_hash != self.compute_hash() {
-            return Err(ResponseError::Schema("contract_hash".into()));
+        if !self.contract_hash.is_empty() {
+            if self.contract_hash.len() != 64
+                || !self
+                    .contract_hash
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit())
+                || self.contract_hash != self.compute_hash()
+            {
+                return Err(ResponseError::Schema("contract_hash".into()));
+            }
         }
         Ok(())
     }
@@ -145,6 +154,15 @@ impl ResponseContract {
         }
         Ok(())
     }
+}
+
+fn valid_contract_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_CONTRACT_ID_BYTES
+        && value == value.trim()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
 }
 
 impl ModelGateway {
@@ -261,5 +279,31 @@ mod tests {
             assert_eq!(provider_error_code(&error), expected);
             assert!(!provider_error_code(&error).contains("secret"));
         }
+    }
+
+    #[test]
+    fn contract_metadata_rejects_url_like_ids_and_invalid_hashes() {
+        assert!(matches!(
+            ResponseContract::new(
+                "https://provider.test/?prompt=secret",
+                1,
+                json!({"type":"object"}),
+                ResponseStrategy::Auto,
+            ),
+            Err(ResponseError::Schema(value)) if value == "contract_id"
+        ));
+
+        let mut contract = ResponseContract::new(
+            "safe.contract",
+            1,
+            json!({"type":"object"}),
+            ResponseStrategy::Auto,
+        )
+        .expect("contract");
+        contract.contract_hash = "z".repeat(64);
+        assert_eq!(
+            contract.validate_schema(),
+            Err(ResponseError::Schema("contract_hash".into()))
+        );
     }
 }

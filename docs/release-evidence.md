@@ -1694,6 +1694,12 @@ coverage feeds URL-, body- and stream-like raw strings through every branch and
 confirms that only the safe code is retained; the Core source module is now
 `0.0.000263`.
 
+Structured-response contract metadata now accepts only bounded identifier
+tokens and validates non-empty hashes as 64-character hexadecimal values
+before replay or execution. URL-like contract IDs and malformed hashes are
+covered by focused regression tests; the Core source module is now
+`0.0.000264`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures
