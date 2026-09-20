@@ -101,10 +101,13 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     const catalogProjection = asRecord(projection?.['catalog'])
     const providerProjection = asRecord(projection?.['provider'])
     const state = typeof catalogProjection?.['state'] === 'string' ? catalogProjection['state'] : null
+    const failureCode = typeof catalogProjection?.['failure_code'] === 'string'
+      ? catalogProjection['failure_code']
+      : null
     const credentialStatus = typeof providerProjection?.['credential_status'] === 'string'
       ? providerProjection['credential_status']
       : null
-    setCatalogStatus(state ? { state, credentialStatus } : null)
+    setCatalogStatus(state ? { state, credentialStatus, failureCode } : null)
   }, [catalog, provider, use])
 
   useEffect(() => {
@@ -150,7 +153,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     // where the user is, instead of leaving an empty dropdown.
     return (
       <span className="model-picker model-picker--error" role="status">
-        {provider === 'ollama' ? 'Модели недоступны — запусти Ollama' : 'Модели недоступны — проверь ключ в настройках'}
+        {catalogStatus?.failureCode === 'model_not_found'
+          ? 'Модель не найдена у провайдера — выбери доступную модель'
+          : provider === 'ollama'
+            ? 'Модели недоступны — запусти Ollama'
+            : 'Модели недоступны — проверь ключ в настройках'}
       </span>
     )
   }
@@ -196,9 +203,11 @@ interface ModelOption {
 interface CatalogStatus {
   readonly state: string
   readonly credentialStatus: string | null
+  readonly failureCode: string | null
 }
 
 function catalogStatusLabel(status: CatalogStatus): string {
+  if (status.failureCode === 'model_not_found') return 'Каталог: модель не найдена у провайдера'
   if (status.credentialStatus === 'needs_credential') return 'Каталог: нужен ключ'
   if (status.credentialStatus === 'rejected') return 'Каталог: ключ отклонён'
   switch (status.state) {

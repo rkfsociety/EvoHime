@@ -79,10 +79,13 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     const catalog = asRecord(projection?.['catalog'])
     const providerProjection = asRecord(projection?.['provider'])
     const state = typeof catalog?.['state'] === 'string' ? catalog['state'] : null
+    const failureCode = typeof catalog?.['failure_code'] === 'string'
+      ? catalog['failure_code']
+      : null
     const credentialStatus = typeof providerProjection?.['credential_status'] === 'string'
       ? providerProjection['credential_status']
       : null
-    setCatalogStatus(state ? catalogStatusLabel(state, credentialStatus) : null)
+    setCatalogStatus(state ? catalogStatusLabel(state, credentialStatus, failureCode) : null)
   }, [events])
 
   const selectProvider = useCallback(async (nextProvider: ProviderKind) => {
@@ -275,7 +278,8 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
 }
 
-function catalogStatusLabel(state: string, credentialStatus: string | null): string {
+function catalogStatusLabel(state: string, credentialStatus: string | null, failureCode: string | null): string {
+  if (failureCode === 'model_not_found') return 'Core: модель не найдена у провайдера'
   if (credentialStatus === 'needs_credential') return 'Core: для каталога нужен ключ'
   if (credentialStatus === 'rejected') return 'Core: ключ провайдера отклонён'
   switch (state) {

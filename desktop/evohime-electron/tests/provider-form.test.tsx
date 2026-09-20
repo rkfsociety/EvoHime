@@ -100,6 +100,22 @@ describe('provider form', () => {
     expect(screen.queryByText(/api.?key|secret/i)).toBeNull()
   })
 
+  it('explains a typed model-not-found catalog outcome', async () => {
+    renderProviderForm([{
+      sequenceId: 2,
+      taskId: '',
+      eventType: 'model.catalog',
+      payload: JSON.stringify({
+        provider_catalog: {
+          provider: { credential_status: 'configured' },
+          catalog: { state: 'unavailable', failure_code: 'model_not_found' }
+        }
+      })
+    }])
+
+    expect(await screen.findByText(/модель не найдена у провайдера/i)).toBeTruthy()
+  })
+
   it('sends the key once and clears the field afterwards', async () => {
     renderProviderForm()
     expect(await screen.findByText('Ключ не задан')).toBeTruthy()

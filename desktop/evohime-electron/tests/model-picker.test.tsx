@@ -224,6 +224,25 @@ describe('model picker', () => {
     expect(screen.queryByRole('button', { name: /Модель/ })).toBeNull()
   })
 
+  it('shows a typed model-not-found outcome instead of a generic provider error', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', {
+          mode: 'free',
+          models: [],
+          error: 'provider response details must not be shown',
+          provider_catalog: {
+            catalog: { state: 'unavailable', failure_code: 'model_not_found' }
+          }
+        })]}
+      />
+    )
+
+    expect(await screen.findByText(/Модель не найдена у провайдера/i)).toBeTruthy()
+    expect(screen.queryByText(/provider response details/i)).toBeNull()
+  })
+
   it('stays out of the composer while Core is unreachable', () => {
     const { container } = render(<ModelPicker connection="reconnecting" events={[]} />)
     expect(container.firstChild).toBeNull()

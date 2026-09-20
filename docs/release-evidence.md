@@ -2052,3 +2052,13 @@ projection. Core patch повышен `0.0.000278 -> 0.0.000279`.
 
 Проверки: Core catalog classification и IPC-safe error-code tests; CI evidence
 для локального коммита ещё не заявляется.
+
+## Typed model-not-found status in provider UI (2026-09-20)
+
+ModelPicker и ProviderForm читают только bounded `failure_code` из Core-owned
+`provider_catalog` projection. Для `model_not_found` они показывают понятный
+статус и не выводят provider response details. UI patch повышен
+`0.0.000095 -> 0.0.000096`.
+
+Проверки: focused ModelPicker/ProviderForm Vitest tests и Electron typecheck;
+CI evidence для локального коммита ещё не заявляется.
