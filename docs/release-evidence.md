@@ -1669,6 +1669,13 @@ catalog failure notice sanitizes old replayed raw strings before rendering and
 maps only the bounded Core codes to user-facing text; the UI bundle is now
 `0.0.000081`.
 
+Support bundle assembly now reads bounded tails from the supplied shell, Core
+and Supervisor log paths instead of serializing the paths themselves. Structured
+JSONL lines use the same sensitive-field redaction as event payloads, while the
+safe `shell.ollama_download_fallback` event name, `error_code`, source and
+operation remain available for confirmation. The shell-host module is now
+`0.0.000095`.
+
 Trace rendering and export now apply the same redaction boundary to ordinary
 event payloads as to legacy `task.failed` events: sensitive JSON fields become
 `[REDACTED]`, URLs become `[URL]`, and the main-process export guard rejects

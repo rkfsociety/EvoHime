@@ -117,7 +117,7 @@ apply не запускается. Отдельного offline/full installer �
 окно запускается повторно, а после общей транзакции запускается Ева.
 
 Текущий checkout содержит patch `core 0.0.000257`, `ui-bundle 0.0.000082`,
-`shell-host 0.0.000094`,
+`shell-host 0.0.000095`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
 installer — `0.0.000061`.

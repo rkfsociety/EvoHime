@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import { buildSupportBundleFiles, serializeSupportBundle } from '../src/main/diagnostics/support-bundle'
@@ -38,5 +42,32 @@ describe('support bundle v2', () => {
     expect(files.events).not.toContain('example.test')
     expect(files.errors).not.toContain('private context')
     expect(files.errors).not.toContain('example.test')
+  })
+
+  it('reads bounded log files and preserves the safe Ollama fallback marker', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evohime-support-logs-'))
+    const log = join(directory, 'shell.jsonl')
+    try {
+      writeFileSync(log, JSON.stringify({
+        event: 'shell.ollama_download_fallback',
+        error_code: 'client_blocked',
+        source: 'electron_transport',
+        operation: 'ollama.download',
+        url: 'https://ollama.com/download/OllamaSetup.exe',
+        prompt: 'private context',
+        token: 'ghp_should-not-leak'
+      }) + '\n', 'utf8')
+
+      const files = buildSupportBundleFiles({ snapshot: {}, runtime: {}, events: [], logs: [log] })
+
+      expect(files.logs).toContain('shell.ollama_download_fallback')
+      expect(files.logs).toContain('client_blocked')
+      expect(files.logs).toContain('ollama.download')
+      expect(files.logs).not.toContain('ollama.com')
+      expect(files.logs).not.toContain('private context')
+      expect(files.logs).not.toContain('ghp_should-not-leak')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

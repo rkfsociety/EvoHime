@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 
 import { REDACTED, redactText, redactValue, type RedactedValue } from './redact'
 
@@ -14,6 +15,9 @@ export interface SupportBundleFiles {
 }
 
 const FORBIDDEN = /(?:bearer\s+|sk-|ghp_|gho_|github_pat_|xoxb-)[A-Za-z0-9._+\-/=]+|(?:[A-Za-z]:\\|\\\\\.\\pipe\\)[^\s"'<>|]+/i
+const MAX_LOG_LINES = 120
+const MAX_LOG_FILES = 4
+const MAX_LOG_BYTES = 64 * 1024
 
 export function buildSupportBundleFiles(input: {
   readonly snapshot: unknown
@@ -25,7 +29,12 @@ export function buildSupportBundleFiles(input: {
   const runtime = redactValue(input.runtime)
   const events = input.events.slice(0, 200).map((event) => JSON.stringify(redactValue({ sequenceId: event.sequenceId, eventType: event.eventType, payload: redactEventPayload(event.payload) }))).join('\n')
   const errors = input.events.filter((event) => /fail|error|refus/i.test(event.eventType)).slice(0, 32).map((event) => JSON.stringify(redactValue({ eventType: event.eventType, payload: redactEventPayload(event.payload) }))).join('\n')
-  const logs = input.logs.slice(0, 120).map(redactText).join('\n')
+  const logs = input.logs
+    .slice(0, MAX_LOG_FILES)
+    .flatMap(readLogSource)
+    .slice(0, MAX_LOG_LINES)
+    .map(redactLogLine)
+    .join('\n')
   const issueDraft = [
     '### Problem',
     'EvoHime diagnostic support bundle generated locally.',
@@ -65,6 +74,39 @@ function redactEventPayload(payload: string): RedactedValue {
     return redactValue(JSON.parse(payload))
   } catch {
     return REDACTED
+  }
+}
+
+function readLogSource(source: string): string[] {
+  const pathLike = /[\\/]/.test(source) || /\.jsonl$/i.test(source)
+  if (!pathLike) return [source]
+  let descriptor: number | undefined
+  try {
+    descriptor = openSync(source, 'r')
+    const size = fstatSync(descriptor).size
+    const offset = Math.max(0, size - MAX_LOG_BYTES)
+    const buffer = Buffer.alloc(size - offset)
+    let read = 0
+    while (read < buffer.length) {
+      const count = readSync(descriptor, buffer, read, buffer.length - read, offset + read)
+      if (count === 0) break
+      read += count
+    }
+    const lines = buffer.subarray(0, read).toString('utf8').split(/\r?\n/).filter(Boolean)
+    if (offset > 0) lines.shift()
+    return lines.slice(-MAX_LOG_LINES)
+  } catch {
+    return []
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor)
+  }
+}
+
+function redactLogLine(line: string): string {
+  try {
+    return JSON.stringify(redactValue(JSON.parse(line)))
+  } catch {
+    return redactText(line)
   }
 }
 
