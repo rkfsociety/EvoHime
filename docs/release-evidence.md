@@ -1655,6 +1655,11 @@ the source module `core` is `0.0.000256` (from `0.0.000255`).
 
 ## Safe model-catalog error projection (2026-09-20)
 
+Ollama pull failures no longer read or return the provider's HTTP body, and
+streamed `error` messages are collapsed to the bounded `Ollama pull failed`
+code. Regression fixtures cover HTTP and stream failures containing URLs and
+token-like text; the Core source module is now `0.0.000258`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures

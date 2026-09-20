@@ -375,8 +375,9 @@ where
         .map_err(|error| ProviderError::Http(error.to_string()))?;
     if !response.status().is_success() {
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(ProviderError::Api(format!("{status}: {body}")));
+        return Err(ProviderError::Api(format!(
+            "Ollama pull request failed with HTTP {status}"
+        )));
     }
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
@@ -398,8 +399,8 @@ where
             }
             let progress = serde_json::from_str::<PullProgress>(line)
                 .map_err(|error| ProviderError::Api(error.to_string()))?;
-            if let Some(error) = progress.error {
-                return Err(ProviderError::Api(error));
+            if progress.error.is_some() {
+                return Err(ProviderError::Api("Ollama pull failed".into()));
             }
             if progress.status.eq_ignore_ascii_case("error") {
                 return Err(ProviderError::Api("Ollama pull failed".into()));
@@ -421,8 +422,8 @@ where
         }
         let progress = serde_json::from_str::<PullProgress>(buffer.trim())
             .map_err(|error| ProviderError::Api(error.to_string()))?;
-        if let Some(error) = progress.error {
-            return Err(ProviderError::Api(error));
+        if progress.error.is_some() {
+            return Err(ProviderError::Api("Ollama pull failed".into()));
         }
         if progress.status.eq_ignore_ascii_case("error") {
             return Err(ProviderError::Api("Ollama pull failed".into()));
@@ -620,5 +621,41 @@ mod tests {
             .await
             .expect_err("truncated pull must not be reported as success");
         assert!(error.to_string().contains("without success event"));
+    }
+
+    #[tokio::test]
+    async fn pull_http_errors_do_not_include_provider_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(503)
+                    .set_body_string("https://provider.test/pull?token=secret-provider-body"),
+            )
+            .mount(&server)
+            .await;
+
+        let error = pull_model_with_progress(&format!("{}/v1", server.uri()), "qwen3:1.7b", |_| {})
+            .await
+            .expect_err("HTTP failure must be returned");
+        assert!(error.to_string().contains("HTTP 503"));
+        assert!(!error.to_string().contains("provider.test"));
+        assert!(!error.to_string().contains("secret-provider-body"));
+    }
+
+    #[tokio::test]
+    async fn pull_stream_errors_do_not_include_provider_message() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                r#"{"status":"error","error":"https://provider.test/pull?token=secret-provider-body"}
+"#,
+            ))
+            .mount(&server)
+            .await;
+
+        let error = pull_model_with_progress(&format!("{}/v1", server.uri()), "qwen3:1.7b", |_| {})
+            .await
+            .expect_err("stream failure must be returned");
+        assert_eq!(error.to_string(), "api error: Ollama pull failed");
     }
 }
