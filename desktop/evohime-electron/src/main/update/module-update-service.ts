@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { join, win32 } from 'node:path'
 
 import { disabledUpdateStatus, initialUpdateSteps, type UpdateStatus } from '@shared/update'
 
@@ -35,9 +35,13 @@ export interface ModuleUpdateServiceOptions {
   readonly quitForApply?: () => void
 }
 
+function joinNativePath(root: string, ...parts: string[]): string {
+  return /^[A-Za-z]:[\\/]|^\\\\/.test(root) ? win32.join(root, ...parts) : join(root, ...parts)
+}
+
 /** The native updater worker is installed beside the packaged shell binary. */
 export function resolveInstalledUpdaterPath(installDirectory: string): string {
-  return join(installDirectory, 'evohime-updater.exe')
+  return joinNativePath(installDirectory, 'evohime-updater.exe')
 }
 
 /** A bootstrap install has no shell to launch until its first module apply. */
@@ -164,8 +168,8 @@ export class ModuleUpdateService {
     if (mode === '--apply') {
       args.push(
         '--wait-pid', String(process.pid),
-        '--relaunch', join(this.options.installDirectory, 'EvoHime.exe'),
-        '--health-file', join(this.options.dataDirectory, 'update-state', 'health.json')
+        '--relaunch', joinNativePath(this.options.installDirectory, 'EvoHime.exe'),
+        '--health-file', joinNativePath(this.options.dataDirectory, 'update-state', 'health.json')
       )
     }
     let resolveCompletion: (succeeded: boolean) => void = () => {}

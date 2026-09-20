@@ -116,7 +116,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `shell-host 0.0.000088`, `updater 0.0.000120`,
+Текущий checkout содержит patch `shell-host 0.0.000088`, `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
 installer — `0.0.000061`.
 Staging marker updater теперь всегда записывается как полный

@@ -1626,6 +1626,11 @@ Renderer дополнительно проверяет legacy `task.failed` payl
 Markdown-экспортом: fallback `task_failed/core/task.execute` исключает URL,
 prompt и secrets даже при старом или некорректном событии.
 
+Updater path routing дополнительно использует Windows-специфичную join-семантику
+для native worker, relaunch и health-file аргументов; это сохраняет `\\` в
+контракте Windows независимо от host OS, с regression coverage в
+`module-update-service.test.ts`.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
