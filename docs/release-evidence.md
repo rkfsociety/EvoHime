@@ -1680,6 +1680,11 @@ Support bundle terminal failures now use the same bounded diagnostic projection
 as the trace (`error_code`, `source`, `operation`) and omit the raw `error`,
 prompt and secret fields. The shell-host module is now `0.0.000096`.
 
+The support-bundle redaction report now exposes an explicit boolean marker for
+whether `shell.ollama_download_fallback` was observed in the bounded logs,
+separate from generic task failure evidence. The shell-host module is now
+`0.0.000097`.
+
 Trace rendering and export now apply the same redaction boundary to ordinary
 event payloads as to legacy `task.failed` events: sensitive JSON fields become
 `[REDACTED]`, URLs become `[URL]`, and the main-process export guard rejects

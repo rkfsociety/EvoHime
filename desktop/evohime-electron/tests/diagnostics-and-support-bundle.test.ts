@@ -63,6 +63,9 @@ describe('support bundle v2', () => {
       expect(files.logs).toContain('shell.ollama_download_fallback')
       expect(files.logs).toContain('client_blocked')
       expect(files.logs).toContain('ollama.download')
+      expect(files.redactionReport).toMatchObject({
+        observed_markers: { shell_ollama_download_fallback: true }
+      })
       expect(files.logs).not.toContain('ollama.com')
       expect(files.logs).not.toContain('private context')
       expect(files.logs).not.toContain('ghp_should-not-leak')
@@ -93,5 +96,8 @@ describe('support bundle v2', () => {
     expect(files.events).not.toContain('provider.test')
     expect(files.events).not.toContain('private context')
     expect(files.events).not.toContain('"error"')
+    expect(files.redactionReport).toMatchObject({
+      observed_markers: { shell_ollama_download_fallback: false }
+    })
   })
 })

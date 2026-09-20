@@ -35,6 +35,9 @@ export function buildSupportBundleFiles(input: {
     .slice(0, MAX_LOG_LINES)
     .map(redactLogLine)
     .join('\n')
+  const observedMarkers = {
+    shell_ollama_download_fallback: logs.includes('shell.ollama_download_fallback')
+  }
   const issueDraft = [
     '### Problem',
     'EvoHime diagnostic support bundle generated locally.',
@@ -56,6 +59,7 @@ export function buildSupportBundleFiles(input: {
     total_matches: 0,
     blocked_sections: ['credentials', 'raw_prompts', 'workspace_files', 'tool_payloads'],
     truncated_sections: input.events.length > 200 ? ['events.jsonl'] : [],
+    observed_markers: observedMarkers,
     raw_values_included: false
   }
   const filesWithoutManifest = { 'health.json': health, 'runtime.json': runtime, 'errors.jsonl': errors, 'events.jsonl': events, 'logs.txt': logs, 'issue-draft.md': issueDraft, 'redaction-report.json': redactionReport }
