@@ -2454,3 +2454,14 @@ deduplication); выполнены `cargo fmt --all` и `git diff --check`. Core
 `memory_extraction` test run был остановлен по запросу пользователя после
 перекомпиляции; полный Core acceptance оставлен CI/Windows.
 Core patch повышен `0.0.000292 -> 0.0.000293`.
+
+## Local-storage error boundary (2026-09-21)
+
+Общий публичный `StorageError` вынесен из корневого `lib.rs` в отдельный
+`storage_error.rs`. Публичный путь `evohime_local_storage::StorageError` и
+варианты ошибок не изменились; это только compile-time boundary для дальнейшего
+разделения большого storage facade. Core patch повышен `0.0.000298 ->
+0.0.000299` по module-router mapping для `evohime-local-storage`.
+
+Локальная проверка и CI evidence для нового коммита будут добавлены после
+проверки соответствующего Core workflow.
