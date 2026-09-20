@@ -34,7 +34,7 @@ compatible-manifest runs; исторические разделы ниже со�
 - Instruction discovery больше не обходит VCS и generated directories
   (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
   поэтому служебные ACL не блокируют запуск агента до вызова модели.
-- Module versions: `core 0.0.000298`, `ui-bundle 0.0.000101`, `cli 0.0.000064`.
+- Module versions: `core 0.0.000298`, `ui-bundle 0.0.000101`, `cli 0.0.000065`.
 - Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
   (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
   прогона.
@@ -48,7 +48,7 @@ compatible-manifest runs; исторические разделы ниже со�
   build, smoke-проверки exit code `7`/`core_unavailable` и exit code
   `2`/`unknown command or option`, а также oversized `--stdin`; Windows CLI
   publication зависит от успешного Linux contract job.
-- Локально на Linux прошли `cargo test --locked -p evohime-cli-protocol` (5/5),
+- Локально на Linux прошли `cargo test --locked -p evohime-cli-protocol` (6/6),
   включая duplex-тест HMAC-handshake, sequence cursor и bounded protobuf-кадров
   `StartTask`/`StartWorkflow`/`StopTask`/`GetTaskSnapshot`, а также
   `cargo test --locked -p evohime-cli` (11/11),
@@ -91,6 +91,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - CLI contract crate разделён на `request` и `events`, сохранив корневые
   публичные re-export paths для `eva` и Core; marker CLI повышен до
   `0.0.000064`.
+- Protocol test harness вынесен в отдельный `tests` модуль; production-фасад
+  `evohime-cli-protocol` теперь содержит только module wiring и публичный
+  `CoreClient`, marker CLI повышен до `0.0.000065`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
