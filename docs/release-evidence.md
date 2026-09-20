@@ -1682,6 +1682,10 @@ event payloads as to legacy `task.failed` events: sensitive JSON fields become
 unsafe content supplied by an old or untrusted renderer. The UI bundle is now
 `0.0.000082`.
 
+Malformed non-terminal trace payloads now fail closed to `[REDACTED]` instead
+of being copied into the saved Markdown, covering raw prompt-like text that
+cannot be safely parsed. The UI bundle is now `0.0.000083`.
+
 ## Trace reason redaction follow-up (2026-09-20)
 
 Trace UI/export now normalizes the connection `reason` to the same bounded

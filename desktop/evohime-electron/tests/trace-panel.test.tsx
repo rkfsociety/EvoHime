@@ -148,6 +148,29 @@ describe('trace panel', () => {
     expect(view.container.textContent).not.toContain('sk-test')
   })
 
+  it('fails closed for malformed ordinary payloads', async () => {
+    const view = render(
+      <TracePanel
+        chatId="chat-1"
+        state={null}
+        workspace="G:/github/EvoHime"
+        onClose={() => {}}
+        events={[{
+          sequenceId: 16,
+          taskId: 'task-1',
+          eventType: 'tool.output',
+          payload: 'private prompt https://example.test secret-token'
+        }]}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('tool.output')).toBeTruthy())
+    expect(view.container.textContent).toContain('[REDACTED]')
+    expect(view.container.textContent).not.toContain('private prompt')
+    expect(view.container.textContent).not.toContain('example.test')
+    expect(view.container.textContent).not.toContain('secret-token')
+  })
+
   it('saves the complete trace through the main-process bridge', async () => {
     const invoke = vi.fn(async (command: RendererCommand) => {
       if (command === 'chat.open') {

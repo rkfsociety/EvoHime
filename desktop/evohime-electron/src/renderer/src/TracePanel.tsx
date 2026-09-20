@@ -137,7 +137,7 @@ function formatPayload(payload: string): string {
   try {
     return JSON.stringify(redactTraceValue(JSON.parse(payload)), null, 2) ?? '[REDACTED]'
   } catch {
-    return redactTraceText(payload)
+    return '[REDACTED]'
   }
 }
 
