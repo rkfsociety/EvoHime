@@ -257,7 +257,10 @@ async function getLatestModuleRelease(
   const releases = await getJson(`${apiBase}/releases?per_page=100`, request, headers)
   if (!Array.isArray(releases)) throw new Error('GitHub module: некорректный список релизов.')
   const prefix = `module-${module}-v`
-  const candidates = releases.filter((release) => typeof release?.tag_name === 'string' && release.tag_name.startsWith(prefix))
+  const candidates = releases.filter((release) => {
+    if (typeof release?.tag_name !== 'string' || !release.tag_name.startsWith(prefix)) return false
+    return /^\d+\.\d+\.\d+$/.test(release.tag_name.slice(prefix.length))
+  })
   candidates.sort((left, right) => compareModuleVersions(String(right.tag_name).slice(prefix.length), String(left.tag_name).slice(prefix.length)))
   if (candidates.length === 0) throw new Error(`GitHub module: релиз ${module} отсутствует.`)
   return candidates[0]

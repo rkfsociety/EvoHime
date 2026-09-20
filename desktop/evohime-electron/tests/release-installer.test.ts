@@ -108,6 +108,29 @@ describe('release installer', () => {
     expect(result.file).toBe(join(root, 'evohime-core.exe'))
   })
 
+  it('ignores malformed module release tags when selecting the newest version', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-module-tags-'))
+    roots.push(root)
+    const bytes = new TextEncoder().encode('valid module')
+    const hash = createHash('sha256').update(bytes).digest('hex')
+    const manifest = JSON.stringify({ schema: 'evohime.module-release.v1', module: 'core', version: '2.2.0', artifact: 'evohime-core.exe', size: bytes.length, sha256: hash })
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/releases?per_page=100')) return new Response(JSON.stringify([
+        { tag_name: 'module-core-vnot-a-version', assets: [] },
+        { tag_name: 'module-core-v2.2.0', assets: [
+          { name: 'core.manifest.json', url: 'https://api.github.com/repos/x/y/releases/assets/core-manifest' },
+          { name: 'evohime-core.exe', url: 'https://api.github.com/repos/x/y/releases/assets/core' }
+        ] }
+      ]), { status: 200 })
+      if (url.endsWith('core-manifest')) return new Response(manifest, { status: 200 })
+      return new Response(bytes, { status: 200 })
+    })
+
+    const result = await downloadModuleRelease('https://github.com/rkfsociety/EvoHime.git', 'core', root, null, { fetch })
+    expect(result.manifest.version).toBe('2.2.0')
+  })
+
   it('does not publish an artifact when its digest is invalid', async () => {
     const root = mkdtempSync(join(tmpdir(), 'evohime-module-invalid-digest-'))
     roots.push(root)
