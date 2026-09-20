@@ -99,6 +99,30 @@ describe('trace panel', () => {
     expect(screen.getByText('network.request')).toBeTruthy()
   })
 
+  it('normalizes a legacy failure payload before display', async () => {
+    const view = render(
+      <TracePanel
+        chatId="chat-1"
+        state={null}
+        workspace="G:/github/EvoHime"
+        onClose={() => {}}
+        events={[{
+          sequenceId: 14,
+          taskId: 'task-1',
+          eventType: 'task.failed',
+          payload: '{"error":"net::ERR_BLOCKED_BY_CLIENT https://example.test/download","prompt":"secret context","secret":"sk-test"}'
+        }]}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('task.failed')).toBeTruthy())
+    expect(view.container.textContent).toContain('task_failed')
+    expect(view.container.textContent).toContain('task.execute')
+    expect(view.container.textContent).not.toContain('example.test')
+    expect(view.container.textContent).not.toContain('secret context')
+    expect(view.container.textContent).not.toContain('sk-test')
+  })
+
   it('saves the complete trace through the main-process bridge', async () => {
     const invoke = vi.fn(async (command: RendererCommand) => {
       if (command === 'chat.open') {

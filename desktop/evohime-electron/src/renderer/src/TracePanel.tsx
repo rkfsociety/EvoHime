@@ -103,7 +103,8 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, update = n
 }
 
 function TraceEventItem({ event }: { readonly event: CoreEvent }): React.JSX.Element {
-  const diagnostics = parseTraceDiagnostics(event.payload)
+  const payload = formatTraceEventPayload(event.eventType, event.payload)
+  const diagnostics = parseTraceDiagnostics(payload)
   return (
     <li className="trace-event">
       <div className="trace-event__meta">
@@ -112,7 +113,7 @@ function TraceEventItem({ event }: { readonly event: CoreEvent }): React.JSX.Ele
       </div>
       {event.taskId ? <small className="trace-event__task">task: {event.taskId}</small> : null}
       {diagnostics ? <TraceDiagnosticsView diagnostics={diagnostics} /> : null}
-      <pre>{formatPayload(event.payload)}</pre>
+      <pre>{payload}</pre>
     </li>
   )
 }
@@ -134,6 +135,23 @@ function formatPayload(payload: string): string {
   } catch {
     return payload
   }
+}
+
+function formatTraceEventPayload(eventType: string, payload: string): string {
+  if (eventType !== 'task.failed') return formatPayload(payload)
+  const diagnostics = parseTraceDiagnostics(payload) ?? {
+    errorCode: 'task_failed',
+    source: 'core',
+    operation: 'task.execute'
+  }
+  return JSON.stringify({
+    redacted: true,
+    conversation_projection: true,
+    terminal: true,
+    error_code: diagnostics.errorCode,
+    source: diagnostics.source,
+    operation: diagnostics.operation
+  }, null, 2)
 }
 
 export function parseTraceDiagnostics(payload: string): TraceDiagnostics | null {
@@ -185,7 +203,7 @@ export function formatTrace(
   ]
 
   const diagnostics = events.flatMap((event) => {
-    const value = parseTraceDiagnostics(event.payload)
+    const value = parseTraceDiagnostics(formatTraceEventPayload(event.eventType, event.payload))
     return value ? [{ event, value }] : []
   })
   if (diagnostics.length > 0) {
@@ -198,7 +216,7 @@ export function formatTrace(
 
   for (const event of events) {
     lines.push(`[${event.sequenceId}] ${event.eventType}${event.taskId ? ` task=${event.taskId}` : ''}`)
-    lines.push(formatPayload(event.payload))
+    lines.push(formatTraceEventPayload(event.eventType, event.payload))
     lines.push('')
   }
   return lines.join('\n')

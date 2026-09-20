@@ -56,7 +56,8 @@ redacted terminal projection: в payload остаются только bounded `
 `task_failed/core/task.execute`, а не generic или raw payload. Полный error text,
 URL, prompt и секреты не сохраняются в этой проекции;
 Trace UI показывает диагностические поля отдельно и включает их в Markdown
-под заголовком `diagnostics`.
+под заголовком `diagnostics`. Renderer повторно нормализует `task.failed` перед
+отображением и экспортом, сохраняя тот же fallback для legacy payload.
 
 Добавлены проверки очереди размера 1 с потоком событий, задержкой чтения и
 финальным `task.completed`, а также проверка явного уведомления об ошибке audit.

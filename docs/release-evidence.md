@@ -1622,6 +1622,10 @@ Conversation-bound `task.failed` теперь сохраняет bounded `error_
 не пересекает IPC projection boundary. Core regression coverage включает оба
 failure-path сценария.
 
+Renderer дополнительно проверяет legacy `task.failed` payload перед показом и
+Markdown-экспортом: fallback `task_failed/core/task.execute` исключает URL,
+prompt и secrets даже при старом или некорректном событии.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
