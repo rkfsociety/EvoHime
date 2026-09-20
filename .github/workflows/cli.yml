@@ -44,6 +44,16 @@ jobs:
           set -e
           test "$status" -eq 2
           grep -qx 'unknown command or option' stderr-invalid.log
+      - name: Verify oversized stdin is rejected before buffering
+        shell: bash
+        run: |
+          set +e
+          head -c 131053 /dev/zero | tr '\0' 'x' | ./target/release/eva run seed --stdin >stdout-stdin.log 2>stderr-stdin.log
+          status=$?
+          set -e
+          test "$status" -eq 2
+          grep -qx 'value is missing or exceeds the CLI bound' stderr-stdin.log
+          test ! -s stdout-stdin.log
 
   module:
     needs: linux-contract
