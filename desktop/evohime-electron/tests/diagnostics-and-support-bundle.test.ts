@@ -100,4 +100,18 @@ describe('support bundle v2', () => {
       observed_markers: { shell_ollama_download_fallback: false }
     })
   })
+
+  it('does not treat a marker-like log field as a fallback event', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evohime-support-marker-'))
+    const log = join(directory, 'shell.jsonl')
+    try {
+      writeFileSync(log, JSON.stringify({ message: 'shell.ollama_download_fallback' }) + '\n', 'utf8')
+      const files = buildSupportBundleFiles({ snapshot: {}, runtime: {}, events: [], logs: [log] })
+      expect(files.redactionReport).toMatchObject({
+        observed_markers: { shell_ollama_download_fallback: false }
+      })
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
 })

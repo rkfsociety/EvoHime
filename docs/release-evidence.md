@@ -1736,6 +1736,12 @@ whether `shell.ollama_download_fallback` was observed in the bounded logs,
 separate from generic task failure evidence. The shell-host module is now
 `0.0.000097`.
 
+Fallback evidence is now confirmed only when a bounded structured log line has
+`event`, `eventType` or `event_type` exactly equal to
+`shell.ollama_download_fallback`; marker-like text in arbitrary fields no longer
+produces a false positive. A negative regression fixture covers that case; the
+shell-host module is now `0.0.000098`.
+
 Trace rendering and export now apply the same redaction boundary to ordinary
 event payloads as to legacy `task.failed` events: sensitive JSON fields become
 `[REDACTED]`, URLs become `[URL]`, and the main-process export guard rejects

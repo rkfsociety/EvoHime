@@ -29,14 +29,15 @@ export function buildSupportBundleFiles(input: {
   const runtime = redactValue(input.runtime)
   const events = input.events.slice(0, 200).map((event) => JSON.stringify(redactValue({ sequenceId: event.sequenceId, eventType: event.eventType, payload: redactEventPayload(event.eventType, event.payload) }))).join('\n')
   const errors = input.events.filter((event) => /fail|error|refus/i.test(event.eventType)).slice(0, 32).map((event) => JSON.stringify(redactValue({ eventType: event.eventType, payload: redactEventPayload(event.eventType, event.payload) }))).join('\n')
-  const logs = input.logs
+  const rawLogLines = input.logs
     .slice(0, MAX_LOG_FILES)
     .flatMap(readLogSource)
     .slice(0, MAX_LOG_LINES)
+  const logs = rawLogLines
     .map(redactLogLine)
     .join('\n')
   const observedMarkers = {
-    shell_ollama_download_fallback: logs.includes('shell.ollama_download_fallback')
+    shell_ollama_download_fallback: rawLogLines.some((line) => hasStructuredEvent(line, 'shell.ollama_download_fallback'))
   }
   const issueDraft = [
     '### Problem',
@@ -131,6 +132,17 @@ function redactLogLine(line: string): string {
     return JSON.stringify(redactValue(JSON.parse(line)))
   } catch {
     return redactText(line)
+  }
+}
+
+function hasStructuredEvent(line: string, eventType: string): boolean {
+  try {
+    const value = JSON.parse(line) as unknown
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const record = value as Record<string, unknown>
+    return record.event === eventType || record.eventType === eventType || record.event_type === eventType
+  } catch {
+    return false
   }
 }
 
