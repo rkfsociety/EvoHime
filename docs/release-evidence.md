@@ -48,7 +48,7 @@ output, transcripts, absolute paths и PII запрещены.
 - Для CLI добавлен отдельный Ubuntu workflow: format, tests, strict clippy,
   build и smoke-проверка exit code `7`/`core_unavailable`; Windows CLI
   publication зависит от успешного Linux contract job.
-- Локально на Linux прошли `cargo test --locked -p evohime-cli` (4/4), включая
+- Локально на Linux прошли `cargo test --locked -p evohime-cli` (5/5), включая
   duplex-тест HMAC-handshake, sequence cursor и `StartTask` protobuf-кадра,
   `cargo test --locked -p evohime-desktop-ipc` (32/32) и его strict clippy,
   `cargo test --locked -p evohime-core --test headless_core_cli_contract`

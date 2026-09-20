@@ -210,6 +210,18 @@ pub fn emit(event: &CliEvent<'_>) -> String {
     })
 }
 
+pub fn terminal_exit_code(event_type: &str) -> Option<ExitCode> {
+    if !evohime_cli_contract::is_terminal_event(event_type) {
+        return None;
+    }
+    Some(match event_type {
+        "task.completed" | "workflow.completed" => ExitCode::Completed,
+        "task.stopped" | "workflow.cancelled" => ExitCode::Cancelled,
+        "task.failed" | "workflow.failed" => ExitCode::RunFailed,
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +248,21 @@ mod tests {
     fn redacts_sensitive_projection_keys() {
         let value = redact_payload(br#"{"prompt":"x","secret":"y","status":"done"}"#);
         assert_eq!(value, serde_json::json!({"status":"done"}));
+    }
+
+    #[test]
+    fn maps_terminal_events_to_stable_exit_codes() {
+        for (event_type, expected) in [
+            ("task.completed", ExitCode::Completed),
+            ("workflow.completed", ExitCode::Completed),
+            ("task.stopped", ExitCode::Cancelled),
+            ("workflow.cancelled", ExitCode::Cancelled),
+            ("task.failed", ExitCode::RunFailed),
+            ("workflow.failed", ExitCode::RunFailed),
+        ] {
+            assert_eq!(terminal_exit_code(event_type), Some(expected));
+        }
+        assert_eq!(terminal_exit_code("task.progress"), None);
     }
 
     #[test]

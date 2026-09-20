@@ -1,5 +1,5 @@
 #[cfg(windows)]
-use evohime_cli::{emit, redact_payload, CliEvent, Command};
+use evohime_cli::{emit, redact_payload, terminal_exit_code, CliEvent, Command};
 use evohime_cli::{parse_args, ExitCode};
 
 #[cfg(windows)]
@@ -151,20 +151,8 @@ mod windows_client {
             match client.next().await {
                 Ok(event) => {
                     print_event(&event, run_id, json);
-                    if evohime_cli_contract::is_terminal_event(&event.event_type) {
-                        return if matches!(
-                            event.event_type.as_str(),
-                            "task.completed" | "workflow.completed"
-                        ) {
-                            ExitCode::Completed
-                        } else if matches!(
-                            event.event_type.as_str(),
-                            "task.stopped" | "workflow.cancelled"
-                        ) {
-                            ExitCode::Cancelled
-                        } else {
-                            ExitCode::RunFailed
-                        };
+                    if let Some(code) = terminal_exit_code(&event.event_type) {
+                        return code;
                     }
                 }
                 Err(error) => {
