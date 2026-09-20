@@ -1594,6 +1594,12 @@ Updater теперь связывает semver в `module-<id>-v<version>` tag �
 module manifest и отвергает рассинхрон до загрузки бинарника. Regression test
 проверяет, что при mismatch выполняются только запросы release и manifest.
 
+## Stable module release selection follow-up (2026-09-20)
+
+Выбор module release теперь исключает GitHub draft и prerelease записи даже при
+валидном module tag и большей semver; в stable update участвуют только обычные
+релизы с корректным `module-<id>-v<version>` tag.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

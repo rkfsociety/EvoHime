@@ -276,6 +276,7 @@ async function getLatestModuleRelease(
   }
   const prefix = `module-${module}-v`
   const candidates = releases.filter((release) => {
+    if (release?.draft === true || release?.prerelease === true) return false
     if (typeof release?.tag_name !== 'string' || !release.tag_name.startsWith(prefix)) return false
     return /^\d+\.\d+\.\d+$/.test(release.tag_name.slice(prefix.length))
   })

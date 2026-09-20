@@ -209,7 +209,7 @@ describe('release installer', () => {
     expect(result.file).toBe(join(root, 'evohime-core.exe'))
   })
 
-  it('ignores malformed module release tags when selecting the newest version', async () => {
+  it('ignores malformed, draft and prerelease tags when selecting the newest version', async () => {
     const root = mkdtempSync(join(tmpdir(), 'evohime-module-tags-'))
     roots.push(root)
     const bytes = new TextEncoder().encode('valid module')
@@ -219,6 +219,8 @@ describe('release installer', () => {
       const url = String(input)
       if (url.endsWith('/releases?per_page=100')) return new Response(JSON.stringify([
         { tag_name: 'module-core-vnot-a-version', assets: [] },
+        { tag_name: 'module-core-v9.9.0', prerelease: true, assets: [] },
+        { tag_name: 'module-core-v9.8.0', draft: true, assets: [] },
         { tag_name: 'module-core-v2.2.0', assets: [
           { name: 'core.manifest.json', url: 'https://api.github.com/repos/x/y/releases/assets/core-manifest' },
           { name: 'evohime-core.exe', url: 'https://api.github.com/repos/x/y/releases/assets/core' }
