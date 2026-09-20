@@ -194,7 +194,7 @@ describe('trace panel', () => {
       capabilities: [],
       coreVersion: '0.1.0',
       lastSequence: 4,
-      reason: null,
+      reason: 'net::ERR_BLOCKED_BY_CLIENT https://example.test/download',
       availability: null,
       reconnectAttempts: 0
     }, 'G:/github/EvoHime', [{
@@ -210,6 +210,8 @@ describe('trace panel', () => {
     expect(trace).toContain('[4] task.failed task=task-1')
     expect(trace).toContain('diagnostics:')
     expect(trace).toContain('error_code=client_blocked source=electron_transport operation=network.request')
+    expect(trace).toContain('reason: client_blocked')
+    expect(trace).not.toContain('example.test')
     expect(trace).not.toContain('"error"')
   })
 })

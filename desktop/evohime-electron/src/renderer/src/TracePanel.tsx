@@ -86,7 +86,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, update = n
           <div><dt>Workspace</dt><dd title={workspace ?? undefined}>{workspace ?? 'не выбран'}</dd></div>
         </dl>
         {saveStatus ? <p className="trace-panel__reason" role="status">{saveStatus}</p> : null}
-        {state?.reason ? <p className="trace-panel__reason">Причина: {state.reason}</p> : null}
+        {state?.reason ? <p className="trace-panel__reason">Причина: {safeTraceReason(state.reason)}</p> : null}
         {chatId === null ? (
           <p className="trace-panel__empty">Выбери чат, чтобы открыть его трейс.</p>
         ) : traceEvents.length === 0 ? (
@@ -181,6 +181,18 @@ function safeTraceToken(value: unknown): string | null {
   return token
 }
 
+function safeTraceReason(reason: string | null): string {
+  if (!reason?.trim()) return 'none'
+  const token = safeTraceToken(reason)
+  if (token) return token
+  const lower = reason.toLowerCase()
+  if (lower.includes('err_blocked_by_client')) return 'client_blocked'
+  if (lower.includes('timeout') || lower.includes('timed out')) return 'timeout'
+  if (lower.includes('permission') || lower.includes('access denied')) return 'permission_denied'
+  if (lower.includes('protocol') || lower.includes('frame') || lower.includes('replay')) return 'protocol_error'
+  return 'unavailable'
+}
+
 export function formatTrace(
   state: ShellState | null,
   workspace: string | null,
@@ -197,7 +209,7 @@ export function formatTrace(
     `last_sequence: ${state?.lastSequence ?? 0}`,
     `reconnect_attempts: ${state?.reconnectAttempts ?? 0}`,
     `workspace: ${workspace ?? 'none'}`,
-    `reason: ${state?.reason ?? 'none'}`,
+    `reason: ${safeTraceReason(state?.reason ?? null)}`,
     `events: ${events.length}`,
     ''
   ]
