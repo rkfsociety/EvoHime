@@ -237,6 +237,19 @@ impl EventJournal {
             CoreEvent::TypedAgentHandoffContract { .. } => {
                 serde_json::to_vec(event).expect("handoff projection serializes")
             }
+            CoreEvent::TaskFailed { task_id, error } => {
+                // The global event journal is durable too. Keep its terminal
+                // failure payload on the same safe contract as the
+                // conversation projection; the original provider error may
+                // contain URLs, prompts, headers or credentials.
+                let mut safe = crate::conversation_event_log::failure_projection(
+                    &serde_json::json!({"error": error}),
+                );
+                if let Some(object) = safe.as_object_mut() {
+                    object.insert("task_id".into(), serde_json::json!(task_id));
+                }
+                serde_json::to_vec(&safe).expect("safe task failure serializes")
+            }
             _ => serde_json::to_vec(event).expect("core events serialize"),
         };
         // Conversation projection is additive and must not break the existing

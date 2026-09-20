@@ -168,7 +168,7 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
         entries.push({
           kind: 'result',
           id,
-          text: clamp(text_(payload, 'error')) || 'Задача завершилась ошибкой.',
+          text: clamp(text_(payload, 'error_code')) || 'Задача завершилась ошибкой.',
           failed: true
         })
         break

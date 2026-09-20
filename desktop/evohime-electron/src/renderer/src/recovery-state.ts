@@ -92,7 +92,7 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
       return {
         ...common,
         state: 'FAILED',
-        reason: stringField(payload, 'error') ?? 'Операция завершилась ошибкой.',
+        reason: stringField(payload, 'error_code') ?? 'Операция завершилась ошибкой.',
         correlationId: stringField(payload, 'request_id') ?? event.taskId
       }
     }

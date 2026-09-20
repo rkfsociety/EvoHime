@@ -58,6 +58,9 @@ URL, prompt и секреты не сохраняются в этой проек
 Trace UI показывает диагностические поля отдельно и включает их в Markdown
 под заголовком `diagnostics`. Renderer повторно нормализует `task.failed` перед
 отображением и экспортом, сохраняя тот же fallback для legacy payload.
+Тот же safe projection применяется при записи исходной строки `task.failed` в
+глобальный durable event journal, поэтому replay больше не возвращает raw
+`error`; fallback transcript и recovery UI показывают только `error_code`.
 
 Добавлены проверки очереди размера 1 с потоком событий, задержкой чтения и
 финальным `task.completed`, а также проверка явного уведомления об ошибке audit.
@@ -116,7 +119,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000267`, `ui-bundle 0.0.000089`,
+Текущий checkout содержит patch `core 0.0.000268`, `ui-bundle 0.0.000090`,
 `shell-host 0.0.000098`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web

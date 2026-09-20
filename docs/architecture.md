@@ -466,6 +466,10 @@ allow-list токенов либо детерминированно класси
 Та же failure projection применяется до записи durable conversation history:
 `assistant_message_failed` и `task_failed` больше не сохраняют исходный
 `error`, поэтому повторное чтение истории не может вернуть raw provider text.
+До вставки в основной durable event journal `task.failed` получает ту же
+projection: глобальный replay хранит только `task_id`, `error_code`, `source` и
+`operation`, а transcript/recovery UI не использует raw `error` даже для
+legacy/live payload.
 Trace UI
 показывает эти три поля отдельной диагностической карточкой и повторяет их в
 Markdown-разделе `diagnostics`, поэтому failure остаётся читаемым и после

@@ -141,6 +141,42 @@ async fn push_journal_tail_leaves_generic_rows_unprojected() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[tokio::test]
+async fn task_failure_global_journal_persists_only_safe_diagnostics() {
+    let path = std::env::temp_dir().join(format!(
+        "evohime-global-task-failure-safe-{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let journal = EventJournal::open(&path).expect("journal opens");
+    journal
+        .record(&CoreEvent::TaskFailed {
+            task_id: "task-safe-failure".into(),
+            error: "ERR_BLOCKED_BY_CLIENT https://provider.test?token=secret prompt text".into(),
+        })
+        .await
+        .expect("failure records");
+
+    let records = journal.replay(0, 10).await.expect("journal replays");
+    let failure = records
+        .iter()
+        .find(|record| record.event_type == "task.failed")
+        .expect("task failure event");
+    let payload: serde_json::Value =
+        serde_json::from_slice(&failure.payload).expect("payload decodes");
+    assert_eq!(payload["task_id"], "task-safe-failure");
+    assert_eq!(payload["error_code"], "client_blocked");
+    assert_eq!(payload["source"], "electron_transport");
+    assert_eq!(payload["operation"], "network.request");
+    assert!(payload.get("error").is_none());
+    let serialized = serde_json::to_string(&payload).expect("payload serializes");
+    assert!(!serialized.contains("provider.test"));
+    assert!(!serialized.contains("secret"));
+    assert!(!serialized.contains("prompt text"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
 /// Regression: the clear marker was published on the coordinator broadcast,
 /// so the journal writer recorded it a moment later. The listing that the
 /// panel sends right after the response still read the old marker and kept

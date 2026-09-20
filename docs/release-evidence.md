@@ -1840,6 +1840,11 @@ conversation history: `assistant_message_failed` и `task_failed` сохраня
 только `error_code`, `source` и `operation`. Raw error, URL, prompt и секреты
 не проходят в renderer payload даже при повторном чтении истории; malformed и
 unsafe metadata получают deterministic fallback. IPC использует тот же helper,
-а renderer показывает `error_code` вместо удалённого raw `error`. Core patch
-повышен с `0.0.000264` до `0.0.000267` (включая исправления CI lint gate), UI
-bundle — с `0.0.000088` до `0.0.000089`.
+а renderer показывает `error_code` вместо удалённого raw `error`.
+
+Основной durable event journal теперь также сериализует `task.failed` только
+как `task_id`, `error_code`, `source` и `operation`; regression fixture с URL,
+prompt и token-like текстом проверяет, что эти значения не попадают в replay.
+Transcript и recovery projection не используют raw `error` даже для legacy/live
+payload без safe code. Core patch повышен с `0.0.000267` до `0.0.000268`, UI
+bundle — с `0.0.000089` до `0.0.000090`.

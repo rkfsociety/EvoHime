@@ -137,15 +137,28 @@ describe('transcript', () => {
 
   it('reports a failure as a readable message', () => {
     const { entries, finished } = buildTranscript(
-      stream(event('TaskFailed', { error: 'model request failed: 403 Forbidden' }))
+      stream(event('TaskFailed', { error_code: 'provider_denied', error: 'must not render' }))
     )
 
     expect(finished).toBe(true)
     expect(entries[0]).toMatchObject({
       kind: 'result',
       failed: true,
-      text: 'model request failed: 403 Forbidden'
+      text: 'provider_denied'
     })
+  })
+
+  it('does not render a raw failure error when Core has no safe code', () => {
+    const { entries } = buildTranscript(
+      stream(event('TaskFailed', { error: 'https://provider.test?token=secret prompt text' }))
+    )
+
+    expect(entries[0]).toMatchObject({
+      kind: 'result',
+      failed: true,
+      text: 'Задача завершилась ошибкой.'
+    })
+    expect(JSON.stringify(entries)).not.toContain('provider.test')
   })
 
   it('does not repeat an empty completion after the answer', () => {
