@@ -1892,6 +1892,20 @@ body {
   color: var(--warning);
 }
 
+.model-picker__catalog-status {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+.model-picker__catalog-status--stale,
+.model-picker__catalog-status--unavailable,
+.model-picker__catalog-status--credential_rejected,
+.model-picker__catalog-status--discovery_unsupported {
+  color: var(--warning);
+}
+
 .composer__hint kbd {
   padding: 1px 5px;
   border: 1px solid var(--border-strong);
@@ -2533,6 +2547,12 @@ select:focus {
   margin: 12px 0 0;
   color: var(--success);
   font-size: 13px;
+}
+
+.provider-form__catalog-status {
+  margin: 8px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 
 .settings-panel__state--ready { color: var(--success); }

@@ -457,6 +457,104 @@ impl IpcBridge {
         self
     }
 
+    /// Safe additive projection carried by the existing authenticated
+    /// `model.catalog` event. It deliberately omits endpoint, credential
+    /// binding, raw provider errors and every request/response body.
+    pub(crate) async fn provider_catalog_projection(
+        &self,
+        route: &evohime_model_gateway::ModelRouteConfig,
+        selected_model: Option<&str>,
+    ) -> serde_json::Value {
+        let profile =
+            crate::free_provider_reliability_routing::ProviderProfile::from_route_config(route)
+                .ok();
+        let snapshot =
+            profile.as_ref().and_then(|profile| {
+                self.provider_catalog_snapshots
+                    .read()
+                    .ok()
+                    .and_then(|cache| {
+                        cache
+                        .get(&crate::free_provider_reliability_routing::provider_catalog_scope_key(
+                            profile,
+                        ))
+                        .cloned()
+                    })
+            });
+        let model_id = selected_model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| route.literouter.model.trim());
+        let models = snapshot
+            .as_ref()
+            .map(|snapshot| {
+                snapshot
+                    .models
+                    .iter()
+                    .take(256)
+                    .map(|model| {
+                        serde_json::json!({
+                            "id": model.model_id,
+                            "limits": {
+                                "context_tokens": model.limits.context_tokens,
+                                "max_output_tokens": model.limits.max_output_tokens,
+                            },
+                            "capabilities": model.capabilities,
+                            "privacy": model.privacy,
+                            "usage": model.usage,
+                            "lifecycle": model.lifecycle,
+                        })
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let state = snapshot
+            .as_ref()
+            .map(|snapshot| serde_json::to_value(snapshot.state).unwrap_or_default())
+            .unwrap_or_else(|| serde_json::Value::String("unobserved".into()));
+        let failure_code = snapshot.as_ref().and_then(|snapshot| {
+            snapshot
+                .failure
+                .and_then(|failure| serde_json::to_value(failure).ok())
+        });
+        let credential_status = if !route.configured() {
+            "needs_credential"
+        } else if snapshot.as_ref().is_some_and(|snapshot| {
+            snapshot.state
+                == crate::free_provider_reliability_routing::ProviderCatalogState::CredentialRejected
+        }) {
+            "rejected"
+        } else {
+            "configured"
+        };
+        serde_json::json!({
+            "schema_version": 1,
+            "provider": profile.as_ref().map(|profile| serde_json::json!({
+                "id": profile.provider_id,
+                "family": profile.provider_family,
+                "transport": profile.transport_kind,
+                "region": profile.region,
+                "configured": route.configured(),
+                "credential_status": credential_status,
+            })),
+            "catalog": {
+                "state": state,
+                "revision": snapshot.as_ref().map(|snapshot| snapshot.revision).unwrap_or(0),
+                "observed_at_ms": snapshot.as_ref().map(|snapshot| snapshot.observed_at_ms).unwrap_or(0),
+                "expires_at_ms": snapshot.as_ref().map(|snapshot| snapshot.expires_at_ms).unwrap_or(0),
+                "failure_code": failure_code,
+                "model_count": snapshot.as_ref().map(|snapshot| snapshot.models.len()).unwrap_or(0),
+                "truncated": snapshot.as_ref().is_some_and(|snapshot| snapshot.models.len() > 256),
+                "configured_model": model_id,
+                "configured_model_eligible": snapshot.as_ref().is_some_and(|snapshot| {
+                    snapshot.route_eligible_at(model_id, crate::task_memory::now_millis())
+                }),
+            },
+            "models": models,
+            "redacted": true,
+        })
+    }
+
     pub fn new(journal: EventJournal) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
         let receipt_keys = Self::manager_for(&journal);

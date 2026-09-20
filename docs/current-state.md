@@ -119,7 +119,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000277`, `ui-bundle 0.0.000091`,
+Текущий checkout содержит patch `core 0.0.000278`, `ui-bundle 0.0.000092`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -143,8 +143,11 @@ expiry timestamps и typed failure code; v174 additive migration совмест�
 гидратирует snapshots настроенных routes в bounded process-local cache до
 открытия IPC. При временной ошибке первый refresh после перезапуска использует
 этот cache для stale UI fallback, сохраняя fail-closed `route_eligible_at`.
-Route preflight подключён к реальному ModelGateway dispatch; IPC и UI остаются
-активными этапами 173.3–173.4.
+Route preflight подключён к реальному ModelGateway dispatch. Существующий
+authenticated `model.catalog` event теперь несёт bounded `provider_catalog`
+projection, а ModelPicker и ProviderForm отображают Core-owned lifecycle и
+credential status; IPC/UI остаются активными этапами 173.3–173.4 для
+дальнейшего capability filtering.
 `ProviderCatalogSnapshot` теперь задаёт bounded lifecycle
 `Fresh/Stale/Unavailable/CredentialRejected/DiscoveryUnsupported`, typed
 failure codes, deterministic gateway-catalog deduplication и fail-closed
@@ -155,8 +158,9 @@ failure codes, deterministic gateway-catalog deduplication и fail-closed
 typed failure перед использованием. Перед provider dispatch Gateway вызывает
 Core-owned route preflight: известные stale/expired/failed snapshots и
 неподтверждённые модели отклоняются без отправки prompt, а fallback-policy
-может перейти к следующему route. Отдельная authenticated projection ещё не
-подключена.
+может перейти к следующему route. В тот же authenticated `model.catalog`
+payload добавлена bounded `provider_catalog` projection без URL, prompt,
+credential binding или raw provider errors; renderer только отображает её.
 При network/timeout/rate-limit ошибке имеющийся bounded catalog сохраняется как
 `Stale` с typed failure и может быть показан UI; `route_eligible_at` остаётся
 false. Credential rejection и unsupported discovery не используют stale cache.

@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { CommandOutcome, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { ProviderForm } from '../src/renderer/src/ProviderForm'
 import { ProviderStateProvider } from '../src/renderer/src/provider-state'
 
@@ -74,15 +74,32 @@ beforeEach(() => {
 
 afterEach(() => cleanup())
 
-function renderProviderForm(): void {
+function renderProviderForm(events: readonly CoreEvent[] = []): void {
   render(
     <ProviderStateProvider>
-      <ProviderForm />
+      <ProviderForm events={events} />
     </ProviderStateProvider>
   )
 }
 
 describe('provider form', () => {
+  it('shows the Core-owned catalog state without exposing credentials', async () => {
+    renderProviderForm([{
+      sequenceId: 1,
+      taskId: '',
+      eventType: 'model.catalog',
+      payload: JSON.stringify({
+        provider_catalog: {
+          provider: { credential_status: 'configured' },
+          catalog: { state: 'stale' }
+        }
+      })
+    }])
+
+    expect(await screen.findByText(/показан кэш каталога, маршрутизация остановлена/i)).toBeTruthy()
+    expect(screen.queryByText(/api.?key|secret/i)).toBeNull()
+  })
+
   it('sends the key once and clears the field afterwards', async () => {
     renderProviderForm()
     expect(await screen.findByText('Ключ не задан')).toBeTruthy()

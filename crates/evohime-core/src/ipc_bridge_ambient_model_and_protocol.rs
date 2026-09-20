@@ -445,6 +445,19 @@ impl IpcBridge {
                         }
                     }
                 }
+                let selected_model = self.selected_model.get();
+                let provider_catalog = if let Some(route) = route {
+                    self.provider_catalog_projection(route, selected_model.as_deref())
+                        .await
+                } else {
+                    serde_json::json!({
+                        "schema_version": 1,
+                        "provider": null,
+                        "catalog": { "state": "unobserved", "model_count": 0 },
+                        "models": [],
+                        "redacted": true,
+                    })
+                };
                 // Лимиты переживают сессию: планировщик контекста и ревью
                 // должны знать окно модели ещё до первого обновления каталога,
                 // а неудачный запрос не должен стирать то, что уже известно.
@@ -471,6 +484,7 @@ impl IpcBridge {
                     "limits": limits,
                     "error": if provider == "ollama" { None } else { error },
                     "ollama": ollama,
+                    "provider_catalog": provider_catalog,
                 });
                 let event = generated::EventEnvelope {
                     protocol: Some(protocol()),

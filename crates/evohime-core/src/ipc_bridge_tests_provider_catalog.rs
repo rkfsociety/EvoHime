@@ -51,7 +51,7 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
         None,
         Some(ModelGatewayConfig {
             default_route: route_name.clone(),
-            routes: HashMap::from([(route_name, route)]),
+            routes: HashMap::from([(route_name, route.clone())]),
         }),
     );
 
@@ -88,6 +88,17 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
         crate::free_provider_reliability_routing::ProviderCatalogState::Stale
     );
     assert_eq!(persisted.failure, Some(CatalogFailureCode::Network));
+
+    let projection = bridge
+        .provider_catalog_projection(&route, Some("model-a"))
+        .await;
+    assert_eq!(projection["catalog"]["state"], "stale");
+    assert_eq!(projection["catalog"]["failure_code"], "network");
+    assert_eq!(projection["provider"]["credential_status"], "configured");
+    assert_eq!(projection["models"][0]["id"], "model-a");
+    let projection_text = serde_json::to_string(&projection).expect("projection serializes");
+    assert!(!projection_text.contains("provider.example"));
+    assert!(!projection_text.contains("test-key"));
 
     let _ = std::fs::remove_file(journal_path);
 }

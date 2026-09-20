@@ -37,6 +37,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
   const [codexRateLimits, setCodexRateLimits] = useState<readonly CodexRateLimit[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null)
 
   useEffect(() => {
     setFallbackTier(null)
@@ -45,6 +46,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setCodexModels([])
     setCodexRateLimits([])
     setError(null)
+    setCatalogStatus(null)
     onModelChange?.('')
   }, [onModelChange, provider])
 
@@ -95,6 +97,14 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       ? ollama['error']
       : parsed['error']
     setError(typeof catalogError === 'string' ? catalogError : null)
+    const projection = asRecord(parsed['provider_catalog'])
+    const catalogProjection = asRecord(projection?.['catalog'])
+    const providerProjection = asRecord(projection?.['provider'])
+    const state = typeof catalogProjection?.['state'] === 'string' ? catalogProjection['state'] : null
+    const credentialStatus = typeof providerProjection?.['credential_status'] === 'string'
+      ? providerProjection['credential_status']
+      : null
+    setCatalogStatus(state ? { state, credentialStatus } : null)
   }, [catalog, provider, use])
 
   useEffect(() => {
@@ -161,6 +171,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       {provider !== 'codex_cli' && use === 'agent' && models.length > 0 ? (
         <span className="model-picker__hint" title={capabilityForModel(provider, current).reason}>агентские модели</span>
       ) : null}
+      {provider !== 'codex_cli' && catalogStatus !== null ? (
+        <span className={`model-picker__catalog-status model-picker__catalog-status--${catalogStatus.state}`} role="status">
+          {catalogStatusLabel(catalogStatus)}
+        </span>
+      ) : null}
       {provider === 'codex_cli' ? <CodexRateLimits rateLimits={codexRateLimits} compact /> : null}
     </>
   )
@@ -176,6 +191,25 @@ interface ModelDropdownProps {
 interface ModelOption {
   readonly value: string
   readonly label: string
+}
+
+interface CatalogStatus {
+  readonly state: string
+  readonly credentialStatus: string | null
+}
+
+function catalogStatusLabel(status: CatalogStatus): string {
+  if (status.credentialStatus === 'needs_credential') return 'Каталог: нужен ключ'
+  if (status.credentialStatus === 'rejected') return 'Каталог: ключ отклонён'
+  switch (status.state) {
+    case 'fresh': return 'Каталог актуален'
+    case 'stale': return 'Каталог из кэша; маршрут временно отключён'
+    case 'unavailable': return 'Каталог недоступен'
+    case 'discovery_unsupported': return 'Каталог не поддерживается'
+    case 'credential_rejected': return 'Каталог: ключ отклонён'
+    case 'unobserved': return 'Каталог ещё не проверен'
+    default: return 'Каталог: состояние неизвестно'
+  }
 }
 
 /**
@@ -278,4 +312,8 @@ function parseJson(payload: string): Record<string, unknown> {
   } catch {
     return {}
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
 }

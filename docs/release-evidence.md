@@ -2013,3 +2013,19 @@ focused Core test `hydrates_configured_catalog_and_uses_it_after_refresh_failure
 (1 тест), rustfmt и `git diff --check`. Route preflight, authenticated IPC/UI
 projection и CI evidence для локального коммита ещё не заявляются;
 установленный клиент не изменялся.
+
+## Provider catalog authenticated UI projection (2026-09-20)
+
+Core patch повышен с `0.0.000277` до `0.0.000278`, UI-bundle — с
+`0.0.000091` до `0.0.000092`. Совместимый authenticated `model.catalog`
+event теперь содержит bounded `provider_catalog`: safe provider identity,
+credential status, catalog state/revision/expiry/failure code, eligibility,
+limits и capability/privacy/usage/lifecycle metadata. URL, opaque credential
+binding, prompt, headers и raw provider error туда не попадают. ModelPicker и
+ProviderForm отображают Core-owned stale/fresh/credential status и не получают
+новый renderer-owned catalog.
+
+Пройдены Core projection/recovery test, Core clippy с `-D warnings`,
+Electron ModelPicker/ProviderForm tests (16 тестов), Electron typecheck,
+rustfmt и `git diff --check`. CI evidence для локального коммита ещё не
+заявляется; установленный клиент не изменялся.

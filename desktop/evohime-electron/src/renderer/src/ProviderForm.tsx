@@ -54,6 +54,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [tier, setTier] = useState<ModelTier>('free')
   const [baseUrl, setBaseUrl] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [catalogStatus, setCatalogStatus] = useState<string | null>(null)
 
   // Fields stay controlled even if a summary arrives with a missing member.
   const apply = useCallback((value: ProviderSummary) => {
@@ -66,6 +67,23 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   useEffect(() => {
     if (summary) apply(summary)
   }, [apply, summary])
+
+  useEffect(() => {
+    const event = [...events].reverse().find((item) => item.eventType === 'model.catalog')
+    if (!event) {
+      setCatalogStatus(null)
+      return
+    }
+    const parsed = parseJson(event.payload)
+    const projection = asRecord(parsed['provider_catalog'])
+    const catalog = asRecord(projection?.['catalog'])
+    const providerProjection = asRecord(projection?.['provider'])
+    const state = typeof catalog?.['state'] === 'string' ? catalog['state'] : null
+    const credentialStatus = typeof providerProjection?.['credential_status'] === 'string'
+      ? providerProjection['credential_status']
+      : null
+    setCatalogStatus(state ? catalogStatusLabel(state, credentialStatus) : null)
+  }, [events])
 
   const selectProvider = useCallback(async (nextProvider: ProviderKind) => {
     if (!api || nextProvider === provider) return
@@ -145,6 +163,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           {provider === 'ollama' ? 'Локальный провайдер' : configured ? 'Ключ сохранён' : 'Ключ не задан'}
         </span>
       </div>
+
+      {catalogStatus !== null ? <p className="provider-form__catalog-status" role="status">{catalogStatus}</p> : null}
 
       <div className="provider-form__grid">
         <label htmlFor="provider-kind">
@@ -240,4 +260,30 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       ) : null}
     </section>
   )
+}
+
+function parseJson(payload: string): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(payload)
+    return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+  } catch {
+    return {}
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null
+}
+
+function catalogStatusLabel(state: string, credentialStatus: string | null): string {
+  if (credentialStatus === 'needs_credential') return 'Core: для каталога нужен ключ'
+  if (credentialStatus === 'rejected') return 'Core: ключ провайдера отклонён'
+  switch (state) {
+    case 'fresh': return 'Core: каталог актуален'
+    case 'stale': return 'Core: показан кэш каталога, маршрутизация остановлена до обновления'
+    case 'unavailable': return 'Core: каталог временно недоступен'
+    case 'discovery_unsupported': return 'Core: провайдер не поддерживает discovery'
+    case 'credential_rejected': return 'Core: ключ провайдера отклонён'
+    default: return 'Core: каталог ещё не проверен'
+  }
 }

@@ -142,6 +142,25 @@ describe('model picker', () => {
     ])
   })
 
+  it('shows the Core-owned catalog lifecycle beside the picker', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', {
+          mode: 'free',
+          models: ['usable:free'],
+          provider_catalog: {
+            provider: { credential_status: 'configured' },
+            catalog: { state: 'stale' }
+          }
+        })]}
+        use="text"
+      />
+    )
+
+    expect(await screen.findByText(/Каталог из кэша; маршрут временно отключён/i)).toBeTruthy()
+  })
+
   it('tells Core about a selection without restarting anything', async () => {
     render(
       <ModelPicker
