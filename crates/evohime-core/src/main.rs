@@ -181,10 +181,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
-            let gateway = provider_catalog_preflight
-                .as_ref()
-                .map(|preflight| gateway.with_route_preflight(preflight.clone()))
-                .unwrap_or(gateway);
+            let gateway = match provider_catalog_preflight.as_ref() {
+                Some(preflight) => gateway.with_route_preflight(preflight.clone()),
+                None => gateway,
+            };
             std::sync::Arc::new(
                 evohime_core::ToolAgent::new_with_approvals(
                     std::sync::Arc::new(gateway),

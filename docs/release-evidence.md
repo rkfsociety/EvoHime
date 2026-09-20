@@ -2159,3 +2159,9 @@ suite сохранял старое ожидание raw `task.failed` error tex
 сделан публичным для package binary target, UI expectation переведён на
 безопасный `error_code`. Новый CI run для исправляющего коммита должен
 подтвердить оба gate; старый FAIL не считается evidence успеха.
+
+Уже запущенный workflow для `c30b437c` дополнительно выявил compile FAIL в
+route-preflight wiring: `ModelGateway` перемещался в eager `unwrap_or` closure
+и использовался повторно. Исправление переведено на явный `match`; следующий
+CI run должен подтвердить Core compile/test gate. Router FAIL был следствием
+этого module failure, а не отдельным provider/runtime failure.
