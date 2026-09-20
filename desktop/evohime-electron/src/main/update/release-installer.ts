@@ -280,19 +280,18 @@ async function extractUiArchive(archivePath: string, destination: string): Promi
   const entries = Object.entries(archive)
   if (entries.length === 0 || entries.length > MAX_UI_FILES) throw new Error('GitHub components: UI archive file count is outside bounds.')
   let total = 0
+  let hasIndex = false
   for (const [name, bytes] of entries) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(name) || name.includes('..') || name.includes('//') || name.endsWith('/')) throw new Error('GitHub components: unsafe UI archive path.')
+    const relativeName = name.startsWith('ui-bundle/') ? name.slice('ui-bundle/'.length) : name
+    if (relativeName === 'index.html') hasIndex = true
     total += bytes.byteLength
     if (total > MAX_UI_BYTES) throw new Error('GitHub components: UI archive is too large after extraction.')
-    const target = join(destination, 'ui-bundle', name)
+    const target = join(destination, 'ui-bundle', relativeName)
     await mkdir(dirname(target), { recursive: true })
     await writeFile(target, bytes)
   }
-  if (!existsInArchive(entries, 'index.html')) throw new Error('GitHub components: UI archive has no index.html.')
-}
-
-function existsInArchive(entries: readonly [string, Uint8Array][], name: string): boolean {
-  return entries.some(([entry]) => entry === name || entry === `ui-bundle/${name}`)
+  if (!hasIndex) throw new Error('GitHub components: UI archive has no index.html.')
 }
 
 function releaseAssetUrl(release: any, name: string, apiBase: string): string | null {

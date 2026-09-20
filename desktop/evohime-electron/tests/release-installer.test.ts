@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
@@ -67,7 +67,7 @@ describe('release installer', () => {
   it('downloads only the selected component and verifies its digest', async () => {
     const root = mkdtempSync(join(tmpdir(), 'evohime-components-'))
     roots.push(root)
-    const bytes = zipSync({ 'index.html': new TextEncoder().encode('ui bundle') })
+    const bytes = zipSync({ 'ui-bundle/index.html': new TextEncoder().encode('ui bundle') })
     const hash = createHash('sha256').update(bytes).digest('hex')
     const manifest = JSON.stringify({
       schema: 'evohime.component-manifest.v1', release_commit: COMMIT,
@@ -85,6 +85,7 @@ describe('release installer', () => {
     const result = await downloadReleaseComponents('https://github.com/rkfsociety/EvoHime.git', root, ['ui-bundle'], null, { fetch })
     expect(result.selected).toEqual(['ui-bundle'])
     expect(result.files).toEqual([join(root, 'ui.zip')])
+    expect(existsSync(join(root, 'ui-bundle', 'index.html'))).toBe(true)
     expect(fetch).toHaveBeenCalledTimes(3)
   })
 
