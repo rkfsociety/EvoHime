@@ -35,7 +35,7 @@ output, transcripts, absolute paths и PII запрещены.
 - Instruction discovery больше не обходит VCS и generated directories
   (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
   поэтому служебные ACL не блокируют запуск агента до вызова модели.
-- Module versions: `core 0.0.000297`, `ui-bundle 0.0.000101`, `cli 0.0.000046`.
+- Module versions: `core 0.0.000297`, `ui-bundle 0.0.000101`, `cli 0.0.000047`.
 - Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
   (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
   прогона.
@@ -50,7 +50,8 @@ output, transcripts, absolute paths и PII запрещены.
   `2`/`unknown command or option`; Windows CLI
   publication зависит от успешного Linux contract job.
 - Локально на Linux прошли `cargo test --locked -p evohime-cli` (6/6), включая
-  duplex-тест HMAC-handshake, sequence cursor и `StartTask` protobuf-кадра,
+  duplex-тест HMAC-handshake, sequence cursor и bounded protobuf-кадров
+  `StartTask`/`StartWorkflow`/`StopTask`/`GetTaskSnapshot`,
   `cargo test --locked -p evohime-desktop-ipc` (32/32) и его strict clippy,
   `cargo test --locked -p evohime-core --test headless_core_cli_contract`
   (2/2) и strict Core clippy,

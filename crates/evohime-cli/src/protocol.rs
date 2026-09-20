@@ -229,7 +229,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn authenticates_and_sends_start_task_over_duplex_transport() {
+    async fn authenticates_and_sends_commands_over_duplex_transport() {
         let context = session::LaunchContext::generate(String::new(), String::new(), 1)
             .expect("test context");
         let expected_secret = context.secret.clone();
@@ -280,6 +280,69 @@ mod tests {
             assert_eq!(start.prompt, "hello");
             assert_eq!(start.workspace_path, "/workspace");
             assert_eq!(start.execution_kind, "agent");
+
+            let workflow_payload = transport::read_frame(&mut reader)
+                .await
+                .expect("read workflow");
+            let workflow = generated::CommandEnvelope::decode(workflow_payload.as_slice())
+                .expect("decode workflow");
+            assert_eq!(workflow.client_id, handshake.client_id);
+            assert_eq!(workflow.core_instance_id, "core-test");
+            assert_eq!(workflow.session_epoch, 8);
+            let generated::command_envelope::Command::StartWorkflow(workflow) =
+                workflow.command.expect("workflow command")
+            else {
+                panic!("expected workflow command");
+            };
+            assert_eq!(workflow.task_id, "workflow-task");
+            assert_eq!(workflow.template_id, "template-1");
+            assert_eq!(workflow.workspace_path, "/workspace");
+            assert!(!workflow.idempotency_key.is_empty());
+
+            let stop_payload = transport::read_frame(&mut reader).await.expect("read stop");
+            let stop =
+                generated::CommandEnvelope::decode(stop_payload.as_slice()).expect("decode stop");
+            assert_eq!(stop.client_id, handshake.client_id);
+            assert_eq!(stop.core_instance_id, "core-test");
+            assert_eq!(stop.session_epoch, 8);
+            let generated::command_envelope::Command::StopTask(stop) =
+                stop.command.expect("stop command")
+            else {
+                panic!("expected stop command");
+            };
+            assert_eq!(stop.task_id, "workflow-task");
+
+            let snapshot_payload = transport::read_frame(&mut reader)
+                .await
+                .expect("read snapshot");
+            let snapshot = generated::CommandEnvelope::decode(snapshot_payload.as_slice())
+                .expect("decode snapshot");
+            assert_eq!(snapshot.client_id, handshake.client_id);
+            assert_eq!(snapshot.core_instance_id, "core-test");
+            assert_eq!(snapshot.session_epoch, 8);
+            let generated::command_envelope::Command::GetTaskSnapshot(snapshot) =
+                snapshot.command.expect("snapshot command")
+            else {
+                panic!("expected snapshot command");
+            };
+            assert_eq!(snapshot.project_id, "");
+            assert_eq!(snapshot.task_id, "workflow-task");
+            transport::write_frame(
+                &mut writer,
+                &generated::EventEnvelope {
+                    protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+                    sequence_id: 45,
+                    task_id: "workflow-task".into(),
+                    event_type: "task.snapshot".into(),
+                    payload: Vec::new(),
+                    core_instance_id: "core-test".into(),
+                    session_epoch: 8,
+                    event: None,
+                }
+                .encode_to_vec(),
+            )
+            .await
+            .expect("write snapshot");
         });
 
         let mut client = CoreClient::connect(client_stream, &context, 40)
@@ -290,6 +353,24 @@ mod tests {
             .start("task-1".into(), "hello".into(), "/workspace".into())
             .await
             .expect("start task");
+        client
+            .start_workflow(
+                "workflow-task".into(),
+                "template-1".into(),
+                "/workspace".into(),
+            )
+            .await
+            .expect("start workflow");
+        client
+            .stop("workflow-task".into())
+            .await
+            .expect("stop task");
+        let snapshot = client
+            .snapshot("workflow-task".into())
+            .await
+            .expect("snapshot task");
+        assert_eq!(snapshot.event_type, "task.snapshot");
+        assert_eq!(client.sequence(), 45);
         server.await.expect("server task");
     }
 
