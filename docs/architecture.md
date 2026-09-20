@@ -2847,9 +2847,15 @@ provider response, prompt, headers или secret-like scope.
 
 SQLite schema v172 хранит последнюю revision для составного
 provider/model/credential-binding/region scope, принимает только следующую
-revision и сохраняет bounded metadata. Probe execution, route eligibility,
-authenticated IPC и renderer projection ещё не подключены; этот foundation не
-объявляет provider free tier подтверждённым сам по себе.
+revision и сохраняет bounded metadata. При старте Core повторно валидирует
+durable snapshot, scope, content hash и revision перед гидратацией только
+configured provider/model scopes в process-local cache; несовпадающие строки
+игнорируются fail-closed. Существующий authenticated `model.catalog` event
+добавляет redacted `free_access` projection с observed/advertised state,
+activation, allowance, freshness, confidence, bounded limits и strict
+eligibility. Это projection-only состояние: probe execution, route eligibility
+и dedicated renderer UI ещё не подключены, поэтому foundation не объявляет
+provider free tier подтверждённым сам по себе.
 
 ## Design Intent Review Lane v1 (план 126, реализован 2026-09-09)
 

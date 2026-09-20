@@ -2181,3 +2181,19 @@ UI и shell не запускались повторно для `7640bba0`, по
 `c30b437c` этот commit изменял только Core и документацию; router подтвердил
 их опубликованные версии и выбрал только Core. Исторические FAIL на старых
 SHA не используются как PASS evidence.
+
+## Free-access evidence recovery projection (2026-09-20)
+
+Core теперь имеет симметричный read-back для `FreeAccessEvidence`: JSON,
+provider/model/credential-binding/region scope, content hash, timestamps,
+invalidation и monotonic revision сверяются с durable row до публикации в
+process-local cache. Startup hydration читает только configured provider/model
+scopes и игнорирует несовместимые строки fail-closed.
+
+Существующий authenticated `model.catalog` event получил bounded `free_access`
+projection с observed/advertised state, activation, allowance, freshness,
+confidence, sample count, typed limits и `strict_eligible`; credential binding,
+URL, prompt, raw response и secrets не пересекают boundary. Проверки: 19
+focused Core tests, 3 local-storage evidence-store tests, `cargo fmt --all` и
+`git diff --check`. Core patch повышен `0.0.000289 -> 0.0.000290`; CI для нового
+коммита будет проверен после push.

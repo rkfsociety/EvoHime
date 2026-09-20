@@ -26,8 +26,13 @@ pub const PROVIDER_CATALOG_SCHEMA_VERSION: u16 = 1;
 pub const MAX_PROVIDER_CATALOG_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 
 pub type ProviderCatalogCache = Arc<std::sync::RwLock<HashMap<String, ProviderCatalogSnapshot>>>;
+pub type FreeAccessEvidenceCache = Arc<std::sync::RwLock<HashMap<String, FreeAccessEvidence>>>;
 
 pub fn new_provider_catalog_cache() -> ProviderCatalogCache {
+    Arc::new(std::sync::RwLock::new(HashMap::new()))
+}
+
+pub fn new_free_access_evidence_cache() -> FreeAccessEvidenceCache {
     Arc::new(std::sync::RwLock::new(HashMap::new()))
 }
 
@@ -570,6 +575,44 @@ impl FreeAccessEvidence {
                 }),
             },
         )
+    }
+
+    pub fn from_storage_record(
+        record: &evohime_local_storage::free_access_evidence_store::FreeAccessEvidenceRecord,
+    ) -> Result<Self, &'static str> {
+        if record.revision <= 0
+            || record.observed_at_ms <= 0
+            || record.expires_at_ms <= record.observed_at_ms
+        {
+            return Err("invalid free access evidence");
+        }
+        let evidence: Self = serde_json::from_slice(&record.evidence_json)
+            .map_err(|_| "invalid free access evidence")?;
+        if evidence.provider_id != record.provider_id
+            || evidence.model_id != record.model_id
+            || evidence.credential_binding != record.credential_binding
+            || evidence.region != record.region
+            || i64::try_from(evidence.revision).ok() != Some(record.revision)
+            || evidence.content_hash != record.content_hash
+            || i64::try_from(evidence.observed_at_ms).ok() != Some(record.observed_at_ms)
+            || i64::try_from(evidence.expires_at_ms).ok() != Some(record.expires_at_ms)
+            || evidence.invalidation.map(invalidation_code) != record.invalidation.as_deref()
+        {
+            return Err("free access evidence scope mismatch");
+        }
+        evidence.validate()?;
+        Ok(evidence)
+    }
+}
+
+fn invalidation_code(value: EvidenceInvalidation) -> &'static str {
+    match value {
+        EvidenceInvalidation::BillingRequired => "billing_required",
+        EvidenceInvalidation::AccountRestricted => "account_restricted",
+        EvidenceInvalidation::QuotaExhausted => "quota_exhausted",
+        EvidenceInvalidation::CatalogChanged => "catalog_changed",
+        EvidenceInvalidation::CredentialChanged => "credential_changed",
+        EvidenceInvalidation::Manual => "manual",
     }
 }
 
@@ -1158,6 +1201,15 @@ pub(crate) fn provider_catalog_scope_key(profile: &ProviderProfile) -> String {
         "{}|{}|{}",
         profile.provider_id, profile.credential_binding, profile.region
     )
+}
+
+pub(crate) fn free_access_evidence_scope_key(
+    provider_id: &str,
+    model_id: &str,
+    credential_binding: &str,
+    region: &str,
+) -> String {
+    format!("{provider_id}|{model_id}|{credential_binding}|{region}")
 }
 
 /// Adapter between the Core-owned catalog lifecycle and the gateway's final
@@ -2082,6 +2134,28 @@ mod tests {
         let json = String::from_utf8(stored.evidence_json).expect("json");
         assert!(!json.contains("prompt"));
         assert!(!json.contains("secret"));
+    }
+
+    #[test]
+    fn free_access_evidence_round_trips_only_when_storage_scope_matches() {
+        let value = evidence();
+        let record = value.to_storage_record().expect("storage record");
+        let recovered = FreeAccessEvidence::from_storage_record(&record).expect("recovery");
+        assert_eq!(recovered, value);
+
+        let mut mismatched = record.clone();
+        mismatched.region = "eu".into();
+        assert_eq!(
+            FreeAccessEvidence::from_storage_record(&mismatched),
+            Err("free access evidence scope mismatch")
+        );
+
+        let mut inconsistent = record;
+        inconsistent.revision = 2;
+        assert_eq!(
+            FreeAccessEvidence::from_storage_record(&inconsistent),
+            Err("free access evidence scope mismatch")
+        );
     }
 
     #[test]

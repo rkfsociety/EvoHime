@@ -171,6 +171,170 @@ impl IpcBridge {
         }
     }
 
+    /// Publishes one validated empirical free-access snapshot. The storage
+    /// layer owns the monotonic revision fence; the process cache is updated
+    /// only after that durable publication succeeds.
+    pub(crate) async fn remember_free_access_evidence(
+        &self,
+        evidence: crate::free_provider_reliability_routing::FreeAccessEvidence,
+    ) -> Result<bool, &'static str> {
+        evidence.validate()?;
+        let record = evidence.to_storage_record()?;
+        let persisted = {
+            let database = self.journal.database().lock().await;
+            evohime_local_storage::free_access_evidence_store::put(database.connection(), &record)
+                .map_err(|_| "free access evidence storage error")?
+        };
+        if persisted {
+            self.free_access_evidence
+                .write()
+                .map_err(|_| "free access evidence cache lock failed")?
+                .insert(
+                    crate::free_provider_reliability_routing::free_access_evidence_scope_key(
+                        &evidence.provider_id,
+                        &evidence.model_id,
+                        &evidence.credential_binding,
+                        &evidence.region,
+                    ),
+                    evidence,
+                );
+        }
+        Ok(persisted)
+    }
+
+    /// Hydrates only the configured provider/model scopes. A durable row that
+    /// does not round-trip through the Core contract is ignored fail-closed;
+    /// no credential binding or raw evidence payload is logged or projected.
+    pub async fn hydrate_free_access_evidence(&self) -> usize {
+        let routes = self
+            .gateway_config
+            .as_ref()
+            .map(|config| {
+                config
+                    .routes
+                    .values()
+                    .take(MAX_PROVIDER_CATALOG_RECOVERY_ROUTES)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut recovered = 0;
+        for route in routes {
+            let profile =
+                match crate::free_provider_reliability_routing::ProviderProfile::from_route_config(
+                    &route,
+                ) {
+                    Ok(profile) => profile,
+                    Err(_) => continue,
+                };
+            let model_id = route.literouter.model.trim();
+            if model_id.is_empty() {
+                continue;
+            }
+            let record = {
+                let database = self.journal.database().lock().await;
+                evohime_local_storage::free_access_evidence_store::get(
+                    database.connection(),
+                    &profile.provider_id,
+                    model_id,
+                    &profile.credential_binding,
+                    &profile.region,
+                )
+                .ok()
+                .flatten()
+            };
+            let Some(record) = record else {
+                continue;
+            };
+            let Ok(evidence) =
+                crate::free_provider_reliability_routing::FreeAccessEvidence::from_storage_record(
+                    &record,
+                )
+            else {
+                tracing::debug!(
+                    target: "model.catalog",
+                    error_code = "free_access_evidence_recovery_invalid",
+                    "free access evidence recovery skipped invalid durable row"
+                );
+                continue;
+            };
+            self.free_access_evidence
+                .write()
+                .expect("free access evidence cache write lock")
+                .insert(
+                    crate::free_provider_reliability_routing::free_access_evidence_scope_key(
+                        &evidence.provider_id,
+                        &evidence.model_id,
+                        &evidence.credential_binding,
+                        &evidence.region,
+                    ),
+                    evidence,
+                );
+            recovered += 1;
+        }
+        tracing::info!(
+            target: "model.catalog",
+            recovered,
+            "free access evidence recovery cache hydrated"
+        );
+        recovered
+    }
+
+    fn free_access_projection(
+        &self,
+        route: &evohime_model_gateway::ModelRouteConfig,
+        selected_model: Option<&str>,
+    ) -> serde_json::Value {
+        let profile =
+            crate::free_provider_reliability_routing::ProviderProfile::from_route_config(route)
+                .ok();
+        let model_id = selected_model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| route.literouter.model.trim());
+        let evidence = profile.as_ref().and_then(|profile| {
+            self.free_access_evidence.read().ok().and_then(|cache| {
+                cache
+                    .get(
+                        &crate::free_provider_reliability_routing::free_access_evidence_scope_key(
+                            &profile.provider_id,
+                            model_id,
+                            &profile.credential_binding,
+                            &profile.region,
+                        ),
+                    )
+                    .cloned()
+            })
+        });
+        let Some(evidence) = evidence else {
+            return serde_json::json!({
+                "state": "unobserved",
+                "model": model_id,
+                "strict_eligible": false,
+                "redacted": true,
+            });
+        };
+        let now_ms = crate::task_memory::now_millis();
+        let freshness = evidence.freshness_at(now_ms);
+        serde_json::json!({
+            "state": evidence.observed_state,
+            "advertised_state": evidence.advertised_state,
+            "activation": evidence.activation,
+            "allowance": evidence.allowance,
+            "freshness": freshness,
+            "strict_eligible": evidence.is_strictly_free_at(now_ms),
+            "model": evidence.model_id,
+            "confidence_bps": evidence.confidence_bps,
+            "successful_sample_count": evidence.successful_sample_count,
+            "observed_at_ms": evidence.observed_at_ms,
+            "expires_at_ms": evidence.expires_at_ms,
+            "invalidation": evidence.invalidation,
+            "failure_reason": evidence.failure_reason,
+            "limits": evidence.limits,
+            "redacted": true,
+        })
+    }
+
     /// Persists the safe catalog lifecycle snapshot. Provider errors are
     /// reduced to typed codes before reaching storage; no gateway error text
     /// or credential is part of this path.
@@ -561,6 +725,7 @@ impl IpcBridge {
                 }),
             },
             "models": models,
+            "free_access": self.free_access_projection(route, selected_model),
             "redacted": true,
         })
     }
@@ -578,6 +743,8 @@ impl IpcBridge {
             gateway_config: None,
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
+            free_access_evidence:
+                crate::free_provider_reliability_routing::new_free_access_evidence_cache(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -620,6 +787,8 @@ impl IpcBridge {
             gateway_config: None,
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
+            free_access_evidence:
+                crate::free_provider_reliability_routing::new_free_access_evidence_cache(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -669,6 +838,8 @@ impl IpcBridge {
             gateway_config,
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
+            free_access_evidence:
+                crate::free_provider_reliability_routing::new_free_access_evidence_cache(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,

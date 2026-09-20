@@ -127,18 +127,20 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000289`, `ui-bundle 0.0.000099`,
+Текущий checkout содержит patch `core 0.0.000290`, `ui-bundle 0.0.000099`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
 installer — `0.0.000061`.
 
-План 174.1 получил первый рабочий срез: Core-owned `FreeAccessEvidence`
-разделяет advertised/observed/activation/allowance состояния, типизированные
-units/limits, confidence, expiry и invalidation; SQLite schema v172 хранит
-только bounded metadata snapshot в scope provider/model/credential-binding/
-region с monotonic revision fence. Probes, `FreeOnly` routing, IPC и UI ещё не
-реализованы и остаются активными этапами 174.2–174.4.
+План 174.1 получил рабочий срез: Core-owned `FreeAccessEvidence` разделяет
+advertised/observed/activation/allowance состояния, типизированные units/limits,
+confidence, expiry и invalidation; SQLite schema v172 хранит только bounded
+metadata snapshot в scope provider/model/credential-binding/region с monotonic
+revision fence. Core валидирует обратное восстановление scope/hash/revision,
+гидратирует только configured provider/model scopes до IPC и добавляет в
+существующий authenticated `model.catalog` redacted `free_access` projection.
+Probes, `FreeOnly` routing и dedicated UI остаются активными этапами 174.2–174.4.
 План 173.1 получил совместимый Core-контракт: versioned `ProviderProfile`
 разделяет provider family и transport, а `ProviderModelDescriptor` адаптирует
 существующий gateway `ModelCatalogEntry` с profile/catalog revision/hash,

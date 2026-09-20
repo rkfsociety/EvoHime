@@ -289,9 +289,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_provider_catalog_cache(provider_catalog_cache)
     .with_ambient_data_dir(data_dir.clone());
     let recovered_provider_catalogs = bridge.hydrate_provider_catalog_snapshots().await;
+    let recovered_free_access_evidence = bridge.hydrate_free_access_evidence().await;
     tracing::info!(
         recovered = recovered_provider_catalogs,
         "provider catalog recovery completed before IPC startup"
+    );
+    tracing::info!(
+        recovered = recovered_free_access_evidence,
+        "free access evidence recovery completed before IPC startup"
     );
     // План 08-2: bounded core_start ledger event, затем reconciliation
     // незавершённых typed actions по dispatch marker в run_effects. Должно

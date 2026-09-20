@@ -618,6 +618,10 @@ pub struct IpcBridge {
     /// SQLite row remains the source of truth; this cache only makes the
     /// validated snapshot available before the first catalog refresh.
     provider_catalog_snapshots: crate::free_provider_reliability_routing::ProviderCatalogCache,
+    /// Process-local cache for validated, scoped empirical free-access
+    /// evidence. SQLite remains the source of truth; this cache is never an
+    /// authority by itself and is only populated from validated records.
+    free_access_evidence: crate::free_provider_reliability_routing::FreeAccessEvidenceCache,
     selected_model: SelectedModel,
     core_instance_id: String,
     session_epoch: u64,
