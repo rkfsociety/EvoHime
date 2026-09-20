@@ -1,6 +1,6 @@
 //! Bounded provider access/reliability metadata; gateway remains transport owner.
 use evohime_model_gateway::providers::ProviderError;
-use evohime_model_gateway::ModelCatalogEntry;
+use evohime_model_gateway::{ModelCatalogEntry, ModelRouteConfig};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -543,7 +543,67 @@ pub struct RouteSelectionExplanation {
 }
 
 impl ProviderProfile {
+    pub fn from_route_config(route: &ModelRouteConfig) -> Result<Self, &'static str> {
+        let (provider_id, provider_family, transport_kind) = match route.provider {
+            evohime_model_gateway::providers::ProviderKind::LiteRouter => (
+                "literouter",
+                ProviderFamily::LiteRouter,
+                TransportKind::OpenAiCompatible,
+            ),
+            evohime_model_gateway::providers::ProviderKind::OpenAICompatible => (
+                "openai",
+                ProviderFamily::OpenAi,
+                TransportKind::OpenAiCompatible,
+            ),
+            evohime_model_gateway::providers::ProviderKind::OpenAIResponses => (
+                "openai_responses",
+                ProviderFamily::OpenAi,
+                TransportKind::OpenAiResponses,
+            ),
+            evohime_model_gateway::providers::ProviderKind::Ollama => {
+                ("ollama", ProviderFamily::Ollama, TransportKind::Ollama)
+            }
+            evohime_model_gateway::providers::ProviderKind::Local => {
+                ("local", ProviderFamily::Local, TransportKind::Local)
+            }
+            evohime_model_gateway::providers::ProviderKind::Mock => {
+                ("mock", ProviderFamily::Mock, TransportKind::Mock)
+            }
+        };
+        let endpoint = if matches!(
+            route.provider,
+            evohime_model_gateway::providers::ProviderKind::Mock
+        ) {
+            "http://127.0.0.1/mock".to_string()
+        } else {
+            route.literouter.base_url.clone()
+        };
+        let mut profile = Self {
+            schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
+            provider_id: provider_id.to_string(),
+            provider_family,
+            transport: transport_kind.as_str().to_string(),
+            transport_kind,
+            endpoint,
+            region: "global".into(),
+            credential_binding: format!("credential:{provider_id}"),
+            content_hash: String::new(),
+            revision: 1,
+        };
+        profile.validate_without_hash()?;
+        profile.content_hash = profile_hash(&profile);
+        Ok(profile)
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
+        self.validate_without_hash()?;
+        if !valid_content_hash(&self.content_hash) {
+            return Err("invalid provider profile");
+        }
+        Ok(())
+    }
+
+    fn validate_without_hash(&self) -> Result<(), &'static str> {
         let parsed_transport = parsed_transport_kind(&self.transport);
         if self.schema_version != PROVIDER_PROFILE_SCHEMA_VERSION
             || self.revision == 0
@@ -555,12 +615,10 @@ impl ProviderProfile {
             || (self.transport_kind != TransportKind::Unknown
                 && parsed_transport != TransportKind::Unknown
                 && parsed_transport != self.transport_kind)
-            || self.content_hash.len() != 64
-            || !self
-                .content_hash
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit())
         {
+            return Err("invalid provider profile");
+        }
+        if !self.content_hash.is_empty() && !valid_content_hash(&self.content_hash) {
             return Err("invalid provider profile");
         }
         Ok(())
@@ -738,14 +796,7 @@ impl ProviderCatalogSnapshot {
             return Err("invalid provider catalog snapshot");
         }
 
-        let mut normalized = entries.to_vec();
-        normalized.sort_by(|left, right| {
-            left.id
-                .cmp(&right.id)
-                .then_with(|| right.context_tokens.cmp(&left.context_tokens))
-                .then_with(|| right.max_output_tokens.cmp(&left.max_output_tokens))
-        });
-        normalized.dedup_by(|left, right| left.id == right.id);
+        let normalized = normalize_catalog_entries(entries)?;
         let models = normalized
             .iter()
             .map(|entry| {
@@ -893,6 +944,29 @@ impl ProviderCatalogSnapshot {
             self.observed_at_ms,
         )
     }
+}
+
+pub fn normalize_catalog_entries(
+    entries: &[ModelCatalogEntry],
+) -> Result<Vec<ModelCatalogEntry>, &'static str> {
+    if entries.len() > MAX_PROVIDER_CATALOG_ENTRIES {
+        return Err("invalid provider catalog snapshot");
+    }
+    let mut normalized = entries.to_vec();
+    normalized.sort_by(|left, right| {
+        left.id
+            .cmp(&right.id)
+            .then_with(|| right.context_tokens.cmp(&left.context_tokens))
+            .then_with(|| right.max_output_tokens.cmp(&left.max_output_tokens))
+    });
+    normalized.dedup_by(|left, right| left.id == right.id);
+    Ok(normalized)
+}
+
+pub fn catalog_content_hash(entries: &[ModelCatalogEntry]) -> Result<String, &'static str> {
+    let normalized = normalize_catalog_entries(entries)?;
+    let json = serde_json::to_vec(&normalized).map_err(|_| "invalid provider catalog snapshot")?;
+    Ok(hex::encode(Sha256::digest(json)))
 }
 
 pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
@@ -1204,6 +1278,22 @@ mod tests {
             parsed.resolved_transport_kind(),
             TransportKind::OpenAiCompatible
         );
+    }
+
+    #[test]
+    fn route_config_adapter_keeps_credentials_out_of_profile_metadata() {
+        let route = ModelRouteConfig::openai_compatible(
+            "sk-live-provider-key",
+            "https://api.example/v1",
+            "model",
+        );
+        let profile = ProviderProfile::from_route_config(&route).expect("profile");
+        assert!(profile.validate().is_ok());
+        assert_eq!(profile.provider_family, ProviderFamily::OpenAi);
+        assert_eq!(profile.transport_kind, TransportKind::OpenAiCompatible);
+        assert!(!serde_json::to_string(&profile)
+            .expect("profile json")
+            .contains("sk-live-provider-key"));
     }
 
     #[test]

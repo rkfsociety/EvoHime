@@ -1910,3 +1910,17 @@ Core patch повышен с `0.0.000271` до `0.0.000272`. `ProviderCatalogSna
 evohime-core --all-targets -- -D warnings`, rustfmt и `git diff --check`.
 Live fetch/cache/recovery wiring, route preflight, IPC/UI и CI evidence ещё не
 заявляются; установленный клиент не изменялся.
+
+## Provider catalog snapshot runtime publication (2026-09-20)
+
+Core patch повышен с `0.0.000272` до `0.0.000273`. `model.catalog` IPC refresh
+теперь адаптирует configured route в redacted `ProviderProfile`, сохраняет
+success/failure `ProviderCatalogSnapshot` в существующий v173 store и
+классифицирует ошибки до записи. Catalog contents остаются bounded model IDs и
+limits; API keys и raw provider errors не входят в profile, snapshot или
+storage warning.
+
+Пройдены Core contract tests (14 тестов), `cargo clippy --locked -p
+evohime-core --all-targets -- -D warnings`, rustfmt и `git diff --check`.
+Startup recovery-read, route preflight, authenticated IPC projection и CI
+evidence ещё не заявляются; установленный клиент не изменялся.

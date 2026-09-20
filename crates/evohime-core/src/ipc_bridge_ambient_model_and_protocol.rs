@@ -322,10 +322,11 @@ impl IpcBridge {
                     .gateway_config
                     .as_ref()
                     .and_then(|config| config.routes.get(&config.default_route));
-                let (entries, error, ollama): (
+                let (entries, error, ollama, catalog_failure): (
                     Vec<evohime_model_gateway::ModelCatalogEntry>,
                     Option<String>,
                     Option<serde_json::Value>,
+                    Option<crate::free_provider_reliability_routing::CatalogFailureCode>,
                 ) = match route {
                     Some(route)
                         if route.provider
@@ -356,7 +357,7 @@ impl IpcBridge {
                                             "installed": entries.iter().map(|entry| entry.id.clone()).collect::<Vec<_>>(),
                                             "error": null,
                                         });
-                                        (entries, None, Some(projection))
+                                        (entries, None, Some(projection), None)
                                     }
                                     Err(error) => {
                                         let recommendations =
@@ -374,6 +375,7 @@ impl IpcBridge {
                                                 "installed": [],
                                                 "error": error_code,
                                             })),
+                                            Some(crate::free_provider_reliability_routing::classify_catalog_error(&error)),
                                         )
                                     }
                                 }
@@ -386,6 +388,7 @@ impl IpcBridge {
                                     "installed": [],
                                     "error": "hardware_discovery_failed",
                                 })),
+                                Some(crate::free_provider_reliability_routing::CatalogFailureCode::Unknown),
                             ),
                         }
                     }
@@ -403,15 +406,30 @@ impl IpcBridge {
                                 .collect::<Vec<_>>(),
                             None,
                             None,
+                            None,
                         ),
                         Err(error) => (
                             Vec::new(),
                             Some(safe_model_catalog_error_code(&error).into()),
                             None,
+                            Some(
+                                crate::free_provider_reliability_routing::classify_catalog_error(
+                                    &error,
+                                ),
+                            ),
                         ),
                     },
-                    None => (Vec::new(), Some("provider_not_configured".into()), None),
+                    None => (
+                        Vec::new(),
+                        Some("provider_not_configured".into()),
+                        None,
+                        None,
+                    ),
                 };
+                if let Some(route) = route {
+                    self.remember_provider_catalog_snapshot(route, &entries, catalog_failure)
+                        .await;
+                }
                 // Лимиты переживают сессию: планировщик контекста и ревью
                 // должны знать окно модели ещё до первого обновления каталога,
                 // а неудачный запрос не должен стирать то, что уже известно.

@@ -158,6 +158,116 @@ impl IpcBridge {
         }
     }
 
+    /// Persists the safe catalog lifecycle snapshot. Provider errors are
+    /// reduced to typed codes before reaching storage; no gateway error text
+    /// or credential is part of this path.
+    pub(crate) async fn remember_provider_catalog_snapshot(
+        &self,
+        route: &evohime_model_gateway::ModelRouteConfig,
+        entries: &[evohime_model_gateway::ModelCatalogEntry],
+        failure: Option<crate::free_provider_reliability_routing::CatalogFailureCode>,
+    ) {
+        let profile =
+            match crate::free_provider_reliability_routing::ProviderProfile::from_route_config(
+                route,
+            ) {
+                Ok(profile) => profile,
+                Err(_) => {
+                    tracing::warn!(
+                        target: "model.catalog",
+                        error_code = "provider_profile_invalid",
+                        "provider catalog profile was not persisted"
+                    );
+                    return;
+                }
+            };
+        let now_ms = crate::task_memory::now_millis();
+        let next_revision = {
+            let database = self.journal.database().lock().await;
+            evohime_local_storage::provider_profile_catalog_store::get(
+                database.connection(),
+                &profile.provider_id,
+                &profile.credential_binding,
+                &profile.region,
+            )
+            .ok()
+            .flatten()
+            .and_then(|record| u64::try_from(record.revision).ok())
+            .and_then(|revision| revision.checked_add(1))
+            .unwrap_or(1)
+        };
+        let catalog_hash = crate::free_provider_reliability_routing::catalog_content_hash(entries)
+            .unwrap_or_else(|_| "0".repeat(64));
+        let expires_at_ms = now_ms.saturating_add(24 * 60 * 60 * 1_000);
+        let snapshot = match failure {
+            None => crate::free_provider_reliability_routing::ProviderCatalogSnapshot::fresh_from_catalog(
+                &profile,
+                entries,
+                next_revision,
+                catalog_hash,
+                now_ms,
+                expires_at_ms,
+            ),
+            Some(code) => {
+                let state = match code {
+                    crate::free_provider_reliability_routing::CatalogFailureCode::CredentialRejected =>
+                        crate::free_provider_reliability_routing::ProviderCatalogState::CredentialRejected,
+                    crate::free_provider_reliability_routing::CatalogFailureCode::DiscoveryUnsupported =>
+                        crate::free_provider_reliability_routing::ProviderCatalogState::DiscoveryUnsupported,
+                    _ => crate::free_provider_reliability_routing::ProviderCatalogState::Unavailable,
+                };
+                crate::free_provider_reliability_routing::ProviderCatalogSnapshot::failure(
+                    &profile,
+                    next_revision,
+                    catalog_hash,
+                    state,
+                    code,
+                    now_ms,
+                    expires_at_ms,
+                )
+            }
+        };
+        let snapshot = match snapshot {
+            Ok(snapshot) => snapshot,
+            Err(_) => {
+                tracing::warn!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_snapshot_invalid",
+                    "provider catalog snapshot was not persisted"
+                );
+                return;
+            }
+        };
+        let record = match snapshot.to_storage_record(&profile) {
+            Ok(record) => record,
+            Err(_) => {
+                tracing::warn!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_storage_projection_invalid",
+                    "provider catalog storage projection was not persisted"
+                );
+                return;
+            }
+        };
+        let database = self.journal.database().lock().await;
+        match evohime_local_storage::provider_profile_catalog_store::put(
+            database.connection(),
+            &record,
+        ) {
+            Ok(true) => {}
+            Ok(false) => tracing::debug!(
+                target: "model.catalog",
+                error_code = "provider_catalog_revision_conflict",
+                "provider catalog snapshot was not current"
+            ),
+            Err(_) => tracing::warn!(
+                target: "model.catalog",
+                error_code = "provider_catalog_storage_error",
+                "provider catalog snapshot storage failed"
+            ),
+        }
+    }
+
     pub fn new(journal: EventJournal) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
         let receipt_keys = Self::manager_for(&journal);

@@ -119,7 +119,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000272`, `ui-bundle 0.0.000090`,
+Текущий checkout содержит patch `core 0.0.000273`, `ui-bundle 0.0.000090`,
 `shell-host 0.0.000098`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -144,6 +144,9 @@ migrate path; discovery, route wiring, IPC и UI остаются активны
 `Fresh/Stale/Unavailable/CredentialRejected/DiscoveryUnsupported`, typed
 failure codes, deterministic gateway-catalog deduplication и fail-closed
 `route_eligible_at`; raw `ProviderError` text не переносится в snapshot.
+`model.catalog` IPC refresh строит redacted profile из route config и
+публикует success/failure snapshot в schema v173; recovery-read, route
+preflight и отдельная authenticated projection ещё не подключены.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и

@@ -2790,7 +2790,9 @@ route wiring, IPC и UI остаются следующими этапами 173
 raw `ProviderError`. Gateway entries сортируются и deduplicate-ятся до создания
 immutable descriptors; expired/stale/failed snapshots не проходят
 `route_eligible_at`. Реальный fetch/cache/recovery wiring и authenticated
-projection ещё не подключены.
+projection ещё не полностью подключены: `model.catalog` IPC refresh уже
+публикует redacted success/failure snapshot через этот store, а startup
+recovery-read и route preflight остаются следующими шагами.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 
