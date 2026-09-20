@@ -25,6 +25,9 @@ where
         context: &session::LaunchContext,
         after_sequence: u64,
     ) -> Result<Self, String> {
+        context
+            .validate()
+            .map_err(|_| "authentication_failed: invalid launch context".to_string())?;
         let client_id = format!("cli-{}", uuid::Uuid::new_v4());
         let mut client = Self {
             stream,
@@ -288,5 +291,20 @@ mod tests {
             .await
             .expect("start task");
         server.await.expect("server task");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn rejects_invalid_launch_context_before_transport_use() {
+        let mut context = session::LaunchContext::generate(String::new(), String::new(), 1)
+            .expect("test context");
+        context.pipe_name = "invalid".into();
+        let (client_stream, _server_stream) = duplex(1024);
+
+        let result = CoreClient::connect(client_stream, &context, 0).await;
+
+        assert_eq!(
+            result.err().as_deref(),
+            Some("authentication_failed: invalid launch context")
+        );
     }
 }
