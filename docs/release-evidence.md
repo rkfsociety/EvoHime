@@ -20,6 +20,30 @@ compatible-manifest runs; исторические разделы ниже со�
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
 
+### CLI modularization batch and live gates (2026-09-21)
+
+- Текущий checkout `45d80345e9f173d78025c76bcd9897a65a7fa271` синхронизирован
+  с `origin/main`; после десяти task-only коммитов CLI marker достиг
+  `0.0.000074`. Production CLI protocol/client facade, command model, output
+  projection, exit policy, redaction policy и test harnesses разделены на
+  отдельные модули с сохранением прежних public re-export paths.
+- Локально на Linux подтверждены `cargo test --locked -p evohime-cli` (11/11),
+  `cargo test --locked -p evohime-cli-protocol` (6/6),
+  `cargo test --locked -p evohime-cli-contract` (4/4), strict clippy для CLI,
+  форматирование, `git diff --check` и release binary smoke; дополнительно
+  `cargo check --locked --target x86_64-pc-windows-gnu -p evohime-cli` прошёл
+  для Windows-only endpoint/output modules.
+- Exact-SHA router run [35544539896](https://github.com/rkfsociety/EvoHime/actions/runs/35544539896),
+  CLI run [35544572717](https://github.com/rkfsociety/EvoHime/actions/runs/35544572717)
+  и compatibility run [35544846665](https://github.com/rkfsociety/EvoHime/actions/runs/35544846665)
+  завершились `success`. Linux job выполнил contract tests, strict clippy,
+  release build и fail-closed/invalid-invocation/oversized-stdin smoke gates;
+  Windows job выполнил tests, clippy, release build и artifact upload.
+- Опубликован release
+  [`module-cli-v0.0.000074`](https://github.com/rkfsociety/EvoHime/releases/tag/module-cli-v0.0.000074)
+  с `eva.exe` и `cli.manifest.json`; compatibility manifest опубликован
+  отдельным fixed release после успешного module gate.
+
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 
 - Conversation-bound trace обновлён до projection v3: отказ filesystem
