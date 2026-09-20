@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { unzipSync } from 'fflate'
@@ -312,9 +312,9 @@ async function extractUiArchive(archivePath: string, destination: string): Promi
   const entries = Object.entries(archive)
   if (entries.length === 0 || entries.length > MAX_UI_FILES) throw new Error('GitHub components: UI archive file count is outside bounds.')
   let hasIndex = false
-  const extractionRoot = join(destination, `.ui-bundle-extract-${process.pid}-${Date.now()}`)
+  const extractionRoot = join(destination, `.ui-bundle-extract-${process.pid}-${randomUUID()}`)
   const publishedRoot = join(destination, 'ui-bundle')
-  const previousRoot = join(destination, `.ui-bundle-previous-${process.pid}-${Date.now()}`)
+  const previousRoot = join(destination, `.ui-bundle-previous-${process.pid}-${randomUUID()}`)
   let previousMoved = false
   await mkdir(extractionRoot, { recursive: true })
   try {
@@ -462,9 +462,9 @@ async function downloadBytes(
   if (!response.ok || !response.body) throw new Error(`GitHub installer: не удалось скачать установщик (${response.status}).`)
   const totalBytes = Number(response.headers.get('content-length')) || expectedBytes || 0
   if (totalBytes > MAX_INSTALLER_BYTES) throw new Error('GitHub installer: установщик слишком большой.')
-  const temporaryPath = join(dirname(path), `.${basename(path)}.part-${process.pid}-${Date.now()}`)
+  const temporaryPath = join(dirname(path), `.${basename(path)}.part-${process.pid}-${randomUUID()}`)
   const digest = createHash('sha256')
-  let file: Awaited<ReturnType<typeof open>> | undefined = await open(temporaryPath, 'w')
+  let file: Awaited<ReturnType<typeof open>> | undefined = await open(temporaryPath, 'wx')
   let downloadedBytes = 0
   try {
     const reader = response.body.getReader()

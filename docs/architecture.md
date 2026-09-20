@@ -860,7 +860,9 @@ pagination, чтобы не пропускать релиз нужного мо�
 Manifest version также обязана совпадать с версией в module release tag; при
 рассинхроне updater останавливается до загрузки бинарника. Draft и prerelease
 релизы не участвуют в выборе стабильного module update. Текстовые manifest-ы
-читаются потоково и ограничиваются 64 KiB до JSON-парсинга. `listener-runtime` является
+читаются потоково и ограничиваются 64 KiB до JSON-парсинга. Все updater
+staging-файлы получают UUID-имя и открываются без overwrite до atomic rename.
+`listener-runtime` является
 отдельным data-directory runtime и поэтому не входит в этот install-tree граф;
 его версия и целостность проверяются отдельным runtime manifest. `evohime-updater` проверяет
 этот marker до staged apply и отказывает при небезопасном пути, неизвестной

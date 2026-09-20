@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
@@ -327,5 +327,6 @@ describe('release installer', () => {
     await expect(downloadModuleRelease('https://github.com/rkfsociety/EvoHime.git', 'core', root, null, { fetch }))
       .rejects.toThrow('SHA-256')
     expect(() => statSync(join(root, 'evohime-core.exe'))).toThrow()
+    expect(readdirSync(root).filter((name) => name.includes('.part-'))).toEqual([])
   })
 })

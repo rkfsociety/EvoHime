@@ -1607,6 +1607,13 @@ Installer, component и module manifest-ы теперь читаются пот�
 отменяется до загрузки следующего артефакта. Regression test подтверждает, что
 module artifact не запрашивается после превышения лимита.
 
+## Collision-resistant updater staging follow-up (2026-09-20)
+
+Временные archive extraction и download paths теперь получают UUID и создаются
+с `open(..., 'wx')`; параллельные операции не могут молча перезаписать чужой
+staging-файл. Failure-path regression дополнительно проверяет удаление `.part`
+после неверного digest.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
