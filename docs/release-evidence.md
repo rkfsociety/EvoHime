@@ -1861,3 +1861,21 @@ cover idempotency, revision gaps, scope separation and rejection of raw
 provider response/prompt/secret-like material. Probe, routing, IPC and UI work
 remain explicitly active in stages 174.2–174.4. Core patch is now
 `0.0.000269` from `0.0.000268`.
+
+## Cloud provider profile contract (2026-09-20)
+
+Core patch повышен с `0.0.000269` до `0.0.000270`. `ProviderProfile` получил
+version/revision/hash provenance, отдельные typed provider family и transport,
+а `ProviderModelDescriptor` адаптирует существующий gateway
+`ModelCatalogEntry` без второго catalog owner. Built-in metadata ограничен
+восемью provider identities; credential binding остаётся opaque, capability,
+privacy и usage без источника остаются `Unknown`, raw catalog body и arbitrary
+endpoint из catalog payload не принимаются.
+
+Локально пройдены `cargo test --locked -p evohime-core
+free_provider_reliability_routing --no-fail-fast` (10 тестов),
+`cargo test --locked -p evohime-model-gateway --no-fail-fast` (95 тестов),
+`cargo clippy --locked -p evohime-core --all-targets -- -D warnings`,
+`cargo fmt --all` и `git diff --check`. Discovery, persistence, runtime route
+wiring, IPC/UI и CI evidence для этого среза ещё не заявляются; установленный
+клиент не изменялся.

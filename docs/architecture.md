@@ -2765,6 +2765,24 @@ reliability snapshot; Model Gateway остаётся transport/retry authority.
 не становятся Healthy, а credentials и raw provider payloads не сохраняются.
 SQLite schema v100 добавляет только reliability metadata.
 
+## Cloud Provider Profiles contract v1 (план 173.1, partial)
+
+`ProviderProfile` теперь versioned и сохраняет provider family отдельно от
+transport kind, opaque credential binding, trusted endpoint metadata, region,
+revision и content hash. Старый metadata-only JSON остаётся совместимым через
+defaults; неизвестные family/transport не становятся разрешением на runtime
+маршрутизацию.
+
+`ProviderModelDescriptor` является immutable adapter над каноническим
+`evohime-model-gateway::ModelCatalogEntry`: он добавляет profile/catalog
+revision и hash provenance, typed limits, capability flags с provenance,
+privacy, usage и lifecycle. Отсутствующие capability/privacy/usage остаются
+`Unknown`, а raw catalog response, arbitrary endpoint и credential material в
+descriptor не попадают. Восемь bounded built-in profile identities описывают
+OpenRouter, Groq, Gemini, Mistral, Cloudflare Workers AI, NVIDIA NIM, Cerebras
+и Hugging Face; discovery, persistence, route wiring, IPC и UI остаются
+следующими этапами 173.2–173.4.
+
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 
 `FreeAccessEvidence` — единый Core-owned metadata contract поверх advisory

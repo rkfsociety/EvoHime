@@ -1,7 +1,11 @@
 //! Bounded provider access/reliability metadata; gateway remains transport owner.
+use evohime_model_gateway::ModelCatalogEntry;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 pub const CONTRACT_ID: &str = "free-provider-reliability-routing-v1";
+pub const PROVIDER_PROFILE_SCHEMA_VERSION: u16 = 1;
+pub const PROVIDER_MODEL_DESCRIPTOR_SCHEMA_VERSION: u16 = 1;
 pub const MAX_PROVIDER_PROFILE_ID_BYTES: usize = 128;
 pub const MAX_PROVIDER_PROFILE_TRANSPORT_BYTES: usize = 64;
 pub const MAX_PROVIDER_PROFILE_ENDPOINT_BYTES: usize = 512;
@@ -14,15 +18,196 @@ pub const MAX_FREE_ACCESS_LIMITS: usize = 16;
 pub const MAX_FREE_ACCESS_SAMPLES: u32 = 256;
 pub const MAX_FREE_ACCESS_CONFIDENCE_BPS: u16 = 10_000;
 pub const MAX_FREE_ACCESS_TTL_MS: u64 = 31 * 24 * 60 * 60 * 1_000;
+pub const MAX_PROVIDER_MODEL_CAPABILITIES: usize = 16;
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderFamily {
+    OpenRouter,
+    Groq,
+    Gemini,
+    Mistral,
+    CloudflareWorkersAi,
+    NvidiaNim,
+    Cerebras,
+    HuggingFace,
+    LiteRouter,
+    OpenAi,
+    Ollama,
+    Local,
+    Mock,
+    #[default]
+    Unknown,
+}
+
+impl ProviderFamily {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenRouter => "openrouter",
+            Self::Groq => "groq",
+            Self::Gemini => "gemini",
+            Self::Mistral => "mistral",
+            Self::CloudflareWorkersAi => "cloudflare_workers_ai",
+            Self::NvidiaNim => "nvidia_nim",
+            Self::Cerebras => "cerebras",
+            Self::HuggingFace => "hugging_face",
+            Self::LiteRouter => "literouter",
+            Self::OpenAi => "open_ai",
+            Self::Ollama => "ollama",
+            Self::Local => "local",
+            Self::Mock => "mock",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TransportKind {
+    OpenAiCompatible,
+    OpenAiResponses,
+    Ollama,
+    Local,
+    Mock,
+    #[default]
+    Unknown,
+}
+
+impl TransportKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAiCompatible => "openai_compatible",
+            Self::OpenAiResponses => "openai_responses",
+            Self::Ollama => "ollama",
+            Self::Local => "local",
+            Self::Mock => "mock",
+            Self::Unknown => "unknown",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderProfile {
+    #[serde(default = "default_provider_profile_schema_version")]
+    pub schema_version: u16,
     pub provider_id: String,
+    #[serde(default)]
+    pub provider_family: ProviderFamily,
     pub transport: String,
+    #[serde(default)]
+    pub transport_kind: TransportKind,
     pub endpoint: String,
     pub region: String,
     pub credential_binding: String,
     pub content_hash: String,
+    #[serde(default = "default_revision")]
+    pub revision: u64,
+}
+
+fn default_provider_profile_schema_version() -> u16 {
+    PROVIDER_PROFILE_SCHEMA_VERSION
+}
+
+fn default_revision() -> u64 {
+    1
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCapability {
+    Chat,
+    Streaming,
+    ToolCalls,
+    StructuredOutput,
+    Vision,
+    Reasoning,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityState {
+    Supported,
+    Unsupported,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityProvenance {
+    ProviderDeclared,
+    Observed,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CapabilityFlag {
+    pub capability: ModelCapability,
+    pub state: CapabilityState,
+    pub provenance: CapabilityProvenance,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PrivacyClass {
+    LocalOnly,
+    ProviderControlled,
+    ProviderRetained,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSource {
+    ProviderReported,
+    GatewayMeasured,
+    #[default]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UsageMetadata {
+    pub input_unit: CreditUnit,
+    pub output_unit: CreditUnit,
+    pub source: UsageSource,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelLimits {
+    pub context_tokens: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelLifecycle {
+    Active,
+    Deprecated,
+    Unavailable,
+    #[default]
+    Unknown,
+}
+
+/// One immutable model snapshot adapted from the gateway's canonical catalog
+/// entry. It carries provenance and policy metadata, but never a raw response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderModelDescriptor {
+    pub schema_version: u16,
+    pub provider_id: String,
+    pub provider_family: ProviderFamily,
+    pub transport_kind: TransportKind,
+    pub model_id: String,
+    pub profile_revision: u64,
+    pub profile_content_hash: String,
+    pub catalog_revision: u64,
+    pub catalog_content_hash: String,
+    pub limits: ModelLimits,
+    pub capabilities: Vec<CapabilityFlag>,
+    pub privacy: PrivacyClass,
+    pub usage: UsageMetadata,
+    pub lifecycle: ModelLifecycle,
 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -310,11 +495,17 @@ pub struct RouteSelectionExplanation {
 
 impl ProviderProfile {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
+        let parsed_transport = parsed_transport_kind(&self.transport);
+        if self.schema_version != PROVIDER_PROFILE_SCHEMA_VERSION
+            || self.revision == 0
+            || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
             || !valid_profile_token(&self.transport, MAX_PROVIDER_PROFILE_TRANSPORT_BYTES)
             || !valid_profile_endpoint(&self.endpoint)
             || !valid_profile_token(&self.region, MAX_PROVIDER_PROFILE_REGION_BYTES)
             || !valid_credential_binding(&self.credential_binding)
+            || (self.transport_kind != TransportKind::Unknown
+                && parsed_transport != TransportKind::Unknown
+                && parsed_transport != self.transport_kind)
             || self.content_hash.len() != 64
             || !self
                 .content_hash
@@ -325,6 +516,197 @@ impl ProviderProfile {
         }
         Ok(())
     }
+
+    pub fn resolved_transport_kind(&self) -> TransportKind {
+        if self.transport_kind != TransportKind::Unknown {
+            return self.transport_kind;
+        }
+        parsed_transport_kind(&self.transport)
+    }
+}
+
+fn parsed_transport_kind(value: &str) -> TransportKind {
+    match value {
+        "openai_compatible" => TransportKind::OpenAiCompatible,
+        "openai_responses" => TransportKind::OpenAiResponses,
+        "ollama" => TransportKind::Ollama,
+        "local" => TransportKind::Local,
+        "mock" => TransportKind::Mock,
+        _ => TransportKind::Unknown,
+    }
+}
+
+impl ModelLimits {
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.context_tokens.is_some_and(|value| value == 0)
+            || self.max_output_tokens.is_some_and(|value| value == 0)
+        {
+            return Err("invalid model limits");
+        }
+        Ok(())
+    }
+}
+
+impl CapabilityFlag {
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.state != CapabilityState::Unknown
+            && self.provenance == CapabilityProvenance::Unknown
+        {
+            return Err("capability state lacks provenance");
+        }
+        Ok(())
+    }
+}
+
+impl ProviderModelDescriptor {
+    pub fn from_catalog_entry(
+        profile: &ProviderProfile,
+        entry: &ModelCatalogEntry,
+        catalog_revision: u64,
+        catalog_content_hash: impl Into<String>,
+    ) -> Result<Self, &'static str> {
+        profile.validate()?;
+        let descriptor = Self {
+            schema_version: PROVIDER_MODEL_DESCRIPTOR_SCHEMA_VERSION,
+            provider_id: profile.provider_id.clone(),
+            provider_family: profile.provider_family,
+            transport_kind: profile.resolved_transport_kind(),
+            model_id: entry.id.clone(),
+            profile_revision: profile.revision,
+            profile_content_hash: profile.content_hash.clone(),
+            catalog_revision,
+            catalog_content_hash: catalog_content_hash.into(),
+            limits: ModelLimits {
+                context_tokens: entry.context_tokens,
+                max_output_tokens: entry.max_output_tokens,
+            },
+            capabilities: Vec::new(),
+            privacy: PrivacyClass::Unknown,
+            usage: UsageMetadata {
+                input_unit: CreditUnit::Unknown,
+                output_unit: CreditUnit::Unknown,
+                source: UsageSource::Unknown,
+            },
+            lifecycle: ModelLifecycle::Unknown,
+        };
+        descriptor.validate()?;
+        Ok(descriptor)
+    }
+
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.schema_version != PROVIDER_MODEL_DESCRIPTOR_SCHEMA_VERSION
+            || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
+            || !valid_model_id(&self.model_id)
+            || self.profile_revision == 0
+            || self.catalog_revision == 0
+            || !valid_content_hash(&self.profile_content_hash)
+            || !valid_content_hash(&self.catalog_content_hash)
+            || self.capabilities.len() > MAX_PROVIDER_MODEL_CAPABILITIES
+            || self.limits.validate().is_err()
+            || self
+                .capabilities
+                .iter()
+                .any(|capability| capability.validate().is_err())
+            || self
+                .capabilities
+                .iter()
+                .enumerate()
+                .any(|(index, capability)| {
+                    self.capabilities[..index]
+                        .iter()
+                        .any(|previous| previous.capability == capability.capability)
+                })
+        {
+            return Err("invalid provider model descriptor");
+        }
+        Ok(())
+    }
+}
+
+/// Trusted, metadata-only defaults. They provide identity and transport
+/// policy; credentials and provider model catalogs are still supplied by the
+/// configured route or a later bounded discovery stage.
+pub fn builtin_provider_profiles() -> Vec<ProviderProfile> {
+    [
+        (
+            "openrouter",
+            ProviderFamily::OpenRouter,
+            "https://openrouter.ai/api/v1",
+        ),
+        (
+            "groq",
+            ProviderFamily::Groq,
+            "https://api.groq.com/openai/v1",
+        ),
+        (
+            "gemini",
+            ProviderFamily::Gemini,
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+        ),
+        (
+            "mistral",
+            ProviderFamily::Mistral,
+            "https://api.mistral.ai/v1",
+        ),
+        (
+            "cloudflare_workers_ai",
+            ProviderFamily::CloudflareWorkersAi,
+            "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
+        ),
+        (
+            "nvidia_nim",
+            ProviderFamily::NvidiaNim,
+            "https://integrate.api.nvidia.com/v1",
+        ),
+        (
+            "cerebras",
+            ProviderFamily::Cerebras,
+            "https://api.cerebras.ai/v1",
+        ),
+        (
+            "hugging_face",
+            ProviderFamily::HuggingFace,
+            "https://router.huggingface.co/v1",
+        ),
+    ]
+    .into_iter()
+    .map(|(provider_id, provider_family, endpoint)| {
+        let mut profile = ProviderProfile {
+            schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
+            provider_id: provider_id.into(),
+            provider_family,
+            transport: "openai_compatible".into(),
+            transport_kind: TransportKind::OpenAiCompatible,
+            endpoint: endpoint.into(),
+            region: "global".into(),
+            credential_binding: format!("credential:{provider_id}"),
+            content_hash: String::new(),
+            revision: 1,
+        };
+        profile.content_hash = profile_hash(&profile);
+        profile
+    })
+    .collect()
+}
+
+fn profile_hash(profile: &ProviderProfile) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(profile.schema_version.to_string().as_bytes());
+    hasher.update(b"|");
+    hasher.update(profile.provider_id.as_bytes());
+    hasher.update(b"|");
+    hasher.update(profile.provider_family.as_str().as_bytes());
+    hasher.update(b"|");
+    hasher.update(profile.transport_kind.as_str().as_bytes());
+    hasher.update(b"|");
+    hasher.update(profile.endpoint.as_bytes());
+    hasher.update(b"|");
+    hasher.update(profile.region.as_bytes());
+    hasher.update(b"|");
+    hasher.update(profile.credential_binding.as_bytes());
+    hasher.update(b"|");
+    hasher.update(profile.revision.to_string().as_bytes());
+    hex::encode(hasher.finalize())
 }
 
 fn valid_profile_token(value: &str, max_bytes: usize) -> bool {
@@ -414,12 +796,16 @@ mod tests {
 
     fn profile() -> ProviderProfile {
         ProviderProfile {
+            schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
             provider_id: "openrouter".into(),
+            provider_family: ProviderFamily::OpenRouter,
             transport: "openai_compatible".into(),
+            transport_kind: TransportKind::OpenAiCompatible,
             endpoint: "https://openrouter.ai/api/v1".into(),
             region: "global".into(),
             credential_binding: "cred:openrouter".into(),
             content_hash: "a".repeat(64),
+            revision: 1,
         }
     }
 
@@ -477,6 +863,13 @@ mod tests {
         let mut secret_binding = profile();
         secret_binding.credential_binding = "sk-live-provider-key".into();
         assert_eq!(secret_binding.validate(), Err("invalid provider profile"));
+
+        let mut mismatched_transport = profile();
+        mismatched_transport.transport_kind = TransportKind::Ollama;
+        assert_eq!(
+            mismatched_transport.validate(),
+            Err("invalid provider profile")
+        );
     }
 
     #[test]
@@ -484,6 +877,77 @@ mod tests {
         let mut invalid = profile();
         invalid.content_hash = "z".repeat(64);
         assert_eq!(invalid.validate(), Err("invalid provider profile"));
+    }
+
+    #[test]
+    fn legacy_profile_defaults_keep_transport_compatible() {
+        let legacy = serde_json::json!({
+            "provider_id": "openrouter",
+            "transport": "openai_compatible",
+            "endpoint": "https://openrouter.ai/api/v1",
+            "region": "global",
+            "credential_binding": "cred:openrouter",
+            "content_hash": "a".repeat(64)
+        });
+        let parsed: ProviderProfile = serde_json::from_value(legacy).expect("legacy profile");
+        assert!(parsed.validate().is_ok());
+        assert_eq!(
+            parsed.resolved_transport_kind(),
+            TransportKind::OpenAiCompatible
+        );
+    }
+
+    #[test]
+    fn builtin_profiles_are_bounded_and_versioned() {
+        let profiles = builtin_provider_profiles();
+        assert_eq!(profiles.len(), 8);
+        assert!(profiles.iter().all(|profile| profile.validate().is_ok()));
+        assert!(profiles
+            .iter()
+            .all(|profile| profile.credential_binding.starts_with("credential:")));
+        let mut ids: Vec<_> = profiles
+            .iter()
+            .map(|profile| profile.provider_id.as_str())
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), profiles.len());
+    }
+
+    #[test]
+    fn model_descriptor_adapts_gateway_catalog_with_fail_closed_metadata() {
+        let entry = ModelCatalogEntry {
+            id: "provider/model".into(),
+            context_tokens: Some(16_384),
+            max_output_tokens: Some(2_048),
+        };
+        let descriptor =
+            ProviderModelDescriptor::from_catalog_entry(&profile(), &entry, 7, "c".repeat(64))
+                .expect("descriptor");
+        assert!(descriptor.validate().is_ok());
+        assert_eq!(descriptor.model_id, entry.id);
+        assert_eq!(descriptor.limits.context_tokens, Some(16_384));
+        assert!(descriptor.capabilities.is_empty());
+        assert_eq!(descriptor.privacy, PrivacyClass::Unknown);
+        assert_eq!(descriptor.usage.source, UsageSource::Unknown);
+
+        let mut duplicate = descriptor.clone();
+        duplicate.capabilities = vec![
+            CapabilityFlag {
+                capability: ModelCapability::Chat,
+                state: CapabilityState::Supported,
+                provenance: CapabilityProvenance::ProviderDeclared,
+            },
+            CapabilityFlag {
+                capability: ModelCapability::Chat,
+                state: CapabilityState::Unknown,
+                provenance: CapabilityProvenance::Unknown,
+            },
+        ];
+        assert_eq!(
+            duplicate.validate(),
+            Err("invalid provider model descriptor")
+        );
     }
 
     #[test]

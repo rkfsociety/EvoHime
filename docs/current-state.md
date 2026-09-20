@@ -119,7 +119,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000269`, `ui-bundle 0.0.000090`,
+Текущий checkout содержит patch `core 0.0.000270`, `ui-bundle 0.0.000090`,
 `shell-host 0.0.000098`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -131,6 +131,12 @@ units/limits, confidence, expiry и invalidation; SQLite schema v172 храни�
 только bounded metadata snapshot в scope provider/model/credential-binding/
 region с monotonic revision fence. Probes, `FreeOnly` routing, IPC и UI ещё не
 реализованы и остаются активными этапами 174.2–174.4.
+План 173.1 получил совместимый Core-контракт: versioned `ProviderProfile`
+разделяет provider family и transport, а `ProviderModelDescriptor` адаптирует
+существующий gateway `ModelCatalogEntry` с profile/catalog revision/hash,
+typed limits и fail-closed capability/privacy/usage metadata. Восемь
+built-in identities добавлены как bounded metadata; discovery, catalog
+storage/recovery, route wiring, IPC и UI остаются активными этапами 173.2–173.4.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и
