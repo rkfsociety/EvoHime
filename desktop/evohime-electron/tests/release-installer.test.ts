@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { zipSync } from 'fflate'
@@ -106,5 +106,25 @@ describe('release installer', () => {
     const result = await downloadModuleRelease('https://github.com/rkfsociety/EvoHime.git', 'core', root, null, { fetch })
     expect(result.manifest.version).toBe('2.1.0')
     expect(result.file).toBe(join(root, 'evohime-core.exe'))
+  })
+
+  it('does not publish an artifact when its digest is invalid', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-module-invalid-digest-'))
+    roots.push(root)
+    const bytes = new TextEncoder().encode('tampered module')
+    const manifest = JSON.stringify({ schema: 'evohime.module-release.v1', module: 'core', version: '2.1.1', artifact: 'evohime-core.exe', size: bytes.length, sha256: '0'.repeat(64) })
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/releases?per_page=100')) return new Response(JSON.stringify([{ tag_name: 'module-core-v2.1.1', assets: [
+        { name: 'core.manifest.json', url: 'https://api.github.com/repos/x/y/releases/assets/core-manifest' },
+        { name: 'evohime-core.exe', url: 'https://api.github.com/repos/x/y/releases/assets/core' }
+      ] }]), { status: 200 })
+      if (url.endsWith('core-manifest')) return new Response(manifest, { status: 200 })
+      return new Response(bytes, { status: 200 })
+    })
+
+    await expect(downloadModuleRelease('https://github.com/rkfsociety/EvoHime.git', 'core', root, null, { fetch }))
+      .rejects.toThrow('SHA-256')
+    expect(() => statSync(join(root, 'evohime-core.exe'))).toThrow()
   })
 })

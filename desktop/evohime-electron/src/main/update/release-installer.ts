@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { basename, dirname, join } from 'node:path'
 import { unzipSync } from 'fflate'
 
 import { normalizeCommit, type BuildMarker } from './config'
@@ -137,11 +137,10 @@ export async function downloadReleaseInstaller(
     request,
     { ...headers, accept: 'application/octet-stream' },
     onProgress ?? deps.onProgress,
-    manifest.size
+    manifest.size,
+    manifest.sha256
   )
   if (bytes !== manifest.size) throw new Error('GitHub installer: размер установщика не совпадает с манифестом.')
-  const digest = await sha256(installer)
-  if (digest !== manifest.sha256) throw new Error('GitHub installer: SHA-256 установщика не совпадает с манифестом.')
 
   const marker: BuildMarker = { commit: manifest.commit, branch: manifest.branch, builtAtMs: (deps.now ?? Date.now)() }
   await writeFile(join(destination, 'evohime.build.json'), `${JSON.stringify(marker, null, 2)}\n`, 'utf8')
@@ -184,8 +183,8 @@ export async function downloadReleaseComponents(
     if (!url) throw new Error(`GitHub components: артефакт отсутствует: ${component.artifact}`)
     const target = join(destination, component.path)
     await mkdir(dirname(target), { recursive: true })
-    const bytes = await downloadBytes(url, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, component.size)
-    if (bytes !== component.size || (await sha256(target)) !== component.sha256) throw new Error(`GitHub components: hash mismatch: ${component.id}`)
+    const bytes = await downloadBytes(url, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, component.size, component.sha256)
+    if (bytes !== component.size) throw new Error(`GitHub components: size mismatch: ${component.id}`)
     if (component.id === 'ui-bundle') await extractUiArchive(target, destination)
     files.push(target)
   }
@@ -214,8 +213,8 @@ export async function downloadModuleRelease(
   if (!artifactUrl) throw new Error(`GitHub module: артефакт ${manifest.artifact} отсутствует.`)
   await mkdir(destination, { recursive: true })
   const target = join(destination, manifest.artifact)
-  const bytes = await downloadBytes(artifactUrl, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, manifest.size)
-  if (bytes !== manifest.size || (await sha256(target)) !== manifest.sha256) throw new Error(`GitHub module: hash mismatch: ${module}`)
+  const bytes = await downloadBytes(artifactUrl, target, request, { ...headers, accept: 'application/octet-stream' }, deps.onProgress, manifest.size, manifest.sha256)
+  if (bytes !== manifest.size) throw new Error(`GitHub module: size mismatch: ${module}`)
   if (module === 'ui-bundle') await extractUiArchive(target, destination)
   return { manifest, file: target }
 }
@@ -338,11 +337,13 @@ async function downloadBytes(
   request: typeof globalThis.fetch,
   headers: Record<string, string>,
   onProgress?: (downloadedBytes: number, totalBytes: number) => void,
-  expectedBytes?: number
+  expectedBytes?: number,
+  expectedSha256?: string
 ): Promise<number> {
   const response = await request(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok || !response.body) throw new Error(`GitHub installer: не удалось скачать установщик (${response.status}).`)
   const totalBytes = Number(response.headers.get('content-length')) || expectedBytes || 0
+  if (totalBytes > MAX_INSTALLER_BYTES) throw new Error('GitHub installer: установщик слишком большой.')
   const chunks: Buffer[] = []
   let downloadedBytes = 0
   const reader = response.body.getReader()
@@ -356,7 +357,19 @@ async function downloadBytes(
   }
   const data = Buffer.concat(chunks)
   if (data.byteLength > MAX_INSTALLER_BYTES) throw new Error('GitHub installer: установщик слишком большой.')
-  await writeFile(path, data)
+  if (expectedBytes !== undefined && data.byteLength !== expectedBytes) {
+    throw new Error('GitHub installer: размер загруженного файла не совпадает с манифестом.')
+  }
+  const temporaryPath = join(dirname(path), `.${basename(path)}.part-${process.pid}-${Date.now()}`)
+  try {
+    await writeFile(temporaryPath, data)
+    if (expectedSha256 !== undefined && (await sha256(temporaryPath)) !== expectedSha256) {
+      throw new Error('GitHub installer: SHA-256 загруженного файла не совпадает с манифестом.')
+    }
+    await rename(temporaryPath, path)
+  } finally {
+    await rm(temporaryPath, { force: true }).catch(() => {})
+  }
   return data.byteLength
 }
 
