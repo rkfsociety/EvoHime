@@ -158,7 +158,7 @@ export async function downloadReleaseComponents(
 ): Promise<DownloadedComponents> {
   const apiBase = githubApiBase(repositoryUrl)
   if (!apiBase) throw new Error('GitHub components: некорректный repository.')
-  if (selected.length === 0 || selected.length > 32 || selected.some((id) => !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id))) {
+  if (selected.length === 0 || selected.length > 32 || new Set(selected).size !== selected.length || selected.some((id) => !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id))) {
     throw new Error('GitHub components: некорректный selected component set.')
   }
   const request = deps.fetch ?? globalThis.fetch
@@ -453,10 +453,19 @@ function parseComponentManifest(text: string): ReleaseComponentManifest {
   if (value?.schema !== 'evohime.component-manifest.v1' || components.length === 0 || components.length > 32) {
     throw new Error('GitHub components: некорректный манифест.')
   }
+  const ids = new Set<string>()
+  const artifacts = new Set<string>()
+  const paths = new Set<string>()
   for (const component of components) {
     if (typeof component?.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(component.id) || typeof component?.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(component.version) || typeof component?.artifact !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(component.artifact) || typeof component?.path !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,259}$/.test(component.path) || component.path.includes('..') || component.path.includes('//') || !Number.isSafeInteger(component.size) || component.size <= 0 || component.size > MAX_INSTALLER_BYTES || typeof component.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(component.sha256) || (component?.protocol !== undefined && (typeof component.protocol !== 'string' || component.protocol.length > 64))) {
       throw new Error('GitHub components: небезопасная запись компонента.')
     }
+    if (ids.has(component.id) || artifacts.has(component.artifact) || paths.has(component.path)) {
+      throw new Error('GitHub components: duplicate component id, artifact or path.')
+    }
+    ids.add(component.id)
+    artifacts.add(component.artifact)
+    paths.add(component.path)
   }
   return {
     ...value,

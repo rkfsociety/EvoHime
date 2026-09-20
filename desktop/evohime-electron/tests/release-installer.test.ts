@@ -111,6 +111,55 @@ describe('release installer', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('rejects duplicate component identities before downloading artifacts', async () => {
+    const cases = [
+      ['id', [
+        { id: 'ui-bundle', artifact: 'ui-a.zip', path: 'ui-a.zip' },
+        { id: 'ui-bundle', artifact: 'ui-b.zip', path: 'ui-b.zip' }
+      ]],
+      ['artifact', [
+        { id: 'ui-bundle', artifact: 'same.zip', path: 'ui-a.zip' },
+        { id: 'core', artifact: 'same.zip', path: 'core.exe' }
+      ]],
+      ['path', [
+        { id: 'ui-bundle', artifact: 'ui.zip', path: 'same/path' },
+        { id: 'core', artifact: 'core.exe', path: 'same/path' }
+      ]]
+    ] as const
+
+    for (const [kind, identities] of cases) {
+      const root = mkdtempSync(join(tmpdir(), `evohime-components-duplicate-${kind}-`))
+      roots.push(root)
+      const manifest = JSON.stringify({
+        schema: 'evohime.component-manifest.v1', release_commit: COMMIT,
+        components: identities.map((component) => ({
+          ...component, version: '1.0.0', size: 1, sha256: '0'.repeat(64), required: true
+        }))
+      })
+      const fetch = vi.fn(async (input: string | URL | Request) => {
+        const url = String(input)
+        if (url.endsWith('/releases/tags/installer')) return new Response(JSON.stringify({ assets: [
+          { name: 'evohime.components.json', url: 'https://api.github.com/repos/x/y/releases/assets/components' }
+        ] }), { status: 200 })
+        if (url.endsWith('/components')) return new Response(manifest, { status: 200 })
+        throw new Error('component artifact must not be downloaded')
+      })
+
+      await expect(downloadReleaseComponents(
+        'https://github.com/rkfsociety/EvoHime.git', root, [...new Set(identities.map((component) => component.id))], null, { fetch }
+      )).rejects.toThrow('duplicate component')
+      expect(fetch).toHaveBeenCalledTimes(2)
+    }
+  })
+
+  it('rejects duplicate selected component ids before contacting GitHub', async () => {
+    const fetch = vi.fn()
+    await expect(downloadReleaseComponents(
+      'https://github.com/rkfsociety/EvoHime.git', tmpdir(), ['ui-bundle', 'ui-bundle'], null, { fetch }
+    )).rejects.toThrow('selected component set')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('preserves the previous UI bundle when archive extraction is rejected', async () => {
     const root = mkdtempSync(join(tmpdir(), 'evohime-components-unsafe-'))
     roots.push(root)

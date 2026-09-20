@@ -1571,6 +1571,15 @@ Component downloader теперь отвергает `ui-bundle` больше 12
 и `updater`; exact-commit CI и публикация module releases будут доступны после
 следующего планового push.
 
+## Component manifest collision follow-up (2026-09-20)
+
+Updater теперь отвергает дублирующиеся component IDs, artifact names и
+destination paths до загрузки байтов. Выбранный список также отвергает повторный
+ID, чтобы не допускать неоднозначного выбора и повторной загрузки одного
+компонента. Regression coverage включает все три типа коллизий и duplicate
+selection; focused release-installer suite, typecheck и diff check выполняются
+перед task-only commit.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
