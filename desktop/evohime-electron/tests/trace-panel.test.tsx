@@ -121,6 +121,7 @@ describe('trace panel', () => {
         events={[{ sequenceId: 20, taskId: 'task-1', eventType: 'task.failed', payload: '{"error_code":"client_blocked","source":"electron_transport","operation":"ollama.download"}' }]} />
     )
     expect(await screen.findByText('Ollama download fallback: подтверждён')).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'События оболочки' }).textContent).toContain('shell.ollama_download_fallback')
   })
 
   it('does not infer a fallback call from an Ollama failure alone', () => {

@@ -89,6 +89,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics 
         {saveStatus ? <p className="trace-panel__reason" role="status">{saveStatus}</p> : null}
         {state?.reason ? <p className="trace-panel__reason">Причина: {safeTraceReason(state.reason)}</p> : null}
         <OllamaFallbackNotice events={traceEvents} shellDiagnostics={shellDiagnostics} />
+        <ShellDiagnosticsView diagnostics={shellDiagnostics} />
         {chatId === null ? (
           <p className="trace-panel__empty">Выбери чат, чтобы открыть его трейс.</p>
         ) : traceEvents.length === 0 ? (
@@ -139,6 +140,23 @@ function OllamaFallbackNotice({ events, shellDiagnostics }: { readonly events: r
   if (!ollamaFailure) return null
   const observed = shellDiagnostics.some((diagnostic) => diagnostic.event === 'shell.ollama_download_fallback')
   return <p className="trace-panel__reason" role="status">Ollama download fallback: {observed ? 'подтверждён' : 'не подтверждён в shell-событиях'}</p>
+}
+
+function ShellDiagnosticsView({ diagnostics }: { readonly diagnostics: readonly ShellDiagnostic[] }): React.JSX.Element | null {
+  if (diagnostics.length === 0) return null
+  return (
+    <section className="trace-panel__shell-diagnostics" aria-label="События оболочки">
+      <h3>События оболочки</h3>
+      <ul>
+        {diagnostics.map((diagnostic) => (
+          <li key={diagnostic.event}>
+            <code>{diagnostic.event}</code>
+            <span>error_code={diagnostic.errorCode} · source={diagnostic.source} · operation={diagnostic.operation}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 const TRACE_URL_PATTERN = /\b(?:https?|wss?|file|ftp):\/\/[^\s"'<>]+/gi

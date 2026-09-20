@@ -30,7 +30,7 @@ output, transcripts, absolute paths и PII запрещены.
   необработанные URL, prompt и секретные значения до native save dialog.
 - Для `ollama.download` trace отдельно сообщает `observed=yes/no` для
   `shell.ollama_download_fallback`; raw URL и shell payload не передаются.
-- UI module patch release: `0.0.000093 -> 0.0.000094`.
+- UI module patch release: `0.0.000094 -> 0.0.000095`.
 - Проверки: `tests/trace-panel.test.tsx`, `tests/shell-bridge.test.ts`,
   `tests/ollama-runtime.test.ts`.
 
