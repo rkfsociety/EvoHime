@@ -2107,3 +2107,7 @@ Core patch повышен `0.0.000282 -> 0.0.000283`.
 
 Проверка: Core route-preflight regression для stale и missing-model states;
 CI evidence для локального коммита ещё не заявляется.
+
+TTL regression: expired `Fresh` snapshot теперь даёт bounded
+`provider_catalog_expired`, не маскируясь под missing model. Core patch повышен
+`0.0.000283 -> 0.0.000284`.

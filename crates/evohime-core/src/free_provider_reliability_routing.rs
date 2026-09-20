@@ -1212,6 +1212,9 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
         };
         match snapshot.state {
             ProviderCatalogState::Fresh if snapshot.route_eligible_at(model_id, now_ms) => Ok(()),
+            ProviderCatalogState::Fresh if now_ms >= snapshot.expires_at_ms => {
+                Err(ProviderError::Config("provider_catalog_expired".into()))
+            }
             ProviderCatalogState::Fresh => {
                 Err(ProviderError::Config("provider_model_not_found".into()))
             }
@@ -1540,6 +1543,28 @@ mod tests {
             .check("default", Some("model-a"), 3_500)
             .expect_err("missing model must fail closed");
         assert!(matches!(error, ProviderError::Config(code) if code == "provider_model_not_found"));
+
+        let expired = ProviderCatalogSnapshot::fresh_from_catalog(
+            &profile,
+            &[ModelCatalogEntry {
+                id: "model-a".into(),
+                context_tokens: None,
+                max_output_tokens: None,
+            }],
+            4,
+            "e".repeat(64),
+            4_000,
+            5_000,
+        )
+        .expect("expired snapshot");
+        cache
+            .write()
+            .expect("cache write")
+            .insert(provider_catalog_scope_key(&profile), expired);
+        let error = preflight
+            .check("default", Some("model-a"), 5_000)
+            .expect_err("expired catalog must fail closed");
+        assert!(matches!(error, ProviderError::Config(code) if code == "provider_catalog_expired"));
     }
 
     fn profile() -> ProviderProfile {
