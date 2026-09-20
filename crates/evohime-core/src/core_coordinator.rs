@@ -436,12 +436,22 @@ impl TaskCoordinator {
                 .await;
             }
             CoreEvent::TaskFailed { task_id, error } => {
+                let diagnostics = crate::conversation_event_log::failure_projection(
+                    &serde_json::json!({"error": error}),
+                );
                 Self::record_audit(
                     state,
                     crate::audit::AuditKind::Failure,
                     task_id.to_string(),
                     "task.failed",
-                    [("error".to_owned(), error.to_string())],
+                    ["error_code", "source", "operation"]
+                        .into_iter()
+                        .filter_map(|key| {
+                            diagnostics
+                                .get(key)
+                                .and_then(serde_json::Value::as_str)
+                                .map(|value| (key.to_owned(), value.to_owned()))
+                        }),
                 )
                 .await;
             }

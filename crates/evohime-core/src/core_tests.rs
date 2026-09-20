@@ -556,7 +556,19 @@ mod tests {
             .expect("failure audit record is appended");
         assert_eq!(failure.actor, "task-audit-failure");
         assert_eq!(failure.event_id, "task.failed");
-        assert!(failure.fields.contains_key("error"));
+        assert_eq!(
+            failure.fields.get("error_code").map(String::as_str),
+            Some("timeout")
+        );
+        assert_eq!(
+            failure.fields.get("source").map(String::as_str),
+            Some("core")
+        );
+        assert_eq!(
+            failure.fields.get("operation").map(String::as_str),
+            Some("task.execute")
+        );
+        assert!(!failure.fields.contains_key("error"));
     }
 
     #[tokio::test]

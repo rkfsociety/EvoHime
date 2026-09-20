@@ -2111,3 +2111,12 @@ CI evidence для локального коммита ещё не заявля�
 TTL regression: expired `Fresh` snapshot теперь даёт bounded
 `provider_catalog_expired`, не маскируясь под missing model. Core patch повышен
 `0.0.000283 -> 0.0.000284`.
+### 2026-09-20 — task.failed audit redaction
+
+- Координатор теперь записывает в durable audit для `task.failed` только
+  `error_code`, `source` и `operation`, используя тот же bounded projection,
+  что и conversation trace; исходный error text больше не сохраняется в audit.
+- Локальное evidence: Core unit test
+  `task_failed_event_appends_a_failure_audit_record` подтверждает отсутствие
+  поля `error` и наличие трёх безопасных полей. GitHub CI для этого локального
+  коммита ещё не запускался.
