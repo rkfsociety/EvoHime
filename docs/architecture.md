@@ -2813,8 +2813,10 @@ immutable descriptors; expired/stale/failed snapshots не проходят
 `route_eligible_at`. При временной ошибке refresh уже сохраняет прежние bounded
 entries как `Stale` с typed failure для отображения, но не для маршрутизации;
 credential rejection и unsupported discovery fail closed без stale fallback.
-HTTP 404 и явный `model not found` получают отдельный bounded
-`model_not_found` outcome и не маскируются под protocol mismatch.
+Явный `model not found` получает отдельный bounded `model_not_found` outcome.
+HTTP 404 при чтении `/models` означает `discovery_unsupported`, поскольку этот
+запрос не содержит выбранную модель; эти исходы не маскируются под generic
+protocol mismatch.
 SQLite boundary принимает только этот bounded код из allow-list и сохраняет его
 при восстановлении снапшота.
 Capability filtering по provider-declared/observed metadata ещё расширяется.

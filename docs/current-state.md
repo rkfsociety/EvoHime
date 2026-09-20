@@ -172,8 +172,9 @@ credential binding или raw provider errors; renderer только отобр�
 При network/timeout/rate-limit ошибке имеющийся bounded catalog сохраняется как
 `Stale` с typed failure и может быть показан UI; `route_eligible_at` остаётся
 false. Credential rejection и unsupported discovery не используют stale cache.
-HTTP 404 и явный `model not found` теперь получают отдельный bounded
-`model_not_found` outcome, а не смешиваются с `protocol_mismatch`; storage
+Явный `model not found` получает отдельный bounded `model_not_found` outcome;
+HTTP 404 при чтении catalog endpoint означает `discovery_unsupported`, а не
+пропажу выбранной модели, и оба случая не смешиваются с `protocol_mismatch`; storage
 boundary принимает и восстанавливает этот код.
 Renderer показывает этот код как «модель не найдена у провайдера» и не выводит
 сырой ответ каталога.

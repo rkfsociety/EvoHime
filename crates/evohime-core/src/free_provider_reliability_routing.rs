@@ -1290,11 +1290,12 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
             CatalogFailureCode::RateLimited
         }
         ProviderError::Api(_)
-            if message.contains("404")
-                || message.contains("model not found")
-                || message.contains("model_not_found") =>
+            if message.contains("model not found") || message.contains("model_not_found") =>
         {
             CatalogFailureCode::ModelNotFound
+        }
+        ProviderError::Api(_) if message.contains("404") => {
+            CatalogFailureCode::DiscoveryUnsupported
         }
         ProviderError::Api(_)
             if message.contains("exceeds size") || message.contains("too large") =>
@@ -2007,6 +2008,10 @@ mod tests {
             classify_catalog_error(&ProviderError::Api(
                 "provider model catalog request failed with HTTP 404".into()
             )),
+            CatalogFailureCode::DiscoveryUnsupported
+        );
+        assert_eq!(
+            classify_catalog_error(&ProviderError::Api("provider model not found".into())),
             CatalogFailureCode::ModelNotFound
         );
         let encoded = serde_json::to_string(&classify_catalog_error(&error)).expect("code json");

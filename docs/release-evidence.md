@@ -2130,3 +2130,13 @@ Core authenticated `model.catalog` projection теперь переводит у
 
 Проверки: Core provider-catalog projection regression, ModelPicker Vitest и
 Electron typecheck; GitHub CI для локального коммита ещё не запускался.
+
+## Catalog 404 classification (2026-09-20)
+
+Catalog discovery теперь не называет HTTP 404 от `/models` отсутствующей
+выбранной моделью: этот запрос не содержит model id, поэтому 404 получает
+bounded `discovery_unsupported`. Только явный `model not found` остаётся
+`model_not_found`.
+
+Проверка: Core classification regression test; GitHub CI для локального
+коммита ещё не запускался.
