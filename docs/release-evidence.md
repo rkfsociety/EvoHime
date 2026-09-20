@@ -60,6 +60,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Status snapshot и cancel command handlers вынесены в отдельный
   `windows_controls` module; task identity, output redaction и exit mapping
   сохранены, marker CLI повышен до `0.0.000078`.
+- Platform-neutral protocol session/write code отделён от event frame reading,
+  cursor advancement и task snapshot filtering в `read` module; HMAC/framing
+  behavior и `CoreClient` facade сохранены, marker CLI повышен до `0.0.000079`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 

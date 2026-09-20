@@ -7,6 +7,7 @@
 mod auth;
 mod client;
 mod commands;
+mod read;
 
 #[cfg(test)]
 mod tests;
