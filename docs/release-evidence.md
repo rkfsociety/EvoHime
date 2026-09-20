@@ -1897,3 +1897,16 @@ local-storage (15 тестов), Core contract tests (11 тестов), clippy C
 local-storage с `-D warnings`, rustfmt и `git diff --check`. Runtime discovery,
 route preflight, IPC/UI и CI evidence ещё не заявляются; установленный клиент
 не изменялся.
+
+## Bounded provider catalog lifecycle contract (2026-09-20)
+
+Core patch повышен с `0.0.000271` до `0.0.000272`. `ProviderCatalogSnapshot`
+разделяет fresh/stale/unavailable/credential-rejected/discovery-unsupported
+состояния, безопасно классифицирует gateway errors, deterministic dedup-ит
+`ModelCatalogEntry` и запрещает expired/stale/failed snapshot в
+`route_eligible_at`; raw provider error text в snapshot не сохраняется.
+
+Пройдены Core contract tests (13 тестов), `cargo clippy --locked -p
+evohime-core --all-targets -- -D warnings`, rustfmt и `git diff --check`.
+Live fetch/cache/recovery wiring, route preflight, IPC/UI и CI evidence ещё не
+заявляются; установленный клиент не изменялся.

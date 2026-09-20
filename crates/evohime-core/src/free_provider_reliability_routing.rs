@@ -1,4 +1,5 @@
 //! Bounded provider access/reliability metadata; gateway remains transport owner.
+use evohime_model_gateway::providers::ProviderError;
 use evohime_model_gateway::ModelCatalogEntry;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -20,6 +21,8 @@ pub const MAX_FREE_ACCESS_CONFIDENCE_BPS: u16 = 10_000;
 pub const MAX_FREE_ACCESS_TTL_MS: u64 = 31 * 24 * 60 * 60 * 1_000;
 pub const MAX_PROVIDER_MODEL_CAPABILITIES: usize = 16;
 pub const MAX_PROVIDER_CATALOG_ENTRIES: usize = 2_048;
+pub const PROVIDER_CATALOG_SCHEMA_VERSION: u16 = 1;
+pub const MAX_PROVIDER_CATALOG_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -209,6 +212,51 @@ pub struct ProviderModelDescriptor {
     pub privacy: PrivacyClass,
     pub usage: UsageMetadata,
     pub lifecycle: ModelLifecycle,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderCatalogState {
+    Fresh,
+    Stale,
+    Unavailable,
+    CredentialRejected,
+    DiscoveryUnsupported,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CatalogFailureCode {
+    Network,
+    Timeout,
+    CredentialRejected,
+    RateLimited,
+    MalformedResponse,
+    ResponseTooLarge,
+    EntryLimitExceeded,
+    ProtocolMismatch,
+    DiscoveryUnsupported,
+    Unknown,
+}
+
+/// Immutable, safe projection of one provider catalog observation. The
+/// gateway remains the network owner; this contract owns lifecycle and route
+/// eligibility semantics only.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderCatalogSnapshot {
+    pub schema_version: u16,
+    pub provider_id: String,
+    pub credential_binding: String,
+    pub region: String,
+    pub profile_revision: u64,
+    pub profile_content_hash: String,
+    pub revision: u64,
+    pub catalog_content_hash: String,
+    pub state: ProviderCatalogState,
+    pub models: Vec<ProviderModelDescriptor>,
+    pub observed_at_ms: u64,
+    pub expires_at_ms: u64,
+    pub failure: Option<CatalogFailureCode>,
 }
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -669,6 +717,221 @@ impl ProviderModelDescriptor {
     }
 }
 
+impl ProviderCatalogSnapshot {
+    pub fn fresh_from_catalog(
+        profile: &ProviderProfile,
+        entries: &[ModelCatalogEntry],
+        revision: u64,
+        catalog_content_hash: impl Into<String>,
+        observed_at_ms: u64,
+        expires_at_ms: u64,
+    ) -> Result<Self, &'static str> {
+        profile.validate()?;
+        let catalog_content_hash = catalog_content_hash.into();
+        if revision == 0
+            || !valid_content_hash(&catalog_content_hash)
+            || observed_at_ms == 0
+            || expires_at_ms <= observed_at_ms
+            || expires_at_ms.saturating_sub(observed_at_ms) > MAX_PROVIDER_CATALOG_TTL_MS
+            || entries.len() > MAX_PROVIDER_CATALOG_ENTRIES
+        {
+            return Err("invalid provider catalog snapshot");
+        }
+
+        let mut normalized = entries.to_vec();
+        normalized.sort_by(|left, right| {
+            left.id
+                .cmp(&right.id)
+                .then_with(|| right.context_tokens.cmp(&left.context_tokens))
+                .then_with(|| right.max_output_tokens.cmp(&left.max_output_tokens))
+        });
+        normalized.dedup_by(|left, right| left.id == right.id);
+        let models = normalized
+            .iter()
+            .map(|entry| {
+                ProviderModelDescriptor::from_catalog_entry(
+                    profile,
+                    entry,
+                    revision,
+                    catalog_content_hash.clone(),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let snapshot = Self {
+            schema_version: PROVIDER_CATALOG_SCHEMA_VERSION,
+            provider_id: profile.provider_id.clone(),
+            credential_binding: profile.credential_binding.clone(),
+            region: profile.region.clone(),
+            profile_revision: profile.revision,
+            profile_content_hash: profile.content_hash.clone(),
+            revision,
+            catalog_content_hash,
+            state: ProviderCatalogState::Fresh,
+            models,
+            observed_at_ms,
+            expires_at_ms,
+            failure: None,
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+
+    pub fn failure(
+        profile: &ProviderProfile,
+        revision: u64,
+        catalog_content_hash: impl Into<String>,
+        state: ProviderCatalogState,
+        failure: CatalogFailureCode,
+        observed_at_ms: u64,
+        expires_at_ms: u64,
+    ) -> Result<Self, &'static str> {
+        profile.validate()?;
+        let snapshot = Self {
+            schema_version: PROVIDER_CATALOG_SCHEMA_VERSION,
+            provider_id: profile.provider_id.clone(),
+            credential_binding: profile.credential_binding.clone(),
+            region: profile.region.clone(),
+            profile_revision: profile.revision,
+            profile_content_hash: profile.content_hash.clone(),
+            revision,
+            catalog_content_hash: catalog_content_hash.into(),
+            state,
+            models: Vec::new(),
+            observed_at_ms,
+            expires_at_ms,
+            failure: Some(failure),
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
+    }
+
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.schema_version != PROVIDER_CATALOG_SCHEMA_VERSION
+            || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
+            || !valid_credential_binding(&self.credential_binding)
+            || !valid_profile_token(&self.region, MAX_PROVIDER_PROFILE_REGION_BYTES)
+            || self.profile_revision == 0
+            || self.revision == 0
+            || !valid_content_hash(&self.profile_content_hash)
+            || !valid_content_hash(&self.catalog_content_hash)
+            || self.models.len() > MAX_PROVIDER_CATALOG_ENTRIES
+            || self.observed_at_ms == 0
+            || self.expires_at_ms <= self.observed_at_ms
+            || self.expires_at_ms.saturating_sub(self.observed_at_ms) > MAX_PROVIDER_CATALOG_TTL_MS
+            || self.models.iter().any(|model| {
+                model.validate().is_err()
+                    || model.provider_id != self.provider_id
+                    || model.profile_revision != self.profile_revision
+                    || model.catalog_revision != self.revision
+                    || model.catalog_content_hash != self.catalog_content_hash
+            })
+            || self.models.iter().enumerate().any(|(index, model)| {
+                self.models[..index]
+                    .iter()
+                    .any(|previous| previous.model_id == model.model_id)
+            })
+        {
+            return Err("invalid provider catalog snapshot");
+        }
+
+        let state_is_consistent = match self.state {
+            ProviderCatalogState::Fresh | ProviderCatalogState::Stale => self.failure.is_none(),
+            ProviderCatalogState::Unavailable => {
+                self.models.is_empty()
+                    && self.failure.is_some_and(|failure| {
+                        !matches!(
+                            failure,
+                            CatalogFailureCode::CredentialRejected
+                                | CatalogFailureCode::DiscoveryUnsupported
+                        )
+                    })
+            }
+            ProviderCatalogState::CredentialRejected => {
+                self.models.is_empty()
+                    && self.failure == Some(CatalogFailureCode::CredentialRejected)
+            }
+            ProviderCatalogState::DiscoveryUnsupported => {
+                self.models.is_empty()
+                    && self.failure == Some(CatalogFailureCode::DiscoveryUnsupported)
+            }
+        };
+        if !state_is_consistent {
+            return Err("inconsistent provider catalog snapshot");
+        }
+        Ok(())
+    }
+
+    pub fn route_eligible_at(&self, model_id: &str, now_ms: u64) -> bool {
+        self.validate().is_ok()
+            && self.state == ProviderCatalogState::Fresh
+            && now_ms >= self.observed_at_ms
+            && now_ms < self.expires_at_ms
+            && self.models.iter().any(|model| model.model_id == model_id)
+    }
+
+    pub fn to_storage_record(
+        &self,
+        profile: &ProviderProfile,
+    ) -> Result<
+        evohime_local_storage::provider_profile_catalog_store::ProviderProfileCatalogRecord,
+        &'static str,
+    > {
+        self.validate()?;
+        if profile.validate().is_err()
+            || profile.provider_id != self.provider_id
+            || profile.credential_binding != self.credential_binding
+            || profile.region != self.region
+            || profile.revision != self.profile_revision
+            || profile.content_hash != self.profile_content_hash
+        {
+            return Err("provider catalog profile mismatch");
+        }
+        profile.to_storage_record(
+            &self.models,
+            self.revision,
+            self.catalog_content_hash.clone(),
+            self.observed_at_ms,
+        )
+    }
+}
+
+pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
+    let message = match error {
+        ProviderError::Config(message)
+        | ProviderError::Http(message)
+        | ProviderError::Api(message)
+        | ProviderError::Stream(message) => message.to_ascii_lowercase(),
+    };
+    match error {
+        ProviderError::Config(_) if message.contains("key") || message.contains("credential") => {
+            CatalogFailureCode::CredentialRejected
+        }
+        ProviderError::Config(_) => CatalogFailureCode::DiscoveryUnsupported,
+        ProviderError::Http(_) | ProviderError::Stream(_) if message.contains("timeout") => {
+            CatalogFailureCode::Timeout
+        }
+        ProviderError::Http(_) | ProviderError::Stream(_) => CatalogFailureCode::Network,
+        ProviderError::Api(_) if message.contains("401") || message.contains("403") => {
+            CatalogFailureCode::CredentialRejected
+        }
+        ProviderError::Api(_) if message.contains("429") || message.contains("rate") => {
+            CatalogFailureCode::RateLimited
+        }
+        ProviderError::Api(_)
+            if message.contains("exceeds size") || message.contains("too large") =>
+        {
+            CatalogFailureCode::ResponseTooLarge
+        }
+        ProviderError::Api(_) if message.contains("too many") || message.contains("entries") => {
+            CatalogFailureCode::EntryLimitExceeded
+        }
+        ProviderError::Api(_) if message.contains("invalid") || message.contains("malformed") => {
+            CatalogFailureCode::MalformedResponse
+        }
+        ProviderError::Api(_) => CatalogFailureCode::ProtocolMismatch,
+    }
+}
+
 /// Trusted, metadata-only defaults. They provide identity and transport
 /// policy; credentials and provider model catalogs are still supplied by the
 /// configured route or a later bounded discovery stage.
@@ -1032,6 +1295,87 @@ mod tests {
         assert!(!String::from_utf8(stored.catalog_json)
             .expect("catalog json")
             .contains("prompt"));
+    }
+
+    #[test]
+    fn catalog_snapshot_deduplicates_deterministically_and_fails_closed_on_expiry() {
+        let profile = profile();
+        let entries = vec![
+            ModelCatalogEntry {
+                id: "provider/z".into(),
+                context_tokens: Some(8_192),
+                max_output_tokens: Some(1_024),
+            },
+            ModelCatalogEntry {
+                id: "provider/a".into(),
+                context_tokens: Some(1_024),
+                max_output_tokens: Some(256),
+            },
+            ModelCatalogEntry {
+                id: "provider/a".into(),
+                context_tokens: Some(4_096),
+                max_output_tokens: Some(512),
+            },
+        ];
+        let snapshot = ProviderCatalogSnapshot::fresh_from_catalog(
+            &profile,
+            &entries,
+            3,
+            "c".repeat(64),
+            1_000,
+            2_000,
+        )
+        .expect("snapshot");
+        assert_eq!(
+            snapshot
+                .models
+                .iter()
+                .map(|model| model.model_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["provider/a", "provider/z"]
+        );
+        assert_eq!(snapshot.models[0].limits.context_tokens, Some(4_096));
+        assert!(snapshot.route_eligible_at("provider/a", 1_500));
+        assert!(!snapshot.route_eligible_at("provider/a", 2_000));
+
+        let mut stale = snapshot;
+        stale.state = ProviderCatalogState::Stale;
+        assert!(stale.validate().is_ok());
+        assert!(!stale.route_eligible_at("provider/a", 1_500));
+    }
+
+    #[test]
+    fn catalog_failures_are_typed_and_never_replay_provider_text() {
+        let error = ProviderError::Api(
+            "provider response body https://provider.test contains malformed JSON".into(),
+        );
+        assert_eq!(
+            classify_catalog_error(&error),
+            CatalogFailureCode::MalformedResponse
+        );
+        let encoded = serde_json::to_string(&classify_catalog_error(&error)).expect("code json");
+        assert!(!encoded.contains("provider.test"));
+        assert!(!encoded.contains("malformed JSON"));
+
+        let failure = ProviderCatalogSnapshot::failure(
+            &profile(),
+            2,
+            "d".repeat(64),
+            ProviderCatalogState::CredentialRejected,
+            CatalogFailureCode::CredentialRejected,
+            1_000,
+            2_000,
+        )
+        .expect("failure snapshot");
+        assert!(failure.validate().is_ok());
+        assert!(!failure.route_eligible_at("provider/model", 1_500));
+
+        let mut inconsistent = failure;
+        inconsistent.state = ProviderCatalogState::Fresh;
+        assert_eq!(
+            inconsistent.validate(),
+            Err("inconsistent provider catalog snapshot")
+        );
     }
 
     #[test]

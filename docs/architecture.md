@@ -2785,6 +2785,13 @@ snapshot с provider/credential-binding/region scope, revision fence и
 idempotent publication через существующий local-storage owner; discovery,
 route wiring, IPC и UI остаются следующими этапами 173.2–173.4.
 
+`ProviderCatalogSnapshot` задаёт lifecycle `Fresh`, `Stale`, `Unavailable`,
+`CredentialRejected` и `DiscoveryUnsupported`, а `CatalogFailureCode` скрывает
+raw `ProviderError`. Gateway entries сортируются и deduplicate-ятся до создания
+immutable descriptors; expired/stale/failed snapshots не проходят
+`route_eligible_at`. Реальный fetch/cache/recovery wiring и authenticated
+projection ещё не подключены.
+
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 
 `FreeAccessEvidence` — единый Core-owned metadata contract поверх advisory
