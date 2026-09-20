@@ -78,6 +78,14 @@ output, transcripts, absolute paths и PII запрещены.
 - Linux duplex contract тест воспроизводит порядок `task.progress` →
   `task.snapshot`; source module `cli` повышен до `0.0.000049`.
 
+### CLI Core generation fencing follow-up (2026-09-20)
+
+- После handshake CLI принимает `Ready` только с непустым
+  `core_instance_id` и ненулевым `session_epoch`; неполная generation identity
+  останавливает клиент до отправки команд.
+- Добавлен Linux regression test для обоих malformed-вариантов; source module
+  `cli` повышен до `0.0.000050`.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:

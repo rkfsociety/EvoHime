@@ -70,14 +70,7 @@ where
             })
             .await?;
         let ready = client.read_event().await?;
-        if !matches!(
-            ready.event,
-            Some(generated::event_envelope::Event::Ready(_))
-        ) {
-            return Err("authentication_failed: Core did not become ready".into());
-        }
-        client.core_instance_id = ready.core_instance_id;
-        client.session_epoch = ready.session_epoch;
+        (client.core_instance_id, client.session_epoch) = ready_generation(&ready)?;
         Ok(client)
     }
 
@@ -196,6 +189,19 @@ where
     }
 }
 
+fn ready_generation(event: &generated::EventEnvelope) -> Result<(String, u64), String> {
+    if !matches!(
+        &event.event,
+        Some(generated::event_envelope::Event::Ready(_))
+    ) {
+        return Err("authentication_failed: Core did not become ready".into());
+    }
+    if event.core_instance_id.is_empty() || event.session_epoch == 0 {
+        return Err("authentication_failed: Core generation is invalid".into());
+    }
+    Ok((event.core_instance_id.clone(), event.session_epoch))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,6 +240,23 @@ mod tests {
                 core_info: None,
             })),
         }
+    }
+
+    #[test]
+    fn rejects_ready_event_without_generation_identity() {
+        let mut event = ready_event(42);
+        event.core_instance_id.clear();
+        assert_eq!(
+            ready_generation(&event).unwrap_err(),
+            "authentication_failed: Core generation is invalid"
+        );
+
+        let mut event = ready_event(42);
+        event.session_epoch = 0;
+        assert_eq!(
+            ready_generation(&event).unwrap_err(),
+            "authentication_failed: Core generation is invalid"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
