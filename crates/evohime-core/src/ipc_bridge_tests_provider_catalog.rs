@@ -55,6 +55,12 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
         }),
     );
 
+    let unobserved_projection = bridge
+        .provider_catalog_projection(&route, Some("model-a"))
+        .await;
+    assert_eq!(unobserved_projection["catalog"]["state"], "unobserved");
+    assert!(unobserved_projection["catalog"]["configured_model_eligible"].is_null());
+
     assert_eq!(bridge.hydrate_provider_catalog_snapshots().await, 1);
     let recovered = bridge
         .remember_provider_catalog_snapshot(
@@ -94,6 +100,7 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
         .await;
     assert_eq!(projection["catalog"]["state"], "stale");
     assert_eq!(projection["catalog"]["failure_code"], "network");
+    assert_eq!(projection["catalog"]["configured_model_eligible"], false);
     assert_eq!(projection["provider"]["credential_status"], "configured");
     assert_eq!(projection["models"][0]["id"], "model-a");
     let projection_text = serde_json::to_string(&projection).expect("projection serializes");

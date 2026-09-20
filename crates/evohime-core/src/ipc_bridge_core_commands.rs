@@ -546,7 +546,7 @@ impl IpcBridge {
                 "model_count": snapshot.as_ref().map(|snapshot| snapshot.models.len()).unwrap_or(0),
                 "truncated": snapshot.as_ref().is_some_and(|snapshot| snapshot.models.len() > 256),
                 "configured_model": model_id,
-                "configured_model_eligible": snapshot.as_ref().is_some_and(|snapshot| {
+                "configured_model_eligible": snapshot.as_ref().map(|snapshot| {
                     snapshot.route_eligible_at(model_id, crate::task_memory::now_millis())
                 }),
             },

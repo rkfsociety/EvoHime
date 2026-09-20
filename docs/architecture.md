@@ -2821,8 +2821,9 @@ Capability filtering по provider-declared/observed metadata ещё расши�
 Route preflight
 проверяет configured credential, известное lifecycle-состояние snapshot,
 свежесть и присутствие выбранной модели; неизвестный snapshot означает
-`unobserved` и сохраняет совместимость первого запуска, а известный stale или
-failed snapshot fail-closed до provider dispatch.
+`unobserved`, оставляет `configured_model_eligible=null` и сохраняет
+совместимость первого запуска, а известный stale или failed snapshot даёт
+bounded `false` и fail-closed до provider dispatch.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 

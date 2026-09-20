@@ -2087,3 +2087,13 @@ UI patch повышен `0.0.000096 -> 0.0.000097`.
 
 Проверки: focused ModelPicker Vitest tests и Electron typecheck;
 CI evidence для локального коммита ещё не заявляется.
+
+## Tri-state provider model eligibility (2026-09-20)
+
+Core теперь сериализует `configured_model_eligible=null` до первого catalog
+observation и `false` только для известного неeligible snapshot; это сохраняет
+разницу между `unobserved` и fail-closed catalog state. Core patch повышен
+`0.0.000281 -> 0.0.000282`.
+
+Проверка: provider-catalog projection regression до/после startup hydration;
+CI evidence для локального коммита ещё не заявляется.
