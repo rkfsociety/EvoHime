@@ -273,6 +273,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_selected_model(selected_model)
     .with_proactivity(proactivity)
     .with_ambient_data_dir(data_dir.clone());
+    let recovered_provider_catalogs = bridge.hydrate_provider_catalog_snapshots().await;
+    tracing::info!(
+        recovered = recovered_provider_catalogs,
+        "provider catalog recovery completed before IPC startup"
+    );
     // План 08-2: bounded core_start ledger event, затем reconciliation
     // незавершённых typed actions по dispatch marker в run_effects. Должно
     // идти после конструирования bridge — именно оно фиксирует

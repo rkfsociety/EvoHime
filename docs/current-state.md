@@ -119,7 +119,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000275`, `ui-bundle 0.0.000091`,
+Текущий checkout содержит patch `core 0.0.000276`, `ui-bundle 0.0.000091`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -139,18 +139,20 @@ built-in identities добавлены как bounded metadata. SQLite schema v1
 атомарно хранит profile/catalog snapshot в provider/credential-binding/region
 scope с monotonic revision fence, bounded JSON, lifecycle state, observation/
 expiry timestamps и typed failure code; v174 additive migration совместима со
-старыми v173 таблицами. Core имеет validated read-back adapter, а startup
-recovery hydration, route preflight, IPC и UI остаются активными этапами
-173.2–173.4.
+старыми v173 таблицами. Core имеет validated read-back adapter и при старте
+гидратирует snapshots настроенных routes в bounded process-local cache до
+открытия IPC. При временной ошибке первый refresh после перезапуска использует
+этот cache для stale UI fallback, сохраняя fail-closed `route_eligible_at`.
+Route preflight, IPC и UI остаются активными этапами 173.2–173.4.
 `ProviderCatalogSnapshot` теперь задаёт bounded lifecycle
 `Fresh/Stale/Unavailable/CredentialRejected/DiscoveryUnsupported`, typed
 failure codes, deterministic gateway-catalog deduplication и fail-closed
 `route_eligible_at`; raw `ProviderError` text не переносится в snapshot.
 `model.catalog` IPC refresh строит redacted profile из route config и
-публикует success/failure snapshot в schema v174; восстановление проверяет
-profile/catalog identity, lifecycle и typed failure перед использованием, но
-startup recovery-read, route preflight и отдельная authenticated projection
-ещё не подключены.
+публикует success/failure snapshot в schema v174; startup recovery-read для
+настроенных routes повторно проверяет profile/catalog identity, lifecycle и
+typed failure перед использованием. Route preflight и отдельная authenticated
+projection ещё не подключены.
 При network/timeout/rate-limit ошибке имеющийся bounded catalog сохраняется как
 `Stale` с typed failure и может быть показан UI; `route_eligible_at` остаётся
 false. Credential rejection и unsupported discovery не используют stale cache.

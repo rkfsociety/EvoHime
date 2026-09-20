@@ -1979,3 +1979,20 @@ payload, URL, prompt и secrets не восстанавливаются.
 Focused TracePanel, Ollama runtime и diagnostics/support bundle tests: 25
 тестов passed. CI evidence для локального коммита ещё не заявляется;
 установленный клиент не изменялся.
+
+## Provider catalog startup recovery hydration (2026-09-20)
+
+Core patch повышен с `0.0.000275` до `0.0.000276`. Перед IPC startup Core
+перечитывает только snapshots настроенных routes из существующего v174 store,
+повторно проверяет profile scope/content hash и lifecycle, а затем помещает
+валидные rows в bounded process-local cache. После перезапуска временная
+ошибка catalog refresh использует этот cache для stale UI fallback и создаёт
+следующую durable revision; stale snapshot по-прежнему не проходит
+`route_eligible_at`. Невалидные, чужие или несовместимые rows игнорируются
+без raw endpoint, prompt, credential или provider error в логах.
+
+Пройдены `cargo check --locked -p evohime-core -p evohime-local-storage`,
+focused Core test `hydrates_configured_catalog_and_uses_it_after_refresh_failure`
+(1 тест), rustfmt и `git diff --check`. Route preflight, authenticated IPC/UI
+projection и CI evidence для локального коммита ещё не заявляются;
+установленный клиент не изменялся.

@@ -2786,7 +2786,13 @@ idempotent publication через существующий local-storage owner. 
 сохраняются lifecycle state, observation/expiry timestamps и typed failure code;
 additive migration v174 переносит старые v173 таблицы без потери metadata, а
 validated read-back отбрасывает несовместимые profile/catalog identity.
-Discovery, route wiring, IPC и UI остаются следующими этапами 173.2–173.4.
+При запуске Core настроенные routes читают свои snapshots из существующего
+SQLite store в bounded process-local cache до открытия IPC; profile scope/hash
+проверяются повторно, несовместимые строки игнорируются fail-closed. Поэтому
+первый неудачный catalog refresh после перезапуска может показать validated
+stale entries, но не может сделать stale snapshot route-eligible. Route
+preflight, authenticated IPC projection и UI остаются следующими этапами
+173.2–173.4.
 
 `ProviderCatalogSnapshot` задаёт lifecycle `Fresh`, `Stale`, `Unavailable`,
 `CredentialRejected` и `DiscoveryUnsupported`, а `CatalogFailureCode` скрывает
@@ -2795,8 +2801,8 @@ immutable descriptors; expired/stale/failed snapshots не проходят
 `route_eligible_at`. При временной ошибке refresh уже сохраняет прежние bounded
 entries как `Stale` с typed failure для отображения, но не для маршрутизации;
 credential rejection и unsupported discovery fail closed без stale fallback.
-Authenticated projection ещё не полностью подключена: startup recovery-read и
-route preflight остаются следующими шагами.
+Authenticated projection ещё не полностью подключена: route preflight остаётся
+следующим шагом.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 

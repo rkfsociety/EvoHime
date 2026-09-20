@@ -1,5 +1,27 @@
 use super::*;
 
+const MAX_PROVIDER_CATALOG_RECOVERY_ROUTES: usize = 64;
+
+fn provider_catalog_scope_key(
+    profile: &crate::free_provider_reliability_routing::ProviderProfile,
+) -> String {
+    format!(
+        "{}|{}|{}",
+        profile.provider_id, profile.credential_binding, profile.region
+    )
+}
+
+fn snapshot_matches_profile(
+    snapshot: &crate::free_provider_reliability_routing::ProviderCatalogSnapshot,
+    profile: &crate::free_provider_reliability_routing::ProviderProfile,
+) -> bool {
+    snapshot.provider_id == profile.provider_id
+        && snapshot.credential_binding == profile.credential_binding
+        && snapshot.region == profile.region
+        && snapshot.profile_revision == profile.revision
+        && snapshot.profile_content_hash == profile.content_hash
+}
+
 impl IpcBridge {
     pub fn journal(&self) -> EventJournal {
         self.journal.clone()
@@ -192,12 +214,23 @@ impl IpcBridge {
             .ok()
             .flatten()
         };
-        let previous_snapshot = previous_record.as_ref().and_then(|record| {
+        let recovered_snapshot = {
+            self.provider_catalog_snapshots
+                .lock()
+                .await
+                .get(&provider_catalog_scope_key(&profile))
+                .cloned()
+        };
+        let previous_snapshot = recovered_snapshot
+            .filter(|snapshot| snapshot_matches_profile(snapshot, &profile))
+            .or_else(|| {
+                previous_record.as_ref().and_then(|record| {
             crate::free_provider_reliability_routing::ProviderCatalogSnapshot::from_storage_record(
                 record,
             )
             .ok()
-        });
+        })
+            });
         let next_revision = previous_record
             .as_ref()
             .and_then(|record| u64::try_from(record.revision).ok())
@@ -289,18 +322,31 @@ impl IpcBridge {
                 return None;
             }
         };
-        let database = self.journal.database().lock().await;
-        match evohime_local_storage::provider_profile_catalog_store::put(
-            database.connection(),
-            &record,
-        ) {
+        let persisted = {
+            let database = self.journal.database().lock().await;
+            evohime_local_storage::provider_profile_catalog_store::put(
+                database.connection(),
+                &record,
+            )
+        };
+        match persisted {
             Ok(true)
                 if snapshot.state
                     == crate::free_provider_reliability_routing::ProviderCatalogState::Stale =>
             {
+                self.provider_catalog_snapshots
+                    .lock()
+                    .await
+                    .insert(provider_catalog_scope_key(profile), snapshot.clone());
                 snapshot.gateway_entries().ok()
             }
-            Ok(true) => None,
+            Ok(true) => {
+                self.provider_catalog_snapshots
+                    .lock()
+                    .await
+                    .insert(provider_catalog_scope_key(profile), snapshot);
+                None
+            }
             Ok(false) => {
                 tracing::debug!(
                     target: "model.catalog",
@@ -320,6 +366,83 @@ impl IpcBridge {
         }
     }
 
+    /// Hydrates only the configured provider scopes from durable storage.
+    /// Invalid, mismatched or stale-schema rows are ignored fail-closed; a
+    /// later catalog refresh can replace them. No endpoint, prompt or secret
+    /// is included in the recovery log.
+    pub(crate) async fn hydrate_provider_catalog_snapshots(&self) -> usize {
+        let routes = self
+            .gateway_config
+            .as_ref()
+            .map(|config| {
+                config
+                    .routes
+                    .values()
+                    .take(MAX_PROVIDER_CATALOG_RECOVERY_ROUTES)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut recovered = 0;
+        for route in routes {
+            let profile =
+                match crate::free_provider_reliability_routing::ProviderProfile::from_route_config(
+                    &route,
+                ) {
+                    Ok(profile) => profile,
+                    Err(_) => {
+                        tracing::debug!(
+                            target: "model.catalog",
+                            error_code = "provider_profile_invalid",
+                            "provider catalog recovery skipped invalid route"
+                        );
+                        continue;
+                    }
+                };
+            let record = {
+                let database = self.journal.database().lock().await;
+                evohime_local_storage::provider_profile_catalog_store::get(
+                    database.connection(),
+                    &profile.provider_id,
+                    &profile.credential_binding,
+                    &profile.region,
+                )
+                .ok()
+                .flatten()
+            };
+            let Some(record) = record else {
+                continue;
+            };
+            let Ok(snapshot) = crate::free_provider_reliability_routing::ProviderCatalogSnapshot::from_storage_record(&record) else {
+                tracing::debug!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_recovery_invalid",
+                    "provider catalog recovery skipped invalid durable row"
+                );
+                continue;
+            };
+            if !snapshot_matches_profile(&snapshot, &profile) {
+                tracing::debug!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_recovery_scope_mismatch",
+                    "provider catalog recovery skipped a different route scope"
+                );
+                continue;
+            }
+            self.provider_catalog_snapshots
+                .lock()
+                .await
+                .insert(provider_catalog_scope_key(&profile), snapshot);
+            recovered += 1;
+        }
+        tracing::info!(
+            target: "model.catalog",
+            recovered,
+            "provider catalog recovery cache hydrated"
+        );
+        recovered
+    }
+
     pub fn new(journal: EventJournal) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
         let receipt_keys = Self::manager_for(&journal);
@@ -331,6 +454,7 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            provider_catalog_snapshots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -371,6 +495,7 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            provider_catalog_snapshots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -418,6 +543,7 @@ impl IpcBridge {
             tools: Some(tools),
             model_config,
             gateway_config,
+            provider_catalog_snapshots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,

@@ -47,6 +47,8 @@ mod tests {
     /// projection, without disturbing the generic backward-compat fields.
     #[path = "../ipc_bridge_tests_projection.rs"]
     mod projection;
+    #[path = "../ipc_bridge_tests_provider_catalog.rs"]
+    mod provider_catalog;
     #[path = "../ipc_bridge_tests_workflow.rs"]
     mod workflow;
     #[path = "../ipc_bridge_tests_workspace_research.rs"]
