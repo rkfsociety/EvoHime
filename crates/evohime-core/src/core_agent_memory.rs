@@ -32,6 +32,34 @@ impl ToolAgent {
     ) {
         use crate::memory_extraction as extraction;
 
+        let Some(_lease) =
+            extraction::ExtractionLease::try_acquire(Arc::clone(&self.extraction_lease))
+        else {
+            write_model_trace(
+                "memory.extraction.skipped",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "reason": extraction::ExtractionError::Throttled {
+                        reason: extraction::ThrottleReason::Reentrant,
+                    }
+                    .to_string(),
+                }),
+            );
+            return;
+        };
+        self.run_memory_extraction_inner(task_id, workspace_root, user_prompt, assistant_reply)
+            .await;
+    }
+
+    async fn run_memory_extraction_inner(
+        &self,
+        task_id: &str,
+        workspace_root: &std::path::Path,
+        user_prompt: &str,
+        assistant_reply: &str,
+    ) {
+        use crate::memory_extraction as extraction;
+
         let Some(journal) = &self.journal else {
             return;
         };
@@ -291,6 +319,27 @@ impl ToolAgent {
     /// the way into it is different, and it is strictly stricter: an ambient
     /// candidate can never auto-confirm.
     pub(super) async fn run_ambient_memory_extraction(&self, episode_id: &str) {
+        use crate::memory_extraction as extraction;
+
+        let Some(_lease) =
+            extraction::ExtractionLease::try_acquire(Arc::clone(&self.extraction_lease))
+        else {
+            write_model_trace(
+                "memory.ambient.skipped",
+                serde_json::json!({
+                    "episode_id": episode_id,
+                    "reason": extraction::ExtractionError::Throttled {
+                        reason: extraction::ThrottleReason::Reentrant,
+                    }
+                    .to_string(),
+                }),
+            );
+            return;
+        };
+        self.run_ambient_memory_extraction_inner(episode_id).await;
+    }
+
+    async fn run_ambient_memory_extraction_inner(&self, episode_id: &str) {
         use crate::memory_extraction as extraction;
 
         let Some(journal) = &self.journal else {

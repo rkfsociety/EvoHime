@@ -2197,3 +2197,17 @@ URL, prompt, raw response и secrets не пересекают boundary. Про�
 focused Core tests, 3 local-storage evidence-store tests, `cargo fmt --all` и
 `git diff --check`. Core patch повышен `0.0.000289 -> 0.0.000290`; CI для нового
 коммита будет проверен после push.
+
+## Memory extraction reentrancy lease (2026-09-20)
+
+Dialog и ambient extraction теперь используют общий cancellation-safe RAII
+`ExtractionLease`. Lease удерживается на всём async-вызове извлекателя и
+освобождается через `Drop`; конкурентный второй вызов не может обойти общие
+ограничения и получает bounded `reentrant` reason в
+`memory.extraction.skipped` либо `memory.ambient.skipped`. В trace не попадают
+текст кандидата, prompt, URL или секреты.
+
+Проверка: `cargo test --locked -p evohime-core memory_extraction --no-fail-fast`
+— 45 тестов модуля прошли; также выполнены `cargo fmt --all` и
+`git diff --check`. Core patch повышен `0.0.000290 -> 0.0.000291`; CI для
+нового коммита будет проверен после push.

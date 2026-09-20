@@ -727,6 +727,8 @@ pub struct ToolAgent {
     /// Per-workspace rate limit, token budget and circuit breaker for memory
     /// extraction. Shared across turns because the limits are hourly.
     extraction_guard: Arc<Mutex<crate::memory_extraction::ExtractionGuard>>,
+    /// One cancellation-safe lease shared by dialog and ambient extraction.
+    extraction_lease: Arc<std::sync::atomic::AtomicBool>,
     /// Потолок и счётчики ограниченной проактивности (04.7).
     ///
     /// `None` означает, что в этой сборке проактивности нет вовсе: предложение
@@ -1007,6 +1009,7 @@ impl TaskExecutor for ToolAgent {
             // Shared, not cloned: the hourly candidate/token limits and the
             // circuit breaker have to hold across concurrent tasks.
             extraction_guard: Arc::clone(&self.extraction_guard),
+            extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
         };
@@ -1052,6 +1055,7 @@ impl TaskExecutor for ToolAgent {
             selected_model: self.selected_model.clone(),
             receipt_keys: self.receipt_keys.clone(),
             extraction_guard: Arc::clone(&self.extraction_guard),
+            extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
         };
@@ -1082,6 +1086,7 @@ impl TaskExecutor for ToolAgent {
             // Shared, not cloned: the ambient budgets and the malformed
             // breaker are hourly and have to hold across episodes.
             extraction_guard: Arc::clone(&self.extraction_guard),
+            extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
         };

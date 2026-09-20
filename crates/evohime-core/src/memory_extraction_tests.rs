@@ -533,6 +533,20 @@ fn guard_enforces_turn_hour_and_breaker_limits() {
 }
 
 #[test]
+fn extraction_lease_is_shared_and_released_on_drop() {
+    let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let lease = ExtractionLease::try_acquire(std::sync::Arc::clone(&flag)).expect("first lease");
+    assert!(ExtractionLease::try_acquire(std::sync::Arc::clone(&flag)).is_none());
+    drop(lease);
+    assert!(ExtractionLease::try_acquire(flag).is_some());
+}
+
+#[test]
+fn reentrant_reason_is_bounded_and_stable() {
+    assert_eq!(ThrottleReason::Reentrant.as_str(), "reentrant");
+}
+
+#[test]
 fn malformed_outside_window_does_not_open_breaker() {
     let mut guard = ExtractionGuard::new();
     guard.register_malformed(0);

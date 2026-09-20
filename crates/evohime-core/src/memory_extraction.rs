@@ -20,6 +20,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Версия policy: попадает в каждую запись и меняется при изменении порогов,
 /// классов риска или правил gate.
@@ -521,6 +523,7 @@ pub enum ThrottleReason {
     /// троттлинга стали бы неразличимы в трассах.
     AmbientCandidateLimit,
     AmbientEpisodeLimit,
+    Reentrant,
 }
 
 impl ThrottleReason {
@@ -534,6 +537,7 @@ impl ThrottleReason {
             Self::NoExplicitTrigger => "no_explicit_trigger",
             Self::AmbientCandidateLimit => "ambient_candidate_limit",
             Self::AmbientEpisodeLimit => "ambient_episode_limit",
+            Self::Reentrant => "reentrant",
         }
     }
 }
@@ -1580,6 +1584,24 @@ pub fn verification_is_stale(
 // ---------------------------------------------------------------------------
 // Rate limit, budget и circuit breaker
 // ---------------------------------------------------------------------------
+
+/// Shared Core extraction lease. It is cancellation-safe because its RAII
+/// drop releases the flag even when an async extractor future is cancelled.
+pub struct ExtractionLease(Arc<AtomicBool>);
+
+impl ExtractionLease {
+    pub fn try_acquire(flag: Arc<AtomicBool>) -> Option<Self> {
+        flag.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+            .then_some(Self(flag))
+    }
+}
+
+impl Drop for ExtractionLease {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
 
 /// Детерминированный guard: время всегда передаётся снаружи, чтобы поведение
 /// было воспроизводимо в тестах.

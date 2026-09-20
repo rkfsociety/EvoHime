@@ -124,6 +124,7 @@ impl ToolAgent {
             extraction_guard: Arc::new(
                 Mutex::new(crate::memory_extraction::ExtractionGuard::new()),
             ),
+            extraction_lease: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             proactivity: None,
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
         }
