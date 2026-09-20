@@ -1588,6 +1588,12 @@ pagination link отвергается, а не используется для 
 test подтверждает выбор релиза со второй страницы; локальный focused suite
 проверяет также прежние сценарии malformed tag и digest mismatch.
 
+## Module release identity follow-up (2026-09-20)
+
+Updater теперь связывает semver в `module-<id>-v<version>` tag с версией
+module manifest и отвергает рассинхрон до загрузки бинарника. Regression test
+проверяет, что при mismatch выполняются только запросы release и manifest.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

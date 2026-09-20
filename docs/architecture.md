@@ -857,7 +857,8 @@ Native package дополнительно содержит `evohime.components.j
 артефактов и destination paths должны быть уникальными: updater отвергает
 коллизии до загрузки байтов. Список module releases читается по bounded GitHub
 pagination, чтобы не пропускать релиз нужного модуля за первой страницей.
-`listener-runtime` является
+Manifest version также обязана совпадать с версией в module release tag; при
+рассинхроне updater останавливается до загрузки бинарника. `listener-runtime` является
 отдельным data-directory runtime и поэтому не входит в этот install-tree граф;
 его версия и целостность проверяются отдельным runtime manifest. `evohime-updater` проверяет
 этот marker до staged apply и отказывает при небезопасном пути, неизвестной

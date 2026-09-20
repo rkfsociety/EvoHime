@@ -210,9 +210,9 @@ export async function downloadModuleRelease(
   if (!apiBase) throw new Error('GitHub module: некорректный repository.')
   const request = deps.fetch ?? globalThis.fetch
   const headers = apiHeaders(token)
-  const release = await getLatestModuleRelease(apiBase, module, request, headers)
-  const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
-  const manifest = await readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers)
+  const selectedRelease = await getLatestModuleRelease(apiBase, module, request, headers)
+  const assets: readonly ReleaseAsset[] = Array.isArray(selectedRelease.release.assets) ? selectedRelease.release.assets : []
+  const manifest = await readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers, selectedRelease.version)
   const artifact = assets.find((asset) => asset.name === manifest.artifact)
   const artifactUrl = assetUrl(artifact?.url, apiBase)
   if (!artifactUrl) throw new Error(`GitHub module: артефакт ${manifest.artifact} отсутствует.`)
@@ -238,9 +238,9 @@ export async function readModuleReleaseManifest(
   if (!apiBase) throw new Error('GitHub module: некорректный repository.')
   const request = deps.fetch ?? globalThis.fetch
   const headers = apiHeaders(token)
-  const release = await getLatestModuleRelease(apiBase, module, request, headers)
-  const assets: readonly ReleaseAsset[] = Array.isArray(release.assets) ? release.assets : []
-  return readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers)
+  const selectedRelease = await getLatestModuleRelease(apiBase, module, request, headers)
+  const assets: readonly ReleaseAsset[] = Array.isArray(selectedRelease.release.assets) ? selectedRelease.release.assets : []
+  return readModuleReleaseManifestFromAssets(module, assets, apiBase, request, headers, selectedRelease.version)
 }
 
 async function readModuleReleaseManifestFromAssets(
@@ -248,12 +248,15 @@ async function readModuleReleaseManifestFromAssets(
   assets: readonly ReleaseAsset[],
   apiBase: string,
   request: typeof globalThis.fetch,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  expectedVersion: string
 ): Promise<ModuleReleaseManifest> {
   const manifestAsset = assets.find((asset) => asset.name === `${module}.manifest.json`)
   const manifestUrl = assetUrl(manifestAsset?.url, apiBase)
   if (!manifestUrl) throw new Error(`GitHub module: manifest ${module} отсутствует.`)
-  return parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }), module)
+  const manifest = parseModuleManifest(await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' }), module)
+  if (manifest.version !== expectedVersion) throw new Error(`GitHub module: версия manifest ${manifest.version} не совпадает с release tag ${expectedVersion}.`)
+  return manifest
 }
 
 async function getLatestModuleRelease(
@@ -261,7 +264,7 @@ async function getLatestModuleRelease(
   module: string,
   request: typeof globalThis.fetch,
   headers: Record<string, string>
-): Promise<any> {
+): Promise<{ readonly release: any; readonly version: string }> {
   const releases: any[] = []
   let nextUrl: string | null = `${apiBase}/releases?per_page=100`
   for (let page = 0; nextUrl; page += 1) {
@@ -278,7 +281,8 @@ async function getLatestModuleRelease(
   })
   candidates.sort((left, right) => compareModuleVersions(String(right.tag_name).slice(prefix.length), String(left.tag_name).slice(prefix.length)))
   if (candidates.length === 0) throw new Error(`GitHub module: релиз ${module} отсутствует.`)
-  return candidates[0]
+  const release = candidates[0]
+  return { release, version: String(release.tag_name).slice(prefix.length) }
 }
 
 function compareModuleVersions(left: string, right: string): number {

@@ -261,6 +261,26 @@ describe('release installer', () => {
     expect(fetch).toHaveBeenCalledTimes(4)
   })
 
+  it('rejects a module manifest whose version differs from its release tag', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-module-version-mismatch-'))
+    roots.push(root)
+    const bytes = new TextEncoder().encode('mismatched module')
+    const manifest = JSON.stringify({ schema: 'evohime.module-release.v1', module: 'core', version: '2.3.0', artifact: 'evohime-core.exe', size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
+    const fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/releases?per_page=100')) return new Response(JSON.stringify([{ tag_name: 'module-core-v2.4.0', assets: [
+        { name: 'core.manifest.json', url: 'https://api.github.com/repos/x/y/releases/assets/core-manifest' },
+        { name: 'evohime-core.exe', url: 'https://api.github.com/repos/x/y/releases/assets/core' }
+      ] }]), { status: 200 })
+      if (url.endsWith('core-manifest')) return new Response(manifest, { status: 200 })
+      throw new Error('mismatched artifact must not be downloaded')
+    })
+
+    await expect(downloadModuleRelease('https://github.com/rkfsociety/EvoHime.git', 'core', root, null, { fetch }))
+      .rejects.toThrow('версия manifest')
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('does not publish an artifact when its digest is invalid', async () => {
     const root = mkdtempSync(join(tmpdir(), 'evohime-module-invalid-digest-'))
     roots.push(root)
