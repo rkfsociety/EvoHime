@@ -117,6 +117,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Bounded stdin tests вынесены из `input.rs` в отдельный `input_tests` module;
   exact-bound and oversized-input behavior сохранены, marker CLI повышен до
   `0.0.000073`.
+- CLI event data model (`CliEvent`, schema и byte bound) вынесена из emit/run
+  filtering в отдельный `event_model` module; public re-export paths сохранены,
+  marker CLI повышен до `0.0.000074`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
