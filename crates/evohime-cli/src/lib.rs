@@ -8,6 +8,7 @@ mod events;
 mod exit_code;
 mod input;
 mod redaction;
+mod redaction_policy;
 
 pub use args::parse_args;
 pub use command::{Command, ParseError};

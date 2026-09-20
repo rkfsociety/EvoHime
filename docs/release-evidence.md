@@ -103,6 +103,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Exit-code enum и terminal-event policy вынесены из event serialization в
   отдельный `exit_code` модуль; корневые CLI re-export paths сохранены, marker
   CLI повышен до `0.0.000068`.
+- Byte/JSON boundary `redact_payload` отделена от recursive sensitive-key policy
+  в `redaction_policy`; redaction depth/secret filtering остаются прежними,
+  marker CLI повышен до `0.0.000069`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
