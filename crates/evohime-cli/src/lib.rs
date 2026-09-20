@@ -8,11 +8,10 @@ mod redaction;
 use serde::Serialize;
 use serde_json::Value;
 
+pub use evohime_cli_contract::{MAX_PROMPT_BYTES, MAX_RUN_ID_BYTES, MAX_WORKSPACE_BYTES};
 pub use redaction::redact_payload;
 
 pub const CLI_SCHEMA: &str = "evohime.cli.event/v1";
-pub const MAX_PROMPT_BYTES: usize = 128 * 1024;
-pub const MAX_WORKSPACE_BYTES: usize = 512;
 pub const MAX_EVENT_BYTES: usize = 256 * 1024;
 const STDIN_PREFIX: &str = "\n\nInput from stdin:\n";
 
@@ -109,7 +108,9 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                         index += 1;
                         workflow = Some(
                             args.get(index)
-                                .filter(|value| !value.starts_with('-') && bounded(value, 128))
+                                .filter(|value| {
+                                    !value.starts_with('-') && bounded(value, MAX_RUN_ID_BYTES)
+                                })
                                 .cloned()
                                 .ok_or(ParseError::InvalidValue)?,
                         );
@@ -157,7 +158,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
         "status" | "watch" | "cancel" | "resume" => {
             let task_id = args
                 .get(1)
-                .filter(|value| bounded(value, 128))
+                .filter(|value| bounded(value, MAX_RUN_ID_BYTES))
                 .cloned()
                 .ok_or(ParseError::InvalidValue)?;
             if args.iter().skip(2).any(|arg| arg != "--json") {

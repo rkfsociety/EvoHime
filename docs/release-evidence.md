@@ -68,6 +68,8 @@ output, transcripts, absolute paths и PII запрещены.
 - CLI watch/resume теперь принимает только события с точным `event.task_id`
   текущего run и не завершается terminal event соседнего run; marker CLI
   повышен до `0.0.000056`.
+- CLI parser переиспользует canonical prompt/workspace/run-id bounds из
+  `evohime-cli-contract`, marker CLI повышен до `0.0.000057`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
