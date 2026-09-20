@@ -1666,6 +1666,14 @@ prefix internally for rate-limit classification and returns status plus a safe
 failure class; regression fixtures confirm URLs and token-like text stay out
 of `ProviderError`. The Core source module is now `0.0.000259`.
 
+The shared Core `ProviderProfile` validator now bounds identity, transport,
+endpoint, region and credential-reference metadata, requires an HTTP(S)
+endpoint without query/fragment/userinfo, and requires a hexadecimal content
+hash. Secret-like credential bindings and oversized values fail closed before
+serialization or routing metadata can consume them. Contract tests cover
+bounded valid metadata, endpoint/query and binding rejection, and hash format;
+the Core source module is now `0.0.000260`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures
