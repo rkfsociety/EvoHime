@@ -202,6 +202,10 @@ pub fn terminal_exit_code(event_type: &str) -> Option<ExitCode> {
     })
 }
 
+pub fn event_matches_run(event_task_id: &str, run_id: &str) -> bool {
+    !run_id.is_empty() && event_task_id == run_id
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +284,14 @@ mod tests {
             let args = vec![name.into(), "run-1".into(), "--json".into()];
             assert_eq!(parse_args(&args).unwrap(), expected);
         }
+    }
+
+    #[test]
+    fn filters_events_to_the_requested_run() {
+        assert!(event_matches_run("run-1", "run-1"));
+        assert!(!event_matches_run("run-2", "run-1"));
+        assert!(!event_matches_run("", "run-1"));
+        assert!(!event_matches_run("run-1", ""));
     }
 
     #[test]

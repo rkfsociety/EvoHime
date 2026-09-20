@@ -1,5 +1,5 @@
 #[cfg(windows)]
-use evohime_cli::{emit, redact_payload, terminal_exit_code, CliEvent, Command};
+use evohime_cli::{emit, event_matches_run, redact_payload, terminal_exit_code, CliEvent, Command};
 use evohime_cli::{parse_args, ExitCode};
 
 #[cfg(windows)]
@@ -150,6 +150,9 @@ mod windows_client {
         loop {
             match client.next().await {
                 Ok(event) => {
+                    if !event_matches_run(&event.task_id, run_id) {
+                        continue;
+                    }
                     print_event(&event, run_id, json);
                     if let Some(code) = terminal_exit_code(&event.event_type) {
                         return code;
