@@ -123,6 +123,17 @@ describe('trace panel', () => {
     expect(await screen.findByText('Ollama download fallback: подтверждён')).toBeTruthy()
   })
 
+  it('does not infer a fallback call from an Ollama failure alone', () => {
+    const trace = formatTrace(null, null, [{
+      sequenceId: 21,
+      taskId: 'task-1',
+      eventType: 'task.failed',
+      payload: '{"error_code":"client_blocked","source":"electron_transport","operation":"ollama.download"}'
+    }])
+    expect(trace).toContain('event=shell.ollama_download_fallback observed=no')
+    expect(trace).not.toContain('shell_diagnostics:')
+  })
+
   it('normalizes a legacy failure payload before display', async () => {
     const view = render(
       <TracePanel
