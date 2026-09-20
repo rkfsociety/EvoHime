@@ -23,9 +23,13 @@ output, transcripts, absolute paths и PII запрещены.
 
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
-- Обычные события trace экспортируются после renderer-redaction с маркером
-  `[REDACTED]`; `task.failed` остаётся typed projection с `error_code`, `source`
-  и `operation`.
+- Conversation-bound события экспортируются через Core projection v2:
+  tool/model/routing/task metadata остаются видимыми, а prompt, arguments,
+  tool output, URL и секреты не пересекают projection boundary.
+- Markdown trace содержит deterministic summary: sequence range/continuity,
+  event counts, task outcome, tool call/telemetry counts и routing statuses;
+  `task.failed` остаётся typed projection с `error_code`, `source` и
+  `operation`.
 - Main bridge принимает только такой безопасный marker assignment и отклоняет
   необработанные URL, prompt и секретные значения до native save dialog.
 - Для `ollama.download` trace отдельно сообщает `observed=yes/no` для

@@ -1,53 +1,304 @@
 use super::*;
 use serde_json::{json, Value};
 
-/// Keeps the conversation-bound event stream redacted while retaining a small,
-/// diagnostic terminal projection. The full event payload remains Core-owned
-/// and never crosses this projection boundary.
+const TRACE_PROJECTION_VERSION: u64 = 2;
+const TRACE_TEXT_BYTES_LIMIT: usize = 512 * 1024;
+
+/// Keeps the conversation-bound event stream redacted while retaining bounded
+/// diagnostic metadata. Raw prompts, arguments, tool output, paths and
+/// provider errors remain Core-owned and never cross this projection boundary.
 fn conversation_bound_trace_payload(event_type: &str, payload: &[u8]) -> Vec<u8> {
     let fallback = || {
         serde_json::to_vec(&json!({
             "redacted": true,
-            "conversation_projection": true
+            "conversation_projection": true,
+            "projection_version": TRACE_PROJECTION_VERSION,
+            "event_type": event_type,
         }))
         .unwrap_or_else(|_| b"{\"redacted\":true}".to_vec())
     };
-    let kind = match event_type {
-        "task.failed" => "task_failed",
-        "task.completed" => "task_completed",
-        "task.stopped" => "task_stopped",
-        _ => return fallback(),
-    };
-    let projected = crate::conversation_event_log::project_core_event(event_type, payload)
+    let value = serde_json::from_slice::<Value>(payload)
         .ok()
-        .and_then(|drafts| drafts.into_iter().find(|draft| draft.kind == kind))
-        .and_then(|draft| serde_json::from_slice::<Value>(&draft.renderer_payload).ok());
-    if projected.is_none() && event_type != "task.failed" {
-        return fallback();
-    }
+        .map(crate::conversation_event_log::normalize_payload)
+        .unwrap_or(Value::Null);
+    let object = value.as_object();
     let mut projection = serde_json::Map::new();
     projection.insert("redacted".into(), Value::Bool(true));
     projection.insert("conversation_projection".into(), Value::Bool(true));
-    projection.insert("terminal".into(), Value::Bool(true));
-    if let Some(status) = projected
-        .as_ref()
-        .and_then(|value| value.get("status"))
+    projection.insert(
+        "projection_version".into(),
+        Value::Number(TRACE_PROJECTION_VERSION.into()),
+    );
+    projection.insert("event_type".into(), Value::String(event_type.to_owned()));
+    if let Some(kind) = trace_projection_kind(event_type, payload) {
+        projection.insert("projection_kind".into(), Value::String(kind));
+    }
+
+    match event_type {
+        "task.started" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("status".into(), Value::String("started".into()));
+            add_text_size(&mut projection, "prompt_bytes", object, "prompt");
+        }
+        "task.completed" => {
+            projection.insert("terminal".into(), Value::Bool(true));
+            projection.insert("status".into(), Value::String("completed".into()));
+            add_text_size(
+                &mut projection,
+                "final_message_bytes",
+                object,
+                "final_message",
+            );
+        }
+        "task.failed" => {
+            projection.insert("terminal".into(), Value::Bool(true));
+            if let Value::Object(diagnostics) =
+                crate::conversation_event_log::failure_projection(&value)
+            {
+                projection.extend(diagnostics);
+            }
+        }
+        "task.stopped" => {
+            projection.insert("terminal".into(), Value::Bool(true));
+            projection.insert("status".into(), Value::String("stopped".into()));
+        }
+        "tool.started" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("started".into()));
+            add_safe_token(&mut projection, "tool_name", object, "tool_name");
+        }
+        "tool.output" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("output".into()));
+            add_safe_token(&mut projection, "tool_name", object, "tool_name");
+            add_text_size(&mut projection, "output_bytes", object, "output");
+            projection.insert("output_redacted".into(), Value::Bool(true));
+        }
+        "tool.telemetry" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("telemetry".into()));
+            add_safe_token(&mut projection, "tool_name", object, "tool_name");
+            add_u64(&mut projection, "iteration", object, "iteration");
+            add_bool(&mut projection, "ok", object, "ok");
+            add_safe_token(&mut projection, "failure_kind", object, "failure_kind");
+            add_u64(&mut projection, "output_bytes", object, "output_bytes");
+            add_bool(&mut projection, "recovery_hint", object, "recovery_hint");
+            add_bool(&mut projection, "escalated", object, "escalated");
+        }
+        "model.context" | "model.usage" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("usage".into()));
+            add_safe_token(&mut projection, "model", object, "model");
+            add_safe_token(&mut projection, "source", object, "source");
+            add_safe_token(&mut projection, "purpose", object, "purpose");
+            for key in [
+                "estimated_tokens",
+                "context_limit_tokens",
+                "input_tokens",
+                "output_tokens",
+                "cache_tokens",
+                "cost_micros",
+            ] {
+                add_u64(&mut projection, key, object, key);
+            }
+            if let Some(tools) = object.and_then(|item| item.get("tools")) {
+                if let Some(tools) = tools.as_array() {
+                    projection.insert("tools_count".into(), (tools.len() as u64).into());
+                }
+            }
+        }
+        "routing.terminal" => {
+            projection.insert("terminal".into(), Value::Bool(true));
+            projection.insert("phase".into(), Value::String("routing".into()));
+            let trace = object
+                .and_then(|item| item.get("trace"))
+                .and_then(Value::as_object)
+                .or(object);
+            for key in [
+                "selected_route",
+                "terminal_status",
+                "reason_code",
+                "event",
+                "classification",
+                "privacy_label",
+                "safe_next_action",
+            ] {
+                add_safe_token_from(&mut projection, key, trace, key);
+            }
+            for key in [
+                "attempt_id",
+                "fallback_count",
+                "latency_ms",
+                "estimated_input_tokens",
+            ] {
+                add_u64_from(&mut projection, key, trace, key);
+            }
+            if let Some(candidates) = trace
+                .and_then(|item| item.get("candidates"))
+                .and_then(Value::as_array)
+            {
+                projection.insert("candidates_count".into(), (candidates.len() as u64).into());
+            }
+        }
+        "routing.pending_approval" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("routing".into()));
+            add_safe_token(&mut projection, "route_id", object, "route_id");
+            add_u64(&mut projection, "expires_at_ms", object, "expires_at_ms");
+        }
+        "agent.message.delta" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("message_delta".into()));
+            add_text_size(&mut projection, "content_bytes", object, "content");
+        }
+        "approval.required" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("approval".into()));
+            add_safe_token(&mut projection, "tool_name", object, "tool_name");
+            add_safe_token(&mut projection, "permission", object, "permission");
+            if object.and_then(|item| item.get("scope")).is_some() {
+                projection.insert("scope_present".into(), Value::Bool(true));
+            }
+        }
+        "conversation.event" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert(
+                "phase".into(),
+                Value::String("conversation_projection".into()),
+            );
+            add_safe_token(&mut projection, "conversation_kind", object, "kind");
+            add_safe_token(&mut projection, "category", object, "category");
+            add_safe_token(
+                &mut projection,
+                "persistence_class",
+                object,
+                "persistence_class",
+            );
+            add_safe_token(&mut projection, "sensitivity", object, "sensitivity");
+            add_u64(&mut projection, "inner_sequence", object, "sequence");
+            if let Some(payload_json) = object.and_then(|item| item.get("payload_json")) {
+                if let Some(payload) = payload_json.as_array() {
+                    projection.insert("payload_bytes".into(), (payload.len() as u64).into());
+                }
+            }
+        }
+        "workflow.progress" | "review.progress" | "revision.progress" => {
+            projection.insert("terminal".into(), Value::Bool(false));
+            projection.insert("phase".into(), Value::String("progress".into()));
+            add_safe_token(&mut projection, "status", object, "status");
+            add_safe_token(&mut projection, "stage", object, "stage");
+            add_safe_token(&mut projection, "model", object, "model");
+            add_u64(&mut projection, "completed", object, "completed");
+            add_u64(&mut projection, "total", object, "total");
+        }
+        _ => {}
+    }
+
+    serde_json::to_vec(&Value::Object(projection)).unwrap_or_else(|_| fallback())
+}
+
+fn trace_projection_kind(event_type: &str, payload: &[u8]) -> Option<String> {
+    crate::conversation_event_log::project_core_event(event_type, payload)
+        .ok()
+        .and_then(|drafts| drafts.into_iter().next())
+        .map(|draft| draft.kind)
+}
+
+fn add_safe_token(
+    projection: &mut serde_json::Map<String, Value>,
+    output_key: &str,
+    object: Option<&serde_json::Map<String, Value>>,
+    input_key: &str,
+) {
+    add_safe_token_from(projection, output_key, object, input_key);
+}
+
+fn add_safe_token_from(
+    projection: &mut serde_json::Map<String, Value>,
+    output_key: &str,
+    object: Option<&serde_json::Map<String, Value>>,
+    input_key: &str,
+) {
+    let Some(value) = object
+        .and_then(|item| item.get(input_key))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| {
+            !value.is_empty()
+                && value.chars().count() <= 128
+                && value.chars().all(|character| {
+                    character.is_ascii_alphanumeric()
+                        || matches!(character, '_' | '-' | '.' | ':' | '/' | '@')
+                })
+                && !value.contains("://")
+                && !value.to_ascii_lowercase().contains("secret")
+                && !value.to_ascii_lowercase().contains("token")
+                && !value.to_ascii_lowercase().contains("password")
+                && !value.to_ascii_lowercase().contains("bearer")
+                && !value.to_ascii_lowercase().contains("sk-")
+        })
+    else {
+        return;
+    };
+    projection.insert(output_key.into(), Value::String(value.to_owned()));
+}
+
+fn add_u64(
+    projection: &mut serde_json::Map<String, Value>,
+    output_key: &str,
+    object: Option<&serde_json::Map<String, Value>>,
+    input_key: &str,
+) {
+    add_u64_from(projection, output_key, object, input_key);
+}
+
+fn add_u64_from(
+    projection: &mut serde_json::Map<String, Value>,
+    output_key: &str,
+    object: Option<&serde_json::Map<String, Value>>,
+    input_key: &str,
+) {
+    if let Some(value) = object
+        .and_then(|item| item.get(input_key))
+        .and_then(Value::as_u64)
+    {
+        projection.insert(output_key.into(), value.min(u64::from(u32::MAX)).into());
+    }
+}
+
+fn add_bool(
+    projection: &mut serde_json::Map<String, Value>,
+    output_key: &str,
+    object: Option<&serde_json::Map<String, Value>>,
+    input_key: &str,
+) {
+    if let Some(value) = object
+        .and_then(|item| item.get(input_key))
+        .and_then(Value::as_bool)
+    {
+        projection.insert(output_key.into(), Value::Bool(value));
+    }
+}
+
+fn add_text_size(
+    projection: &mut serde_json::Map<String, Value>,
+    output_key: &str,
+    object: Option<&serde_json::Map<String, Value>>,
+    input_key: &str,
+) {
+    if let Some(value) = object
+        .and_then(|item| item.get(input_key))
         .and_then(Value::as_str)
     {
-        projection.insert("status".into(), Value::String(status.to_owned()));
+        projection.insert(
+            output_key.into(),
+            (value.len().min(TRACE_TEXT_BYTES_LIMIT) as u64).into(),
+        );
+        projection.insert(
+            format!("{output_key}_bounded"),
+            Value::Bool(value.len() > TRACE_TEXT_BYTES_LIMIT),
+        );
     }
-    if event_type == "task.failed" {
-        let input = serde_json::from_slice::<Value>(payload)
-            .ok()
-            .map(crate::conversation_event_log::normalize_payload)
-            .unwrap_or(Value::Null);
-        if let Value::Object(diagnostics) =
-            crate::conversation_event_log::failure_projection(&input)
-        {
-            projection.extend(diagnostics);
-        }
-    }
-    serde_json::to_vec(&Value::Object(projection)).unwrap_or_else(|_| fallback())
 }
 
 impl IpcBridge {
@@ -941,15 +1192,77 @@ mod tests {
     }
 
     #[test]
-    fn conversation_trace_does_not_expose_non_terminal_payloads() {
+    fn conversation_trace_exposes_bounded_tool_metadata_without_payloads() {
+        let started = conversation_bound_trace_payload(
+            "tool.started",
+            br#"{"ToolStarted":{"task_id":"task-1","tool_name":"filesystem.search"}}"#,
+        );
+        let started_value: Value =
+            serde_json::from_slice(&started).expect("valid start projection");
+        assert_eq!(started_value["projection_version"], 2);
+        assert_eq!(started_value["projection_kind"], "tool_started");
+        assert_eq!(started_value["tool_name"], "filesystem.search");
+        assert_eq!(started_value["phase"], "started");
+
+        let output = conversation_bound_trace_payload(
+            "tool.output",
+            br#"{"ToolOutput":{"task_id":"task-1","tool_name":"filesystem.search","output":"private https://example.test token sk-test"}}"#,
+        );
+        let output_value: Value = serde_json::from_slice(&output).expect("valid output projection");
+        assert_eq!(output_value["projection_kind"], "tool_output");
+        assert_eq!(output_value["tool_name"], "filesystem.search");
+        assert_eq!(output_value["output_redacted"], true);
+        assert!(output_value.get("output").is_none());
+        let serialized = serde_json::to_string(&output_value).unwrap();
+        assert!(!serialized.contains("example.test"));
+        assert!(!serialized.contains("sk-test"));
+    }
+
+    #[test]
+    fn conversation_trace_exposes_safe_telemetry_and_routing_metadata() {
+        let telemetry = conversation_bound_trace_payload(
+            "tool.telemetry",
+            br#"{"tool_name":"filesystem.read","iteration":2,"ok":false,"failure_kind":"execution","output_bytes":17,"recovery_hint":true,"escalated":false,"secret":"sk-test"}"#,
+        );
+        let telemetry_value: Value =
+            serde_json::from_slice(&telemetry).expect("valid telemetry projection");
+        assert_eq!(telemetry_value["tool_name"], "filesystem.read");
+        assert_eq!(telemetry_value["iteration"], 2);
+        assert_eq!(telemetry_value["ok"], false);
+        assert_eq!(telemetry_value["failure_kind"], "execution");
+        assert!(serde_json::to_string(&telemetry_value)
+            .unwrap()
+            .contains("redacted"));
+        assert!(!serde_json::to_string(&telemetry_value)
+            .unwrap()
+            .contains("sk-test"));
+
+        let routing = conversation_bound_trace_payload(
+            "routing.terminal",
+            br#"{"RoutingTrace":{"task_id":"task-1","trace":{"selected_route":"cloud","terminal_status":"success","reason_code":"only_candidate","fallback_count":1,"latency_ms":42,"candidates":[{}],"snapshot_hash":"secret-hash"}}}"#,
+        );
+        let routing_value: Value =
+            serde_json::from_slice(&routing).expect("valid routing projection");
+        assert_eq!(routing_value["selected_route"], "cloud");
+        assert_eq!(routing_value["terminal_status"], "success");
+        assert_eq!(routing_value["fallback_count"], 1);
+        assert_eq!(routing_value["candidates_count"], 1);
+        assert!(!serde_json::to_string(&routing_value)
+            .unwrap()
+            .contains("secret-hash"));
+    }
+
+    #[test]
+    fn conversation_trace_keeps_generic_events_bounded_when_projection_is_unknown() {
         let payload = conversation_bound_trace_payload(
             "workflow.progress",
             br#"{"status":"failed","error":"internal"}"#,
         );
-        assert_eq!(
-            serde_json::from_slice::<Value>(&payload).expect("valid trace projection"),
-            json!({"redacted": true, "conversation_projection": true})
-        );
+        let value: Value = serde_json::from_slice(&payload).expect("valid trace projection");
+        assert_eq!(value["projection_version"], 2);
+        assert_eq!(value["projection_kind"], "task_progress");
+        assert_eq!(value["status"], "failed");
+        assert!(value.get("error").is_none());
     }
 
     #[test]

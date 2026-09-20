@@ -268,6 +268,8 @@ export function formatTrace(
     ''
   ]
 
+  appendTraceSummary(lines, events)
+
   const diagnostics = events.flatMap((event) => {
     const value = parseTraceDiagnostics(formatTraceEventPayload(event.eventType, event.payload))
     return value ? [{ event, value }] : []
@@ -302,4 +304,87 @@ export function formatTrace(
     lines.push('')
   }
   return lines.join('\n')
+}
+
+interface TraceToolSummary {
+  readonly started: number
+  readonly outputs: number
+  readonly telemetry: number
+  readonly ok: number
+  readonly failed: number
+}
+
+function appendTraceSummary(lines: string[], events: readonly CoreEvent[]): void {
+  const counts = new Map<string, number>()
+  const tools = new Map<string, TraceToolSummary>()
+  const routingStatuses = new Map<string, number>()
+  const sequences = events.map((event) => event.sequenceId).filter(Number.isFinite)
+  let completed = 0
+  let failed = 0
+  let stopped = 0
+
+  for (const event of events) {
+    counts.set(event.eventType, (counts.get(event.eventType) ?? 0) + 1)
+    if (event.eventType === 'task.completed') completed += 1
+    if (event.eventType === 'task.failed') failed += 1
+    if (event.eventType === 'task.stopped') stopped += 1
+
+    const payload = parseTraceObject(formatTraceEventPayload(event.eventType, event.payload))
+    const tool = safeTraceToken(payload?.tool_name) ?? 'unknown'
+    if (event.eventType === 'tool.started' || event.eventType === 'tool.output' || event.eventType === 'tool.telemetry') {
+      const current = tools.get(tool) ?? { started: 0, outputs: 0, telemetry: 0, ok: 0, failed: 0 }
+      const next = { ...current }
+      if (event.eventType === 'tool.started') next.started += 1
+      if (event.eventType === 'tool.output') next.outputs += 1
+      if (event.eventType === 'tool.telemetry') {
+        next.telemetry += 1
+        if (payload?.ok === true) next.ok += 1
+        if (payload?.ok === false) next.failed += 1
+      }
+      tools.set(tool, next)
+    }
+    if (event.eventType === 'routing.terminal') {
+      const status = safeTraceToken(payload?.terminal_status) ?? 'unknown'
+      routingStatuses.set(status, (routingStatuses.get(status) ?? 0) + 1)
+    }
+  }
+
+  const uniqueSequences = new Set(sequences)
+  const firstSequence = sequences.length > 0 ? Math.min(...sequences) : 0
+  const lastSequence = sequences.length > 0 ? Math.max(...sequences) : 0
+  const contiguous = sequences.length > 0 && uniqueSequences.size === lastSequence - firstSequence + 1
+
+  lines.push('summary:')
+  lines.push(`- sequence_range=${firstSequence}..${lastSequence} unique=${uniqueSequences.size} contiguous=${contiguous ? 'yes' : 'no'}`)
+  lines.push(`- task_outcome=completed:${completed} failed:${failed} stopped:${stopped}`)
+  lines.push('event_counts:')
+  for (const [eventType, count] of [...counts.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+    lines.push(`- ${eventType}=${count}`)
+  }
+
+  if (tools.size > 0) {
+    lines.push('tool_summary:')
+    for (const [tool, summary] of [...tools.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+      const pending = Math.max(summary.started - summary.outputs, 0)
+      lines.push(`- tool=${tool} started=${summary.started} outputs=${summary.outputs} telemetry=${summary.telemetry} ok=${summary.ok} failed=${summary.failed} pending=${pending}`)
+    }
+  }
+
+  if (routingStatuses.size > 0) {
+    lines.push('routing_statuses:')
+    for (const [status, count] of [...routingStatuses.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+      lines.push(`- ${status}=${count}`)
+    }
+  }
+  lines.push('')
+}
+
+function parseTraceObject(payload: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(payload)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    return value as Record<string, unknown>
+  } catch {
+    return null
+  }
 }

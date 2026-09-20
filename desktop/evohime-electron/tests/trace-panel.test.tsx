@@ -367,4 +367,19 @@ describe('trace panel', () => {
     expect(trace).not.toContain('example.test')
     expect(trace).not.toContain('"error"')
   })
+
+  it('adds bounded event and tool summaries without exporting tool payloads', () => {
+    const trace = formatTrace(null, 'G:/github/EvoHime', [
+      { sequenceId: 10, taskId: 'task-1', eventType: 'tool.started', payload: '{"tool_name":"filesystem.search"}' },
+      { sequenceId: 11, taskId: 'task-1', eventType: 'tool.output', payload: '{"tool_name":"filesystem.search","output":"private context"}' },
+      { sequenceId: 12, taskId: 'task-1', eventType: 'tool.telemetry', payload: '{"tool_name":"filesystem.search","iteration":1,"ok":true}' },
+      { sequenceId: 13, taskId: 'task-1', eventType: 'task.completed', payload: '{"final_message":"готово"}' }
+    ])
+
+    expect(trace).toContain('summary:')
+    expect(trace).toContain('sequence_range=10..13 unique=4 contiguous=yes')
+    expect(trace).toContain('task_outcome=completed:1 failed:0 stopped:0')
+    expect(trace).toContain('tool=filesystem.search started=1 outputs=1 telemetry=1 ok=1 failed=0 pending=0')
+    expect(trace).toContain('tool.output=1')
+  })
 })

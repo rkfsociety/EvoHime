@@ -61,9 +61,13 @@ Trace UI показывает диагностические поля отдел
 Тот же safe projection применяется при записи исходной строки `task.failed` в
 глобальный durable event journal, поэтому replay больше не возвращает raw
 `error`; fallback transcript и recovery UI показывают только `error_code`.
-Обычные trace payloads после renderer-redaction сохраняются с маркером
-`[REDACTED]`; main bridge принимает только этот безопасный маркер и отклоняет
-необработанные URL, prompt и секретные значения.
+Обычные conversation-bound trace payloads передаются как projection v2:
+тип события, projection kind, фаза, безопасные имена инструментов, bounded
+счётчики и размеры payload без самого prompt, arguments, tool output, URL или
+секретов. Поля содержимого остаются redacted; main bridge по-прежнему
+отклоняет необработанные URL, prompt и секретные assignment-поля. Экспорт
+Markdown дополнительно содержит deterministic summary с диапазоном sequence,
+числом событий по типам, outcome задачи, сводкой tool calls и routing statuses.
 Для ошибки `ollama.download` trace отдельно показывает, был ли фактически
 получен allow-listed marker `shell.ollama_download_fallback`; URL установщика и
 raw shell-log payload в renderer не передаются.
