@@ -1700,6 +1700,12 @@ before replay or execution. URL-like contract IDs and malformed hashes are
 covered by focused regression tests; the Core source module is now
 `0.0.000264`.
 
+The renderer routing-trace parser now projects only bounded safe identifiers,
+reason codes, candidate metadata and known actions. Oversized candidate lists,
+URL/prompt-like identifiers and unknown action values fail closed; unknown-route
+fallbacks no longer copy raw trace IDs into the UI. Regression tests cover
+these cases; the UI bundle is now `0.0.000087`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures

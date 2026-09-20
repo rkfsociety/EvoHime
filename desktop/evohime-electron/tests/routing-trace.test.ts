@@ -26,4 +26,16 @@ describe('routing trace', () => {
     expect(routingViewState(parsed, 'local')).toBe('partial_fallback')
     expect(parsed.selected_route).toBe('cloud')
   })
+  it('fails closed on unbounded or URL-like trace metadata', () => {
+    expect(parseRoutingTrace(trace({ trace_id: 'https://provider.test/?token=secret' }))).toBeNull()
+    expect(parseRoutingTrace(trace({ reason_code: 'prompt with raw text' }))).toBeNull()
+    expect(parseRoutingTrace(trace({ candidates: Array.from({ length: 65 }, (_, index) => ({ route_id: `route-${index}`, health_state: 'healthy' })) }))).toBeNull()
+  })
+  it('does not copy raw identifiers into an unknown-route fallback', () => {
+    const parsed = parseRoutingTrace(trace({ selected_route: 'https://provider.test/?token=secret', trace_id: 'safe-trace', run_id: 'safe-run' }))!
+    expect(parsed.terminal_status).toBe('internal_error')
+    expect(parsed.trace_id).toBe('safe-trace')
+    expect(parsed.run_id).toBe('safe-run')
+    expect(JSON.stringify(parsed)).not.toContain('provider.test')
+  })
 })
