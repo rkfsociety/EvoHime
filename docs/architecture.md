@@ -458,6 +458,14 @@ versioned runtime catalog, redacted replayable trace и typed routing UI
 подключены к agent loop. Временные планы этапа удалены после переноса
 контракта сюда и подтверждённого состояния в [`current-state.md`](current-state.md).
 
+Conversation-bound trace сохраняет только bounded terminal metadata. Для
+`task.failed` Core экспортирует `error_code`, `source` и `operation` из
+allow-list токенов либо детерминированно классифицирует ошибку; URL, prompt,
+секреты и полный текст ошибки не пересекают projection boundary. Trace UI
+показывает эти три поля отдельной диагностической карточкой и повторяет их в
+Markdown-разделе `diagnostics`, поэтому failure остаётся читаемым и после
+сохранения файла.
+
 ## Signed receipts
 
 Canonical Receipt v1 реализован в `crates/evohime-receipts` и Electron main

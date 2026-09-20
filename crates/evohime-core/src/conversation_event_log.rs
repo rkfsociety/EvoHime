@@ -292,7 +292,7 @@ fn redact_projection(
     }
 }
 
-fn normalize_payload(value: serde_json::Value) -> serde_json::Value {
+pub(crate) fn normalize_payload(value: serde_json::Value) -> serde_json::Value {
     let serde_json::Value::Object(object) = &value else {
         return value;
     };

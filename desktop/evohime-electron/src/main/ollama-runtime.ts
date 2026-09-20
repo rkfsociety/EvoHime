@@ -149,7 +149,9 @@ export class OllamaRuntimeService {
       const fallback = this.deps.fallbackFetch
       if (!fallback || !isElectronClientBlockedError(error)) throw error
       this.deps.log('warn', 'shell.ollama_download_fallback', {
-        reason: describeOllamaError(error)
+        error_code: 'client_blocked',
+        source: 'electron_transport',
+        operation: 'ollama.download'
       })
       response = await fallback(OLLAMA_INSTALLER_URL, options)
     }
@@ -208,7 +210,9 @@ export class OllamaRuntimeService {
       const fallback = this.deps.fallbackFetch
       if (!fallback || fallback === request) return { available: false, version: null }
       this.deps.log('warn', 'shell.ollama_probe_fallback', {
-        reason: describeOllamaError(error)
+        error_code: isElectronClientBlockedError(error) ? 'client_blocked' : 'probe_failed',
+        source: 'electron_transport',
+        operation: 'ollama.probe'
       })
       try {
         return await this.probeWith(fallback)

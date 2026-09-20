@@ -57,6 +57,7 @@ describe('Ollama runtime service', () => {
 
   it('falls back when the Electron transport blocks the executable download', async () => {
     let installed = false
+    const log = vi.fn()
     const primaryFetch = vi.fn(async (input: string | URL) => {
       if (String(input) === OLLAMA_INSTALLER_URL) throw new Error('net::ERR_BLOCKED_BY_CLIENT')
       return installed
@@ -75,7 +76,7 @@ describe('Ollama runtime service', () => {
       fetch: primaryFetch as never,
       fallbackFetch: fallbackFetch as never,
       emit: () => {},
-      log: () => {},
+      log,
       exists: async () => installed,
       launchInstaller,
       wait: async () => {}
@@ -86,6 +87,11 @@ describe('Ollama runtime service', () => {
     expect(status.state).toBe('ready')
     expect(fallbackFetch).toHaveBeenCalledTimes(1)
     expect(launchInstaller).toHaveBeenCalledTimes(1)
+    expect(log).toHaveBeenCalledWith('warn', 'shell.ollama_download_fallback', {
+      error_code: 'client_blocked',
+      source: 'electron_transport',
+      operation: 'ollama.download'
+    })
   })
 
   it('falls back to the Node transport when the Electron probe is blocked', async () => {

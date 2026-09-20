@@ -77,6 +77,28 @@ describe('trace panel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('shows safe terminal diagnostics as separate fields', async () => {
+    render(
+      <TracePanel
+        chatId="chat-1"
+        state={null}
+        workspace="G:/github/EvoHime"
+        onClose={() => {}}
+        events={[{
+          sequenceId: 13,
+          taskId: 'task-1',
+          eventType: 'task.failed',
+          payload: '{"redacted":true,"conversation_projection":true,"terminal":true,"error_code":"client_blocked","source":"electron_transport","operation":"network.request"}'
+        }]}
+      />
+    )
+
+    expect(await screen.findByText('Код ошибки')).toBeTruthy()
+    expect(screen.getByText('client_blocked')).toBeTruthy()
+    expect(screen.getByText('electron_transport')).toBeTruthy()
+    expect(screen.getByText('network.request')).toBeTruthy()
+  })
+
   it('saves the complete trace through the main-process bridge', async () => {
     const invoke = vi.fn(async (command: RendererCommand) => {
       if (command === 'chat.open') {
@@ -155,13 +177,15 @@ describe('trace panel', () => {
       sequenceId: 4,
       taskId: 'task-1',
       eventType: 'task.failed',
-      payload: '{"error":"boom"}'
+      payload: '{"redacted":true,"conversation_projection":true,"terminal":true,"error_code":"client_blocked","source":"electron_transport","operation":"network.request"}'
     }], update)
 
     expect(trace).toContain('workspace: G:/github/EvoHime')
     expect(trace).toContain('core_module_version: 0.0.000243')
     expect(trace).toContain('core_runtime_version: 0.1.0')
     expect(trace).toContain('[4] task.failed task=task-1')
-    expect(trace).toContain('"error": "boom"')
+    expect(trace).toContain('diagnostics:')
+    expect(trace).toContain('error_code=client_blocked source=electron_transport operation=network.request')
+    expect(trace).not.toContain('"error"')
   })
 })

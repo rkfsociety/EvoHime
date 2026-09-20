@@ -932,6 +932,35 @@ body {
   white-space: nowrap;
 }
 
+.trace-event__diagnostics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 9px 0 0;
+}
+
+.trace-event__diagnostics div {
+  min-width: 0;
+  padding: 6px 7px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.trace-event__diagnostics dt {
+  color: var(--fg-faint);
+  font-size: 10px;
+}
+
+.trace-event__diagnostics dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--fg);
+  font: 11px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .trace-event pre {
   max-height: 180px;
   margin: 8px 0 0;

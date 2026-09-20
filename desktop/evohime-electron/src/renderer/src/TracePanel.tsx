@@ -8,6 +8,12 @@ import { filterEventsForChat } from './trace-filter'
 
 export { filterEventsForChat } from './trace-filter'
 
+export interface TraceDiagnostics {
+  readonly errorCode: string
+  readonly source: string
+  readonly operation: string
+}
+
 interface Props {
   readonly chatId: string | null
   /** Reloads the persisted task ids after a prompt or task changes the chat. */
@@ -88,18 +94,36 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, update = n
         ) : (
           <ol className="trace-panel__events">
             {traceEvents.map((event) => (
-              <li key={`${event.sequenceId}-${event.eventType}`} className="trace-event">
-                <div className="trace-event__meta">
-                  <code>{event.eventType}</code>
-                  <span>#{event.sequenceId}</span>
-                </div>
-                {event.taskId ? <small className="trace-event__task">task: {event.taskId}</small> : null}
-                <pre>{formatPayload(event.payload)}</pre>
-              </li>
+              <TraceEventItem key={`${event.sequenceId}-${event.eventType}`} event={event} />
             ))}
           </ol>
         )}
     </aside>
+  )
+}
+
+function TraceEventItem({ event }: { readonly event: CoreEvent }): React.JSX.Element {
+  const diagnostics = parseTraceDiagnostics(event.payload)
+  return (
+    <li className="trace-event">
+      <div className="trace-event__meta">
+        <code>{event.eventType}</code>
+        <span>#{event.sequenceId}</span>
+      </div>
+      {event.taskId ? <small className="trace-event__task">task: {event.taskId}</small> : null}
+      {diagnostics ? <TraceDiagnosticsView diagnostics={diagnostics} /> : null}
+      <pre>{formatPayload(event.payload)}</pre>
+    </li>
+  )
+}
+
+function TraceDiagnosticsView({ diagnostics }: { readonly diagnostics: TraceDiagnostics }): React.JSX.Element {
+  return (
+    <dl className="trace-event__diagnostics" aria-label="Диагностика ошибки">
+      <div><dt>Код ошибки</dt><dd><code>{diagnostics.errorCode}</code></dd></div>
+      <div><dt>Источник</dt><dd><code>{diagnostics.source}</code></dd></div>
+      <div><dt>Операция</dt><dd><code>{diagnostics.operation}</code></dd></div>
+    </dl>
   )
 }
 
@@ -110,6 +134,33 @@ function formatPayload(payload: string): string {
   } catch {
     return payload
   }
+}
+
+export function parseTraceDiagnostics(payload: string): TraceDiagnostics | null {
+  try {
+    const value: unknown = JSON.parse(payload)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const record = value as Record<string, unknown>
+    const errorCode = safeTraceToken(record.error_code)
+    const source = safeTraceToken(record.source)
+    const operation = safeTraceToken(record.operation)
+    if (!errorCode || !source || !operation) return null
+    return { errorCode, source, operation }
+  } catch {
+    return null
+  }
+}
+
+function safeTraceToken(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const token = value.trim()
+  if (
+    !token ||
+    [...token].length > 128 ||
+    !/^[A-Za-z0-9_.:-]+$/.test(token) ||
+    /secret|token|password|bearer|sk-/i.test(token)
+  ) return null
+  return token
 }
 
 export function formatTrace(
@@ -132,6 +183,18 @@ export function formatTrace(
     `events: ${events.length}`,
     ''
   ]
+
+  const diagnostics = events.flatMap((event) => {
+    const value = parseTraceDiagnostics(event.payload)
+    return value ? [{ event, value }] : []
+  })
+  if (diagnostics.length > 0) {
+    lines.push('diagnostics:')
+    for (const { event, value } of diagnostics) {
+      lines.push(`- sequence=${event.sequenceId} event=${event.eventType} error_code=${value.errorCode} source=${value.source} operation=${value.operation}`)
+    }
+    lines.push('')
+  }
 
   for (const event of events) {
     lines.push(`[${event.sequenceId}] ${event.eventType}${event.taskId ? ` task=${event.taskId}` : ''}`)

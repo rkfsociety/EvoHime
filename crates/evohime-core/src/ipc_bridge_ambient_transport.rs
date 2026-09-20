@@ -1,4 +1,126 @@
 use super::*;
+use serde_json::{json, Value};
+
+const CONVERSATION_TRACE_TOKEN_MAX_CHARS: usize = 128;
+
+/// Keeps the conversation-bound event stream redacted while retaining a small,
+/// diagnostic terminal projection. The full event payload remains Core-owned
+/// and never crosses this projection boundary.
+fn conversation_bound_trace_payload(event_type: &str, payload: &[u8]) -> Vec<u8> {
+    let fallback = || {
+        serde_json::to_vec(&json!({
+            "redacted": true,
+            "conversation_projection": true
+        }))
+        .unwrap_or_else(|_| b"{\"redacted\":true}".to_vec())
+    };
+    let kind = match event_type {
+        "task.failed" => "task_failed",
+        "task.completed" => "task_completed",
+        "task.stopped" => "task_stopped",
+        _ => return fallback(),
+    };
+    let Some(draft) = crate::conversation_event_log::project_core_event(event_type, payload)
+        .ok()
+        .and_then(|drafts| drafts.into_iter().find(|draft| draft.kind == kind))
+    else {
+        return fallback();
+    };
+    let Ok(projected) = serde_json::from_slice::<Value>(&draft.renderer_payload) else {
+        return fallback();
+    };
+    let mut projection = serde_json::Map::new();
+    projection.insert("redacted".into(), Value::Bool(true));
+    projection.insert("conversation_projection".into(), Value::Bool(true));
+    projection.insert("terminal".into(), Value::Bool(true));
+    if let Some(status) = projected.get("status").and_then(Value::as_str) {
+        projection.insert("status".into(), Value::String(status.to_owned()));
+    }
+    if event_type == "task.failed" {
+        let input = serde_json::from_slice::<Value>(payload)
+            .ok()
+            .map(crate::conversation_event_log::normalize_payload)
+            .unwrap_or(Value::Null);
+        let error = input
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        projection.insert(
+            "error_code".into(),
+            Value::String(
+                safe_trace_token(&input, &["error_code"])
+                    .unwrap_or_else(|| classify_trace_error(error))
+                    .to_owned(),
+            ),
+        );
+        projection.insert(
+            "source".into(),
+            Value::String(
+                safe_trace_token(&input, &["source", "error_source"])
+                    .unwrap_or_else(|| classify_trace_source(error))
+                    .to_owned(),
+            ),
+        );
+        projection.insert(
+            "operation".into(),
+            Value::String(
+                safe_trace_token(&input, &["operation", "operation_name", "tool_name"])
+                    .unwrap_or_else(|| classify_trace_operation(error))
+                    .to_owned(),
+            ),
+        );
+    }
+    serde_json::to_vec(&Value::Object(projection)).unwrap_or_else(|_| fallback())
+}
+
+fn safe_trace_token<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .filter_map(|key| value.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|candidate| {
+            !candidate.is_empty()
+                && candidate.chars().count() <= CONVERSATION_TRACE_TOKEN_MAX_CHARS
+                && candidate.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | ':')
+                })
+                && !candidate.to_ascii_lowercase().contains("secret")
+                && !candidate.to_ascii_lowercase().contains("token")
+                && !candidate.to_ascii_lowercase().contains("password")
+                && !candidate.to_ascii_lowercase().contains("bearer")
+                && !candidate.to_ascii_lowercase().contains("sk-")
+        })
+}
+
+fn classify_trace_error(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("err_blocked_by_client") {
+        "client_blocked"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "timeout"
+    } else if lower.contains("permission") || lower.contains("access denied") {
+        "permission_denied"
+    } else if lower.contains("cancel") || lower.contains("стоп") {
+        "cancelled"
+    } else {
+        "task_failed"
+    }
+}
+
+fn classify_trace_source(error: &str) -> &'static str {
+    if error.to_ascii_lowercase().contains("err_blocked_by_client") {
+        "electron_transport"
+    } else {
+        "core"
+    }
+}
+
+fn classify_trace_operation(error: &str) -> &'static str {
+    if error.to_ascii_lowercase().contains("err_blocked_by_client") {
+        "network.request"
+    } else {
+        "task.execute"
+    }
+}
 
 impl IpcBridge {
     pub fn with_selected_model(mut self, selected: SelectedModel) -> Self {
@@ -472,9 +594,7 @@ impl IpcBridge {
                 continue;
             }
             let payload = if task_is_conversation_bound {
-                serde_json::to_vec(
-                    &serde_json::json!({"redacted": true, "conversation_projection": true}),
-                )?
+                conversation_bound_trace_payload(&record.event_type, &record.payload)
             } else {
                 record.payload
             };
@@ -863,5 +983,44 @@ impl IpcBridge {
         evohime_local_storage::domains::runs::get_run(database.connection(), &request.run_id)
             .map_err(|_| "storage_failed".to_string())?
             .ok_or_else(|| "run_not_found".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conversation_trace_keeps_only_safe_terminal_diagnostics() {
+        let payload = conversation_bound_trace_payload(
+            "task.failed",
+            br#"{"error":"net::ERR_BLOCKED_BY_CLIENT https://example.test/download","prompt":"secret context","operation":"browser.navigate","source":"browser","run_id":"run-1","secret":"sk-test"}"#,
+        );
+        let value: Value = serde_json::from_slice(&payload).expect("valid trace projection");
+        assert_eq!(value["redacted"], true);
+        assert_eq!(value["conversation_projection"], true);
+        assert_eq!(value["terminal"], true);
+        assert_eq!(value["error_code"], "client_blocked");
+        assert_eq!(value["source"], "browser");
+        assert_eq!(value["operation"], "browser.navigate");
+        assert!(value.get("error").is_none());
+        assert!(value.get("prompt").is_none());
+        assert!(value.get("run_id").is_none());
+        assert!(!serde_json::to_string(&value)
+            .unwrap()
+            .contains("example.test"));
+        assert!(!serde_json::to_string(&value).unwrap().contains("secret"));
+    }
+
+    #[test]
+    fn conversation_trace_does_not_expose_non_terminal_payloads() {
+        let payload = conversation_bound_trace_payload(
+            "workflow.progress",
+            br#"{"status":"failed","error":"internal"}"#,
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(&payload).expect("valid trace projection"),
+            json!({"redacted": true, "conversation_projection": true})
+        );
     }
 }
