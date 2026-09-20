@@ -12,6 +12,9 @@ export interface TraceDiagnostics {
   readonly errorCode: string
   readonly source: string
   readonly operation: string
+  readonly pathForm?: string
+  readonly pathScope?: string
+  readonly pathBoundaryReason?: string
 }
 
 interface Props {
@@ -127,6 +130,9 @@ function TraceDiagnosticsView({ diagnostics }: { readonly diagnostics: TraceDiag
       <div><dt>Код ошибки</dt><dd><code>{diagnostics.errorCode}</code></dd></div>
       <div><dt>Источник</dt><dd><code>{diagnostics.source}</code></dd></div>
       <div><dt>Операция</dt><dd><code>{diagnostics.operation}</code></dd></div>
+      {diagnostics.pathForm ? <div><dt>Форма пути</dt><dd><code>{diagnostics.pathForm}</code></dd></div> : null}
+      {diagnostics.pathScope ? <div><dt>Область пути</dt><dd><code>{diagnostics.pathScope}</code></dd></div> : null}
+      {diagnostics.pathBoundaryReason ? <div><dt>Причина границы</dt><dd><code>{diagnostics.pathBoundaryReason}</code></dd></div> : null}
     </dl>
   )
 }
@@ -197,14 +203,18 @@ function formatTraceEventPayload(eventType: string, payload: string): string {
     source: 'core',
     operation: 'task.execute'
   }
-  return JSON.stringify({
+  const result: Record<string, unknown> = {
     redacted: true,
     conversation_projection: true,
     terminal: true,
     error_code: diagnostics.errorCode,
     source: diagnostics.source,
     operation: diagnostics.operation
-  }, null, 2)
+  }
+  if (diagnostics.pathForm) result.path_form = diagnostics.pathForm
+  if (diagnostics.pathScope) result.path_scope = diagnostics.pathScope
+  if (diagnostics.pathBoundaryReason) result.path_boundary_reason = diagnostics.pathBoundaryReason
+  return JSON.stringify(result, null, 2)
 }
 
 export function parseTraceDiagnostics(payload: string): TraceDiagnostics | null {
@@ -216,7 +226,17 @@ export function parseTraceDiagnostics(payload: string): TraceDiagnostics | null 
     const source = safeTraceToken(record.source ?? record.error_source)
     const operation = safeTraceToken(record.operation ?? record.operation_name ?? record.tool_name)
     if (!errorCode || !source || !operation) return null
-    return { errorCode, source, operation }
+    const pathForm = safeTraceToken(record.path_form)
+    const pathScope = safeTraceToken(record.path_scope)
+    const pathBoundaryReason = safeTraceToken(record.path_boundary_reason)
+    return {
+      errorCode,
+      source,
+      operation,
+      ...(pathForm ? { pathForm } : {}),
+      ...(pathScope ? { pathScope } : {}),
+      ...(pathBoundaryReason ? { pathBoundaryReason } : {})
+    }
   } catch {
     return null
   }
@@ -318,6 +338,7 @@ function appendTraceSummary(lines: string[], events: readonly CoreEvent[]): void
   const counts = new Map<string, number>()
   const tools = new Map<string, TraceToolSummary>()
   const routingStatuses = new Map<string, number>()
+  const toolFailures: string[] = []
   const sequences = events.map((event) => event.sequenceId).filter(Number.isFinite)
   let completed = 0
   let failed = 0
@@ -340,6 +361,14 @@ function appendTraceSummary(lines: string[], events: readonly CoreEvent[]): void
         next.telemetry += 1
         if (payload?.ok === true) next.ok += 1
         if (payload?.ok === false) next.failed += 1
+        if (payload?.ok === false && (payload?.path_form || payload?.path_scope || payload?.path_boundary_reason)) {
+          const iteration = typeof payload.iteration === 'number' ? payload.iteration : 'unknown'
+          const failureKind = safeTraceToken(payload.failure_kind) ?? 'unknown'
+          const pathForm = safeTraceToken(payload.path_form) ?? 'unknown'
+          const pathScope = safeTraceToken(payload.path_scope) ?? 'unknown'
+          const boundaryReason = safeTraceToken(payload.path_boundary_reason) ?? 'unknown'
+          toolFailures.push(`- tool=${tool} iteration=${iteration} failure_kind=${failureKind} path_form=${pathForm} path_scope=${pathScope} path_boundary_reason=${boundaryReason}`)
+        }
       }
       tools.set(tool, next)
     }
@@ -368,6 +397,11 @@ function appendTraceSummary(lines: string[], events: readonly CoreEvent[]): void
       const pending = Math.max(summary.started - summary.outputs, 0)
       lines.push(`- tool=${tool} started=${summary.started} outputs=${summary.outputs} telemetry=${summary.telemetry} ok=${summary.ok} failed=${summary.failed} pending=${pending}`)
     }
+  }
+
+  if (toolFailures.length > 0) {
+    lines.push('tool_failures:')
+    lines.push(...toolFailures)
   }
 
   if (routingStatuses.size > 0) {

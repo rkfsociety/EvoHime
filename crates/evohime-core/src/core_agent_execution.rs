@@ -1229,21 +1229,36 @@ impl ToolAgent {
                         output: guarded_output.clone(),
                     })
                     .await;
+                let path_metadata = (!outcome.ok)
+                    .then(|| {
+                        crate::trace_diagnostics::classify_tool_path(
+                            &call.name,
+                            &call.arguments,
+                            &context.workspace_root,
+                        )
+                    })
+                    .flatten();
                 if let Some(journal) = &self.journal {
+                    let mut telemetry = serde_json::json!({
+                        "tool_name": call.name,
+                        "iteration": iteration,
+                        "ok": outcome.ok,
+                        "failure_kind": outcome.kind.as_ref().map(|kind| format!("{kind:?}")),
+                        "output_bytes": outcome.output.len().min(512 * 1024),
+                        "redacted": true,
+                    });
+                    if let Some(metadata) = path_metadata {
+                        if let Some(object) = telemetry.as_object_mut() {
+                            metadata.insert_into(object);
+                        }
+                    }
                     let _ = journal
                         .record_audit(
                             &task_id,
                             "tool.telemetry",
-                            serde_json::to_vec(&serde_json::json!({
-                                "tool_name": call.name,
-                                "iteration": iteration,
-                                "ok": outcome.ok,
-                                "failure_kind": outcome.kind.as_ref().map(|kind| format!("{kind:?}")),
-                                "output_bytes": outcome.output.len().min(512 * 1024),
-                                "redacted": true,
-                            }))
-                            .unwrap_or_default()
-                            .as_slice(),
+                            serde_json::to_vec(&telemetry)
+                                .unwrap_or_default()
+                                .as_slice(),
                         )
                         .await;
                 }
@@ -1453,9 +1468,19 @@ impl ToolAgent {
                 );
                 if policy_denied || failures_without_success >= 5 {
                     let message = if policy_denied {
+                        let path_details = path_metadata
+                            .map(|metadata| {
+                                format!(
+                                    "; path_form={} path_scope={} path_boundary_reason={}",
+                                    metadata.path_form,
+                                    metadata.path_scope,
+                                    metadata.path_boundary_reason
+                                )
+                            })
+                            .unwrap_or_default();
                         format!(
-                            "Задача остановлена: инструмент {} запрещён текущей политикой (класс {:?}); повтор вызова невозможен без изменения permission или loadout.",
-                            call.name, outcome.kind
+                            "Задача остановлена: инструмент {} запрещён текущей политикой (класс {:?}){}; повтор вызова невозможен без изменения permission или loadout.",
+                            call.name, outcome.kind, path_details
                         )
                     } else {
                         format!(

@@ -241,6 +241,7 @@ pub mod task_memory;
 pub(crate) mod task_worktree_isolation;
 pub mod team_coordination_policies;
 pub mod team_resource_budget;
+mod trace_diagnostics;
 pub mod typed_agent_handoff_contract;
 pub use task_memory::project_scope_id;
 pub(crate) mod agent_git_change_sets;

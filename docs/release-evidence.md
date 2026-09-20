@@ -21,6 +21,25 @@ output, transcripts, absolute paths и PII запрещены.
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
 
+### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
+
+- Conversation-bound trace обновлён до projection v3: отказ filesystem
+  сохраняет только `path_form`, `path_scope` и `path_boundary_reason`; raw path,
+  prompt, arguments и tool output не пересекают projection boundary.
+- Markdown export добавляет bounded `tool_failures` summary, а terminal CLI
+  показывает те же safe boundary tokens в сообщении `task.failed`.
+- Реальный `evohime-core --console` прогон с локальной моделью `qwen3:0.6b`
+  успешно завершил обычный workspace-анализ; отдельный boundary-прогон
+  получил `absolute/outside_workspace/absolute_path_not_allowed`, а проверка
+  `logs/audit.jsonl` не нашла raw path.
+- Instruction discovery больше не обходит VCS и generated directories
+  (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
+  поэтому служебные ACL не блокируют запуск агента до вызова модели.
+- Module versions: `core 0.0.000295`, `ui-bundle 0.0.000101`.
+- Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
+  (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
+  прогона.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:

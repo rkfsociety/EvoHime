@@ -356,14 +356,25 @@ pub(crate) fn failure_projection(value: &serde_json::Value) -> serde_json::Value
         .get("error")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    serde_json::json!({
+    let mut projection = serde_json::json!({
         "error_code": safe_failure_token(value, &["error_code"])
             .unwrap_or_else(|| classify_failure_error(error)),
         "source": safe_failure_token(value, &["source", "error_source"])
             .unwrap_or_else(|| classify_failure_source(error)),
         "operation": safe_failure_token(value, &["operation", "operation_name", "tool_name"])
             .unwrap_or_else(|| classify_failure_operation(error)),
-    })
+    });
+    if let Some(object) = projection.as_object_mut() {
+        for key in ["path_form", "path_scope", "path_boundary_reason"] {
+            let token = safe_failure_token(value, &[key])
+                .map(str::to_owned)
+                .or_else(|| safe_error_token(error, key).map(str::to_owned));
+            if let Some(token) = token {
+                object.insert(key.into(), serde_json::Value::String(token.into()));
+            }
+        }
+    }
+    projection
 }
 
 fn safe_failure_token<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
@@ -382,6 +393,29 @@ fn safe_failure_token<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option
                 && !candidate.to_ascii_lowercase().contains("bearer")
                 && !candidate.to_ascii_lowercase().contains("sk-")
         })
+}
+
+fn safe_error_token<'a>(error: &'a str, key: &str) -> Option<&'a str> {
+    let prefix = format!("{key}=");
+    error.split_whitespace().find_map(|part| {
+        let value = part.strip_prefix(&prefix)?;
+        let value = value
+            .trim_matches(|character: char| matches!(character, ',' | ';' | '.' | ')' | ']' | '}'));
+        is_safe_failure_token(value).then_some(value)
+    })
+}
+
+fn is_safe_failure_token(candidate: &str) -> bool {
+    !candidate.is_empty()
+        && candidate.chars().count() <= FAILURE_TOKEN_MAX_CHARS
+        && candidate.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | ':')
+        })
+        && !candidate.to_ascii_lowercase().contains("secret")
+        && !candidate.to_ascii_lowercase().contains("token")
+        && !candidate.to_ascii_lowercase().contains("password")
+        && !candidate.to_ascii_lowercase().contains("bearer")
+        && !candidate.to_ascii_lowercase().contains("sk-")
 }
 
 fn classify_failure_error(error: &str) -> &'static str {
@@ -558,7 +592,7 @@ mod tests {
     fn failed_projection_persists_only_safe_diagnostics() {
         let projected = project_core_event(
             "task.failed",
-            br#"{"error":"net::ERR_BLOCKED_BY_CLIENT https://provider.test/?token=secret","prompt":"private context","operation":"browser.navigate","source":"browser"}"#,
+            br#"{"error":"net::ERR_BLOCKED_BY_CLIENT https://provider.test/?token=secret path_form=absolute path_scope=outside_workspace path_boundary_reason=absolute_path_not_allowed","prompt":"private context","operation":"browser.navigate","source":"browser"}"#,
         )
         .unwrap();
 
@@ -568,6 +602,9 @@ mod tests {
             assert_eq!(payload["error_code"], "client_blocked");
             assert_eq!(payload["source"], "browser");
             assert_eq!(payload["operation"], "browser.navigate");
+            assert_eq!(payload["path_form"], "absolute");
+            assert_eq!(payload["path_scope"], "outside_workspace");
+            assert_eq!(payload["path_boundary_reason"], "absolute_path_not_allowed");
             assert!(payload.get("error").is_none());
             assert!(payload.get("prompt").is_none());
             let serialized = serde_json::to_string(&payload).unwrap();

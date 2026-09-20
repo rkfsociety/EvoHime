@@ -458,30 +458,32 @@ versioned runtime catalog, redacted replayable trace и typed routing UI
 подключены к agent loop. Временные планы этапа удалены после переноса
 контракта сюда и подтверждённого состояния в [`current-state.md`](current-state.md).
 
-Conversation-bound trace передаёт projection v2 с bounded metadata для
+Conversation-bound trace передаёт projection v3 с bounded metadata для
 non-terminal и terminal событий: тип/фаза, безопасные имена инструментов,
 tool telemetry, token/candidate counters, routing status и размеры скрытого
 содержимого. Для `task.failed` Core экспортирует `error_code`, `source` и
-`operation` из allow-list токенов либо детерминированно классифицирует ошибку;
-URL, prompt, arguments, tool output, секреты и полный текст ошибки не
-пересекают projection boundary. Даже malformed или oversized payload получает
-bounded deterministic fallback fields.
+`operation` из allow-list токенов либо детерминированно классифицирует ошибку.
+При отказе filesystem boundary дополнительно экспортируются только
+`path_form`, `path_scope` и `path_boundary_reason`; исходный путь не пересекает
+projection boundary. URL, prompt, arguments, tool output, секреты и полный
+текст ошибки не пересекают projection boundary. Даже malformed или oversized
+payload получает bounded deterministic fallback fields.
 Та же failure projection применяется до записи durable conversation history:
 `assistant_message_failed` и `task_failed` больше не сохраняют исходный
 `error`, поэтому повторное чтение истории не может вернуть raw provider text.
 До вставки в основной durable event journal `task.failed` получает ту же
-projection: глобальный replay хранит только `task_id`, `error_code`, `source` и
-`operation`, а transcript/recovery UI не использует raw `error` даже для
-legacy/live payload.
-Trace UI
-показывает эти три поля отдельной диагностической карточкой и повторяет их в
-Markdown-разделе `diagnostics`, поэтому failure остаётся читаемым и после
-сохранения файла. Renderer дополнительно нормализует legacy `task.failed`
+projection: глобальный replay хранит только `task_id`, `error_code`, `source`,
+`operation` и безопасные path-boundary tokens при их наличии, а
+transcript/recovery UI не использует raw `error` даже для legacy/live payload.
+Trace UI показывает базовые поля failure отдельной диагностической карточкой;
+при filesystem boundary failure он также показывает безопасные path tokens и
+повторяет их в Markdown-разделе `diagnostics`, поэтому failure остаётся
+читаемым и после сохранения файла. Renderer дополнительно нормализует legacy `task.failed`
 payload перед показом и экспортом, поэтому старое или ошибочно доставленное
 событие не возвращает URL, prompt или секрет в trace surface.
 Обычные payloads renderer сначала рекурсивно редактирует, а экспорт добавляет
 deterministic summary: диапазон и непрерывность sequence, counts по типам,
-итог задачи, tool started/output/telemetry и routing statuses. Main bridge
+итог задачи, tool started/output/telemetry, bounded `tool_failures` и routing statuses. Main bridge
 отклоняет необработанные URL и чувствительные assignment-поля до native save
 dialog.
 Shell-owned Ollama fallback не маскируется под Core event: main broadcast

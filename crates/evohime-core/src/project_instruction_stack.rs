@@ -534,6 +534,25 @@ fn collect_files(
     Ok(())
 }
 
+fn is_generated_or_vcs_directory(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|value| value.to_str()),
+        Some(
+            ".git"
+                | "target"
+                | "node_modules"
+                | ".evohime-native"
+                | ".evohime-cargo"
+                | ".evohime-rustup"
+                | ".evohime-tools"
+                | ".evohime-temp"
+                | "dist"
+                | "build"
+                | "release"
+        )
+    )
+}
+
 pub fn discover_rules(
     workspace_root: &Path,
     global_rules_root: Option<&Path>,
@@ -558,7 +577,9 @@ pub fn discover_rules(
             let p = entry
                 .map_err(|e| InstructionError::Io(e.to_string()))?
                 .path();
-            if p.file_name().and_then(|value| value.to_str()) == Some(".evohime") {
+            if p.file_name().and_then(|value| value.to_str()) == Some(".evohime")
+                || is_generated_or_vcs_directory(&p)
+            {
                 continue;
             }
             let m = fs::symlink_metadata(&p).map_err(|e| InstructionError::Io(e.to_string()))?;
@@ -690,5 +711,23 @@ mod tests {
             discover_rules(dir.path(), None),
             Err(InstructionError::RuleTooLarge)
         ));
+    }
+
+    #[test]
+    fn discovery_skips_generated_and_vcs_directories() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "# root\n").unwrap();
+        for name in ["target", "node_modules", ".evohime-native", ".git"] {
+            let nested = dir.path().join(name);
+            std::fs::create_dir_all(&nested).unwrap();
+            std::fs::write(nested.join("AGENTS.md"), "# ignored\n").unwrap();
+        }
+        let crates = dir.path().join("crates");
+        std::fs::create_dir_all(&crates).unwrap();
+        std::fs::write(crates.join("AGENTS.md"), "# nested\n").unwrap();
+
+        let rules = discover_rules(dir.path(), None).unwrap();
+        let refs: Vec<_> = rules.iter().map(|rule| rule.source_ref.as_str()).collect();
+        assert_eq!(refs, vec!["agents.md", "crates/agents.md"]);
     }
 }

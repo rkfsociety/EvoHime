@@ -382,4 +382,26 @@ describe('trace panel', () => {
     expect(trace).toContain('tool=filesystem.search started=1 outputs=1 telemetry=1 ok=1 failed=0 pending=0')
     expect(trace).toContain('tool.output=1')
   })
+
+  it('exports safe filesystem boundary diagnostics without the requested path', () => {
+    const trace = formatTrace(null, 'D:/github/Bombox', [
+      {
+        sequenceId: 20,
+        taskId: 'task-1',
+        eventType: 'tool.telemetry',
+        payload: '{"tool_name":"filesystem.read","iteration":3,"ok":false,"failure_kind":"denied_policy","path_form":"absolute","path_scope":"outside_workspace","path_boundary_reason":"absolute_path_not_allowed"}'
+      },
+      {
+        sequenceId: 21,
+        taskId: 'task-1',
+        eventType: 'task.failed',
+        payload: '{"error_code":"permission_denied","source":"core","operation":"task.execute","path_form":"absolute","path_scope":"outside_workspace","path_boundary_reason":"absolute_path_not_allowed"}'
+      }
+    ])
+
+    expect(trace).toContain('tool_failures:')
+    expect(trace).toContain('tool=filesystem.read iteration=3 failure_kind=denied_policy path_form=absolute path_scope=outside_workspace path_boundary_reason=absolute_path_not_allowed')
+    expect(trace).toContain('"path_form": "absolute"')
+    expect(trace).not.toContain('C:\\Users\\roman')
+  })
 })

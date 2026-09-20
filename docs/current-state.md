@@ -51,7 +51,9 @@ reopen не оставляет частичных строк.
 
 Conversation-bound `task.failed` trace events передаются в renderer как
 redacted terminal projection: в payload остаются только bounded `error_code`,
-`source` и `operation` (или безопасная детерминированная классификация).
+`source` и `operation` (или безопасная детерминированная классификация), а для
+filesystem boundary failures — только безопасные `path_form`, `path_scope` и
+`path_boundary_reason` без самого пути.
 При malformed или oversized исходном payload сохраняется fallback
 `task_failed/core/task.execute`, а не generic или raw payload. Полный error text,
 URL, prompt и секреты не сохраняются в этой проекции;
@@ -61,10 +63,11 @@ Trace UI показывает диагностические поля отдел
 Тот же safe projection применяется при записи исходной строки `task.failed` в
 глобальный durable event journal, поэтому replay больше не возвращает raw
 `error`; fallback transcript и recovery UI показывают только `error_code`.
-Обычные conversation-bound trace payloads передаются как projection v2:
+Обычные conversation-bound trace payloads передаются как projection v3:
 тип события, projection kind, фаза, безопасные имена инструментов, bounded
 счётчики и размеры payload без самого prompt, arguments, tool output, URL или
-секретов. Поля содержимого остаются redacted; main bridge по-прежнему
+секретов. Ошибки filesystem-инструментов дополнительно попадают в bounded
+`tool_failures` summary с формой пути, областью и причиной отказа. Поля содержимого остаются redacted; main bridge по-прежнему
 отклоняет необработанные URL, prompt и секретные assignment-поля. Экспорт
 Markdown дополнительно содержит deterministic summary с диапазоном sequence,
 числом событий по типам, outcome задачи, сводкой tool calls и routing statuses.

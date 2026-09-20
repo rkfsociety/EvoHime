@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::{json, Value};
 
-const TRACE_PROJECTION_VERSION: u64 = 2;
+const TRACE_PROJECTION_VERSION: u64 = 3;
 const TRACE_TEXT_BYTES_LIMIT: usize = 512 * 1024;
 
 /// Keeps the conversation-bound event stream redacted while retaining bounded
@@ -81,6 +81,14 @@ fn conversation_bound_trace_payload(event_type: &str, payload: &[u8]) -> Vec<u8>
             add_u64(&mut projection, "iteration", object, "iteration");
             add_bool(&mut projection, "ok", object, "ok");
             add_safe_token(&mut projection, "failure_kind", object, "failure_kind");
+            add_safe_token(&mut projection, "path_form", object, "path_form");
+            add_safe_token(&mut projection, "path_scope", object, "path_scope");
+            add_safe_token(
+                &mut projection,
+                "path_boundary_reason",
+                object,
+                "path_boundary_reason",
+            );
             add_u64(&mut projection, "output_bytes", object, "output_bytes");
             add_bool(&mut projection, "recovery_hint", object, "recovery_hint");
             add_bool(&mut projection, "escalated", object, "escalated");
@@ -1222,14 +1230,20 @@ mod tests {
     fn conversation_trace_exposes_safe_telemetry_and_routing_metadata() {
         let telemetry = conversation_bound_trace_payload(
             "tool.telemetry",
-            br#"{"tool_name":"filesystem.read","iteration":2,"ok":false,"failure_kind":"execution","output_bytes":17,"recovery_hint":true,"escalated":false,"secret":"sk-test"}"#,
+            br#"{"tool_name":"filesystem.read","iteration":2,"ok":false,"failure_kind":"denied_policy","path_form":"absolute","path_scope":"outside_workspace","path_boundary_reason":"absolute_path_not_allowed","output_bytes":17,"recovery_hint":true,"escalated":false,"secret":"sk-test"}"#,
         );
         let telemetry_value: Value =
             serde_json::from_slice(&telemetry).expect("valid telemetry projection");
         assert_eq!(telemetry_value["tool_name"], "filesystem.read");
         assert_eq!(telemetry_value["iteration"], 2);
         assert_eq!(telemetry_value["ok"], false);
-        assert_eq!(telemetry_value["failure_kind"], "execution");
+        assert_eq!(telemetry_value["failure_kind"], "denied_policy");
+        assert_eq!(telemetry_value["path_form"], "absolute");
+        assert_eq!(telemetry_value["path_scope"], "outside_workspace");
+        assert_eq!(
+            telemetry_value["path_boundary_reason"],
+            "absolute_path_not_allowed"
+        );
         assert!(serde_json::to_string(&telemetry_value)
             .unwrap()
             .contains("redacted"));
