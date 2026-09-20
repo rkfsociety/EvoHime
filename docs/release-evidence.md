@@ -1664,6 +1664,11 @@ for old or unknown events, so URLs, query tokens and provider diagnostics are
 not rendered from replayed history. Source modules are now `core 0.0.000257`
 and `ui-bundle 0.0.000080`.
 
+The shared renderer catalog-error projection is also used by plan review. Its
+catalog failure notice sanitizes old replayed raw strings before rendering and
+maps only the bounded Core codes to user-facing text; the UI bundle is now
+`0.0.000081`.
+
 ## Trace reason redaction follow-up (2026-09-20)
 
 Trace UI/export now normalizes the connection `reason` to the same bounded

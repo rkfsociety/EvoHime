@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ConnectionState, CoreEvent, ModelLimits, ModelTier, PlanFile, PlanReviewResult, PlanRevisionResult } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import { MarkdownMessage } from './MarkdownMessage'
 
 const CONNECTED: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -523,7 +524,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
       <fieldset className="review-panel__models">
         <legend>Модели-рецензенты · {reviewers.filter(Boolean).length} из {reviewerCount}</legend>
-        {catalog.error ? <p role="alert" className="review-panel__catalog-error">Каталог моделей не обновился: {catalog.error}{models.length > 0 ? ' Показан прошлый список.' : ''}</p> : null}
+        {catalog.error ? <p role="alert" className="review-panel__catalog-error">Каталог моделей не обновился: {catalogErrorMessage(catalog.error)}{models.length > 0 ? ' Показан прошлый список.' : ''}</p> : null}
         {models.length === 0 ? <p>Каталог {tier === 'free' ? 'бесплатных' : 'платных'} моделей пуст.</p> : reviewers.map((model, index) => (
           <label key={index} className="review-panel__model-row">
             <span>Рецензент {index + 1}</span>
@@ -692,7 +693,7 @@ function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): ModelCata
   return {
     models: Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string' && model.trim().length > 0).sort() : [],
     limits: readLimits(payload?.limits),
-    error: typeof payload?.error === 'string' && payload.error.length > 0 ? payload.error : null
+    error: safeCatalogErrorCode(payload?.error)
   }
 }
 

@@ -157,10 +157,12 @@ describe('plan review panel', () => {
     const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
 
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 1' }), 'a')
-    view.rerender(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: [], error: 'provider error: 429 rate limit' }), catalog]} />)
+    view.rerender(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: [], error: 'provider error: https://provider.test?token=secret' }), catalog]} />)
 
     expect((screen.getByRole('combobox', { name: 'Модель рецензента 1' }) as HTMLSelectElement).value).toBe('a')
-    expect(screen.getByRole('alert').textContent).toContain('429 rate limit')
+    expect(screen.getByRole('alert').textContent).toContain('Не удалось получить каталог моделей.')
+    expect(screen.getByRole('alert').textContent).not.toContain('provider.test')
+    expect(screen.getByRole('alert').textContent).not.toContain('secret')
   })
 
   it('keeps every reviewer listed after their events leave the window', async () => {
