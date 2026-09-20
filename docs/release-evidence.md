@@ -44,6 +44,14 @@ compatible-manifest runs; исторические разделы ниже со�
   с `eva.exe` и `cli.manifest.json`; compatibility manifest опубликован
   отдельным fixed release после успешного module gate.
 
+### CLI Windows endpoint boundary (2026-09-21)
+
+- Named-pipe launch-context loading и platform endpoint setup вынесены из
+  command orchestration в отдельный `windows_endpoint` module; Linux fail-closed
+  behavior и `CoreClient` public facade не изменены.
+- CLI marker повышен до `0.0.000075`; Windows target check и Linux CLI tests
+  являются обязательными проверками перед следующим module-router push.
+
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 
 - Conversation-bound trace обновлён до projection v3: отказ filesystem
