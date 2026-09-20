@@ -310,6 +310,8 @@ pub enum MemoryStoreError {
     InvalidConfidence,
     #[error("memory evidence references are invalid or unbounded")]
     InvalidEvidenceRefs,
+    #[error("memory extraction idempotency key was reused for another source basis")]
+    ExtractionIdempotencyConflict,
     #[error("memory record was not found")]
     NotFound,
     #[error("state transition from {from} to {to} is not allowed")]

@@ -293,6 +293,26 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Atomically publishes an extraction candidate and its metadata-only
+    /// source/idempotency lifecycle. Memory storage remains the sole owner of
+    /// the candidate body; a replay returns the original memory id.
+    pub async fn publish_memory_extraction_candidate(
+        &self,
+        record: &evohime_local_storage::domains::memory::MemoryRecord,
+        source_basis: &str,
+        idempotency_key: &str,
+    ) -> Result<evohime_local_storage::domains::memory::PublishOutcome, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::publish_candidate(
+            database.connection(),
+            record,
+            source_basis,
+            idempotency_key,
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(|error| error.to_string())
+    }
+
     /// Lists non-forgotten Memory v1 records for one exact scope.
     pub async fn list_memory(
         &self,

@@ -8,6 +8,7 @@
 #![allow(ambiguous_glob_imports)]
 
 pub mod memory {
+    pub use crate::memory_extraction_store::{publish_candidate, PublishOutcome};
     pub use crate::memory_store::{
         install_schema, InsertSessionNoteInput, MemoryExtractionFields, MemoryPrivacy,
         MemoryRecord, MemoryRecordInput, MemoryScope, MemoryStoreError, MemoryStoreSql,

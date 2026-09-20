@@ -84,6 +84,7 @@ pub mod language_intelligence_store;
 pub mod local_model_compatibility_gateway_store;
 pub mod local_model_performance_calibration_store;
 pub mod local_model_runtime_manager_store;
+pub mod memory_extraction_store;
 pub(crate) mod memory_store;
 pub(crate) mod memory_views_and_adaptive_recall_store;
 mod migrations;
@@ -150,7 +151,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 174;
+pub const SCHEMA_VERSION: u32 = 175;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -706,6 +707,7 @@ impl LocalDatabase {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         memory_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        memory_extraction_store::install_schema(&connection)?;
         context_ledger_store::install_compaction_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         task_checkpoint::install_schema(&connection)?;
@@ -3023,6 +3025,7 @@ impl LocalDatabase {
         migrations::v172::apply(&transaction, current)?;
         migrations::v173::apply(&transaction, current)?;
         migrations::v174::apply(&transaction, current)?;
+        migrations::v175::apply(&transaction, current)?;
         transaction.commit()?;
         Ok(())
     }

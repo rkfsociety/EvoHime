@@ -2,6 +2,36 @@ use super::*;
 
 const MAX_MEMORY_VALIDATION_FILE_BYTES: usize = 1024 * 1024;
 
+/// Builds opaque, deterministic source and idempotency keys. The candidate
+/// statement is hashed in memory and never placed in lifecycle metadata.
+fn extraction_publish_keys(
+    origin: &str,
+    source_id: &str,
+    candidate: &crate::memory_extraction::Candidate,
+) -> (String, String) {
+    use sha2::{Digest, Sha256};
+
+    let material = serde_json::json!({
+        "version": 1,
+        "origin": origin,
+        "source_id": source_id,
+        "kind": candidate.kind.as_str(),
+        "scope": candidate.scope.as_str(),
+        "canonical_subject": candidate.canonical_subject,
+        "statement": candidate.statement,
+        "evidence": candidate.evidence,
+    });
+    let bytes = serde_json::to_vec(&material).unwrap_or_default();
+    let source_basis = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
+    let idempotency_key = format!(
+        "sha256:{}",
+        hex::encode(Sha256::digest(
+            format!("memory-extraction-publish:v1:{source_basis}").as_bytes(),
+        ))
+    );
+    (source_basis, idempotency_key)
+}
+
 impl ToolAgent {
     pub(super) async fn persist_lesson(&self, task_id: &str, workspace_root: &std::path::Path) {
         let Some(journal) = &self.journal else {
@@ -290,12 +320,58 @@ impl ToolAgent {
                     .map(|verdict| verdict.verification_confidence)
                     .unwrap_or(0.0),
             };
-            if let Err(error) = journal.save_memory(&record).await {
-                write_model_trace(
-                    "memory.extraction.rejected",
-                    serde_json::json!({ "task_id": task_id, "reason": error }),
-                );
-                continue;
+            let (source_basis, idempotency_key) =
+                extraction_publish_keys("dialog", task_id, &candidate);
+            match journal
+                .publish_memory_extraction_candidate(&record, &source_basis, &idempotency_key)
+                .await
+            {
+                Ok(evohime_local_storage::domains::memory::PublishOutcome::Committed { .. }) => {}
+                Ok(
+                    evohime_local_storage::domains::memory::PublishOutcome::AlreadyCommitted {
+                        memory_id,
+                    }
+                    | evohime_local_storage::domains::memory::PublishOutcome::SourceBasisAlreadyCaptured {
+                        memory_id: Some(memory_id),
+                    },
+                ) => {
+                    write_model_trace(
+                        "memory.extraction.duplicate",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "memory_id": memory_id,
+                            "reason": "already_committed",
+                        }),
+                    );
+                    continue;
+                }
+                Ok(
+                    evohime_local_storage::domains::memory::PublishOutcome::SourceBasisAlreadyCaptured {
+                        memory_id: None,
+                    },
+                ) => {
+                    write_model_trace(
+                        "memory.extraction.duplicate",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "reason": "source_basis_already_captured",
+                        }),
+                    );
+                    continue;
+                }
+                Err(_) => {
+                    write_model_trace(
+                        "memory.extraction.rejected",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "error_code": "memory_extraction_publish_failed",
+                            "source": "core.memory_extraction",
+                            "operation": "dialog",
+                            "reason": "storage_failure",
+                        }),
+                    );
+                    continue;
+                }
             }
             write_model_trace(
                 "memory.extraction.candidate",
@@ -608,12 +684,58 @@ impl ToolAgent {
                 durability: "durable".to_owned(),
                 confidence: 0.0,
             };
-            if let Err(error) = journal.save_memory(&record).await {
-                write_model_trace(
-                    "memory.ambient.rejected",
-                    serde_json::json!({ "episode_id": episode_id, "reason": error }),
-                );
-                continue;
+            let (source_basis, idempotency_key) =
+                extraction_publish_keys("ambient", episode_id, &candidate);
+            match journal
+                .publish_memory_extraction_candidate(&record, &source_basis, &idempotency_key)
+                .await
+            {
+                Ok(evohime_local_storage::domains::memory::PublishOutcome::Committed { .. }) => {}
+                Ok(
+                    evohime_local_storage::domains::memory::PublishOutcome::AlreadyCommitted {
+                        memory_id,
+                    }
+                    | evohime_local_storage::domains::memory::PublishOutcome::SourceBasisAlreadyCaptured {
+                        memory_id: Some(memory_id),
+                    },
+                ) => {
+                    write_model_trace(
+                        "memory.ambient.duplicate",
+                        serde_json::json!({
+                            "episode_id": episode_id,
+                            "memory_id": memory_id,
+                            "reason": "already_committed",
+                        }),
+                    );
+                    continue;
+                }
+                Ok(
+                    evohime_local_storage::domains::memory::PublishOutcome::SourceBasisAlreadyCaptured {
+                        memory_id: None,
+                    },
+                ) => {
+                    write_model_trace(
+                        "memory.ambient.duplicate",
+                        serde_json::json!({
+                            "episode_id": episode_id,
+                            "reason": "source_basis_already_captured",
+                        }),
+                    );
+                    continue;
+                }
+                Err(_) => {
+                    write_model_trace(
+                        "memory.ambient.rejected",
+                        serde_json::json!({
+                            "episode_id": episode_id,
+                            "error_code": "memory_extraction_publish_failed",
+                            "source": "core.memory_extraction",
+                            "operation": "ambient",
+                            "reason": "storage_failure",
+                        }),
+                    );
+                    continue;
+                }
             }
             write_model_trace(
                 "memory.ambient.candidate",

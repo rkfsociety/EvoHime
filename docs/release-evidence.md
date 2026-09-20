@@ -2214,3 +2214,21 @@ trace не попадают текст кандидата, prompt, URL или с
 `git diff --check`; Electron `TracePanel` targeted suite — 14 тестов прошли.
 Core patch повышен `0.0.000291 -> 0.0.000292`; CI для нового коммита будет
 проверен после push.
+
+## Memory extraction durable publication (2026-09-20)
+
+Memory storage получил schema v175 и metadata-only
+`memory_extraction_lifecycle`. Dialog/ambient extraction строят opaque
+SHA-256 source-basis и idempotency keys; одна транзакция атомарно связывает
+`finalizing` lifecycle с вставкой `memory_entries` и `committed` outcome.
+Повторный ключ возвращает исходный `memory_id`, а повтор source basis не
+создаёт semantic copy. Lifecycle не содержит statement, transcript, prompt,
+URL или secrets; publish failures в trace имеют только bounded
+`error_code/source/operation/reason`.
+
+Проверка: `cargo test --locked -p evohime-local-storage memory_extraction
+--no-fail-fast` — 3/3 теста прошли (migration, atomic idempotency и source-basis
+deduplication); выполнены `cargo fmt --all` и `git diff --check`. Core
+`memory_extraction` test run был остановлен по запросу пользователя после
+перекомпиляции; полный Core acceptance оставлен CI/Windows.
+Core patch повышен `0.0.000292 -> 0.0.000293`.

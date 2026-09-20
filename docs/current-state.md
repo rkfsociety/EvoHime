@@ -127,7 +127,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000292`, `ui-bundle 0.0.000099`,
+Текущий checkout содержит patch `core 0.0.000293`, `ui-bundle 0.0.000099`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -141,12 +141,14 @@ revision fence. Core валидирует обратное восстановл�
 гидратирует только configured provider/model scopes до IPC и добавляет в
 существующий authenticated `model.catalog` redacted `free_access` projection.
 Probes, `FreeOnly` routing и dedicated UI остаются активными этапами 174.2–174.4.
-План 175 получил первый runtime-срез: общий cancellation-safe RAII lease
+План 175 получил runtime/storage-срез: общий cancellation-safe RAII lease
 сериализует dialog/ambient memory extraction и не даёт конкурентному второму
 извлечению обойти бюджеты и circuit breaker. Повторный запуск получает только
 bounded `reentrant` reason в `memory.extraction.skipped` или
-`memory.ambient.skipped`; durable candidate/finalization/CAS/recovery остаются
-активными этапами 175.1–175.4.
+`memory.ambient.skipped`; SQLite schema v175 добавляет metadata-only lifecycle
+с source-basis/idempotency hashes и атомарным `finalizing → committed` publish,
+не сохраняя statement, transcript, prompt или secrets. Recovery, deferred
+finalization и IPC projection остаются активными этапами 175.2–175.4.
 План 173.1 получил совместимый Core-контракт: versioned `ProviderProfile`
 разделяет provider family и transport, а `ProviderModelDescriptor` адаптирует
 существующий gateway `ModelCatalogEntry` с profile/catalog revision/hash,
