@@ -34,7 +34,7 @@ compatible-manifest runs; исторические разделы ниже со�
 - Instruction discovery больше не обходит VCS и generated directories
   (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
   поэтому служебные ACL не блокируют запуск агента до вызова модели.
-- Module versions: `core 0.0.000298`, `ui-bundle 0.0.000101`, `cli 0.0.000061`.
+- Module versions: `core 0.0.000298`, `ui-bundle 0.0.000101`, `cli 0.0.000062`.
 - Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
   (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
   прогона.
@@ -83,6 +83,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Platform-neutral CLI protocol разделён на внутренние модули `auth`, `client`
   и `commands`, сохранив прежний публичный `CoreClient`; marker CLI повышен до
   `0.0.000061`.
+- Windows named-pipe endpoint, reconnect loop и CLI event output вынесены из
+  binary entrypoint в отдельный `windows_client` module; marker CLI повышен до
+  `0.0.000062`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
