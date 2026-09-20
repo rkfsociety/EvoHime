@@ -128,13 +128,35 @@ function TraceDiagnosticsView({ diagnostics }: { readonly diagnostics: TraceDiag
   )
 }
 
+const TRACE_URL_PATTERN = /\b(?:https?|wss?|file):\/\/[^\s"'<>]+/gi
+const TRACE_SENSITIVE_FIELD_PATTERN = /^(?:prompt|secret|token|password|api[_-]?key|authorization|credential)$/i
+const TRACE_SENSITIVE_ASSIGNMENT_PATTERN = /(["']?(?:prompt|secret|token|password|api[_-]?key|authorization|credential)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi
+
 function formatPayload(payload: string): string {
   if (!payload) return 'без payload'
   try {
-    return JSON.stringify(JSON.parse(payload), null, 2)
+    return JSON.stringify(redactTraceValue(JSON.parse(payload)), null, 2) ?? '[REDACTED]'
   } catch {
-    return payload
+    return redactTraceText(payload)
   }
+}
+
+function redactTraceValue(value: unknown, key = ''): unknown {
+  if (TRACE_SENSITIVE_FIELD_PATTERN.test(key)) return '[REDACTED]'
+  if (typeof value === 'string') return redactTraceText(value)
+  if (Array.isArray(value)) return value.map((item) => redactTraceValue(item))
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [entryKey, redactTraceValue(entryValue, entryKey)])
+    )
+  }
+  return value
+}
+
+function redactTraceText(value: string): string {
+  return value
+    .replace(TRACE_URL_PATTERN, '[URL]')
+    .replace(TRACE_SENSITIVE_ASSIGNMENT_PATTERN, '$1[REDACTED]')
 }
 
 function formatTraceEventPayload(eventType: string, payload: string): string {

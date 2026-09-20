@@ -1669,6 +1669,12 @@ catalog failure notice sanitizes old replayed raw strings before rendering and
 maps only the bounded Core codes to user-facing text; the UI bundle is now
 `0.0.000081`.
 
+Trace rendering and export now apply the same redaction boundary to ordinary
+event payloads as to legacy `task.failed` events: sensitive JSON fields become
+`[REDACTED]`, URLs become `[URL]`, and the main-process export guard rejects
+unsafe content supplied by an old or untrusted renderer. The UI bundle is now
+`0.0.000082`.
+
 ## Trace reason redaction follow-up (2026-09-20)
 
 Trace UI/export now normalizes the connection `reason` to the same bounded

@@ -2873,8 +2873,7 @@ function asTraceContent(value: unknown): string | null {
   if (typeof value !== 'string' || value.trim().length === 0 || Buffer.byteLength(value, 'utf8') > MAX_TRACE_EXPORT_BYTES) {
     return null
   }
-  const failureSections = value.split(/\n(?=\[\d+\]\s)/).filter((section) => /^\[\d+\]\s+task\.failed\b/m.test(section))
-  return failureSections.some((section) => TRACE_URL_PATTERN.test(section) || TRACE_SENSITIVE_FIELD_PATTERN.test(section))
+  return TRACE_URL_PATTERN.test(value) || TRACE_SENSITIVE_FIELD_PATTERN.test(value)
     ? null
     : value
 }

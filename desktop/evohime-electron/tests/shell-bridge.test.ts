@@ -774,6 +774,17 @@ describe('trace export', () => {
       message: 'Трейс пуст, слишком большой или содержит небезопасные данные.'
     })
   })
+
+  it('rejects URLs and sensitive fields anywhere in the trace before writing a file', () => {
+    const result = invoke('trace.export', {
+      content: '[1] tool.output\n{"url":"https://example.test","prompt":"private context"}'
+    })
+    expect(result).toEqual({
+      ok: false,
+      code: 'invalid-payload',
+      message: 'Трейс пуст, слишком большой или содержит небезопасные данные.'
+    })
+  })
 })
 
 describe('source update commands', () => {
