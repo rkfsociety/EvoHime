@@ -100,6 +100,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Windows-only CLI orchestration отделена от human/NDJSON output projection в
   `windows_client` и `windows_output`; Linux contract не меняется, а Windows
   target `cargo check` подтверждает сборку, marker CLI повышен до `0.0.000067`.
+- Exit-code enum и terminal-event policy вынесены из event serialization в
+  отдельный `exit_code` модуль; корневые CLI re-export paths сохранены, marker
+  CLI повышен до `0.0.000068`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
