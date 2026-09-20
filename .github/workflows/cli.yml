@@ -35,6 +35,15 @@ jobs:
           set -e
           test "$status" -eq 7
           grep -q '^core_unavailable:' stderr.log
+      - name: Verify invalid invocation is bounded
+        shell: bash
+        run: |
+          set +e
+          ./target/release/eva run --unknown >stdout-invalid.log 2>stderr-invalid.log
+          status=$?
+          set -e
+          test "$status" -eq 2
+          grep -qx 'unknown command or option' stderr-invalid.log
 
   module:
     needs: linux-contract

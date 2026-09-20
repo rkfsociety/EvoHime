@@ -35,7 +35,7 @@ output, transcripts, absolute paths и PII запрещены.
 - Instruction discovery больше не обходит VCS и generated directories
   (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
   поэтому служебные ACL не блокируют запуск агента до вызова модели.
-- Module versions: `core 0.0.000297`, `ui-bundle 0.0.000101`, `cli 0.0.000044`.
+- Module versions: `core 0.0.000297`, `ui-bundle 0.0.000101`, `cli 0.0.000046`.
 - Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
   (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
   прогона.
@@ -46,7 +46,8 @@ output, transcripts, absolute paths и PII запрещены.
   fail-closed возвращает `CoreUnavailable`, а не пытается открыть неподдержанный
   named pipe или запускать второй Core runtime.
 - Для CLI добавлен отдельный Ubuntu workflow: format, tests, strict clippy,
-  build и smoke-проверка exit code `7`/`core_unavailable`; Windows CLI
+  build, smoke-проверки exit code `7`/`core_unavailable` и exit code
+  `2`/`unknown command or option`; Windows CLI
   publication зависит от успешного Linux contract job.
 - Локально на Linux прошли `cargo test --locked -p evohime-cli` (6/6), включая
   duplex-тест HMAC-handshake, sequence cursor и `StartTask` protobuf-кадра,
