@@ -775,6 +775,13 @@ describe('trace export', () => {
     })
   })
 
+  it('accepts renderer-redacted sensitive fields without allowing their raw values', async () => {
+    const result = await invoke('trace.export', {
+      content: '[1] tool.output\n{"prompt":"[REDACTED]","secret":"[REDACTED]","result":"ok"}'
+    })
+    expect(result).toEqual({ ok: true, value: { cancelled: false, path: 'G:/evohime-trace.md' } })
+  })
+
   it('rejects URLs and sensitive fields anywhere in the trace before writing a file', () => {
     const result = invoke('trace.export', {
       content: '[1] tool.output\n{"url":"https://example.test","prompt":"private context"}'

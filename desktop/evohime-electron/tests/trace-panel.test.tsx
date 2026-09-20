@@ -215,6 +215,32 @@ describe('trace panel', () => {
     expect(await screen.findByText('Трейс сохранён в Markdown-файл.')).toBeTruthy()
   })
 
+  it('saves ordinary events after renderer redaction', async () => {
+    const invoke = vi.fn(async (command: RendererCommand, payload?: unknown) => {
+      if (command === 'chat.open') {
+        return ok({
+          id: 'chat-1', workspacePath: 'G:/github/EvoHime', title: 'Чат',
+          createdMs: 0, updatedMs: 0, taskIds: ['task-1'], messages: []
+        })
+      }
+      if (command === 'trace.export') {
+        expect((payload as { content: string }).content).toContain('"prompt": "[REDACTED]"')
+      }
+      return ok({ cancelled: false, path: 'G:/trace.md' })
+    })
+    const current = window.evohime.v1
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: { ...current, invoke } }), configurable: true
+    })
+    render(
+      <TracePanel chatId="chat-1" state={null} workspace="G:/github/EvoHime" onClose={() => {}}
+        events={[{ sequenceId: 12, taskId: 'task-1', eventType: 'tool.output', payload: '{"prompt":"private context","result":"ok"}' }]} />
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить .md' }))
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('trace.export', expect.anything()))
+    expect(await screen.findByText('Трейс сохранён в Markdown-файл.')).toBeTruthy()
+  })
+
   it('reloads task ids after the chat receives a new task', async () => {
     const view = render(
       <TracePanel

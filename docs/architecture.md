@@ -476,6 +476,9 @@ Markdown-разделе `diagnostics`, поэтому failure остаётся �
 сохранения файла. Renderer дополнительно нормализует legacy `task.failed`
 payload перед показом и экспортом, поэтому старое или ошибочно доставленное
 событие не возвращает URL, prompt или секрет в trace surface.
+Обычные payloads renderer сначала рекурсивно редактирует: в экспорт допускается
+только маркер `[REDACTED]`, а main bridge отклоняет необработанные URL и
+чувствительные assignment-поля до native save dialog.
 
 ## Signed receipts
 

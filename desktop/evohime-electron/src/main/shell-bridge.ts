@@ -53,7 +53,7 @@ const MAX_CLIPBOARD_CHARS = 64 * 1024
 const MAX_TRACE_EXPORT_BYTES = 16 * 1024 * 1024
 const MAX_REVIEW_PLAN_BYTES = 512 * 1024
 const TRACE_URL_PATTERN = /\b(?:https?|wss?|file|ftp):\/\/[^\s"'<>]+/i
-const TRACE_SENSITIVE_FIELD_PATTERN = /(?:["'](?:prompt|secret|token|password|api[_-]?key|authorization)["']|\b(?:prompt|secret|token|password|api[_-]?key|authorization))\s*[:=]/i
+const TRACE_SENSITIVE_ASSIGNMENT_PATTERN = /((?:["'](?:prompt|secret|token|password|api[_-]?key|authorization)["']|\b(?:prompt|secret|token|password|api[_-]?key|authorization))\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,}]+)/gi
 
 function applyWorkspacePermissionMode(client: CorePipeClient, mode: PermissionMode | undefined): void {
   if (mode === undefined) return
@@ -2873,9 +2873,21 @@ function asTraceContent(value: unknown): string | null {
   if (typeof value !== 'string' || value.trim().length === 0 || Buffer.byteLength(value, 'utf8') > MAX_TRACE_EXPORT_BYTES) {
     return null
   }
-  return TRACE_URL_PATTERN.test(value) || TRACE_SENSITIVE_FIELD_PATTERN.test(value)
+  TRACE_URL_PATTERN.lastIndex = 0
+  return TRACE_URL_PATTERN.test(value) || hasUnsafeTraceSensitiveAssignment(value)
     ? null
     : value
+}
+
+function hasUnsafeTraceSensitiveAssignment(value: string): boolean {
+  TRACE_SENSITIVE_ASSIGNMENT_PATTERN.lastIndex = 0
+  for (const match of value.matchAll(TRACE_SENSITIVE_ASSIGNMENT_PATTERN)) {
+    const prefix = match[1]
+    if (prefix === undefined) return true
+    const assignment = match[0].slice(prefix.length).trim().replace(/^["']|["']$/g, '')
+    if (assignment !== '[REDACTED]') return true
+  }
+  return false
 }
 
 function asOptionalBoundedString(value: unknown): string | null {

@@ -61,6 +61,9 @@ Trace UI показывает диагностические поля отдел
 Тот же safe projection применяется при записи исходной строки `task.failed` в
 глобальный durable event journal, поэтому replay больше не возвращает raw
 `error`; fallback transcript и recovery UI показывают только `error_code`.
+Обычные trace payloads после renderer-redaction сохраняются с маркером
+`[REDACTED]`; main bridge принимает только этот безопасный маркер и отклоняет
+необработанные URL, prompt и секретные значения.
 
 Добавлены проверки очереди размера 1 с потоком событий, задержкой чтения и
 финальным `task.completed`, а также проверка явного уведомления об ошибке audit.

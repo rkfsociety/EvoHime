@@ -21,6 +21,16 @@ output, transcripts, absolute paths и PII запрещены.
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
 
+### Safe trace export accepts redacted ordinary payloads (2026-09-20)
+
+- Обычные события trace экспортируются после renderer-redaction с маркером
+  `[REDACTED]`; `task.failed` остаётся typed projection с `error_code`, `source`
+  и `operation`.
+- Main bridge принимает только такой безопасный marker assignment и отклоняет
+  необработанные URL, prompt и секретные значения до native save dialog.
+- UI module patch release: `0.0.000092 -> 0.0.000093`.
+- Проверки: `tests/trace-panel.test.tsx`, `tests/shell-bridge.test.ts`.
+
 Поставка разделена на versioned module releases с тегами
 `module-<module>-v<semver>`, `bootstrap` для первоначальной установки и
 `installer` для полного восстановления. `bootstrap` содержит маленький`EvoHime-Setup.exe` и `EvoHime-Setup.json`; бинарники и runtime публикуются
