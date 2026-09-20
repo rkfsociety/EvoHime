@@ -3,6 +3,8 @@ use evohime_cli::{parse_args, ExitCode};
 #[cfg(windows)]
 mod windows_client;
 #[cfg(windows)]
+mod windows_controls;
+#[cfg(windows)]
 mod windows_endpoint;
 #[cfg(windows)]
 mod windows_output;

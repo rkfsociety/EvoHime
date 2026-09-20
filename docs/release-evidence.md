@@ -57,6 +57,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - `run` request validation, task/workflow start и detach projection вынесены в
   отдельный `windows_run` handler; Core command envelopes и CLI exit mapping не
   изменены, marker CLI повышен до `0.0.000077`.
+- Status snapshot и cancel command handlers вынесены в отдельный
+  `windows_controls` module; task identity, output redaction и exit mapping
+  сохранены, marker CLI повышен до `0.0.000078`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 
