@@ -855,7 +855,9 @@ Native package дополнительно содержит `evohime.components.j
 `evohime.component-manifest.v1`: identity релиза, component inventory, размеры
 и SHA-256 артефактов, зависимости и restart class. IDs компонентов, имена
 артефактов и destination paths должны быть уникальными: updater отвергает
-коллизии до загрузки байтов. `listener-runtime` является
+коллизии до загрузки байтов. Список module releases читается по bounded GitHub
+pagination, чтобы не пропускать релиз нужного модуля за первой страницей.
+`listener-runtime` является
 отдельным data-directory runtime и поэтому не входит в этот install-tree граф;
 его версия и целостность проверяются отдельным runtime manifest. `evohime-updater` проверяет
 этот marker до staged apply и отказывает при небезопасном пути, неизвестной

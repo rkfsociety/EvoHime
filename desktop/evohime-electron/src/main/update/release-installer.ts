@@ -15,6 +15,7 @@ const MAX_INSTALLER_BYTES = 2 * 1024 * 1024 * 1024
 const MAX_UI_FILES = 512
 const MAX_UI_BYTES = 512 * 1024 * 1024
 const MAX_UI_ARCHIVE_BYTES = 128 * 1024 * 1024
+const MAX_RELEASE_PAGES = 10
 const REQUEST_TIMEOUT_MS = 120_000
 
 export interface ReleaseInstallerManifest {
@@ -261,8 +262,15 @@ async function getLatestModuleRelease(
   request: typeof globalThis.fetch,
   headers: Record<string, string>
 ): Promise<any> {
-  const releases = await getJson(`${apiBase}/releases?per_page=100`, request, headers)
-  if (!Array.isArray(releases)) throw new Error('GitHub module: некорректный список релизов.')
+  const releases: any[] = []
+  let nextUrl: string | null = `${apiBase}/releases?per_page=100`
+  for (let page = 0; nextUrl; page += 1) {
+    if (page >= MAX_RELEASE_PAGES) throw new Error('GitHub module: список релизов слишком большой.')
+    const result = await getJsonPage(nextUrl, request, headers)
+    if (!Array.isArray(result.value)) throw new Error('GitHub module: некорректный список релизов.')
+    releases.push(...result.value)
+    nextUrl = result.nextUrl
+  }
   const prefix = `module-${module}-v`
   const candidates = releases.filter((release) => {
     if (typeof release?.tag_name !== 'string' || !release.tag_name.startsWith(prefix)) return false
@@ -371,9 +379,36 @@ function assetUrl(value: unknown, apiBase: string): string | null {
 }
 
 async function getJson(url: string, request: typeof globalThis.fetch, headers: Record<string, string>): Promise<any> {
+  return (await getJsonPage(url, request, headers)).value
+}
+
+async function getJsonPage(
+  url: string,
+  request: typeof globalThis.fetch,
+  headers: Record<string, string>
+): Promise<{ readonly value: any; readonly nextUrl: string | null }> {
   const response = await request(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok) throw new Error(`GitHub installer: API ответил ${response.status}.`)
-  return response.json()
+  return { value: await response.json(), nextUrl: nextPageUrl(response.headers.get('link'), url) }
+}
+
+function nextPageUrl(linkHeader: string | null, currentUrl: string): string | null {
+  if (!linkHeader) return null
+  const origin = new URL(currentUrl).origin
+  for (const entry of linkHeader.split(',')) {
+    const match = /^<([^>]+)>\s*;\s*rel="([^"]+)"$/.exec(entry.trim())
+    const target = match?.[1]
+    const relation = match?.[2]
+    if (!target || !relation || !relation.split(/\s+/).includes('next')) continue
+    try {
+      const next = new URL(target, currentUrl)
+      if (next.protocol !== 'https:' || next.origin !== origin) throw new Error('origin')
+      return next.toString()
+    } catch {
+      throw new Error('GitHub module: некорректная pagination link.')
+    }
+  }
+  return null
 }
 
 async function downloadText(url: string, request: typeof globalThis.fetch, headers: Record<string, string>): Promise<string> {

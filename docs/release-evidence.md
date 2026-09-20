@@ -1580,6 +1580,14 @@ ID, чтобы не допускать неоднозначного выбора
 selection; focused release-installer suite, typecheck и diff check выполняются
 перед task-only commit.
 
+## Module release pagination follow-up (2026-09-20)
+
+Выбор module release теперь следует только по same-origin `Link: rel="next"`
+страницам GitHub API и ограничен десятью страницами. Некорректная или внешняя
+pagination link отвергается, а не используется для сетевого запроса. Regression
+test подтверждает выбор релиза со второй страницы; локальный focused suite
+проверяет также прежние сценарии malformed tag и digest mismatch.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
