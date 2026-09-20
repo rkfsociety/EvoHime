@@ -69,6 +69,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Auth challenge/TTL/nonce validation отделена от Core generation identity и
   fencing в `auth/challenge` и `auth/generation`; handshake и stale-generation
   rejection invariants сохранены, marker CLI повышен до `0.0.000081`.
+- Protocol event cursor/replay path отделён от task snapshot response filtering
+  в `event_stream` и `snapshot` modules; interleaved-event bound и task identity
+  fence сохранены, marker CLI повышен до `0.0.000082`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 

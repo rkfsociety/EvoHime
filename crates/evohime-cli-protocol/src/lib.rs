@@ -6,7 +6,8 @@
 
 mod auth;
 mod client;
-mod read;
+mod event_stream;
+mod snapshot;
 mod task_commands;
 mod workflow_commands;
 
