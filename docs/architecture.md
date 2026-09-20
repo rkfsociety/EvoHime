@@ -2199,8 +2199,9 @@ acceptance, watch с reconnect от последнего sequence, status, cance
 `resume` безопасно возобновляет наблюдение за существующим run через тот же
 event cursor; он не перезапускает агент и не повторяет effect. Exit codes versioned (0–8),
 а `eva.exe` включён в Windows package без Node/Python runtime. Framing,
-HMAC-handshake и command envelopes CLI вынесены в платформенно-независимый
-протокольный модуль, а bounded `RunRequest` и terminal-event contract живут в
+HMAC-handshake и command envelopes CLI вынесены в отдельный
+платформенно-независимый crate `evohime-cli-protocol`, а bounded `RunRequest`
+и terminal-event contract живут в
 легковесном общем crate `evohime-cli-contract`; Linux CI проверяет их через
 in-memory duplex transport,
 но production endpoint и Core runtime по-прежнему остаются Windows-only.
