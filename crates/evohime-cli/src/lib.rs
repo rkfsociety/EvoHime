@@ -12,6 +12,8 @@ mod redaction_policy;
 
 #[cfg(test)]
 mod args_tests;
+#[cfg(test)]
+mod event_tests;
 
 pub use args::parse_args;
 pub use command::{Command, ParseError};

@@ -22,16 +22,3 @@ pub fn emit(event: &CliEvent<'_>) -> String {
 pub fn event_matches_run(event_task_id: &str, run_id: &str) -> bool {
     !run_id.is_empty() && event_task_id == run_id
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn filters_events_to_the_requested_run() {
-        assert!(event_matches_run("run-1", "run-1"));
-        assert!(!event_matches_run("run-2", "run-1"));
-        assert!(!event_matches_run("", "run-1"));
-        assert!(!event_matches_run("run-1", ""));
-    }
-}

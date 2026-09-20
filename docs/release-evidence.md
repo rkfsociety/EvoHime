@@ -109,6 +109,8 @@ compatible-manifest runs; исторические разделы ниже со�
 - Parser tests вынесены из `args.rs` в отдельный `args_tests` module; parser
   production surface уменьшен без изменения command/error re-export paths,
   marker CLI повышен до `0.0.000070`.
+- Event run-filter test вынесен в отдельный `event_tests` module; event
+  serialization API не изменён, marker CLI повышен до `0.0.000071`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.
