@@ -79,17 +79,46 @@ pub fn is_terminal_event(event_type: &str) -> bool {
 mod tests {
     use super::*;
 
-    #[test]
-    fn validates_bounded_request() {
-        let request = RunRequest {
+    fn valid_request() -> RunRequest {
+        RunRequest {
             schema_version: SCHEMA_VERSION,
             prompt: "check".into(),
             workspace: "workspace".into(),
             output_mode: OutputMode::Ndjson,
             approval_mode: ApprovalMode::DenyIfApprovalRequired,
             detach: false,
-        };
-        assert!(validate_request(&request).is_ok());
+        }
+    }
+
+    #[test]
+    fn validates_bounded_request() {
+        assert!(validate_request(&valid_request()).is_ok());
+    }
+
+    #[test]
+    fn rejects_schema_and_byte_bound_violations() {
+        let mut schema = valid_request();
+        schema.schema_version = SCHEMA_VERSION + 1;
+        assert_eq!(validate_request(&schema), Err(Error::InvalidInput));
+
+        let mut prompt = valid_request();
+        prompt.prompt = "x".repeat(MAX_PROMPT_BYTES + 1);
+        assert_eq!(validate_request(&prompt), Err(Error::InvalidInput));
+
+        let mut workspace = valid_request();
+        workspace.workspace = "x".repeat(MAX_WORKSPACE_BYTES + 1);
+        assert_eq!(validate_request(&workspace), Err(Error::InvalidInput));
+    }
+
+    #[test]
+    fn rejects_control_bytes_in_text_fields() {
+        let mut prompt = valid_request();
+        prompt.prompt = "safe\nunsafe".into();
+        assert_eq!(validate_request(&prompt), Err(Error::InvalidInput));
+
+        let mut workspace = valid_request();
+        workspace.workspace = "workspace\tname".into();
+        assert_eq!(validate_request(&workspace), Err(Error::InvalidInput));
     }
 
     #[test]
