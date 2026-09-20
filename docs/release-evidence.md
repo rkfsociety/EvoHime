@@ -54,7 +54,8 @@ output, transcripts, absolute paths и PII запрещены.
   `cargo test --locked -p evohime-core --test headless_core_cli_contract`
   (2/2) и strict Core clippy,
   `cargo clippy --locked -p evohime-cli --all-targets -- -D warnings`,
-  `cargo build --locked -p evohime-cli` и binary smoke `eva doctor --json`.
+  `cargo build --locked --release -p evohime-cli` и release binary smoke
+  `eva doctor --json`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.

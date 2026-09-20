@@ -25,12 +25,12 @@ jobs:
       - run: cargo clippy --locked -p evohime-cli-contract --all-targets -- -D warnings
       - run: cargo clippy --locked -p evohime-cli --all-targets -- -D warnings
       - run: cargo clippy --locked -p evohime-desktop-ipc --all-targets -- -D warnings
-      - run: cargo build --locked -p evohime-cli
+      - run: cargo build --locked --release -p evohime-cli
       - name: Verify unsupported production transport fails closed
         shell: bash
         run: |
           set +e
-          ./target/debug/eva doctor --json >stdout.log 2>stderr.log
+          ./target/release/eva doctor --json >stdout.log 2>stderr.log
           status=$?
           set -e
           test "$status" -eq 7
