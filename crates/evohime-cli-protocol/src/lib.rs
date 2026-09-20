@@ -85,6 +85,7 @@ where
             .map_err(|error| error.to_string())?;
         let event = generated::EventEnvelope::decode(payload.as_slice())
             .map_err(|error| format!("protocol_error: {error}"))?;
+        validate_event_generation(&event, &self.core_instance_id, self.session_epoch)?;
         self.sequence = self.sequence.max(event.sequence_id);
         Ok(event)
     }
@@ -198,6 +199,20 @@ fn ready_generation(event: &generated::EventEnvelope) -> Result<(String, u64), S
     Ok((event.core_instance_id.clone(), event.session_epoch))
 }
 
+fn validate_event_generation(
+    event: &generated::EventEnvelope,
+    core_instance_id: &str,
+    session_epoch: u64,
+) -> Result<(), String> {
+    if core_instance_id.is_empty() {
+        return Ok(());
+    }
+    if event.core_instance_id != core_instance_id || event.session_epoch != session_epoch {
+        return Err("protocol_error: Core generation changed".into());
+    }
+    Ok(())
+}
+
 fn challenge_nonce(event: &generated::EventEnvelope) -> Result<String, String> {
     let Some(generated::event_envelope::Event::AuthChallenge(challenge)) = &event.event else {
         return Err("authentication_failed: challenge missing".into());
@@ -283,6 +298,23 @@ mod tests {
         assert_eq!(
             ready_generation(&event).unwrap_err(),
             "authentication_failed: Core generation is invalid"
+        );
+    }
+
+    #[test]
+    fn rejects_events_from_another_core_generation() {
+        let mut event = ready_event(43);
+        event.core_instance_id = "other-core".into();
+        assert_eq!(
+            validate_event_generation(&event, "core-test", 8).unwrap_err(),
+            "protocol_error: Core generation changed"
+        );
+
+        let mut event = ready_event(43);
+        event.session_epoch = 9;
+        assert_eq!(
+            validate_event_generation(&event, "core-test", 8).unwrap_err(),
+            "protocol_error: Core generation changed"
         );
     }
 
