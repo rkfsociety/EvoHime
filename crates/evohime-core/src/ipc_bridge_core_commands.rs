@@ -166,7 +166,7 @@ impl IpcBridge {
         route: &evohime_model_gateway::ModelRouteConfig,
         entries: &[evohime_model_gateway::ModelCatalogEntry],
         failure: Option<crate::free_provider_reliability_routing::CatalogFailureCode>,
-    ) {
+    ) -> Option<Vec<evohime_model_gateway::ModelCatalogEntry>> {
         let profile =
             match crate::free_provider_reliability_routing::ProviderProfile::from_route_config(
                 route,
@@ -178,11 +178,10 @@ impl IpcBridge {
                         error_code = "provider_profile_invalid",
                         "provider catalog profile was not persisted"
                     );
-                    return;
+                    return None;
                 }
             };
-        let now_ms = crate::task_memory::now_millis();
-        let next_revision = {
+        let previous_record = {
             let database = self.journal.database().lock().await;
             evohime_local_storage::provider_profile_catalog_store::get(
                 database.connection(),
@@ -192,10 +191,19 @@ impl IpcBridge {
             )
             .ok()
             .flatten()
+        };
+        let previous_snapshot = previous_record.as_ref().and_then(|record| {
+            crate::free_provider_reliability_routing::ProviderCatalogSnapshot::from_storage_record(
+                record,
+            )
+            .ok()
+        });
+        let next_revision = previous_record
+            .as_ref()
             .and_then(|record| u64::try_from(record.revision).ok())
             .and_then(|revision| revision.checked_add(1))
-            .unwrap_or(1)
-        };
+            .unwrap_or(1);
+        let now_ms = crate::task_memory::now_millis();
         let catalog_hash = crate::free_provider_reliability_routing::catalog_content_hash(entries)
             .unwrap_or_else(|_| "0".repeat(64));
         let expires_at_ms = now_ms.saturating_add(24 * 60 * 60 * 1_000);
@@ -209,6 +217,29 @@ impl IpcBridge {
                 expires_at_ms,
             ),
             Some(code) => {
+                if entries.is_empty()
+                    && !matches!(
+                        code,
+                        crate::free_provider_reliability_routing::CatalogFailureCode::CredentialRejected
+                            | crate::free_provider_reliability_routing::CatalogFailureCode::DiscoveryUnsupported
+                    )
+                {
+                    if let Some(previous) = previous_snapshot
+                        .as_ref()
+                        .filter(|snapshot| !snapshot.models.is_empty())
+                    {
+                        if let Ok(snapshot) = crate::free_provider_reliability_routing::ProviderCatalogSnapshot::stale_after_failure(
+                            &profile,
+                            previous,
+                            next_revision,
+                            code,
+                        ) {
+                            return self
+                                .persist_provider_catalog_snapshot(&profile, snapshot)
+                                .await;
+                        }
+                    }
+                }
                 let state = match code {
                     crate::free_provider_reliability_routing::CatalogFailureCode::CredentialRejected =>
                         crate::free_provider_reliability_routing::ProviderCatalogState::CredentialRejected,
@@ -235,10 +266,19 @@ impl IpcBridge {
                     error_code = "provider_catalog_snapshot_invalid",
                     "provider catalog snapshot was not persisted"
                 );
-                return;
+                return None;
             }
         };
-        let record = match snapshot.to_storage_record(&profile) {
+        self.persist_provider_catalog_snapshot(&profile, snapshot)
+            .await
+    }
+
+    async fn persist_provider_catalog_snapshot(
+        &self,
+        profile: &crate::free_provider_reliability_routing::ProviderProfile,
+        snapshot: crate::free_provider_reliability_routing::ProviderCatalogSnapshot,
+    ) -> Option<Vec<evohime_model_gateway::ModelCatalogEntry>> {
+        let record = match snapshot.to_storage_record(profile) {
             Ok(record) => record,
             Err(_) => {
                 tracing::warn!(
@@ -246,7 +286,7 @@ impl IpcBridge {
                     error_code = "provider_catalog_storage_projection_invalid",
                     "provider catalog storage projection was not persisted"
                 );
-                return;
+                return None;
             }
         };
         let database = self.journal.database().lock().await;
@@ -254,17 +294,29 @@ impl IpcBridge {
             database.connection(),
             &record,
         ) {
-            Ok(true) => {}
-            Ok(false) => tracing::debug!(
-                target: "model.catalog",
-                error_code = "provider_catalog_revision_conflict",
-                "provider catalog snapshot was not current"
-            ),
-            Err(_) => tracing::warn!(
-                target: "model.catalog",
-                error_code = "provider_catalog_storage_error",
-                "provider catalog snapshot storage failed"
-            ),
+            Ok(true)
+                if snapshot.state
+                    == crate::free_provider_reliability_routing::ProviderCatalogState::Stale =>
+            {
+                snapshot.gateway_entries().ok()
+            }
+            Ok(true) => None,
+            Ok(false) => {
+                tracing::debug!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_revision_conflict",
+                    "provider catalog snapshot was not current"
+                );
+                None
+            }
+            Err(_) => {
+                tracing::warn!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_storage_error",
+                    "provider catalog snapshot storage failed"
+                );
+                None
+            }
         }
     }
 

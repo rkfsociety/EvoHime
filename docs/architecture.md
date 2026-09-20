@@ -2792,10 +2792,11 @@ Discovery, route wiring, IPC и UI остаются следующими эта�
 `CredentialRejected` и `DiscoveryUnsupported`, а `CatalogFailureCode` скрывает
 raw `ProviderError`. Gateway entries сортируются и deduplicate-ятся до создания
 immutable descriptors; expired/stale/failed snapshots не проходят
-`route_eligible_at`. Реальный fetch/cache/recovery wiring и authenticated
-projection ещё не полностью подключены: `model.catalog` IPC refresh уже
-публикует redacted success/failure snapshot через этот store, а startup
-recovery-read и route preflight остаются следующими шагами.
+`route_eligible_at`. При временной ошибке refresh уже сохраняет прежние bounded
+entries как `Stale` с typed failure для отображения, но не для маршрутизации;
+credential rejection и unsupported discovery fail closed без stale fallback.
+Authenticated projection ещё не полностью подключена: startup recovery-read и
+route preflight остаются следующими шагами.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 

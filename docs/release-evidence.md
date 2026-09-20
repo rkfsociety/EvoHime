@@ -1941,3 +1941,18 @@ Raw provider text, URL, prompt и secrets по-прежнему не входя�
 `git diff --check`. Полный startup recovery hydration, route preflight,
 authenticated IPC projection и CI evidence ещё не заявляются; установленный
 клиент не изменялся.
+
+## Provider catalog stale fallback (2026-09-20)
+
+Core patch повышен с `0.0.000274` до `0.0.000275`. Временная ошибка
+catalog refresh больше не затирает последний bounded catalog пустым результатом:
+при network/timeout/rate-limit snapshot сохраняется как `Stale` с typed failure,
+его model IDs/limits доступны для безопасного UI fallback, а
+`route_eligible_at` остаётся false. Credential rejection и unsupported discovery
+не используют stale cache.
+
+Пройдены Core contract tests (16 тестов), `cargo check --locked -p
+evohime-core -p evohime-local-storage`, `cargo clippy --locked -p evohime-core
+--all-targets -- -D warnings`, rustfmt и `git diff --check`. Startup recovery
+hydration, route preflight, authenticated IPC projection и CI evidence ещё не
+заявляются; установленный клиент не изменялся.

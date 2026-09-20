@@ -952,7 +952,8 @@ impl ProviderCatalogSnapshot {
         }
 
         let state_is_consistent = match self.state {
-            ProviderCatalogState::Fresh | ProviderCatalogState::Stale => self.failure.is_none(),
+            ProviderCatalogState::Fresh => self.failure.is_none(),
+            ProviderCatalogState::Stale => true,
             ProviderCatalogState::Unavailable => {
                 self.models.is_empty()
                     && self.failure.is_some_and(|failure| {
@@ -984,6 +985,65 @@ impl ProviderCatalogSnapshot {
             && now_ms >= self.observed_at_ms
             && now_ms < self.expires_at_ms
             && self.models.iter().any(|model| model.model_id == model_id)
+    }
+
+    pub fn gateway_entries(&self) -> Result<Vec<ModelCatalogEntry>, &'static str> {
+        self.validate()?;
+        Ok(self
+            .models
+            .iter()
+            .map(|model| ModelCatalogEntry {
+                id: model.model_id.clone(),
+                context_tokens: model.limits.context_tokens,
+                max_output_tokens: model.limits.max_output_tokens,
+            })
+            .collect())
+    }
+
+    pub fn stale_after_failure(
+        profile: &ProviderProfile,
+        previous: &Self,
+        revision: u64,
+        failure: CatalogFailureCode,
+    ) -> Result<Self, &'static str> {
+        profile.validate()?;
+        previous.validate()?;
+        if revision == 0
+            || previous.provider_id != profile.provider_id
+            || previous.credential_binding != profile.credential_binding
+            || previous.region != profile.region
+            || previous.profile_revision != profile.revision
+            || previous.profile_content_hash != profile.content_hash
+        {
+            return Err("provider catalog profile mismatch");
+        }
+        let models = previous
+            .models
+            .iter()
+            .cloned()
+            .map(|mut model| {
+                model.catalog_revision = revision;
+                model.validate()?;
+                Ok(model)
+            })
+            .collect::<Result<Vec<_>, &'static str>>()?;
+        let snapshot = Self {
+            schema_version: PROVIDER_CATALOG_SCHEMA_VERSION,
+            provider_id: profile.provider_id.clone(),
+            credential_binding: profile.credential_binding.clone(),
+            region: profile.region.clone(),
+            profile_revision: profile.revision,
+            profile_content_hash: profile.content_hash.clone(),
+            revision,
+            catalog_content_hash: previous.catalog_content_hash.clone(),
+            state: ProviderCatalogState::Stale,
+            models,
+            observed_at_ms: previous.observed_at_ms,
+            expires_at_ms: previous.expires_at_ms,
+            failure: Some(failure),
+        };
+        snapshot.validate()?;
+        Ok(snapshot)
     }
 
     pub fn to_storage_record(
@@ -1630,6 +1690,51 @@ mod tests {
         stale.state = ProviderCatalogState::Stale;
         assert!(stale.validate().is_ok());
         assert!(!stale.route_eligible_at("provider/a", 1_500));
+    }
+
+    #[test]
+    fn stale_catalog_preserves_models_but_never_becomes_route_eligible() {
+        let profile = profile();
+        let fresh = ProviderCatalogSnapshot::fresh_from_catalog(
+            &profile,
+            &[ModelCatalogEntry {
+                id: "provider/model".into(),
+                context_tokens: Some(8_192),
+                max_output_tokens: Some(1_024),
+            }],
+            1,
+            "c".repeat(64),
+            1_000,
+            2_000,
+        )
+        .expect("fresh snapshot");
+        let stale = ProviderCatalogSnapshot::stale_after_failure(
+            &profile,
+            &fresh,
+            2,
+            CatalogFailureCode::Timeout,
+        )
+        .expect("stale snapshot");
+        assert_eq!(stale.state, ProviderCatalogState::Stale);
+        assert_eq!(stale.failure, Some(CatalogFailureCode::Timeout));
+        assert_eq!(stale.gateway_entries().expect("entries").len(), 1);
+        assert!(!stale.route_eligible_at("provider/model", 1_500));
+        let database = rusqlite::Connection::open_in_memory().expect("sqlite");
+        evohime_local_storage::provider_profile_catalog_store::install_schema(&database)
+            .expect("schema");
+        let fresh_record = fresh.to_storage_record(&profile).expect("fresh record");
+        assert!(evohime_local_storage::provider_profile_catalog_store::put(
+            &database,
+            &fresh_record
+        )
+        .expect("fresh write"));
+        let record = stale.to_storage_record(&profile).expect("storage record");
+        assert_eq!(record.state, "stale");
+        assert_eq!(record.failure_code.as_deref(), Some("timeout"));
+        assert!(
+            evohime_local_storage::provider_profile_catalog_store::put(&database, &record)
+                .expect("stale write")
+        );
     }
 
     #[test]

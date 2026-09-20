@@ -204,7 +204,8 @@ fn validate_record(record: &ProviderProfileCatalogRecord) -> Result<(), &'static
     }
 
     let state_consistent = match record.state.as_str() {
-        "fresh" | "stale" => record.failure_code.is_none(),
+        "fresh" => record.failure_code.is_none(),
+        "stale" => true,
         "unavailable" => record
             .failure_code
             .as_deref()

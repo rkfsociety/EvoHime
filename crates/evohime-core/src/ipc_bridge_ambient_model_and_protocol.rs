@@ -322,7 +322,7 @@ impl IpcBridge {
                     .gateway_config
                     .as_ref()
                     .and_then(|config| config.routes.get(&config.default_route));
-                let (entries, error, ollama, catalog_failure): (
+                let (mut entries, error, ollama, catalog_failure): (
                     Vec<evohime_model_gateway::ModelCatalogEntry>,
                     Option<String>,
                     Option<serde_json::Value>,
@@ -427,8 +427,23 @@ impl IpcBridge {
                     ),
                 };
                 if let Some(route) = route {
-                    self.remember_provider_catalog_snapshot(route, &entries, catalog_failure)
+                    let cached_entries = self
+                        .remember_provider_catalog_snapshot(route, &entries, catalog_failure)
                         .await;
+                    if entries.is_empty() {
+                        if let Some(cached_entries) = cached_entries {
+                            entries = cached_entries
+                                .into_iter()
+                                .filter(|entry| {
+                                    if mode == "free" {
+                                        entry.id.ends_with(":free")
+                                    } else {
+                                        !entry.id.ends_with(":free")
+                                    }
+                                })
+                                .collect();
+                        }
+                    }
                 }
                 // Лимиты переживают сессию: планировщик контекста и ревью
                 // должны знать окно модели ещё до первого обновления каталога,
