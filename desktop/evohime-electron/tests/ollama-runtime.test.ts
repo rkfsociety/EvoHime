@@ -150,6 +150,23 @@ describe('Ollama runtime service', () => {
     expect(launchInstaller).not.toHaveBeenCalled()
   })
 
+  it('does not expose a raw network error in the install status', async () => {
+    const service = new OllamaRuntimeService({
+      fetch: async () => { throw new Error('request failed https://example.test/download?token=sk-test') },
+      emit: () => {},
+      log: () => {},
+      exists: async () => false,
+      wait: async () => {}
+    })
+
+    const status = await service.install()
+
+    expect(status.state).toBe('failed')
+    expect(status.message).toContain('сетевой запрос не выполнен')
+    expect(status.message).not.toContain('example.test')
+    expect(status.message).not.toContain('sk-test')
+  })
+
   it('does not launch a non-executable response from the official URL', async () => {
     const launchInstaller = vi.fn(async () => 0)
     const service = new OllamaRuntimeService({

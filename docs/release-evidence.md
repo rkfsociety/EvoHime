@@ -1663,6 +1663,10 @@ stream and rejects payloads above 16 KiB before JSON parsing. This closes an
 unbounded diagnostic-response allocation path; `shell-host` is `0.0.000089`
 (from `0.0.000088`).
 
+Install failures from the Ollama shell service also use bounded user-facing
+error classes; raw transport messages, URLs and query tokens are not exposed
+in status text. `shell-host` is now `0.0.000090` (from `0.0.000089`).
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

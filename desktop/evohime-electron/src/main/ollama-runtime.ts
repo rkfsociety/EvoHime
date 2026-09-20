@@ -297,11 +297,19 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 function describeOllamaError(error: unknown): string {
-  if (!(error instanceof Error)) return String(error)
+  if (!(error instanceof Error)) return 'неизвестная ошибка'
   const message = error.message.trim()
-  if (message !== 'fetch failed') return message || 'неизвестная ошибка'
-  const cause = error.cause
-  return cause instanceof Error && cause.message.trim() ? `сетевая ошибка: ${cause.message.trim()}` : 'сетевая ошибка'
+  if (/^сервер Ollama ответил \d{3}$/.test(message)
+    || message.startsWith('загрузка перенаправлена ')
+    || message.startsWith('установщик был закрыт')
+    || message.startsWith('установщик завершился с кодом ')
+    || message.startsWith('установщик Ollama ')
+    || message.startsWith('сервер Ollama вернул пустой установщик')
+    || message.startsWith('официальный адрес ')) return message
+  if (isElectronClientBlockedError(error)) return 'загрузка заблокирована клиентом'
+  const lower = `${message} ${String(error.cause ?? '')}`.toLowerCase()
+  if (lower.includes('timeout') || lower.includes('aborted')) return 'истекло время ожидания сетевого запроса'
+  return 'сетевой запрос не выполнен'
 }
 
 function isElectronClientBlockedError(error: unknown): boolean {
