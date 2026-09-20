@@ -1676,6 +1676,10 @@ safe `shell.ollama_download_fallback` event name, `error_code`, source and
 operation remain available for confirmation. The shell-host module is now
 `0.0.000095`.
 
+Support bundle terminal failures now use the same bounded diagnostic projection
+as the trace (`error_code`, `source`, `operation`) and omit the raw `error`,
+prompt and secret fields. The shell-host module is now `0.0.000096`.
+
 Trace rendering and export now apply the same redaction boundary to ordinary
 event payloads as to legacy `task.failed` events: sensitive JSON fields become
 `[REDACTED]`, URLs become `[URL]`, and the main-process export guard rejects

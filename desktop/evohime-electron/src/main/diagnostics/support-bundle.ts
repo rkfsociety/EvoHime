@@ -27,8 +27,8 @@ export function buildSupportBundleFiles(input: {
 }): SupportBundleFiles {
   const health = redactValue(input.snapshot)
   const runtime = redactValue(input.runtime)
-  const events = input.events.slice(0, 200).map((event) => JSON.stringify(redactValue({ sequenceId: event.sequenceId, eventType: event.eventType, payload: redactEventPayload(event.payload) }))).join('\n')
-  const errors = input.events.filter((event) => /fail|error|refus/i.test(event.eventType)).slice(0, 32).map((event) => JSON.stringify(redactValue({ eventType: event.eventType, payload: redactEventPayload(event.payload) }))).join('\n')
+  const events = input.events.slice(0, 200).map((event) => JSON.stringify(redactValue({ sequenceId: event.sequenceId, eventType: event.eventType, payload: redactEventPayload(event.eventType, event.payload) }))).join('\n')
+  const errors = input.events.filter((event) => /fail|error|refus/i.test(event.eventType)).slice(0, 32).map((event) => JSON.stringify(redactValue({ eventType: event.eventType, payload: redactEventPayload(event.eventType, event.payload) }))).join('\n')
   const logs = input.logs
     .slice(0, MAX_LOG_FILES)
     .flatMap(readLogSource)
@@ -69,12 +69,32 @@ export function buildSupportBundleFiles(input: {
   return { manifest, health, runtime, errors, events, logs, issueDraft, redactionReport }
 }
 
-function redactEventPayload(payload: string): RedactedValue {
+function redactEventPayload(eventType: string, payload: string): RedactedValue {
   try {
-    return redactValue(JSON.parse(payload))
+    const value = JSON.parse(payload) as unknown
+    if (eventType === 'task.failed' && value && typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>
+      return {
+        redacted: true,
+        conversation_projection: true,
+        terminal: true,
+        error_code: safeDiagnosticToken(record.error_code) ?? 'task_failed',
+        source: safeDiagnosticToken(record.source ?? record.error_source) ?? 'core',
+        operation: safeDiagnosticToken(record.operation ?? record.operation_name ?? record.tool_name) ?? 'task.execute'
+      }
+    }
+    return redactValue(value)
   } catch {
     return REDACTED
   }
+}
+
+function safeDiagnosticToken(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const token = value.trim()
+  if (!token || [...token].length > 128 || !/^[A-Za-z0-9_.:-]+$/.test(token)) return null
+  if (/secret|token|password|bearer|sk-/i.test(token)) return null
+  return token
 }
 
 function readLogSource(source: string): string[] {

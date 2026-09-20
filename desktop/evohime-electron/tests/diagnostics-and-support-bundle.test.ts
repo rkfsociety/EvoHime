@@ -70,4 +70,28 @@ describe('support bundle v2', () => {
       rmSync(directory, { recursive: true, force: true })
     }
   })
+
+  it('projects task failures without retaining the raw error field', () => {
+    const files = buildSupportBundleFiles({
+      snapshot: {},
+      runtime: {},
+      events: [{
+        sequenceId: 3,
+        eventType: 'task.failed',
+        payload: JSON.stringify({
+          error: 'net::ERR_BLOCKED_BY_CLIENT https://provider.test?token=secret',
+          prompt: 'private context',
+          operation: 'browser.navigate'
+        })
+      }],
+      logs: []
+    })
+
+    expect(files.events).toContain('"error_code":"task_failed"')
+    expect(files.events).toContain('"source":"core"')
+    expect(files.events).toContain('"operation":"browser.navigate"')
+    expect(files.events).not.toContain('provider.test')
+    expect(files.events).not.toContain('private context')
+    expect(files.events).not.toContain('"error"')
+  })
 })
