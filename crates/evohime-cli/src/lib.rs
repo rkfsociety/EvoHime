@@ -62,7 +62,7 @@ pub enum Command {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ParseError {
-    #[error("usage: eva run <prompt> [--workspace <path>] [--json] [--detach]")]
+    #[error("usage: eva run [<prompt>] [--workflow <id>] [--workspace <path>] [--stdin] [--json] [--detach]")]
     Usage,
     #[error("unknown command or option")]
     UnknownOption,
@@ -99,13 +99,17 @@ pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
                     }
                     "--workspace" => {
                         index += 1;
-                        workspace = args.get(index).cloned().ok_or(ParseError::InvalidValue)?;
+                        workspace = args
+                            .get(index)
+                            .filter(|value| !value.starts_with('-'))
+                            .cloned()
+                            .ok_or(ParseError::InvalidValue)?;
                     }
                     "--workflow" => {
                         index += 1;
                         workflow = Some(
                             args.get(index)
-                                .filter(|value| bounded(value, 128))
+                                .filter(|value| !value.starts_with('-') && bounded(value, 128))
                                 .cloned()
                                 .ok_or(ParseError::InvalidValue)?,
                         );
@@ -272,6 +276,18 @@ mod tests {
         ] {
             let args = vec![name.into(), "run-1".into(), "--json".into()];
             assert_eq!(parse_args(&args).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn rejects_option_names_as_missing_values() {
+        for args in [
+            vec!["run", "prompt", "--workspace", "--json"],
+            vec!["run", "--workflow", "--json"],
+            vec!["run", "prompt", "--workflow", "--detach"],
+        ] {
+            let args = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert_eq!(parse_args(&args), Err(ParseError::InvalidValue));
         }
     }
 }

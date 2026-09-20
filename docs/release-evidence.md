@@ -94,6 +94,13 @@ output, transcripts, absolute paths и PII запрещены.
 - Добавлены regression tests для credential aliases и depth bound; публичный
   `redact_payload` сохранён, source module `cli` повышен до `0.0.000051`.
 
+### CLI option-value parsing follow-up (2026-09-20)
+
+- `--workspace` и `--workflow` больше не принимают следующий option token как
+  значение; missing option values завершаются bounded `InvalidValue`.
+- Usage дополнен `--workflow`/`--stdin`, добавлен parser regression test; source
+  module `cli` повышен до `0.0.000052`.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:
