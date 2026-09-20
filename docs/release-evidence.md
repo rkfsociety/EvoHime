@@ -1660,6 +1660,12 @@ streamed `error` messages are collapsed to the bounded `Ollama pull failed`
 code. Regression fixtures cover HTTP and stream failures containing URLs and
 token-like text; the Core source module is now `0.0.000258`.
 
+LiteRouter and OpenAI Responses chat failures no longer return provider HTTP
+bodies or streamed Responses error messages. LiteRouter reads only a bounded
+prefix internally for rate-limit classification and returns status plus a safe
+failure class; regression fixtures confirm URLs and token-like text stay out
+of `ProviderError`. The Core source module is now `0.0.000259`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures

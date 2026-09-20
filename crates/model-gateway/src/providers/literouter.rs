@@ -5,7 +5,7 @@ use crate::providers::{
 };
 use crate::retry::{
     classify_rate_limit, compute_backoff, is_retryable_status, parse_retry_after_seconds,
-    RateLimitClass, RetryPolicy,
+    read_bounded_rate_limit_body, RateLimitClass, RetryPolicy,
 };
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
@@ -158,11 +158,11 @@ impl LiteRouterProvider {
                 Ok(response) => {
                     let status = response.status();
                     let retry_after = parse_retry_after_seconds(response.headers());
-                    let text = response.text().await.unwrap_or_default();
+                    let text = read_bounded_rate_limit_body(response).await;
                     let rate_limit = classify_rate_limit(status, &text);
                     if matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
                         return Err(ProviderError::Api(format!(
-                            "{status}: provider quota exhausted: {text}"
+                            "{status}: provider quota exhausted"
                         )));
                     }
                     let rate_limit_retryable = matches!(
@@ -180,7 +180,9 @@ impl LiteRouterProvider {
                         attempt = attempt.saturating_add(1);
                         continue;
                     }
-                    return Err(ProviderError::Api(format!("{status}: {text}")));
+                    return Err(ProviderError::Api(format!(
+                        "{status}: provider request failed"
+                    )));
                 }
                 Err(error) => {
                     if attempt < self.retry.max_retries {

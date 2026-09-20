@@ -8,9 +8,12 @@
 //! - `EVOHIME_LLM_RETRY_BASE_MS` (default 250)
 //! - `EVOHIME_LLM_RETRY_MAX_MS` (default 5000)
 
+use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::StatusCode;
 use std::time::Duration;
+
+pub(crate) const MAX_RATE_LIMIT_BODY_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy {
@@ -51,6 +54,34 @@ pub fn classify_rate_limit(status: StatusCode, body: &str) -> Option<RateLimitCl
     } else {
         Some(RateLimitClass::Unknown)
     }
+}
+
+/// Read only a small prefix used to classify a rate-limit response.
+///
+/// The provider body is deliberately not returned from this helper's callers:
+/// it may contain URLs, credentials or other provider diagnostics. The bound
+/// also prevents an error response from becoming an unbounded allocation.
+pub(crate) async fn read_bounded_rate_limit_body(response: reqwest::Response) -> String {
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .unwrap_or_default()
+            .try_into()
+            .unwrap_or(0)
+            .min(MAX_RATE_LIMIT_BODY_BYTES),
+    );
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else {
+            break;
+        };
+        let remaining = MAX_RATE_LIMIT_BODY_BYTES.saturating_sub(body.len());
+        if remaining == 0 {
+            break;
+        }
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+    }
+    String::from_utf8_lossy(&body).into_owned()
 }
 
 impl RetryPolicy {

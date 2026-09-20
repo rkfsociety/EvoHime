@@ -176,5 +176,40 @@ async fn literouter_does_not_retry_client_errors() {
         .expect("error item")
         .expect_err("should fail");
     assert!(err.to_string().contains("400"));
+    assert!(!err.to_string().contains("bad request"));
     assert!(stream.next().await.is_none());
+}
+
+#[tokio::test]
+async fn literouter_quota_error_does_not_include_provider_body() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(429).set_body_string(
+            "quota exceeded: https://provider.test/quota?token=secret-provider-body",
+        ))
+        .mount(&server)
+        .await;
+
+    let provider = LiteRouterProvider::with_retry(
+        LiteRouterConfig {
+            api_key: "lr_test".to_string(),
+            base_url: format!("{}/v1", server.uri()),
+            model: "test-paid-model".to_string(),
+        },
+        RetryPolicy::none(),
+    )
+    .expect("provider");
+
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
+    let err = stream
+        .next()
+        .await
+        .expect("error item")
+        .expect_err("quota failure should be returned");
+
+    assert!(err.to_string().contains("quota exhausted"));
+    assert!(!err.to_string().contains("provider.test"));
+    assert!(!err.to_string().contains("secret-provider-body"));
 }

@@ -77,13 +77,14 @@ impl OpenAIResponsesProvider {
                 Ok(response) if response.status().is_success() => return Ok(response),
                 Ok(response) => {
                     let status = response.status();
-                    let text = response.text().await.unwrap_or_default();
                     if is_retryable_status(status) && attempt < self.retry.max_retries {
                         tokio::time::sleep(compute_backoff(attempt, &self.retry, None)).await;
                         attempt = attempt.saturating_add(1);
                         continue;
                     }
-                    return Err(ProviderError::Api(format!("{status}: {text}")));
+                    return Err(ProviderError::Api(format!(
+                        "{status}: Responses API request failed"
+                    )));
                 }
                 Err(error) if attempt < self.retry.max_retries => {
                     tokio::time::sleep(compute_backoff(attempt, &self.retry, None)).await;
@@ -213,11 +214,7 @@ fn parse_stream_event(line: &str) -> Option<Result<ChatStreamItem, ProviderError
             .get("response")
             .map(|response| Ok(ChatStreamItem::Usage(parse_usage(response)))),
         Some("error") => Some(Err(ProviderError::Api(
-            value
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("Responses API error")
-                .to_string(),
+            "Responses API returned an error event".into(),
         ))),
         _ => None,
     }
@@ -312,5 +309,15 @@ mod tests {
         let result = parse_result(&value);
         assert_eq!(result.tool_calls[0].name, "git_status");
         assert_eq!(result.tool_calls[0].id, "call_1");
+    }
+
+    #[test]
+    fn stream_error_event_does_not_expose_provider_message() {
+        let result = parse_stream_event(
+            r#"data: {"type":"error","message":"https://provider.test/?token=secret"}"#,
+        );
+        let error = result.expect("error event").expect_err("event must fail");
+        assert!(!error.to_string().contains("provider.test"));
+        assert!(!error.to_string().contains("secret"));
     }
 }
