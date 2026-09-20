@@ -127,7 +127,7 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000284`, `ui-bundle 0.0.000097`,
+Текущий checkout содержит patch `core 0.0.000286`, `ui-bundle 0.0.000098`,
 `shell-host 0.0.000099`,
 `updater 0.0.000121`,
 `supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
@@ -179,7 +179,8 @@ Renderer показывает этот код как «модель не най�
 сырой ответ каталога.
 Route preflight сохраняет этот исход как `provider_model_not_found`, включая
 случай, когда fresh catalog больше не содержит выбранную модель.
-Истёкший snapshot получает отдельный `provider_catalog_expired`.
+Истёкший snapshot получает отдельный `provider_catalog_expired`, а UI получает
+согласованное состояние `expired` вместо misleading `fresh`.
 Если Core помечает `configured_model_eligible=false`, ModelPicker отдельно
 показывает, что выбранная модель не подтверждена для текущего маршрута;
 для `unobserved` projection оставляет это поле `null`.

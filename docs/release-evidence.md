@@ -2120,3 +2120,13 @@ TTL regression: expired `Fresh` snapshot теперь даёт bounded
   `task_failed_event_appends_a_failure_audit_record` подтверждает отсутствие
   поля `error` и наличие трёх безопасных полей. GitHub CI для этого локального
   коммита ещё не запускался.
+
+## Expired provider catalog projection (2026-09-20)
+
+Core authenticated `model.catalog` projection теперь переводит уже истёкший
+`Fresh` snapshot в bounded state `expired`; ModelPicker показывает, что маршрут
+временно отключён, вместо misleading `Каталог актуален`. Route preflight
+по-прежнему использует отдельный `provider_catalog_expired` error code.
+
+Проверки: Core provider-catalog projection regression, ModelPicker Vitest и
+Electron typecheck; GitHub CI для локального коммита ещё не запускался.

@@ -162,6 +162,24 @@ describe('model picker', () => {
     expect(screen.getByText(/Выбранная модель не подтверждена Core/i)).toBeTruthy()
   })
 
+  it('shows an expired Core catalog as unavailable', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', {
+          mode: 'free',
+          models: ['usable:free'],
+          provider_catalog: {
+            catalog: { state: 'expired', configured_model_eligible: false }
+          }
+        })]}
+        use="text"
+      />
+    )
+
+    expect(await screen.findByText(/Каталог истёк; маршрут временно отключён/i)).toBeTruthy()
+  })
+
   it('tells Core about a selection without restarting anything', async () => {
     render(
       <ModelPicker

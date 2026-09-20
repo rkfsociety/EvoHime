@@ -223,6 +223,7 @@ function catalogStatusLabel(status: CatalogStatus): string {
   if (status.credentialStatus === 'rejected') return 'Каталог: ключ отклонён'
   switch (status.state) {
     case 'fresh': return 'Каталог актуален'
+    case 'expired': return 'Каталог истёк; маршрут временно отключён'
     case 'stale': return 'Каталог из кэша; маршрут временно отключён'
     case 'unavailable': return 'Каталог недоступен'
     case 'discovery_unsupported': return 'Каталог не поддерживается'

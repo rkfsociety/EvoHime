@@ -508,9 +508,19 @@ impl IpcBridge {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
+        let now_ms = crate::task_memory::now_millis();
         let state = snapshot
             .as_ref()
-            .map(|snapshot| serde_json::to_value(snapshot.state).unwrap_or_default())
+            .map(|snapshot| {
+                if snapshot.state
+                    == crate::free_provider_reliability_routing::ProviderCatalogState::Fresh
+                    && now_ms >= snapshot.expires_at_ms
+                {
+                    serde_json::Value::String("expired".into())
+                } else {
+                    serde_json::to_value(snapshot.state).unwrap_or_default()
+                }
+            })
             .unwrap_or_else(|| serde_json::Value::String("unobserved".into()));
         let failure_code = snapshot.as_ref().and_then(|snapshot| {
             snapshot
@@ -547,7 +557,7 @@ impl IpcBridge {
                 "truncated": snapshot.as_ref().is_some_and(|snapshot| snapshot.models.len() > 256),
                 "configured_model": model_id,
                 "configured_model_eligible": snapshot.as_ref().map(|snapshot| {
-                    snapshot.route_eligible_at(model_id, crate::task_memory::now_millis())
+                    snapshot.route_eligible_at(model_id, now_ms)
                 }),
             },
             "models": models,

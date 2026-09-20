@@ -107,5 +107,36 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
     assert!(!projection_text.contains("provider.example"));
     assert!(!projection_text.contains("test-key"));
 
+    let now_ms = crate::task_memory::now_millis();
+    let expired = ProviderCatalogSnapshot::fresh_from_catalog(
+        &profile,
+        &[evohime_model_gateway::ModelCatalogEntry {
+            id: "model-a".into(),
+            context_tokens: Some(8_192),
+            max_output_tokens: Some(1_024),
+        }],
+        3,
+        "b".repeat(64),
+        now_ms.saturating_sub(2_000),
+        now_ms.saturating_sub(1_000),
+    )
+    .expect("expired snapshot");
+    bridge
+        .provider_catalog_snapshots
+        .write()
+        .expect("catalog cache write lock")
+        .insert(
+            crate::free_provider_reliability_routing::provider_catalog_scope_key(&profile),
+            expired,
+        );
+    let expired_projection = bridge
+        .provider_catalog_projection(&route, Some("model-a"))
+        .await;
+    assert_eq!(expired_projection["catalog"]["state"], "expired");
+    assert_eq!(
+        expired_projection["catalog"]["configured_model_eligible"],
+        false
+    );
+
     let _ = std::fs::remove_file(journal_path);
 }

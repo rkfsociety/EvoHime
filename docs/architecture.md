@@ -2826,6 +2826,8 @@ Route preflight
 bounded `false` и fail-closed до provider dispatch. Missing model остаётся
 отдельным `provider_model_not_found`, а истёкший snapshot —
 `provider_catalog_expired`, а не generic catalog outage.
+Authenticated `model.catalog` projects an already-expired fresh snapshot as
+`expired`, so ModelPicker does not display an expired catalog as current.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 
