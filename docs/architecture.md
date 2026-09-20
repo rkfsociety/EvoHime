@@ -2830,6 +2830,9 @@ bounded `false` и fail-closed до provider dispatch. Missing model остаё�
 `provider_catalog_expired`, а не generic catalog outage.
 Authenticated `model.catalog` projects an already-expired fresh snapshot as
 `expired`, so ModelPicker does not display an expired catalog as current.
+ModelPicker keeps provider-returned models visible and renders capability,
+limits and privacy hints only from the bounded Core descriptor; it has no
+provider-name or model-name compatibility table.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 

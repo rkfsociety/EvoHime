@@ -4,7 +4,12 @@ import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, CodexRat
 
 import { useShellApi } from './shell-api'
 import { CodexRateLimits } from './CodexRateLimits'
-import { capabilityForModel, sortModelsForUse, type ModelUse } from '@shared/model-capabilities'
+import {
+  modelMetadataHint,
+  parseCoreModelDescriptor,
+  type CoreModelDescriptor,
+  type ModelUse
+} from '@shared/model-capabilities'
 import { useProviderState } from './provider-state'
 
 /**
@@ -33,6 +38,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const connected = CONNECTED_STATES.includes(connection)
   const [fallbackTier, setFallbackTier] = useState<ModelTier | null>(null)
   const [models, setModels] = useState<readonly string[]>([])
+  const [modelDescriptors, setModelDescriptors] = useState<readonly CoreModelDescriptor[]>([])
   const [current, setCurrent] = useState('')
   const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
   const [codexRateLimits, setCodexRateLimits] = useState<readonly CodexRateLimit[]>([])
@@ -42,6 +48,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   useEffect(() => {
     setFallbackTier(null)
     setModels([])
+    setModelDescriptors([])
     setCurrent('')
     setCodexModels([])
     setCodexRateLimits([])
@@ -89,7 +96,15 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     const catalogModels = Array.isArray(parsed['models'])
       ? parsed['models'].filter((model): model is string => typeof model === 'string' && model.trim().length > 0)
       : []
-    setModels(sortModelsForUse(provider, catalogModels, use))
+    const projection = asRecord(parsed['provider_catalog'])
+    const projectedModels = Array.isArray(projection?.['models'])
+      ? projection['models'].flatMap((model) => {
+        const descriptor = parseCoreModelDescriptor(model)
+        return descriptor === null ? [] : [descriptor]
+      })
+      : []
+    setModelDescriptors(projectedModels)
+    setModels([...new Set(catalogModels)].sort((left, right) => left.localeCompare(right)))
     const ollama = typeof parsed['ollama'] === 'object' && parsed['ollama'] !== null
       ? parsed['ollama'] as Record<string, unknown>
       : null
@@ -97,7 +112,6 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       ? ollama['error']
       : parsed['error']
     setError(typeof catalogError === 'string' ? catalogError : null)
-    const projection = asRecord(parsed['provider_catalog'])
     const catalogProjection = asRecord(projection?.['catalog'])
     const providerProjection = asRecord(projection?.['provider'])
     const state = typeof catalogProjection?.['state'] === 'string' ? catalogProjection['state'] : null
@@ -169,6 +183,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     ? codexModels.map((model) => ({ value: model.id, label: model.displayName || model.id }))
     : models.map((model) => ({ value: model, label: model }))
   const known = visibleModels.some((model) => model.value === current)
+  const selectedDescriptor = modelDescriptors.find((model) => model.id === current)
 
   return (
     <>
@@ -178,8 +193,10 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         onSelect={(model) => void select(model)}
         disabled={disabled}
       />
-      {provider !== 'codex_cli' && use === 'agent' && models.length > 0 ? (
-        <span className="model-picker__hint" title={capabilityForModel(provider, current).reason}>агентские модели</span>
+      {provider !== 'codex_cli' && models.length > 0 ? (
+        <span className="model-picker__hint" title={modelMetadataHint(selectedDescriptor, use)}>
+          {modelMetadataHint(selectedDescriptor, use)}
+        </span>
       ) : null}
       {provider !== 'codex_cli' && catalogStatus !== null ? (
         <>

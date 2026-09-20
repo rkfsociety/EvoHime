@@ -1,27 +1,29 @@
 import { describe, expect, it } from 'vitest'
 
-import { capabilityForModel, sortModelsForUse } from '../src/shared/model-capabilities'
+import { modelMetadataHint, parseCoreModelDescriptor } from '../src/shared/model-capabilities'
 
 describe('model capabilities', () => {
-  it('allows the verified LiteRouter Haiku route for agent work', () => {
-    expect(capabilityForModel('literouter', 'claude-haiku-4.5-cheap:free')).toMatchObject({ agent: true, text: true, rank: 100 })
+  it('reads explicit tool support from the Core descriptor', () => {
+    const descriptor = parseCoreModelDescriptor({
+      id: 'future-model',
+      limits: { context_tokens: 128000, max_output_tokens: 8192 },
+      capabilities: [{ capability: 'tool_calls', state: 'supported', provenance: 'observed' }],
+      privacy: 'provider_controlled',
+      lifecycle: 'active'
+    })
+
+    expect(descriptor).not.toBeNull()
+    expect(modelMetadataHint(descriptor ?? undefined, 'agent')).toContain('tool_calls подтверждён Core')
+    expect(modelMetadataHint(descriptor ?? undefined, 'agent')).toContain('контекст 128k')
   })
 
-  it('keeps unverified future-provider models available for text only', () => {
-    expect(capabilityForModel('literouter', 'new-local-model:free')).toMatchObject({ agent: false, text: true })
-    expect(capabilityForModel('openai_compatible', 'future-model')).toMatchObject({ agent: false, text: true })
+  it('keeps unknown capability visibly unknown instead of guessing from the model name', () => {
+    const descriptor = parseCoreModelDescriptor({ id: 'claude-haiku-4.5-cheap:free', capabilities: [] })
+
+    expect(modelMetadataHint(descriptor ?? undefined, 'agent')).toContain('не подтверждён Core')
   })
 
-  it('allows installed Ollama models for agent and text work', () => {
-    expect(capabilityForModel('ollama', 'qwen3:4b')).toMatchObject({ agent: true, text: true })
-    expect(sortModelsForUse('ollama', ['qwen3:4b'], 'agent')).toEqual(['qwen3:4b'])
-  })
-
-  it('sorts verified agent models ahead of unknown and rejected models', () => {
-    expect(sortModelsForUse('literouter', [
-      'mythomax-l2-13b:free',
-      'claude-haiku-4.5-cheap:free',
-      'future-model:free'
-    ], 'agent')).toEqual(['claude-haiku-4.5-cheap:free'])
+  it('rejects malformed Core descriptors', () => {
+    expect(parseCoreModelDescriptor({ id: '', capabilities: [] })).toBeNull()
   })
 })

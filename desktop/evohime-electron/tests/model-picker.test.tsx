@@ -116,7 +116,7 @@ describe('model picker', () => {
     )
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['usable:free', 'mythomax-l2-13b:free'])
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['mythomax-l2-13b:free', 'usable:free'])
   })
 
   it('requests the configured tier and offers what the provider returned', async () => {
@@ -214,7 +214,7 @@ describe('model picker', () => {
     )
   })
 
-  it('keeps only verified agent models in the chat picker and puts Haiku first', async () => {
+  it('keeps all provider models visible when Core has not confirmed capabilities', async () => {
     render(
       <ModelPicker
         connection="connected"
@@ -227,8 +227,34 @@ describe('model picker', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'claude-haiku-4.5-cheap:free'
+      'claude-haiku-4.5-cheap:free',
+      'gemma-3-27b-it:free',
+      'mythomax-l2-13b:free'
     ])
+    expect(screen.getByText(/tool_calls не подтверждён Core/i)).toBeTruthy()
+  })
+
+  it('renders Core-owned capability and limits metadata', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', {
+          mode: 'free',
+          models: ['core-model'],
+          provider_catalog: {
+            models: [{
+              id: 'core-model',
+              limits: { context_tokens: 128000, max_output_tokens: 8192 },
+              capabilities: [{ capability: 'tool_calls', state: 'supported', provenance: 'observed' }],
+              privacy: 'provider_controlled',
+              lifecycle: 'active'
+            }]
+          }
+        })]}
+      />
+    )
+
+    expect(await screen.findByText(/tool_calls подтверждён Core.*контекст 128k/i)).toBeTruthy()
   })
 
   it('points at the key when the catalogue could not be read', async () => {

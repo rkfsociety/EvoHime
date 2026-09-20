@@ -2140,3 +2140,13 @@ bounded `discovery_unsupported`. Только явный `model not found` ос�
 
 Проверка: Core classification regression test; GitHub CI для локального
 коммита ещё не запускался.
+
+## Core-owned model capability display (2026-09-20)
+
+ModelPicker больше не фильтрует catalog по hardcoded provider/model names.
+Он сортирует только по model id, сохраняет все модели видимыми и показывает
+capability/limits/privacy hint из bounded `provider_catalog.models`; отсутствие
+descriptor или capability остаётся явным `не подтверждён Core`.
+
+Проверки: ModelPicker и model-capabilities Vitest tests, Electron typecheck и
+`git diff --check`; GitHub CI для локального коммита ещё не запускался.
