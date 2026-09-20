@@ -66,6 +66,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Core protocol command builders разделены на `task_commands` и
   `workflow_commands`; envelope fields, idempotency key и public `CoreClient`
   methods сохранены, marker CLI повышен до `0.0.000080`.
+- Auth challenge/TTL/nonce validation отделена от Core generation identity и
+  fencing в `auth/challenge` и `auth/generation`; handshake и stale-generation
+  rejection invariants сохранены, marker CLI повышен до `0.0.000081`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 
