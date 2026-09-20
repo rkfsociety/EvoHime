@@ -106,6 +106,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Byte/JSON boundary `redact_payload` отделена от recursive sensitive-key policy
   в `redaction_policy`; redaction depth/secret filtering остаются прежними,
   marker CLI повышен до `0.0.000069`.
+- Parser tests вынесены из `args.rs` в отдельный `args_tests` module; parser
+  production surface уменьшен без изменения command/error re-export paths,
+  marker CLI повышен до `0.0.000070`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.

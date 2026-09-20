@@ -10,6 +10,9 @@ mod input;
 mod redaction;
 mod redaction_policy;
 
+#[cfg(test)]
+mod args_tests;
+
 pub use args::parse_args;
 pub use command::{Command, ParseError};
 pub use events::{emit, event_matches_run, CliEvent, CLI_SCHEMA, MAX_EVENT_BYTES};
