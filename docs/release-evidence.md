@@ -1649,6 +1649,10 @@ coverage в `evohime-model-gateway` проверяет сортировку/dedu
 count limits и отсутствие provider body/secret в ошибке. Source module `core`
 повышен с `0.0.000254` до `0.0.000255`.
 
+Conversation-bound failure projection now classifies a blocked Ollama installer
+as `operation=ollama.download` while retaining only safe diagnostic fields;
+the source module `core` is `0.0.000256` (from `0.0.000255`).
+
 ## Trace reason redaction follow-up (2026-09-20)
 
 Trace UI/export now normalizes the connection `reason` to the same bounded

@@ -117,7 +117,13 @@ fn classify_trace_source(error: &str) -> &'static str {
 }
 
 fn classify_trace_operation(error: &str) -> &'static str {
-    if error.to_ascii_lowercase().contains("err_blocked_by_client") {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("err_blocked_by_client")
+        && lower.contains("ollama")
+        && (lower.contains("download") || lower.contains("installer"))
+    {
+        "ollama.download"
+    } else if lower.contains("err_blocked_by_client") {
         "network.request"
     } else {
         "task.execute"
@@ -1046,5 +1052,20 @@ mod tests {
         assert_eq!(value["error_code"], "task_failed");
         assert_eq!(value["source"], "core");
         assert_eq!(value["operation"], "task.execute");
+    }
+
+    #[test]
+    fn conversation_trace_classifies_blocked_ollama_download_without_url() {
+        let payload = conversation_bound_trace_payload(
+            "task.failed",
+            br#"{"error":"net::ERR_BLOCKED_BY_CLIENT https://ollama.com/download/OllamaSetup.exe"}"#,
+        );
+        let value: Value = serde_json::from_slice(&payload).expect("valid trace projection");
+        assert_eq!(value["error_code"], "client_blocked");
+        assert_eq!(value["source"], "electron_transport");
+        assert_eq!(value["operation"], "ollama.download");
+        assert!(!serde_json::to_string(&value)
+            .unwrap()
+            .contains("ollama.com"));
     }
 }
