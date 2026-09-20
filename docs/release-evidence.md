@@ -1706,6 +1706,11 @@ URL/prompt-like identifiers and unknown action values fail closed; unknown-route
 fallbacks no longer copy raw trace IDs into the UI. Regression tests cover
 these cases; the UI bundle is now `0.0.000087`.
 
+Pending routing-approval metadata now uses the same bounded trace/run token
+validation and accepts only non-negative safe-integer expiry timestamps. URL-like
+IDs and fractional expiry values fail closed in renderer tests; the UI bundle is
+now `0.0.000088`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures

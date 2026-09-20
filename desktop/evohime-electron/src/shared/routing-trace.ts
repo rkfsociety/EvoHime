@@ -136,7 +136,7 @@ export function parsePendingRoutingApproval(raw: string): PendingRoutingApproval
   const runId = typeof v.run_id === 'string' ? v.run_id : typeof v.runId === 'string' ? v.runId : null
   const routeId = typeof v.route_id === 'string' ? v.route_id : typeof v.routeId === 'string' ? v.routeId : null
   const expiresAtMs = typeof v.expires_at_ms === 'number' ? v.expires_at_ms : typeof v.expiresAtMs === 'number' ? v.expiresAtMs : null
-  if (!traceId || !runId || (routeId !== 'local' && routeId !== 'cloud') || expiresAtMs === null || !Number.isFinite(expiresAtMs)) return null
+  if (!traceId || !runId || !isSafeTraceToken(traceId) || !isSafeTraceToken(runId) || (routeId !== 'local' && routeId !== 'cloud') || expiresAtMs === null || !Number.isSafeInteger(expiresAtMs) || expiresAtMs < 0) return null
   return { traceId, runId, routeId, expiresAtMs }
 }
 

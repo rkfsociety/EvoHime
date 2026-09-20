@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseRoutingTrace, routingViewState } from '../src/shared/routing-trace'
+import { parsePendingRoutingApproval, parseRoutingTrace, routingViewState } from '../src/shared/routing-trace'
 
 const trace = (overrides: Record<string, unknown> = {}) => JSON.stringify({ schema_version: 1, terminal_status: 'success', selected_route: 'local', reason_code: 'only_candidate', candidates: [{ route_id: 'local', health_state: 'healthy' }], fallback_count: 0, privacy_label: 'non_sensitive', trace_id: 't', run_id: 'r', sequence: 1, ...overrides })
 describe('routing trace', () => {
@@ -37,5 +37,9 @@ describe('routing trace', () => {
     expect(parsed.trace_id).toBe('safe-trace')
     expect(parsed.run_id).toBe('safe-run')
     expect(JSON.stringify(parsed)).not.toContain('provider.test')
+  })
+  it('rejects unsafe pending-approval metadata', () => {
+    expect(parsePendingRoutingApproval(JSON.stringify({ trace_id: 'https://provider.test/?token=secret', run_id: 'run', route_id: 'local', expires_at_ms: 1 }))).toBeNull()
+    expect(parsePendingRoutingApproval(JSON.stringify({ trace_id: 'trace', run_id: 'run', route_id: 'local', expires_at_ms: 1.5 }))).toBeNull()
   })
 })
