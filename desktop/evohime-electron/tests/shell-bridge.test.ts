@@ -763,6 +763,17 @@ describe('trace export', () => {
     const result = await invoke('trace.export', { content: '# trace\n\n' + 'x'.repeat(100_000) })
     expect(result).toEqual({ ok: true, value: { cancelled: false, path: 'G:/evohime-trace.md' } })
   })
+
+  it('rejects unsafe legacy failure payloads before writing a file', () => {
+    const result = invoke('trace.export', {
+      content: '[1] task.failed task=task-1\n{"error":"https://example.test","prompt":"private context","token":"sk-test"}'
+    })
+    expect(result).toEqual({
+      ok: false,
+      code: 'invalid-payload',
+      message: 'Трейс пуст, слишком большой или содержит небезопасные данные.'
+    })
+  })
 })
 
 describe('source update commands', () => {

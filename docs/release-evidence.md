@@ -1671,6 +1671,11 @@ The local Ollama version projection also accepts only a bounded version token;
 unsafe strings are treated as an unknown version instead of being rendered.
 `shell-host` is now `0.0.000091` (from `0.0.000090`).
 
+The main-process `trace.export` boundary now rejects legacy or forged
+`task.failed` sections containing URLs or sensitive prompt/credential fields;
+safe renderer-generated traces continue to save normally. `shell-host` is now
+`0.0.000092` (from `0.0.000091`).
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

@@ -52,6 +52,8 @@ const MAX_TEXT_FIELD_CHARS = 4_096
 const MAX_CLIPBOARD_CHARS = 64 * 1024
 const MAX_TRACE_EXPORT_BYTES = 16 * 1024 * 1024
 const MAX_REVIEW_PLAN_BYTES = 512 * 1024
+const TRACE_URL_PATTERN = /\b(?:https?|wss?):\/\/[^\s"'<>]+/i
+const TRACE_SENSITIVE_FIELD_PATTERN = /(?:["'](?:prompt|secret|token|password|api[_-]?key|authorization)["']|\b(?:prompt|secret|token|password|api[_-]?key|authorization))\s*[:=]/i
 
 function applyWorkspacePermissionMode(client: CorePipeClient, mode: PermissionMode | undefined): void {
   if (mode === undefined) return
@@ -150,7 +152,7 @@ function dispatch(
 
     case 'trace.export': {
       const content = asTraceContent(asRecord(payload)['content'])
-      if (content === null) return failure('invalid-payload', 'Трейс пуст или слишком большой для экспорта.')
+      if (content === null) return failure('invalid-payload', 'Трейс пуст, слишком большой или содержит небезопасные данные.')
       const window = BrowserWindow.getFocusedWindow()
       const saveOptions: Electron.SaveDialogOptions = {
         defaultPath: 'evohime-trace.md',
@@ -2868,9 +2870,13 @@ function asGoalReferenceKind(value: unknown): 'workflow' | 'child' | 'checkpoint
 }
 
 function asTraceContent(value: unknown): string | null {
-  return typeof value === 'string' && value.trim().length > 0 && Buffer.byteLength(value, 'utf8') <= MAX_TRACE_EXPORT_BYTES
-    ? value
-    : null
+  if (typeof value !== 'string' || value.trim().length === 0 || Buffer.byteLength(value, 'utf8') > MAX_TRACE_EXPORT_BYTES) {
+    return null
+  }
+  const failureSections = value.split(/\n(?=\[\d+\]\s)/).filter((section) => /^\[\d+\]\s+task\.failed\b/m.test(section))
+  return failureSections.some((section) => TRACE_URL_PATTERN.test(section) || TRACE_SENSITIVE_FIELD_PATTERN.test(section))
+    ? null
+    : value
 }
 
 function asOptionalBoundedString(value: unknown): string | null {
