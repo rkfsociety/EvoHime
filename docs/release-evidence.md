@@ -114,6 +114,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - Redaction boundary tests вынесены в отдельный `redaction_tests` module;
   sensitive-key and depth invariants сохранены, marker CLI повышен до
   `0.0.000072`.
+- Bounded stdin tests вынесены из `input.rs` в отдельный `input_tests` module;
+  exact-bound and oversized-input behavior сохранены, marker CLI повышен до
+  `0.0.000073`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.

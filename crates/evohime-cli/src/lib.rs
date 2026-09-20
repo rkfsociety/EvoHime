@@ -15,6 +15,8 @@ mod args_tests;
 #[cfg(test)]
 mod event_tests;
 #[cfg(test)]
+mod input_tests;
+#[cfg(test)]
 mod redaction_tests;
 
 pub use args::parse_args;
