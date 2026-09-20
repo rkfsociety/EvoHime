@@ -182,8 +182,8 @@ export function parseTraceDiagnostics(payload: string): TraceDiagnostics | null 
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null
     const record = value as Record<string, unknown>
     const errorCode = safeTraceToken(record.error_code)
-    const source = safeTraceToken(record.source)
-    const operation = safeTraceToken(record.operation)
+    const source = safeTraceToken(record.source ?? record.error_source)
+    const operation = safeTraceToken(record.operation ?? record.operation_name ?? record.tool_name)
     if (!errorCode || !source || !operation) return null
     return { errorCode, source, operation }
   } catch {

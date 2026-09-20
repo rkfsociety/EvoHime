@@ -123,6 +123,27 @@ describe('trace panel', () => {
     expect(view.container.textContent).not.toContain('sk-test')
   })
 
+  it('displays safe legacy diagnostic aliases as canonical fields', async () => {
+    render(
+      <TracePanel
+        chatId="chat-1"
+        state={null}
+        workspace="G:/github/EvoHime"
+        onClose={() => {}}
+        events={[{
+          sequenceId: 17,
+          taskId: 'task-1',
+          eventType: 'task.failed',
+          payload: '{"error_code":"timeout","error_source":"provider","operation_name":"model.fetch"}'
+        }]}
+      />
+    )
+
+    expect(await screen.findByText('timeout')).toBeTruthy()
+    expect(screen.getByText('provider')).toBeTruthy()
+    expect(screen.getByText('model.fetch')).toBeTruthy()
+  })
+
   it('redacts URLs and sensitive fields from ordinary event payloads', async () => {
     const view = render(
       <TracePanel

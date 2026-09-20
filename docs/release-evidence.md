@@ -1968,3 +1968,14 @@ bundle теперь отдельно пишет в issue draft, был ли ст
 TracePanel (24 теста), включая положительное и отрицательное подтверждение
 marker. CI evidence для локального коммита ещё не заявляется; установленный
 клиент не изменялся.
+
+## Trace compatibility aliases (2026-09-20)
+
+UI-bundle patch повышен с `0.0.000090` до `0.0.000091`. TracePanel принимает
+безопасные legacy-имена `error_source`, `operation_name` и `tool_name`, но
+отображает и экспортирует только канонические `source` и `operation`; raw
+payload, URL, prompt и secrets не восстанавливаются.
+
+Focused TracePanel, Ollama runtime и diagnostics/support bundle tests: 25
+тестов passed. CI evidence для локального коммита ещё не заявляется;
+установленный клиент не изменялся.
