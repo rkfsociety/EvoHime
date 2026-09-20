@@ -52,7 +52,9 @@ reopen не оставляет частичных строк.
 Conversation-bound `task.failed` trace events передаются в renderer как
 redacted terminal projection: в payload остаются только bounded `error_code`,
 `source` и `operation` (или безопасная детерминированная классификация).
-Полный error text, URL, prompt и секреты не сохраняются в этой проекции;
+При malformed или oversized исходном payload сохраняется fallback
+`task_failed/core/task.execute`, а не generic или raw payload. Полный error text,
+URL, prompt и секреты не сохраняются в этой проекции;
 Trace UI показывает диагностические поля отдельно и включает их в Markdown
 под заголовком `diagnostics`.
 

@@ -1614,6 +1614,14 @@ module artifact не запрашивается после превышения 
 staging-файл. Failure-path regression дополнительно проверяет удаление `.part`
 после неверного digest.
 
+## Trace diagnostic fallback follow-up (2026-09-20)
+
+Conversation-bound `task.failed` теперь сохраняет bounded `error_code`, `source`
+и `operation` даже при malformed или oversized исходном payload. В таких случаях
+используется deterministic fallback `task_failed/core/task.execute`; raw payload
+не пересекает IPC projection boundary. Core regression coverage включает оба
+failure-path сценария.
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:

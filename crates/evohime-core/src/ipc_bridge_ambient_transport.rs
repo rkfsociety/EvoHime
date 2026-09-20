@@ -20,20 +20,22 @@ fn conversation_bound_trace_payload(event_type: &str, payload: &[u8]) -> Vec<u8>
         "task.stopped" => "task_stopped",
         _ => return fallback(),
     };
-    let Some(draft) = crate::conversation_event_log::project_core_event(event_type, payload)
+    let projected = crate::conversation_event_log::project_core_event(event_type, payload)
         .ok()
         .and_then(|drafts| drafts.into_iter().find(|draft| draft.kind == kind))
-    else {
+        .and_then(|draft| serde_json::from_slice::<Value>(&draft.renderer_payload).ok());
+    if projected.is_none() && event_type != "task.failed" {
         return fallback();
-    };
-    let Ok(projected) = serde_json::from_slice::<Value>(&draft.renderer_payload) else {
-        return fallback();
-    };
+    }
     let mut projection = serde_json::Map::new();
     projection.insert("redacted".into(), Value::Bool(true));
     projection.insert("conversation_projection".into(), Value::Bool(true));
     projection.insert("terminal".into(), Value::Bool(true));
-    if let Some(status) = projected.get("status").and_then(Value::as_str) {
+    if let Some(status) = projected
+        .as_ref()
+        .and_then(|value| value.get("status"))
+        .and_then(Value::as_str)
+    {
         projection.insert("status".into(), Value::String(status.to_owned()));
     }
     if event_type == "task.failed" {
@@ -1022,5 +1024,27 @@ mod tests {
             serde_json::from_slice::<Value>(&payload).expect("valid trace projection"),
             json!({"redacted": true, "conversation_projection": true})
         );
+    }
+
+    #[test]
+    fn conversation_trace_malformed_failure_payload_still_gets_safe_diagnostics() {
+        let payload =
+            conversation_bound_trace_payload("task.failed", b"not-json-with-secret-token");
+        let value: Value = serde_json::from_slice(&payload).expect("valid trace projection");
+        assert_eq!(value["error_code"], "task_failed");
+        assert_eq!(value["source"], "core");
+        assert_eq!(value["operation"], "task.execute");
+        assert_eq!(value["redacted"], true);
+        assert!(!serde_json::to_string(&value).unwrap().contains("secret"));
+    }
+
+    #[test]
+    fn conversation_trace_oversized_failure_payload_still_gets_safe_diagnostics() {
+        let payload = vec![b'x'; crate::conversation_event_log::MAX_PAYLOAD_BYTES + 1];
+        let projected = conversation_bound_trace_payload("task.failed", &payload);
+        let value: Value = serde_json::from_slice(&projected).expect("valid trace projection");
+        assert_eq!(value["error_code"], "task_failed");
+        assert_eq!(value["source"], "core");
+        assert_eq!(value["operation"], "task.execute");
     }
 }

@@ -461,7 +461,9 @@ versioned runtime catalog, redacted replayable trace и typed routing UI
 Conversation-bound trace сохраняет только bounded terminal metadata. Для
 `task.failed` Core экспортирует `error_code`, `source` и `operation` из
 allow-list токенов либо детерминированно классифицирует ошибку; URL, prompt,
-секреты и полный текст ошибки не пересекают projection boundary. Trace UI
+секреты и полный текст ошибки не пересекают projection boundary. Даже malformed
+или oversized failure payload получает bounded deterministic fallback fields.
+Trace UI
 показывает эти три поля отдельной диагностической карточкой и повторяет их в
 Markdown-разделе `diagnostics`, поэтому failure остаётся читаемым и после
 сохранения файла.
