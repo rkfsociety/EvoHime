@@ -8,6 +8,8 @@ use evohime_desktop_ipc::{generated, session, transport};
 use prost::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
 
+const MAX_SNAPSHOT_INTERLEAVED_EVENTS: usize = 128;
+
 pub struct CoreClient<S> {
     stream: S,
     sequence: u64,
@@ -180,7 +182,13 @@ where
             )),
         })
         .await?;
-        self.read_event().await
+        for _ in 0..=MAX_SNAPSHOT_INTERLEAVED_EVENTS {
+            let event = self.read_event().await?;
+            if event.event_type == "task.snapshot" {
+                return Ok(event);
+            }
+        }
+        Err("protocol_error: task snapshot response missing".into())
     }
 
     pub async fn next(&mut self) -> Result<generated::EventEnvelope, String> {
@@ -327,6 +335,22 @@ mod tests {
             };
             assert_eq!(snapshot.project_id, "");
             assert_eq!(snapshot.task_id, "workflow-task");
+            transport::write_frame(
+                &mut writer,
+                &generated::EventEnvelope {
+                    protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+                    sequence_id: 44,
+                    task_id: "workflow-task".into(),
+                    event_type: "task.progress".into(),
+                    payload: Vec::new(),
+                    core_instance_id: "core-test".into(),
+                    session_epoch: 8,
+                    event: None,
+                }
+                .encode_to_vec(),
+            )
+            .await
+            .expect("write interleaved event");
             transport::write_frame(
                 &mut writer,
                 &generated::EventEnvelope {

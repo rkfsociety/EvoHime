@@ -70,6 +70,14 @@ output, transcripts, absolute paths и PII запрещены.
 - Новые unit tests покрывают ровно допустимый размер и отказ на превышение;
   source module `cli` повышен с `0.0.000047` до `0.0.000048`.
 
+### CLI snapshot response ordering follow-up (2026-09-20)
+
+- `GetTaskSnapshot` теперь принимает только точный `task.snapshot` response и
+  пропускает не более 128 interleaved push-событий; первый попавший в канал
+  progress-кадр больше не трактуется как status response.
+- Linux duplex contract тест воспроизводит порядок `task.progress` →
+  `task.snapshot`; source module `cli` повышен до `0.0.000049`.
+
 ### Safe trace export accepts redacted ordinary payloads (2026-09-20)
 
 - Conversation-bound события экспортируются через Core projection v2:
