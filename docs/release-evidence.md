@@ -72,6 +72,10 @@ compatible-manifest runs; исторические разделы ниже со�
 - Protocol event cursor/replay path отделён от task snapshot response filtering
   в `event_stream` и `snapshot` modules; interleaved-event bound и task identity
   fence сохранены, marker CLI повышен до `0.0.000082`.
+- Общий authenticated command envelope metadata helper централизует protocol,
+  client/session generation и request-id fields для task/workflow/snapshot
+  builders; handshake остаётся отдельным pre-auth path, marker CLI повышен до
+  `0.0.000083`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 

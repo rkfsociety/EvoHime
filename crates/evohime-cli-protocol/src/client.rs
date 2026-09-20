@@ -65,6 +65,20 @@ where
         self.sequence
     }
 
+    pub(crate) fn command_envelope(
+        &self,
+        command: generated::command_envelope::Command,
+    ) -> generated::CommandEnvelope {
+        generated::CommandEnvelope {
+            protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            client_id: self.client_id.clone(),
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            command: Some(command),
+        }
+    }
+
     pub(crate) async fn write(
         &mut self,
         command: generated::CommandEnvelope,
