@@ -66,6 +66,7 @@ describe('support bundle v2', () => {
       expect(files.redactionReport).toMatchObject({
         observed_markers: { shell_ollama_download_fallback: true }
       })
+      expect(files.issueDraft).toContain('Ollama fallback event observed: yes.')
       expect(files.logs).not.toContain('ollama.com')
       expect(files.logs).not.toContain('private context')
       expect(files.logs).not.toContain('ghp_should-not-leak')
@@ -110,6 +111,7 @@ describe('support bundle v2', () => {
       expect(files.redactionReport).toMatchObject({
         observed_markers: { shell_ollama_download_fallback: false }
       })
+      expect(files.issueDraft).toContain('Ollama fallback event observed: no.')
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

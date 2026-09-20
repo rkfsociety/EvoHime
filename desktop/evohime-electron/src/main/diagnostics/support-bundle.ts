@@ -53,7 +53,8 @@ export function buildSupportBundleFiles(input: {
     'See errors.jsonl for normalized event types.',
     '',
     '### Diagnostics',
-    'See manifest.json and redaction-report.json.'
+    'See manifest.json and redaction-report.json.',
+    `Ollama fallback event observed: ${observedMarkers.shell_ollama_download_fallback ? 'yes' : 'no'}.`
   ].join('\n')
   const redactionReport = {
     rules_version: 'sensitive-data-guardrails-v1',

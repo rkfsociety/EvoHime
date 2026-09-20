@@ -1956,3 +1956,15 @@ evohime-core -p evohime-local-storage`, `cargo clippy --locked -p evohime-core
 --all-targets -- -D warnings`, rustfmt и `git diff --check`. Startup recovery
 hydration, route preflight, authenticated IPC projection и CI evidence ещё не
 заявляются; установленный клиент не изменялся.
+
+## Ollama fallback evidence in support diagnostics (2026-09-20)
+
+Shell-host patch повышен с `0.0.000098` до `0.0.000099`. Redacted support
+bundle теперь отдельно пишет в issue draft, был ли структурированный вызов
+`shell.ollama_download_fallback`; URL, prompt и secret-like поля по-прежнему
+отбрасываются, а marker дополнительно остаётся в `redaction-report.json`.
+
+Пройдены focused Electron tests diagnostics/support bundle, Ollama runtime и
+TracePanel (24 теста), включая положительное и отрицательное подтверждение
+marker. CI evidence для локального коммита ещё не заявляется; установленный
+клиент не изменялся.
