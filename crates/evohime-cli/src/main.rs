@@ -61,20 +61,19 @@ mod windows_client {
                 json,
                 detach,
             } => {
-                let request = evohime_core::headless_core_cli::RunRequest {
-                    schema_version: evohime_core::headless_core_cli::SCHEMA_VERSION,
+                let request = evohime_cli_contract::RunRequest {
+                    schema_version: evohime_cli_contract::SCHEMA_VERSION,
                     prompt: prompt.clone(),
                     workspace: workspace.clone(),
                     output_mode: if json {
-                        evohime_core::headless_core_cli::OutputMode::Ndjson
+                        evohime_cli_contract::OutputMode::Ndjson
                     } else {
-                        evohime_core::headless_core_cli::OutputMode::Human
+                        evohime_cli_contract::OutputMode::Human
                     },
-                    approval_mode:
-                        evohime_core::headless_core_cli::ApprovalMode::DenyIfApprovalRequired,
+                    approval_mode: evohime_cli_contract::ApprovalMode::DenyIfApprovalRequired,
                     detach,
                 };
-                if evohime_core::headless_core_cli::validate_request(&request).is_err() {
+                if evohime_cli_contract::validate_request(&request).is_err() {
                     eprintln!("invalid invocation: bounded Core CLI request is invalid");
                     return ExitCode::InvalidInvocation;
                 }
@@ -152,7 +151,7 @@ mod windows_client {
             match client.next().await {
                 Ok(event) => {
                     print_event(&event, run_id, json);
-                    if evohime_core::headless_core_cli::is_terminal_event(&event.event_type) {
+                    if evohime_cli_contract::is_terminal_event(&event.event_type) {
                         return if matches!(
                             event.event_type.as_str(),
                             "task.completed" | "workflow.completed"

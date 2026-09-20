@@ -20,5 +20,6 @@ members = [
   "crates/evohime-model-provenance",
   "crates/evohime-remote",
   "crates/evohime-cli",
+  "crates/evohime-cli-contract",
 ]
 resolver = "2"

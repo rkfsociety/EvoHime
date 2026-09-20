@@ -9,7 +9,7 @@ name = "eva"
 path = "src/main.rs"
 
 [dependencies]
-evohime-core = { path = "../evohime-core" }
+evohime-cli-contract = { path = "../evohime-cli-contract" }
 evohime-desktop-ipc = { path = "../desktop-ipc" }
 prost = "0.14"
 serde = { version = "1", features = ["derive"] }

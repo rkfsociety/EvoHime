@@ -835,7 +835,7 @@ dependencies = [
 name = "evohime-cli"
 version = "0.1.0"
 dependencies = [
- "evohime-core",
+ "evohime-cli-contract",
  "evohime-desktop-ipc",
  "prost",
  "serde",
@@ -843,6 +843,14 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "evohime-cli-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -864,6 +872,7 @@ dependencies = [
  "base64",
  "chrono",
  "criterion",
+ "evohime-cli-contract",
  "evohime-context-budget",
  "evohime-desktop-ipc",
  "evohime-listener-contract",
@@ -1085,13 +1094,13 @@ name = "evohime-tool-runtime"
 version = "0.1.0"
 dependencies = [
  "base64",
-	"evohime-permissions",
+ "evohime-permissions",
  "flate2",
  "futures-util",
  "hex",
  "jsonschema",
-	"reqwest",
-	"rand 0.8.7",
+ "rand 0.8.7",
+ "reqwest",
  "scraper",
  "serde",
  "serde_json",

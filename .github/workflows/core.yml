@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'crates/evohime-core/**'
+      - 'crates/evohime-cli-contract/**'
       - 'crates/model-gateway/**'
       - 'crates/permissions/**'
       - 'crates/tool-runtime/**'
