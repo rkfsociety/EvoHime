@@ -1674,6 +1674,13 @@ serialization or routing metadata can consume them. Contract tests cover
 bounded valid metadata, endpoint/query and binding rejection, and hash format;
 the Core source module is now `0.0.000260`.
 
+Reliability snapshots now use bounded provider/model identifiers, finite
+non-negative latency metrics with a 24-hour ceiling, ordered p50/p95 values,
+and a class that must match deterministic classification. Invalid metrics,
+unbounded identifiers and stale class claims fail closed; Core contract tests
+cover sparse valid snapshots and each rejection family. The Core source
+module is now `0.0.000261`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures

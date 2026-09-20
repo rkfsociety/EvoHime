@@ -7,6 +7,8 @@ pub const MAX_PROVIDER_PROFILE_TRANSPORT_BYTES: usize = 64;
 pub const MAX_PROVIDER_PROFILE_ENDPOINT_BYTES: usize = 512;
 pub const MAX_PROVIDER_PROFILE_REGION_BYTES: usize = 64;
 pub const MAX_PROVIDER_PROFILE_CREDENTIAL_BINDING_BYTES: usize = 128;
+pub const MAX_PROVIDER_MODEL_ID_BYTES: usize = 256;
+pub const MAX_RELIABILITY_LATENCY_MS: f64 = 86_400_000.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderProfile {
@@ -111,17 +113,39 @@ fn valid_credential_binding(value: &str) -> bool {
 }
 impl ReliabilitySnapshot {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.provider_id.trim().is_empty()
-            || self.model_id.trim().is_empty()
+        if !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
+            || !valid_model_id(&self.model_id)
             || self.sample_count > 256
             || !self.success_rate.is_finite()
             || !(0.0..=1.0).contains(&self.success_rate)
+            || !valid_latency(self.p50_ms)
+            || !valid_latency(self.p95_ms)
+            || !valid_latency(self.jitter_ms)
+            || self
+                .p50_ms
+                .zip(self.p95_ms)
+                .is_some_and(|(p50, p95)| p50 > p95)
+            || self.class != classify(self)
         {
-            Err("invalid reliability snapshot")
-        } else {
-            Ok(())
+            return Err("invalid reliability snapshot");
         }
+        Ok(())
     }
+}
+
+fn valid_model_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_PROVIDER_MODEL_ID_BYTES
+        && value == value.trim()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:/-".contains(&byte))
+}
+
+fn valid_latency(value: Option<f64>) -> bool {
+    value.map_or(true, |value| {
+        value.is_finite() && (0.0..=MAX_RELIABILITY_LATENCY_MS).contains(&value)
+    })
 }
 
 pub fn classify(snapshot: &ReliabilitySnapshot) -> ReliabilityClass {
@@ -197,5 +221,32 @@ mod tests {
             class: ReliabilityClass::Unknown,
         };
         assert_eq!(classify(&s), ReliabilityClass::Unknown);
+        assert!(s.validate().is_ok());
+    }
+
+    #[test]
+    fn reliability_snapshot_rejects_unbounded_or_inconsistent_metadata() {
+        let mut invalid = ReliabilitySnapshot {
+            provider_id: "provider".into(),
+            model_id: "provider/model:free".into(),
+            sample_count: 3,
+            success_rate: 1.0,
+            p50_ms: Some(100.0),
+            p95_ms: Some(50.0),
+            jitter_ms: Some(2.0),
+            class: ReliabilityClass::Excellent,
+        };
+        assert_eq!(invalid.validate(), Err("invalid reliability snapshot"));
+
+        invalid.p95_ms = Some(f64::NAN);
+        assert_eq!(invalid.validate(), Err("invalid reliability snapshot"));
+
+        invalid.p95_ms = Some(200.0);
+        invalid.model_id = "model with spaces".into();
+        assert_eq!(invalid.validate(), Err("invalid reliability snapshot"));
+
+        invalid.model_id = "provider/model:free".into();
+        invalid.class = ReliabilityClass::Healthy;
+        assert_eq!(invalid.validate(), Err("invalid reliability snapshot"));
     }
 }
