@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const CONTRACT_VERSION: u32 = 1;
 pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
+const FAILURE_TOKEN_MAX_CHARS: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationEventDraft {
@@ -97,19 +98,20 @@ pub fn project_core_event(
             )?);
         }
         "task.failed" => {
+            let diagnostics = failure_projection(&normalized);
             events.push(draft(
                 "assistant_message_failed",
                 "message",
                 "durable",
                 "internal",
-                normalized.clone(),
+                diagnostics.clone(),
             )?);
             events.push(draft(
                 "task_failed",
                 "error",
                 "durable",
                 "internal",
-                status_payload(&normalized),
+                diagnostics,
             )?);
         }
         "task.stopped" => events.push(draft(
@@ -343,6 +345,82 @@ fn status_payload(value: &serde_json::Value) -> serde_json::Value {
     serde_json::Value::Object(output)
 }
 
+/// Produces the only failure details allowed in a durable conversation trace.
+///
+/// The original error is useful inside Core diagnostics, but it is not a
+/// stable or safe conversation payload: provider messages can contain URLs,
+/// prompts, headers, or credentials. Prefer explicitly supplied bounded
+/// tokens and otherwise classify the error into deterministic categories.
+pub(crate) fn failure_projection(value: &serde_json::Value) -> serde_json::Value {
+    let error = value
+        .get("error")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    serde_json::json!({
+        "error_code": safe_failure_token(value, &["error_code"])
+            .unwrap_or_else(|| classify_failure_error(error)),
+        "source": safe_failure_token(value, &["source", "error_source"])
+            .unwrap_or_else(|| classify_failure_source(error)),
+        "operation": safe_failure_token(value, &["operation", "operation_name", "tool_name"])
+            .unwrap_or_else(|| classify_failure_operation(error)),
+    })
+}
+
+fn safe_failure_token<'a>(value: &'a serde_json::Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .filter_map(|key| value.get(*key).and_then(serde_json::Value::as_str))
+        .map(str::trim)
+        .find(|candidate| {
+            !candidate.is_empty()
+                && candidate.chars().count() <= FAILURE_TOKEN_MAX_CHARS
+                && candidate.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | ':')
+                })
+                && !candidate.to_ascii_lowercase().contains("secret")
+                && !candidate.to_ascii_lowercase().contains("token")
+                && !candidate.to_ascii_lowercase().contains("password")
+                && !candidate.to_ascii_lowercase().contains("bearer")
+                && !candidate.to_ascii_lowercase().contains("sk-")
+        })
+}
+
+fn classify_failure_error(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("err_blocked_by_client") {
+        "client_blocked"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "timeout"
+    } else if lower.contains("permission") || lower.contains("access denied") {
+        "permission_denied"
+    } else if lower.contains("cancel") || lower.contains("стоп") {
+        "cancelled"
+    } else {
+        "task_failed"
+    }
+}
+
+fn classify_failure_source(error: &str) -> &'static str {
+    if error.to_ascii_lowercase().contains("err_blocked_by_client") {
+        "electron_transport"
+    } else {
+        "core"
+    }
+}
+
+fn classify_failure_operation(error: &str) -> &'static str {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("err_blocked_by_client")
+        && lower.contains("ollama")
+        && (lower.contains("download") || lower.contains("installer"))
+    {
+        "ollama.download"
+    } else if lower.contains("err_blocked_by_client") {
+        "network.request"
+    } else {
+        "task.execute"
+    }
+}
+
 fn usage_summary(value: &serde_json::Value) -> serde_json::Value {
     let mut output = serde_json::Map::new();
     for key in [
@@ -474,6 +552,41 @@ mod tests {
         assert_eq!(payload["source"], "main_model");
         assert_eq!(payload["input_tokens"], 42);
         assert_eq!(payload["output_tokens"], 0);
+    }
+
+    #[test]
+    fn failed_projection_persists_only_safe_diagnostics() {
+        let projected = project_core_event(
+            "task.failed",
+            br#"{"error":"net::ERR_BLOCKED_BY_CLIENT https://provider.test/?token=secret","prompt":"private context","operation":"browser.navigate","source":"browser"}"#,
+        )
+        .unwrap();
+
+        for event in projected {
+            let payload: serde_json::Value =
+                serde_json::from_slice(&event.renderer_payload).expect("renderer payload is JSON");
+            assert_eq!(payload["error_code"], "client_blocked");
+            assert_eq!(payload["source"], "browser");
+            assert_eq!(payload["operation"], "browser.navigate");
+            assert!(payload.get("error").is_none());
+            assert!(payload.get("prompt").is_none());
+            let serialized = serde_json::to_string(&payload).unwrap();
+            assert!(!serialized.contains("provider.test"));
+            assert!(!serialized.contains("private context"));
+        }
+    }
+
+    #[test]
+    fn failed_projection_classifies_malformed_or_unsafe_metadata() {
+        let projected = failure_projection(&serde_json::json!({
+            "error_code": "https://provider.test/?token=secret",
+            "source": "secret-token",
+            "operation": "prompt with raw text",
+            "error": "timeout while contacting provider"
+        }));
+        assert_eq!(projected["error_code"], "timeout");
+        assert_eq!(projected["source"], "core");
+        assert_eq!(projected["operation"], "task.execute");
     }
 
     #[tokio::test]

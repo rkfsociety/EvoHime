@@ -242,7 +242,13 @@ export function batchAssistantDeltas(
     } else if (event.kind === 'assistant_message_finalized') {
       output.push({ kind: 'finalized', taskId: event.taskId, content, firstSequence: event.sequence, lastSequence: event.sequence })
     } else if (event.kind === 'assistant_message_failed') {
-      output.push({ kind: 'failed', taskId: event.taskId, content: textPayload(event.payload, 'error'), firstSequence: event.sequence, lastSequence: event.sequence })
+      output.push({
+        kind: 'failed',
+        taskId: event.taskId,
+        content: textPayload(event.payload, 'error_code') || 'task_failed',
+        firstSequence: event.sequence,
+        lastSequence: event.sequence
+      })
     }
   }
   return output

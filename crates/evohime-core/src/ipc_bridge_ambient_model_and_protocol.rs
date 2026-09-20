@@ -29,65 +29,6 @@ fn safe_model_catalog_error_code(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn model_catalog_error_projection_is_bounded_and_does_not_include_details() {
-        let cases = [
-            (
-                evohime_model_gateway::providers::ProviderError::Config(
-                    "provider API key is not configured".into(),
-                ),
-                "provider_configuration_error",
-            ),
-            (
-                evohime_model_gateway::providers::ProviderError::Http(
-                    "error sending request to https://provider.test/models: operation timed out"
-                        .into(),
-                ),
-                "provider_timeout",
-            ),
-            (
-                evohime_model_gateway::providers::ProviderError::Api(
-                    "provider model catalog response is invalid: secret-token".into(),
-                ),
-                "catalog_response_invalid",
-            ),
-            (
-                evohime_model_gateway::providers::ProviderError::Stream(
-                    "stream ended at https://provider.test".into(),
-                ),
-                "catalog_stream_error",
-            ),
-        ];
-
-        for (error, expected) in cases {
-            let code = safe_model_catalog_error_code(&error);
-            assert_eq!(code, expected);
-            assert!(!code.contains("provider.test"));
-            assert!(!code.contains("secret"));
-        }
-    }
-
-    #[test]
-    fn model_catalog_limits_have_stable_safe_codes() {
-        assert_eq!(
-            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
-                "provider model catalog contains too many entries".into(),
-            )),
-            "catalog_too_many_entries"
-        );
-        assert_eq!(
-            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
-                "provider model catalog response exceeds size limit".into(),
-            )),
-            "catalog_response_too_large"
-        );
-    }
-}
-
 impl IpcBridge {
     pub(super) async fn dispatch_model_and_protocol<W: AsyncWrite + Unpin>(
         &self,
@@ -514,5 +455,64 @@ impl IpcBridge {
             _ => unreachable!("command routed to the wrong domain"),
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_catalog_error_projection_is_bounded_and_does_not_include_details() {
+        let cases = [
+            (
+                evohime_model_gateway::providers::ProviderError::Config(
+                    "provider API key is not configured".into(),
+                ),
+                "provider_configuration_error",
+            ),
+            (
+                evohime_model_gateway::providers::ProviderError::Http(
+                    "error sending request to https://provider.test/models: operation timed out"
+                        .into(),
+                ),
+                "provider_timeout",
+            ),
+            (
+                evohime_model_gateway::providers::ProviderError::Api(
+                    "provider model catalog response is invalid: secret-token".into(),
+                ),
+                "catalog_response_invalid",
+            ),
+            (
+                evohime_model_gateway::providers::ProviderError::Stream(
+                    "stream ended at https://provider.test".into(),
+                ),
+                "catalog_stream_error",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            let code = safe_model_catalog_error_code(&error);
+            assert_eq!(code, expected);
+            assert!(!code.contains("provider.test"));
+            assert!(!code.contains("secret"));
+        }
+    }
+
+    #[test]
+    fn model_catalog_limits_have_stable_safe_codes() {
+        assert_eq!(
+            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
+                "provider model catalog contains too many entries".into(),
+            )),
+            "catalog_too_many_entries"
+        );
+        assert_eq!(
+            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
+                "provider model catalog response exceeds size limit".into(),
+            )),
+            "catalog_response_too_large"
+        );
     }
 }

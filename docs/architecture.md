@@ -463,6 +463,9 @@ Conversation-bound trace сохраняет только bounded terminal metada
 allow-list токенов либо детерминированно классифицирует ошибку; URL, prompt,
 секреты и полный текст ошибки не пересекают projection boundary. Даже malformed
 или oversized failure payload получает bounded deterministic fallback fields.
+Та же failure projection применяется до записи durable conversation history:
+`assistant_message_failed` и `task_failed` больше не сохраняют исходный
+`error`, поэтому повторное чтение истории не может вернуть raw provider text.
 Trace UI
 показывает эти три поля отдельной диагностической карточкой и повторяет их в
 Markdown-разделе `diagnostics`, поэтому failure остаётся читаемым и после

@@ -70,6 +70,19 @@ describe('conversation projection', () => {
     expect(projectUsage(events)).toEqual({ inputTokens: 7, outputTokens: 3, bySource: { main_model: 6, reviewer: 4 } })
   })
 
+  it('shows the safe failure code from the durable conversation projection', () => {
+    const events = [
+      event(1, 'failure-1', 'assistant_message_failed', {
+        error_code: 'client_blocked',
+        source: 'electron_transport',
+        operation: 'network.request'
+      })
+    ]
+    expect(batchAssistantDeltas(events)).toMatchObject([
+      { kind: 'failed', content: 'client_blocked' }
+    ])
+  })
+
   it('never applies events from another conversation', () => {
     const other = { ...event(1, 'foreign', 'task_started'), conversationId: 'conversation-2' }
     const state = applyConversationEvents(createConversationProjection('conversation-1'), [other])

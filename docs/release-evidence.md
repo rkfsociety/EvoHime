@@ -1832,3 +1832,14 @@ tests, builds, linters, smoke/E2E и runtime в этом plan-implementation м�
 `3f5de640` недоступен до push (`UNAVAILABLE`); после push module-router должен
 увидеть `core` и `ui-bundle` по их version files и dispatch-ить соответствующие
 workflow. Установленный клиент не изменялся.
+
+## Durable safe failure projection (2026-09-20)
+
+Core теперь применяет одну bounded failure projection до записи durable
+conversation history: `assistant_message_failed` и `task_failed` сохраняют
+только `error_code`, `source` и `operation`. Raw error, URL, prompt и секреты
+не проходят в renderer payload даже при повторном чтении истории; malformed и
+unsafe metadata получают deterministic fallback. IPC использует тот же helper,
+а renderer показывает `error_code` вместо удалённого raw `error`. Core patch
+повышен с `0.0.000264` до `0.0.000267` (включая исправления CI lint gate), UI
+bundle — с `0.0.000088` до `0.0.000089`.

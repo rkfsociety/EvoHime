@@ -97,16 +97,15 @@ impl ResponseContract {
         if bytes.len() > MAX_SCHEMA_BYTES || !self.schema.is_object() {
             return Err(ResponseError::Schema("root_or_size".into()));
         }
-        if !self.contract_hash.is_empty() {
-            if self.contract_hash.len() != 64
+        if !self.contract_hash.is_empty()
+            && (self.contract_hash.len() != 64
                 || !self
                     .contract_hash
                     .bytes()
                     .all(|byte| byte.is_ascii_hexdigit())
-                || self.contract_hash != self.compute_hash()
-            {
-                return Err(ResponseError::Schema("contract_hash".into()));
-            }
+                || self.contract_hash != self.compute_hash())
+        {
+            return Err(ResponseError::Schema("contract_hash".into()));
         }
         Ok(())
     }

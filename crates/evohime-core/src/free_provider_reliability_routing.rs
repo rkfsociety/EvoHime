@@ -143,7 +143,7 @@ fn valid_model_id(value: &str) -> bool {
 }
 
 fn valid_latency(value: Option<f64>) -> bool {
-    value.map_or(true, |value| {
+    value.is_none_or(|value| {
         value.is_finite() && (0.0..=MAX_RELIABILITY_LATENCY_MS).contains(&value)
     })
 }
