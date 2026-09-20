@@ -225,8 +225,8 @@ export class OllamaRuntimeService {
   private async probeWith(request: FetchLike): Promise<{ available: boolean; version: string | null }> {
     const response = await request(OLLAMA_API_URL, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
     if (!response.ok) return { available: false, version: null }
-    const body = await response.text()
-    if (Buffer.byteLength(body, 'utf8') > MAX_VERSION_RESPONSE_BYTES) return { available: false, version: null }
+    const body = await readBoundedResponseText(response, MAX_VERSION_RESPONSE_BYTES)
+    if (body === null) return { available: false, version: null }
     const value = JSON.parse(body) as { version?: unknown }
     const version = typeof value.version === 'string' && value.version.length <= 128 ? value.version : null
     return { available: true, version }
@@ -237,6 +237,30 @@ export class OllamaRuntimeService {
     this.deps.emit(this.current)
     return this.current
   }
+}
+
+async function readBoundedResponseText(response: Response, maxBytes: number): Promise<string | null> {
+  const contentLength = Number(response.headers.get('content-length') ?? 0)
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) return null
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      totalBytes += value.byteLength
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => {})
+        return null
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString('utf8')
 }
 
 export function isAllowedInstallerUrl(value: string): boolean {

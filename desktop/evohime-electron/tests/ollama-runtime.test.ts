@@ -118,6 +118,20 @@ describe('Ollama runtime service', () => {
     expect(fallbackFetch).toHaveBeenCalledTimes(1)
   })
 
+  it('does not buffer an oversized Ollama probe response', async () => {
+    const service = new OllamaRuntimeService({
+      fetch: async () => new Response(new Uint8Array(16 * 1024 + 1), { status: 200 }),
+      emit: () => {},
+      log: () => {},
+      exists: async () => true
+    })
+
+    const status = await service.check()
+
+    expect(status.state).toBe('installed')
+    expect(status.message).toContain('локальный API пока недоступен')
+  })
+
   it('does not launch an empty download and exposes the failure', async () => {
     const launchInstaller = vi.fn(async () => 0)
     const service = new OllamaRuntimeService({

@@ -1656,6 +1656,13 @@ diagnostic vocabulary before rendering or writing Markdown. A raw URL or
 transport message can no longer enter the saved trace header; the UI bundle
 patch is `0.0.000079` (from `0.0.000078`).
 
+## Ollama probe response bound (2026-09-20)
+
+The shell-side Ollama readiness probe now reads the response as a bounded
+stream and rejects payloads above 16 KiB before JSON parsing. This closes an
+unbounded diagnostic-response allocation path; `shell-host` is `0.0.000089`
+(from `0.0.000088`).
+
 ## Атомарный journal, история чата и подготовленные SQLite connections (2026-09-16)
 
 Локальная серия `42e575a0` → `3f5de640` закрывает пять связанных исправлений:
