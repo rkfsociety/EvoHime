@@ -46,7 +46,8 @@ output, transcripts, absolute paths и PII запрещены.
   fail-closed возвращает `CoreUnavailable`, а не пытается открыть неподдержанный
   named pipe или запускать второй Core runtime.
 - Для CLI добавлен отдельный Ubuntu workflow: format, tests, strict clippy,
-  build и smoke-проверка exit code `7`/`core_unavailable`.
+  build и smoke-проверка exit code `7`/`core_unavailable`; Windows CLI
+  publication зависит от успешного Linux contract job.
 - Локально на Linux прошли `cargo test --locked -p evohime-cli` (4/4), включая
   duplex-тест HMAC-handshake, sequence cursor и `StartTask` protobuf-кадра,
   `cargo test --locked -p evohime-desktop-ipc` (32/32) и его strict clippy,

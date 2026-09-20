@@ -23,6 +23,8 @@ foreach ($workflow in @('core.yml','supervisor.yml','cli.yml','analysis-worker.y
     if ($text -notmatch [regex]::Escape('group: evohime-module-${{ github.workflow }}')) { throw "$workflow does not isolate its own concurrency group." }
     if ($text -notmatch '(?m)^\s+cancel-in-progress:\s*true\s*$') { throw "$workflow does not cancel the previous module run." }
 }
+$cliWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\cli.yml') -Raw
+if ($cliWorkflow -notmatch '(?m)^\s+needs:\s+linux-contract\s*$') { throw 'CLI publication is not gated by the Linux contract job.' }
 $shellWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\shell-host.yml') -Raw
 if ($shellWorkflow -notmatch 'shell-host\.zip') { throw 'Shell host workflow does not publish a complete archive.' }
 if ($shellWorkflow -notmatch 'resources\\app\.asar') { throw 'Shell host workflow does not assert app.asar delivery.' }

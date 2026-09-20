@@ -37,6 +37,7 @@ jobs:
           grep -q '^core_unavailable:' stderr.log
 
   module:
+    needs: linux-contract
     uses: ./.github/workflows/module-native.yml
     permissions: { contents: write }
     with: { module: cli, package: evohime-cli, artifact: eva.exe, version_file: release-versions/cli.txt }
