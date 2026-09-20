@@ -1,6 +1,39 @@
 use super::*;
 
 #[tokio::test]
+async fn task_snapshot_response_binds_requested_task_id() {
+    let path = std::env::temp_dir().join(format!(
+        "evohime-ipc-task-response-{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let journal = EventJournal::open(&path).expect("journal opens");
+    let bridge = IpcBridge::new(journal);
+    let (mut client, mut server) = duplex(4096);
+
+    bridge
+        .write_task_response(
+            &mut server,
+            "task.snapshot",
+            "task-requested",
+            br#"{}"#.to_vec(),
+        )
+        .await
+        .expect("task response writes");
+    let event = generated::EventEnvelope::decode(
+        transport::read_frame(&mut client)
+            .await
+            .expect("task response reads")
+            .as_slice(),
+    )
+    .expect("task response decodes");
+
+    assert_eq!(event.event_type, "task.snapshot");
+    assert_eq!(event.task_id, "task-requested");
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
 async fn push_journal_tail_projects_typed_ledger_row_into_execution_event() {
     let path = std::env::temp_dir().join(format!("evohime-ipc-ledger-{}.db", std::process::id()));
     let _ = std::fs::remove_file(&path);

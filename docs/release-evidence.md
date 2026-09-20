@@ -76,6 +76,8 @@ output, transcripts, absolute paths и PII запрещены.
   workspace crate `evohime-cli-protocol`; Windows-only `eva` сохранил только
   endpoint glue и output/parser, а marker поставляемого CLI повышен до
   `0.0.000058`.
+- `GetTaskSnapshot` теперь возвращает task-bound envelope, а CLI пропускает
+  interleaved `task.snapshot` другого run; Core marker повышен до `0.0.000298`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.

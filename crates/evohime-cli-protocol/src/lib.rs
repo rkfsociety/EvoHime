@@ -156,6 +156,7 @@ where
     }
 
     pub async fn snapshot(&mut self, task_id: String) -> Result<generated::EventEnvelope, String> {
+        let expected_task_id = task_id.clone();
         self.write(generated::CommandEnvelope {
             protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
             request_id: uuid::Uuid::new_v4().to_string(),
@@ -172,7 +173,7 @@ where
         .await?;
         for _ in 0..=MAX_SNAPSHOT_INTERLEAVED_EVENTS {
             let event = self.read_event().await?;
-            if event.event_type == "task.snapshot" {
+            if event.event_type == "task.snapshot" && event.task_id == expected_task_id {
                 return Ok(event);
             }
         }
@@ -428,6 +429,22 @@ mod tests {
                 &generated::EventEnvelope {
                     protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
                     sequence_id: 44,
+                    task_id: "other-task".into(),
+                    event_type: "task.snapshot".into(),
+                    payload: Vec::new(),
+                    core_instance_id: "core-test".into(),
+                    session_epoch: 8,
+                    event: None,
+                }
+                .encode_to_vec(),
+            )
+            .await
+            .expect("write unrelated snapshot");
+            transport::write_frame(
+                &mut writer,
+                &generated::EventEnvelope {
+                    protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+                    sequence_id: 45,
                     task_id: "workflow-task".into(),
                     event_type: "task.progress".into(),
                     payload: Vec::new(),
@@ -443,7 +460,7 @@ mod tests {
                 &mut writer,
                 &generated::EventEnvelope {
                     protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                    sequence_id: 45,
+                    sequence_id: 46,
                     task_id: "workflow-task".into(),
                     event_type: "task.snapshot".into(),
                     payload: Vec::new(),
@@ -482,7 +499,7 @@ mod tests {
             .await
             .expect("snapshot task");
         assert_eq!(snapshot.event_type, "task.snapshot");
-        assert_eq!(client.sequence(), 45);
+        assert_eq!(client.sequence(), 46);
         server.await.expect("server task");
     }
 

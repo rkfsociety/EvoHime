@@ -838,6 +838,31 @@ impl IpcBridge {
         Ok(())
     }
 
+    pub(crate) async fn write_task_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        event_type: &str,
+        task_id: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: task_id.to_owned(),
+                event_type: event_type.into(),
+                payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: None,
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub(crate) async fn write_persistent_agent_organization_registry_response<
         W: AsyncWrite + Unpin,
     >(

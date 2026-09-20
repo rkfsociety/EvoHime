@@ -152,10 +152,12 @@ impl IpcBridge {
                     .await?;
             }
             Some(generated::command_envelope::Command::GetTaskSnapshot(request)) => {
+                let task_id = request.task_id;
                 let result = self
-                    .dispatch_get_task_snapshot(request.project_id, request.task_id)
+                    .dispatch_get_task_snapshot(request.project_id, task_id.clone())
                     .await?;
-                self.write_response(writer, "task.snapshot", result).await?;
+                self.write_task_response(writer, "task.snapshot", &task_id, result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::RestoreTaskSnapshot(request)) => {
                 let result = self
