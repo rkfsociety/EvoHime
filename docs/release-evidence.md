@@ -76,6 +76,9 @@ compatible-manifest runs; исторические разделы ниже со�
   client/session generation и request-id fields для task/workflow/snapshot
   builders; handshake остаётся отдельным pre-auth path, marker CLI повышен до
   `0.0.000083`.
+- Windows event stream redacted output отделён от doctor/run/cancel acknowledgements
+  в `windows_event_output`; payload redaction и NDJSON schema сохранены, marker
+  CLI повышен до `0.0.000084`.
 
 ### Safe filesystem boundary trace and Ollama CLI (2026-09-20)
 

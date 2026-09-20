@@ -7,6 +7,8 @@ mod windows_controls;
 #[cfg(windows)]
 mod windows_endpoint;
 #[cfg(windows)]
+mod windows_event_output;
+#[cfg(windows)]
 mod windows_output;
 #[cfg(windows)]
 mod windows_run;
