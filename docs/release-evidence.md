@@ -35,7 +35,7 @@ output, transcripts, absolute paths и PII запрещены.
 - Instruction discovery больше не обходит VCS и generated directories
   (`.evohime-native`, `target`, `node_modules` и связанные build/cache roots),
   поэтому служебные ACL не блокируют запуск агента до вызова модели.
-- Module versions: `core 0.0.000297`, `ui-bundle 0.0.000101`, `cli 0.0.000054`.
+- Module versions: `core 0.0.000297`, `ui-bundle 0.0.000101`, `cli 0.0.000057`.
 - Локальные проверки: Core targeted tests, Electron `trace-panel.test.tsx`
   (16/16), TypeScript node/web typecheck, release build Core и два Ollama CLI
   прогона.
