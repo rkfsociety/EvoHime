@@ -50,7 +50,6 @@ pub const MAX_MODEL_ID_CHARS: usize = 256;
 // `#[cfg(not(test))]` в `chat_with_tools_with_policy_and_route`: в тестовой
 // сборке крейта эта ветка выключена, поэтому и хелперы собираются вместе с
 // ней, а не висят мёртвым кодом.
-#[cfg(not(test))]
 fn current_time_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -110,6 +109,14 @@ fn classify_failure(error: &ProviderError) -> FailureCategory {
 pub struct ModelGateway {
     default_route: String,
     routes: HashMap<String, Arc<dyn ModelProvider>>,
+    route_preflight: Option<Arc<dyn RoutePreflight>>,
+}
+
+/// Core-owned gate evaluated after policy selection and immediately before a
+/// provider call. The gateway owns transport; Core owns durable catalog and
+/// credential/health lifecycle metadata.
+pub trait RoutePreflight: Send + Sync {
+    fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError>;
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -317,6 +324,7 @@ impl ModelGateway {
         Ok(Self {
             default_route: config.default_route.clone(),
             routes,
+            route_preflight: None,
         })
     }
 
@@ -324,6 +332,7 @@ impl ModelGateway {
         Self {
             default_route: "default".to_string(),
             routes: HashMap::from([("default".to_string(), provider)]),
+            route_preflight: None,
         }
     }
 
@@ -334,7 +343,13 @@ impl ModelGateway {
         Self {
             default_route: default_route.into(),
             routes,
+            route_preflight: None,
         }
+    }
+
+    pub fn with_route_preflight(mut self, preflight: Arc<dyn RoutePreflight>) -> Self {
+        self.route_preflight = Some(preflight);
+        self
     }
 
     pub fn try_from_env() -> Result<Self, ProviderError> {
@@ -592,6 +607,19 @@ impl ModelGateway {
                     if backoff > 0 {
                         tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
                     }
+                    if let Some(preflight) = &self.route_preflight {
+                        if let Err(error) = preflight.check(&route, model, current_time_ms()) {
+                            if let Some(attempt) = trace.attempts.last_mut() {
+                                attempt.failure_category = Some(FailureCategory::InvalidRequest);
+                            }
+                            last_error = Some(error);
+                            attempt_id = attempt_id.saturating_add(1);
+                            if attempt_id > retry.max_attempts {
+                                break 'routes;
+                            }
+                            break;
+                        }
+                    }
                     match self
                         .chat_with_tools_for_route(&route, model, messages, tools)
                         .await
@@ -646,6 +674,9 @@ impl ModelGateway {
             .selected_route
             .as_deref()
             .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
+        if let Some(preflight) = &self.route_preflight {
+            preflight.check(route, model, current_time_ms())?;
+        }
         let result = self
             .chat_with_tools_for_route(route, model, messages, tools)
             .await?;
@@ -946,6 +977,36 @@ mod tests {
             })
             .collect();
         ModelGateway::from_routes("local", routes)
+    }
+
+    struct RejectingPreflight;
+
+    impl RoutePreflight for RejectingPreflight {
+        fn check(
+            &self,
+            _route: &str,
+            _model: Option<&str>,
+            _now_ms: u64,
+        ) -> Result<(), ProviderError> {
+            Err(ProviderError::Config("preflight_rejected".into()))
+        }
+    }
+
+    #[tokio::test]
+    async fn gateway_runs_route_preflight_before_provider_dispatch() {
+        let gateway = gateway_with_routes(vec![("local", "local-model")])
+            .with_route_preflight(Arc::new(RejectingPreflight));
+        let error = gateway
+            .chat_with_tools_with_policy_and_route(
+                RoutingMode::Balanced,
+                &policy_request(),
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "hello")],
+                &[],
+            )
+            .await
+            .expect_err("preflight must reject before provider dispatch");
+        assert!(matches!(error, ProviderError::Config(code) if code == "preflight_rejected"));
     }
 
     #[test]

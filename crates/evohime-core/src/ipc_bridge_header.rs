@@ -617,7 +617,7 @@ pub struct IpcBridge {
     /// Process-local recovery cache for the durable provider catalog. The
     /// SQLite row remains the source of truth; this cache only makes the
     /// validated snapshot available before the first catalog refresh.
-    provider_catalog_snapshots: Arc<tokio::sync::Mutex<HashMap<String, crate::free_provider_reliability_routing::ProviderCatalogSnapshot>>>,
+    provider_catalog_snapshots: crate::free_provider_reliability_routing::ProviderCatalogCache,
     selected_model: SelectedModel,
     core_instance_id: String,
     session_epoch: u64,

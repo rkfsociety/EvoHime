@@ -2,15 +2,6 @@ use super::*;
 
 const MAX_PROVIDER_CATALOG_RECOVERY_ROUTES: usize = 64;
 
-fn provider_catalog_scope_key(
-    profile: &crate::free_provider_reliability_routing::ProviderProfile,
-) -> String {
-    format!(
-        "{}|{}|{}",
-        profile.provider_id, profile.credential_binding, profile.region
-    )
-}
-
 fn snapshot_matches_profile(
     snapshot: &crate::free_provider_reliability_routing::ProviderCatalogSnapshot,
     profile: &crate::free_provider_reliability_routing::ProviderProfile,
@@ -216,9 +207,11 @@ impl IpcBridge {
         };
         let recovered_snapshot = {
             self.provider_catalog_snapshots
-                .lock()
-                .await
-                .get(&provider_catalog_scope_key(&profile))
+                .read()
+                .expect("provider catalog cache read lock")
+                .get(
+                    &crate::free_provider_reliability_routing::provider_catalog_scope_key(&profile),
+                )
                 .cloned()
         };
         let previous_snapshot = recovered_snapshot
@@ -335,16 +328,26 @@ impl IpcBridge {
                     == crate::free_provider_reliability_routing::ProviderCatalogState::Stale =>
             {
                 self.provider_catalog_snapshots
-                    .lock()
-                    .await
-                    .insert(provider_catalog_scope_key(profile), snapshot.clone());
+                    .write()
+                    .expect("provider catalog cache write lock")
+                    .insert(
+                        crate::free_provider_reliability_routing::provider_catalog_scope_key(
+                            profile,
+                        ),
+                        snapshot.clone(),
+                    );
                 snapshot.gateway_entries().ok()
             }
             Ok(true) => {
                 self.provider_catalog_snapshots
-                    .lock()
-                    .await
-                    .insert(provider_catalog_scope_key(profile), snapshot);
+                    .write()
+                    .expect("provider catalog cache write lock")
+                    .insert(
+                        crate::free_provider_reliability_routing::provider_catalog_scope_key(
+                            profile,
+                        ),
+                        snapshot,
+                    );
                 None
             }
             Ok(false) => {
@@ -430,9 +433,12 @@ impl IpcBridge {
                 continue;
             }
             self.provider_catalog_snapshots
-                .lock()
-                .await
-                .insert(provider_catalog_scope_key(&profile), snapshot);
+                .write()
+                .expect("provider catalog cache write lock")
+                .insert(
+                    crate::free_provider_reliability_routing::provider_catalog_scope_key(&profile),
+                    snapshot,
+                );
             recovered += 1;
         }
         tracing::info!(
@@ -441,6 +447,14 @@ impl IpcBridge {
             "provider catalog recovery cache hydrated"
         );
         recovered
+    }
+
+    pub fn with_provider_catalog_cache(
+        mut self,
+        cache: crate::free_provider_reliability_routing::ProviderCatalogCache,
+    ) -> Self {
+        self.provider_catalog_snapshots = cache;
+        self
     }
 
     pub fn new(journal: EventJournal) -> Self {
@@ -454,7 +468,8 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
-            provider_catalog_snapshots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            provider_catalog_snapshots:
+                crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -495,7 +510,8 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
-            provider_catalog_snapshots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            provider_catalog_snapshots:
+                crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -543,7 +559,8 @@ impl IpcBridge {
             tools: Some(tools),
             model_config,
             gateway_config,
-            provider_catalog_snapshots: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            provider_catalog_snapshots:
+                crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,

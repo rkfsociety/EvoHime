@@ -1,8 +1,9 @@
 //! Bounded provider access/reliability metadata; gateway remains transport owner.
 use evohime_model_gateway::providers::ProviderError;
-use evohime_model_gateway::{ModelCatalogEntry, ModelRouteConfig};
+use evohime_model_gateway::{ModelCatalogEntry, ModelRouteConfig, RoutePreflight};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::{collections::HashMap, sync::Arc};
 
 pub const CONTRACT_ID: &str = "free-provider-reliability-routing-v1";
 pub const PROVIDER_PROFILE_SCHEMA_VERSION: u16 = 1;
@@ -23,6 +24,12 @@ pub const MAX_PROVIDER_MODEL_CAPABILITIES: usize = 16;
 pub const MAX_PROVIDER_CATALOG_ENTRIES: usize = 2_048;
 pub const PROVIDER_CATALOG_SCHEMA_VERSION: u16 = 1;
 pub const MAX_PROVIDER_CATALOG_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
+
+pub type ProviderCatalogCache = Arc<std::sync::RwLock<HashMap<String, ProviderCatalogSnapshot>>>;
+
+pub fn new_provider_catalog_cache() -> ProviderCatalogCache {
+    Arc::new(std::sync::RwLock::new(HashMap::new()))
+}
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1132,6 +1139,84 @@ impl ProviderCatalogSnapshot {
     }
 }
 
+pub(crate) fn provider_catalog_scope_key(profile: &ProviderProfile) -> String {
+    format!(
+        "{}|{}|{}",
+        profile.provider_id, profile.credential_binding, profile.region
+    )
+}
+
+/// Adapter between the Core-owned catalog lifecycle and the gateway's final
+/// route dispatch boundary. An absent snapshot is treated as unobserved (the
+/// gateway still performs its configured-provider checks); a known stale,
+/// expired or failed snapshot is never allowed to reach the provider.
+pub struct ProviderCatalogRoutePreflight {
+    config: evohime_model_gateway::ModelGatewayConfig,
+    cache: ProviderCatalogCache,
+}
+
+impl ProviderCatalogRoutePreflight {
+    pub fn new(
+        config: evohime_model_gateway::ModelGatewayConfig,
+        cache: ProviderCatalogCache,
+    ) -> Self {
+        Self { config, cache }
+    }
+}
+
+impl RoutePreflight for ProviderCatalogRoutePreflight {
+    fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError> {
+        let route_config = self
+            .config
+            .routes
+            .get(route)
+            .ok_or_else(|| ProviderError::Config("provider_route_not_configured".into()))?;
+        if !route_config.configured() {
+            return Err(ProviderError::Config(
+                "provider_credential_not_configured".into(),
+            ));
+        }
+        let profile = ProviderProfile::from_route_config(route_config)
+            .map_err(|_| ProviderError::Config("provider_profile_invalid".into()))?;
+        let model_id = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| route_config.literouter.model.trim());
+        if model_id.is_empty() {
+            return Err(ProviderError::Config(
+                "provider_model_not_configured".into(),
+            ));
+        }
+        let snapshot = self
+            .cache
+            .read()
+            .map_err(|_| ProviderError::Config("provider_catalog_lock_failed".into()))?
+            .get(&provider_catalog_scope_key(&profile))
+            .cloned();
+        let Some(snapshot) = snapshot else {
+            return Ok(());
+        };
+        match snapshot.state {
+            ProviderCatalogState::Fresh if snapshot.route_eligible_at(model_id, now_ms) => Ok(()),
+            ProviderCatalogState::Fresh => {
+                Err(ProviderError::Config("provider_model_not_cataloged".into()))
+            }
+            ProviderCatalogState::Stale => {
+                Err(ProviderError::Config("provider_catalog_stale".into()))
+            }
+            ProviderCatalogState::CredentialRejected => {
+                Err(ProviderError::Config("provider_credential_rejected".into()))
+            }
+            ProviderCatalogState::Unavailable => {
+                Err(ProviderError::Config("provider_catalog_unavailable".into()))
+            }
+            ProviderCatalogState::DiscoveryUnsupported => Err(ProviderError::Config(
+                "provider_catalog_discovery_unsupported".into(),
+            )),
+        }
+    }
+}
+
 pub fn normalize_catalog_entries(
     entries: &[ModelCatalogEntry],
 ) -> Result<Vec<ModelCatalogEntry>, &'static str> {
@@ -1362,6 +1447,50 @@ pub fn classify(snapshot: &ReliabilitySnapshot) -> ReliabilityClass {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn route_preflight_rejects_known_stale_catalog_before_provider_dispatch() {
+        let route = ModelRouteConfig::openai_compatible(
+            "test-key",
+            "https://provider.example/v1",
+            "model-a",
+        );
+        let profile = ProviderProfile::from_route_config(&route).expect("profile");
+        let fresh = ProviderCatalogSnapshot::fresh_from_catalog(
+            &profile,
+            &[ModelCatalogEntry {
+                id: "model-a".into(),
+                context_tokens: None,
+                max_output_tokens: None,
+            }],
+            1,
+            "a".repeat(64),
+            1_000,
+            2_000,
+        )
+        .expect("fresh catalog");
+        let stale = ProviderCatalogSnapshot::stale_after_failure(
+            &profile,
+            &fresh,
+            2,
+            CatalogFailureCode::Timeout,
+        )
+        .expect("stale catalog");
+        let cache = new_provider_catalog_cache();
+        cache
+            .write()
+            .expect("cache write")
+            .insert(provider_catalog_scope_key(&profile), stale);
+        let config = evohime_model_gateway::ModelGatewayConfig {
+            default_route: "default".into(),
+            routes: std::collections::HashMap::from([("default".into(), route)]),
+        };
+        let preflight = ProviderCatalogRoutePreflight::new(config, cache);
+        let error = preflight
+            .check("default", Some("model-a"), 1_500)
+            .expect_err("stale catalog must fail closed");
+        assert!(matches!(error, ProviderError::Config(code) if code == "provider_catalog_stale"));
+    }
 
     fn profile() -> ProviderProfile {
         ProviderProfile {

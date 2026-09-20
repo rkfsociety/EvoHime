@@ -2791,8 +2791,9 @@ SQLite store в bounded process-local cache до открытия IPC; profile s
 проверяются повторно, несовместимые строки игнорируются fail-closed. Поэтому
 первый неудачный catalog refresh после перезапуска может показать validated
 stale entries, но не может сделать stale snapshot route-eligible. Route
-preflight, authenticated IPC projection и UI остаются следующими этапами
-173.2–173.4.
+preflight теперь вызывается ModelGateway непосредственно перед transport
+dispatch; authenticated IPC projection и UI остаются следующими этапами
+173.3–173.4.
 
 `ProviderCatalogSnapshot` задаёт lifecycle `Fresh`, `Stale`, `Unavailable`,
 `CredentialRejected` и `DiscoveryUnsupported`, а `CatalogFailureCode` скрывает
@@ -2801,8 +2802,11 @@ immutable descriptors; expired/stale/failed snapshots не проходят
 `route_eligible_at`. При временной ошибке refresh уже сохраняет прежние bounded
 entries как `Stale` с typed failure для отображения, но не для маршрутизации;
 credential rejection и unsupported discovery fail closed без stale fallback.
-Authenticated projection ещё не полностью подключена: route preflight остаётся
-следующим шагом.
+Authenticated projection ещё не полностью подключена. Route preflight
+проверяет configured credential, известное lifecycle-состояние snapshot,
+свежесть и присутствие выбранной модели; неизвестный snapshot означает
+`unobserved` и сохраняет совместимость первого запуска, а известный stale или
+failed snapshot fail-closed до provider dispatch.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 

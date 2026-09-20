@@ -1980,6 +1980,23 @@ Focused TracePanel, Ollama runtime и diagnostics/support bundle tests: 25
 тестов passed. CI evidence для локального коммита ещё не заявляется;
 установленный клиент не изменялся.
 
+## Provider route preflight before dispatch (2026-09-20)
+
+Core patch повышен с `0.0.000276` до `0.0.000277`. ModelGateway получил
+Core-owned `RoutePreflight` hook и вызывает его после policy selection, но до
+`chat_with_tools_for_route`; отказ фиксируется как bounded routing attempt и
+позволяет перейти к следующему fallback route. Core adapter проверяет
+configured credential, profile scope, lifecycle и свежесть известного catalog
+snapshot, а также наличие выбранной модели. Stale/expired/failed snapshots не
+получают prompt; отсутствие snapshot трактуется только как `unobserved` для
+совместимости первого запуска до первой catalog discovery.
+
+Пройдены Gateway test `gateway_runs_route_preflight_before_provider_dispatch`
+и Core test `route_preflight_rejects_known_stale_catalog_before_provider_dispatch`,
+`cargo fmt --all`, ранее прошедшие Core/Gateway checks и `git diff --check`.
+CI evidence для локального коммита ещё не заявляется; установленный клиент не
+изменялся.
+
 ## Provider catalog startup recovery hydration (2026-09-20)
 
 Core patch повышен с `0.0.000275` до `0.0.000276`. Перед IPC startup Core

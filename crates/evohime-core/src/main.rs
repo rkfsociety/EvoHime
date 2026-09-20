@@ -160,6 +160,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
     });
     let gateway_config = model_config.clone();
+    let provider_catalog_cache =
+        evohime_core::free_provider_reliability_routing::new_provider_catalog_cache();
+    let provider_catalog_preflight = gateway_config.clone().map(|config| {
+        std::sync::Arc::new(
+            evohime_core::free_provider_reliability_routing::ProviderCatalogRoutePreflight::new(
+                config,
+                provider_catalog_cache.clone(),
+            ),
+        )
+    });
     // One selection shared by the agent and the IPC bridge: the shell changes
     // it, the next request picks it up without a Core restart.
     let selected_model = evohime_core::SelectedModel::default();
@@ -171,6 +181,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
+            let gateway = provider_catalog_preflight
+                .as_ref()
+                .map(|preflight| gateway.with_route_preflight(preflight.clone()))
+                .unwrap_or(gateway);
             std::sync::Arc::new(
                 evohime_core::ToolAgent::new_with_approvals(
                     std::sync::Arc::new(gateway),
@@ -272,6 +286,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )
     .with_selected_model(selected_model)
     .with_proactivity(proactivity)
+    .with_provider_catalog_cache(provider_catalog_cache)
     .with_ambient_data_dir(data_dir.clone());
     let recovered_provider_catalogs = bridge.hydrate_provider_catalog_snapshots().await;
     tracing::info!(
