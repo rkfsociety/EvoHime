@@ -1681,6 +1681,12 @@ unbounded identifiers and stale class claims fail closed; Core contract tests
 cover sparse valid snapshots and each rejection family. The Core source
 module is now `0.0.000261`.
 
+The Core resilience policy now validates `ModelProfileRef` provider/model
+identifiers and capability names as bounded metadata, rejects non-hex profile
+hashes, and applies the same capability bound to policy requirements. URL,
+prompt-like and malformed hash fixtures fail closed before compatibility or
+fallback selection; the Core source module is now `0.0.000262`.
+
 The Core `model.catalog` IPC projection no longer serializes provider error
 strings. Network, timeout, configuration, response-size, entry-count and
 stream failures become bounded error codes; Ollama hardware discovery failures

@@ -18,6 +18,9 @@ pub const MAX_ATTEMPTS: u32 = 8;
 pub const MAX_FALLBACKS: usize = 8;
 pub const MAX_BACKOFF_MS: u64 = 30_000;
 pub const MAX_PROFILE_ID_BYTES: usize = 128;
+pub const MAX_PROVIDER_ID_BYTES: usize = 128;
+pub const MAX_MODEL_ID_BYTES: usize = 256;
+pub const MAX_CAPABILITY_BYTES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -143,7 +146,7 @@ impl ModelResiliencePolicyDefinition {
         if self.schema_version != CONTRACT_VERSION {
             return Err(PolicyError::UnsupportedVersion(self.schema_version));
         }
-        if self.policy_id.trim().is_empty() || self.policy_id.len() > MAX_PROFILE_ID_BYTES {
+        if !valid_metadata_token(&self.policy_id, MAX_PROFILE_ID_BYTES) {
             return Err(PolicyError::Invalid("policy_id".into()));
         }
         let r = &self.rules;
@@ -266,17 +269,50 @@ fn validate_profile(
     rules: &ModelResiliencePolicyRules,
 ) -> Result<(), PolicyError> {
     if profile.id.trim().is_empty()
-        || profile.id.len() > MAX_PROFILE_ID_BYTES
-        || profile.provider.trim().is_empty()
-        || profile.model.trim().is_empty()
+        || !valid_metadata_token(&profile.id, MAX_PROFILE_ID_BYTES)
+        || !valid_metadata_token(&profile.provider, MAX_PROVIDER_ID_BYTES)
+        || !valid_model_id(&profile.model)
         || profile.profile_hash.len() != 64
+        || !profile
+            .profile_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+        || profile
+            .capabilities
+            .iter()
+            .any(|capability| !valid_metadata_token(capability, MAX_CAPABILITY_BYTES))
     {
         return Err(PolicyError::Invalid("profile metadata".into()));
+    }
+    if rules
+        .required_capabilities
+        .iter()
+        .any(|capability| !valid_metadata_token(capability, MAX_CAPABILITY_BYTES))
+    {
+        return Err(PolicyError::Invalid("capability metadata".into()));
     }
     if !is_compatible(profile, rules) {
         return Err(PolicyError::Incompatible(profile.id.clone()));
     }
     Ok(())
+}
+
+fn valid_metadata_token(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max_bytes
+        && value == value.trim()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+}
+
+fn valid_model_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_MODEL_ID_BYTES
+        && value == value.trim()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:/-".contains(&byte))
 }
 
 fn is_compatible(profile: &ModelProfileRef, rules: &ModelResiliencePolicyRules) -> bool {
@@ -365,5 +401,20 @@ mod tests {
         let mut p = policy();
         p.schema_version = 2;
         assert_eq!(p.validate(), Err(PolicyError::UnsupportedVersion(2)));
+    }
+
+    #[test]
+    fn rejects_unbounded_or_secret_like_profile_metadata() {
+        let mut p = policy();
+        p.primary.model = "https://provider.example/?prompt=secret".into();
+        assert!(matches!(p.validate(), Err(PolicyError::Invalid(_))));
+
+        let mut p = policy();
+        p.primary.capabilities.insert("prompt secret".into());
+        assert!(matches!(p.validate(), Err(PolicyError::Invalid(_))));
+
+        let mut p = policy();
+        p.primary.profile_hash = "z".repeat(64);
+        assert!(matches!(p.validate(), Err(PolicyError::Invalid(_))));
     }
 }
