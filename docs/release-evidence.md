@@ -97,6 +97,9 @@ compatible-manifest runs; исторические разделы ниже со�
 - CLI command model (`Command`/`ParseError`) вынесена из parser-а в отдельный
   `command` модуль; корневые re-export paths сохранены, marker CLI повышен до
   `0.0.000066`.
+- Windows-only CLI orchestration отделена от human/NDJSON output projection в
+  `windows_client` и `windows_output`; Linux contract не меняется, а Windows
+  target `cargo check` подтверждает сборку, marker CLI повышен до `0.0.000067`.
 - Общий `evohime-cli-contract` отделён от полного Core runtime: `cargo tree`
   для CLI больше не содержит `evohime-core`; Core сохраняет совместимый
   `evohime_core::headless_core_cli` re-export.

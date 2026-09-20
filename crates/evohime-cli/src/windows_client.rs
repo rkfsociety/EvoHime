@@ -1,9 +1,10 @@
 use evohime_cli::protocol::CoreClient as ProtocolClient;
 use evohime_cli::ExitCode;
-use evohime_cli::{emit, event_matches_run, redact_payload, terminal_exit_code, CliEvent, Command};
-use evohime_desktop_ipc::generated;
+use evohime_cli::{event_matches_run, terminal_exit_code, Command};
 use std::path::PathBuf;
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
+
+use crate::windows_output;
 
 type CoreClient = ProtocolClient<NamedPipeClient>;
 
@@ -32,23 +33,7 @@ pub async fn run(command: Command) -> ExitCode {
         }
     };
     match command {
-        Command::Doctor { json } => {
-            if json {
-                println!(
-                    "{}",
-                    emit(&CliEvent {
-                        schema: evohime_cli::CLI_SCHEMA,
-                        sequence: 0,
-                        kind: "core.ready",
-                        run_id: "",
-                        payload: serde_json::json!({"status":"ready"})
-                    })
-                );
-            } else {
-                println!("Core готов");
-            }
-            ExitCode::Completed
-        }
+        Command::Doctor { json } => windows_output::print_doctor(json),
         Command::Run {
             prompt,
             workspace,
@@ -85,28 +70,14 @@ pub async fn run(command: Command) -> ExitCode {
                 return ExitCode::CoreUnavailable;
             }
             if detach {
-                if json {
-                    println!(
-                        "{}",
-                        emit(&CliEvent {
-                            schema: evohime_cli::CLI_SCHEMA,
-                            sequence: 0,
-                            kind: "run.accepted",
-                            run_id: &run_id,
-                            payload: serde_json::json!({"detached":true})
-                        })
-                    );
-                } else {
-                    println!("{run_id}");
-                }
-                return ExitCode::Completed;
+                return windows_output::print_run_accepted(&run_id, json);
             }
             watch_events(&mut client, &run_id, json).await
         }
         Command::Watch { task_id, json } => watch_events(&mut client, &task_id, json).await,
         Command::Status { task_id, json } => match client.snapshot(task_id.clone()).await {
             Ok(event) => {
-                print_event(&event, &task_id, json);
+                windows_output::print_event(&event, &task_id, json);
                 ExitCode::Completed
             }
             Err(error) => {
@@ -115,23 +86,7 @@ pub async fn run(command: Command) -> ExitCode {
             }
         },
         Command::Cancel { task_id, json } => match client.stop(task_id.clone()).await {
-            Ok(()) => {
-                if json {
-                    println!(
-                        "{}",
-                        emit(&CliEvent {
-                            schema: evohime_cli::CLI_SCHEMA,
-                            sequence: 0,
-                            kind: "run.cancel_requested",
-                            run_id: &task_id,
-                            payload: serde_json::json!({"accepted":true})
-                        })
-                    );
-                } else {
-                    println!("Отмена запрошена: {task_id}");
-                }
-                ExitCode::Completed
-            }
+            Ok(()) => windows_output::print_cancel_requested(&task_id, json),
             Err(error) => {
                 eprintln!("{error}");
                 ExitCode::CoreUnavailable
@@ -148,7 +103,7 @@ async fn watch_events(client: &mut CoreClient, run_id: &str, json: bool) -> Exit
                 if !event_matches_run(&event.task_id, run_id) {
                     continue;
                 }
-                print_event(&event, run_id, json);
+                windows_output::print_event(&event, run_id, json);
                 if let Some(code) = terminal_exit_code(&event.event_type) {
                     return code;
                 }
@@ -172,23 +127,5 @@ async fn watch_events(client: &mut CoreClient, run_id: &str, json: bool) -> Exit
                 *client = next;
             }
         }
-    }
-}
-
-fn print_event(event: &generated::EventEnvelope, run_id: &str, json: bool) {
-    let payload = redact_payload(&event.payload);
-    if json {
-        println!(
-            "{}",
-            emit(&CliEvent {
-                schema: evohime_cli::CLI_SCHEMA,
-                sequence: event.sequence_id,
-                kind: &event.event_type,
-                run_id,
-                payload
-            })
-        );
-    } else {
-        println!("{} {}", event.event_type, run_id);
     }
 }

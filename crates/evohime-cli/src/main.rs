@@ -2,6 +2,8 @@ use evohime_cli::{parse_args, ExitCode};
 
 #[cfg(windows)]
 mod windows_client;
+#[cfg(windows)]
+mod windows_output;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
