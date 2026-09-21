@@ -67,6 +67,9 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
+    // The canonical Eva icon is also part of the independently replaceable UI
+    // bundle, so launch/update surfaces do not fall back to a letter mark.
+    publicDir: resolve(__dirname, 'resources'),
     plugins: [react(), stripProductionCspInDev()],
     resolve: {
       alias: { '@shared': resolve(__dirname, 'src/shared') }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { UpdaterUiStatus } from '@shared/updater'
 
 import './UpdaterSurface.css'
+import { EvaIcon } from './EvaIcon'
 
 const fallback: UpdaterUiStatus = {
   phase: 'checking',
@@ -51,7 +52,7 @@ export function UpdaterApp(): React.JSX.Element {
     <main className="updater-shell">
       <header className="updater-titlebar">
         <div className="updater-titlebar__drag">
-          <span className="updater-logo" aria-hidden="true">E</span>
+          <span className="updater-logo"><EvaIcon /></span>
           <span className="updater-titlebar__name">EvoHime</span>
         </div>
         <div className="updater-window-actions">

@@ -8,6 +8,7 @@ import {
 } from '@shared/update'
 
 import './UpdateSurface.css'
+import { EvaIcon } from './EvaIcon'
 
 /**
  * Launch gate of the source updater.
@@ -45,7 +46,7 @@ export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | nul
       <div className="update-gate__orb update-gate__orb--two" aria-hidden="true" />
       <div className="update-gate__panel">
         <header className="update-gate__header">
-          <div className="update-gate__brand-mark" aria-hidden="true">E</div>
+          <div className="update-gate__brand-mark"><EvaIcon /></div>
           <div>
             <p className="update-gate__brand">EvoHime</p>
             <p className="update-gate__eyebrow">Обновление приложения</p>

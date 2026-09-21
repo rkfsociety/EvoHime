@@ -147,7 +147,17 @@ body {
   width: 52px;
   height: 52px;
   border-radius: 17px;
+  padding: 3px;
   font-size: 24px;
+}
+
+.eva-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
 }
 
 .startup-screen__brand,
@@ -226,6 +236,7 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 8px;
+  padding: 2px;
   background: linear-gradient(135deg, var(--accent), #5e8de8);
   color: var(--accent-fg);
   font-size: 14px;
@@ -1088,6 +1099,7 @@ body {
   height: 52px;
   margin-bottom: 16px;
   border-radius: 16px;
+  padding: 3px;
   background: linear-gradient(135deg, var(--accent), #5e8de8);
   color: var(--accent-fg);
   font-size: 22px;

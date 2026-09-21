@@ -69,8 +69,8 @@ describe('индикатор слушания в трее', () => {
     expect(trayTooltip('stopped')).toBe('EvoHime · Слушание выключено')
   })
 
-  it('иконка активного слушания отличается от обычной', () => {
-    expect(trayIconName('listening')).toBe('evohime-agent-listening.ico')
+  it('брендовая иконка Евы сохраняется во всех состояниях', () => {
+    expect(trayIconName('listening')).toBe('evohime-agent.ico')
     expect(trayIconName('paused_by_user')).toBe('evohime-agent.ico')
     expect(trayIconName(null)).toBe('evohime-agent.ico')
   })
@@ -102,7 +102,7 @@ describe('индикатор слушания в трее', () => {
 
     tray.setListeningState('listening')
     expect(tooltip).toBe('EvoHime · Ева слушает')
-    expect(image).toBe('evohime-agent-listening.ico')
+    expect(image).toBe('evohime-agent.ico')
 
     item('Поставить микрофон на паузу')?.click?.()
     expect(toggles).toEqual([true])

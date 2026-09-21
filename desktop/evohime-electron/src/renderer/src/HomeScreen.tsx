@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ChatSummary } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { EvaIcon } from './EvaIcon'
 
 /**
  * What the user sees before a conversation is open.
@@ -53,7 +54,7 @@ export function HomeScreen({
 
   return (
     <div className="home">
-      <span className="home__logo" aria-hidden="true">E</span>
+      <span className="home__logo"><EvaIcon /></span>
       <h2 className="home__greeting">
         {identityName ? `Чем займёмся, ${identityName}?` : 'Чем займёмся?'}
       </h2>

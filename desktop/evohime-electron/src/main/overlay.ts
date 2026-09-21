@@ -36,7 +36,7 @@ export function overlayVisible(state: ListeningState | null): boolean {
 }
 
 function overlayHtml(): string {
-  const iconUrl = `file://${resourcePath('evohime-agent-listening.ico').replace(/\\/g, '/')}`
+  const iconUrl = `file://${resourcePath('evohime-agent.ico').replace(/\\/g, '/')}`
   return `<!doctype html>
 <html>
 <head>

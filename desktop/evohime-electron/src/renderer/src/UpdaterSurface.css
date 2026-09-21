@@ -11,7 +11,7 @@ html, body, #root { width: 100%; min-width: 0; height: 100%; margin: 0; overflow
 button { font: inherit; }
 
 .updater-boot-fallback { display: flex; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 40px; border: 1px solid rgb(141 130 232 / 55%); border-radius: 14px; background: radial-gradient(ellipse at bottom, rgb(93 75 224 / 22%), transparent 52%), #0d0d11; color: #e8e8ef; text-align: center; }
-.updater-boot-fallback__icon { display: grid; width: 96px; height: 96px; place-items: center; border: 1px solid rgb(255 255 255 / 15%); border-radius: 24px; background: linear-gradient(135deg, #a197f5, #5e50d2); color: #fff; font-size: 52px; font-weight: 700; box-shadow: 0 0 0 14px rgb(113 96 223 / 12%), 0 14px 34px rgb(87 69 220 / 48%); }
+.updater-boot-fallback__icon { display: grid; width: 96px; height: 96px; place-items: center; padding: 8px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 24px; background: linear-gradient(135deg, #a197f5, #5e50d2); box-shadow: 0 0 0 14px rgb(113 96 223 / 12%), 0 14px 34px rgb(87 69 220 / 48%); }
 .updater-boot-fallback h1 { margin: 0; font-size: 24px; font-weight: 650; }
 .updater-boot-fallback p { max-width: 340px; margin: 0; color: #9b9baa; font-size: 14px; line-height: 1.55; }
 
@@ -29,7 +29,8 @@ button { font: inherit; }
 
 .updater-titlebar { display: flex; height: 56px; flex: 0 0 56px; align-items: center; color: #e8e8ef; }
 .updater-titlebar__drag { display: flex; height: 100%; min-width: 0; flex: 1; align-items: center; gap: 10px; padding: 0 16px; -webkit-app-region: drag; }
-.updater-logo { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 1px solid rgb(255 255 255 / 15%); border-radius: 11px; background: linear-gradient(135deg, #a79df5, #6253cf); color: #fff; font-size: 18px; font-weight: 700; box-shadow: 0 8px 20px rgb(112 95 234 / 35%); }
+.updater-logo { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; padding: 2px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 11px; background: linear-gradient(135deg, #a79df5, #6253cf); box-shadow: 0 8px 20px rgb(112 95 234 / 35%); }
+.updater-boot-fallback__icon img { width: 100%; height: 100%; object-fit: contain; }
 .updater-titlebar__name { overflow: hidden; font-size: 18px; font-weight: 650; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
 .updater-window-actions { display: flex; height: 100%; flex: 0 0 auto; align-items: stretch; -webkit-app-region: no-drag; }
 .updater-window-actions button { width: 44px; border: 0; background: transparent; color: #6d6d7c; font-size: 18px; line-height: 1; cursor: pointer; }

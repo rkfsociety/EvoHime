@@ -83,9 +83,9 @@ export function trayPauseItem(state: ListeningState | null): {
   return { label: 'Поставить микрофон на паузу', paused: true, enabled: false }
 }
 
-/** Иконка активного слушания отличается от обычной, если она поставлена. */
-export function trayIconName(state: ListeningState | null): string {
-  return state === 'listening' ? 'evohime-agent-listening.ico' : 'evohime-agent.ico'
+/** Брендовая иконка трея не меняется вместе со статусом слушания. */
+export function trayIconName(_state: ListeningState | null): string {
+  return 'evohime-agent.ico'
 }
 
 export function createTray(options: TrayOptions): TrayController {

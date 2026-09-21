@@ -36,6 +36,7 @@ import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
 import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 import { ProviderStateProvider } from './provider-state'
+import { EvaIcon } from './EvaIcon'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -201,7 +202,7 @@ export function App(): React.JSX.Element {
   if (!update) {
     return (
       <main className="startup-screen" aria-label="Запуск EvoHime">
-        <div className="startup-screen__mark" aria-hidden="true">E</div>
+        <div className="startup-screen__mark"><EvaIcon /></div>
         <p className="startup-screen__brand">EvoHime</p>
         <p className="startup-screen__message">Подготавливаю приложение…</p>
       </main>
@@ -229,7 +230,7 @@ export function App(): React.JSX.Element {
             title={sidebarCollapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'}
             onClick={() => setSidebarCollapsed((value) => !value)}
           >
-            <span className="sidebar__logo" aria-hidden="true">E</span>
+            <span className="sidebar__logo"><EvaIcon /></span>
           </button>
           <h1 className="sidebar__title">EvoHime</h1>
         </div>
