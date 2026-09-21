@@ -2785,3 +2785,10 @@ strict clippy и format/diff-check прошли локально. Linux Core lib
 943/948 тестов прошли, 5 DPAPI-зависимых receipt IPC сценариев завершились
 ожидаемым `UnsupportedPlatform`; CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
+
+Тесты `free_provider_reliability_routing` вынесены в
+`free_provider_reliability_routing_tests.rs`; production-файл уменьшен до
+1536 строк, provider profile/catalog/reliability contracts сохранены.
+Core marker повышен `0.0.000329 -> 0.0.000330`; 19 routing tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
