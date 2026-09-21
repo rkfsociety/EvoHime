@@ -359,22 +359,6 @@ fn redact_sensitive(value: &str) -> String {
 /// Parameterized SQL only; schema creation and migrations remain external.
 pub struct MemoryStoreSql;
 
-/// Полный список колонок в порядке, которого придерживается `map_record`.
-/// Держится в одном месте, чтобы SELECT'ы не расходились между собой.
-const COLUMNS: &str = "id, scope_kind, scope_id, title, content, provenance, privacy,
-        created_at, expires_at, archived, forgotten, confirmations, lesson_key,
-        kind, canonical_subject, confirmation_state, model_confidence,
-        verification_confidence, privacy_class, source_trust, supersedes,
-        superseded_by, supersession_reason, extractor_version, policy_version,
-        validation_status, validated_at, provenance_source_id, record_version,
-        evidence_refs, execution_event_refs, authority, durability, confidence";
-
-/// Только те состояния, в которых запись считается активной памятью.
-const RETRIEVABLE_PREDICATE: &str = "forgotten = 0 AND archived = 0
-          AND confirmation_state = 'confirmed'
-          AND validation_status IN ('not_required', 'valid')
-          AND superseded_by IS NULL";
-
 impl MemoryStoreSql {
     pub const INSERT: &'static str = "INSERT INTO memory_entries
         (id, scope_kind, scope_id, title, content, provenance, privacy,
@@ -398,62 +382,6 @@ impl MemoryStoreSql {
             evidence_refs = '[]', execution_event_refs = '[]',
             forgotten = 1, confirmation_state = 'forgotten'
         WHERE id = ?1";
-
-    fn select_by_id() -> String {
-        format!("SELECT {COLUMNS} FROM memory_entries WHERE id = ?1")
-    }
-
-    fn search_sql() -> String {
-        format!(
-            "SELECT {COLUMNS} FROM memory_entries
-        WHERE scope_kind = ?1 AND scope_id = ?2
-          AND {RETRIEVABLE_PREDICATE}
-          AND (expires_at IS NULL OR expires_at > ?3)
-          AND (lower(title) LIKE lower(?4) ESCAPE '\\'
-               OR lower(content) LIKE lower(?4) ESCAPE '\\')
-        ORDER BY id ASC LIMIT ?5"
-        )
-    }
-
-    fn search_lessons_sql() -> String {
-        format!(
-            "SELECT {COLUMNS} FROM memory_entries
-        WHERE scope_kind = ?1 AND scope_id = ?2
-          AND {RETRIEVABLE_PREDICATE} AND lesson_key IS NOT NULL
-          AND (expires_at IS NULL OR expires_at > ?3)
-          AND (lower(title) LIKE lower(?4) ESCAPE '\\'
-               OR lower(content) LIKE lower(?4) ESCAPE '\\')
-        ORDER BY confirmations DESC, created_at DESC, id ASC LIMIT ?5"
-        )
-    }
-
-    fn list_sql() -> String {
-        format!(
-            "SELECT {COLUMNS} FROM memory_entries
-        WHERE scope_kind = ?1 AND scope_id = ?2
-          AND forgotten = 0
-          AND (?3 = 1 OR archived = 0)
-        ORDER BY created_at DESC, id ASC LIMIT ?4"
-        )
-    }
-
-    fn list_by_state_sql() -> String {
-        format!(
-            "SELECT {COLUMNS} FROM memory_entries
-        WHERE scope_kind = ?1 AND scope_id = ?2
-          AND confirmation_state = ?3 AND forgotten = 0
-        ORDER BY created_at DESC, id ASC LIMIT ?4"
-        )
-    }
-
-    fn conflict_candidates_sql() -> String {
-        format!(
-            "SELECT {COLUMNS} FROM memory_entries
-        WHERE scope_kind = ?1 AND scope_id = ?2 AND kind = ?3
-          AND {RETRIEVABLE_PREDICATE}
-        ORDER BY created_at DESC, id ASC LIMIT ?4"
-        )
-    }
 
     pub fn insert(connection: &Connection, record: &MemoryRecord) -> Result<(), MemoryStoreError> {
         record.validate()?;
@@ -542,7 +470,11 @@ impl MemoryStoreSql {
         id: &str,
     ) -> Result<Option<MemoryRecord>, MemoryStoreError> {
         Ok(connection
-            .query_row(&Self::select_by_id(), params![id], map_record)
+            .query_row(
+                &crate::memory_queries::select_by_id(),
+                params![id],
+                map_record,
+            )
             .optional()?)
     }
 
@@ -569,7 +501,7 @@ impl MemoryStoreSql {
                 .replace('%', "\\%")
                 .replace('_', "\\_")
         );
-        let mut statement = connection.prepare(&Self::search_sql())?;
+        let mut statement = connection.prepare(&crate::memory_queries::search())?;
         let records = statement
             .query_map(
                 params![
@@ -597,7 +529,7 @@ impl MemoryStoreSql {
         limit: u32,
     ) -> Result<Vec<MemoryRecord>, MemoryStoreError> {
         validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
-        let mut statement = connection.prepare(&Self::list_sql())?;
+        let mut statement = connection.prepare(&crate::memory_queries::list())?;
         let records = statement
             .query_map(
                 params![
@@ -629,7 +561,7 @@ impl MemoryStoreSql {
         validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
         validate_required("now", now, MAX_TIMESTAMP_BYTES)?;
         let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
-        let mut statement = connection.prepare(&Self::search_lessons_sql())?;
+        let mut statement = connection.prepare(&crate::memory_queries::search_lessons())?;
         let records = statement
             .query_map(
                 params![
@@ -662,7 +594,7 @@ impl MemoryStoreSql {
         limit: u32,
     ) -> Result<Vec<MemoryRecord>, MemoryStoreError> {
         validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
-        let mut statement = connection.prepare(&Self::list_by_state_sql())?;
+        let mut statement = connection.prepare(&crate::memory_queries::list_by_state())?;
         let records = statement
             .query_map(
                 params![
@@ -708,7 +640,7 @@ impl MemoryStoreSql {
         limit: u32,
     ) -> Result<Vec<MemoryRecord>, MemoryStoreError> {
         validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
-        let mut statement = connection.prepare(&Self::conflict_candidates_sql())?;
+        let mut statement = connection.prepare(&crate::memory_queries::conflict_candidates())?;
         let records = statement
             .query_map(
                 params![

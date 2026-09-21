@@ -94,6 +94,7 @@ pub mod local_model_runtime_manager_store;
 pub mod memory_extraction_store;
 mod memory_inputs;
 mod memory_mapping;
+mod memory_queries;
 mod memory_schema;
 pub(crate) mod memory_store;
 pub(crate) mod memory_views_and_adaptive_recall_store;
