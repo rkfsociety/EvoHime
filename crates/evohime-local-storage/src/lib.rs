@@ -9,6 +9,7 @@ pub(crate) mod agent_middleware_pipeline_store;
 pub mod agent_program_optimizer_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
+mod ambient_store_cleanup;
 pub mod analysis_kernel;
 pub mod approval_policy_profiles_store;
 pub mod architect_editor_model_pipeline_store;

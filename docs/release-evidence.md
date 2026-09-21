@@ -2621,3 +2621,10 @@ schema guards and restore behavior сохранены. Core marker повыше�
 `0.0.000320 -> 0.0.000321`; локально прошли schema/open/rollback tests, strict
 clippy, format/diff-check и Core+storage check. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
+
+Ambient episode deletion, candidate rejection, proposal expiry, counter
+recalculation and retention helpers вынесены в `ambient_store_cleanup.rs`; the
+transaction ordering and tombstone/journal semantics are unchanged. Core marker
+повышен `0.0.000321 -> 0.0.000322`; все 18 ambient storage tests, strict clippy,
+format/diff-check и Core+storage check прошли локально. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.

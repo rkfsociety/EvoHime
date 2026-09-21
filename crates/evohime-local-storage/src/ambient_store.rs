@@ -30,6 +30,8 @@
 use evohime_listener_contract::{ExtractionState, ProposalKind, ProposalState};
 use rusqlite::{params, Connection, OptionalExtension};
 
+use crate::ambient_store_cleanup;
+
 pub const MAX_ID_BYTES: usize = 256;
 pub const MAX_TIMESTAMP_BYTES: usize = 64;
 pub const MAX_TEXT_BYTES: usize = 16 * 1024;
@@ -64,7 +66,7 @@ pub const MAX_TITLE_BYTES: usize = 2 * 1024;
 
 /// Префикс ambient-событий в `events`. Совпадает с именами записей
 /// типизированного фасада (`ambient.state`, `ambient.transcript`, …).
-const AMBIENT_EVENT_PREFIX: &str = "ambient.%";
+pub(crate) const AMBIENT_EVENT_PREFIX: &str = "ambient.%";
 
 #[derive(Debug, thiserror::Error)]
 pub enum AmbientStoreError {
@@ -303,7 +305,7 @@ fn validate_reason(reason: &str) -> Result<(), AmbientStoreError> {
 /// tombstone. Детерминированность важнее — повторный purge того же эпизода
 /// не плодит вторую запись, а `UNIQUE(episode_id, removed_at)` остаётся
 /// согласован с первичным ключом.
-fn tombstone_id(episode_id: &str, removed_at: &str) -> String {
+pub(crate) fn tombstone_id(episode_id: &str, removed_at: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(episode_id.as_bytes());
@@ -441,7 +443,7 @@ impl AmbientStoreSql {
                 record.expires_at,
             ],
         )?;
-        recalculate_counters(&transaction, &record.episode_id)?;
+        ambient_store_cleanup::recalculate_counters(&transaction, &record.episode_id)?;
         transaction.commit()?;
         Ok(true)
     }
@@ -533,7 +535,7 @@ impl AmbientStoreSql {
         validate_reason(reason)?;
         let transaction = connection.unchecked_transaction()?;
         let mut deletion = AmbientDeletion::default();
-        remove_episode(
+        ambient_store_cleanup::remove_episode(
             &transaction,
             episode_id,
             reason,
@@ -571,7 +573,7 @@ impl AmbientStoreSql {
         )?;
         let transaction = connection.unchecked_transaction()?;
         let mut deletion = AmbientDeletion::default();
-        let affected = affected_episodes(
+        let affected = ambient_store_cleanup::affected_episodes(
             &transaction,
             "SELECT DISTINCT episode_id FROM ambient_utterances
              WHERE started_at >= ?1 AND started_at <= ?2",
@@ -582,10 +584,11 @@ impl AmbientStoreSql {
             params![from, to],
         )?;
         for episode_id in &affected {
-            deletion.candidates_rejected += reject_candidates(&transaction, episode_id)?;
-            let remaining = recalculate_counters(&transaction, episode_id)?;
+            deletion.candidates_rejected +=
+                ambient_store_cleanup::reject_candidates(&transaction, episode_id)?;
+            let remaining = ambient_store_cleanup::recalculate_counters(&transaction, episode_id)?;
             if remaining == 0 {
-                remove_episode(
+                ambient_store_cleanup::remove_episode(
                     &transaction,
                     episode_id,
                     REASON_FORGET_WINDOW,
@@ -911,7 +914,7 @@ impl AmbientStoreSql {
         // 1. Истёкший текст. Эпизод при этом остаётся: у метаданных свой,
         //    более длинный срок, поэтому счётчики пересчитываются, а не
         //    замораживаются на прежнем значении.
-        let partial = affected_episodes(
+        let partial = ambient_store_cleanup::affected_episodes(
             &transaction,
             "SELECT DISTINCT episode_id FROM ambient_utterances WHERE expires_at <= ?1",
             params![now],
@@ -921,18 +924,18 @@ impl AmbientStoreSql {
             params![now],
         )?;
         for episode_id in &partial {
-            recalculate_counters(&transaction, episode_id)?;
+            ambient_store_cleanup::recalculate_counters(&transaction, episode_id)?;
         }
 
         // 2. Истёкшие метаданные эпизода: удаляются с bounded tombstone.
-        let expired = affected_episodes(
+        let expired = ambient_store_cleanup::affected_episodes(
             &transaction,
             "SELECT episode_id FROM ambient_episodes WHERE expires_at <= ?1",
             params![now],
         )?;
         let mut deletion = AmbientDeletion::default();
         for episode_id in &expired {
-            remove_episode(
+            ambient_store_cleanup::remove_episode(
                 &transaction,
                 episode_id,
                 REASON_RETENTION,
@@ -963,7 +966,7 @@ impl AmbientStoreSql {
         // 5. Предложения. Сначала истечение по 24-часовому окну — карточка,
         //    на которую не ответили, перестаёт ждать ответа, — затем уборка
         //    уже решённых по тому же сроку, что и ambient-строки журнала.
-        if table_exists(&transaction, "ambient_proposals")? {
+        if ambient_store_cleanup::table_exists(&transaction, "ambient_proposals")? {
             purge.proposals_expired += transaction.execute(
                 "UPDATE ambient_proposals SET state = 'expired', updated_at = ?1
                  WHERE state = 'proposed' AND expires_at <= ?1",
@@ -979,153 +982,6 @@ impl AmbientStoreSql {
         transaction.commit()?;
         Ok(purge)
     }
-}
-
-/// Общий путь удаления эпизода: tombstone → кандидаты → journal → строки.
-///
-/// Порядок не косметический: tombstone фиксируется до того, как исчезает
-/// первое высказывание, поэтому оборванная транзакция не может оставить
-/// «удалено без следа».
-fn remove_episode(
-    transaction: &rusqlite::Transaction<'_>,
-    episode_id: &str,
-    reason: &str,
-    removed_at: &str,
-    tombstone_expires_at: &str,
-    deletion: &mut AmbientDeletion,
-) -> Result<(), AmbientStoreError> {
-    let utterance_count: i64 = transaction.query_row(
-        "SELECT COUNT(*) FROM ambient_utterances WHERE episode_id = ?1",
-        params![episode_id],
-        |row| row.get(0),
-    )?;
-    deletion.tombstones_written += transaction.execute(
-        "INSERT OR REPLACE INTO ambient_tombstones
-         (tombstone_id, episode_id, removed_at, reason, utterance_count, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            tombstone_id(episode_id, removed_at),
-            episode_id,
-            removed_at,
-            reason,
-            utterance_count,
-            tombstone_expires_at,
-        ],
-    )?;
-    deletion.candidates_rejected += reject_candidates(transaction, episode_id)?;
-    // Порядок здесь — контракт, а не стиль. `ON DELETE SET NULL` обнулил бы
-    // `source_episode_id` первым, и после удаления строки эпизода найти его
-    // предложения было бы уже нечем. Поэтому они помечаются истёкшими
-    // раньше — в этой же транзакции и тем же моментом, что и tombstone.
-    deletion.proposals_expired += expire_proposals_of_episode(transaction, episode_id, removed_at)?;
-    deletion.events_removed += transaction.execute(
-        "DELETE FROM events WHERE task_id = ?1 AND event_type LIKE ?2",
-        params![episode_id, AMBIENT_EVENT_PREFIX],
-    )?;
-    // Каскад по внешнему ключу сделал бы то же самое, но только при
-    // включённом `foreign_keys`; явное удаление не зависит от pragma.
-    deletion.utterances_removed += transaction.execute(
-        "DELETE FROM ambient_utterances WHERE episode_id = ?1",
-        params![episode_id],
-    )?;
-    deletion.episodes_removed += transaction.execute(
-        "DELETE FROM ambient_episodes WHERE episode_id = ?1",
-        params![episode_id],
-    )?;
-    Ok(())
-}
-
-/// Переводит предложения удаляемого эпизода в `expired` с причиной
-/// `source_deleted`.
-///
-/// Обнулённая ссылка вместо этого оставила бы карточку висеть в очереди без
-/// источника: пользователь видел бы предложение по речи, которой в базе уже
-/// нет.
-fn expire_proposals_of_episode(
-    transaction: &rusqlite::Transaction<'_>,
-    episode_id: &str,
-    removed_at: &str,
-) -> Result<usize, AmbientStoreError> {
-    if !table_exists(transaction, "ambient_proposals")? {
-        return Ok(0);
-    }
-    Ok(transaction.execute(
-        "UPDATE ambient_proposals
-         SET state = 'expired', updated_at = ?2,
-             source_deleted_at = ?2, source_deleted_reason = ?3
-         WHERE source_episode_id = ?1",
-        params![episode_id, removed_at, CANDIDATE_REJECTION_REASON],
-    )?)
-}
-
-/// Отклоняет производных memory-кандидатов удалённого эпизода.
-///
-/// `supersession_reason` — единственная колонка причины у `memory_entries`;
-/// заводить ради ambient ещё одну означало бы менять схему памяти из этапа
-/// про хранение транскриптов. Подтверждённая пользователем запись не
-/// трогается: её содержимое больше не принадлежит источнику.
-fn reject_candidates(
-    transaction: &rusqlite::Transaction<'_>,
-    episode_id: &str,
-) -> Result<usize, AmbientStoreError> {
-    if !table_exists(transaction, "memory_entries")? {
-        return Ok(0);
-    }
-    Ok(transaction.execute(
-        "UPDATE memory_entries
-         SET confirmation_state = 'rejected', supersession_reason = ?2
-         WHERE provenance_source_id = ?1
-           AND confirmation_state IN ('candidate', 'pending_confirmation')",
-        params![episode_id, CANDIDATE_REJECTION_REASON],
-    )?)
-}
-
-fn table_exists(
-    transaction: &rusqlite::Transaction<'_>,
-    name: &str,
-) -> Result<bool, AmbientStoreError> {
-    let found: Option<i64> = transaction
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-            params![name],
-            |row| row.get(0),
-        )
-        .optional()?;
-    Ok(found.is_some())
-}
-
-/// Пересчитывает счётчики эпизода из уцелевших строк и возвращает их число.
-fn recalculate_counters(
-    transaction: &rusqlite::Transaction<'_>,
-    episode_id: &str,
-) -> Result<i64, AmbientStoreError> {
-    transaction.execute(
-        "UPDATE ambient_episodes SET
-            utterance_count = (SELECT COUNT(*) FROM ambient_utterances WHERE episode_id = ?1),
-            speech_ms = (SELECT COALESCE(SUM(duration_ms), 0) FROM ambient_utterances
-                         WHERE episode_id = ?1)
-         WHERE episode_id = ?1",
-        params![episode_id],
-    )?;
-    Ok(transaction.query_row(
-        "SELECT COUNT(*) FROM ambient_utterances WHERE episode_id = ?1",
-        params![episode_id],
-        |row| row.get(0),
-    )?)
-}
-
-fn affected_episodes(
-    transaction: &rusqlite::Transaction<'_>,
-    sql: &str,
-    parameters: impl rusqlite::Params,
-) -> Result<Vec<String>, AmbientStoreError> {
-    let mut statement = transaction.prepare(sql)?;
-    let rows = statement.query_map(parameters, |row| row.get::<_, String>(0))?;
-    let mut episodes = Vec::new();
-    for row in rows {
-        episodes.push(row?);
-    }
-    Ok(episodes)
 }
 
 fn map_episode(row: &rusqlite::Row<'_>) -> rusqlite::Result<AmbientEpisodeRecord> {
