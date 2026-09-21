@@ -2533,3 +2533,10 @@ update и dependency-cycle guard вынесены в `work_item_store.rs`; graph
 и cycle rejection сохранены. Core marker повышен `0.0.000307 -> 0.0.000308`;
 перед push проверяются graph/optimistic-storage tests, strict clippy и
 Core+storage compile.
+
+Journal append/read paths, tool metrics and bounded event replay вынесены в
+`event_store.rs`; `LocalDatabase` facade, transaction helper и replay ordering
+сохранены. Core marker повышен `0.0.000308 -> 0.0.000309`; локально прошли
+event replay и JSONL export tests, strict clippy, format/diff-check и storage
+compile. CI evidence для этого коммита будет добавлено после push десятой
+commit-группы.
