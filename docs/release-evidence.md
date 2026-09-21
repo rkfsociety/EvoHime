@@ -2904,6 +2904,13 @@ format/diff-check прошли локально. CI evidence для новой c
 `evohime-local-storage`, strict clippy, format/diff-check и Core+storage check
 прошли локально. Runtime-код и Core marker не менялись: изменение test-only.
 
+Artifact handoff registry tests вынесены из
+`artifact_handoff_registry_store.rs` в
+`artifact_handoff_registry_store_tests.rs`; production-файл уменьшен до 216
+строк, additive schema, command idempotency, atomic acceptance, replay
+metadata и bounded listing contracts сохранены. 5 artifact-handoff tests,
+format/diff-check прошли локально; изменение test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
