@@ -62,6 +62,7 @@ pub use crate::runtime_projection::{
     bounded_result_marker, protect_action_row, sampled_read_only, unprotect_action_row,
 };
 pub use crate::runtime_recovery::recover_database;
+pub use crate::runtime_request_contract::ModelRequestReceiptInput;
 pub use crate::runtime_schema::install_schema;
 
 pub const APPROVAL_TTL_MS: i64 = 600_000;
@@ -143,20 +144,6 @@ fn stored_hash_for_action(
 pub struct ReceiptRuntime<'a> {
     connection: &'a mut Connection,
     signer: &'a dyn ReceiptSigner,
-}
-
-/// Immutable fields required to append a signed model-request receipt.
-pub struct ModelRequestReceiptInput<'a> {
-    pub request_id: &'a str,
-    pub logical_request_id: &'a str,
-    pub ledger_id: &'a str,
-    pub attempt: u32,
-    pub provider: &'a str,
-    pub model: &'a str,
-    pub envelope_hash: &'a str,
-    pub context_projection_hash: &'a str,
-    pub route_snapshot_hash: &'a str,
-    pub policy_snapshot_hash: &'a str,
 }
 
 impl<'a> ReceiptRuntime<'a> {

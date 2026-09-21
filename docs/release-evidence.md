@@ -2735,3 +2735,10 @@ rebuild and idempotent defaults сохранены. Verifier marker повыше
 `0.0.000049 -> 0.0.000050`; 36 runtime tests, strict clippy,
 format/diff-check и Core+receipts check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
+
+Model-request receipt input contract вынесен в `runtime_request_contract.rs`,
+а прежний `runtime::ModelRequestReceiptInput` сохранён через re-export.
+Поля, ownership и request-commit serialization contract не изменены.
+Verifier marker повышен `0.0.000050 -> 0.0.000051`; 36 runtime tests, strict
+clippy, format/diff-check и Core+receipts check прошли локально. CI evidence
+для новой commit-группы будет добавлено после её десятого коммита.
