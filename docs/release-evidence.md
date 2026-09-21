@@ -2614,3 +2614,10 @@ commit-группы будет добавлено после её десятог
 прошли migration rollback/idempotency tests, strict clippy, format/diff-check и
 Core+storage check. CI evidence для новой commit-группы будет добавлено после
 её десятого коммита.
+
+Database open/prepared-open, backup-on-migration-failure и idempotent schema
+installation вынесены в `database_lifecycle.rs`; startup order, WAL setup,
+schema guards and restore behavior сохранены. Core marker повышен
+`0.0.000320 -> 0.0.000321`; локально прошли schema/open/rollback tests, strict
+clippy, format/diff-check и Core+storage check. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.
