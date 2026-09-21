@@ -1,8 +1,10 @@
 //! Platform clocks and boot identity used by receipt approval recovery.
 
 use crate::runtime_contract::RuntimeError;
+#[cfg(not(windows))]
 use serde_json::{json, Value};
 use std::sync::OnceLock;
+#[cfg(not(windows))]
 use uuid::Uuid;
 
 static BOOT_ID: OnceLock<String> = OnceLock::new();

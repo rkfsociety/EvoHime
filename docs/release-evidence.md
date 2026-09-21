@@ -2742,3 +2742,10 @@ Model-request receipt input contract вынесен в `runtime_request_contract
 Verifier marker повышен `0.0.000050 -> 0.0.000051`; 36 runtime tests, strict
 clippy, format/diff-check и Core+receipts check прошли локально. CI evidence
 для новой commit-группы будет добавлено после её десятого коммита.
+
+Verifier CI failure на Windows исправлен: `runtime_platform.rs` теперь
+условно импортирует Linux-only boot-marker dependencies, сохраняя Windows
+`GetTickCount64` path без unused imports. Verifier marker повышен
+`0.0.000051 -> 0.0.000052`; локальные Linux runtime tests, strict clippy,
+format/diff-check и Core+receipts check должны быть повторены перед commit.
+Новый CI evidence будет проверен по exact SHA после push.
