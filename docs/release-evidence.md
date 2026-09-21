@@ -2992,6 +2992,13 @@ contracts сохранены. 1 team-coordinator test, strict clippy, Core+stora
 check, format/diff-check прошли локально; изменение test-only, Core marker не
 менялся.
 
+Workspace checkpoint test вынесен из `workspace_state_checkpoint.rs` в
+`workspace_state_checkpoint_tests.rs`; production-файл уменьшен до 162 строк,
+checkpoint metadata round-trip и restore-journal append contracts сохранены.
+1 workspace-checkpoint test, strict clippy, Core+storage check,
+format/diff-check прошли локально; изменение test-only, Core marker не
+менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
