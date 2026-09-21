@@ -2540,3 +2540,9 @@ Journal append/read paths, tool metrics and bounded event replay вынесен�
 event replay и JSONL export tests, strict clippy, format/diff-check и storage
 compile. CI evidence для этого коммита будет добавлено после push десятой
 commit-группы.
+
+Run creation, idempotent insertion and typed snapshot read-back вынесены в
+`run_store.rs`; `LocalDatabase` API и serialized snapshot fields сохранены.
+Core marker повышен `0.0.000309 -> 0.0.000310`; локально проверены run/snapshot
+focused tests, strict clippy, format/diff-check и storage compile. CI evidence
+для этого коммита будет добавлено после push десятой commit-группы.
