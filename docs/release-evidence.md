@@ -2825,6 +2825,13 @@ Linux CLI boundary закреплён интеграционным тестом
 `cargo test -p evohime-cli` (11 library tests и 1 Linux boundary test) прошёл
 локально. Публикуемый CLI marker не менялся: изменение test-only.
 
+Plan artifact storage tests вынесены из `plan_artifact.rs` в
+`plan_artifact_tests.rs`; production-файл уменьшен до 425 строк, deterministic
+sealing, revision transition and stale-write contracts сохранены. Core marker
+повышен `0.0.000353 -> 0.0.000354`; 1 plan-artifact test,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
