@@ -2978,6 +2978,13 @@ atomic publication, idempotent replay и source-basis deduplication contracts
 format/diff-check прошли локально; изменение test-only, Core marker не
 менялся.
 
+Integration provider metadata tests вынесены из `integration_provider_store.rs`
+в `integration_provider_store_tests.rs`; production-файл уменьшен до 75 строк,
+secret-free metadata, immutable manifest versions, wildcard-safe dependency
+report и manifest bounds contracts сохранены. 4 integration-provider tests,
+strict clippy, Core+storage check, format/diff-check прошли локально;
+изменение test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
