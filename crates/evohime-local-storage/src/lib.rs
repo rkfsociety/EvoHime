@@ -8,6 +8,7 @@ pub mod agent_git_change_sets_store;
 pub(crate) mod agent_middleware_pipeline_store;
 pub mod agent_program_optimizer_store;
 pub mod agent_role_profiles_store;
+mod ambient_contract;
 pub mod ambient_store;
 mod ambient_store_cleanup;
 mod ambient_store_mapping;

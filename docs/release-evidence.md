@@ -2634,3 +2634,10 @@ redaction flags, field ordering and bounded read behavior are unchanged. Core
 marker повышен `0.0.000322 -> 0.0.000323`; все 18 ambient tests, strict clippy,
 format/diff-check и Core+storage check прошли локально. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
+
+Ambient records, proposal/counter result types and validation rules вынесены в
+`ambient_contract.rs`; public `ambient_store` paths remain compatible through
+re-exports, while validation and enum invariants are unchanged. Core marker
+повышен `0.0.000323 -> 0.0.000324`; все 18 ambient tests, strict clippy,
+format/diff-check и Core+storage check прошли локально. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.
