@@ -2502,3 +2502,8 @@ Ledger event INSERT, cached INSERT и duplicate-terminal guard вынесены 
 `pub(crate)` helpers. Core marker повышен `0.0.000301 -> 0.0.000302`; локально
 проверены focused execution-ledger tests, format/diff-check и Core+storage
 compile, CI evidence будет добавлено после push десятой commit-группы.
+
+Read-only diagnostics summary и recovery health projection вынесены в
+`diagnostics.rs`; bounded table/event limits и SELECT-only semantics сохранены.
+Core marker повышен `0.0.000302 -> 0.0.000303`; проверяются diagnostics-focused
+tests, strict clippy и Core+storage compile.
