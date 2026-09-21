@@ -39,7 +39,7 @@ beforeEach(() => {
       if (command === 'provider.get') {
         return ok({ provider: 'literouter', model: '', baseUrl: '', tier, configured: true })
       }
-      if (command === 'codex.getStatus') {
+      if (command === 'codex.getStatus' || command === 'codex.refresh') {
         return ok({
           installed: true,
           installing: false,
@@ -296,6 +296,7 @@ describe('model picker', () => {
   it('shows Codex five-hour and weekly limits below its model', async () => {
     render(<ModelPicker connection="connected" events={[]} provider="codex_cli" />)
 
+    await waitFor(() => expect(calls).toContainEqual({ command: 'codex.refresh', payload: {} }))
     expect(await screen.findByText('5 часов: осталось 80%')).toBeTruthy()
     expect(screen.getByText('Неделя: осталось 60%')).toBeTruthy()
     expect(screen.getByTestId('codex-composer-limits')).toBeTruthy()

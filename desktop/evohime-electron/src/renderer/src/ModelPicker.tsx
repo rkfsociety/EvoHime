@@ -76,7 +76,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
 
   useEffect(() => {
     if (!api || !connected || provider !== 'codex_cli') return
-    void api.invoke('codex.getStatus', {}).then((outcome) => {
+    void api.invoke('codex.refresh', {}).then((outcome) => {
       if (outcome.ok) {
         setCodexModels(outcome.value.models)
         setCodexRateLimits(outcome.value.rateLimits)

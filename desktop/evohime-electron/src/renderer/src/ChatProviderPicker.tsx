@@ -40,9 +40,12 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
     const apiOptions = PROVIDER_KINDS.filter((provider) => summary?.profiles?.[provider]?.configured === true)
     return [
       ...apiOptions.map((provider) => ({ value: provider as ChatProviderMode, label: LABELS[provider] })),
-      ...(codex?.available ? [{ value: 'codex_cli' as const, label: LABELS.codex_cli }] : [])
+      // Installation and readiness are different states. Keep an installed
+      // CLI selectable even after a transient app-server/auth failure; the
+      // model picker performs a fresh refresh when this route is selected.
+      ...(codex?.installed ? [{ value: 'codex_cli' as const, label: LABELS.codex_cli }] : [])
     ]
-  }, [codex?.available, summary?.profiles])
+  }, [codex?.installed, summary?.profiles])
 
   useEffect(() => {
     if (options.some((option) => option.value === value)) return

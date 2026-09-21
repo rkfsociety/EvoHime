@@ -10,6 +10,7 @@ import { ProviderForm } from '../src/renderer/src/ProviderForm'
 import { ProviderStateProvider } from '../src/renderer/src/provider-state'
 
 const calls: Array<{ command: string; payload: unknown }> = []
+let codexInstalled = false
 
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
@@ -33,6 +34,7 @@ function summary(literouterConfigured: boolean): ProviderSummary {
 
 beforeEach(() => {
   calls.length = 0
+  codexInstalled = false
   let current = summary(false)
   const api: EvoHimeApiV1 = {
     apiVersion: 1,
@@ -44,7 +46,7 @@ beforeEach(() => {
         return ok({ summary: current, restarted: true })
       }
       if (command === 'codex.getStatus') {
-        return ok({ installed: false, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: 1, error: null })
+        return ok({ installed: codexInstalled, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: 1, error: 'Проверка Codex временно не выполнена.' })
       }
       return ok({ accepted: true })
     }) as EvoHimeApiV1['invoke'],
@@ -84,5 +86,27 @@ describe('shared provider state', () => {
     expect((picker as HTMLSelectElement).value).toBe('literouter')
     expect(selected).toContain('literouter')
     expect(calls.filter((call) => call.command === 'provider.get')).toHaveLength(1)
+  })
+
+  it('keeps an installed Codex CLI selectable after a temporary status failure', async () => {
+    codexInstalled = true
+    const selected: string[] = []
+    function ChatPickerHarness(): React.JSX.Element {
+      const [provider, setProvider] = useState<ChatProviderMode>('ollama')
+      return <ChatProviderPicker connection="connected" value={provider} onChange={(next) => { selected.push(next); setProvider(next) }} />
+    }
+
+    render(
+      <ProviderStateProvider>
+        <ChatPickerHarness />
+      </ProviderStateProvider>
+    )
+
+    const picker = await screen.findByRole('combobox', { name: 'Провайдер задачи' })
+    await waitFor(() => expect(picker.querySelector('option[value="codex_cli"]')).toBeTruthy())
+    await userEvent.selectOptions(picker, 'codex_cli')
+
+    expect(selected).toContain('codex_cli')
+    expect((picker as HTMLSelectElement).value).toBe('codex_cli')
   })
 })
