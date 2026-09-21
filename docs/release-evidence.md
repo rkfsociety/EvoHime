@@ -2572,3 +2572,10 @@ updates сохранены. Core marker повышен `0.0.000313 -> 0.0.000314
 проверены reconciliation/lease tests, strict clippy, format/diff-check и
 storage compile. CI evidence для этого коммита будет добавлено после push
 десятой commit-группы.
+
+Run and agent recovery transitions plus latest-state readback вынесены в
+`run_recovery_store.rs`; bounded text/evidence validation, idempotency and FSM
+transitions сохранены. Core marker повышен `0.0.000314 -> 0.0.000315`; локально
+проверены recovery transition tests, strict clippy, format/diff-check и storage
+compile. CI evidence для этого коммита будет добавлено после push десятой
+commit-группы.
