@@ -139,9 +139,9 @@ describe('operations panel', () => {
     )
 
     const providerPicker = await screen.findByRole('combobox', { name: 'Провайдер самоисправления' })
-    expect(providerPicker).toHaveValue('codex_cli')
+    expect((providerPicker as HTMLSelectElement).value).toBe('codex_cli')
     expect(providerPicker.querySelectorAll('option')).toHaveLength(1)
-    expect(providerPicker).toBeDisabled()
+    expect((providerPicker as HTMLSelectElement).disabled).toBe(true)
 
     const button = await screen.findByRole('button', { name: 'Повторить' })
     await userEvent.click(button)
