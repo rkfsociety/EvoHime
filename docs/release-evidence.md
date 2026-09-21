@@ -2971,6 +2971,13 @@ immutable protocol history, listing and payload bounds, session version fence
 clippy, Core+storage check, format/diff-check прошли локально; изменение
 test-only, Core marker не менялся.
 
+Memory extraction lifecycle tests вынесены из `memory_extraction_store.rs` в
+`memory_extraction_store_tests.rs`; production-файл уменьшен до 147 строк,
+atomic publication, idempotent replay и source-basis deduplication contracts
+сохранены. 2 memory-extraction tests, strict clippy, Core+storage check,
+format/diff-check прошли локально; изменение test-only, Core marker не
+менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
