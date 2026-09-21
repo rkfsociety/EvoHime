@@ -2,7 +2,6 @@
 
 use std::{
     fs,
-    io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
 
@@ -56,6 +55,7 @@ pub mod domain_workflow_recipes_store;
 pub mod domains;
 pub mod durable_background_execution_store;
 pub mod durable_remote_task_bridge_store;
+mod event_export;
 pub(crate) mod event_trigger_runtime_store;
 pub mod event_visualizer_registry_store;
 pub mod execution_backend_registry_store;
@@ -2290,31 +2290,6 @@ impl LocalDatabase {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    }
-
-    pub fn export_events_jsonl(&self, output: impl AsRef<Path>) -> Result<(), StorageError> {
-        if let Some(parent) = output.as_ref().parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let file = fs::File::create(output)?;
-        let mut writer = BufWriter::new(file);
-        for event in self.read_events_after(0, usize::MAX)? {
-            let payload = serde_json::from_slice::<serde_json::Value>(&event.payload)
-                .unwrap_or_else(|_| serde_json::json!({"raw_bytes": event.payload}));
-            serde_json::to_writer(
-                &mut writer,
-                &serde_json::json!({
-                    "sequence_id": event.sequence_id,
-                    "task_id": event.task_id,
-                    "event_type": event.event_type,
-                    "payload": payload,
-                    "created_at": event.created_at,
-                }),
-            )?;
-            writer.write_all(b"\n")?;
-        }
-        writer.flush()?;
-        Ok(())
     }
 
     fn read_schema_version(connection: &Connection) -> Result<u32, rusqlite::Error> {

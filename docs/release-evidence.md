@@ -2507,3 +2507,8 @@ Read-only diagnostics summary и recovery health projection вынесены в
 `diagnostics.rs`; bounded table/event limits и SELECT-only semantics сохранены.
 Core marker повышен `0.0.000302 -> 0.0.000303`; проверяются diagnostics-focused
 tests, strict clippy и Core+storage compile.
+
+JSONL event export вынесен в `event_export.rs`; формат полей, fallback для
+невалидного payload и bounded Core-owned event read path сохранены. Core marker
+повышен `0.0.000303 -> 0.0.000304`; проверены export-focused test, strict
+clippy и Core+storage compile.
