@@ -2917,6 +2917,12 @@ mutation audit, exactly-once summarize consumption, pin isolation и sliding
 rate-limit contracts сохранены. 6 context-command tests, format/diff-check
 прошли локально; изменение test-only, Core marker не менялся.
 
+Toolkit storage tests вынесены из `toolkit_store.rs` в
+`toolkit_store_tests.rs`; production-файл уменьшен до 233 строк, lifecycle
+reopen, rollback audit, rediscovery idempotency и quarantine fail-closed
+contracts сохранены. 3 toolkit-store tests, format/diff-check прошли
+локально; изменение test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
