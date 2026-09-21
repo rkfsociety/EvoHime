@@ -2522,3 +2522,8 @@ Snapshot save/get/latest-for-task methods вынесены в `snapshot_store.rs
 ownership lookup, ordering и payload round-trip не изменились. Core marker
 повышен `0.0.000305 -> 0.0.000306`; проверены snapshot-focused tests, strict
 clippy и Core+storage compile.
+
+Atomic PRD provenance insertion и read-back вынесены в `provenance_store.rs`;
+provenance/work-item transaction boundary и import behavior сохранены. Core
+marker повышен `0.0.000306 -> 0.0.000307`; проверены PRD import/provenance
+tests, strict clippy и Core+storage compile.
