@@ -3007,6 +3007,13 @@ External coding-agent adapter tests вынесены из
 format/diff-check прошли локально; изменение test-only, Core marker не
 менялся.
 
+Event-trigger runtime tests вынесены из `event_trigger_runtime_store.rs` в
+`event_trigger_runtime_store_tests.rs`; production-файл уменьшен до 87 строк,
+secret-free schema, deduplication, immutable event payloads, definition bounds
+и duplicate-version idempotency contracts сохранены. 3 event-trigger tests,
+strict clippy, Core+storage check, format/diff-check прошли локально;
+изменение test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
