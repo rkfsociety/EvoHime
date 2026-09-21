@@ -2911,6 +2911,12 @@ Artifact handoff registry tests вынесены из
 metadata и bounded listing contracts сохранены. 5 artifact-handoff tests,
 format/diff-check прошли локально; изменение test-only, Core marker не менялся.
 
+Context command storage tests вынесены из `context_command_store.rs` в
+`context_command_store_tests.rs`; production-файл уменьшен до 222 строк,
+mutation audit, exactly-once summarize consumption, pin isolation и sliding
+rate-limit contracts сохранены. 6 context-command tests, format/diff-check
+прошли локально; изменение test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
