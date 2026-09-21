@@ -2841,6 +2841,15 @@ catalog bounds contracts сохранены. Core marker повышен
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Execution-environment profile tests вынесены из
+`execution_environment_profiles_store.rs` в
+`execution_environment_profiles_store_tests.rs`; production-файл уменьшен до
+232 строк, monotonic revisions, atomic activation, stale snapshot fencing,
+run binding и idempotency replay contracts сохранены. Core marker повышен
+`0.0.000355 -> 0.0.000356`; 6 execution-environment tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
