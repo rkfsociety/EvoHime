@@ -2685,3 +2685,10 @@ Receipt runtime public models, error type and signer boundary вынесены �
 tests, strict clippy, format/diff-check и Core+receipts check прошли локально.
 CI evidence для новой commit-группы будет добавлено после её десятого
 коммита.
+
+Receipt capability snapshot, policy-decision and action-binding persistence
+вынесены в `runtime_policy.rs`; SQL idempotency, conflict checks и публичные
+runtime paths сохранены через re-export. Verifier marker повышен
+`0.0.000043 -> 0.0.000044`; 36 runtime tests, strict clippy,
+format/diff-check и Core+receipts check прошли локально. CI evidence для
+новой commit-группы будет добавлено после её десятого коммита.
