@@ -11,6 +11,7 @@ import { ProviderStateProvider } from '../src/renderer/src/provider-state'
 
 const calls: Array<{ command: string; payload: unknown }> = []
 let codexInstalled = false
+let current: ProviderSummary
 
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
@@ -35,7 +36,7 @@ function summary(literouterConfigured: boolean): ProviderSummary {
 beforeEach(() => {
   calls.length = 0
   codexInstalled = false
-  let current = summary(false)
+  current = summary(false)
   const api: EvoHimeApiV1 = {
     apiVersion: 1,
     invoke: (async (command: RendererCommand, payload: unknown) => {
@@ -90,6 +91,7 @@ describe('shared provider state', () => {
 
   it('keeps an installed Codex CLI selectable after a temporary status failure', async () => {
     codexInstalled = true
+    current = summary(true)
     const selected: string[] = []
     function ChatPickerHarness(): React.JSX.Element {
       const [provider, setProvider] = useState<ChatProviderMode>('ollama')
@@ -106,7 +108,9 @@ describe('shared provider state', () => {
     await waitFor(() => expect(picker.querySelector('option[value="codex_cli"]')).toBeTruthy())
     await userEvent.selectOptions(picker, 'codex_cli')
 
-    expect(selected).toContain('codex_cli')
-    expect((picker as HTMLSelectElement).value).toBe('codex_cli')
+    await waitFor(() => {
+      expect(selected).toContain('codex_cli')
+      expect((picker as HTMLSelectElement).value).toBe('codex_cli')
+    })
   })
 })

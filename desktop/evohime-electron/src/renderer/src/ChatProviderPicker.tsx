@@ -60,7 +60,9 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   // than leaving a valid but stale localStorage choice selected.
   useEffect(() => {
     const preferred = summary?.provider
-    if (!preferred || !options.some((option) => option.value === preferred) || preferred === value) return
+    // Codex CLI is a task route, not the persisted API-provider profile. Once
+    // it is selected, the API profile must not immediately overwrite it.
+    if (value === 'codex_cli' || !preferred || !options.some((option) => option.value === preferred) || preferred === value) return
     window.localStorage.setItem('evohime.chat-provider-mode', preferred)
     onChange(preferred)
   }, [onChange, options, summary?.provider, value])
