@@ -2565,3 +2565,10 @@ Run and agent lease acquire/heartbeat/release paths вынесены в
 Core marker повышен `0.0.000312 -> 0.0.000313`; локально проверены lease/effect
 tests, strict clippy, format/diff-check и storage compile. CI evidence для
 этого коммита будет добавлено после push десятой commit-группы.
+
+Run and agent effect reconciliation read/write paths вынесены в
+`run_reconciliation_store.rs`; idempotent conflict handling and result-state
+updates сохранены. Core marker повышен `0.0.000313 -> 0.0.000314`; локально
+проверены reconciliation/lease tests, strict clippy, format/diff-check и
+storage compile. CI evidence для этого коммита будет добавлено после push
+десятой commit-группы.
