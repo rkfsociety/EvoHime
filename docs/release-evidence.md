@@ -2546,3 +2546,9 @@ Run creation, idempotent insertion and typed snapshot read-back вынесены
 Core marker повышен `0.0.000309 -> 0.0.000310`; локально проверены run/snapshot
 focused tests, strict clippy, format/diff-check и storage compile. CI evidence
 для этого коммита будет добавлено после push десятой commit-группы.
+
+Checkpoint creation and latest-read persistence вынесены в
+`run_checkpoint_store.rs`; checkpoint ordering and payload fields are unchanged.
+Core marker повышен `0.0.000310 -> 0.0.000311`; локально проверены checkpoint
+recovery tests, strict clippy, format/diff-check и storage compile. CI evidence
+для этого коммита будет добавлено после push десятой commit-группы.
