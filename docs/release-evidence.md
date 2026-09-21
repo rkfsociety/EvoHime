@@ -2957,6 +2957,13 @@ serialization contracts сохранены. 6 reconciliation-verifier tests, str
 clippy, Core+storage check, format/diff-check прошли локально; изменение
 test-only, Core marker не менялся.
 
+Model-limit storage tests вынесены из `model_limit_store.rs` в
+`model_limit_store_tests.rs`; production-файл уменьшен до 149 строк,
+window round-trip, unknown-window semantics, overwrite, listing bound и empty
+identifier validation contracts сохранены. 5 model-limit tests, strict
+clippy, Core+storage check, format/diff-check прошли локально; изменение
+test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
