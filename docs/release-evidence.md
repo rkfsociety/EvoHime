@@ -2745,6 +2745,14 @@ TTL/quota eviction и tombstone contracts сохранены. Core marker пов
 прошли локально. CI evidence для новой commit-группы будет добавлено после
 её десятого коммита.
 
+Automation storage tests вынесены из `automation_store.rs` в
+`automation_store_tests.rs`; production-файл уменьшен до 667 строк,
+owner-scoped idempotency, immutable preset snapshot, schedule CAS fencing,
+archive/restore checksum и retention contracts сохранены. Core marker
+повышен `0.0.000343 -> 0.0.000344`; 4 automation-store tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
