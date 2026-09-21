@@ -2756,3 +2756,10 @@ run `35557265043` завершились успешно. Windows verifier test, 
 release build и publication прошли; опубликован
 `module-verifier-v0.0.000052` с `evohime-verify.exe` и
 `verifier.manifest.json`.
+
+Inline `runtime::tests` вынесены в `runtime_tests.rs`; production-файл
+`runtime.rs` уменьшен до 1659 строк, поведение и публичный test path
+сохранены через явный `#[path]` module declaration. Verifier marker повышен
+`0.0.000052 -> 0.0.000053`; 36 runtime tests, strict clippy,
+format/diff-check и Core+receipts check прошли локально. CI evidence для
+новой commit-группы будет добавлено после её десятого коммита.
