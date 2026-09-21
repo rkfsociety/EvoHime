@@ -2943,6 +2943,13 @@ revision fencing и payload bounds contracts сохранены. 7 conversation-
 tests, strict clippy, Core+storage check, format/diff-check прошли локально;
 изменение test-only, Core marker не менялся.
 
+Workflow package import tests вынесены из `workflow_package_store.rs` в
+`workflow_package_store_tests.rs`; production-файл уменьшен до 252 строк,
+metadata-only import, pending listing и committed transition contracts
+сохранены. 1 workflow-package test, strict clippy, Core+storage check,
+format/diff-check прошли локально; изменение test-only, Core marker не
+менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
