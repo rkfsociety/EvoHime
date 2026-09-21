@@ -2929,6 +2929,12 @@ pinned selection reconnect, per-task overwrite, deletion и field-bound
 contracts сохранены. 3 capability-selection tests, format/diff-check прошли
 локально; изменение test-only, Core marker не менялся.
 
+Free-access evidence tests вынесены из `free_access_evidence_store.rs` в
+`free_access_evidence_store_tests.rs`; production-файл уменьшен до 247 строк,
+scoped revision fencing, idempotency, raw provider-material rejection и
+secret-like scope rejection contracts сохранены. 3 free-access tests,
+format/diff-check прошли локально; изменение test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
