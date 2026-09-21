@@ -2677,3 +2677,11 @@ format/diff-check и Core+receipts check прошли локально. Полн
 на Linux имеет существующие DPAPI-only chain/export failures
 `UnsupportedPlatform`; CI evidence для новой commit-группы будет добавлено
 после её десятого коммита.
+
+Receipt runtime public models, error type and signer boundary вынесены в
+`runtime_contract.rs`; прежние `evohime_receipts::runtime::*` paths сохранены
+через re-export. Runtime state representations и serialization contracts не
+изменены. Verifier marker повышен `0.0.000042 -> 0.0.000043`; 36 runtime
+tests, strict clippy, format/diff-check и Core+receipts check прошли локально.
+CI evidence для новой commit-группы будет добавлено после её десятого
+коммита.

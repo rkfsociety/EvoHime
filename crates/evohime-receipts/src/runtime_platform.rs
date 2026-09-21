@@ -1,6 +1,6 @@
 //! Platform clocks and boot identity used by receipt approval recovery.
 
-use crate::runtime::RuntimeError;
+use crate::runtime_contract::RuntimeError;
 use serde_json::{json, Value};
 use std::sync::OnceLock;
 use uuid::Uuid;
