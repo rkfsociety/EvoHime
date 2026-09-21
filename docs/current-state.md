@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-20.
+Обновлено: 2026-09-21.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -21,6 +21,12 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 дальнейшее
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
+
+## Актуальный code baseline
+
+Последний коммит, меняющий код, — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21); на момент аудита он совпадал с `origin/main`. Серия тестовых коммитов вынесла inline-тесты storage-модулей в соседние `*_tests.rs`; production-файлы и публичные storage-контракты не менялись.
+
+Актуальные release markers берутся из `release-versions/`: `core 0.0.000362`, `cli 0.0.000084`, `ui-bundle 0.0.000101`, `shell-host 0.0.000099`, `updater 0.0.000123`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
 
 Startup `EventJournal::open` выполняет миграции и idempotent schema installers
 один раз. Длительные workspace RAG index/search/vector операции используют
@@ -134,11 +140,9 @@ apply не запускается. Отдельного offline/full installer �
 `requires_exit` только непосредственно перед заменой файлов; после self-update
 окно запускается повторно, а после общей транзакции запускается Ева.
 
-Текущий checkout содержит patch `core 0.0.000297`, `ui-bundle 0.0.000099`,
-`shell-host 0.0.000099`,
-`updater 0.0.000121`,
-`supervisor 0.0.000043` и `transaction 0.0.000066`; текущая версия web
-installer — `0.0.000061`.
+Версии поставляемых модулей не дублируются отдельной таблицей в статусе: их
+канонический источник — файлы `release-versions/*.txt`, перечисленные
+выше для текущего baseline.
 
 План 174.1 получил рабочий срез: Core-owned `FreeAccessEvidence` разделяет
 advertised/observed/activation/allowance состояния, типизированные units/limits,

@@ -7,10 +7,14 @@ redacted: допускаются commit, contract/schema versions, test IDs, has
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий checkout содержит реализацию единственного web-установщика и
-синхронизирован с `origin/main` после task-only коммита. Актуальные GitHub
-Actions результаты для текущего checkout подтверждены отдельными module и
-compatible-manifest runs; исторические разделы ниже сохраняют прежнее evidence.
+Текущий code baseline — `cbd5aa6539ff873248a418ceb133e61fcb91417d`,
+синхронизированный с `origin/main` на 2026-09-21. Последняя серия
+коммитов вынесла storage-тесты в отдельные `*_tests.rs`; runtime-контракты
+не менялись. Актуальные release markers хранятся в `release-versions/`;
+для этого baseline ключевые значения: `core=0.0.000362`,
+`updater=0.0.000123`, `transaction=0.0.000067`,
+`ui-bundle=0.0.000101`, `shell-host=0.0.000099` и
+`cli=0.0.000084`. Исторические разделы ниже сохраняют прежнее evidence.
 
 ## Статус выпуска
 
@@ -20,9 +24,13 @@ compatible-manifest runs; исторические разделы ниже со�
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
 
-### CLI modularization batch and live gates (2026-09-21)
+### Current code baseline and live gates (2026-09-21)
 
-- Текущий checkout `45d80345e9f173d78025c76bcd9897a65a7fa271` синхронизирован
+- Module router [run 35567850005](https://github.com/rkfsociety/EvoHime/actions/runs/35567850005) и core module [run 35567896714](https://github.com/rkfsociety/EvoHime/actions/runs/35567896714) были в статусе `PENDING` на момент фиксации этого документа. Они не считаются зелёным release gate до завершения.
+
+### Historical CLI modularization batch and live gates (2026-09-21)
+
+- Исходный CLI-batch checkout `45d80345e9f173d78025c76bcd9897a65a7fa271` был синхронизирован
   с `origin/main`; после десяти task-only коммитов CLI marker достиг
   `0.0.000074`. Production CLI protocol/client facade, command model, output
   projection, exit policy, redaction policy и test harnesses разделены на

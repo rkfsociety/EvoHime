@@ -1,6 +1,6 @@
 # EvoHime — реестр решений
 
-Обновлено: 2026-09-15.
+Обновлено: 2026-09-21.
 
 Канонический реестр решений текущего desktop-цикла. Здесь нет секретов,
 provider credentials или обещаний, не подтверждённых кодом. `accepted` означает,
@@ -21,7 +21,7 @@ provider credentials или обещаний, не подтверждённых 
 | D-SIGN-01 | Authenticode signing вне текущего release scope; trust root — manifest/hash evidence | Release | `architecture.md`, `release-evidence.md` |
 | D-REPAIR-01 | Self-repair запускается пользователем; provider/model обязательны, diagnose/commit/push/restart подтверждаются отдельно | Repair/update | `repair-service.ts`, Electron repair tests |
 | D-UPDATE-01 | Backup удерживается до authenticated Core health marker; timeout вызывает rollback | Repair/update | `evohime-updater`, health-marker tests |
-| D-UI-01 | Основная навигация короткая; технические панели находятся в collapsed `Интерфейс разработчика` | Desktop shell | `App.tsx`, operations/sidebar tests |
+| D-UI-01 | Основная навигация короткая; Core/agent/model контракты не выносятся в отдельную developer-вкладку, а рабочая панель, браузер, трейс и настройки открываются контекстно | Desktop shell | `App.tsx`, navigation-boundary tests |
 | D-MODEL-01 | API model selection действует со следующего Core-запроса; смена API-профиля и Codex model restart Core | Provider/shell | `ModelPicker`, `CodexService`, shell-bridge tests |
 | D-RELEASE-01 | Единственный релиз `installer` — маленький web installer; после запуска он получает точные module releases через compatibility manifest | Release | `installer/release-notes.md`, `.github/workflows/installer.yml` |
 | D-RELEASE-02 | Обновления разрешаются только через fixed `compatibility` manifest, который связывает точные module releases, hashes, зависимости и minimum updater; старый installer сначала получает совместимый updater | Release | `architecture.md`, `release-evidence.md`, `evohime-update-agent` |

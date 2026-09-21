@@ -3,12 +3,24 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$removedPlans = @(
-    'docs\plans\16-0-workflow-automation-and-simulation.md',
-    'docs\plans\17-0-release-criteria-and-open-decisions.md',
-    'docs\plans\17-4-release-audit-and-acceptance.md'
-)
-foreach ($path in $removedPlans) { if (Test-Path -LiteralPath (Join-Path $repo $path)) { throw "Completed plan must be removed: $path" } }
+$catalogPath = Join-Path $repo 'docs\plans\README.md'
+$catalog = Get-Content -LiteralPath $catalogPath -Raw
+$activeNumbers = @([regex]::Matches($catalog, '(?m)^\|\s*(\d+)\s*\|') | ForEach-Object { [int]$_.Groups[1].Value } | Sort-Object -Unique)
+if ($activeNumbers.Count -eq 0) { throw 'No active implementation plans found in docs/plans/README.md' }
+$activeSet = [System.Collections.Generic.HashSet[int]]::new()
+foreach ($number in $activeNumbers) { [void]$activeSet.Add($number) }
+$planFiles = @(Get-ChildItem -LiteralPath (Join-Path $repo 'docs\plans') -File -Filter '*.md' | Where-Object Name -ne 'README.md')
+foreach ($file in $planFiles) {
+    if ($file.BaseName -notmatch '^(?<number>\d+)-(?<stage>[0-4])-.+$') { throw "Invalid implementation plan filename: $($file.Name)" }
+    if (-not $activeSet.Contains([int]$Matches.number)) { throw "Plan is not listed as active: $($file.Name)" }
+}
+foreach ($number in $activeNumbers) {
+    foreach ($stage in 0..4) {
+        $stageFilter = $number.ToString() + '-' + $stage.ToString() + '-*.md'
+        $stageFiles = @(Get-ChildItem -LiteralPath (Join-Path $repo 'docs\plans') -File -Filter $stageFilter)
+        if ($stageFiles.Count -ne 1) { throw "Active plan $number must have exactly one stage $stage file." }
+    }
+}
 Push-Location $repo
 try {
     & cargo fmt --all -- --check

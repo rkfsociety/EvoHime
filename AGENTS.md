@@ -49,7 +49,7 @@ pwsh -File .\start-dev.ps1 -SkipBuild
 
 # Ревью плана и правка по нему без UI (ключ берётся тем же DPAPI-путём)
 .\scripts\test-agent.ps1 -ListModels
-.\scripts\test-agent.ps1 -ReviewPlan docs\plans\03-4-child-ui-and-observability.md -Reviewers 'модель-1,модель-2' -Synthesis 'модель-3' -Revise -Out C:\temp\plan.md
+.\scripts\test-agent.ps1 -ReviewPlan docs\plans\181-4-core-sensitive-egress-guardrails.md -Reviewers 'модель-1,модель-2' -Synthesis 'модель-3' -Revise -Out C:\temp\plan.md
 
 # Официальный headless Core-клиент (Windows companion binary)
 cargo run -p evohime-cli -- doctor --json
