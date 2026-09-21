@@ -2552,3 +2552,10 @@ Checkpoint creation and latest-read persistence вынесены в
 Core marker повышен `0.0.000310 -> 0.0.000311`; локально проверены checkpoint
 recovery tests, strict clippy, format/diff-check и storage compile. CI evidence
 для этого коммита будет добавлено после push десятой commit-группы.
+
+Run and agent effect preparation, state transitions and result read-back
+вынесены в `run_effect_store.rs`; transactional insertion and idempotent state
+guards сохранены. Core marker повышен `0.0.000311 -> 0.0.000312`; локально
+проверены effect/recovery tests, strict clippy, format/diff-check и storage
+compile. CI evidence для этого коммита будет добавлено после push десятой
+commit-группы.
