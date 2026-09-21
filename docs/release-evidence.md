@@ -2641,3 +2641,9 @@ re-exports, while validation and enum invariants are unchanged. Core marker
 повышен `0.0.000323 -> 0.0.000324`; все 18 ambient tests, strict clippy,
 format/diff-check и Core+storage check прошли локально. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
+
+Idempotent typed-memory schema installation вынесена в `memory_schema.rs`, а
+`memory_store::install_schema` сохранён через совместимый re-export. Core marker
+повышен `0.0.000324 -> 0.0.000325`; все 21 memory storage test, strict clippy,
+format/diff-check и Core+storage check прошли локально. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.
