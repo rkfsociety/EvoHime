@@ -2781,6 +2781,13 @@ contracts сохранены. Core marker повышен `0.0.000347 -> 0.0.0003
 retained-child-store tests, format/diff-check прошли локально. CI evidence
 для новой commit-группы будет добавлено после её десятого коммита.
 
+Backup storage tests вынесены из `backup.rs` в `backup_tests.rs`;
+production-файл уменьшен до 921 строки, safe manifest preview, checksum
+validation, cancellation, retention rotation, safety backup и atomic restore
+contracts сохранены. Core marker повышен `0.0.000348 -> 0.0.000349`; 5
+backup tests, format/diff-check прошли локально. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
