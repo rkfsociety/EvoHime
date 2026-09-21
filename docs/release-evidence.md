@@ -2668,3 +2668,12 @@ Memory read-query builders и общий SELECT column contract вынесены
 tests, strict clippy, format/diff-check и Core+storage check выполняется перед
 коммитом. CI evidence для новой commit-группы будет добавлено после её
 десятого коммита.
+
+Receipt runtime platform clocks and boot-marker handling вынесены в
+`runtime_platform.rs`; Linux `/proc/uptime`, Windows `GetTickCount64`,
+owner-only marker fallback и fail-closed errors сохранены. Verifier marker
+повышен `0.0.000041 -> 0.0.000042`; runtime tests, strict clippy,
+format/diff-check и Core+receipts check прошли локально. Полный receipts test
+на Linux имеет существующие DPAPI-only chain/export failures
+`UnsupportedPlatform`; CI evidence для новой commit-группы будет добавлено
+после её десятого коммита.

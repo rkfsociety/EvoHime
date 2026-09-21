@@ -14,6 +14,7 @@ pub mod chain;
 pub mod export;
 pub mod key_lifecycle;
 pub mod runtime;
+mod runtime_platform;
 
 pub const RECEIPT_VERSION: u64 = 1;
 include!(concat!(env!("OUT_DIR"), "/receipt_limits.rs"));
