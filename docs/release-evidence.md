@@ -2819,6 +2819,12 @@ contracts сохранены. Core marker повышен `0.0.000352 -> 0.0.0003
 durable-background test, format/diff-check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
 
+Linux CLI boundary закреплён интеграционным тестом
+`crates/evohime-cli/tests/linux_platform_boundary.rs`: `doctor`, `run` и
+`status` без Windows Core возвращают exit code 7 и `core_unavailable`; весь
+`cargo test -p evohime-cli` (11 library tests и 1 Linux boundary test) прошёл
+локально. Публикуемый CLI marker не менялся: изменение test-only.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
