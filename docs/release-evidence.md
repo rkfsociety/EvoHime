@@ -2684,6 +2684,12 @@ utterance, tombstone и proposal lifecycle contracts сохранены. Core ma
 format/diff-check и Core+storage check прошли локально. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
 
+Goal storage tests вынесены из `goal.rs` в `goal_tests.rs`; production-файл
+уменьшен до 1330 строк, durable goal/revision/evidence contracts сохранены.
+Core marker повышен `0.0.000335 -> 0.0.000336`; 7 goal tests, strict clippy,
+format/diff-check и Core+storage check прошли локально. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
