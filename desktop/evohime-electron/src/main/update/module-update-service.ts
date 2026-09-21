@@ -185,9 +185,22 @@ export class ModuleUpdateService {
         resolveCompletion(false)
       })
       child.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
-        this.refresh()
-        if (code === 0 && !['checking', 'applying'].includes(this.current.phase)) {
+        const workerStatus = this.refresh()
+        // The worker deliberately exits with code 0 after writing
+        // requires_exit=true for updater self-replacement. The bootstrap
+        // script then waits for this UI to close before replacing files.
+        if (code === 0 && (
+          !['checking', 'applying'].includes(this.current.phase) ||
+          (mode === '--apply' && workerStatus?.phase === 'applying' && workerStatus.requires_exit === true)
+        )) {
           resolveCompletion(true)
+          return
+        }
+        // A structured failed status is authoritative even when the worker
+        // also reports a non-zero process exit code. Preserve the diagnostic
+        // instead of replacing it with the generic fallback below.
+        if (workerStatus?.phase === 'failed' || this.current.phase === 'failed') {
+          resolveCompletion(false)
           return
         }
         // A correctly written Rust status is richer and is picked up above by
@@ -220,15 +233,15 @@ export class ModuleUpdateService {
     this.options.emit(this.current)
   }
 
-  private refresh(): void {
-    if (!this.options.enabled) return
+  private refresh(): ModuleUpdaterStatus | null {
+    if (!this.options.enabled) return null
     const path = join(this.options.dataDirectory, 'update-state', 'updater.json')
-    if (!existsSync(path)) return
+    if (!existsSync(path)) return null
     let parsed: ModuleUpdaterStatus
     try {
       parsed = JSON.parse(readFileSync(path, 'utf8')) as ModuleUpdaterStatus
     } catch {
-      return
+      return null
     }
     const available = (parsed.available ?? []).filter(
       (item): item is Required<Pick<typeof item, 'module' | 'installed' | 'available'>> & typeof item =>
@@ -268,7 +281,7 @@ export class ModuleUpdateService {
       ...(parsed.recovery ? { recovery: parsed.recovery } : {})
     }
     const serialized = JSON.stringify(next)
-    if (serialized === this.lastSerialized) return
+    if (serialized === this.lastSerialized) return parsed
     this.lastSerialized = serialized
     this.current = next
     this.options.emit(next)
@@ -276,6 +289,7 @@ export class ModuleUpdateService {
       this.exitRequested = true
       this.options.quitForApply?.()
     }
+    return parsed
   }
 }
 

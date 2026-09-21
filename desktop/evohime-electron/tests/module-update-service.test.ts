@@ -117,6 +117,45 @@ describe('ModuleUpdateService', () => {
     expect(service.status.error).toContain('без диагностического статуса')
   })
 
+  it('accepts a successful updater self-replacement handoff', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evohime-updater-handoff-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'applying',
+        message: 'Загрузка завершена. Перезапускаю updater для применения…',
+        requires_exit: true,
+        available: [{ module: 'updater', installed: '0.0.000123', available: '0.0.000124' }]
+      }))
+      let close: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
+      spawnMock.mockImplementationOnce(() => ({
+        once: vi.fn((event: string, listener: (code: number | null, signal: NodeJS.Signals | null) => void) => {
+          if (event === 'close') close = listener
+        }),
+        unref: vi.fn()
+      }))
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: 'C:\\EvoHime',
+        emit: () => {},
+        intervalMs: 60_000
+      })
+
+      await service.prepareComponents(['updater'])
+      close?.(0, null)
+
+      expect(service.status.phase).toBe('applying')
+      expect(service.status.error).toBeNull()
+      service.stop()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('reads the structured worker error and keeps failed status authoritative', async () => {
     const root = mkdtempSync(join(tmpdir(), 'evohime-module-status-'))
     try {

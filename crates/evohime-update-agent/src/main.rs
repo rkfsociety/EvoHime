@@ -1606,7 +1606,8 @@ fn schedule_updater_replacement(
         cleanup_bootstrap_files(&script, &marker);
         return Err(error.to_string());
     }
-    if let Err(error) = Command::new("cmd.exe")
+    let mut command = Command::new("cmd.exe");
+    command
         .current_dir(&state_dir)
         .args([
             "/D",
@@ -1616,8 +1617,11 @@ fn schedule_updater_replacement(
                 .and_then(|name| name.to_str())
                 .unwrap_or_default(),
         ])
-        .spawn()
-    {
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    configure_hidden_process(&mut command);
+    if let Err(error) = command.spawn() {
         cleanup_bootstrap_files(&script, &marker);
         return Err(error.to_string());
     }
