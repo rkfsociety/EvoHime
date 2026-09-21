@@ -2749,3 +2749,10 @@ Verifier CI failure на Windows исправлен: `runtime_platform.rs` те�
 `0.0.000051 -> 0.0.000052`; локальные Linux runtime tests, strict clippy,
 format/diff-check и Core+receipts check должны быть повторены перед commit.
 Новый CI evidence будет проверен по exact SHA после push.
+
+Live CI evidence for `5c0487c05c65cde0e5a28a0ed0942e8a4cf0b744`: module router
+run `35557026511`, verifier run `35557060894` и compatible release manifest
+run `35557265043` завершились успешно. Windows verifier test, strict clippy,
+release build и publication прошли; опубликован
+`module-verifier-v0.0.000052` с `evohime-verify.exe` и
+`verifier.manifest.json`.
