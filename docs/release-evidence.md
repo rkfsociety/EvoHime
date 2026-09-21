@@ -2803,6 +2803,14 @@ contracts сохранены. Core marker повышен `0.0.000350 -> 0.0.0003
 continuation-store tests, format/diff-check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
 
+Scratchpad storage tests вынесены из `scratchpad_store.rs` в
+`scratchpad_store_tests.rs`; production-файл уменьшен до 354 строк,
+confirmation basis, immutable revisions, recovery-on-shutdown, bounded
+projection, task clearing и privacy/offload contracts сохранены. Core marker
+повышен `0.0.000351 -> 0.0.000352`; 11 scratchpad-store tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
