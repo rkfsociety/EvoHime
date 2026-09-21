@@ -2935,6 +2935,14 @@ scoped revision fencing, idempotency, raw provider-material rejection и
 secret-like scope rejection contracts сохранены. 3 free-access tests,
 format/diff-check прошли локально; изменение test-only, Core marker не менялся.
 
+Conversation bridge adapter tests вынесены из
+`conversation_bridge_adapters_store.rs` в
+`conversation_bridge_adapters_store_tests.rs`; production-файл уменьшен до
+200 строк, bridge/binding identity checks, idempotency, cascading cleanup,
+revision fencing и payload bounds contracts сохранены. 7 conversation-bridge
+tests, strict clippy, Core+storage check, format/diff-check прошли локально;
+изменение test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
