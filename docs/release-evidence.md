@@ -2586,3 +2586,10 @@ recovery event publication сохранены. Core marker повышен `0.0.0
 0.0.000316`; локально проверены recovery sweep tests, strict clippy,
 format/diff-check и storage compile. CI evidence для этого коммита будет
 добавлено после push десятой commit-группы.
+
+Typed ledger single/batch append and atomic workflow-node transition вынесены
+в `ledger_store.rs`; event validation, duplicate-terminal guard and one-commit
+node linkage сохранены. Core marker повышен `0.0.000316 -> 0.0.000317`; локально
+проверены execution-ledger and workflow-transition tests, strict clippy,
+format/diff-check и storage compile. CI evidence для этого коммита будет
+добавлено после push десятой commit-группы.
