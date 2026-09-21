@@ -2999,6 +2999,14 @@ checkpoint metadata round-trip и restore-journal append contracts сохран�
 format/diff-check прошли локально; изменение test-only, Core marker не
 менялся.
 
+External coding-agent adapter tests вынесены из
+`external_coding_agent_adapter_store.rs` в
+`external_coding_agent_adapter_store_tests.rs`; production-файл уменьшен до
+96 строк, event idempotency и stale/duplicate preset revision fences
+сохранены. 3 external-agent tests, strict clippy, Core+storage check,
+format/diff-check прошли локально; изменение test-only, Core marker не
+менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
