@@ -2517,3 +2517,8 @@ Project CRUD, workspace-path lookup и optimistic project-policy update выне
 в `project_store.rs`; version-conflict behavior и public `LocalDatabase` methods
 сохранены. Core marker повышен `0.0.000304 -> 0.0.000305`; проверены project
 storage tests, strict clippy и Core+storage compile.
+
+Snapshot save/get/latest-for-task methods вынесены в `snapshot_store.rs`; run
+ownership lookup, ordering и payload round-trip не изменились. Core marker
+повышен `0.0.000305 -> 0.0.000306`; проверены snapshot-focused tests, strict
+clippy и Core+storage compile.

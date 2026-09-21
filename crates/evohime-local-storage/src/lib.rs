@@ -125,6 +125,7 @@ pub mod scratchpad_store;
 pub mod semantic_activity_motion_system_store;
 pub mod skill_source_lifecycle_store;
 pub(crate) mod skill_trust_pipeline_store;
+mod snapshot_store;
 pub mod standing_approval_profiles_store;
 pub mod static_analysis_pack_store;
 mod storage_error;
@@ -455,62 +456,6 @@ impl LocalDatabase {
                     })
                 },
             )
-            .optional()?)
-    }
-
-    pub fn save_snapshot(
-        &self,
-        id: &str,
-        run_id: &str,
-        workspace_hash: &str,
-        payload: &[u8],
-    ) -> Result<SnapshotRecord, StorageError> {
-        self.connection.execute(
-            "INSERT INTO snapshots(id, run_id, workspace_hash, payload) VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![id, run_id, workspace_hash, payload],
-        )?;
-        self.get_snapshot(id)?
-            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
-    }
-
-    pub fn get_snapshot(&self, id: &str) -> Result<Option<SnapshotRecord>, StorageError> {
-        Ok(self
-            .connection
-            .query_row(
-                "SELECT id, run_id, workspace_hash, payload, created_at FROM snapshots WHERE id = ?1",
-                [id],
-                |row| {
-                    Ok(SnapshotRecord {
-                        id: row.get(0)?,
-                        run_id: row.get(1)?,
-                        workspace_hash: row.get(2)?,
-                        payload: row.get(3)?,
-                        created_at: row.get(4)?,
-                    })
-                },
-            )
-            .optional()?)
-    }
-
-    pub fn latest_snapshot_for_task(
-        &self,
-        task_id: &str,
-    ) -> Result<Option<SnapshotRecord>, StorageError> {
-        let mut statement = self.connection.prepare(
-            "SELECT s.id, s.run_id, s.workspace_hash, s.payload, s.created_at
-             FROM snapshots s JOIN runs r ON r.id = s.run_id
-             WHERE r.work_item_id = ?1 ORDER BY s.created_at DESC, s.id DESC LIMIT 1",
-        )?;
-        Ok(statement
-            .query_row([task_id], |row| {
-                Ok(SnapshotRecord {
-                    id: row.get(0)?,
-                    run_id: row.get(1)?,
-                    workspace_hash: row.get(2)?,
-                    payload: row.get(3)?,
-                    created_at: row.get(4)?,
-                })
-            })
             .optional()?)
     }
 
