@@ -2600,3 +2600,10 @@ outcome publication and terminal-outcome guards сохранены. Core marker 
 `0.0.000317 -> 0.0.000318`; локально проверены core-start/reconciliation tests,
 strict clippy, format/diff-check и storage compile. После этого десятого
 коммита выполняется обязательный push и обновляется live CI evidence.
+
+Connection accessors, schema-version lookup, events-table inspection and command
+deduplication вынесены в `database_access.rs`; публичный `LocalDatabase` API и
+deduplication conflict semantics сохранены. Core marker повышен
+`0.0.000318 -> 0.0.000319`; локально проверены schema/index, prepared-open и
+deduplication tests, format/diff-check и storage compile. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.
