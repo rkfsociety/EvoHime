@@ -2707,3 +2707,10 @@ fields сохранены. Verifier marker повышен `0.0.000045 -> 0.0.000
 runtime tests, strict clippy, format/diff-check и Core+receipts check прошли
 локально. CI evidence для новой commit-группы будет добавлено после её
 десятого коммита.
+
+Signed action receipt assembly вынесена в `runtime_signing.rs`; chain-head
+consistency check, canonical payload/envelope hashing, signature boundary,
+append metrics and read-only sampling metrics сохранены. Verifier marker
+повышен `0.0.000046 -> 0.0.000047`; 36 runtime tests, strict clippy,
+format/diff-check и Core+receipts check прошли локально. CI evidence для
+новой commit-группы будет добавлено после её десятого коммита.
