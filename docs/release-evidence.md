@@ -2669,6 +2669,14 @@ fingerprint/canonical-hash contracts сохранены. Core marker повыш�
 format/diff-check и Core+permissions check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
 
+Тесты `evohime-local-storage::memory_store` вынесены в
+`memory_store_tests.rs`; production-файл `memory_store.rs` уменьшен до 1047
+строк, SQL bounds, scope filters, tombstone и session-note contracts
+сохранены. Core marker повышен `0.0.000333 -> 0.0.000334`; 21 memory-store
+tests, strict clippy, format/diff-check и Core+storage check прошли локально.
+CI evidence для новой commit-группы будет добавлено после её десятого
+коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
