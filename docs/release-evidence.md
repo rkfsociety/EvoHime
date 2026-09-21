@@ -2964,6 +2964,13 @@ identifier validation contracts сохранены. 5 model-limit tests, strict
 clippy, Core+storage check, format/diff-check прошли локально; изменение
 test-only, Core marker не менялся.
 
+Team SOP protocol/session tests вынесены из `team_sop_protocols_store.rs` в
+`team_sop_protocols_store_tests.rs`; production-файл уменьшен до 76 строк,
+immutable protocol history, listing and payload bounds, session version fence
+и duplicate-version protection contracts сохранены. 7 Team SOP tests, strict
+clippy, Core+storage check, format/diff-check прошли локально; изменение
+test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
