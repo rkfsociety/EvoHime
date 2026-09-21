@@ -2496,3 +2496,9 @@ Runtime/recovery records, diagnostic projections and transition inputs тепе�
 `pub(crate)` только для сохранения внутренней связи с facade. Core marker
 повышен `0.0.000300 -> 0.0.000301`; schema, recovery transitions и public
 re-export paths не изменялись.
+
+Ledger event INSERT, cached INSERT и duplicate-terminal guard вынесены в
+`ledger_helpers.rs`; транзакционные callers используют те же проверки через
+`pub(crate)` helpers. Core marker повышен `0.0.000301 -> 0.0.000302`; локально
+проверены focused execution-ledger tests, format/diff-check и Core+storage
+compile, CI evidence будет добавлено после push десятой commit-группы.
