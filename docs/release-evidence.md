@@ -2792,3 +2792,9 @@ strict clippy и format/diff-check прошли локально. Linux Core lib
 Core marker повышен `0.0.000329 -> 0.0.000330`; 19 routing tests,
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
+
+Большой inline test-модуль `evohime-local-storage/src/lib.rs` вынесен в
+`tests.rs`; production-файл уменьшен до 201 строки без изменения storage API.
+Core marker повышен `0.0.000330 -> 0.0.000331`; 406 storage tests, strict
+clippy, format/diff-check и Core+storage check прошли локально. CI evidence
+для новой commit-группы будет добавлено после её десятого коммита.
