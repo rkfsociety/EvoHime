@@ -2721,3 +2721,10 @@ invariants, recovery metrics and ready/read-only guard transitions сохран�
 Verifier marker повышен `0.0.000047 -> 0.0.000048`; 36 runtime tests, strict
 clippy, format/diff-check и Core+receipts check прошли локально. CI evidence
 для новой commit-группы будет добавлено после её десятого коммита.
+
+Bounded receipt recovery projections and deterministic read-only sampling
+вынесены в `runtime_projection.rs`; AES-GCM envelope bounds, recovery-code
+validation, marker canonicalization and sampling hash contract сохранены.
+Verifier marker повышен `0.0.000048 -> 0.0.000049`; 36 runtime tests, strict
+clippy, format/diff-check и Core+receipts check прошли локально. CI evidence
+для новой commit-группы будет добавлено после её десятого коммита.
