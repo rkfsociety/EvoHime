@@ -66,7 +66,7 @@
 | Команды сборки, запуска и проверок | [`../AGENTS.md`](../AGENTS.md) |
 | Установить текущий Windows-клиент | [`../installer/release-notes.md`](../installer/release-notes.md) |
 | Provider-specific configuration | [`providers/`](providers/) |
-| Core crate contracts and implementation notes | соответствующий `crates/*/README.md` |
+| Core crate contracts and implementation notes | [`architecture.md`](architecture.md) и README конкретного crate, если он существует |
 
 Один факт не должен поддерживаться вручную в нескольких статусных документах:
 ссылки на факт допустимы, копирование таблиц состояния — нет.

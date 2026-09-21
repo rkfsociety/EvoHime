@@ -26,7 +26,18 @@ output, transcripts, absolute paths и PII запрещены.
 
 ### Current code baseline and live gates (2026-09-21)
 
-- Module router [run 35567850005](https://github.com/rkfsociety/EvoHime/actions/runs/35567850005) и core module [run 35567896714](https://github.com/rkfsociety/EvoHime/actions/runs/35567896714) были в статусе `PENDING` на момент фиксации этого документа. Они не считаются зелёным release gate до завершения.
+- Для code baseline `cbd5aa6539ff873248a418ceb133e61fcb91417d` module router
+  [run 35567850005](https://github.com/rkfsociety/EvoHime/actions/runs/35567850005),
+  core module
+  [run 35567896714](https://github.com/rkfsociety/EvoHime/actions/runs/35567896714)
+  и compatible release manifest
+  [run 35570007272](https://github.com/rkfsociety/EvoHime/actions/runs/35570007272)
+  завершились `success`. Опубликован текущий Core release
+  [`module-core-v0.0.000362`](https://github.com/rkfsociety/EvoHime/releases/tag/module-core-v0.0.000362).
+
+- Локальный `pwsh -NoProfile -File scripts/documentation.tests.ps1` также
+  завершился `PASS` для 110 tracked text files; это документационный gate и не
+  заменяет platform-specific package acceptance.
 
 ### Historical CLI modularization batch and live gates (2026-09-21)
 

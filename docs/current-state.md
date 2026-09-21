@@ -9,7 +9,7 @@ release-gates и результаты отдельных завершённых 
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v174, а также
+v042–v116 и v149–v175, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -222,10 +222,10 @@ deprecated positional arguments в консольное окно.
 ## Граница текущего checkout и CI
 
 Текущий checkout содержит task-only реализацию единственного web-установщика и
-self-contained updater в `main`; после последнего plan-push `HEAD` может
-временно опережать `origin/main` локальными task-only коммитами. Узкие проверки updater и trace follow-up пройдены
-локально; live CI evidence для этих локальных коммитов отдельно не заявляется
-до проверки GitHub Actions. Подробное redacted evidence находится в
+self-contained updater в `main`. `HEAD` `376fa354` совпадает с
+`origin/main`; последний коммит, меняющий код, — `cbd5aa6539ff873248a418ceb133e61fcb91417d`.
+Module router и Core workflow для этого code baseline завершились успешно;
+подробное redacted evidence находится в
 [`release-evidence.md`](release-evidence.md).
 
 ## История чата в renderer
@@ -383,9 +383,9 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Текущий checkout находится в `main`; локальные task-only commits перед
-плановым push могут временно опережать `origin/main`, поэтому live CI evidence
-для них не заявляется до публикации.
+Текущий checkout находится в `main`; `HEAD` совпадает с `origin/main`.
+Актуальные module router, Core и compatible-release workflow завершились
+успешно для code baseline `cbd5aa6539ff873248a418ceb133e61fcb91417d`.
 Полный Windows workflow
 `34912288572` является историческим evidence предыдущего опубликованного
 baseline; актуальные installer/module/router/compatibility результаты и
@@ -394,7 +394,7 @@ baseline; актуальные installer/module/router/compatibility резул�
 
 | Проверка | Результат |
 | --- | --- |
-| Статическая сверка исходников, тестов и workflow | Выполнена; узкие локальные tests/typecheck и GitHub Actions gates прошли |
+| Статическая сверка исходников, тестов и workflow | Выполнена; документационный gate прошёл, узкие локальные проверки и актуальные GitHub Actions gates зафиксированы в `release-evidence.md` |
 | `git diff --check` | PASS |
 
 ## Исторические сведения о закрытых планах
@@ -423,7 +423,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог пуст. Планы `149–167` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `173–181`; планы `149–167` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

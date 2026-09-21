@@ -99,8 +99,8 @@ recovery, IPC/UI при наличии, focused tests, release evidence и об�
 ## Команды проверки
 
 Полный список команд находится в [`../AGENTS.md`](../AGENTS.md). На рабочей
-машине используются только быстрые проверки; полный набор запускается через
-GitHub Actions workflow:
+машине по умолчанию используются быстрые проверки, а полный набор
+предпочтительно запускается через GitHub Actions workflow:
 
 ```powershell
 pwsh -File .\scripts\documentation.tests.ps1
@@ -116,7 +116,7 @@ Windows native package acceptance workflow запускается только �
 `workflow_dispatch`. Он не подписан на `push`/PR, не вызывается центральным
 `module-router` и не входит в release path. Центральный `module-router`
 dispatch’ит только затронутые module workflows, compatibility manifest и
-единственный web-installer workflow. Полный локальный прогон запрещён рабочим
-процессом проекта; локально выполняются только документационные,
-protocol/typecheck и узкие проверки изменённых модулей. Описание workflow
+единственный web-installer workflow. Полный локальный прогон не требуется по
+умолчанию, но не запрещён: объём локальной проверки выбирается по риску и
+области изменения. Описание workflow
 находится в [`.github/workflows/`](../.github/workflows/).
