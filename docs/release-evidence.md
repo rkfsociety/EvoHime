@@ -2669,6 +2669,13 @@ fingerprint/canonical-hash contracts сохранены. Core marker повыш�
 format/diff-check и Core+permissions check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
 
+Inline registry tests `evohime-tool-runtime` вынесены в `registry_tests.rs`;
+production-файл `registry.rs` уменьшен до 1297 строк, tool preflight,
+approval и manifest contracts сохранены. Core marker повышен
+`0.0.000332 -> 0.0.000333`; 157 unit tests, 6 network integration tests,
+7 stage3 integration tests, strict clippy, format/diff-check и Core+tool-runtime
+check прошли локально; один cargo test остаётся штатно ignored.
+
 Memory read-query builders и общий SELECT column contract вынесены в
 `memory_queries.rs`; порядок колонок, predicates, bind-позиции и сортировка не
 изменены. Core marker повышен `0.0.000327 -> 0.0.000328`; проверка memory
