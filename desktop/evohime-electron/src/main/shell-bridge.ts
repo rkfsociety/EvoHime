@@ -31,7 +31,6 @@ import {
   normalizeApiKey,
   normalizeBaseUrl,
   normalizeModel,
-  isProviderKind,
   type ProviderStore
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
