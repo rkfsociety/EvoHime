@@ -2690,6 +2690,13 @@ Core marker повышен `0.0.000335 -> 0.0.000336`; 7 goal tests, strict clip
 format/diff-check и Core+storage check прошли локально. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
 
+Workflow storage tests вынесены из `workflow_store.rs` в
+`workflow_store_tests.rs`; production-файл уменьшен до 984 строк, dispatch
+marker, monotonic replay, lease, cancellation и crash-recovery contracts
+сохранены. Core marker повышен `0.0.000336 -> 0.0.000337`; 8 workflow-store
+tests, format/diff-check прошли локально. CI evidence для новой commit-группы
+будет добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
