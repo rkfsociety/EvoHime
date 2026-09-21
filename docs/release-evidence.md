@@ -2777,3 +2777,11 @@ ELF-тестового процесса. Updater marker повышен `0.0.0001
 18 library tests и 35 binary tests, strict clippy, format/diff-check и check
 updater crates прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
+
+IPC workspace command dispatch разделён между `ipc_bridge_workspace_commands.rs`
+и `ipc_bridge_workspace_commands_extensions.rs`; публичные `pub(crate)` методы
+и dispatch-контракт сохранены. Core marker повышен `0.0.000328 -> 0.0.000329`;
+strict clippy и format/diff-check прошли локально. Linux Core lib suite:
+943/948 тестов прошли, 5 DPAPI-зависимых receipt IPC сценариев завершились
+ожидаемым `UnsupportedPlatform`; CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
