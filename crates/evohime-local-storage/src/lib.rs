@@ -92,6 +92,7 @@ pub mod local_model_compatibility_gateway_store;
 pub mod local_model_performance_calibration_store;
 pub mod local_model_runtime_manager_store;
 pub mod memory_extraction_store;
+mod memory_inputs;
 mod memory_mapping;
 mod memory_schema;
 pub(crate) mod memory_store;

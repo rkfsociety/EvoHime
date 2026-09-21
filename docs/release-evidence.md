@@ -2654,3 +2654,10 @@ read-back remain unchanged. Core marker повышен `0.0.000325 -> 0.0.000326
 все 21 memory tests, strict clippy, format/diff-check и Core+storage check
 прошли локально. CI evidence для новой commit-группы будет добавлено после её
 десятого коммита.
+
+Memory command input records вынесены в `memory_inputs.rs`, а
+`memory_store` сохранил прежние crate-visible пути через re-export. Формы
+входных данных и ownership семантика не изменены. Core marker повышен
+`0.0.000326 -> 0.0.000327`; проверка memory tests, strict clippy,
+format/diff-check и Core+storage check выполняется перед коммитом. CI evidence
+для новой commit-группы будет добавлено после её десятого коммита.

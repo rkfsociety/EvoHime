@@ -7,6 +7,7 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub use crate::memory_inputs::{InsertSessionNoteInput, MemoryRecordInput};
 use crate::memory_mapping::map_record;
 pub use crate::memory_schema::install_schema;
 
@@ -357,29 +358,6 @@ fn redact_sensitive(value: &str) -> String {
 
 /// Parameterized SQL only; schema creation and migrations remain external.
 pub struct MemoryStoreSql;
-
-pub struct InsertSessionNoteInput<'a> {
-    pub id: &'a str,
-    pub session_id: &'a str,
-    pub scope: MemoryScope,
-    pub scope_id: &'a str,
-    pub kind: &'a str,
-    pub statement: &'a str,
-    pub created_at: &'a str,
-    pub expires_at: &'a str,
-}
-
-pub struct MemoryRecordInput {
-    pub id: String,
-    pub scope: MemoryScope,
-    pub scope_id: String,
-    pub title: String,
-    pub content: String,
-    pub provenance: String,
-    pub privacy: MemoryPrivacy,
-    pub created_at: String,
-    pub expires_at: Option<String>,
-}
 
 /// Полный список колонок в порядке, которого придерживается `map_record`.
 /// Держится в одном месте, чтобы SELECT'ы не расходились между собой.
