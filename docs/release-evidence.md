@@ -44,6 +44,24 @@ compatible-manifest runs; исторические разделы ниже со�
   с `eva.exe` и `cli.manifest.json`; compatibility manifest опубликован
   отдельным fixed release после успешного module gate.
 
+### CLI Windows event-output boundary live gates (2026-09-21)
+
+- После ещё десяти task-only коммитов SHA `ea644b96a60e4d9530dad1211f9f2eb669c2ccac`
+  содержит отдельный `windows_event_output` для redacted event stream; CLI
+  marker достиг `0.0.000084`, protocol envelope metadata и Windows control
+  acknowledgements сохранили прежние public paths и schema.
+- Exact-SHA router run
+  [35545585804](https://github.com/rkfsociety/EvoHime/actions/runs/35545585804),
+  CLI run
+  [35545674910](https://github.com/rkfsociety/EvoHime/actions/runs/35545674910)
+  и compatibility manifest run
+  [35545890168](https://github.com/rkfsociety/EvoHime/actions/runs/35545890168)
+  завершились `success`; Linux contract, Windows tests/clippy/release build,
+  artifact publication и compatibility gate подтверждены.
+- Опубликован release
+  [`module-cli-v0.0.000084`](https://github.com/rkfsociety/EvoHime/releases/tag/module-cli-v0.0.000084)
+  с `eva.exe` и `cli.manifest.json`.
+
 ### CLI Windows endpoint boundary (2026-09-21)
 
 - Named-pipe launch-context loading и platform endpoint setup вынесены из
@@ -2465,3 +2483,10 @@ Core patch повышен `0.0.000292 -> 0.0.000293`.
 
 Локальная проверка и CI evidence для нового коммита будут добавлены после
 проверки соответствующего Core workflow.
+
+Следующим storage-шагом публичные event/project/work-item/provenance snapshot
+records вынесены в отдельный `records.rs`; их root re-export paths сохранены.
+Core marker повышен `0.0.000299 -> 0.0.000300`. Локально прошли полный
+`evohime-local-storage` lib suite (406/406), strict clippy и Core+storage
+`cargo check`; CI evidence для этого нового коммита будет добавлено после
+следующего module-router push.
