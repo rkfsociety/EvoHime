@@ -2579,3 +2579,10 @@ transitions сохранены. Core marker повышен `0.0.000314 -> 0.0.00
 проверены recovery transition tests, strict clippy, format/diff-check и storage
 compile. CI evidence для этого коммита будет добавлено после push десятой
 commit-группы.
+
+Unknown-effect recovery sweep and run-status update вынесены в
+`run_recovery_sweep_store.rs`; lease cleanup, blocked-state marking and durable
+recovery event publication сохранены. Core marker повышен `0.0.000315 ->
+0.0.000316`; локально проверены recovery sweep tests, strict clippy,
+format/diff-check и storage compile. CI evidence для этого коммита будет
+добавлено после push десятой commit-группы.
