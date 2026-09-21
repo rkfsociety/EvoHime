@@ -2490,3 +2490,9 @@ Core marker повышен `0.0.000299 -> 0.0.000300`. Локально прош
 `evohime-local-storage` lib suite (406/406), strict clippy и Core+storage
 `cargo check`; CI evidence для этого нового коммита будет добавлено после
 следующего module-router push.
+
+Runtime/recovery records, diagnostic projections and transition inputs теперь
+живут в отдельном `runtime_records.rs`; `RecoveryState` helpers стали
+`pub(crate)` только для сохранения внутренней связи с facade. Core marker
+повышен `0.0.000300 -> 0.0.000301`; schema, recovery transitions и public
+re-export paths не изменялись.
