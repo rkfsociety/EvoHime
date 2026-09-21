@@ -175,10 +175,13 @@ export class ModuleUpdateService {
     let resolveCompletion: (succeeded: boolean) => void = () => {}
     const completion = new Promise<boolean>((resolve) => { resolveCompletion = resolve })
     try {
+      const useWindowsShell = process.platform === 'win32'
       const child = spawn(
-        this.options.updaterPath,
-        args,
-        { detached: true, stdio: 'ignore', windowsHide: true, shell: false }
+        useWindowsShell ? quoteShellArgument(this.options.updaterPath) : this.options.updaterPath,
+        useWindowsShell
+          ? args.map((argument, index) => index === 2 || index === 6 || index === 8 ? quoteShellArgument(argument) : argument)
+          : args,
+        { detached: true, stdio: 'ignore', windowsHide: true, shell: useWindowsShell }
       )
       child.once('error', () => {
         this.patchLocal({ phase: 'failed', message: 'Не удалось запустить updater worker.', error: 'Updater worker недоступен.' })
@@ -308,6 +311,10 @@ function readInstalledModules(installDirectory: string): Readonly<Record<string,
   } catch {
     return {}
   }
+}
+
+function quoteShellArgument(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`
 }
 
 function toUpdatePhase(value: string | undefined, hasAvailable: boolean): UpdateStatus['phase'] {

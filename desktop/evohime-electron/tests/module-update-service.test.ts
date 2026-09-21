@@ -51,13 +51,25 @@ describe('ModuleUpdateService', () => {
 
     await service.prepareComponents(['listener-runtime'])
 
+    const expectedPath = process.platform === 'win32'
+      ? '"C:\\Program Files\\EvoHime\\evohime-updater.exe"'
+      : 'C:\\Program Files\\EvoHime\\evohime-updater.exe'
+    const expectedInstall = process.platform === 'win32'
+      ? '"C:\\Program Files\\EvoHime"'
+      : 'C:\\Program Files\\EvoHime'
+    const expectedRelaunch = process.platform === 'win32'
+      ? '"C:\\Program Files\\EvoHime\\EvoHime.exe"'
+      : 'C:\\Program Files\\EvoHime\\EvoHime.exe'
+    const expectedHealth = process.platform === 'win32'
+      ? '"C:\\data\\EvoHime\\update-state\\health.json"'
+      : 'C:\\data\\EvoHime\\update-state\\health.json'
     expect(spawnMock).toHaveBeenCalledWith(
-      'C:\\Program Files\\EvoHime\\evohime-updater.exe',
-      ['--apply', '--install-dir', 'C:\\Program Files\\EvoHime', '--wait-pid', String(process.pid), '--relaunch', 'C:\\Program Files\\EvoHime\\EvoHime.exe', '--health-file', 'C:\\data\\EvoHime\\update-state\\health.json'],
+      expectedPath,
+      ['--apply', '--install-dir', expectedInstall, '--wait-pid', String(process.pid), '--relaunch', expectedRelaunch, '--health-file', expectedHealth],
       expect.objectContaining({
         detached: true,
         windowsHide: true,
-        shell: false,
+        shell: process.platform === 'win32',
         stdio: 'ignore'
       })
     )
@@ -217,16 +229,19 @@ describe('ModuleUpdateService', () => {
       expect(quitForApply).toBe(false)
       expect(spawnMock).toHaveBeenCalledTimes(2)
       const applyCall = spawnMock.mock.calls[1] as unknown as [string, readonly string[]] | undefined
+      const expectedInstall = process.platform === 'win32' ? `"${install}"` : install
+      const expectedRelaunch = process.platform === 'win32' ? `"${join(install, 'EvoHime.exe')}"` : join(install, 'EvoHime.exe')
+      const expectedHealth = process.platform === 'win32' ? `"${join(root, 'update-state', 'health.json')}"` : join(root, 'update-state', 'health.json')
       expect(applyCall?.[1]).toEqual([
         '--apply',
         '--install-dir',
-        install,
+        expectedInstall,
         '--wait-pid',
         String(process.pid),
         '--relaunch',
-        join(install, 'EvoHime.exe'),
+        expectedRelaunch,
         '--health-file',
-        join(root, 'update-state', 'health.json')
+        expectedHealth
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
