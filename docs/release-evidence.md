@@ -2811,6 +2811,14 @@ projection, task clearing и privacy/offload contracts сохранены. Core 
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Durable background execution storage tests вынесены из
+`durable_background_execution_store.rs` в
+`durable_background_execution_store_tests.rs`; production-файл уменьшен до
+430 строк, bounded metadata, idempotent waits и automation-run linkage
+contracts сохранены. Core marker повышен `0.0.000352 -> 0.0.000353`; 1
+durable-background test, format/diff-check прошли локально. CI evidence для
+новой commit-группы будет добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
