@@ -2559,3 +2559,9 @@ guards сохранены. Core marker повышен `0.0.000311 -> 0.0.000312`
 проверены effect/recovery tests, strict clippy, format/diff-check и storage
 compile. CI evidence для этого коммита будет добавлено после push десятой
 commit-группы.
+
+Run and agent lease acquire/heartbeat/release paths вынесены в
+`run_lease_store.rs`; owner, generation, expiry and fencing checks preserved.
+Core marker повышен `0.0.000312 -> 0.0.000313`; локально проверены lease/effect
+tests, strict clippy, format/diff-check и storage compile. CI evidence для
+этого коммита будет добавлено после push десятой commit-группы.
