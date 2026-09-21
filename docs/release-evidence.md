@@ -3014,6 +3014,14 @@ secret-free schema, deduplication, immutable event payloads, definition bounds
 strict clippy, Core+storage check, format/diff-check прошли локально;
 изменение test-only, Core marker не менялся.
 
+Execution backend registry tests вынесены из
+`execution_backend_registry_store.rs` в
+`execution_backend_registry_store_tests.rs`; production-файл уменьшен до 90
+строк, idempotent metadata, stale-version fencing, listing bound и capability
+payload limit contracts сохранены. 4 execution-backend tests, strict clippy,
+Core+storage check, format/diff-check прошли локально; изменение test-only,
+Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
