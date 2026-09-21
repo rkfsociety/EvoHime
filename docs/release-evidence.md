@@ -2985,6 +2985,13 @@ report и manifest bounds contracts сохранены. 4 integration-provider t
 strict clippy, Core+storage check, format/diff-check прошли локально;
 изменение test-only, Core marker не менялся.
 
+Team coordinator storage test вынесен из `team_coordinator_store.rs` в
+`team_coordinator_store_tests.rs`; production-файл уменьшен до 151 строки,
+revision-fenced work-item replacement, additive schema и idempotency lookup
+contracts сохранены. 1 team-coordinator test, strict clippy, Core+storage
+check, format/diff-check прошли локально; изменение test-only, Core marker не
+менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
