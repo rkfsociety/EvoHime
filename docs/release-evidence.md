@@ -2593,3 +2593,10 @@ node linkage сохранены. Core marker повышен `0.0.000316 -> 0.0.0
 проверены execution-ledger and workflow-transition tests, strict clippy,
 format/diff-check и storage compile. CI evidence для этого коммита будет
 добавлено после push десятой commit-группы.
+
+Core-start event publication and startup ledger reconciliation вынесены в
+`ledger_reconciliation_store.rs`; dispatch-marker classification, unknown
+outcome publication and terminal-outcome guards сохранены. Core marker повышен
+`0.0.000317 -> 0.0.000318`; локально проверены core-start/reconciliation tests,
+strict clippy, format/diff-check и storage compile. После этого десятого
+коммита выполняется обязательный push и обновляется live CI evidence.
