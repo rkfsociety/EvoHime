@@ -15,6 +15,7 @@ pub mod export;
 pub mod key_lifecycle;
 pub mod runtime;
 mod runtime_contract;
+mod runtime_payload;
 mod runtime_platform;
 mod runtime_policy;
 mod runtime_transaction;

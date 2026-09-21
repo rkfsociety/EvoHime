@@ -2699,3 +2699,11 @@ behavior сохранены. Verifier marker повышен `0.0.000044 -> 0.0.0
 runtime tests, strict clippy, format/diff-check и Core+receipts check прошли
 локально. CI evidence для новой commit-группы будет добавлено после её
 десятого коммита.
+
+Receipt payload redaction, bounded previews, canonical action payload assembly
+и parent approval reference validation вынесены в `runtime_payload.rs`;
+credential redaction, byte bounds, UUID-v7 validation and serialized payload
+fields сохранены. Verifier marker повышен `0.0.000045 -> 0.0.000046`; 36
+runtime tests, strict clippy, format/diff-check и Core+receipts check прошли
+локально. CI evidence для новой commit-группы будет добавлено после её
+десятого коммита.
