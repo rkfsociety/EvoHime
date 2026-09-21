@@ -969,6 +969,42 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// Regression: the workspace index status command must reach the
+    /// workspace coordinator domain. Routing it through the capabilities
+    /// runtime used to hit its `unreachable!` arm, drop the response, and
+    /// permanently kill the coordinator worker used by the shell.
+    #[tokio::test]
+    async fn index_status_command_is_routed_to_the_workspace_handler() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-core-index-status-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal);
+        let (reply, response) = tokio::sync::oneshot::channel();
+
+        coordinator
+            .dispatch(CoreCommand::GetIndexStatus {
+                workspace_path: std::env::current_dir()
+                    .expect("current directory")
+                    .to_string_lossy()
+                    .into_owned(),
+                reply,
+            })
+            .await
+            .expect("command dispatches");
+
+        let payload = response
+            .await
+            .expect("workspace handler replies")
+            .expect("index status succeeds");
+        let projection: serde_json::Value =
+            serde_json::from_slice(&payload).expect("index status is valid json");
+        assert_eq!(projection["status"]["status"], "not_indexed");
+
+        let _ = std::fs::remove_file(path);
+    }
+
     /// Regression: plan review recorded its progress straight into the journal.
     /// The events were durable, but the pipe server flushes its tail only on the
     /// `journalled` signal, so the shell saw nothing and a running review looked

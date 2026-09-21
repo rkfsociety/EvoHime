@@ -716,7 +716,7 @@ impl TaskCoordinator {
             c @ CoreCommand::SearchWorkspaceKnowledge { .. } => {
                 capabilities_runtime::handle(state, c).await
             }
-            c @ CoreCommand::GetIndexStatus { .. } => capabilities_runtime::handle(state, c).await,
+            c @ CoreCommand::GetIndexStatus { .. } => workspace::handle(state, c).await,
             c @ CoreCommand::SubmitFeedback { .. } => workspace::handle(state, c).await,
             c @ CoreCommand::ListFeedback { .. } => workspace::handle(state, c).await,
             c @ CoreCommand::GetContextLedger { .. } => workspace::handle(state, c).await,
