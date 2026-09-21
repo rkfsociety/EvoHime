@@ -2705,6 +2705,14 @@ concurrent append contracts сохранены. Core marker повышен
 прошли локально. CI evidence для новой commit-группы будет добавлено после
 её десятого коммита.
 
+Model provenance storage tests вынесены из `model_provenance.rs` в
+`model_provenance_tests.rs`; production-файл уменьшен до 1264 строк,
+idempotent commit, nested source refs, request scoping, schema migration и
+failed-lineage rollback contracts сохранены. Core marker повышен
+`0.0.000338 -> 0.0.000339`; 5 model-provenance tests, format/diff-check
+прошли локально. CI evidence для новой commit-группы будет добавлено после
+её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
