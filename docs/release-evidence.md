@@ -2728,3 +2728,10 @@ validation, marker canonicalization and sampling hash contract сохранен�
 Verifier marker повышен `0.0.000048 -> 0.0.000049`; 36 runtime tests, strict
 clippy, format/diff-check и Core+receipts check прошли локально. CI evidence
 для новой commit-группы будет добавлено после её десятого коммита.
+
+Receipt SQLite schema installation and legacy compatibility upgrades вынесены
+в `runtime_schema.rs`; table definitions, additive columns, request-commit
+rebuild and idempotent defaults сохранены. Verifier marker повышен
+`0.0.000049 -> 0.0.000050`; 36 runtime tests, strict clippy,
+format/diff-check и Core+receipts check прошли локально. CI evidence для
+новой commit-группы будет добавлено после её десятого коммита.

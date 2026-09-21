@@ -20,6 +20,7 @@ mod runtime_platform;
 mod runtime_policy;
 mod runtime_projection;
 mod runtime_recovery;
+mod runtime_schema;
 mod runtime_signing;
 mod runtime_transaction;
 
