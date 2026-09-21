@@ -2882,6 +2882,15 @@ stale handoff fencing и atomic publish contracts сохранены. Core marke
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Agent Git change-set storage tests вынесены из
+`agent_git_change_sets_store.rs` в
+`agent_git_change_sets_store_tests.rs`; production-файл уменьшен до 289
+строк, idempotency claim ownership, paired rollback, bounded candidate write
+и schema migration contracts сохранены. Core marker повышен
+`0.0.000360 -> 0.0.000361`; 4 agent-git-change-set tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
