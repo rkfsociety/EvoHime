@@ -2873,6 +2873,15 @@ marker повышен `0.0.000358 -> 0.0.000359`; 1 grounded-research test,
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Visual workflow builder storage tests вынесены из
+`visual_workflow_builder_store.rs` в
+`visual_workflow_builder_store_tests.rs`; production-файл уменьшен до 165
+строк, idempotent schema, draft revisions, layout/execution hash separation,
+stale handoff fencing и atomic publish contracts сохранены. Core marker
+повышен `0.0.000359 -> 0.0.000360`; 4 visual-workflow tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
