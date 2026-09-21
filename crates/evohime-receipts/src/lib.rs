@@ -17,6 +17,7 @@ pub mod runtime;
 mod runtime_contract;
 mod runtime_platform;
 mod runtime_policy;
+mod runtime_transaction;
 
 pub const RECEIPT_VERSION: u64 = 1;
 include!(concat!(env!("OUT_DIR"), "/receipt_limits.rs"));

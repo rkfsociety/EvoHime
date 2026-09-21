@@ -5,6 +5,7 @@
 //! terminal receipt.  The durable rows are the recovery source of truth.
 
 use crate::runtime_platform::{boot_id, monotonic_ms};
+use crate::runtime_transaction::RetryTransaction;
 use crate::{
     canonicalize_json, receipt_hash, result_hash, validate_uuid_v7, Envelope, ReceiptError,
 };
@@ -609,7 +610,7 @@ pub(crate) fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
 
-fn increment_metric_tx(
+pub(crate) fn increment_metric_tx(
     connection: &Connection,
     metric: &str,
     amount: i64,
@@ -656,104 +657,6 @@ fn stored_hash_for_action(
         .map_err(RuntimeError::from)
 }
 
-/// Normative lock-retry schedule for chain-append transactions: attempt
-/// immediately, then retry after 10ms, 50ms and 250ms before surfacing
-/// `receipt.chain_conflict`. SQLite's own busy handler is disabled around
-/// these attempts so this application-level schedule is authoritative.
-const APPEND_RETRY_DELAYS_MS: [u64; 4] = [0, 10, 50, 250];
-
-/// A hand-rolled `BEGIN IMMEDIATE` guard used only by the receipt-append
-/// paths. `rusqlite::Connection::transaction_with_behavior` requires `&mut
-/// self` and keeps that place mutably borrowed for the entire lifetime of
-/// the returned `Transaction`, which makes an in-place retry-with-backoff
-/// loop unrepresentable under NLL (every attempt, including failed ones,
-/// would need the same borrow region as the eventual success). Driving
-/// `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` as raw statements over a shared
-/// `&Connection` sidesteps that: every rusqlite statement method here only
-/// needs `&self`.
-struct RetryTransaction<'a> {
-    connection: &'a Connection,
-    finished: bool,
-}
-
-impl<'a> std::ops::Deref for RetryTransaction<'a> {
-    type Target = Connection;
-    fn deref(&self) -> &Connection {
-        self.connection
-    }
-}
-
-impl<'a> RetryTransaction<'a> {
-    fn begin(connection: &'a Connection) -> Result<Self, RuntimeError> {
-        let _ = connection.busy_timeout(Duration::from_millis(0));
-        for (index, delay) in APPEND_RETRY_DELAYS_MS.iter().enumerate() {
-            if *delay > 0 {
-                std::thread::sleep(Duration::from_millis(*delay));
-            }
-            match connection.execute_batch("BEGIN IMMEDIATE") {
-                Ok(()) => {
-                    let _ = connection.busy_timeout(Duration::from_secs(2));
-                    if index > 0 {
-                        increment_metric_tx(
-                            connection,
-                            "receipt_append_busy_retries",
-                            index as i64,
-                        )?;
-                    }
-                    return Ok(Self {
-                        connection,
-                        finished: false,
-                    });
-                }
-                Err(rusqlite::Error::SqliteFailure(err, _))
-                    if matches!(
-                        err.code,
-                        rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                    ) && index + 1 < APPEND_RETRY_DELAYS_MS.len() =>
-                {
-                    continue
-                }
-                Err(rusqlite::Error::SqliteFailure(err, _))
-                    if matches!(
-                        err.code,
-                        rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
-                    ) =>
-                {
-                    // Best-effort only, and deliberately attempted while
-                    // busy_timeout is still 0: the caller already has its
-                    // answer and must not be held up further waiting for a
-                    // diagnostic write against a lock that is still held.
-                    let _ = connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES('receipt_chain_conflicts',1) ON CONFLICT(metric) DO UPDATE SET value=value+1", []);
-                    let _ = connection.busy_timeout(Duration::from_secs(2));
-                    return Err(RuntimeError::Code("chain_conflict"));
-                }
-                Err(err) => {
-                    let _ = connection.busy_timeout(Duration::from_secs(2));
-                    return Err(RuntimeError::from(err));
-                }
-            }
-        }
-        unreachable!("APPEND_RETRY_DELAYS_MS is non-empty")
-    }
-
-    fn commit(mut self) -> Result<(), RuntimeError> {
-        self.connection.execute_batch("COMMIT")?;
-        self.finished = true;
-        Ok(())
-    }
-}
-
-impl<'a> Drop for RetryTransaction<'a> {
-    fn drop(&mut self) {
-        if !self.finished {
-            let _ = self.connection.execute_batch("ROLLBACK");
-        }
-    }
-}
-
-/// Bounded, case-insensitive scan for secret-shaped substrings. Previews are
-/// human-readable summaries only; anything resembling a credential is
-/// replaced before the byte-bound truncation runs.
 fn redact_secrets(value: &str) -> String {
     const MARKERS: &[&str] = &[
         "password",

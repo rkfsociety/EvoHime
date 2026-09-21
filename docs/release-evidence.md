@@ -2692,3 +2692,10 @@ runtime paths сохранены через re-export. Verifier marker повы�
 `0.0.000043 -> 0.0.000044`; 36 runtime tests, strict clippy,
 format/diff-check и Core+receipts check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
+
+Receipt append retry transaction guard вынесен в `runtime_transaction.rs`;
+BEGIN IMMEDIATE retry schedule, busy metrics, rollback-on-drop и chain conflict
+behavior сохранены. Verifier marker повышен `0.0.000044 -> 0.0.000045`; 36
+runtime tests, strict clippy, format/diff-check и Core+receipts check прошли
+локально. CI evidence для новой commit-группы будет добавлено после её
+десятого коммита.
