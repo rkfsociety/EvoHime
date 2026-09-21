@@ -9,7 +9,7 @@
 
 use rusqlite::Connection;
 
-use crate::{LocalDatabase, StorageError};
+use crate::StorageError;
 
 pub(crate) mod v001;
 pub(crate) mod v002;
@@ -153,5 +153,5 @@ pub(crate) fn run(
     current: u32,
     fail_migration: bool,
 ) -> Result<(), StorageError> {
-    LocalDatabase::migrate_legacy(connection, current, fail_migration)
+    crate::legacy_migration::run(connection, current, fail_migration)
 }

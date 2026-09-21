@@ -2607,3 +2607,10 @@ deduplication conflict semantics сохранены. Core marker повышен
 `0.0.000318 -> 0.0.000319`; локально проверены schema/index, prepared-open и
 deduplication tests, format/diff-check и storage compile. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
+
+Историческая legacy migration transaction и строгий порядок installers вынесены
+в `legacy_migration.rs`; backup/rollback, fail-injection и schema version
+поведение сохранены. Core marker повышен `0.0.000319 -> 0.0.000320`; локально
+прошли migration rollback/idempotency tests, strict clippy, format/diff-check и
+Core+storage check. CI evidence для новой commit-группы будет добавлено после
+её десятого коммита.
