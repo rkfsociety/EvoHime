@@ -47,7 +47,7 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   hardenWebContents(window.webContents, options)
 
   window.once('ready-to-show', () => {
-    if (options.showOnReady?.() ?? true) window.show()
+    if (options.showOnReady?.() ?? true) focusWindow(window)
   })
 
   window.webContents.on('render-process-gone', (_event, details) => {

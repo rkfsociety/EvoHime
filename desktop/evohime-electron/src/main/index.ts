@@ -274,10 +274,10 @@ if (process.argv.includes('--evohime-browser-backend')) {
     }
 
     // If the renderer finished loading while the gate was running, its
-    // ready-to-show callback deliberately kept it hidden. Show the normal
-    // shell only after the gate has released startup.
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
-      mainWindow.show()
+    // ready-to-show callback deliberately kept it hidden. Restore and focus
+    // the normal shell only after the gate has released startup.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      focusWindow(mainWindow)
     }
 
     const launch = await ensureSupervisorSession()
