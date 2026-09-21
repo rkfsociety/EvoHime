@@ -2647,3 +2647,10 @@ Idempotent typed-memory schema installation вынесена в `memory_schema.r
 повышен `0.0.000324 -> 0.0.000325`; все 21 memory storage test, strict clippy,
 format/diff-check и Core+storage check прошли локально. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
+
+Typed-memory SQLite row decoding and conversion errors вынесены в
+`memory_mapping.rs`; legacy-column defaults, enum parsing and redacted field
+read-back remain unchanged. Core marker повышен `0.0.000325 -> 0.0.000326`;
+все 21 memory tests, strict clippy, format/diff-check и Core+storage check
+прошли локально. CI evidence для новой commit-группы будет добавлено после её
+десятого коммита.
