@@ -2697,6 +2697,14 @@ marker, monotonic replay, lease, cancellation и crash-recovery contracts
 tests, format/diff-check прошли локально. CI evidence для новой commit-группы
 будет добавлено после её десятого коммита.
 
+Context ledger storage tests вынесены из `context_ledger_store.rs` в
+`context_ledger_store_tests.rs`; production-файл уменьшен до 626 строк,
+immutable hash, usage, bounded projection, retention, receipt pinning и
+concurrent append contracts сохранены. Core marker повышен
+`0.0.000337 -> 0.0.000338`; 10 context-ledger tests, format/diff-check
+прошли локально. CI evidence для новой commit-группы будет добавлено после
+её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
