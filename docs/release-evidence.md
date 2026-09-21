@@ -2763,3 +2763,9 @@ Inline `runtime::tests` вынесены в `runtime_tests.rs`; production-фа�
 `0.0.000052 -> 0.0.000053`; 36 runtime tests, strict clippy,
 format/diff-check и Core+receipts check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
+
+Тесты `key_lifecycle::tests` вынесены в `key_lifecycle_tests.rs`; production-файл
+`key_lifecycle.rs` уменьшен до 1902 строк без изменения публичного модуля.
+Verifier marker повышен `0.0.000053 -> 0.0.000054`; 5 key-lifecycle tests,
+strict clippy, format/diff-check и Core+receipts check прошли локально. CI
+evidence для новой commit-группы будет добавлено после её десятого коммита.
