@@ -2527,3 +2527,9 @@ Atomic PRD provenance insertion и read-back вынесены в `provenance_sto
 provenance/work-item transaction boundary и import behavior сохранены. Core
 marker повышен `0.0.000306 -> 0.0.000307`; проверены PRD import/provenance
 tests, strict clippy и Core+storage compile.
+
+Work-item CRUD, bounded project listing, ready-node selection, optimistic status
+update и dependency-cycle guard вынесены в `work_item_store.rs`; graph ordering
+и cycle rejection сохранены. Core marker повышен `0.0.000307 -> 0.0.000308`;
+перед push проверяются graph/optimistic-storage tests, strict clippy и
+Core+storage compile.
