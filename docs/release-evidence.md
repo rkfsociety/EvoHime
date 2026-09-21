@@ -2721,6 +2721,14 @@ marker повышен `0.0.000339 -> 0.0.000340`; 10 task-checkpoint tests,
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Execution ledger tests вынесены из `execution_ledger.rs` в
+`execution_ledger_tests.rs`; production-файл уменьшен до 818 строк, event
+body round-trip, bounded/redacted fields, state transition, dispatch marker,
+scope validation и idempotent schema migration contracts сохранены. Core
+marker повышен `0.0.000340 -> 0.0.000341`; 20 execution-ledger tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
