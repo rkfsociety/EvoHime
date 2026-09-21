@@ -10,6 +10,7 @@ pub mod agent_program_optimizer_store;
 pub mod agent_role_profiles_store;
 pub mod ambient_store;
 mod ambient_store_cleanup;
+mod ambient_store_mapping;
 pub mod analysis_kernel;
 pub mod approval_policy_profiles_store;
 pub mod architect_editor_model_pipeline_store;

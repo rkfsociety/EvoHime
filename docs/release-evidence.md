@@ -2628,3 +2628,9 @@ transaction ordering and tombstone/journal semantics are unchanged. Core marker
 повышен `0.0.000321 -> 0.0.000322`; все 18 ambient storage tests, strict clippy,
 format/diff-check и Core+storage check прошли локально. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
+
+Ambient SQLite row decoders вынесены в `ambient_store_mapping.rs`; enum parsing,
+redaction flags, field ordering and bounded read behavior are unchanged. Core
+marker повышен `0.0.000322 -> 0.0.000323`; все 18 ambient tests, strict clippy,
+format/diff-check и Core+storage check прошли локально. CI evidence для новой
+commit-группы будет добавлено после её десятого коммита.
