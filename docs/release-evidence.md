@@ -2850,6 +2850,15 @@ run binding и idempotency replay contracts сохранены. Core marker по
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Persistent agent registry tests вынесены из
+`persistent_agent_registry_store.rs` в
+`persistent_agent_registry_store_tests.rs`; production-файл уменьшен до 402
+строк, revision idempotency, stale assignment fencing, immutable reporting
+history, goal binding и command-outcome replay contracts сохранены. Core
+marker повышен `0.0.000356 -> 0.0.000357`; 6 persistent-agent tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
