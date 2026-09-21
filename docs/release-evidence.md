@@ -2767,6 +2767,13 @@ round-trip contracts сохранены. Core marker повышен `0.0.000345 
 5 feedback-store tests, format/diff-check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
 
+Research storage tests вынесены из `research_store.rs` в
+`research_store_tests.rs`; production-файл уменьшен до 207 строк, bounded
+evidence fields, deterministic provenance listing, round-trip и deletion
+contracts сохранены. Core marker повышен `0.0.000346 -> 0.0.000347`; 3
+research-store tests, format/diff-check прошли локально. CI evidence для
+новой commit-группы будет добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
