@@ -2866,6 +2866,13 @@ bounds contracts сохранены. Core marker повышен `0.0.000357 -> 0
 refinement-store tests, format/diff-check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
 
+Grounded research storage tests вынесены из `grounded_research_store.rs` в
+`grounded_research_store_tests.rs`; production-файл уменьшен до 555 строк,
+revision idempotency и immutable artifact coverage contracts сохранены. Core
+marker повышен `0.0.000358 -> 0.0.000359`; 1 grounded-research test,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
