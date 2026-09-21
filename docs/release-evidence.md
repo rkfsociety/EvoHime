@@ -2512,3 +2512,8 @@ JSONL event export вынесен в `event_export.rs`; формат полей,
 невалидного payload и bounded Core-owned event read path сохранены. Core marker
 повышен `0.0.000303 -> 0.0.000304`; проверены export-focused test, strict
 clippy и Core+storage compile.
+
+Project CRUD, workspace-path lookup и optimistic project-policy update вынесены
+в `project_store.rs`; version-conflict behavior и public `LocalDatabase` methods
+сохранены. Core marker повышен `0.0.000304 -> 0.0.000305`; проверены project
+storage tests, strict clippy и Core+storage compile.
