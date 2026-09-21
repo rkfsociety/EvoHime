@@ -2950,6 +2950,13 @@ metadata-only import, pending listing и committed transition contracts
 format/diff-check прошли локально; изменение test-only, Core marker не
 менялся.
 
+Reconciliation verifier tests вынесены из `reconciliation_verifier.rs` в
+`reconciliation_verifier_tests.rs`; production-файл уменьшен до 177 строк,
+file/database/process evidence decisions, size bound и deterministic
+serialization contracts сохранены. 6 reconciliation-verifier tests, strict
+clippy, Core+storage check, format/diff-check прошли локально; изменение
+test-only, Core marker не менялся.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
