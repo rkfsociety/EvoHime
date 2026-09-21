@@ -2788,6 +2788,14 @@ contracts сохранены. Core marker повышен `0.0.000348 -> 0.0.0003
 backup tests, format/diff-check прошли локально. CI evidence для новой
 commit-группы будет добавлено после её десятого коммита.
 
+Analysis kernel storage tests вынесены из `analysis_kernel.rs` в
+`analysis_kernel_tests.rs`; production-файл уменьшен до 611 строк, canonical
+hash, secret/ephemeral object rejection, stale revision fencing, bounded
+listing и crash recovery contracts сохранены. Core marker повышен
+`0.0.000349 -> 0.0.000350`; 6 analysis-kernel tests, format/diff-check
+прошли локально. CI evidence для новой commit-группы будет добавлено после
+её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
