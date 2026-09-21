@@ -2714,3 +2714,10 @@ append metrics and read-only sampling metrics сохранены. Verifier marke
 повышен `0.0.000046 -> 0.0.000047`; 36 runtime tests, strict clippy,
 format/diff-check и Core+receipts check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
+
+Receipt startup recovery orchestration вынесена в `runtime_recovery.rs`;
+quick-check safe mode, approval expiry, terminal reconciliation, quarantine
+invariants, recovery metrics and ready/read-only guard transitions сохранены.
+Verifier marker повышен `0.0.000047 -> 0.0.000048`; 36 runtime tests, strict
+clippy, format/diff-check и Core+receipts check прошли локально. CI evidence
+для новой commit-группы будет добавлено после её десятого коммита.

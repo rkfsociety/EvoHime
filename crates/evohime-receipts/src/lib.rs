@@ -18,6 +18,7 @@ mod runtime_contract;
 mod runtime_payload;
 mod runtime_platform;
 mod runtime_policy;
+mod runtime_recovery;
 mod runtime_signing;
 mod runtime_transaction;
 
