@@ -2769,3 +2769,11 @@ format/diff-check и Core+receipts check прошли локально. CI evide
 Verifier marker повышен `0.0.000053 -> 0.0.000054`; 5 key-lifecycle tests,
 strict clippy, format/diff-check и Core+receipts check прошли локально. CI
 evidence для новой commit-группы будет добавлено после её десятого коммита.
+
+Тесты `evohime-updater` вынесены из `main.rs` в `tests.rs`; production-файл
+уменьшен до 2275 строк. Linux-only fixture исправлен на минимальный валидный
+x64 PE, поэтому updater package test больше не зависит от формата текущего
+ELF-тестового процесса. Updater marker повышен `0.0.000121 -> 0.0.000122`;
+18 library tests и 35 binary tests, strict clippy, format/diff-check и check
+updater crates прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
