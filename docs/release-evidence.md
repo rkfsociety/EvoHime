@@ -2729,6 +2729,14 @@ marker повышен `0.0.000340 -> 0.0.000341`; 20 execution-ledger tests,
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Conversation event-log tests вынесены из `conversation_event_log_store.rs` в
+`conversation_event_log_store_tests.rs`; production-файл уменьшен до 754
+строк, conversation binding, idempotent message acceptance, stable cursor,
+dispatch retry и schema migration contracts сохранены. Core marker повышен
+`0.0.000341 -> 0.0.000342`; 7 conversation-event-log tests,
+format/diff-check прошли локально. CI evidence для новой commit-группы будет
+добавлено после её десятого коммита.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
