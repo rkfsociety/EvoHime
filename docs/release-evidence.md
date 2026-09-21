@@ -2899,6 +2899,11 @@ field bounds contracts сохранены. Core marker повышен
 format/diff-check прошли локально. CI evidence для новой commit-группы будет
 добавлено после её десятого коммита.
 
+Общий storage unit-suite разделён на `tests_schema.rs` и `tests_runtime.rs`,
+а `tests.rs` оставлен тонким агрегатором общих fixtures. Все 406 тестов
+`evohime-local-storage`, strict clippy, format/diff-check и Core+storage check
+прошли локально. Runtime-код и Core marker не менялись: изменение test-only.
+
 Archive and listener-runtime update helpers вынесены из
 `evohime-update-agent/src/main.rs` в `update_agent_artifacts.rs`; production
 `main.rs` уменьшен до 1796 строк, CLI and update transaction contracts
