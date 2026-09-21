@@ -122,15 +122,15 @@ describe('RepairService', () => {
       service.observe(event('same failure'))
 
       await service.start('C:\\Users\\roman\\Documents\\ordinary-project', {
-        provider: 'literouter',
-        model: 'gpt-4o-mini:free'
+        provider: 'codex_cli',
+        model: 'gpt-5.6-sol'
       })
 
       expect(service.status.phase).toBe('diagnosing')
       expect(startedWorkspace).toContain('repair')
-      expect(startedSelection).toEqual({ provider: 'literouter', model: 'gpt-4o-mini:free' })
-      expect(service.status.provider).toBe('literouter')
-      expect(service.status.model).toBe('gpt-4o-mini:free')
+      expect(startedSelection).toEqual({ provider: 'codex_cli', model: 'gpt-5.6-sol' })
+      expect(service.status.provider).toBe('codex_cli')
+      expect(service.status.model).toBe('gpt-5.6-sol')
       expect(service.status.error).toBeNull()
     } finally {
       rmSync(directory, { recursive: true, force: true })

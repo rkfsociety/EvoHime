@@ -328,14 +328,23 @@ describe('renderer command surface', () => {
       log: () => {}
     })
 
-    await expect(invoke('repair.start', { workspacePath: '', provider: 'literouter', model: 'gpt-4o-mini:free' })).resolves.toMatchObject({ ok: true })
-    expect(start).toHaveBeenCalledWith('', { provider: 'literouter', model: 'gpt-4o-mini:free' })
+    await expect(invoke('repair.start', { workspacePath: '', provider: 'codex_cli', model: 'gpt-5.6-sol' })).resolves.toMatchObject({ ok: true })
+    expect(start).toHaveBeenCalledWith('', { provider: 'codex_cli', model: 'gpt-5.6-sol' })
   })
 
   it('не запускает repair-run без явного провайдера и модели', () => {
-    expect(invoke('repair.start', { workspacePath: '', provider: 'literouter', model: '' })).toMatchObject({
+    expect(invoke('repair.start', { workspacePath: '', provider: 'codex_cli', model: '' })).toMatchObject({
       ok: false,
       code: 'invalid-payload'
+    })
+    expect(sent).toHaveLength(0)
+  })
+
+  it('не запускает repair-run через API-провайдера', () => {
+    expect(invoke('repair.start', { workspacePath: '', provider: 'ollama', model: 'qwen3:0.6b' })).toMatchObject({
+      ok: false,
+      code: 'invalid-payload',
+      message: 'Самоисправление доступно только через Codex CLI.'
     })
     expect(sent).toHaveLength(0)
   })

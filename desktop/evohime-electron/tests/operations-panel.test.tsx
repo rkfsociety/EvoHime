@@ -83,8 +83,19 @@ beforeEach(() => {
           }
         })
       }
-      if (command === 'codex.getStatus') {
-        return ok({ installed: false, installing: false, loggingIn: false, available: false, loggedIn: false, selectedModel: '', models: [], rateLimits: [], lastUpdatedMs: 1, error: null })
+      if (command === 'codex.getStatus' || command === 'codex.refresh') {
+        return ok({
+          installed: true,
+          installing: false,
+          loggingIn: false,
+          available: true,
+          loggedIn: true,
+          selectedModel: 'gpt-5.6-sol',
+          models: [{ id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: '5.6 Sol', description: 'Codex 5.6 Sol.', defaultReasoningEffort: 'medium', supportedReasoningEfforts: ['medium'], isDefault: true }],
+          rateLimits: [],
+          lastUpdatedMs: 1,
+          error: null
+        })
       }
       return ok({ accepted: true })
     }) as EvoHimeApiV1['invoke'],
@@ -127,13 +138,18 @@ describe('operations panel', () => {
       />
     )
 
+    const providerPicker = await screen.findByRole('combobox', { name: 'Провайдер самоисправления' })
+    expect(providerPicker).toHaveValue('codex_cli')
+    expect(providerPicker.querySelectorAll('option')).toHaveLength(1)
+    expect(providerPicker).toBeDisabled()
+
     const button = await screen.findByRole('button', { name: 'Повторить' })
     await userEvent.click(button)
 
     expect(calls.find((call) => call.command === 'repair.start')?.payload).toEqual({
       workspacePath: '',
-      provider: 'literouter',
-      model: 'gpt-4o-mini:free'
+      provider: 'codex_cli',
+      model: 'gpt-5.6-sol'
     })
   })
 

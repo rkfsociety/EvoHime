@@ -93,6 +93,9 @@ export class RepairService {
     if (this.current.errorCount < ERROR_THRESHOLD) {
       return this.fail('Пока недостаточно повторяющихся ошибок для repair-run.')
     }
+    if (selection.provider !== 'codex_cli') {
+      return this.fail('Самоисправление доступно только через Codex CLI.')
+    }
     if (selection.model.trim().length === 0) {
       return this.fail('Перед repair-run выбери модель для анализа.')
     }

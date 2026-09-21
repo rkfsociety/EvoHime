@@ -81,10 +81,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         setCodexModels(outcome.value.models)
         setCodexRateLimits(outcome.value.rateLimits)
         setCurrent(outcome.value.selectedModel)
+        if (outcome.value.selectedModel.length > 0) onModelChange?.(outcome.value.selectedModel)
         setError(outcome.value.error)
       }
     })
-  }, [api, connected, provider])
+  }, [api, connected, onModelChange, provider])
 
   const catalog = useMemo(() => latest(events, 'model.catalog'), [events])
   const config = useMemo(() => latest(events, 'model.config'), [events])

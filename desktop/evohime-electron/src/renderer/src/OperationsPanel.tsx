@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
-import { ChatProviderPicker } from './ChatProviderPicker'
 import { ModelPicker } from './ModelPicker'
 
 interface Props {
@@ -27,17 +26,10 @@ function boundedDiagnostic(value: string): string {
   return `${value.slice(0, REPAIR_SUMMARY_LIMIT).trimEnd()}…`
 }
 
-function initialRepairProvider(): ChatProviderMode {
-  const stored = window.localStorage.getItem('evohime.chat-provider-mode')
-  return stored === 'codex_cli' || stored === 'openai_compatible' || stored === 'openai_responses' || stored === 'literouter' || stored === 'ollama'
-    ? stored
-    : 'literouter'
-}
-
 function RepairCard({ status, connection, events }: { readonly status: RepairStatus; readonly connection: ConnectionState; readonly events: readonly CoreEvent[] }): React.JSX.Element {
   const api = useShellApi()
   const [message, setMessage] = useState('')
-  const [provider, setProvider] = useState<ChatProviderMode>(initialRepairProvider)
+  const provider: ChatProviderMode = 'codex_cli'
   const [model, setModel] = useState('')
   const active = ['preparing', 'diagnosing', 'committing', 'pushing', 'waiting_ci'].includes(status.phase)
   const connected = CONNECTED_STATES.includes(connection)
@@ -86,15 +78,9 @@ function RepairCard({ status, connection, events }: { readonly status: RepairSta
       <div className="repair-selection" aria-label="Провайдер и модель самоисправления">
         <span className="repair-selection__title">Чем анализировать</span>
         <div className="repair-selection__controls">
-          <ChatProviderPicker
-            connection={connection}
-            value={provider}
-            onChange={(next) => {
-              setProvider(next)
-              setModel('')
-            }}
-            disabled={active}
-          />
+          <select aria-label="Провайдер самоисправления" value={provider} disabled>
+            <option value="codex_cli">Codex CLI</option>
+          </select>
           <ModelPicker
             connection={connection}
             events={events}

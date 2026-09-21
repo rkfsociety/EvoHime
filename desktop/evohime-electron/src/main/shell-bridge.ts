@@ -1729,14 +1729,12 @@ function dispatch(
       const value = asRecord(payload)
       const workspacePath = asOptionalBoundedString(value['workspacePath'])
       const providerValue = value['provider']
-      const provider = providerValue === 'codex_cli'
-        ? providerValue
-        : isProviderKind(providerValue)
-          ? providerValue
-          : null
+      const provider = providerValue === 'codex_cli' ? providerValue : null
       const model = normalizeModel(value['model'])
       if (workspacePath === null || provider === null || model === null || model.length === 0) {
-        return failure('invalid-payload', 'Для repair-run выбери провайдера и модель.')
+        return failure('invalid-payload', providerValue === 'codex_cli'
+          ? 'Для repair-run выбери модель Codex CLI.'
+          : 'Самоисправление доступно только через Codex CLI.')
       }
       return repair.start(workspacePath, { provider, model }).then((result) => ({ ok: true, value: result }))
     }
