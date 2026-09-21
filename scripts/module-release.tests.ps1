@@ -13,5 +13,7 @@ if ($text -notmatch 'gh api --method DELETE') { throw 'Old module release cleanu
 if ($text -match "NotesFile = 'installer/release-notes\.md'") { throw 'Module release still inherits installer notes by default.' }
 if ($text -notmatch 'Версия модуля') { throw 'Module release version text is missing.' }
 if ($text -match '# \$Module \$Version') { throw 'Module release body still duplicates the release title.' }
+if ($text -notmatch 'gh release create \$tag .*--title \$Module') { throw 'Module release title must contain only the module name.' }
+if ($text -notmatch 'gh release edit \$tag .*--title \$Module') { throw 'Module release edit title must contain only the module name.' }
 Remove-Item -LiteralPath $root -Recurse -Force
 Write-Output 'module release smoke: PASS'

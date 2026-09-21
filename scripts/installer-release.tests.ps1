@@ -15,6 +15,8 @@ foreach ($required in @('gh api --method DELETE "repos/$repo/releases/$releaseId
 }
 if ($publisher -match 'gh release edit') { throw 'Installer publisher still edits the old release instead of recreating it.' }
 if ($publisher -match 'git/refs/tags') { throw 'Installer publisher must preserve the permanent installer tag.' }
+if ($publisher -notmatch 'gh release create \$Tag.*--title \$Tag') { throw 'Installer release title must contain only the module name.' }
+if ($publisher -match 'EvoHime installer \$Version') { throw 'Installer release title still contains product/version text.' }
 if ($publisher -notmatch 'gh release upload \$Tag.*\$setup.*--clobber') { throw 'Installer publisher misses setup upload.' }
 if ($publisher -notmatch 'gh release upload \$Tag.*\$manifestPath.*--clobber') { throw 'Installer publisher misses manifest upload.' }
 if ($iss -notmatch 'Source: "\{#SourceDir\}\\\*"' -or $iss -notmatch 'updater\\EvoHimeUpdater\.exe') { throw 'Installer Inno script misses required runtime files.' }

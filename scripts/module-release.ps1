@@ -137,9 +137,9 @@ $notes | Set-Content -LiteralPath $generatedNotesPath -Encoding utf8NoBOM
 
 gh release view $tag --repo $repo 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    gh release create $tag --repo $repo --title "$Module $Version" --notes-file $generatedNotesPath
+    gh release create $tag --repo $repo --title $Module --notes-file $generatedNotesPath
 } else {
-    gh release edit $tag --repo $repo --title "$Module $Version" --notes-file $generatedNotesPath
+    gh release edit $tag --repo $repo --title $Module --notes-file $generatedNotesPath
 }
 gh release upload $tag --repo $repo $artifactPath --clobber
 if ($LASTEXITCODE -ne 0) { throw "Failed to publish $artifactName." }

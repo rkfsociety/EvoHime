@@ -46,7 +46,7 @@ if (-not $releaseAbsent) {
     gh api --method DELETE "repos/$repo/releases/$releaseId"
     if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить старый installer release $Tag." }
 }
-gh release create $Tag --repo $repo --target $Commit --title "EvoHime installer $Version" --notes-file $notes
+gh release create $Tag --repo $repo --target $Commit --title $Tag --notes-file $notes
 if ($LASTEXITCODE -ne 0) { throw "Не удалось создать installer release $Tag." }
 gh release upload $Tag --repo $repo $setup --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать web installer.' }
