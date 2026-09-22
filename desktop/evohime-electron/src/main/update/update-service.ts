@@ -130,9 +130,10 @@ export class UpdateService {
       return 'continue'
     }
 
-    // The launch window is the updater surface itself. Keep the normal shell
-    // hidden until the complete transaction has either been applied or safely
-    // abandoned after a failed check/build.
+    // The visible shell renderer owns the startup/update surface. Mark the
+    // launch as blocking so it cannot reveal the working shell until the
+    // complete transaction has either been applied or safely abandoned after a
+    // failed check/build.
     this.patch({ blocking: true })
     const staged = this.stagedMarker()
     const checked = await this.check()

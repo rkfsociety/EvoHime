@@ -172,16 +172,15 @@ if (process.argv.includes('--evohime-browser-backend')) {
       if (event.eventType === 'ambient.voice_command') overlay?.flashHeard()
     })
 
-    // Start the launch gate before the first window can become visible. The
-    // renderer will receive the current status through update.getStatus and
-    // paint the dedicated update surface while the gate is running.
+    // Start the launch gate before Core and supervisor. The renderer receives
+    // the current status through update.getStatus and paints the dedicated
+    // startup/update surface while the gate is running.
     updates = createUpdateService()
     const launchGate = updates.runLaunchGate()
 
     mainWindow = createMainWindow({
       ...hardening,
       onRendererFailure: handleRendererFailure,
-      showOnReady: () => !(updates?.status.blocking ?? false)
     })
     tray = createTray({
       window: mainWindow,
@@ -273,9 +272,9 @@ if (process.argv.includes('--evohime-browser-backend')) {
       return
     }
 
-    // If the renderer finished loading while the gate was running, its
-    // ready-to-show callback deliberately kept it hidden. Restore and focus
-    // the normal shell only after the gate has released startup.
+    // If the renderer finished loading while the gate was running, make sure
+    // the visible startup/update surface is still focused after the gate has
+    // released startup.
     if (mainWindow && !mainWindow.isDestroyed()) {
       focusWindow(mainWindow)
     }

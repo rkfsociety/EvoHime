@@ -15,8 +15,6 @@ import { resolveUiEntry } from './ui-bundle'
 
 export interface WindowOptions extends HardeningOptions {
   readonly onRendererFailure: (reason: string) => void
-  /** The updater owns the first visible frame during a launch gate. */
-  readonly showOnReady?: () => boolean
 }
 
 export function createMainWindow(options: WindowOptions): BrowserWindow {
@@ -47,7 +45,9 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   hardenWebContents(window.webContents, options)
 
   window.once('ready-to-show', () => {
-    if (options.showOnReady?.() ?? true) focusWindow(window)
+    // The renderer owns the startup/update surface while the launch gate is
+    // running, so the application window must still be visible immediately.
+    focusWindow(window)
   })
 
   window.webContents.on('render-process-gone', (_event, details) => {
