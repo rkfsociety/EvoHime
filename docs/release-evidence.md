@@ -1,19 +1,22 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-21.
+Обновлено: 2026-09-22.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-Текущий code baseline — `cbd5aa6539ff873248a418ceb133e61fcb91417d`,
-синхронизированный с `origin/main` на 2026-09-21. Последняя серия
-коммитов вынесла storage-тесты в отдельные `*_tests.rs`; runtime-контракты
-не менялись. Актуальные release markers хранятся в `release-versions/`;
-для этого baseline ключевые значения: `core=0.0.000362`,
-`updater=0.0.000123`, `transaction=0.0.000067`,
-`ui-bundle=0.0.000101`, `shell-host=0.0.000099` и
+Опубликованный code baseline — `cbd5aa6539ff873248a418ceb133e61fcb91417d`,
+синхронизированный с `origin/main` на 2026-09-21. Текущий task-local checkout
+дополнительно меняет только presentation композера renderer; IPC-контракты,
+Core-owned state и runtime authority не меняются. Для этой задачи локально
+проверены `typecheck`, focused renderer tests, `build:shell`,
+`check:bundle` и live built-shell fixture preview; GitHub module-router и
+публикация `ui-bundle` ещё не запускались, потому что push не выполнялся.
+Актуальные release markers хранятся в `release-versions/`: `core=0.0.000362`,
+`updater=0.0.000127`, `transaction=0.0.000067`,
+`ui-bundle=0.0.000108`, `shell-host=0.0.000099` и
 `cli=0.0.000084`. Исторические разделы ниже сохраняют прежнее evidence.
 
 ## Статус выпуска
