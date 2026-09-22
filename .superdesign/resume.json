@@ -6,31 +6,40 @@
       "projectId": "85f50f7b-7ad8-481f-96b2-f6d2c2f2046a",
       "activeDraftId": "56ff56b2-8243-409e-acb0-10d3545f5610",
       "baselineDraftId": "56ff56b2-8243-409e-acb0-10d3545f5610",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [
+        "826f0cff-5d11-4fd0-9b1e-2044f724f618",
+        "edad21b4-e996-4312-b5b7-1acd1e88dd1f"
+      ],
       "contextFiles": [
+        ".superdesign/design-system.md",
         "desktop/evohime-electron/src/renderer/src/App.tsx",
         "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx",
         "desktop/evohime-electron/src/renderer/src/TaskTimeline.tsx",
         "desktop/evohime-electron/src/renderer/src/WorkbenchPanel.tsx",
         "desktop/evohime-electron/src/renderer/src/styles.css:1:220",
         "desktop/evohime-electron/src/renderer/src/styles.css:597:740",
+        "desktop/evohime-electron/src/renderer/src/styles.css:1547:1740",
         "desktop/evohime-electron/src/renderer/src/styles.css:1835:1885",
-        "desktop/evohime-electron/src/renderer/src/styles.css:1920:2050"
+        "desktop/evohime-electron/src/renderer/src/styles.css:1920:2050",
+        "desktop/evohime-electron/src/renderer/src/styles.css:3571:3590"
       ],
       "fingerprints": {
-        "desktop/evohime-electron/src/renderer/src/App.tsx": "92ebdf4b13bddab76f528803cb7edcfb98e42b2eabde6d40880b58bf11c0c328",
-        "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx": "136c2bb20fd5ff757f5048dbd3e59c8c959ec72f4036c889280c6dcb8edc682e",
-        "desktop/evohime-electron/src/renderer/src/TaskTimeline.tsx": "eeb623ce97b7861dbfbb9cac5bd4ce66ea65583c14b02f581427528d9d1cc4d1",
+        ".superdesign/design-system.md": "6f63b70dd5075ad07feab6127da86223795b8c59f17701e10e8d0a53a602af3f",
+        "desktop/evohime-electron/src/renderer/src/App.tsx": "daa38c18d6bae15f6ce488f73eb657519b1c369ef1bd530232fa90a9870315f0",
+        "desktop/evohime-electron/src/renderer/src/ProjectSidebar.tsx": "58e0e0fa260b6cac766acaa7d6c2215f44b8dfa56511d285b02fdeb4fd151d2c",
+        "desktop/evohime-electron/src/renderer/src/TaskTimeline.tsx": "1ea164d97f0e4be2a8d4e8dca4488bf7e5b51f44e825151d9e174b88e3393b72",
         "desktop/evohime-electron/src/renderer/src/WorkbenchPanel.tsx": "ed610df0549ce7b8546c959db7c5391a66db94644ec059a50119b7fa00b01d95",
-        "desktop/evohime-electron/src/renderer/src/styles.css": "266596848c106dcb1a0ceab2eda8215ea38ea795a8e22710808e734f3e3f9212"
+        "desktop/evohime-electron/src/renderer/src/styles.css": "2d4b06bb4f0b3949c502812fb8762502a0ffb5f5b9d57a4d3d04395015fa1ba9"
       },
       "drafts": {
         "56ff56b2-8243-409e-acb0-10d3545f5610": {
-          "title": "EvoHime UX Redesign",
-          "visualDirection": "спокойная тёмная оболочка с одним очевидным основным сценарием",
-          "currentVersion": 2
+          "title": "EvoHime — glass composer",
+          "visualDirection": "тёмная shell-оболочка с широким glass/glow composer и четырьмя компактными группами управления",
+          "currentVersion": 3
         }
       },
-      "updatedAt": "2026-09-02T00:00:00.000Z"
+      "updatedAt": "2026-09-22T09:23:00.7241809Z"
     },
     "operations": {
       "targetKind": "existing-ui",
