@@ -137,9 +137,9 @@ $notes | Set-Content -LiteralPath $generatedNotesPath -Encoding utf8NoBOM
 
 gh release view $tag --repo $repo 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    gh release create $tag --repo $repo --title $Module --notes-file $generatedNotesPath
+    gh release create $tag --repo $repo --title $Module --notes-file $generatedNotesPath --latest=false
 } else {
-    gh release edit $tag --repo $repo --title $Module --notes-file $generatedNotesPath
+    gh release edit $tag --repo $repo --title $Module --notes-file $generatedNotesPath --latest=false
 }
 gh release upload $tag --repo $repo $artifactPath --clobber
 if ($LASTEXITCODE -ne 0) { throw "Failed to publish $artifactName." }
@@ -159,4 +159,5 @@ foreach ($row in $releaseRows) {
     gh api --method DELETE "repos/$repo/git/refs/tags/$oldTag" 2>$null
     Write-Host "Removed old release $oldTag"
 }
+./scripts/mark-installer-release-latest.ps1 -Repository $repo
 Write-Host "Published $Module $Version to $tag ($hash)"

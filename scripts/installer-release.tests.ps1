@@ -2,6 +2,10 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $workflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\installer.yml') -Raw
 $publisher = Get-Content -LiteralPath (Join-Path $root 'scripts\publish-installer-release.ps1') -Raw
+$latestMarker = Get-Content -LiteralPath (Join-Path $root 'scripts\mark-installer-release-latest.ps1') -Raw
+$modulePublisher = Get-Content -LiteralPath (Join-Path $root 'scripts\module-release.ps1') -Raw
+$compatiblePublisher = Get-Content -LiteralPath (Join-Path $root 'scripts\publish-compatible-manifest.ps1') -Raw
+$listenerWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\listener.yml') -Raw
 $iss = Get-Content -LiteralPath (Join-Path $root 'installer\EvoHime.iss') -Raw
 
 foreach ($required in @('module-updater-v$updaterVersion', 'build-installer-source.ps1', 'EvoHime.iss', 'installer-content.tests.ps1')) {
@@ -19,5 +23,11 @@ if ($publisher -notmatch 'gh release create \$Tag.*--title \$Tag') { throw 'Inst
 if ($publisher -match 'EvoHime installer \$Version') { throw 'Installer release title still contains product/version text.' }
 if ($publisher -notmatch 'gh release upload \$Tag.*\$setup.*--clobber') { throw 'Installer publisher misses setup upload.' }
 if ($publisher -notmatch 'gh release upload \$Tag.*\$manifestPath.*--clobber') { throw 'Installer publisher misses manifest upload.' }
+if ($publisher -notmatch 'gh release create \$Tag.*--latest') { throw 'Installer publisher does not mark its release as Latest.' }
+if ($latestMarker -notmatch 'gh release edit \$Tag.*--latest') { throw 'Installer latest marker is missing.' }
+if ($modulePublisher -notmatch 'gh release create \$tag .*--latest=false' -or $modulePublisher -notmatch 'gh release edit \$tag .*--latest=false') { throw 'Module publisher may replace installer as Latest.' }
+if ($compatiblePublisher -notmatch 'gh release create \$tag .*--latest=false' -or $compatiblePublisher -notmatch 'gh release edit \$tag .*--latest=false') { throw 'Compatible manifest publisher may replace installer as Latest.' }
+if ($listenerWorkflow -notmatch 'gh release create \$releaseTag .*--latest=false' -or $listenerWorkflow -notmatch 'gh release edit \$releaseTag .*--latest=false') { throw 'Listener publisher may replace installer as Latest.' }
+if ($publisher -notmatch 'mark-installer-release-latest\.ps1' -or $modulePublisher -notmatch 'mark-installer-release-latest\.ps1' -or $compatiblePublisher -notmatch 'mark-installer-release-latest\.ps1' -or $listenerWorkflow -notmatch 'mark-installer-release-latest\.ps1') { throw 'All release publishers must restore installer as Latest.' }
 if ($iss -notmatch 'Source: "\{#SourceDir\}\\\*"' -or $iss -notmatch 'updater\\EvoHimeUpdater\.exe') { throw 'Installer Inno script misses required runtime files.' }
 Write-Host 'web installer release contract tests passed.'

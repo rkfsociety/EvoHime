@@ -7,6 +7,7 @@ on:
     paths:
       - 'crates/evohime-listener/**'
       - 'scripts/build-listener-runtime.ps1'
+      - 'scripts/mark-installer-release-latest.ps1'
       - 'release-versions/listener-runtime.txt'
       - '.github/workflows/listener.yml'
 
@@ -76,9 +77,9 @@ jobs:
           $releaseTag = "module-listener-runtime-v$version"
           gh release view $releaseTag 2>$null | Out-Null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $releaseTag --title 'listener-runtime' --notes-file $notesPath
+            gh release create $releaseTag --title 'listener-runtime' --notes-file $notesPath --latest=false
           } else {
-            gh release edit $releaseTag --title 'listener-runtime' --notes-file $notesPath
+            gh release edit $releaseTag --title 'listener-runtime' --notes-file $notesPath --latest=false
           }
           Get-ChildItem -LiteralPath $bundle -File | ForEach-Object {
             gh release upload $releaseTag $_.FullName --clobber
@@ -94,3 +95,4 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить старый релиз $oldTag." }
             gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$oldTag" 2>$null
           }
+          ./scripts/mark-installer-release-latest.ps1 -Repository $env:GITHUB_REPOSITORY

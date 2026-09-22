@@ -10,6 +10,7 @@ on:
       - 'scripts/build-installer-source.ps1'
       - 'scripts/installer-content.tests.ps1'
       - 'scripts/installer-release.tests.ps1'
+      - 'scripts/mark-installer-release-latest.ps1'
       - 'scripts/publish-installer-release.ps1'
       - 'release-versions/installer.txt'
       - '.github/workflows/installer.yml'

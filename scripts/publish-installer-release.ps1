@@ -46,10 +46,11 @@ if (-not $releaseAbsent) {
     gh api --method DELETE "repos/$repo/releases/$releaseId"
     if ($LASTEXITCODE -ne 0) { throw "Не удалось удалить старый installer release $Tag." }
 }
-gh release create $Tag --repo $repo --target $Commit --title $Tag --notes-file $notes
+gh release create $Tag --repo $repo --target $Commit --title $Tag --notes-file $notes --latest
 if ($LASTEXITCODE -ne 0) { throw "Не удалось создать installer release $Tag." }
 gh release upload $Tag --repo $repo $setup --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать web installer.' }
 gh release upload $Tag --repo $repo $manifestPath --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать installer manifest.' }
+./scripts/mark-installer-release-latest.ps1 -Repository $repo -Tag $Tag
 Write-Host "Published web installer $Version to $Tag ($($manifest.sha256))"

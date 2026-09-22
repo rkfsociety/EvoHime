@@ -146,12 +146,13 @@ $notes = Join-Path $env:RUNNER_TEMP 'compatible-manifest-notes.md'
 ) | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
 gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    gh release create $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes
+    gh release create $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes --latest=false
     if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать release совместимого комплекта.' }
 } else {
-    gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes
+    gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file $notes --latest=false
     if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить release совместимого комплекта.' }
 }
 gh release upload $tag --repo $env:GITHUB_REPOSITORY $output --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать манифест совместимого комплекта.' }
+./scripts/mark-installer-release-latest.ps1 -Repository $env:GITHUB_REPOSITORY
 Write-Host "Опубликован совместимый комплект: $tag"
