@@ -50,9 +50,29 @@ describe('update issue reporter', () => {
     rmSync(stateDirectory, { recursive: true, force: true })
   })
 
-  it('refuses an archive that cannot fit in an issue', async () => {
+  it('uploads an oversized archive to a secret gist before creating the issue', async () => {
     const stateDirectory = mkdtempSync(join(tmpdir(), 'evohime-support-issue-large-'))
-    await expect(reportSupportBundle(config(stateDirectory), { archive: new Uint8Array(40 * 1024 + 1), issueDraft: '' }, { token: 'test-token-value-1234567890' })).rejects.toThrow('слишком большой')
-    rmSync(stateDirectory, { recursive: true, force: true })
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ html_url: 'https://gist.github.com/1234567890abcdef' }), { status: 201, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ html_url: 'https://github.com/rkfsociety/EvoHime/issues/3' }), { status: 201, headers: { 'content-type': 'application/json' } }))
+    try {
+      const archive = Uint8Array.from({ length: 40 * 1024 + 1 }, () => 0x42)
+      const url = await reportSupportBundle(config(stateDirectory), { archive, issueDraft: '' }, { fetch: fetch as typeof globalThis.fetch, token: 'test-token-value-1234567890' })
+
+      expect(url).toContain('/issues/3')
+      expect(fetch).toHaveBeenCalledTimes(2)
+      const gistCall = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0]!
+      expect(gistCall[0]).toBe('https://api.github.com/gists')
+      const gistPayload = JSON.parse(String(gistCall[1]?.body)) as { public: boolean; files: Record<string, { content: string }> }
+      expect(gistPayload.public).toBe(false)
+      expect(gistPayload.files['evohime-support-bundle.zip.base64']?.content).toBe(Buffer.from(archive).toString('base64'))
+
+      const issueCall = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[1]!
+      const issuePayload = JSON.parse(String(issueCall[1]?.body)) as { body: string }
+      expect(issuePayload.body).toContain('https://gist.github.com/1234567890abcdef')
+      expect(issuePayload.body).not.toContain(Buffer.from(archive).toString('base64'))
+    } finally {
+      rmSync(stateDirectory, { recursive: true, force: true })
+    }
   })
 })

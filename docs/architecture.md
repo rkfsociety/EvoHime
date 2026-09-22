@@ -1338,7 +1338,7 @@ action authority. Worker backend отсутствует в базовом packag
 memory/RAG citations требуют redacted page/frame provenance.
 ## Reliability, recovery и diagnostics
 
-Electron main maintains only a bounded diagnostic projection. The additive shell command `shell.exportDiagnostics` opens a native save dialog and writes `evohime-support-bundle-v2` as a local ZIP with manifest, health, runtime, errors, bounded events/logs, issue draft and redaction report. It never reads workspace files, prompts, tool output or credential payloads; a final whole-archive scan fails closed before saving. ZIP entries are store-only and the destination is created with restrictive permissions. Log collection remains bounded to at most four files, 64 KiB from each file, 120 total lines and a 512 KiB v1-compatible shell projection.
+Electron main maintains only a bounded diagnostic projection. The additive shell command `shell.exportDiagnostics` opens a native save dialog and writes `evohime-support-bundle-v2` as a local ZIP with manifest, health, runtime, errors, bounded events/logs, issue draft and redaction report. It never reads workspace files, prompts, tool output or credential payloads; a final whole-archive scan fails closed before saving. ZIP entries use deflate when it reduces size and the destination is created with restrictive permissions. Log collection remains bounded to at most four files, 64 KiB from each file, 120 total lines and a 512 KiB v1-compatible shell projection.
 
 The authenticated additive `CreateDiagnosticsSnapshot` command (tag 202) asks
 Core for an ephemeral, bounded JSON snapshot. It maps existing Doctor checks to
@@ -1346,14 +1346,20 @@ Core for an ephemeral, bounded JSON snapshot. It maps existing Doctor checks to
 omissions, bounds and optional conversation/run metadata references, and
 computes a SHA-256 fingerprint. It does not create a store or migration, does
 not include raw prompts/files/tool payloads/credentials, and does not perform
-repair or any external effect. Electron main may include the result in the ZIP
-only after the user reviews the preview. The diagnostics settings panel also
-offers an explicit, confirmed `shell.submitDiagnostics` action: main performs
-the same final redaction scan, resolves the existing GitHub credential, and
-creates one issue containing a readable draft plus the bounded ZIP as base64;
-the created issue is opened for the user. There is no automatic support-bundle
-publication; automatic reporting remains limited to short deduplicated update
-failure issues.
+repair or any external effect. A manually exported ZIP may include the result
+after the user reviews the preview; an automatic failure report uses the same
+bounded projection and does not wait for a preview action. The diagnostics
+settings panel also offers an explicit, confirmed `shell.submitDiagnostics`
+action. Main performs
+the same final redaction scan, resolves the existing GitHub credential from the
+environment/configuration or `gh auth token`, and creates an issue. Bundles that
+fit the issue bound are included as base64; larger bundles are uploaded first to
+a secret GitHub Gist through the same credential, and the issue contains its
+link, archive size and SHA-256. A Gist is unlisted rather than private: anyone
+with the issue link can read it. The same redacted report is started
+automatically once for each live `task.failed` task ID; replayed failures during
+startup/resync are excluded. Automatic publication is best-effort and does not
+turn a GitHub/network failure into a second Core task failure.
 
 Recovery UI consumes Core events as the source of truth and preserves typed `reason_code`, correlation, sequence and `UNKNOWN_OUTCOME`. Terminal task IDs are indexed once per projection, cancellation is offered only when Core explicitly marks `can_cancel`, and user-visible recovery details use a bounded allowlist of non-secret fields. Database operations use `core.cancelDatabaseOperation`, task operations use `core.stopTask`.
 

@@ -8,7 +8,7 @@ import type { AmbientHotkeyStatus, ListeningState, ShellDiagnostic, ShellState }
 import { ChatStore } from './chat-store'
 import { CodexService } from './codex-service'
 import { JsonlLogger } from './diagnostics/logger'
-import { buildSupportBundleFiles, serializeSupportBundle } from './diagnostics/support-bundle'
+import { buildSupportBundleFiles, claimAutomaticSupportReport, serializeSupportBundle } from './diagnostics/support-bundle'
 import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { dataDirectory, logDirectory } from './paths'
@@ -60,6 +60,7 @@ let ollamaRuntime: OllamaRuntimeService | null = null
 let codex: CodexService | null = null
 let repair: RepairService | null = null
 const recentCoreEvents: import('@shared/api').CoreEvent[] = []
+const claimedAutomaticSupportReports = new Set<string>()
 let lastShellState: ShellState | null = null
 let lastRepairStatus: import('@shared/api').RepairStatus | null = null
 let lastUpdateStatus: import('@shared/update').UpdateStatus | null = null
@@ -132,6 +133,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
       packaged: app.isPackaged
     })
     const updateHealthFile = join(updateConfig.stateDirectory, 'health.json')
+    let automaticSupportReport: (() => Promise<string>) | null = null
     repair = new RepairService({
       filePath: join(dataDirectory(), 'shell', 'repair.json'),
       repairRoot: join(dataDirectory(), 'repair'),
@@ -170,6 +172,18 @@ if (process.argv.includes('--evohime-browser-backend')) {
       // Индикатор поверх всех окон коротко вспыхивает, когда ядро распознало
       // обращение «Ева, …» — тот же сигнал, что панель показывает карточкой.
       if (event.eventType === 'ambient.voice_command') overlay?.flashHeard()
+      if (claimAutomaticSupportReport(event, lastShellState?.connection === 'connected', claimedAutomaticSupportReports) && automaticSupportReport) {
+        const timer = setTimeout(() => {
+          const report = automaticSupportReport
+          if (!report) return
+          void report().then((url) => {
+            log('info', 'shell.diagnostics_auto_report_created', { url })
+          }).catch(() => {
+            log('warn', 'shell.diagnostics_auto_report_failed', {})
+          })
+        }, 500)
+        timer.unref?.()
+      }
     })
 
     // Start the launch gate before Core and supervisor. The standalone updater
@@ -214,6 +228,18 @@ if (process.argv.includes('--evohime-browser-backend')) {
       return { archive: serializeSupportBundle(files), issueDraft: files.issueDraft }
     }
 
+    const submitSupportBundle = async (): Promise<string> => {
+      const bundle = buildCurrentSupportBundle()
+      const token = await resolveGithubToken({ configured: updateConfig.githubToken })
+      const url = await reportSupportBundle(updateConfig, bundle, {
+        token: token?.token ?? null,
+        fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
+      })
+      log('info', 'shell.diagnostics_issue_created', { url })
+      return url
+    }
+    automaticSupportReport = submitSupportBundle
+
     // The picker dialog is owned by the main process and opens modal to the
     // shell window; the renderer only ever receives the chosen path.
     registerShellBridge({
@@ -240,16 +266,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
         writeFileSync(save.filePath, buildCurrentSupportBundle().archive, { mode: 0o600 })
         return { cancelled: false, path: save.filePath }
       },
-      submitDiagnostics: async () => {
-        const bundle = buildCurrentSupportBundle()
-        const token = await resolveGithubToken({ configured: updateConfig.githubToken })
-        const url = await reportSupportBundle(updateConfig, bundle, {
-          token: token?.token ?? null,
-          fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init)
-        })
-        log('info', 'shell.diagnostics_issue_created', { url })
-        return { url }
-      },
+      submitDiagnostics: async () => ({ url: await submitSupportBundle() }),
       log
     })
 

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { deflateRawSync } from 'node:zlib'
 
 import { REDACTED, redactText, redactValue, type RedactedValue } from './redact'
 
@@ -18,6 +19,23 @@ const FORBIDDEN = /(?:bearer\s+|sk-|ghp_|gho_|github_pat_|xoxb-)[A-Za-z0-9._+\-/
 const MAX_LOG_LINES = 120
 const MAX_LOG_FILES = 4
 const MAX_LOG_BYTES = 64 * 1024
+
+/** Claims one live task failure for the automatic support report path. */
+export function claimAutomaticSupportReport(
+  event: { readonly eventType: string; readonly taskId: string },
+  isLive: boolean,
+  claimedTaskIds: Set<string>
+): boolean {
+  if (!isLive || event.eventType !== 'task.failed' || event.taskId.length === 0 || claimedTaskIds.has(event.taskId)) {
+    return false
+  }
+  if (claimedTaskIds.size >= 64) {
+    const oldest = claimedTaskIds.values().next().value
+    if (typeof oldest === 'string') claimedTaskIds.delete(oldest)
+  }
+  claimedTaskIds.add(event.taskId)
+  return true
+}
 
 export function buildSupportBundleFiles(input: {
   readonly snapshot: unknown
@@ -161,7 +179,7 @@ export function serializeSupportBundle(files: SupportBundleFiles): Buffer {
   const contents = Object.entries(entries).map(([name, value]) => [name, Buffer.from(typeof value === 'string' ? value : JSON.stringify(value), 'utf8')] as const)
   const allText = contents.map(([, content]) => content.toString('utf8')).join('\n')
   if (FORBIDDEN.test(allText)) throw new Error('support bundle final redaction scan failed')
-  return zipStore(contents)
+  return zipArchive(contents)
 }
 
 function sha256(value: string): string { return createHash('sha256').update(value, 'utf8').digest('hex') }
@@ -175,19 +193,22 @@ function crc32(bytes: Buffer): number {
   return (crc ^ 0xffffffff) >>> 0
 }
 
-function zipStore(entries: readonly (readonly [string, Buffer])[]): Buffer {
+function zipArchive(entries: readonly (readonly [string, Buffer])[]): Buffer {
   const local: Buffer[] = []
   const central: Buffer[] = []
   let offset = 0
   for (const [name, data] of entries) {
     const nameBytes = Buffer.from(name, 'utf8')
+    const compressed = deflateRawSync(data)
+    const method = compressed.length < data.length ? 8 : 0
+    const stored = method === 8 ? compressed : data
     const header = Buffer.alloc(30)
-    header.writeUInt32LE(0x04034b50, 0); header.writeUInt16LE(20, 4); header.writeUInt16LE(0x800, 6); header.writeUInt32LE(crc32(data), 14); header.writeUInt32LE(data.length, 18); header.writeUInt32LE(data.length, 22); header.writeUInt16LE(nameBytes.length, 26)
-    local.push(header, nameBytes, data)
+    header.writeUInt32LE(0x04034b50, 0); header.writeUInt16LE(20, 4); header.writeUInt16LE(0x800, 6); header.writeUInt16LE(method, 8); header.writeUInt32LE(crc32(data), 14); header.writeUInt32LE(stored.length, 18); header.writeUInt32LE(data.length, 22); header.writeUInt16LE(nameBytes.length, 26)
+    local.push(header, nameBytes, stored)
     const directory = Buffer.alloc(46)
-    directory.writeUInt32LE(0x02014b50, 0); directory.writeUInt16LE(20, 4); directory.writeUInt16LE(20, 6); directory.writeUInt16LE(0x800, 8); directory.writeUInt32LE(crc32(data), 16); directory.writeUInt32LE(data.length, 20); directory.writeUInt32LE(data.length, 24); directory.writeUInt16LE(nameBytes.length, 28); directory.writeUInt32LE(offset, 42)
+    directory.writeUInt32LE(0x02014b50, 0); directory.writeUInt16LE(20, 4); directory.writeUInt16LE(20, 6); directory.writeUInt16LE(0x800, 8); directory.writeUInt16LE(method, 10); directory.writeUInt32LE(crc32(data), 16); directory.writeUInt32LE(stored.length, 20); directory.writeUInt32LE(data.length, 24); directory.writeUInt16LE(nameBytes.length, 28); directory.writeUInt32LE(offset, 42)
     central.push(directory, nameBytes)
-    offset += header.length + nameBytes.length + data.length
+    offset += header.length + nameBytes.length + stored.length
   }
   const centralBytes = Buffer.concat(central)
   const end = Buffer.alloc(22)

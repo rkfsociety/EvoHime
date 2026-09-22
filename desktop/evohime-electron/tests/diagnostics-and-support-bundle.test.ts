@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
+import { unzipSync } from 'fflate'
 
-import { buildSupportBundleFiles, serializeSupportBundle } from '../src/main/diagnostics/support-bundle'
+import { buildSupportBundleFiles, claimAutomaticSupportReport, serializeSupportBundle } from '../src/main/diagnostics/support-bundle'
 
 describe('support bundle v2', () => {
   it('contains bounded sections, issue draft and redaction metadata in a ZIP', () => {
@@ -16,6 +17,16 @@ describe('support bundle v2', () => {
     })
     const archive = serializeSupportBundle(files)
     expect(archive.subarray(0, 4).toString('hex')).toBe('504b0304')
+    expect(Object.keys(unzipSync(archive)).sort()).toEqual([
+      'errors.jsonl',
+      'events.jsonl',
+      'health.json',
+      'issue-draft.md',
+      'logs.txt',
+      'manifest.json',
+      'redaction-report.json',
+      'runtime.json'
+    ])
     expect(files.manifest.schema).toBe('evohime-support-bundle-v2')
     expect(files.redactionReport.raw_values_included).toBe(false)
     expect(files.issueDraft).toContain('### Problem')
@@ -115,5 +126,16 @@ describe('support bundle v2', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
+  })
+
+  it('claims only live task failures and deduplicates each task id', () => {
+    const claimed = new Set<string>()
+    const failure = { eventType: 'task.failed', taskId: 'task-1' }
+
+    expect(claimAutomaticSupportReport(failure, false, claimed)).toBe(false)
+    expect(claimAutomaticSupportReport(failure, true, claimed)).toBe(true)
+    expect(claimAutomaticSupportReport(failure, true, claimed)).toBe(false)
+    expect(claimAutomaticSupportReport({ eventType: 'task.failed', taskId: 'task-2' }, true, claimed)).toBe(true)
+    expect(claimed).toEqual(new Set(['task-1', 'task-2']))
   })
 })

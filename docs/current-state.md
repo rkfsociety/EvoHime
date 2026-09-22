@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-22.
+Обновлено: 2026-09-23.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -96,6 +96,19 @@ E2E запускается отдельным обязательным шаго�
 валидное соединение с ошибкой `outbound IPC frame queue is full`. Регрессионный
 тест `channel_writer_waits_for_capacity_instead_of_closing` подтверждает, что
 последовательные кадры replay дожидаются чтения writer-задачей.
+
+## Support bundle и автоматический отчёт об ошибке
+
+Electron main собирает `evohime-support-bundle-v2` только из bounded redacted
+projection. ZIP использует deflate, когда это уменьшает размер. Ручная
+`shell.submitDiagnostics` и автоматический отчёт для живого `task.failed`
+используют одну GitHub authorization chain: `EVOHIME_UPDATE_GITHUB_TOKEN`,
+`update.json`, `GH_TOKEN`/`GITHUB_TOKEN` или `gh auth token`. Bundle, который не
+помещается в issue, автоматически отправляется в secret/unlisted Gist как
+base64 ZIP, после чего issue содержит ссылку, размер и SHA-256. Старые
+replay/resync failures при запуске не отправляются; один task ID claim-ится не
+более одного раза за процесс. Отказ GitHub/Gist остаётся best-effort shell
+diagnostic и не меняет исходный Core failure.
 
 ## Продуктовая граница
 

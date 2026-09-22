@@ -62,7 +62,7 @@ export function DiagnosticsAndSupportBundlePanel({ connection, events }: Props):
   return (
     <section className="settings-info" aria-label="Диагностика и support bundle">
       <h3>Диагностика и support bundle</h3>
-      <p>Core собирает bounded health snapshot. Main делает финальный redaction scan; отправка выполняется только после нажатия кнопки и подтверждения.</p>
+      <p>Core собирает bounded health snapshot. Main делает финальный redaction scan. После живого падения задачи Ева автоматически отправляет redacted report при наличии авторизации GitHub; кнопку можно использовать для повторной ручной отправки.</p>
       <div className="safety__actions">
         <input aria-label="Идентификатор conversation" placeholder="conversation id (необязательно)" value={conversationId} onChange={(event) => setConversationId(event.target.value)} />
         <input aria-label="Идентификатор failed run" placeholder="failed run id (необязательно)" value={runId} onChange={(event) => setRunId(event.target.value)} />

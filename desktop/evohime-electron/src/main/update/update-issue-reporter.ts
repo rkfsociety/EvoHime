@@ -12,6 +12,8 @@ const REQUEST_TIMEOUT_MS = 15_000
 const MARKER_PREFIX = 'evohime-update-error:'
 const MAX_INLINE_SUPPORT_BUNDLE_BYTES = 40 * 1024
 const MAX_SUPPORT_ISSUE_BODY_CHARS = 60_000
+const MAX_GIST_BASE64_CHARS = 900_000
+const SUPPORT_BUNDLE_GIST_FILENAME = 'evohime-support-bundle.zip.base64'
 
 export interface UpdateIssueReporterDeps {
   readonly fetch?: typeof fetch
@@ -24,7 +26,7 @@ export interface SupportBundleReportInput {
   readonly issueDraft: string
 }
 
-/** Creates a user-triggered issue containing the redacted support archive. */
+/** Creates an issue containing the redacted support archive. */
 export async function reportSupportBundle(
   config: UpdateConfig,
   input: SupportBundleReportInput,
@@ -33,17 +35,15 @@ export async function reportSupportBundle(
   const apiBase = githubApiBase(config.repositoryUrl)
   if (!apiBase) throw new Error('Репозиторий для support bundle не является GitHub-репозиторием.')
   if (!deps.token) throw new Error('GitHub-токен не найден. Выполни gh auth login и повтори отправку.')
-  if (input.archive.byteLength > MAX_INLINE_SUPPORT_BUNDLE_BYTES) {
-    throw new Error('Support bundle слишком большой для отправки в issue. Сначала сохрани ZIP и прикрепи его вручную.')
-  }
 
   const archive = Buffer.from(input.archive)
   const archiveHash = createHash('sha256').update(archive).digest('hex')
-  const body = [
+  const redactedDraft = redactText(input.issueDraft).slice(0, 16_000)
+  const inlineBody = [
     '<!-- evohime-support-bundle-v2 -->',
     '## Диагностический support bundle EvoHime',
     '',
-    redactText(input.issueDraft).slice(0, 16_000),
+    redactedDraft,
     '',
     '### Архив',
     '',
@@ -58,10 +58,29 @@ export async function reportSupportBundle(
     '```',
     '</details>',
     '',
-    '_Issue создан по явному нажатию кнопки в EvoHime. Архив можно восстановить из base64-блока по SHA-256._'
+    '_Issue создан EvoHime. Архив можно восстановить из base64-блока по SHA-256._'
   ].join('\n')
+  let body = inlineBody
+  if (archive.byteLength > MAX_INLINE_SUPPORT_BUNDLE_BYTES || inlineBody.length > MAX_SUPPORT_ISSUE_BODY_CHARS) {
+    const gistUrl = await createSupportBundleGist(apiBase, archive, deps)
+    body = [
+      '<!-- evohime-support-bundle-v2 -->',
+      '## Диагностический support bundle EvoHime',
+      '',
+      redactedDraft,
+      '',
+      '### Архив',
+      '',
+      '- Размер: `' + archive.length + ' байт`',
+      '- SHA-256: `' + archiveHash + '`',
+      `- ZIP автоматически загружен в [секретный GitHub Gist](${gistUrl}) как \`${SUPPORT_BUNDLE_GIST_FILENAME}\`.`,
+      '- Gist не публикуется в списке GitHub, но доступен каждому, у кого есть ссылка на issue.',
+      '',
+      '_Issue создан EvoHime с авторизацией пользователя GitHub; credentials, raw prompts, workspace files и tool payloads исключены._'
+    ].join('\n')
+  }
   if (body.length > MAX_SUPPORT_ISSUE_BODY_CHARS) {
-    throw new Error('Support bundle не помещается в ограничение GitHub issue. Сохрани ZIP и прикрепи его вручную.')
+    throw new Error('Support bundle не помещается в ограничение GitHub issue даже после загрузки в Gist.')
   }
 
   const response = await (deps.fetch ?? globalThis.fetch)(`${apiBase}/issues`, {
@@ -80,6 +99,50 @@ export async function reportSupportBundle(
   const result = await response.json() as { html_url?: unknown }
   if (typeof result.html_url !== 'string') throw new Error('GitHub не вернул ссылку на созданный issue.')
   return result.html_url
+}
+
+async function createSupportBundleGist(
+  apiBase: string,
+  archive: Buffer,
+  deps: UpdateIssueReporterDeps
+): Promise<string> {
+  const content = archive.toString('base64')
+  if (content.length > MAX_GIST_BASE64_CHARS) {
+    throw new Error('Support bundle слишком велик для автоматической загрузки в GitHub Gist. Сохрани ZIP вручную.')
+  }
+  const apiOrigin = new URL(apiBase).origin
+  const response = await (deps.fetch ?? globalThis.fetch)(`${apiOrigin}/gists`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${deps.token}`,
+      'content-type': 'application/json',
+      'user-agent': 'EvoHime-Diagnostics',
+      'x-github-api-version': '2022-11-28'
+    },
+    body: JSON.stringify({
+      description: 'EvoHime redacted support bundle',
+      public: false,
+      files: { [SUPPORT_BUNDLE_GIST_FILENAME]: { content } }
+    }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  })
+  if (!response.ok) {
+    throw new Error(`GitHub Gist API ответил ${response.status}. Авторизация должна разрешать создание Gist (scope gist); выполни gh auth refresh -s gist и повтори отправку.`)
+  }
+  const result = await response.json() as { html_url?: unknown }
+  if (!isGithubGistUrl(result.html_url)) throw new Error('GitHub не вернул безопасную ссылку на Gist support bundle.')
+  return result.html_url
+}
+
+function isGithubGistUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === 'gist.github.com' && /^\/[A-Za-z0-9-]+(?:\/.*)?$/.test(url.pathname)
+  } catch {
+    return false
+  }
 }
 
 /** Reports a deduplicated, redacted update failure to the source repository. */
