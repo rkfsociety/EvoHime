@@ -303,7 +303,7 @@ impl<'a> PlanArtifactStore<'a> {
                 to: status.as_str().into(),
             });
         }
-        let mut next = current.clone();
+        let mut next = current;
         next.version += 1;
         next.status = status;
         next.revision += 1;
@@ -372,7 +372,7 @@ impl<'a> PlanArtifactStore<'a> {
         let snapshot = PlanExecutionSnapshot {
             artifact_id: next.id.clone(),
             revision: next.revision,
-            content_hash: next.content_hash.clone(),
+            content_hash: next.content_hash,
             policy_snapshot_hash: policy_snapshot_hash.to_owned(),
             task_id: task_id.map(str::to_owned),
             workflow_run_id: workflow_run_id.map(str::to_owned),

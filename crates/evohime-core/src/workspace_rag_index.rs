@@ -204,7 +204,7 @@ pub fn index_workspace(
         )?;
         cleanup_generation(connection, &key, generation)?;
         progress(IndexProgress {
-            run_id: run_id.clone(),
+            run_id,
             phase: status.into(),
             scanned_files: 0,
             indexed_files: 0,

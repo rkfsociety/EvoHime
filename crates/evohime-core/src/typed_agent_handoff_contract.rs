@@ -156,7 +156,7 @@ pub fn propose(
         }],
         provenance: BTreeMap::from([
             (String::from("source_event"), source_event_id.to_owned()),
-            (String::from("target_run"), packet.workflow_run_id.clone()),
+            (String::from("target_run"), packet.workflow_run_id),
         ]),
     })
 }

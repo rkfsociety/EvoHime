@@ -637,7 +637,7 @@ pub fn a_started_snapshot_ignores_library_changes() -> Result<(), String> {
         .map_err(|error| format!("instantiation failed: {error:?}"))?;
     let hash = snapshot.canonical_hash();
 
-    let mut newer = template.clone();
+    let mut newer = template;
     newer.version = 2;
     let newer_snapshot = newer
         .instantiate(&inputs)

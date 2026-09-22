@@ -63,13 +63,9 @@ impl IpcBridge {
                 profile_id = profile.id.clone();
                 revision = profile.revision;
                 let saved = if request.operation == "create" {
-                    registry.create(profile.clone(), &request.idempotency_key)?
+                    registry.create(profile, &request.idempotency_key)?
                 } else {
-                    registry.revise(
-                        profile.clone(),
-                        request.expected_revision,
-                        &request.idempotency_key,
-                    )?
+                    registry.revise(profile, request.expected_revision, &request.idempotency_key)?
                 };
                 let hash = canonical_hash(&saved)?;
                 if let Ok(database) = self.journal.database().try_lock() {

@@ -187,10 +187,10 @@ impl TaskCoordinator {
             backup_approvals: HashMap::new(),
             routing_decisions: HashMap::new(),
             routing_approvals: RoutingApprovalRegistry::default(),
-            events: events.clone(),
+            events,
             notifications: notifications.clone(),
             executor,
-            journal: journal.clone(),
+            journal,
             audit: crate::audit::AuditTrail::default(),
             retained_children: crate::retained_child::RetainedRegistry::default(),
             background_tasks,
@@ -206,7 +206,6 @@ impl TaskCoordinator {
         let journalled = Arc::new(journalled);
         let audit_state = Arc::clone(&state);
         let journal_state = Arc::clone(&state);
-        let notifications = notifications.clone();
         let journalled_for_worker = Arc::clone(&journalled);
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {

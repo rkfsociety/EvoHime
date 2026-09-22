@@ -208,7 +208,7 @@ pub async fn run_research_fetch(
         &body,
         serde_json::json!({
             "url": citation_url(&final_url),
-            "content_type": evidence.source.content_type.clone(),
+            "content_type": evidence.source.content_type.as_str(),
             "status": status.as_u16(),
         })
         .to_string(),

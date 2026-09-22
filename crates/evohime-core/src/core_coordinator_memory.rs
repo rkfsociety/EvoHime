@@ -305,7 +305,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                .and_then(|bytes| std::str::from_utf8(bytes).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::MemoryViewsAndAdaptiveRecall {
                 operation: event_operation,
@@ -367,7 +367,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                .and_then(|bytes| std::str::from_utf8(bytes).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::ModelEditProtocolRegistry {
                 operation: event_operation,
@@ -408,7 +408,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::RemoteConversationChannels {
                 operation: event_operation,
@@ -436,7 +436,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::PromptCachePlanner {
                 operation: event_operation,
@@ -505,7 +505,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::DeclarativeRuntimeComponents {
                 operation: event_operation,

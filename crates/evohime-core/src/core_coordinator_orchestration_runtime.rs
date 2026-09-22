@@ -616,7 +616,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             max_concurrency: request.max_concurrency,
                             failure_policy: request.failure_policy,
                             now_ms: crate::task_memory::now_millis() as i64,
-                            policy: policy.clone(),
+                            policy,
                         })
                         .map_err(|e| e.to_string())?;
                         let json = serde_json::to_vec(&value)

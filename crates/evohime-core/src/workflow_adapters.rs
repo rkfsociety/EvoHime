@@ -445,8 +445,8 @@ impl NodeAdapter for CoreNodeAdapter {
                                 .collect();
                             let stale = fresh.len() < items.len();
                             let payload = json!({
-                                "out": {"items": fresh.clone()},
-                                "evidence": {"items": fresh.clone()},
+                                "out": {"items": fresh},
+                                "evidence": {"items": fresh},
                                 "source": entry.source.as_str(),
                             });
                             let success =
@@ -465,8 +465,8 @@ impl NodeAdapter for CoreNodeAdapter {
                         .await
                         .unwrap_or_default();
                     let success = NodeSuccess::new(json!({
-                        "out": {"items": items.clone()},
-                        "evidence": {"items": items.clone()},
+                        "out": {"items": items},
+                        "evidence": {"items": items},
                     }))
                     .with_evidence(items.len() as u32);
                     if items.is_empty() {

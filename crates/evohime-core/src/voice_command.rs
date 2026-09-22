@@ -275,8 +275,8 @@ pub fn decide(
     let command = PendingCommand {
         command_id,
         kind: intent.kind,
-        app_id: entry.id.clone(),
-        title: entry.title.clone(),
+        app_id: entry.id,
+        title: entry.title,
         created_at_ms: now_ms,
     };
     if policy.voice_commands_autorun {

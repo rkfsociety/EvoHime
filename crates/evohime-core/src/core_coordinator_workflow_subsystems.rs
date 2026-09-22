@@ -20,7 +20,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::RuntimeInterventionPipeline {
                 run_id,
@@ -59,7 +59,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::CodeDiagnosticsFeedbackLoop {
                 workspace_root_id,
@@ -129,7 +129,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::MultiReviewerEnsemble {
                 ensemble_id: event_id,
@@ -166,7 +166,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::LanguageIntelligence {
                 request_id: event_id,
@@ -229,7 +229,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::CodeReviewLane {
                 review_id: event_review_id,
@@ -268,7 +268,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::StaticAnalysisPacks {
                 pack_id: event_pack_id,
@@ -306,7 +306,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::ContextLoadouts {
                 profile_id: event_profile_id,
@@ -335,7 +335,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::SkillSourceLifecycle {
                 installation_id: event_id,
@@ -364,7 +364,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::KernelCapabilityFacade {
                 record_id: event_id,
@@ -393,7 +393,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::AuthorizedSecurityAssessment {
                 assessment_id: event_id,
@@ -454,7 +454,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                .and_then(|bytes| std::str::from_utf8(bytes).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::RuntimeServiceGraph {
                 graph_id: event_id,
@@ -494,7 +494,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|bytes| String::from_utf8(bytes.clone()).ok())
+                .and_then(|bytes| std::str::from_utf8(bytes).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::AgentProgramOptimizer {
                 program_id: event_id,
@@ -537,7 +537,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::WorkflowOptimizationLab {
                 run_id,
@@ -570,7 +570,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::ProjectKnowledgeNotebook {
                 notebook_id: event_id,
@@ -599,7 +599,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::GitRemotePublicationProtocol {
                 protocol_id: event_id,
@@ -628,7 +628,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::VoiceInputDictation {
                 profile_id: event_id,
@@ -657,7 +657,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::OfflineExperienceConsolidation {
                 cycle_id: event_id,
@@ -686,7 +686,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::DeterministicReviewExecutionPlan {
                 plan_id: event_id,
@@ -724,7 +724,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::CoreTopicSubscriptionEventBus {
                 operation,
@@ -760,7 +760,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::DependencyAwareTaskGraph {
                 graph_id,
@@ -798,7 +798,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::DeclarativeAgentComponentRegistry {
                 registry_id,
@@ -870,7 +870,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::TypedContextReferences {
                 ref_id,
@@ -938,7 +938,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let projection_json = result
                 .as_ref()
                 .ok()
-                .and_then(|b| String::from_utf8(b.clone()).ok())
+                .and_then(|b| std::str::from_utf8(b).ok().map(str::to_owned))
                 .unwrap_or_else(|| "{}".into());
             let event = CoreEvent::SafeUiExtensionFramework {
                 extension_id,

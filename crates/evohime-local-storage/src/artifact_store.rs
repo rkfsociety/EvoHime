@@ -155,8 +155,8 @@ impl<'a> ArtifactStore<'a> {
             }
             let locator = format!("artifact://{owner_task_id}/{hash}");
             let reference = ArtifactRef {
-                locator: locator.clone(),
-                content_hash: hash.clone(),
+                locator,
+                content_hash: hash,
                 task_id: task_id.to_string(),
                 owner_task_id: owner_task_id.to_string(),
                 bytes,
@@ -243,7 +243,7 @@ impl<'a> ArtifactStore<'a> {
             return Err(StorageError::Context(
                 ArtifactError::HashMismatch {
                     locator: locator.to_string(),
-                    expected: reference.content_hash.clone(),
+                    expected: reference.content_hash,
                     actual,
                 }
                 .to_string(),

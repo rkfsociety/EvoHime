@@ -201,7 +201,7 @@ impl IpcBridge {
         } else if request.operation == "status" {
             crate::sensitive_data_guardrails::RedactionMetadata {
                 contract_version: 1,
-                policy_hash: snapshot.policy_hash.clone(),
+                policy_hash: snapshot.policy_hash,
                 destination: destination.into(),
                 action: None,
                 rule_ids: Vec::new(),

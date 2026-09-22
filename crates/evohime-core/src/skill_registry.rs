@@ -345,7 +345,7 @@ impl SkillRegistry {
         self.cache.insert(
             skill_id.to_owned(),
             CachedSkill {
-                hash: hash.clone(),
+                hash,
                 content: parsed.body.clone(),
             },
         );

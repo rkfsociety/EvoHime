@@ -215,13 +215,14 @@ impl BuilderDraftStore {
         draft.definition.validate()?;
         let draft_hash = draft.definition.execution_hash();
         let handle = format!("builder-handoff:{draft_id}:{}", draft.revision);
+        let save_precondition = format!("{}:{}", draft.revision, draft_hash);
         let handoff = BuilderHandoff {
-            handle: handle.clone(),
+            handle,
             contract_version: BUILDER_CONTRACT_VERSION.into(),
             owner_scope: owner_scope.into(),
             draft_revision: draft.revision,
-            draft_hash: draft_hash.clone(),
-            save_precondition: format!("{}:{}", draft.revision, draft_hash),
+            draft_hash,
+            save_precondition,
             single_use: true,
         };
         draft.handoff = Some(handoff.clone());

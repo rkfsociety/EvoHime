@@ -370,7 +370,7 @@ pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<N
     Some(NativeToolCall {
         id: format!("plain-{iteration}"),
         name: name.to_string(),
-        arguments: arguments.to_string(),
+        arguments,
     })
 }
 
