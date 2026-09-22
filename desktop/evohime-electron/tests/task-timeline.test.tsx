@@ -11,6 +11,7 @@ import { TaskTimeline } from '../src/renderer/src/TaskTimeline'
 const calls: Array<{ command: string; payload: unknown }> = []
 let respond: (command: RendererCommand) => unknown
 let clipboardText = ''
+let selectedFilePath = ''
 
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
@@ -28,7 +29,8 @@ function installApi(): void {
       clipboardText = text
       return true
     },
-    openExternal: async () => true
+    openExternal: async () => true,
+    pathForFile: () => selectedFilePath
   }
   Object.defineProperty(window, 'evohime', { value: Object.freeze({ v1: api }), configurable: true })
 }
@@ -85,6 +87,7 @@ function conversationPage(operation: string, projected: ConversationEventProject
 beforeEach(() => {
   calls.length = 0
   clipboardText = ''
+  selectedFilePath = ''
   // The transcript only shows tasks of the open chat, so the store must
   // report this chat as owning them.
   const chat = {
@@ -450,6 +453,7 @@ describe('task timeline', () => {
       />
     )
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Файлы' }).hasAttribute('disabled')).toBe(true)
 
     view.rerender(
       <TaskTimeline
@@ -465,6 +469,7 @@ describe('task timeline', () => {
     )
 
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Файлы' }).hasAttribute('disabled')).toBe(false)
   })
 
   it('starts a standalone dialogue with an empty workspace path', async () => {
@@ -745,6 +750,35 @@ describe('task timeline', () => {
       prompt: 'Проверь тесты',
       workspacePath: 'C:\\work\\repo'
     })
+  })
+
+  it('makes composer actions affect the next task instead of leaving them decorative', async () => {
+    selectedFilePath = 'C:\\work\\repo\\docs\\brief.md'
+    const view = render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+    expect(screen.getByRole('menu', { name: 'Режим доступа агента' })).toBeTruthy()
+    await userEvent.click(screen.getByRole('menuitemradio', { name: /Только чтение/ }))
+    await waitFor(() => expect(calls.some((call) => call.command === 'core.setPermissionMode')).toBe(true))
+
+    const file = new File(['brief'], 'brief.md', { type: 'text/markdown' })
+    const input = view.container.querySelector('input[type="file"]')
+    expect(input).toBeTruthy()
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    fireEvent.change(input as HTMLInputElement)
+    expect(await screen.findByText('brief.md')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Веб-поиск' }))
+    expect(screen.getByRole('button', { name: 'Веб-поиск' }).getAttribute('aria-pressed')).toBe('true')
+    await userEvent.type(await screen.findByLabelText('Задача'), 'Сделай сводку')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
+
+    await waitFor(() => expect(calls.some((call) => call.command === 'core.startTask')).toBe(true))
+    expect(calls.find((call) => call.command === 'core.startTask')?.payload).toMatchObject({
+      prompt: expect.stringContaining('docs/brief.md'),
+      workspacePath: 'C:\\work\\repo'
+    })
+    expect((calls.find((call) => call.command === 'core.startTask')?.payload as { prompt: string }).prompt).toContain('веб-поиск')
   })
 
   it('offers stop while Core is still accepting the task', async () => {

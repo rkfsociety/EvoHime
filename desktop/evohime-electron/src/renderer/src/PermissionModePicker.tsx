@@ -36,16 +36,23 @@ const MODES: readonly {
 export interface PermissionModePickerProps {
   readonly connection: ConnectionState
   readonly workspace?: string | null
+  readonly open?: boolean
+  readonly onOpenChange?: (open: boolean) => void
 }
 
-export function PermissionModePicker({ connection, workspace = null }: PermissionModePickerProps): React.JSX.Element | null {
+export function PermissionModePicker({ connection, workspace = null, open: controlledOpen, onOpenChange }: PermissionModePickerProps): React.JSX.Element | null {
   const api = useShellApi()
   const connected = CONNECTED_STATES.includes(connection)
   const [mode, setMode] = useState<PermissionMode>('ask')
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const root = useRef<HTMLDivElement | null>(null)
   const current = MODES.find((item) => item.value === mode) ?? MODES[0]!
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean): void => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
 
   useEffect(() => {
     if (!api || !connected || workspace === null) return
@@ -103,7 +110,7 @@ export function PermissionModePicker({ connection, workspace = null }: Permissio
         aria-label="Режим доступа"
         title={current.label}
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
       >
         <span aria-hidden="true">◉</span>
         <span>{current.compactLabel}</span>

@@ -1836,7 +1836,15 @@ body {
   color: #b5b5e5;
   font-size: 12px;
   font-weight: 500;
-  cursor: default;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.composer__action:hover:not(:disabled),
+.composer__action--active {
+  border-color: rgb(165 151 255 / 78%);
+  background: rgb(69 58 132 / 74%);
+  color: #e5e1ff;
 }
 
 .composer__action .composer__icon {
@@ -1847,6 +1855,53 @@ body {
 
 .composer__action:disabled {
   opacity: 0.88;
+  cursor: not-allowed;
+}
+
+.composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.composer__attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 5px 8px 5px 10px;
+  border: 1px solid rgb(132 126 223 / 48%);
+  border-radius: 999px;
+  background: rgb(31 35 76 / 72%);
+  color: #d6d3ff;
+  font-size: 12px;
+}
+
+.composer__attachment > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer__attachment button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #aaa5d7;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.composer__attachment button:hover {
+  color: #fff;
+}
+
+.composer__mode-hint {
+  margin: 8px 4px 0;
+  color: #b7b2e4;
+  font-size: 12px;
 }
 
 .composer__shortcut {

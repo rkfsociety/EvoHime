@@ -39,6 +39,11 @@ const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
   minute: '2-digit'
 })
 
+interface ComposerAttachment {
+  readonly name: string
+  readonly relativePath: string
+}
+
 function buildConversationPageKey(page: { conversationId: string; oldestSequence: number; earliestAvailableSequence?: number; errorCode?: string; events: readonly { eventId: string; sequence: number }[] }): string {
   const signature = page.events.map((entry) => `${entry.sequence}:${entry.eventId}`).join('|')
   return `${page.conversationId}:${page.oldestSequence}:${page.earliestAvailableSequence ?? 0}:${page.errorCode ?? ''}:${signature}`
@@ -104,6 +109,10 @@ export function TaskTimeline({
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
   const [prompt, setPrompt] = useState('')
+  const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([])
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
+  const [composerNotice, setComposerNotice] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [startingTaskId, setStartingTaskId] = useState<string | null>(null)
   const [stopRequested, setStopRequested] = useState(false)
@@ -122,6 +131,7 @@ export function TaskTimeline({
   const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
   const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [timelineWindowStart, setTimelineWindowStart] = useState(0)
   const followLiveRef = useRef(true)
@@ -184,6 +194,10 @@ export function TaskTimeline({
     // Without this reset an empty chat still rendered the previous prompt and
     // task because both were kept outside the persisted ChatRecord.
     setChat(null)
+    setAttachments([])
+    setWebSearchEnabled(false)
+    setToolsMenuOpen(false)
+    setComposerNotice(null)
     setTaskId(null)
     setStartingTaskId(null)
     setStopRequested(false)
@@ -585,7 +599,7 @@ export function TaskTimeline({
     if (!api || prompt.trim().length === 0) return
     const nextTaskId = makeTaskId()
     const clientMessageId = globalThis.crypto.randomUUID()
-    const text = prompt.trim()
+    const text = composeTaskPrompt(prompt.trim(), attachments, webSearchEnabled)
     cancelRequestedTaskId.current = null
     setTaskId(nextTaskId)
     setStartingTaskId(nextTaskId)
@@ -639,6 +653,9 @@ export function TaskTimeline({
     setSentPrompt(text)
     setSentPromptAtMs(Date.now())
     setPrompt('')
+    setAttachments([])
+    setWebSearchEnabled(false)
+    setComposerNotice(null)
     const stored = await api.invoke('chat.appendPrompt', {
       chatId: targetChatId,
       taskId: nextTaskId,
@@ -650,7 +667,38 @@ export function TaskTimeline({
     if (cancelRequestedTaskId.current === nextTaskId) {
       await api.invoke('core.stopTask', { taskId: nextTaskId })
     }
-  }, [api, chatId, onChatOpened, onChatTouched, prompt, providerMode, setConversationProjection, workspace])
+  }, [api, attachments, chatId, onChatOpened, onChatTouched, prompt, providerMode, setConversationProjection, webSearchEnabled, workspace])
+
+  const selectFiles = useCallback((fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return
+    if (!workspace) {
+      setComposerNotice('Сначала выбери проект, чтобы прикрепить файл.')
+      return
+    }
+    const selected: ComposerAttachment[] = []
+    let rejected = false
+    for (const file of Array.from(fileList)) {
+      const absolutePath = api?.pathForFile?.(file) ?? ''
+      const relativePath = absolutePath.length > 0 ? relativeWorkspacePath(workspace, absolutePath) : null
+      if (!relativePath) {
+        rejected = true
+        continue
+      }
+      if (!selected.some((item) => item.relativePath.toLowerCase() === relativePath.toLowerCase())) {
+        selected.push({ name: file.name, relativePath })
+      }
+    }
+    if (selected.length > 0) {
+      setAttachments((current) => {
+        const next = [...current]
+        for (const item of selected) {
+          if (!next.some((existing) => existing.relativePath.toLowerCase() === item.relativePath.toLowerCase())) next.push(item)
+        }
+        return next
+      })
+    }
+    setComposerNotice(rejected ? 'Можно прикрепить только файлы из выбранного проекта.' : null)
+  }, [api, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !activeTaskId) return
@@ -800,15 +848,47 @@ export function TaskTimeline({
               </button>
             </div>
             <div className="composer__input-actions">
-              <button type="button" className="composer__action" disabled title="Файлы пока не подключены">
+              <input
+                ref={fileInputRef}
+                className="visually-hidden"
+                type="file"
+                multiple
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={(event) => {
+                  selectFiles(event.target.files)
+                  event.target.value = ''
+                }}
+              />
+              <button
+                type="button"
+                className="composer__action"
+                disabled={!connected || busy || !workspace}
+                title={!workspace ? 'Сначала выбери проект' : 'Прикрепить файлы из проекта'}
+                onClick={() => fileInputRef.current?.click()}
+              >
                 <ComposerIcon name="paperclip" />
                 <span>Файлы</span>
               </button>
-              <button type="button" className="composer__action" disabled title="Инструменты уже выбираются Core автоматически">
+              <button
+                type="button"
+                className={`composer__action${toolsMenuOpen ? ' composer__action--active' : ''}`}
+                disabled={!connected || busy}
+                aria-expanded={toolsMenuOpen}
+                title="Открыть режим доступа к инструментам"
+                onClick={() => setToolsMenuOpen((value) => !value)}
+              >
                 <ComposerIcon name="layers" />
                 <span>Инструменты</span>
               </button>
-              <button type="button" className="composer__action" disabled title="Веб-поиск пока не подключен">
+              <button
+                type="button"
+                className={`composer__action${webSearchEnabled ? ' composer__action--active' : ''}`}
+                disabled={!connected || busy}
+                aria-pressed={webSearchEnabled}
+                title="Попросить Core использовать веб-поиск для этого запроса"
+                onClick={() => setWebSearchEnabled((value) => !value)}
+              >
                 <ComposerIcon name="globe" />
                 <span>Веб-поиск</span>
               </button>
@@ -849,7 +929,12 @@ export function TaskTimeline({
             <div className="composer__control-group">
               <ComposerIcon name="lock" className="composer__control-icon" />
               <span className="composer__control-label">Режим доступа</span>
-              <PermissionModePicker connection={connection} workspace={workspace} />
+              <PermissionModePicker
+                connection={connection}
+                workspace={workspace}
+                open={toolsMenuOpen}
+                onOpenChange={setToolsMenuOpen}
+              />
             </div>
             <span className="composer__divider" aria-hidden="true" />
             <div className="composer__control-group">
@@ -879,6 +964,25 @@ export function TaskTimeline({
             </div>
           ) : null}
 
+          {attachments.length > 0 ? (
+            <div className="composer__attachments" aria-label="Прикреплённые файлы">
+              {attachments.map((attachment) => (
+                <span className="composer__attachment" key={attachment.relativePath}>
+                  <span title={attachment.relativePath}>{attachment.name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Удалить файл ${attachment.name}`}
+                    onClick={() => setAttachments((current) => current.filter((item) => item.relativePath !== attachment.relativePath))}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {webSearchEnabled ? <p className="composer__mode-hint" role="status">Веб-поиск включён для следующего запроса.</p> : null}
+          {composerNotice ? <p className="composer__mode-hint" role="status">{composerNotice}</p> : null}
+
 
           {!connected ? (
             <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p>
@@ -889,6 +993,27 @@ export function TaskTimeline({
       </div>
     </section>
   )
+}
+
+function composeTaskPrompt(prompt: string, attachments: readonly ComposerAttachment[], webSearchEnabled: boolean): string {
+  const sections = [prompt]
+  if (attachments.length > 0) {
+    sections.push(`Прикреплённые файлы из текущего проекта:\n${attachments.map((attachment) => `- ${attachment.relativePath}`).join('\n')}\nИспользуй их как дополнительный контекст задачи.`)
+  }
+  if (webSearchEnabled) {
+    sections.push('Для этой задачи используй веб-поиск и актуальные внешние источники, если они доступны; укажи использованные источники в ответе.')
+  }
+  return sections.join('\n\n')
+}
+
+function relativeWorkspacePath(workspace: string, filePath: string): string | null {
+  const normalize = (value: string): string => value.replaceAll('\\', '/').replace(/\/+$/, '')
+  const root = normalize(workspace)
+  const candidate = normalize(filePath)
+  const prefix = `${root}/`
+  if (candidate.toLowerCase() === root.toLowerCase() || !candidate.toLowerCase().startsWith(prefix.toLowerCase())) return null
+  const relative = candidate.slice(prefix.length)
+  return relative.length > 0 && !relative.split('/').includes('..') ? relative : null
 }
 
 type ComposerIconName = 'box' | 'folder' | 'globe' | 'layers' | 'link' | 'lock' | 'paperclip' | 'send'

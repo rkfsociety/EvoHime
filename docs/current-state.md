@@ -24,9 +24,9 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 
 ## Актуальный code baseline
 
-Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local обновление presentation композера shell; IPC-контракты и Core-owned state не менялись.
+Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local подключение действий композера shell: выбор файлов текущего workspace, существующий выбор режима доступа через Core и флаг веб-поиска для следующего запроса. Новых IPC-контрактов и Core-owned state не добавлено.
 
-Актуальные release markers берутся из `release-versions/`: `core 0.0.000362`, `cli 0.0.000084`, `ui-bundle 0.0.000108`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
+Актуальные release markers берутся из `release-versions/`: `core 0.0.000362`, `cli 0.0.000084`, `ui-bundle 0.0.000109`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
 
 Startup `EventJournal::open` выполняет миграции и idempotent schema installers
 один раз. Длительные workspace RAG index/search/vector операции используют
