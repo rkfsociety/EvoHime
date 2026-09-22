@@ -1,0 +1,4 @@
+interface:
+  display_name: "EvoHime interface preview"
+  short_description: "Пересобрать и снять текущий интерфейс EvoHime"
+  default_prompt: "Пересобери нужную UI-поверхность EvoHime из исходников, сними её и проверь внешний вид."
