@@ -436,31 +436,27 @@ pub(crate) async fn run_codex_cli(
         .stderr
         .take()
         .ok_or_else(|| AgentRunError::Internal("codex_cli stderr unavailable".into()))?;
-    let stdout_task = tokio::spawn(stream_codex_output(
-        stdout,
-        events.clone(),
-        task_id.clone(),
-        true,
-    ));
-    let stderr_task = tokio::spawn(stream_codex_output(
-        stderr,
-        events.clone(),
-        task_id.clone(),
-        false,
-    ));
-    let status = tokio::select! {
+    // Both pipes must be drained concurrently, but they do not need separate
+    // scheduler tasks: join! keeps the reads cooperative within this task.
+    let stdout = stream_codex_output(stdout, events.clone(), task_id.clone(), true);
+    let stderr = stream_codex_output(stderr, events.clone(), task_id.clone(), false);
+    let process = async {
+        let (status, stdout, stderr) = tokio::join!(child.wait(), stdout, stderr);
+        let status = status.map_err(|error| {
+            AgentRunError::Internal(format!("codex_cli process failed: {error}"))
+        })?;
+        let mut combined = stdout;
+        combined.extend_from_slice(&stderr);
+        Ok::<_, AgentRunError>((status, combined))
+    };
+    let (status, combined) = tokio::select! {
         _ = cancellation.cancelled() => {
             let _ = child.kill().await;
             let _ = child.wait().await;
-            stdout_task.abort();
-            stderr_task.abort();
             return Err(AgentRunError::Cancelled);
         }
-        output = child.wait() => output
-            .map_err(|error| AgentRunError::Internal(format!("codex_cli process failed: {error}")))?,
+        output = process => output?,
     };
-    let mut combined = stdout_task.await.unwrap_or_default();
-    combined.extend_from_slice(&stderr_task.await.unwrap_or_default());
     if combined.len() > CODEX_MAX_OUTPUT_BYTES {
         return Err(AgentRunError::Internal(
             "codex_cli: output limit exceeded".into(),

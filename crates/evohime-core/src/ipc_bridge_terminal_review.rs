@@ -794,11 +794,12 @@ impl IpcBridge {
         let progress = Arc::new(move |progress: crate::plan_review::ReviewProgress| {
             let _ = progress_tx.send(progress);
         });
+        let review_event_id = task_review_id.clone();
         tokio::spawn(async move {
             let _background_permit = background_permit;
             let progress_journal = journal.clone();
             let progress_coordinator = coordinator.clone();
-            let progress_writer = tokio::spawn(async move {
+            let progress_writer = async move {
                 while let Some(progress) = progress_rx.recv().await {
                     publish_review_event(
                         &progress_coordinator,
@@ -814,35 +815,39 @@ impl IpcBridge {
                     )
                     .await;
                 }
-            });
-            let event = match crate::plan_review::run_review_with_progress(
-                Arc::new(gateway),
-                review,
-                cancellation,
-                progress,
-            )
-            .await
-            {
-                Ok(result) => {
-                    let payload = serde_json::to_string(&result).unwrap_or_default();
-                    results
-                        .lock()
-                        .await
-                        .insert(result.review_id.clone(), result.clone());
-                    CoreEvent::TaskCompleted {
-                        task_id: result.review_id,
-                        final_message: payload,
-                    }
-                }
-                Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
-                    task_id: task_review_id.clone(),
-                },
-                Err(error) => CoreEvent::TaskFailed {
-                    task_id: task_review_id.clone(),
-                    error: error.to_string(),
-                },
             };
-            let _ = progress_writer.await;
+            let review = async move {
+                match crate::plan_review::run_review_with_progress(
+                    Arc::new(gateway),
+                    review,
+                    cancellation,
+                    progress,
+                )
+                .await
+                {
+                    Ok(result) => {
+                        let payload = serde_json::to_string(&result).unwrap_or_default();
+                        results
+                            .lock()
+                            .await
+                            .insert(result.review_id.clone(), result.clone());
+                        CoreEvent::TaskCompleted {
+                            task_id: result.review_id,
+                            final_message: payload,
+                        }
+                    }
+                    Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
+                        task_id: review_event_id.clone(),
+                    },
+                    Err(error) => CoreEvent::TaskFailed {
+                        task_id: review_event_id.clone(),
+                        error: error.to_string(),
+                    },
+                }
+            };
+            // The outer task already owns the detached lifetime; join! keeps
+            // progress publication concurrent without a nested task.
+            let (event, _) = tokio::join!(review, progress_writer);
             let terminal_progress = match &event {
                 CoreEvent::TaskCompleted { .. } => Some(CoreEvent::ReviewProgress {
                     review_id: task_review_id.clone(),
@@ -963,11 +968,12 @@ impl IpcBridge {
         let progress = Arc::new(move |progress: crate::plan_review::RevisionProgress| {
             let _ = progress_tx.send(progress);
         });
+        let revision_event_id = task_revision_id.clone();
         tokio::spawn(async move {
             let _background_permit = background_permit;
             let progress_journal = journal.clone();
             let progress_coordinator = coordinator.clone();
-            let progress_writer = tokio::spawn(async move {
+            let progress_writer = async move {
                 while let Some(progress) = progress_rx.recv().await {
                     publish_review_event(
                         &progress_coordinator,
@@ -980,35 +986,39 @@ impl IpcBridge {
                     )
                     .await;
                 }
-            });
-            let event = match crate::plan_review::run_revision(
-                Arc::new(gateway),
-                revision,
-                cancellation,
-                progress,
-            )
-            .await
-            {
-                Ok(result) => {
-                    let payload = serde_json::to_string(&result).unwrap_or_default();
-                    results
-                        .lock()
-                        .await
-                        .insert(result.revision_id.clone(), result.clone());
-                    CoreEvent::TaskCompleted {
-                        task_id: result.revision_id,
-                        final_message: payload,
-                    }
-                }
-                Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
-                    task_id: task_revision_id.clone(),
-                },
-                Err(error) => CoreEvent::TaskFailed {
-                    task_id: task_revision_id.clone(),
-                    error: error.to_string(),
-                },
             };
-            let _ = progress_writer.await;
+            let revision = async move {
+                match crate::plan_review::run_revision(
+                    Arc::new(gateway),
+                    revision,
+                    cancellation,
+                    progress,
+                )
+                .await
+                {
+                    Ok(result) => {
+                        let payload = serde_json::to_string(&result).unwrap_or_default();
+                        results
+                            .lock()
+                            .await
+                            .insert(result.revision_id.clone(), result.clone());
+                        CoreEvent::TaskCompleted {
+                            task_id: result.revision_id,
+                            final_message: payload,
+                        }
+                    }
+                    Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
+                        task_id: revision_event_id.clone(),
+                    },
+                    Err(error) => CoreEvent::TaskFailed {
+                        task_id: revision_event_id.clone(),
+                        error: error.to_string(),
+                    },
+                }
+            };
+            // The outer task already owns the detached lifetime; join! keeps
+            // progress publication concurrent without a nested task.
+            let (event, _) = tokio::join!(revision, progress_writer);
             publish_review_event(&coordinator, &journal, event).await;
             tasks.lock().await.remove(&task_revision_id);
         });

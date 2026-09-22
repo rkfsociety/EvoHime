@@ -19,7 +19,7 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 стартовал из свежей сборки, но native screenshot не снят: доступный CUA-сеанс
 не умеет привязать окно Electron; GitHub module-router и публикация `ui-bundle`
 ещё не запускались, потому что push не выполнялся.
-Актуальные release markers хранятся в `release-versions/`: `core=0.0.000365`,
+Актуальные release markers хранятся в `release-versions/`: `core=0.0.000366`,
 `updater=0.0.000128`, `transaction=0.0.000067`,
 `ui-bundle=0.0.000110`, `shell-host=0.0.000103` и
 `cli=0.0.000084`. Исторические разделы ниже сохраняют прежнее evidence.
