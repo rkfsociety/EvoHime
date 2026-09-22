@@ -15,7 +15,6 @@ import { shortCommit } from '@shared/update'
 
 import { useShellApi } from './shell-api'
 import { UpdateIndicator } from './UpdateIndicator'
-import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
 import { SettingsModal } from './SettingsModal'
@@ -194,25 +193,6 @@ export function App(): React.JSX.Element {
         <p>Мост preload не загрузился. Перезапусти приложение.</p>
       </main>
     )
-  }
-
-  // Do not reveal the working shell while the main process is still deciding
-  // whether a launch-time update is required. The first frame is a small,
-  // neutral splash; once the status arrives, UpdateGate owns the whole window.
-  if (!update) {
-    return (
-      <main className="startup-screen" aria-label="Запуск EvoHime">
-        <div className="startup-screen__mark"><EvaIcon /></div>
-        <p className="startup-screen__brand">EvoHime</p>
-        <p className="startup-screen__message">Подготавливаю приложение…</p>
-      </main>
-    )
-  }
-
-  // This is intentionally a full-window surface, not an overlay over the
-  // shell. Core and supervisor are started only after this branch disappears.
-  if (update.blocking) {
-    return <UpdateGate status={update} />
   }
 
   const connection = state?.connection ?? 'starting'
@@ -426,7 +406,7 @@ export function App(): React.JSX.Element {
       <footer className="statusbar">
         <span>Протокол {state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</span>
         <span title={state?.coreVersion ? `Версия runtime-пакета Core: ${state.coreVersion}` : undefined}>
-          Core модуль {update.installedModules?.core ?? '—'}
+          Core модуль {update?.installedModules?.core ?? '—'}
         </span>
         {/* Сборка опознаётся commit: релизная версия модуля показана отдельно. */}
         {update && update.phase !== 'disabled' ? (
@@ -438,7 +418,6 @@ export function App(): React.JSX.Element {
         {state?.reason ? <span className="statusbar__reason">{state.reason}</span> : null}
       </footer>
 
-      {update ? <UpdateGate status={update} /> : null}
     </div>
     </ProviderStateProvider>
   )

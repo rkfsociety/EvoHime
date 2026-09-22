@@ -130,10 +130,9 @@ export class UpdateService {
       return 'continue'
     }
 
-    // The visible shell renderer owns the startup/update surface. Mark the
-    // launch as blocking so it cannot reveal the working shell until the
-    // complete transaction has either been applied or safely abandoned after a
-    // failed check/build.
+    // Keep Core and supervisor behind the launch transaction. The visible
+    // progress surface belongs to the standalone updater; this flag is only
+    // the process-level safety boundary for the transaction.
     this.patch({ blocking: true })
     const staged = this.stagedMarker()
     const checked = await this.check()

@@ -45,8 +45,8 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   hardenWebContents(window.webContents, options)
 
   window.once('ready-to-show', () => {
-    // The renderer owns the startup/update surface while the launch gate is
-    // running, so the application window must still be visible immediately.
+    // The standalone updater owns blocking progress; the shell window remains
+    // visible immediately while its process-level launch gate is running.
     focusWindow(window)
   })
 

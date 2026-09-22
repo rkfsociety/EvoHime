@@ -51,7 +51,7 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
 
       {confirmOpen ? (
         <section className="update-confirm" role="dialog" aria-label="Подтверждение обновления">
-          <div className="update-popover__header">
+          <div className="update-confirm__header">
             <div>
               <h2>{ready ? 'Обновление готово' : 'Доступно обновление'}</h2>
               <p>{ready ? 'Изменения проверены. Применить обновление сейчас?' : status.message}</p>

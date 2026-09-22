@@ -1,10 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 import { disabledUpdateStatus, initialUpdateSteps, updateProgress, type UpdateStatus } from '@shared/update'
-import { UpdateGate } from '../src/renderer/src/UpdateGate'
 import { UpdateIndicator } from '../src/renderer/src/UpdateIndicator'
 import { UpdaterApp } from '../src/renderer/src/UpdaterApp'
 import type { UpdaterUiStatus } from '../src/shared/updater'
@@ -65,47 +64,6 @@ describe('update progress', () => {
       index === 0 ? { ...step, state: 'done' as const } : step
     )
     expect(updateProgress(status({ steps: active }))).toBeCloseTo(1 / steps.length)
-  })
-})
-
-describe('launch gate', () => {
-  it('shows the running step and the last build line while it blocks', () => {
-    render(
-      <UpdateGate
-        status={status({
-          phase: 'preparing',
-          blocking: true,
-          message: 'Пересобираю Еву…',
-          detail: 'Compiling evohime-core',
-          steps: initialUpdateSteps().map((step) =>
-            step.id === 'core' ? { ...step, state: 'active' as const } : step
-          )
-        })}
-      />
-    )
-
-    expect(screen.getByText('Пересобираю Еву…')).toBeTruthy()
-    expect(screen.getByText('Compiling evohime-core')).toBeTruthy()
-    expect(within(screen.getByRole('region', { name: 'Текущий этап' })).getByText('Сборка Core')).toBeTruthy()
-    expect(within(screen.getByRole('region', { name: 'Текущий этап' })).getByText('Компилирую Rust Core и supervisor.')).toBeTruthy()
-    expect(screen.getByText('0 из 6 этапов')).toBeTruthy()
-    expect(screen.getByText('main')).toBeTruthy()
-    expect(screen.getByRole('progressbar')).toBeTruthy()
-    expect(screen.getAllByText('Сборка Core').some((element) => element.closest('li')?.getAttribute('data-state') === 'active')).toBe(true)
-  })
-
-  it('stays out of the way when the run is not blocking', () => {
-    installApi()
-    render(<UpdateGate status={status({ phase: 'preparing', blocking: false })} />)
-
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('does not offer the regular shell while a launch update is running', () => {
-    render(<UpdateGate status={status({ phase: 'preparing', blocking: true })} />)
-
-    expect(screen.queryByRole('button')).toBeNull()
-    expect(screen.getByText('Обычный интерфейс откроется после полного завершения обновления.')).toBeTruthy()
   })
 })
 
@@ -198,26 +156,5 @@ describe('standalone updater window', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Обновление не завершено' })).toBeTruthy())
     expect(screen.getByText('Проверьте подключение и повторите попытку.')).toBeTruthy()
-  })
-})
-
-describe('commit tracking', () => {
-  it('names the commit pair and the branch in the launch gate', () => {
-    installApi()
-    const commit = 'a'.repeat(40)
-    render(
-      <UpdateGate
-        status={status({
-          phase: 'preparing',
-          blocking: true,
-          installedCommit: commit,
-          remoteCommit: commit
-        })}
-      />
-    )
-
-    const commits = screen.getByText((_, element) => element?.classList.contains('update-gate__commits') ?? false)
-    expect(commits.textContent).toContain('aaaaaaa → aaaaaaa')
-    expect(screen.getByText('main')).toBeTruthy()
   })
 })

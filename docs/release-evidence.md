@@ -12,14 +12,16 @@ output, transcripts, absolute paths и PII запрещены.
 дополнительно подключает действия композера renderer: выбор файлов текущего
 workspace, существующий режим доступа Core и флаг веб-поиска для следующего
 запроса; новых IPC-контрактов, Core-owned state и runtime authority не добавлено.
-Для этой задачи локально проверены `typecheck`, полный renderer test suite,
-`build:shell` и `check:bundle`. Shell preview также успешно стартовал из
-свежей сборки, но native screenshot не снят: доступный CUA-сеанс не умеет
-привязать окно Electron; GitHub module-router и публикация `ui-bundle` ещё не
-запускались, потому что push не выполнялся.
-Актуальные release markers хранятся в `release-versions/`: `core=0.0.000362`,
-`updater=0.0.000127`, `transaction=0.0.000067`,
-`ui-bundle=0.0.000109`, `shell-host=0.0.000099` и
+Также удалён legacy full-window `UpdateGate`: blocking progress UI остаётся
+только в отдельном updater, а shell больше не рисует экран обновления при
+запуске. Для этой задачи локально проверены `typecheck`, полный renderer test
+suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успешно
+стартовал из свежей сборки, но native screenshot не снят: доступный CUA-сеанс
+не умеет привязать окно Electron; GitHub module-router и публикация `ui-bundle`
+ещё не запускались, потому что push не выполнялся.
+Актуальные release markers хранятся в `release-versions/`: `core=0.0.000365`,
+`updater=0.0.000128`, `transaction=0.0.000067`,
+`ui-bundle=0.0.000110`, `shell-host=0.0.000103` и
 `cli=0.0.000084`. Исторические разделы ниже сохраняют прежнее evidence.
 
 ## Статус выпуска
