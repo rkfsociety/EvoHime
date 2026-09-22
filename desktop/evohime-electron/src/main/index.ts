@@ -60,6 +60,11 @@ let ollamaRuntime: OllamaRuntimeService | null = null
 let codex: CodexService | null = null
 let repair: RepairService | null = null
 const recentCoreEvents: import('@shared/api').CoreEvent[] = []
+const diagnosticSnapshotWaiters = new Set<{
+  readonly resolve: (event: import('@shared/api').CoreEvent) => void
+  readonly reject: (error: Error) => void
+  timer?: NodeJS.Timeout
+}>()
 const claimedAutomaticSupportReports = new Set<string>()
 let lastShellState: ShellState | null = null
 let lastRepairStatus: import('@shared/api').RepairStatus | null = null
@@ -165,6 +170,13 @@ if (process.argv.includes('--evohime-browser-backend')) {
     client.on('core-event', (event) => {
       recentCoreEvents.unshift(event)
       if (recentCoreEvents.length > 2_000) recentCoreEvents.length = 2_000
+      if (event.eventType === 'diagnostics.snapshot') {
+        for (const waiter of diagnosticSnapshotWaiters) {
+          if (waiter.timer) clearTimeout(waiter.timer)
+          diagnosticSnapshotWaiters.delete(waiter)
+          waiter.resolve(event)
+        }
+      }
       repair?.observe(event)
       broadcast({ kind: 'core-event', event })
       observeAmbientEvent(event.eventType, event.payload)
@@ -205,12 +217,32 @@ if (process.argv.includes('--evohime-browser-backend')) {
     listenerRuntime = createListenerRuntimeService()
     ollamaRuntime = createOllamaRuntimeService()
 
-    const buildCurrentSupportBundle = (): { readonly archive: Buffer; readonly issueDraft: string } => {
-      const snapshotEvent = recentCoreEvents.find((event) => event.eventType === 'diagnostics.snapshot')
-      let snapshot: unknown = { unavailable: true, reason: 'core_snapshot_not_received' }
-      if (snapshotEvent) {
-        try { snapshot = JSON.parse(snapshotEvent.payload) as unknown } catch { snapshot = { unavailable: true, reason: 'malformed_core_snapshot' } }
+    const requestDiagnosticSnapshot = (): Promise<import('@shared/api').CoreEvent> => new Promise((resolve, reject) => {
+      if (!client || lastShellState?.connection !== 'connected') {
+        reject(new Error('Core diagnostic snapshot is unavailable while IPC is not connected.'))
+        return
       }
+      const waiter: {
+        readonly resolve: (event: import('@shared/api').CoreEvent) => void
+        readonly reject: (error: Error) => void
+        timer?: NodeJS.Timeout
+      } = { resolve, reject }
+      waiter.timer = setTimeout(() => {
+        diagnosticSnapshotWaiters.delete(waiter)
+        reject(new Error('Core diagnostic snapshot was not received before the timeout.'))
+      }, 5_000)
+      waiter.timer.unref?.()
+      diagnosticSnapshotWaiters.add(waiter)
+      if (client.send({ createDiagnosticsSnapshot: { maxEventCount: 200, maxLogBytes: 64 * 1024 } }) !== 'queued') {
+        clearTimeout(waiter.timer)
+        diagnosticSnapshotWaiters.delete(waiter)
+        reject(new Error('Core diagnostic snapshot request could not be queued.'))
+      }
+    })
+
+    const buildCurrentSupportBundle = (snapshotEvent: import('@shared/api').CoreEvent): { readonly archive: Buffer; readonly issueDraft: string } => {
+      let snapshot: unknown
+      try { snapshot = JSON.parse(snapshotEvent.payload) as unknown } catch { throw new Error('Core diagnostic snapshot was malformed.') }
       const files = buildSupportBundleFiles({
         snapshot,
         runtime: { appVersion: app.getVersion(), platform: process.platform, architecture: process.arch, state: lastShellState, update: lastUpdateStatus, repair: lastRepairStatus },
@@ -229,7 +261,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
     }
 
     const submitSupportBundle = async (): Promise<string> => {
-      const bundle = buildCurrentSupportBundle()
+      const bundle = buildCurrentSupportBundle(await requestDiagnosticSnapshot())
       const token = await resolveGithubToken({ configured: updateConfig.githubToken })
       const url = await reportSupportBundle(updateConfig, bundle, {
         token: token?.token ?? null,
@@ -263,7 +295,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
           ? await dialog.showSaveDialog(window, { defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
           : await dialog.showSaveDialog({ defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
         if (save.canceled || !save.filePath) return { cancelled: true, path: '' }
-        writeFileSync(save.filePath, buildCurrentSupportBundle().archive, { mode: 0o600 })
+        writeFileSync(save.filePath, buildCurrentSupportBundle(await requestDiagnosticSnapshot()).archive, { mode: 0o600 })
         return { cancelled: false, path: save.filePath }
       },
       submitDiagnostics: async () => ({ url: await submitSupportBundle() }),

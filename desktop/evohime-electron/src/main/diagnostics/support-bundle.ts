@@ -16,7 +16,7 @@ export interface SupportBundleFiles {
 }
 
 const FORBIDDEN = /(?:bearer\s+|sk-|ghp_|gho_|github_pat_|xoxb-)[A-Za-z0-9._+\-/=]+|(?:[A-Za-z]:\\|\\\\\.\\pipe\\)[^\s"'<>|]+/i
-const MAX_LOG_LINES = 120
+const MAX_LOG_LINES_PER_SOURCE = 40
 const MAX_LOG_FILES = 4
 const MAX_LOG_BYTES = 64 * 1024
 
@@ -49,8 +49,7 @@ export function buildSupportBundleFiles(input: {
   const errors = input.events.filter((event) => /fail|error|refus/i.test(event.eventType)).slice(0, 32).map((event) => JSON.stringify(redactValue({ eventType: event.eventType, payload: redactEventPayload(event.eventType, event.payload) }))).join('\n')
   const rawLogLines = input.logs
     .slice(0, MAX_LOG_FILES)
-    .flatMap(readLogSource)
-    .slice(0, MAX_LOG_LINES)
+    .flatMap((source) => readLogSource(source).slice(-MAX_LOG_LINES_PER_SOURCE))
   const logs = rawLogLines
     .map(redactLogLine)
     .join('\n')
@@ -88,7 +87,7 @@ export function buildSupportBundleFiles(input: {
     included_sections: Object.keys(filesWithoutManifest),
     omissions: ['credentials', 'raw_prompts', 'workspace_files', 'tool_payloads'],
     truncation: redactionReport.truncated_sections,
-    file_hashes: Object.fromEntries(Object.entries(filesWithoutManifest).map(([name, value]) => [name, sha256(JSON.stringify(value))]))
+    file_hashes: Object.fromEntries(Object.entries(filesWithoutManifest).map(([name, value]) => [name, sha256(entryBytes(value))]))
   }
   return { manifest, health, runtime, errors, events, logs, issueDraft, redactionReport }
 }
@@ -138,7 +137,7 @@ function readLogSource(source: string): string[] {
     }
     const lines = buffer.subarray(0, read).toString('utf8').split(/\r?\n/).filter(Boolean)
     if (offset > 0) lines.shift()
-    return lines.slice(-MAX_LOG_LINES)
+    return lines
   } catch {
     return []
   } finally {
@@ -176,13 +175,17 @@ export function serializeSupportBundle(files: SupportBundleFiles): Buffer {
     'issue-draft.md': files.issueDraft,
     'redaction-report.json': files.redactionReport
   }
-  const contents = Object.entries(entries).map(([name, value]) => [name, Buffer.from(typeof value === 'string' ? value : JSON.stringify(value), 'utf8')] as const)
+  const contents = Object.entries(entries).map(([name, value]) => [name, entryBytes(value)] as const)
   const allText = contents.map(([, content]) => content.toString('utf8')).join('\n')
   if (FORBIDDEN.test(allText)) throw new Error('support bundle final redaction scan failed')
   return zipArchive(contents)
 }
 
-function sha256(value: string): string { return createHash('sha256').update(value, 'utf8').digest('hex') }
+function entryBytes(value: unknown): Buffer {
+  return Buffer.from(typeof value === 'string' ? value : JSON.stringify(value), 'utf8')
+}
+
+function sha256(value: Buffer): string { return createHash('sha256').update(value).digest('hex') }
 
 function crc32(bytes: Buffer): number {
   let crc = 0xffffffff

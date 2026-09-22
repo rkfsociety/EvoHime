@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -31,6 +32,16 @@ describe('support bundle v2', () => {
     expect(files.redactionReport.raw_values_included).toBe(false)
     expect(files.issueDraft).toContain('### Problem')
     expect(archive.toString('utf8')).not.toContain('ghp_should-not-leak')
+
+    const entries = unzipSync(archive)
+    const manifestEntry = entries['manifest.json']
+    expect(manifestEntry).toBeDefined()
+    const manifest = JSON.parse(Buffer.from(manifestEntry ?? new Uint8Array()).toString('utf8')) as { file_hashes: Record<string, string> }
+    for (const [name, expected] of Object.entries(manifest.file_hashes)) {
+      const entry = entries[name]
+      expect(entry, name).toBeDefined()
+      if (entry) expect(createHash('sha256').update(entry).digest('hex'), name).toBe(expected)
+    }
   })
 
   it('fails closed when a final archive still contains a credential', () => {
@@ -123,6 +134,22 @@ describe('support bundle v2', () => {
         observed_markers: { shell_ollama_download_fallback: false }
       })
       expect(files.issueDraft).toContain('Ollama fallback event observed: no.')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('reserves log lines for every source instead of letting shell logs evict Core logs', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'evohime-support-log-sources-'))
+    const paths = ['shell', 'core', 'supervisor'].map((name) => join(directory, `${name}.jsonl`))
+    try {
+      for (const [index, path] of paths.entries()) {
+        writeFileSync(path, Array.from({ length: 100 }, (_, line) => JSON.stringify({ stream: path, line: index * 100 + line })).join('\n') + '\n', 'utf8')
+      }
+      const files = buildSupportBundleFiles({ snapshot: {}, runtime: {}, events: [], logs: paths })
+      expect(files.logs).toContain('"line":99')
+      expect(files.logs).toContain('"line":199')
+      expect(files.logs).toContain('"line":299')
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

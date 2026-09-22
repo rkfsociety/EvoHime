@@ -67,8 +67,8 @@ export function DiagnosticsAndSupportBundlePanel({ connection, events }: Props):
         <input aria-label="Идентификатор conversation" placeholder="conversation id (необязательно)" value={conversationId} onChange={(event) => setConversationId(event.target.value)} />
         <input aria-label="Идентификатор failed run" placeholder="failed run id (необязательно)" value={runId} onChange={(event) => setRunId(event.target.value)} />
         <button type="button" disabled={!api || !connected} onClick={() => void refresh()}>Обновить preview</button>
-        <button type="button" disabled={!api || !connected} onClick={() => void save()}>Сохранить support bundle</button>
-        <button type="button" disabled={!api || sending} onClick={() => void submit()}>{sending ? 'Отправка…' : 'Отправить в GitHub issue'}</button>
+        <button type="button" disabled={!api || !connected || !snapshot} onClick={() => void save()}>Сохранить support bundle</button>
+        <button type="button" disabled={!api || !connected || !snapshot || sending} onClick={() => void submit()}>{sending ? 'Отправка…' : 'Отправить в GitHub issue'}</button>
         <button type="button" disabled={!api || !snapshot} onClick={() => void copyDraft()}>Скопировать issue draft</button>
       </div>
       {snapshot ? <>

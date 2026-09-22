@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import type { EvoHimeApiV1 } from '../src/shared/api'
+import type { CoreEvent, EvoHimeApiV1 } from '../src/shared/api'
 import { DiagnosticsAndSupportBundlePanel } from '../src/renderer/src/DiagnosticsAndSupportBundlePanel'
 
 afterEach(() => {
@@ -20,7 +20,7 @@ describe('diagnostics and support bundle panel', () => {
     Object.defineProperty(window, 'evohime', { value: { v1: api }, configurable: true })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
-    render(<DiagnosticsAndSupportBundlePanel connection="disconnected" events={[]} />)
+    render(<DiagnosticsAndSupportBundlePanel connection="connected" events={[{ eventType: 'diagnostics.snapshot', payload: '{}' } as CoreEvent]} />)
     await userEvent.click(screen.getByRole('button', { name: 'Отправить в GitHub issue' }))
 
     expect(invoke).toHaveBeenCalledWith('shell.submitDiagnostics', {})
