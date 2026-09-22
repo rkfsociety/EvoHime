@@ -210,7 +210,7 @@ fn validate_schema(value: &Value, depth: usize) -> Result<(), SdkError> {
     Ok(())
 }
 
-pub fn fixture_echo_manifest() -> IntegrationProviderManifestV1 {
+pub fn fixture_echo_manifest() -> Result<IntegrationProviderManifestV1, SdkError> {
     let action = IntegrationActionV1 {
         id: "echo".into(),
         version: 1,
@@ -234,8 +234,9 @@ pub fn fixture_echo_manifest() -> IntegrationProviderManifestV1 {
         credential_schema: serde_json::json!({"type":"object"}),
         content_hash: String::new(),
     };
-    manifest.content_hash = canonical_hash(&manifest).expect("fixture hash");
-    manifest
+    manifest.content_hash = canonical_hash(&manifest)
+        .map_err(|_| SdkError::Unavailable("fixture serialization failed".into()))?;
+    Ok(manifest)
 }
 
 #[cfg(test)]
@@ -243,13 +244,13 @@ mod tests {
     use super::*;
     #[test]
     fn fixture_is_valid_and_hashed() {
-        let manifest = fixture_echo_manifest();
+        let manifest = fixture_echo_manifest().unwrap();
         assert!(validate_manifest(&manifest).is_ok());
         assert!(!manifest.content_hash.is_empty());
     }
     #[test]
     fn unknown_schema_keyword_is_rejected() {
-        let mut manifest = fixture_echo_manifest();
+        let mut manifest = fixture_echo_manifest().unwrap();
         manifest.actions[0].input_schema = serde_json::json!({"type":"object","x-unsafe":true});
         assert!(matches!(
             validate_manifest(&manifest),
@@ -258,7 +259,7 @@ mod tests {
     }
     #[test]
     fn duplicate_action_version_is_rejected() {
-        let mut manifest = fixture_echo_manifest();
+        let mut manifest = fixture_echo_manifest().unwrap();
         manifest.actions.push(manifest.actions[0].clone());
         assert!(matches!(
             validate_manifest(&manifest),

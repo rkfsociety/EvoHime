@@ -7,12 +7,22 @@ impl IpcBridge {
     ) -> serde_json::Value {
         let operation = request.operation.as_str();
         if operation == "list_catalog" || operation == "get_provider" {
+            let Ok(manifest) = crate::integration_provider_sdk::fixture_echo_manifest() else {
+                return serde_json::json!({
+                    "schema_version": 1,
+                    "request_id": request.request_id,
+                    "status": "error",
+                    "operation": operation,
+                    "providers": [],
+                    "error_code": "fixture_serialization_failed",
+                });
+            };
             return serde_json::json!({
                 "schema_version": 1,
                 "request_id": request.request_id,
                 "status": "ok",
                 "operation": operation,
-                "providers": [crate::integration_provider_sdk::fixture_echo_manifest()],
+                "providers": [manifest],
                 "error_code": "",
             });
         }
@@ -116,7 +126,7 @@ impl IpcBridge {
                     return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"rejected","error_code":"corrupt_preset"});
                 };
                 if preset.content_hash != stored_hash
-                    || preset.canonical_content_hash() != stored_hash
+                    || preset.canonical_content_hash().ok().as_deref() != Some(stored_hash.as_str())
                 {
                     return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":"run","status":"rejected","error_code":"preset_hash_mismatch"});
                 }
@@ -173,7 +183,12 @@ impl IpcBridge {
                 if let Err(error) = preset.validate() {
                     return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"rejected","error_code":error.to_string()});
                 }
-                preset.content_hash = preset.canonical_content_hash();
+                preset.content_hash = match preset.canonical_content_hash() {
+                    Ok(hash) => hash,
+                    Err(_) => {
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"rejected","error_code":"preset_serialization_failed"});
+                    }
+                };
                 let content = serde_json::to_string(&preset).unwrap_or_default();
                 let state = serde_json::to_value(preset.state)
                     .unwrap_or_default()
@@ -254,7 +269,7 @@ impl IpcBridge {
                     }
                 };
                 if source.content_hash != stored_hash
-                    || source.canonical_content_hash() != stored_hash
+                    || source.canonical_content_hash().ok().as_deref() != Some(stored_hash.as_str())
                     || migration.source_revision != source_revision
                 {
                     return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"preset_hash_mismatch"});

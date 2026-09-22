@@ -92,22 +92,14 @@ impl IpcBridge {
         input: serde_json::Value,
         cancellation: CancellationToken,
     ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
-        match self
-            .tools
-            .as_ref()
-            .ok_or_else(|| {
-                evohime_tool_runtime::ToolError::Execution(
-                    "Terminal tools are not configured".into(),
-                )
-            })?
-            .preflight(context, "shell.execute", &input)
-            .await?
-        {
+        let Some(tools) = self.tools.as_ref() else {
+            return Err(evohime_tool_runtime::ToolError::Execution(
+                "Terminal tools are not configured".into(),
+            ));
+        };
+        match tools.preflight(context, "shell.execute", &input).await? {
             evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
-                let scope = self
-                    .tools
-                    .as_ref()
-                    .unwrap()
+                let scope = tools
                     .permissions()
                     .normalize_scope(&scope)
                     .map_err(evohime_tool_runtime::ToolError::Execution)?;
@@ -220,10 +212,7 @@ impl IpcBridge {
                 .map_err(|decision| {
                     evohime_tool_runtime::ToolError::Execution(decision.reason_code)
                 })?;
-                let result = self
-                    .tools
-                    .as_ref()
-                    .unwrap()
+                let result = tools
                     .execute_with_cancellation(context, "shell.execute", input, cancellation)
                     .await;
                 let mut database = self.journal.database().lock().await;
@@ -369,9 +358,7 @@ impl IpcBridge {
                 // Preflight is a hard boundary. The ordinary execute path
                 // creates the approval request and returns NeedsApproval;
                 // dispatching the implementation here would bypass policy.
-                self.tools
-                    .as_ref()
-                    .unwrap()
+                tools
                     .execute_with_cancellation(context, "shell.execute", input, cancellation)
                     .await
             }
@@ -1496,12 +1483,11 @@ impl IpcBridge {
         };
         let result = match status_result {
             Ok(_) => {
-                self.analysis_kernels
-                    .lock()
-                    .await
-                    .get_mut(&request.kernel_id)
-                    .expect("kernel existence checked before reset")
-                    .reset();
+                let mut kernels = self.analysis_kernels.lock().await;
+                let Some(kernel) = kernels.get_mut(&request.kernel_id) else {
+                    return analysis_kernel_result_error("", "not_found");
+                };
+                kernel.reset();
                 generated::AnalysisKernelResult {
                     schema_version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
                     request_id: String::new(),

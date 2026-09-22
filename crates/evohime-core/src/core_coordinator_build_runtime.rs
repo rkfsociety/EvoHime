@@ -62,8 +62,13 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             reply,
         } => {
             let result = crate::export::export_logs(std::path::Path::new(&destination_path))
-                .map(|summary| summary.to_bounded_json().into_bytes())
-                .map_err(|error| format!("{error:?}"));
+                .map_err(|error| format!("{error:?}"))
+                .and_then(|summary| {
+                    summary
+                        .to_bounded_json()
+                        .map(|json| json.into_bytes())
+                        .map_err(|error| error.to_string())
+                });
             let _ = reply.send(result);
         }
         CoreCommand::CreateDatabaseBackup {

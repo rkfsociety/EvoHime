@@ -174,8 +174,13 @@ impl EventJournal {
             let mut database = workspace_database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
+            let Some(database) = database.database_mut() else {
+                return Err(crate::workspace_rag::RagError::InvalidConfig(
+                    "workspace database lease is empty".into(),
+                ));
+            };
             crate::workspace_rag::index_workspace(
-                database.database_mut().connection_mut(),
+                database.connection_mut(),
                 &workspace_root,
                 &crate::workspace_rag::IndexConfig::default(),
                 rebuild,
@@ -227,9 +232,14 @@ impl EventJournal {
             let mut database = workspace_database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
+            let Some(database) = database.database_mut() else {
+                return Err(crate::workspace_rag::RagError::InvalidConfig(
+                    "workspace database lease is empty".into(),
+                ));
+            };
             crate::workspace_rag::search_workspace_with_progress(
                 crate::workspace_rag::SearchWorkspaceInput {
-                    connection: database.database_mut().connection(),
+                    connection: database.connection(),
                     workspace_root: &workspace_root,
                     query: &query,
                     filters,
@@ -296,8 +306,13 @@ impl EventJournal {
             let mut database = workspace_database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
+            let Some(database) = database.database_mut() else {
+                return Err(crate::workspace_rag::RagError::InvalidConfig(
+                    "workspace database lease is empty".into(),
+                ));
+            };
             crate::workspace_rag::build_vector_index(
-                database.database_mut().connection_mut(),
+                database.connection_mut(),
                 &workspace_root,
                 &crate::workspace_rag::HybridConfig {
                     enabled: true,

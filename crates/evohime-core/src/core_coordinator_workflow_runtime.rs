@@ -388,7 +388,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     let journal = state.lock().await.journal.clone().ok_or_else(|| "storage journal is not configured".to_string())?;
                     let database = journal.database().lock().await;
                     let scope_kind = match scope.as_str() { "application" => crate::schema_driven_agent_configuration::ConfigurationScope::ApplicationDefaults, "workspace" => crate::schema_driven_agent_configuration::ConfigurationScope::WorkspaceDefaults, "agent" => crate::schema_driven_agent_configuration::ConfigurationScope::AgentProfile, "conversation" => crate::schema_driven_agent_configuration::ConfigurationScope::ConversationDefaults, "run" => crate::schema_driven_agent_configuration::ConfigurationScope::RunOverride, _ => return Err("invalid_configuration_scope".into()) };
-                    let schema = crate::schema_driven_agent_configuration::builtin_schema(scope_kind);
+                    let schema = crate::schema_driven_agent_configuration::builtin_schema(scope_kind)
+                        .map_err(|error| error.to_string())?;
                     match operation.as_str() {
                         "get_schema" => serde_json::to_vec(&schema).map_err(|e| e.to_string()),
                         "get_snapshot" => {

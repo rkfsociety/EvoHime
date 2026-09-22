@@ -25,6 +25,7 @@ pub struct AutomationSnapshotV1 {
 pub enum SnapshotError {
     Oversized,
     InvalidChecksum,
+    Serialization,
     IncompatibleSchema,
     StaleDefinition,
     InvalidGeneration,
@@ -38,7 +39,7 @@ impl std::fmt::Display for SnapshotError {
 impl std::error::Error for SnapshotError {}
 
 impl AutomationSnapshotV1 {
-    pub fn new(input: SnapshotInput<'_>) -> Self {
+    pub fn new(input: SnapshotInput<'_>) -> Result<Self, SnapshotError> {
         let mut snapshot = Self {
             schema_version: SNAPSHOT_SCHEMA_VERSION,
             run_id: input.run_id.into(),
@@ -52,15 +53,14 @@ impl AutomationSnapshotV1 {
             provenance: input.provenance.into(),
             checksum_sha256: String::new(),
         };
-        snapshot.checksum_sha256 = snapshot.checksum();
-        snapshot
+        snapshot.checksum_sha256 = snapshot.checksum()?;
+        Ok(snapshot)
     }
-    fn checksum(&self) -> String {
+    fn checksum(&self) -> Result<String, SnapshotError> {
         let mut unsigned = self.clone();
         unsigned.checksum_sha256.clear();
-        hex::encode(Sha256::digest(
-            serde_json::to_vec(&unsigned).expect("snapshot is serializable"),
-        ))
+        let bytes = serde_json::to_vec(&unsigned).map_err(|_| SnapshotError::Serialization)?;
+        Ok(hex::encode(Sha256::digest(bytes)))
     }
     pub fn validate(
         &self,
@@ -77,7 +77,7 @@ impl AutomationSnapshotV1 {
         if self.schema_version != SNAPSHOT_SCHEMA_VERSION {
             return Err(SnapshotError::IncompatibleSchema);
         }
-        if self.checksum_sha256 != self.checksum() {
+        if self.checksum_sha256 != self.checksum()? {
             return Err(SnapshotError::InvalidChecksum);
         }
         if self.definition_revision != expected_definition_revision {
@@ -163,7 +163,8 @@ mod tests {
             policy_snapshot: "p",
             approval_snapshot: "a",
             provenance: "prov",
-        });
+        })
+        .unwrap();
         assert!(snapshot.validate(1, Some(1)).is_ok());
         assert_eq!(
             snapshot.validate(2, None),

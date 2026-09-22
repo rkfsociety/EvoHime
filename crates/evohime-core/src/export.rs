@@ -61,8 +61,8 @@ pub struct ExportSummary {
 }
 
 impl ExportSummary {
-    pub fn to_bounded_json(&self) -> String {
-        serde_json::to_string(self).expect("ExportSummary is serializable")
+    pub fn to_bounded_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 }
 

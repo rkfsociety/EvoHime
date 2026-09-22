@@ -496,9 +496,9 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    pub fn canonical_hash(&self) -> String {
-        let bytes = serde_json::to_vec(self).expect("benchmark suite serializes");
-        hex::encode(Sha256::digest(bytes))
+    pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
+        let bytes = serde_json::to_vec(self)?;
+        Ok(hex::encode(Sha256::digest(bytes)))
     }
 }
 

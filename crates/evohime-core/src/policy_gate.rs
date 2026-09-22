@@ -98,15 +98,29 @@ pub struct PolicyGate {
     snapshot: CapabilitySnapshotV1,
 }
 
+fn decision(
+    outcome: evohime_receipts::capability::PolicyOutcome,
+    reason: &'static str,
+) -> PolicyDecision {
+    match PolicyDecision::new(outcome, reason) {
+        Ok(decision) => decision,
+        Err(error) => {
+            tracing::error!(%error, reason, "policy decision reason code was rejected");
+            PolicyDecision {
+                outcome: PolicyOutcome::PolicyError,
+                reason_code: "policy_error".into(),
+                retryable: false,
+            }
+        }
+    }
+}
+
 impl PolicyGate {
     pub fn new(snapshot: CapabilitySnapshotV1) -> Result<Self, PolicyDecision> {
         if snapshot.validate().is_err()
             || snapshot.compute_hash().ok().as_deref() != Some(&snapshot.snapshot_hash)
         {
-            return Err(
-                PolicyDecision::new(PolicyOutcome::PolicyError, "snapshot_invalid")
-                    .expect("bounded reason"),
-            );
+            return Err(decision(PolicyOutcome::PolicyError, "snapshot_invalid"));
         }
         Ok(Self { snapshot })
     }
@@ -119,15 +133,13 @@ impl PolicyGate {
         input: &Value,
         current: PolicyOutcome,
     ) -> Result<EffectBinding, PolicyDecision> {
-        let input_hash = canonical_call_hash(tool_name, scope, input).map_err(|_| {
-            PolicyDecision::new(PolicyOutcome::PolicyError, "input_invalid")
-                .expect("bounded reason")
-        })?;
+        let input_hash = canonical_call_hash(tool_name, scope, input)
+            .map_err(|_| decision(PolicyOutcome::PolicyError, "input_invalid"))?;
         if !matches!(
             current,
             PolicyOutcome::Allowed | PolicyOutcome::ApprovalRequired
         ) {
-            return Err(PolicyDecision::new(current, "current_policy").expect("bounded reason"));
+            return Err(decision(current, "current_policy"));
         }
         Ok(EffectBinding {
             action_id: action_id.to_owned(),
@@ -147,26 +159,21 @@ impl PolicyGate {
         input: &Value,
         current: PolicyOutcome,
     ) -> Result<(), PolicyDecision> {
-        let actual = canonical_call_hash(tool_name, scope, input).map_err(|_| {
-            PolicyDecision::new(PolicyOutcome::PolicyError, "input_invalid")
-                .expect("bounded reason")
-        })?;
+        let actual = canonical_call_hash(tool_name, scope, input)
+            .map_err(|_| decision(PolicyOutcome::PolicyError, "input_invalid"))?;
         if binding.tool_name != tool_name
             || binding.normalized_scope != scope
             || binding.input_hash != actual
             || binding.snapshot_hash != self.snapshot.snapshot_hash
             || binding.policy_version != self.snapshot.policy_version
         {
-            return Err(
-                PolicyDecision::new(PolicyOutcome::PolicyError, "binding_changed")
-                    .expect("bounded reason"),
-            );
+            return Err(decision(PolicyOutcome::PolicyError, "binding_changed"));
         }
         if !matches!(
             current,
             PolicyOutcome::Allowed | PolicyOutcome::ApprovalRequired
         ) {
-            return Err(PolicyDecision::new(current, "current_policy").expect("bounded reason"));
+            return Err(decision(current, "current_policy"));
         }
         Ok(())
     }

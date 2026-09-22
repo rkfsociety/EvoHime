@@ -2,7 +2,7 @@ use evohime_core::schema_driven_agent_configuration::*;
 
 #[test]
 fn schema_contract_has_typed_layers_and_no_secret_value() {
-    let schema = builtin_schema(ConfigurationScope::ApplicationDefaults);
+    let schema = builtin_schema(ConfigurationScope::ApplicationDefaults).unwrap();
     validate_schema(&schema).unwrap();
     assert_eq!(schema.version, 1);
     assert!(schema.fields.iter().any(|field| field.secret));
@@ -29,7 +29,7 @@ fn schema_contract_has_typed_layers_and_no_secret_value() {
 
 #[test]
 fn unknown_field_and_reference_are_rejected() {
-    let schema = builtin_schema(ConfigurationScope::RunOverride);
+    let schema = builtin_schema(ConfigurationScope::RunOverride).unwrap();
     let unknown = ConfigurationPatch {
         kind: PatchKind::SetField,
         field: "executable".into(),

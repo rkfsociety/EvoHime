@@ -134,7 +134,16 @@ pub fn default_policy(destination: impl Into<String>) -> PolicySnapshot {
         max_json_depth: MAX_JSON_DEPTH,
         max_json_nodes: MAX_JSON_NODES,
     };
-    snapshot(policy).expect("default guardrail policy is valid")
+    match snapshot(policy.clone()) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            tracing::error!(%error, "default guardrail policy is invalid");
+            PolicySnapshot {
+                policy,
+                policy_hash: String::new(),
+            }
+        }
+    }
 }
 
 pub fn snapshot(policy: Policy) -> Result<PolicySnapshot, GuardrailError> {

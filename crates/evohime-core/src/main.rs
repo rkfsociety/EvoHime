@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 use std::io::Write;
 #[cfg(windows)]
 use std::process::ExitCode;
@@ -22,22 +24,31 @@ fn main() -> ExitCode {
         )
         .with_target(false)
         .init();
-    std::thread::Builder::new()
+    let runtime_thread = match std::thread::Builder::new()
         // Debug startup has a large async state machine. The default process
         // stack is too small on Windows and can overflow before Core finishes
         // establishing its IPC listener.
         .stack_size(8 * 1024 * 1024)
         .spawn(|| {
-            tokio::runtime::Builder::new_current_thread()
+            let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .expect("failed to build Tokio runtime")
-                .block_on(run())
-        })
-        .expect("failed to create Core runtime thread")
-        .join()
-        .expect("evohime-core runtime thread failed")
-        .map_or_else(handle_fatal_error, |_| ExitCode::SUCCESS)
+                .map_err(|error| -> Box<dyn std::error::Error + Send + Sync> { Box::new(error) })?;
+            runtime.block_on(run())
+        }) {
+        Ok(thread) => thread,
+        Err(error) => {
+            eprintln!("failed to create Core runtime thread: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match runtime_thread.join() {
+        Ok(result) => result.map_or_else(handle_fatal_error, |_| ExitCode::SUCCESS),
+        Err(_) => {
+            eprintln!("evohime-core runtime thread panicked");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -316,7 +327,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => return Err(format!("logging failed: {error}").into()),
     };
-    let config = pipe_config.expect("console commands return before pipe startup");
+    let Some(config) = pipe_config else {
+        return Err("pipe configuration missing for a server launch".into());
+    };
     if let Err(error) = probe_supervisor(config.context()).await {
         tracing::error!("evohime-core supervisor lifecycle probe failed: {error}");
     }

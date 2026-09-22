@@ -2,7 +2,7 @@ use evohime_core::schema_driven_agent_configuration::*;
 
 #[test]
 fn effective_snapshot_is_immutable_by_revision_and_reproducible() {
-    let schema = builtin_schema(ConfigurationScope::ConversationDefaults);
+    let schema = builtin_schema(ConfigurationScope::ConversationDefaults).unwrap();
     let mut first = serde_json::Map::new();
     first.insert("reasoning_effort".into(), serde_json::json!("high"));
     let a = effective_snapshot(

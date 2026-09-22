@@ -153,7 +153,7 @@ pub fn migrate_preset(
     migrated.revision = source.revision.saturating_add(1);
     migrated.created_at_ms = now_ms;
     migrated.updated_at_ms = now_ms;
-    migrated.content_hash = migrated.canonical_content_hash();
+    migrated.content_hash = migrated.canonical_content_hash()?;
     migrated.validate()?;
     Ok(migrated)
 }
@@ -165,6 +165,7 @@ pub enum PresetValidationError {
     TooManyInputs,
     InputTooLarge,
     InvalidSensitiveField(String),
+    Serialization(String),
 }
 
 impl std::fmt::Display for PresetValidationError {
@@ -177,6 +178,7 @@ impl std::fmt::Display for PresetValidationError {
             Self::InvalidSensitiveField(field) => {
                 write!(f, "sensitive field is not allowed: {field}")
             }
+            Self::Serialization(error) => write!(f, "preset serialization failed: {error}"),
         }
     }
 }
@@ -284,14 +286,15 @@ impl InvocationPreset {
                 return Err(PresetValidationError::InvalidSensitiveField(key.clone()));
             }
         }
-        let bytes = serde_json::to_vec(&self.input_values).expect("preset values serialize");
+        let bytes = serde_json::to_vec(&self.input_values)
+            .map_err(|error| PresetValidationError::Serialization(error.to_string()))?;
         if bytes.len() > MAX_INPUT_BYTES {
             return Err(PresetValidationError::InputTooLarge);
         }
         Ok(())
     }
 
-    pub fn canonical_content_hash(&self) -> String {
+    pub fn canonical_content_hash(&self) -> Result<String, PresetValidationError> {
         #[derive(Serialize)]
         struct Content<'a> {
             schema_version: u32,
@@ -326,8 +329,10 @@ impl InvocationPreset {
             revision: self.revision,
         };
         let mut hasher = Sha256::new();
-        hasher.update(serde_json::to_vec(&content).expect("preset content serializes"));
-        hex::encode(hasher.finalize())
+        let bytes = serde_json::to_vec(&content)
+            .map_err(|error| PresetValidationError::Serialization(error.to_string()))?;
+        hasher.update(bytes);
+        Ok(hex::encode(hasher.finalize()))
     }
 }
 
@@ -424,7 +429,7 @@ mod tests {
     fn validates_and_hashes_deterministically() {
         let mut value = preset();
         value.validate().unwrap();
-        value.content_hash = value.canonical_content_hash();
+        value.content_hash = value.canonical_content_hash().unwrap();
         assert_eq!(value.content_hash.len(), 64);
     }
 

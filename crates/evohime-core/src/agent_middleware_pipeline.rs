@@ -172,6 +172,7 @@ pub enum PipelineError {
     UnsupportedVersion(u32),
     CapabilityExpansion,
     EventTooLarge,
+    Serialization(String),
 }
 impl std::fmt::Display for PipelineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -181,6 +182,7 @@ impl std::fmt::Display for PipelineError {
             Self::UnsupportedVersion(v) => write!(f, "unsupported middleware version: {v}"),
             Self::CapabilityExpansion => write!(f, "middleware cannot expand capabilities"),
             Self::EventTooLarge => write!(f, "middleware event is too large"),
+            Self::Serialization(error) => write!(f, "middleware serialization failed: {error}"),
         }
     }
 }
@@ -193,10 +195,10 @@ fn text(field: &'static str, value: &str) -> Result<(), PipelineError> {
         Ok(())
     }
 }
-fn hash<T: Serialize>(value: &T) -> String {
-    hex::encode(Sha256::digest(
-        serde_json::to_vec(value).expect("contract serializes"),
-    ))
+fn hash<T: Serialize>(value: &T) -> Result<String, PipelineError> {
+    let bytes = serde_json::to_vec(value)
+        .map_err(|error| PipelineError::Serialization(error.to_string()))?;
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 impl PipelineDefinition {
@@ -212,11 +214,11 @@ impl PipelineDefinition {
             middleware,
             contract_hash: String::new(),
         };
-        value.contract_hash = value.compute_hash();
+        value.contract_hash = value.compute_hash()?;
         value.validate()?;
         Ok(value)
     }
-    pub fn compute_hash(&self) -> String {
+    pub fn compute_hash(&self) -> Result<String, PipelineError> {
         let mut copy = self.clone();
         copy.contract_hash.clear();
         hash(&copy)
@@ -256,7 +258,7 @@ impl PipelineDefinition {
                 }
             }
         }
-        if self.contract_hash != self.compute_hash() {
+        if self.contract_hash != self.compute_hash()? {
             return Err(PipelineError::Invalid("contract_hash"));
         }
         Ok(())

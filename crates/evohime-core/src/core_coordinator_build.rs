@@ -177,7 +177,13 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 _ = heartbeat_cancel_for_task.cancelled() => break,
                                 _ = interval.tick() => {
                                     if let Err(error) = heartbeat_journal.heartbeat_build_effect(&heartbeat_run_id).await {
-                                        *heartbeat_failure_slot.lock().expect("heartbeat failure lock") = Some(error.to_string());
+                                        match heartbeat_failure_slot.lock() {
+                                            Ok(mut slot) => *slot = Some(error.to_string()),
+                                            Err(poisoned) => {
+                                                tracing::error!("build heartbeat failure lock poisoned; recovering state");
+                                                *poisoned.into_inner() = Some(error.to_string());
+                                            }
+                                        }
                                         break;
                                     }
                                 }
@@ -230,11 +236,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         )
                         .await
                         .map_err(|error| error.to_string())?;
-                    if let Some(error) = heartbeat_failure
-                        .lock()
-                        .expect("heartbeat failure lock")
-                        .clone()
-                    {
+                    let heartbeat_error = match heartbeat_failure.lock() {
+                        Ok(slot) => slot.clone(),
+                        Err(poisoned) => {
+                            tracing::error!("build heartbeat failure lock poisoned; recovering state");
+                            poisoned.into_inner().clone()
+                        }
+                    };
+                    if let Some(error) = heartbeat_error {
                         return Err(format!(
                             "build lease heartbeat failed; outcome requires reconciliation: {error}"
                         ));
@@ -468,7 +477,10 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let report =
                     crate::doctor::DoctorReport::from_snapshot_with_detail(&snapshot, detail_level)
                         .map_err(|error| format!("{error:?}"))?;
-                Ok(report.to_bounded_json().into_bytes())
+                report
+                    .to_bounded_json()
+                    .map(|json| json.into_bytes())
+                    .map_err(|error| error.to_string())
             }
             .await;
             let _ = reply.send(result);

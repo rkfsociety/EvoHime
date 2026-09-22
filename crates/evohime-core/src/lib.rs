@@ -1,4 +1,8 @@
 #![allow(dead_code, unused_imports)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 
 mod core_prelude;
 pub(crate) use core_prelude::*;

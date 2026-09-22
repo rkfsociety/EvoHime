@@ -88,6 +88,7 @@ pub enum HandoffStatus {
 pub enum ContractError {
     EmptyField(&'static str),
     FieldTooLong { field: &'static str, max: usize },
+    Serialization(String),
     TooManyFields { actual: usize, maximum: usize },
     InvalidRoleName,
     HandoffTooLarge { actual: usize, maximum: usize },
@@ -98,6 +99,7 @@ impl fmt::Display for ContractError {
         match self {
             Self::EmptyField(field) => write!(f, "{field} must not be empty"),
             Self::FieldTooLong { field, max } => write!(f, "{field} exceeds {max} characters"),
+            Self::Serialization(error) => write!(f, "handoff serialization failed: {error}"),
             Self::TooManyFields { actual, maximum } => {
                 write!(f, "payload has {actual} fields, maximum is {maximum}")
             }
@@ -213,7 +215,8 @@ impl HandoffEnvelope {
             sequence: input.sequence,
         };
         envelope.validate()?;
-        let bytes = serde_json::to_vec(&envelope).expect("HandoffEnvelope is serializable");
+        let bytes = serde_json::to_vec(&envelope)
+            .map_err(|error| ContractError::Serialization(error.to_string()))?;
         if bytes.len() > MAX_HANDOFF_BYTES {
             return Err(ContractError::HandoffTooLarge {
                 actual: bytes.len(),
@@ -232,8 +235,8 @@ impl HandoffEnvelope {
         Ok(())
     }
 
-    pub fn to_deterministic_json(&self) -> String {
-        serde_json::to_string(self).expect("HandoffEnvelope is serializable")
+    pub fn to_deterministic_json(&self) -> Result<String, ContractError> {
+        serde_json::to_string(self).map_err(|error| ContractError::Serialization(error.to_string()))
     }
 }
 
@@ -359,9 +362,9 @@ mod tests {
             sequence: 1,
         })
         .unwrap();
-        let json = envelope.to_deterministic_json();
+        let json = envelope.to_deterministic_json().unwrap();
         assert!(json.find("alpha").unwrap() < json.find("zeta").unwrap());
-        assert_eq!(json, envelope.to_deterministic_json());
+        assert_eq!(json, envelope.to_deterministic_json().unwrap());
     }
 
     #[test]
@@ -398,7 +401,7 @@ mod tests {
         })
         .unwrap();
         let restored: HandoffEnvelope =
-            serde_json::from_str(&envelope.to_deterministic_json()).unwrap();
+            serde_json::from_str(&envelope.to_deterministic_json().unwrap()).unwrap();
         assert_eq!(restored, envelope);
     }
 }

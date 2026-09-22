@@ -89,7 +89,8 @@ mod tests {
             policy_snapshot: "policy",
             approval_snapshot: "approval",
             provenance: "fixture",
-        });
+        })
+        .unwrap();
         assert!(snapshot.validate(1, None).is_ok());
         let input = ReplayInputV1 {
             schema_version: 1,

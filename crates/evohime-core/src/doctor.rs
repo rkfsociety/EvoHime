@@ -212,8 +212,8 @@ impl DoctorReport {
             .any(|check| !matches!(check.status, CheckStatus::Ok))
     }
 
-    pub fn to_bounded_json(&self) -> String {
-        serde_json::to_string(self).expect("DoctorReport is serializable")
+    pub fn to_bounded_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 }
 
@@ -650,7 +650,7 @@ mod tests {
         let report = DoctorReport::from_snapshot(&snapshot()).unwrap();
         assert_eq!(report.checks.len(), 8);
         assert!(!report.is_actionable());
-        let json = report.to_bounded_json();
+        let json = report.to_bounded_json().unwrap();
         assert!(json.contains("\"bounded\":true"));
         assert!(!json.contains("secret"));
     }
@@ -667,6 +667,7 @@ mod tests {
         assert_eq!(report.checks[3].status, CheckStatus::Blocked);
         assert!(!report
             .to_bounded_json()
+            .unwrap()
             .contains("provider-with-secret-looking-id"));
         assert!(report.checks.iter().all(|check| {
             check.details.as_deref().unwrap_or_default().chars().count() <= MAX_DETAILS_CHARS
@@ -770,6 +771,7 @@ mod tests {
             DoctorReport::from_snapshot_with_detail(&value, DetailLevel::Detailed).unwrap();
         assert!(!detailed
             .to_bounded_json()
+            .unwrap()
             .contains("provider-with-secret-looking-id"));
     }
 

@@ -115,8 +115,8 @@ impl PreparedDatabasePool {
 }
 
 impl PreparedDatabaseLease {
-    pub(crate) fn database_mut(&mut self) -> &mut LocalDatabase {
-        self.database.as_mut().expect("database lease is present")
+    pub(crate) fn database_mut(&mut self) -> Option<&mut LocalDatabase> {
+        self.database.as_mut()
     }
 }
 

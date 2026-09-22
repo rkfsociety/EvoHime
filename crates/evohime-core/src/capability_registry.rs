@@ -514,8 +514,20 @@ pub(crate) fn test_sign_with_trusted_key(name: &str, version: &str, content_hash
     // secret -- see `tests::TRUSTED_TEST_PKCS8_HEX` for the twin copy used
     // by this module's own fixtures.
     const PKCS8_HEX: &str = "3051020101300506032b657004220420e641ad038b0899bb389b1ef891c8e0b00970798f13b7ba13e02e7aedc74e818c8121006cafe3cad26efdee80e7dc617a9d5fdf74407c0ceaae88ec759833b573a821df";
-    let pkcs8 = hex_decode(PKCS8_HEX).expect("test pkcs8 decodes");
-    let key_pair = Ed25519KeyPair::from_pkcs8(&pkcs8).expect("test pkcs8 parses");
+    let pkcs8 = match hex_decode(PKCS8_HEX) {
+        Ok(pkcs8) => pkcs8,
+        Err(error) => {
+            tracing::error!(?error, "test signing key does not decode");
+            return String::new();
+        }
+    };
+    let key_pair = match Ed25519KeyPair::from_pkcs8(&pkcs8) {
+        Ok(key_pair) => key_pair,
+        Err(error) => {
+            tracing::error!(?error, "test signing key does not parse");
+            return String::new();
+        }
+    };
     let message = signed_message(name, version, content_hash);
     let signature = key_pair.sign(message.as_bytes());
     signature

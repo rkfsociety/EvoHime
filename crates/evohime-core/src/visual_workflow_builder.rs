@@ -97,7 +97,13 @@ impl WorkflowLayout {
     pub fn canonical_hash(&self) -> String {
         let mut nodes = self.nodes.clone();
         nodes.sort_by(|a, b| a.node_id.cmp(&b.node_id));
-        let bytes = serde_json::to_vec(&nodes).expect("layout is serializable");
+        let bytes = match serde_json::to_vec(&nodes) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::error!(%error, "workflow layout serialization failed");
+                return String::new();
+            }
+        };
         hex::encode(Sha256::digest(bytes))
     }
 }
@@ -134,7 +140,8 @@ impl VisualWorkflowBuilderDefinition {
         {
             return Err(BuilderError::UnknownLayoutNode);
         }
-        let encoded = serde_json::to_vec(&self.graph).expect("graph is serializable");
+        let encoded = serde_json::to_vec(&self.graph)
+            .map_err(|error| BuilderError::Serialization(error.to_string()))?;
         if encoded.len() > MAX_DRAFT_BYTES {
             return Err(BuilderError::Limit("graph"));
         }
@@ -151,6 +158,8 @@ impl VisualWorkflowBuilderDefinition {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BuilderError {
+    #[error("workflow serialization failed: {0}")]
+    Serialization(String),
     #[error("unsupported builder contract version")]
     UnsupportedVersion,
     #[error("invalid workflow graph")]

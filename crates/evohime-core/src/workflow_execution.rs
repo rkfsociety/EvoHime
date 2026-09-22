@@ -134,9 +134,11 @@ pub async fn run_workflow(
     let mut run_cancelled = false;
 
     for step in &plan.steps {
-        let node = nodes
-            .get(step.node_id.as_str())
-            .expect("planned step references a graph node");
+        let Some(node) = nodes.get(step.node_id.as_str()) else {
+            return Err(RunError::Planning(RunnerError::InvalidGraph(vec![
+                crate::workflow::ValidationError::UnknownNode(step.node_id.clone()),
+            ])));
+        };
 
         if run_cancelled || cancellation.is_cancelled() {
             run_cancelled = true;

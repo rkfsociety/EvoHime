@@ -138,6 +138,8 @@ pub enum BuildError {
     InvalidPath(String),
     #[error("bounded build timeout exceeded")]
     TimedOut,
+    #[error("build intent serialization failed: {0}")]
+    Serialization(String),
 }
 
 pub fn prepare_build(
@@ -166,13 +168,13 @@ pub fn prepare_build(
     let preview_diff = preview_diff(&root, &changes)?;
     let mut approved = ApprovedBuild {
         intent_hash: String::new(),
-        effective_permissions_hash: calculate_effective_permissions_hash(&proposal.scope),
+        effective_permissions_hash: calculate_effective_permissions_hash(&proposal.scope)?,
         expected_workspace_hash: manifest.workspace_hash,
         scope: proposal.scope.clone(),
         changes,
         preview_diff,
     };
-    approved.intent_hash = calculate_intent_hash(&approved.scope, &approved.changes);
+    approved.intent_hash = calculate_intent_hash(&approved.scope, &approved.changes)?;
     Ok(approved)
 }
 
@@ -250,16 +252,20 @@ fn preview_diff(root: &Path, changes: &[BuildChange]) -> Result<Vec<SnapshotDiff
     Ok(diff)
 }
 
-pub fn calculate_intent_hash(scope: &BuildScope, changes: &[BuildChange]) -> String {
-    let effective_permissions_hash = calculate_effective_permissions_hash(scope);
+pub fn calculate_intent_hash(
+    scope: &BuildScope,
+    changes: &[BuildChange],
+) -> Result<String, BuildError> {
+    let effective_permissions_hash = calculate_effective_permissions_hash(scope)?;
     let canonical = serde_json::to_vec(&(scope, changes, effective_permissions_hash))
-        .expect("build intent serializes");
-    content_hash(&canonical)
+        .map_err(|error| BuildError::Serialization(error.to_string()))?;
+    Ok(content_hash(&canonical))
 }
 
-pub fn calculate_effective_permissions_hash(scope: &BuildScope) -> String {
-    let canonical = serde_json::to_vec(scope).expect("build scope serializes");
-    content_hash(&canonical)
+pub fn calculate_effective_permissions_hash(scope: &BuildScope) -> Result<String, BuildError> {
+    let canonical =
+        serde_json::to_vec(scope).map_err(|error| BuildError::Serialization(error.to_string()))?;
+    Ok(content_hash(&canonical))
 }
 
 pub fn apply_approved_build(
@@ -267,8 +273,10 @@ pub fn apply_approved_build(
     run_id: &str,
     build: &ApprovedBuild,
 ) -> Result<WorkspaceSnapshot, BuildError> {
-    if calculate_effective_permissions_hash(&build.scope) != build.effective_permissions_hash
-        || calculate_intent_hash(&build.scope, &build.changes) != build.intent_hash
+    let effective_permissions_hash = calculate_effective_permissions_hash(&build.scope)?;
+    let intent_hash = calculate_intent_hash(&build.scope, &build.changes)?;
+    if effective_permissions_hash != build.effective_permissions_hash
+        || intent_hash != build.intent_hash
     {
         return Err(BuildError::IntentHashMismatch);
     }
@@ -534,8 +542,9 @@ mod tests {
             changes: vec![change],
             preview_diff: Vec::new(),
         };
-        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
-        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
+        build.effective_permissions_hash =
+            calculate_effective_permissions_hash(&build.scope).unwrap();
+        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes).unwrap();
         let snapshot = apply_approved_build(&root, "run-apply", &build).unwrap();
         assert_eq!(snapshot.run_id, "run-apply");
         assert_eq!(
@@ -573,8 +582,9 @@ mod tests {
             preview_diff: Vec::new(),
         };
         assert!(apply_approved_build(&root, "run-conflict", &build).is_err());
-        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
-        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
+        build.effective_permissions_hash =
+            calculate_effective_permissions_hash(&build.scope).unwrap();
+        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes).unwrap();
         assert!(apply_approved_build(&root, "run-conflict", &build).is_err());
         fs::remove_dir_all(root).unwrap();
     }
@@ -628,8 +638,9 @@ mod tests {
             changes: vec![change.clone()],
             preview_diff: Vec::new(),
         };
-        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
-        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
+        build.effective_permissions_hash =
+            calculate_effective_permissions_hash(&build.scope).unwrap();
+        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes).unwrap();
         assert!(matches!(
             apply_approved_build(&root, "run-rename", &build),
             Err(super::BuildError::ScopeViolation(reason)) if reason.contains("rename")
@@ -639,8 +650,9 @@ mod tests {
         allowed_scope.allowed_operations = vec!["write".into(), "rename".into()];
         allowed_scope.allow_rename = true;
         build.scope = allowed_scope;
-        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
-        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
+        build.effective_permissions_hash =
+            calculate_effective_permissions_hash(&build.scope).unwrap();
+        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes).unwrap();
         let snapshot = apply_approved_build(&root, "run-rename", &build).unwrap();
         assert!(!root.join("src/old_name.rs").exists());
         assert_eq!(
@@ -681,8 +693,9 @@ mod tests {
             changes: vec![change],
             preview_diff: Vec::new(),
         };
-        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
-        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
+        build.effective_permissions_hash =
+            calculate_effective_permissions_hash(&build.scope).unwrap();
+        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes).unwrap();
         // Baseline workspace_hash already diverged from expected_workspace_hash
         // because of the write above, so the outer WorkspaceConflict fires
         // first. Rebuild the baseline hash to isolate the per-file

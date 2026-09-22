@@ -102,7 +102,12 @@ pub fn list_directory(
             let metadata = entry.metadata()?;
             let relative_path = path
                 .strip_prefix(&root)
-                .expect("workspace entry is inside root")
+                .map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "workspace entry escaped root",
+                    )
+                })?
                 .to_string_lossy()
                 .replace('\\', "/");
             Ok(Some(WorkspaceEntry {
@@ -225,7 +230,12 @@ pub fn build_manifest(
         };
         let relative_path = path
             .strip_prefix(&root)
-            .expect("manifest path is inside root")
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "manifest path escaped root",
+                )
+            })?
             .to_string_lossy()
             .replace('\\', "/");
         total_bytes += content.len();

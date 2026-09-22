@@ -408,7 +408,10 @@ impl EventJournal {
                     "effect_id": record.effect_id,
                     "idempotency_key": idempotency_key,
                     "verifier": verifier,
-                    "snapshot_id": success.then(|| snapshot.as_ref().expect("successful reconciliation has snapshot").id.clone()),
+                    "snapshot_id": snapshot
+                        .as_ref()
+                        .filter(|snapshot| snapshot.run_id == record.run_id)
+                        .map(|snapshot| snapshot.id.clone()),
                     "decision": if success { "applied" } else { "blocked" },
                 });
                 (success, verifier, idempotency_key, evidence)

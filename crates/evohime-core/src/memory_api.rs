@@ -32,6 +32,7 @@ pub enum MemoryApiError {
     NotFound,
     AlreadyForgotten,
     ExportTooLarge,
+    Serialization,
     TooManyProvenanceResults,
 }
 
@@ -46,6 +47,7 @@ impl fmt::Display for MemoryApiError {
             Self::NotFound => write!(f, "memory was not found"),
             Self::AlreadyForgotten => write!(f, "memory was already forgotten"),
             Self::ExportTooLarge => write!(f, "memory export exceeds the bounded size"),
+            Self::Serialization => write!(f, "memory export serialization failed"),
             Self::TooManyProvenanceResults => write!(f, "too many provenance results requested"),
         }
     }
@@ -385,7 +387,7 @@ impl MemoryApi {
         let export = MemoryExport {
             records: self.records.values().cloned().collect(),
         };
-        let json = serde_json::to_string(&export).expect("MemoryExport is serializable");
+        let json = serde_json::to_string(&export).map_err(|_| MemoryApiError::Serialization)?;
         if json.len() > MAX_EXPORT_BYTES {
             return Err(MemoryApiError::ExportTooLarge);
         }

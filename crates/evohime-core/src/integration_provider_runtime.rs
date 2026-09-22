@@ -40,7 +40,8 @@ impl CredentialResolver for FixtureCredentialResolver {
 }
 
 pub fn validate_fixture_catalog() -> Result<(), SdkError> {
-    validate_manifest(&fixture_echo_manifest())
+    let manifest = fixture_echo_manifest()?;
+    validate_manifest(&manifest)
 }
 
 pub fn invoke_fixture(

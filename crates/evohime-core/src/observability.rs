@@ -38,6 +38,7 @@ pub enum ContractError {
     FieldTooLong { field: &'static str, max: usize },
     TooManyFields { actual: usize, maximum: usize },
     TooManyContextItems { actual: usize, maximum: usize },
+    Serialization(String),
     EventTooLarge { actual: usize, maximum: usize },
 }
 
@@ -52,6 +53,7 @@ impl fmt::Display for ContractError {
             Self::TooManyContextItems { actual, maximum } => {
                 write!(f, "context has {actual} items, maximum is {maximum}")
             }
+            Self::Serialization(error) => write!(f, "event serialization failed: {error}"),
             Self::EventTooLarge { actual, maximum } => {
                 write!(f, "event is {actual} bytes, maximum is {maximum}")
             }
@@ -150,7 +152,8 @@ impl HookEvent {
         };
         validate_text("event_id", &event.event_id, MAX_FIELD_VALUE_CHARS, true)?;
         validate_text("task_id", &event.task_id, MAX_FIELD_VALUE_CHARS, true)?;
-        let json = serde_json::to_vec(&event).expect("HookEvent is serializable");
+        let json = serde_json::to_vec(&event)
+            .map_err(|error| ContractError::Serialization(error.to_string()))?;
         if json.len() > MAX_EVENT_BYTES {
             return Err(ContractError::EventTooLarge {
                 actual: json.len(),
@@ -160,8 +163,8 @@ impl HookEvent {
         Ok(event)
     }
 
-    pub fn to_deterministic_json(&self) -> String {
-        serde_json::to_string(self).expect("HookEvent is serializable")
+    pub fn to_deterministic_json(&self) -> Result<String, ContractError> {
+        serde_json::to_string(self).map_err(|error| ContractError::Serialization(error.to_string()))
     }
 }
 
@@ -296,7 +299,7 @@ mod tests {
             .unwrap();
             assert_eq!(event.payload.fields["authorization"], "[REDACTED]");
             assert_eq!(event.payload.fields["note"], "contact [REDACTED]");
-            assert!(event.to_deterministic_json().len() <= MAX_EVENT_BYTES);
+            assert!(event.to_deterministic_json().unwrap().len() <= MAX_EVENT_BYTES);
         }
     }
 
@@ -332,9 +335,13 @@ mod tests {
             second,
         )
         .unwrap();
-        assert_eq!(left.to_deterministic_json(), right.to_deterministic_json());
+        assert_eq!(
+            left.to_deterministic_json().unwrap(),
+            right.to_deterministic_json().unwrap()
+        );
         assert!(left
             .to_deterministic_json()
+            .unwrap()
             .contains("\"alpha\":\"a\",\"zeta\":\"z\""));
     }
 

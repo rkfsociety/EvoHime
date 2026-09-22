@@ -179,7 +179,13 @@ impl WorkflowApprovalRegistry {
     /// перезапуск драйвера не плодит карточки.
     pub fn approval_id(&self, run_id: &str, node_id: &str) -> String {
         let key = format!("{run_id}:{node_id}");
-        let mut pending = self.pending.lock().expect("approval registry");
+        let mut pending = match self.pending.lock() {
+            Ok(guard) => guard,
+            Err(error) => {
+                tracing::error!("workflow approval registry lock poisoned: recovering state");
+                error.into_inner()
+            }
+        };
         pending
             .entry(key)
             .or_insert_with(|| uuid::Uuid::new_v4().to_string())
@@ -187,39 +193,58 @@ impl WorkflowApprovalRegistry {
     }
 
     pub fn resolve(&self, approval_id: &str, granted: bool) -> bool {
-        let known = self
-            .pending
-            .lock()
-            .expect("approval registry")
-            .values()
-            .any(|value| value == approval_id);
+        let known = match self.pending.lock() {
+            Ok(guard) => guard.values().any(|value| value == approval_id),
+            Err(error) => {
+                tracing::error!("workflow approval registry lock poisoned: recovering state");
+                error
+                    .into_inner()
+                    .values()
+                    .any(|value| value == approval_id)
+            }
+        };
         if !known {
             return false;
         }
-        self.decisions
-            .lock()
-            .expect("approval registry")
-            .insert(approval_id.to_string(), granted);
+        match self.decisions.lock() {
+            Ok(mut decisions) => {
+                decisions.insert(approval_id.to_string(), granted);
+            }
+            Err(error) => {
+                tracing::error!("workflow approval registry lock poisoned: recovering state");
+                error.into_inner().insert(approval_id.to_string(), granted);
+            }
+        }
         true
     }
 
     /// Запуск, которому принадлежит подтверждение. Нужен, чтобы после
     /// решения продолжить именно его.
     pub fn run_for(&self, approval_id: &str) -> Option<String> {
-        self.pending
-            .lock()
-            .expect("approval registry")
-            .iter()
-            .find(|(_, value)| value.as_str() == approval_id)
-            .and_then(|(key, _)| key.split(':').next().map(str::to_string))
+        match self.pending.lock() {
+            Ok(pending) => pending
+                .iter()
+                .find(|(_, value)| value.as_str() == approval_id)
+                .and_then(|(key, _)| key.split(':').next().map(str::to_string)),
+            Err(error) => {
+                tracing::error!("workflow approval registry lock poisoned: recovering state");
+                error
+                    .into_inner()
+                    .iter()
+                    .find(|(_, value)| value.as_str() == approval_id)
+                    .and_then(|(key, _)| key.split(':').next().map(str::to_string))
+            }
+        }
     }
 
     pub fn decision(&self, approval_id: &str) -> Option<bool> {
-        self.decisions
-            .lock()
-            .expect("approval registry")
-            .get(approval_id)
-            .copied()
+        match self.decisions.lock() {
+            Ok(decisions) => decisions.get(approval_id).copied(),
+            Err(error) => {
+                tracing::error!("workflow approval registry lock poisoned: recovering state");
+                error.into_inner().get(approval_id).copied()
+            }
+        }
     }
 }
 
@@ -825,7 +850,9 @@ impl WorkflowRuntime {
                 .fetch_add(batch.len() as u64, Ordering::Relaxed);
             let mut progressed = false;
             for node_id in &batch {
-                let node = graph.node(node_id).expect("validated node");
+                let Some(node) = graph.node(node_id) else {
+                    return Err(RuntimeError::InvalidGraph("validated node missing".into()));
+                };
                 match self
                     .execute_node(run, graph, graph_hash, node, parent, &states)
                     .await?

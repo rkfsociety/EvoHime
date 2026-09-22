@@ -34,6 +34,7 @@ pub enum AuditError {
     TooManyFields { actual: usize, maximum: usize },
     TooManyRecords { actual: usize, maximum: usize },
     SequenceMismatch { expected: u64, actual: u64 },
+    Serialization(String),
     RecordTooLarge { actual: usize, maximum: usize },
     TrailTooLarge { actual: usize, maximum: usize },
 }
@@ -52,6 +53,7 @@ impl fmt::Display for AuditError {
             Self::SequenceMismatch { expected, actual } => {
                 write!(f, "audit sequence expected {expected}, got {actual}")
             }
+            Self::Serialization(error) => write!(f, "audit serialization failed: {error}"),
             Self::RecordTooLarge { actual, maximum } => {
                 write!(f, "audit record is {actual} bytes, maximum is {maximum}")
             }
@@ -111,7 +113,8 @@ impl AuditRecord {
     }
 
     pub fn to_json_line(&self) -> Result<String, AuditError> {
-        let json = serde_json::to_string(self).expect("AuditRecord is serializable");
+        let json = serde_json::to_string(self)
+            .map_err(|error| AuditError::Serialization(error.to_string()))?;
         let bytes = json.len() + 1;
         if bytes > MAX_RECORD_BYTES {
             return Err(AuditError::RecordTooLarge {

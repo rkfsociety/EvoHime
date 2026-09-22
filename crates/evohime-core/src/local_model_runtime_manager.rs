@@ -545,7 +545,10 @@ pub fn atomic_promote_verified_artifact(
     if observed_hash != expected_hash || observed_size != expected_size {
         return Err(ManagerError::Invalid("artifact verification failed"));
     }
-    fs::create_dir_all(destination.parent().expect("checked above"))
+    let Some(destination_parent) = destination.parent() else {
+        return Err(ManagerError::Invalid("artifact destination"));
+    };
+    fs::create_dir_all(destination_parent)
         .map_err(|_| ManagerError::Invalid("artifact destination"))?;
     fs::rename(staging, destination).map_err(|_| ManagerError::Invalid("artifact promotion failed"))
 }

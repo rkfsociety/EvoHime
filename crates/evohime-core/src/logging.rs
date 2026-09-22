@@ -146,8 +146,11 @@ pub(crate) fn write_observability_hook(
     ) else {
         return;
     };
-    let fields =
-        serde_json::from_str(&event.to_deterministic_json()).unwrap_or(serde_json::Value::Null);
+    let fields = event
+        .to_deterministic_json()
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or(serde_json::Value::Null);
     write_model_trace("observability.hook", fields);
 }
 

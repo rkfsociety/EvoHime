@@ -146,7 +146,8 @@ impl Runtime {
             .append_event(
                 run_id,
                 "incremental_change.created",
-                &serde_json::to_vec(&projection(&record)).unwrap(),
+                &serde_json::to_vec(&projection(&record))
+                    .map_err(|error| Error::Invalid(error.to_string()))?,
             )
             .map_err(|e| Error::Storage(e.to_string()))?;
         Ok(
@@ -185,7 +186,8 @@ impl Runtime {
             );
             return Err(Error::Stale);
         }
-        let evidence = serde_json::to_vec(&serde_json::json!({"schema_version": SCHEMA_VERSION, "state": next.as_str(), "redacted": true})).unwrap();
+        let evidence = serde_json::to_vec(&serde_json::json!({"schema_version": SCHEMA_VERSION, "state": next.as_str(), "redacted": true}))
+            .map_err(|error| Error::Invalid(error.to_string()))?;
         if !incremental_change_protocol_store::transition(
             database.connection(),
             run_id,
@@ -206,7 +208,8 @@ impl Runtime {
             .append_event(
                 run_id,
                 "incremental_change.transitioned",
-                &serde_json::to_vec(&projection(&updated)).unwrap(),
+                &serde_json::to_vec(&projection(&updated))
+                    .map_err(|error| Error::Invalid(error.to_string()))?,
             )
             .map_err(|e| Error::Storage(e.to_string()))?;
         Ok(updated)

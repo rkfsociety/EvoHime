@@ -210,11 +210,11 @@ impl Runtime {
     }
 }
 
-pub fn canonical_hash<T: Serialize>(value: &T) -> String {
-    let bytes = serde_json::to_vec(value).expect("contract serialization");
+pub fn canonical_hash<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
+    let bytes = serde_json::to_vec(value)?;
     let mut hash = Sha256::new();
     hash.update(bytes);
-    hex::encode(hash.finalize())
+    Ok(hex::encode(hash.finalize()))
 }
 
 pub fn validate_definition(def: &TriggerDefinition) -> Result<(), TriggerError> {

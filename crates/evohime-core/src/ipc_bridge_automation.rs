@@ -193,7 +193,8 @@ impl IpcBridge {
                     .filter(|preset| {
                         state == "ready"
                             && preset.content_hash == request.preset_content_hash
-                            && preset.canonical_content_hash() == hash
+                            && preset.canonical_content_hash().ok().as_deref()
+                                == Some(hash.as_str())
                             && preset.revision == request.preset_revision
                     })
             });

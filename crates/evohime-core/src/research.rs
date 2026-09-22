@@ -126,8 +126,8 @@ impl ResearchEvidence {
     }
 
     /// Stable compact JSON suitable for hashing, storage, or IPC fixtures.
-    pub fn to_deterministic_json(&self) -> String {
-        serde_json::to_string(self).expect("ResearchEvidence is serializable")
+    pub fn to_deterministic_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 }
 
@@ -936,8 +936,8 @@ mod tests {
     #[test]
     fn deterministic_json_is_stable_and_round_trips() {
         let evidence = ResearchEvidence::capture(source(), "same", 2_000, 1_000).unwrap();
-        let json = evidence.to_deterministic_json();
-        assert_eq!(json, evidence.to_deterministic_json());
+        let json = evidence.to_deterministic_json().unwrap();
+        assert_eq!(json, evidence.to_deterministic_json().unwrap());
         assert!(json.starts_with("{\"source\":{\"url\":\"https://example.test/a\""));
         assert_eq!(
             serde_json::from_str::<ResearchEvidence>(&json).unwrap(),

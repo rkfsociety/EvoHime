@@ -258,18 +258,23 @@ impl IpcBridge {
                 );
                 continue;
             };
-            self.free_access_evidence
-                .write()
-                .expect("free access evidence cache write lock")
-                .insert(
-                    crate::free_provider_reliability_routing::free_access_evidence_scope_key(
-                        &evidence.provider_id,
-                        &evidence.model_id,
-                        &evidence.credential_binding,
-                        &evidence.region,
-                    ),
-                    evidence,
+            let Ok(mut cache) = self.free_access_evidence.write() else {
+                tracing::error!(
+                    target: "model.catalog",
+                    error_code = "free_access_evidence_cache_poisoned",
+                    "free access evidence recovery aborted because the cache lock is poisoned"
                 );
+                break;
+            };
+            cache.insert(
+                crate::free_provider_reliability_routing::free_access_evidence_scope_key(
+                    &evidence.provider_id,
+                    &evidence.model_id,
+                    &evidence.credential_binding,
+                    &evidence.region,
+                ),
+                evidence,
+            );
             recovered += 1;
         }
         tracing::info!(
@@ -370,9 +375,15 @@ impl IpcBridge {
             .flatten()
         };
         let recovered_snapshot = {
-            self.provider_catalog_snapshots
-                .read()
-                .expect("provider catalog cache read lock")
+            let Ok(cache) = self.provider_catalog_snapshots.read() else {
+                tracing::error!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_cache_poisoned",
+                    "provider catalog persistence skipped because the cache lock is poisoned"
+                );
+                return None;
+            };
+            cache
                 .get(
                     &crate::free_provider_reliability_routing::provider_catalog_scope_key(&profile),
                 )
@@ -491,27 +502,33 @@ impl IpcBridge {
                 if snapshot.state
                     == crate::free_provider_reliability_routing::ProviderCatalogState::Stale =>
             {
-                self.provider_catalog_snapshots
-                    .write()
-                    .expect("provider catalog cache write lock")
-                    .insert(
-                        crate::free_provider_reliability_routing::provider_catalog_scope_key(
-                            profile,
-                        ),
-                        snapshot.clone(),
+                let Ok(mut cache) = self.provider_catalog_snapshots.write() else {
+                    tracing::error!(
+                        target: "model.catalog",
+                        error_code = "provider_catalog_cache_poisoned",
+                        "stale provider catalog was not cached because the cache lock is poisoned"
                     );
+                    return None;
+                };
+                cache.insert(
+                    crate::free_provider_reliability_routing::provider_catalog_scope_key(profile),
+                    snapshot.clone(),
+                );
                 snapshot.gateway_entries().ok()
             }
             Ok(true) => {
-                self.provider_catalog_snapshots
-                    .write()
-                    .expect("provider catalog cache write lock")
-                    .insert(
-                        crate::free_provider_reliability_routing::provider_catalog_scope_key(
-                            profile,
-                        ),
-                        snapshot,
+                let Ok(mut cache) = self.provider_catalog_snapshots.write() else {
+                    tracing::error!(
+                        target: "model.catalog",
+                        error_code = "provider_catalog_cache_poisoned",
+                        "provider catalog was not cached because the cache lock is poisoned"
                     );
+                    return None;
+                };
+                cache.insert(
+                    crate::free_provider_reliability_routing::provider_catalog_scope_key(profile),
+                    snapshot,
+                );
                 None
             }
             Ok(false) => {
@@ -596,13 +613,18 @@ impl IpcBridge {
                 );
                 continue;
             }
-            self.provider_catalog_snapshots
-                .write()
-                .expect("provider catalog cache write lock")
-                .insert(
-                    crate::free_provider_reliability_routing::provider_catalog_scope_key(&profile),
-                    snapshot,
+            let Ok(mut cache) = self.provider_catalog_snapshots.write() else {
+                tracing::error!(
+                    target: "model.catalog",
+                    error_code = "provider_catalog_cache_poisoned",
+                    "provider catalog recovery aborted because the cache lock is poisoned"
                 );
+                continue;
+            };
+            cache.insert(
+                crate::free_provider_reliability_routing::provider_catalog_scope_key(&profile),
+                snapshot,
+            );
             recovered += 1;
         }
         tracing::info!(

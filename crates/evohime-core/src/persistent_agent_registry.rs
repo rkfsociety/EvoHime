@@ -988,7 +988,7 @@ struct RegistryResponse {
 }
 
 fn response(input: ResponseInput<'_>) -> serde_json::Value {
-    serde_json::to_value(RegistryResponse {
+    match serde_json::to_value(RegistryResponse {
         schema_version: CONTRACT_VERSION,
         contract_id: CONTRACT_ID,
         status: input.status.into(),
@@ -1001,8 +1001,23 @@ fn response(input: ResponseInput<'_>) -> serde_json::Value {
         assignments: input.assignments,
         cost_status: "unavailable",
         redacted: true,
-    })
-    .expect("typed registry response is serializable")
+    }) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "typed registry response serialization failed");
+            serde_json::json!({
+                "schema_version": CONTRACT_VERSION,
+                "contract_id": CONTRACT_ID,
+                "status": "serialization_error",
+                "operation": input.operation,
+                "agent_id": "",
+                "revision": 0,
+                "cost_status": "unavailable",
+                "redacted": true,
+                "error_code": "serialization_failed",
+            })
+        }
+    }
 }
 
 fn write_agent(

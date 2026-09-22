@@ -154,7 +154,10 @@ pub fn validate(graph: &TaskGraph, grants_ceiling: &[String]) -> Result<(), Grap
     }
     let mut incoming: BTreeMap<&str, usize> = graph.tasks.keys().map(|k| (k.as_str(), 0)).collect();
     for e in &graph.edges {
-        *incoming.get_mut(e.to_id.as_str()).unwrap() += 1;
+        let Some(count) = incoming.get_mut(e.to_id.as_str()) else {
+            return Err(GraphError::UnknownTask(e.to_id.clone()));
+        };
+        *count += 1;
     }
     let mut q: VecDeque<&str> = incoming
         .iter()
@@ -165,7 +168,9 @@ pub fn validate(graph: &TaskGraph, grants_ceiling: &[String]) -> Result<(), Grap
     while let Some(id) = q.pop_front() {
         seen += 1;
         for e in graph.edges.iter().filter(|e| e.from_id == id) {
-            let n = incoming.get_mut(e.to_id.as_str()).unwrap();
+            let Some(n) = incoming.get_mut(e.to_id.as_str()) else {
+                return Err(GraphError::UnknownTask(e.to_id.clone()));
+            };
             *n -= 1;
             if *n == 0 {
                 q.push_back(e.to_id.as_str());

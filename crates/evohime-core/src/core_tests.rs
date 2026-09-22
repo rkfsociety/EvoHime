@@ -1435,7 +1435,7 @@ mod tests {
         .unwrap();
         assert_eq!(event.hook, observability::HookName::BeforeCommit);
         assert_eq!(event.task_id, "task-1");
-        let json = event.to_deterministic_json();
+        let json = event.to_deterministic_json().unwrap();
         assert!(json.contains("\"hook\":\"before_commit\""));
     }
 
@@ -1466,7 +1466,7 @@ mod tests {
         .unwrap();
         assert_eq!(event.hook, observability::HookName::AfterTask);
         assert_eq!(event.task_id, "task-1");
-        let json = event.to_deterministic_json();
+        let json = event.to_deterministic_json().unwrap();
         assert!(json.contains("\"hook\":\"after_task\""));
         assert!(json.contains("\"status\":\"exceeded_iteration_limit\""));
     }
@@ -1500,7 +1500,7 @@ mod tests {
                 payload,
             )
             .unwrap();
-            let json = event.to_deterministic_json();
+            let json = event.to_deterministic_json().unwrap();
             assert!(!json.is_empty());
             assert!(json.len() <= observability::MAX_EVENT_BYTES);
         }

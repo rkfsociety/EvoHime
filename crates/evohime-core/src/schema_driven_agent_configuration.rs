@@ -230,7 +230,9 @@ pub fn validate_patches(
     Ok(diagnostics)
 }
 
-pub fn builtin_schema(scope: ConfigurationScope) -> ConfigurationSchema {
+pub fn builtin_schema(
+    scope: ConfigurationScope,
+) -> Result<ConfigurationSchema, ConfigurationError> {
     let fields = vec![
         ConfigurationField {
             key: "model_profile".into(),
@@ -290,9 +292,8 @@ pub fn builtin_schema(scope: ConfigurationScope) -> ConfigurationSchema {
         schema.version,
         schema.scope,
         &schema.fields,
-    ))
-    .expect("builtin schema hash");
-    schema
+    ))?;
+    Ok(schema)
 }
 
 pub fn effective_snapshot(

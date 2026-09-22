@@ -113,18 +113,25 @@ pub fn plan_workflow(
         indegree.insert(node_id.clone(), 0);
     }
     for edge in &graph.edges {
-        let inserted = dependencies
-            .get_mut(&edge.to_node)
-            .expect("validated target node")
-            .insert(edge.from_node.clone());
+        let Some(target_dependencies) = dependencies.get_mut(&edge.to_node) else {
+            return Err(RunnerError::InvalidGraph(vec![
+                ValidationError::UnknownNode(edge.to_node.clone()),
+            ]));
+        };
+        let inserted = target_dependencies.insert(edge.from_node.clone());
         if inserted {
-            outgoing
-                .get_mut(&edge.from_node)
-                .expect("validated source node")
-                .insert(edge.to_node.clone());
-            *indegree
-                .get_mut(&edge.to_node)
-                .expect("validated target node") += 1;
+            let Some(source_outgoing) = outgoing.get_mut(&edge.from_node) else {
+                return Err(RunnerError::InvalidGraph(vec![
+                    ValidationError::UnknownNode(edge.from_node.clone()),
+                ]));
+            };
+            source_outgoing.insert(edge.to_node.clone());
+            let Some(target_indegree) = indegree.get_mut(&edge.to_node) else {
+                return Err(RunnerError::InvalidGraph(vec![
+                    ValidationError::UnknownNode(edge.to_node.clone()),
+                ]));
+            };
+            *target_indegree += 1;
         }
     }
 
@@ -139,7 +146,11 @@ pub fn plan_workflow(
     while let Some(node_id) = ready.pop_first() {
         ordered.push(node_id.clone());
         for next in outgoing.get(&node_id).into_iter().flatten() {
-            let degree = indegree.get_mut(next).expect("validated target node");
+            let Some(degree) = indegree.get_mut(next) else {
+                return Err(RunnerError::InvalidGraph(vec![
+                    ValidationError::UnknownNode(next.clone()),
+                ]));
+            };
             *degree -= 1;
             if *degree == 0 {
                 ready.insert(next.clone());
@@ -149,15 +160,19 @@ pub fn plan_workflow(
 
     let mut steps = Vec::with_capacity(ordered.len());
     for (ordinal, node_id) in ordered.into_iter().enumerate() {
-        let node = nodes.get(&node_id).expect("validated node");
+        let Some(node) = nodes.get(&node_id) else {
+            return Err(RunnerError::InvalidGraph(vec![
+                ValidationError::UnknownNode(node_id),
+            ]));
+        };
         let decision = decisions.get(&node_id).cloned().unwrap_or_default();
         let step_decision = decide_step(node, &decision)?;
-        let dependencies = dependencies
-            .get(&node_id)
-            .expect("initialized node")
-            .iter()
-            .cloned()
-            .collect();
+        let Some(node_dependencies) = dependencies.get(&node_id) else {
+            return Err(RunnerError::InvalidGraph(vec![
+                ValidationError::UnknownNode(node_id.clone()),
+            ]));
+        };
+        let dependencies = node_dependencies.iter().cloned().collect();
         steps.push(PlannedStep {
             ordinal,
             node_id,

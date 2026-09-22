@@ -269,7 +269,13 @@ pub fn validate(snapshot: &ArchitectureSnapshot) -> Result<(), Error> {
 }
 
 pub fn canonical_hash<T: Serialize>(value: &T) -> String {
-    let bytes = serde_json::to_vec(value).expect("architecture contract is serializable");
+    let bytes = match serde_json::to_vec(value) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::error!(%error, "architecture contract serialization failed");
+            return String::new();
+        }
+    };
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())

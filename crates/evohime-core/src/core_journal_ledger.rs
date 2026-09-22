@@ -1,5 +1,9 @@
 use super::*;
 
+fn serialize_payload<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, StorageError> {
+    serde_json::to_vec(value).map_err(|error| StorageError::InvalidInput(error.to_string()))
+}
+
 impl EventJournal {
     pub async fn record(&self, event: &CoreEvent) -> Result<i64, StorageError> {
         let task_id = match event {
@@ -201,42 +205,18 @@ impl EventJournal {
             CoreEvent::DurableBackgroundExecution { .. } => "background_execution.result",
         };
         let payload = match event {
-            CoreEvent::StorageProgress { progress, .. } => {
-                serde_json::to_vec(progress).expect("storage progress serializes")
-            }
-            CoreEvent::WorkspaceIndexProgress { progress, .. } => {
-                serde_json::to_vec(progress).expect("workspace index progress serializes")
-            }
-            CoreEvent::WorkspaceRetrievalProgress { progress, .. } => {
-                serde_json::to_vec(progress).expect("workspace retrieval progress serializes")
-            }
-            CoreEvent::ChildWorkflowProjection { projection, .. } => {
-                serde_json::to_vec(projection).expect("child projection serializes")
-            }
-            CoreEvent::WorkflowProgress { projection, .. } => {
-                serde_json::to_vec(projection).expect("workflow projection serializes")
-            }
-            CoreEvent::WorkspaceBootstrapManifest { .. } => {
-                serde_json::to_vec(event).expect("bootstrap projection serializes")
-            }
-            CoreEvent::TeamCoordinationPolicies { .. } => {
-                serde_json::to_vec(event).expect("team coordination projection serializes")
-            }
-            CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => {
-                serde_json::to_vec(event).expect("memory view projection serializes")
-            }
-            CoreEvent::ModelEditProtocolRegistry { .. } => {
-                serde_json::to_vec(event).expect("model edit projection serializes")
-            }
-            CoreEvent::RemoteConversationChannels { .. } => {
-                serde_json::to_vec(event).expect("remote channel projection serializes")
-            }
-            CoreEvent::PromptCachePlanner { .. } => {
-                serde_json::to_vec(event).expect("prompt cache projection serializes")
-            }
-            CoreEvent::TypedAgentHandoffContract { .. } => {
-                serde_json::to_vec(event).expect("handoff projection serializes")
-            }
+            CoreEvent::StorageProgress { progress, .. } => serialize_payload(progress)?,
+            CoreEvent::WorkspaceIndexProgress { progress, .. } => serialize_payload(progress)?,
+            CoreEvent::WorkspaceRetrievalProgress { progress, .. } => serialize_payload(progress)?,
+            CoreEvent::ChildWorkflowProjection { projection, .. } => serialize_payload(projection)?,
+            CoreEvent::WorkflowProgress { projection, .. } => serialize_payload(projection)?,
+            CoreEvent::WorkspaceBootstrapManifest { .. } => serialize_payload(event)?,
+            CoreEvent::TeamCoordinationPolicies { .. } => serialize_payload(event)?,
+            CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => serialize_payload(event)?,
+            CoreEvent::ModelEditProtocolRegistry { .. } => serialize_payload(event)?,
+            CoreEvent::RemoteConversationChannels { .. } => serialize_payload(event)?,
+            CoreEvent::PromptCachePlanner { .. } => serialize_payload(event)?,
+            CoreEvent::TypedAgentHandoffContract { .. } => serialize_payload(event)?,
             CoreEvent::TaskFailed { task_id, error } => {
                 // The global event journal is durable too. Keep its terminal
                 // failure payload on the same safe contract as the
@@ -248,9 +228,9 @@ impl EventJournal {
                 if let Some(object) = safe.as_object_mut() {
                     object.insert("task_id".into(), serde_json::json!(task_id));
                 }
-                serde_json::to_vec(&safe).expect("safe task failure serializes")
+                serialize_payload(&safe)?
             }
-            _ => serde_json::to_vec(event).expect("core events serialize"),
+            _ => serialize_payload(event)?,
         };
         // Conversation projection is additive and must not break the existing
         // bounded global journal. If a legacy event is too large or malformed,

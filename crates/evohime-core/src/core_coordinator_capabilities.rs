@@ -362,7 +362,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     from_role: role_identity_display(&from),
                     to_role: role_identity_display(&to),
                     sequence: envelope.sequence,
-                    envelope_json: envelope.to_deterministic_json(),
+                    envelope_json: envelope
+                        .to_deterministic_json()
+                        .map_err(|error| error.to_string())?,
                 };
                 journal.save_child_handoff(&record).await?;
                 TaskCoordinator::record_audit(
