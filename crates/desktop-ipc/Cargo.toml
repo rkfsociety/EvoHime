@@ -9,10 +9,10 @@ path = "src/lib.rs"
 
 [dependencies]
 prost = "0.14"
-tokio = { version = "1", features = ["io-util", "macros", "rt"] }
-thiserror = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+tokio = { workspace = true, features = ["io-util", "macros", "rt"] }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 sha2 = "0.10"
 getrandom = "0.3"
 

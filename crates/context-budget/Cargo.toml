@@ -9,8 +9,8 @@ path = "src/lib.rs"
 
 [dependencies]
 lru = "0.12"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 sha2 = "0.10"
-thiserror = "2"
+thiserror = { workspace = true }
 unicode-normalization = "0.1"

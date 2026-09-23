@@ -7,5 +7,5 @@ edition = "2021"
 [dependencies]
 evohime-desktop-ipc = { path = "../desktop-ipc" }
 prost = "0.14"
-tokio = { version = "1", features = ["io-util", "macros", "rt", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "rt", "time"] }
 uuid = { version = "1", features = ["v4"] }

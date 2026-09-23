@@ -5,5 +5,5 @@ publish = false
 edition = "2021"
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-thiserror = "2"
+serde = { workspace = true }
+thiserror = { workspace = true }

@@ -16,7 +16,7 @@ name = "kill9-worker-test-helper"
 path = "tests/bin/kill9_worker.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 evohime-cli-contract = { path = "../evohime-cli-contract" }
 evohime-context-budget = { path = "../context-budget" }
 evohime-model-gateway = { path = "../model-gateway" }
@@ -31,14 +31,14 @@ evohime-model-provenance = { path = "../evohime-model-provenance" }
 evohime-remote = { path = "../evohime-remote" }
 prost = "0.14"
 futures-util = "0.3"
-serde_json = "1"
+serde_json = { workspace = true }
 jsonschema = "0.18.3"
-serde = { version = "1", features = ["derive"] }
+serde = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-thiserror = "2"
+thiserror = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "deflate", "stream"] }
-tracing = "0.1"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rusqlite = { version = "0.32.1", features = ["bundled", "hooks"] }
 ring = "0.17"
