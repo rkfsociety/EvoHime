@@ -164,7 +164,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         .begin_build_effect(&run_id, &task_id, &approved.intent_hash)
                         .await
                         .map_err(|error| error.to_string())?;
-                    let heartbeat_failure = Arc::new(StdMutex::new(None::<String>));
+                    let heartbeat_failure = Arc::new(Mutex::new(None::<String>));
                     let heartbeat_cancel = CancellationToken::new();
                     let heartbeat_journal = journal.clone();
                     let heartbeat_run_id = run_id.clone();
@@ -177,13 +177,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 _ = heartbeat_cancel_for_task.cancelled() => break,
                                 _ = interval.tick() => {
                                     if let Err(error) = heartbeat_journal.heartbeat_build_effect(&heartbeat_run_id).await {
-                                        match heartbeat_failure_slot.lock() {
-                                            Ok(mut slot) => *slot = Some(error.to_string()),
-                                            Err(poisoned) => {
-                                                tracing::error!("build heartbeat failure lock poisoned; recovering state");
-                                                *poisoned.into_inner() = Some(error.to_string());
-                                            }
-                                        }
+                                        *heartbeat_failure_slot.lock().await = Some(error.to_string());
                                         break;
                                     }
                                 }
@@ -236,13 +230,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         )
                         .await
                         .map_err(|error| error.to_string())?;
-                    let heartbeat_error = match heartbeat_failure.lock() {
-                        Ok(slot) => slot.clone(),
-                        Err(poisoned) => {
-                            tracing::error!("build heartbeat failure lock poisoned; recovering state");
-                            poisoned.into_inner().clone()
-                        }
-                    };
+                    let heartbeat_error = heartbeat_failure.lock().await.clone();
                     if let Some(error) = heartbeat_error {
                         return Err(format!(
                             "build lease heartbeat failed; outcome requires reconciliation: {error}"

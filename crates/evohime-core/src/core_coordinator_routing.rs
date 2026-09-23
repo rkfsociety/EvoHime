@@ -179,33 +179,27 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
 
                 let heartbeat_cancel = CancellationToken::new();
-                let heartbeat_failure = Arc::new(StdMutex::new(None::<String>));
+                let heartbeat_failure = Arc::new(Mutex::new(None::<String>));
                 let heartbeat_task = journal.as_ref().map(|journal| {
-                        let journal = journal.clone();
-                        let run_id = run_id.clone();
-                        let failure = heartbeat_failure.clone();
-                        let cancel = heartbeat_cancel.clone();
-                        tokio::spawn(async move {
-                            let mut interval = tokio::time::interval(Duration::from_secs(10));
-                            loop {
-                                tokio::select! {
-                                    _ = cancel.cancelled() => break,
-                                    _ = interval.tick() => {
-                                        if let Err(error) = journal.heartbeat_agent_run(&run_id).await {
-                                            match failure.lock() {
-                                                Ok(mut slot) => *slot = Some(error.to_string()),
-                                                Err(poisoned) => {
-                                                    tracing::error!("agent heartbeat failure lock poisoned; recovering state");
-                                                    *poisoned.into_inner() = Some(error.to_string());
-                                                }
-                                            }
-                                            break;
-                                        }
+                    let journal = journal.clone();
+                    let run_id = run_id.clone();
+                    let failure = heartbeat_failure.clone();
+                    let cancel = heartbeat_cancel.clone();
+                    tokio::spawn(async move {
+                        let mut interval = tokio::time::interval(Duration::from_secs(10));
+                        loop {
+                            tokio::select! {
+                                _ = cancel.cancelled() => break,
+                                _ = interval.tick() => {
+                                    if let Err(error) = journal.heartbeat_agent_run(&run_id).await {
+                                        *failure.lock().await = Some(error.to_string());
+                                        break;
                                     }
                                 }
                             }
-                        })
-                    });
+                        }
+                    })
+                });
                 // A task is a loop of model calls and tool runs, so its
                 // budget must exceed one model call (120 s by default).
                 // The old 60 s cut off agents that were working fine.
@@ -519,13 +513,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 if let Some(heartbeat_task) = heartbeat_task {
                     let _ = heartbeat_task.await;
                 }
-                let heartbeat_error = match heartbeat_failure.lock() {
-                    Ok(slot) => slot.clone(),
-                    Err(poisoned) => {
-                        tracing::error!("agent heartbeat failure lock poisoned; recovering state");
-                        poisoned.into_inner().clone()
-                    }
-                };
+                let heartbeat_error = heartbeat_failure.lock().await.clone();
                 if let Some(journal) = &journal {
                     let checkpoint_status = if heartbeat_error.is_some() {
                         crate::task_checkpoint::CheckpointStatus::Conflicted

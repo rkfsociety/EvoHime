@@ -131,7 +131,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex as StdMutex},
+    sync::Arc,
     time::{Duration, Instant, SystemTime},
 };
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
