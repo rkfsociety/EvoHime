@@ -184,7 +184,7 @@ impl IpcBridge {
             );
         }
         if operation == "subscribed" {
-            *self.conversation_subscription.lock().await = Some((
+            *self.conversation_subscription.write().await = Some((
                 request.conversation_id.clone(),
                 request.kinds_filter.iter().cloned().collect(),
             ));

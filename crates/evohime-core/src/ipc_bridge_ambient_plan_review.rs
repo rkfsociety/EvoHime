@@ -33,7 +33,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::ListPlanReviews(request)) => {
                 let limit = (request.limit as usize).clamp(1, 50);
-                let results = self.review_results.lock().await;
+                let results = self.review_results.read().await;
                 let mut items: Vec<_> = results.values().cloned().collect();
                 drop(results);
                 if let Ok(events) = self.journal.review_history(limit).await {
@@ -58,7 +58,7 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::ClearPlanReviewHistory(_)) => {
                 // Running reviews keep their own state; only what the history
                 // lists is dropped, and the marker is what listing reads.
-                self.review_results.lock().await.clear();
+                self.review_results.write().await.clear();
                 let marker_id = format!("review-history-{}", self.latest_sequence().await);
                 // Recorded directly rather than published: the shell lists again
                 // as soon as this response arrives, and a marker still travelling
@@ -79,7 +79,7 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::GetPlanReview(request)) => {
                 let mut result = self
                     .review_results
-                    .lock()
+                    .read()
                     .await
                     .get(&request.review_id)
                     .cloned();
@@ -105,7 +105,7 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::ExportPlanReview(request)) => {
                 let mut result = self
                     .review_results
-                    .lock()
+                    .read()
                     .await
                     .get(&request.review_id)
                     .cloned();

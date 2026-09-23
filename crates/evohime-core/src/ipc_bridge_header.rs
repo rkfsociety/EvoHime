@@ -604,7 +604,7 @@ pub struct ModelConfigSnapshot {
 }
 
 type ConversationSubscription =
-    Arc<tokio::sync::Mutex<Option<(String, std::collections::BTreeSet<String>)>>>;
+    Arc<tokio::sync::RwLock<Option<(String, std::collections::BTreeSet<String>)>>>;
 
 pub struct IpcBridge {
     journal: EventJournal,
@@ -626,7 +626,7 @@ pub struct IpcBridge {
     core_instance_id: String,
     session_epoch: u64,
     review_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
-    review_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::ReviewResult>>>,
+    review_results: Arc<tokio::sync::RwLock<HashMap<String, crate::plan_review::ReviewResult>>>,
     revision_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
     revision_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::RevisionResult>>>,
     /// Active kernel runtimes are process-local; only their validated manifest

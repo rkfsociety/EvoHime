@@ -409,7 +409,7 @@ impl IpcBridge {
                         ))
                     })
             } else if record.event_type == "conversation.event" {
-                let subscription = self.conversation_subscription.lock().await.clone();
+                let subscription = self.conversation_subscription.read().await.clone();
                 decode_conversation_event(&record.payload).and_then(|conversation| {
                     let allowed = subscription
                         .as_ref()

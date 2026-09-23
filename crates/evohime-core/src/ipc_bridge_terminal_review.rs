@@ -828,7 +828,7 @@ impl IpcBridge {
                     Ok(result) => {
                         let payload = serde_json::to_string(&result).unwrap_or_default();
                         results
-                            .lock()
+                            .write()
                             .await
                             .insert(result.review_id.clone(), result.clone());
                         CoreEvent::TaskCompleted {
@@ -900,7 +900,7 @@ impl IpcBridge {
         }
         let mut review = self
             .review_results
-            .lock()
+            .read()
             .await
             .get(&request.review_id)
             .cloned();
@@ -1280,7 +1280,9 @@ impl IpcBridge {
                 return analysis_kernel_result_error(&request.request_id, "duplicate_request");
             }
         }
-        let operation = match serde_json::from_str(&format!("\"{}\"", request.operation)) {
+        let operation = match serde_json::from_value(serde_json::Value::String(
+            request.operation.clone(),
+        )) {
             Ok(crate::analysis_kernel::KernelOperation::JsonParse) => {
                 crate::analysis_kernel::KernelOperation::JsonParse
             }
