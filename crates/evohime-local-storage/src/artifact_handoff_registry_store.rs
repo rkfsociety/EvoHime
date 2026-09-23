@@ -4,21 +4,32 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
+/// Version of the artifact handoff registry schema.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 const MAX_LIST_ROWS: u32 = 256;
 
+/// Metadata row for one immutable artifact revision; artifact bytes remain in `ArtifactStore`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegistryRow {
+    /// Stable artifact identifier.
     pub artifact_id: String,
+    /// Project that owns the artifact.
     pub project_id: String,
+    /// Immutable revision number.
     pub revision: u64,
+    /// Lifecycle state of this revision.
     pub state: String,
+    /// Locator for artifact bytes in the Core-owned artifact store.
     pub content_locator: String,
+    /// Digest of the artifact bytes.
     pub content_hash: String,
+    /// Serialized bounded metadata, not the artifact payload.
     pub metadata_json: Vec<u8>,
+    /// Revision creation time in Unix milliseconds.
     pub created_at_ms: i64,
 }
 
+/// Creates artifact revision, lineage, handoff, acceptance, and idempotency tables.
 pub fn install_schema(connection: &Transaction<'_>) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS project_artifact_revisions (
@@ -57,6 +68,7 @@ pub fn install_schema(connection: &Transaction<'_>) -> rusqlite::Result<()> {
     )
 }
 
+/// Inserts an artifact revision and its parent edges in the caller's transaction.
 pub fn insert_revision(
     tx: &Transaction<'_>,
     row: &RegistryRow,
@@ -85,6 +97,7 @@ pub fn insert_revision(
     Ok(())
 }
 
+/// Inserts an artifact revision and parent edges in a transaction owned by this function.
 pub fn insert_revision_atomic(
     connection: &Connection,
     row: &RegistryRow,
@@ -95,6 +108,7 @@ pub fn insert_revision_atomic(
     transaction.commit()
 }
 
+/// Lists artifact revisions for a project newest first, capped at 256 rows.
 pub fn list(
     connection: &Connection,
     project_id: &str,
@@ -122,6 +136,7 @@ pub fn list(
     rows.collect()
 }
 
+/// Loads one artifact revision by identifier and revision number.
 pub fn get(
     connection: &Connection,
     artifact_id: &str,
@@ -139,6 +154,9 @@ pub fn get(
     ).optional()
 }
 
+/// Records the outcome of an idempotent command once per key.
+///
+/// Returns `false` if the key already has a recorded outcome.
 pub fn record_command(
     connection: &Connection,
     key: &str,
@@ -157,6 +175,7 @@ pub fn record_command(
     Ok(changed == 1)
 }
 
+/// Loads the stored outcome for an idempotency key.
 pub fn command_outcome(connection: &Connection, key: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -167,6 +186,7 @@ pub fn command_outcome(connection: &Connection, key: &str) -> rusqlite::Result<O
         .optional()
 }
 
+/// Updates the lifecycle state of one artifact revision.
 pub fn transition(
     connection: &Connection,
     artifact_id: &str,
@@ -179,6 +199,7 @@ pub fn transition(
     )? == 1)
 }
 
+/// Creates a pending handoff record; duplicate handoff identifiers are left unchanged.
 pub fn insert_handoff(
     connection: &Connection,
     id: &str,
@@ -192,6 +213,9 @@ pub fn insert_handoff(
     Ok(())
 }
 
+/// Records a handoff decision and its reason atomically when the handoff is pending.
+///
+/// Returns `false` when the handoff does not exist or is no longer pending.
 pub fn accept_handoff(
     connection: &mut Connection,
     id: &str,

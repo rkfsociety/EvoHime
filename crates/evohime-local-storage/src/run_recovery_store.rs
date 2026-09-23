@@ -4,6 +4,16 @@ use crate::{
 use rusqlite::OptionalExtension;
 
 impl LocalDatabase {
+    /// Persists the next verified recovery decision for a workflow run.
+    ///
+    /// Transitions follow `Recovering → Reconciling → terminal`; each record
+    /// includes bounded verifier/evidence data and an idempotency key. A
+    /// matching replay returns the original record.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] for invalid transitions, conflicting key reuse,
+    /// invalid fields, or transaction failure.
     pub fn transition_recovery(
         &self,
         input: RecoveryTransitionInput<'_>,
@@ -140,6 +150,15 @@ impl LocalDatabase {
         Ok(record)
     }
 
+    /// Persists a verified recovery decision for an agent-run effect.
+    ///
+    /// Uses the agent recovery ledger and the same bounded, idempotent state
+    /// transitions as [`Self::transition_recovery`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] for invalid transitions, conflicting key reuse,
+    /// invalid fields, or transaction failure.
     pub fn transition_agent_recovery(
         &self,
         input: RecoveryTransitionInput<'_>,
@@ -281,6 +300,11 @@ impl LocalDatabase {
         Ok(record)
     }
 
+    /// Returns the latest agent-effect recovery record for a run, if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the SQLite query fails.
     pub fn latest_agent_recovery(
         &self,
         run_id: &str,
@@ -310,6 +334,11 @@ impl LocalDatabase {
             .map_err(Into::into)
     }
 
+    /// Returns the latest workflow-effect recovery record for a run, if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the SQLite query fails.
     pub fn latest_recovery(&self, run_id: &str) -> Result<Option<RunRecoveryRecord>, StorageError> {
         self.connection
             .query_row(

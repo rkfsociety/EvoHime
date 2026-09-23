@@ -12,84 +12,139 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
+/// Current schema version for model-call resilience policies.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Stable policy identifier included in canonical hashes.
 pub const CONTRACT_ID: &str = "model-resilience-policy-v1";
+/// Maximum number of attempts allowed by a resilience policy.
 pub const MAX_ATTEMPTS: u32 = 8;
+/// Maximum number of configured fallback profiles.
 pub const MAX_FALLBACKS: usize = 8;
+/// Maximum exponential backoff delay in milliseconds.
 pub const MAX_BACKOFF_MS: u64 = 30_000;
+/// Maximum encoded profile identifier length.
 pub const MAX_PROFILE_ID_BYTES: usize = 128;
+/// Maximum encoded provider identifier length.
 pub const MAX_PROVIDER_ID_BYTES: usize = 128;
+/// Maximum encoded model identifier length.
 pub const MAX_MODEL_ID_BYTES: usize = 256;
+/// Maximum encoded capability identifier length.
 pub const MAX_CAPABILITY_BYTES: usize = 64;
 
+/// Data-location requirement applied to primary and fallback profiles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataResidency {
+    /// Request data must remain on the local machine.
     Local,
+    /// Request data must be processed within the European Union.
     EuropeanUnion,
+    /// No additional residency restriction is imposed.
     Any,
 }
 
+/// Versioned provider profile metadata eligible for model-call routing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelProfileRef {
+    /// Stable profile identifier.
     pub id: String,
+    /// Stable provider identifier.
     pub provider: String,
+    /// Model identifier understood by the provider adapter.
     pub model: String,
+    /// Capabilities supported by the profile.
     pub capabilities: BTreeSet<String>,
+    /// Privacy boundary promised by the profile.
     pub privacy_boundary: PrivacyClass,
+    /// Processing residency of the profile.
     pub residency: DataResidency,
+    /// Digest binding the profile's metadata and revision.
     pub profile_hash: String,
 }
 
+/// Retry, fallback, privacy, residency, and capability constraints.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelResiliencePolicyRules {
+    /// Total attempt limit including the initial call.
     pub max_attempts: u32,
+    /// Maximum number of fallback profiles considered.
     pub max_fallbacks: u32,
+    /// Initial backoff delay in milliseconds.
     pub backoff_base_ms: u64,
+    /// Upper bound for exponential backoff in milliseconds.
     pub backoff_max_ms: u64,
+    /// Whether compatible fallback profiles may be selected.
     pub allow_fallback: bool,
+    /// Minimum privacy boundary required of a profile.
     pub required_privacy: PrivacyClass,
+    /// Required processing residency.
     pub required_residency: DataResidency,
+    /// Capabilities that every selected profile must provide.
     pub required_capabilities: BTreeSet<String>,
 }
 
+/// Versioned policy with primary and pre-authorized compatible fallback profiles.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelResiliencePolicyDefinition {
+    /// Serialized contract version.
     pub schema_version: u32,
+    /// Stable policy identifier.
     pub policy_id: String,
+    /// Monotonic policy revision.
     pub version: u64,
+    /// Retry and compatibility constraints.
     pub rules: ModelResiliencePolicyRules,
+    /// First profile selected for a model call.
     pub primary: ModelProfileRef,
+    /// Ordered compatible profiles eligible after primary failure.
     pub fallbacks: Vec<ModelProfileRef>,
 }
 
+/// Planned outcome for one provider attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttemptOutcome {
+    /// Provider returned a successful response.
     Success,
+    /// Another attempt on the primary profile is permitted.
     Retried,
+    /// A compatible fallback profile is selected.
     Fallback,
+    /// Caller cancelled the operation.
     Cancelled,
+    /// Failure category does not permit retry or fallback.
     Denied,
+    /// Request may have reached the provider, so outcome cannot be retried safely.
     UnknownOutcome,
+    /// Configured attempt budget is exhausted.
     Exhausted,
 }
 
+/// Bounded metadata describing a single planned attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptMetadata {
+    /// One-based attempt number.
     pub attempt: u32,
+    /// Profile selected for this attempt.
     pub profile_id: String,
+    /// Normalized failure category, if the attempt follows a failure.
     pub failure: Option<FailureCategory>,
+    /// Planned attempt outcome.
     pub outcome: AttemptOutcome,
+    /// Delay before the next permitted attempt, in milliseconds.
     pub backoff_ms: u64,
 }
 
+/// Resilience policy compatibility, version, or validation failure.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PolicyError {
+    /// Policy uses an unsupported schema version.
     #[error("unsupported resilience policy schema {0}")]
     UnsupportedVersion(u32),
+    /// Policy fields or profile metadata violate the contract.
     #[error("invalid resilience policy: {0}")]
     Invalid(String),
+    /// No profile satisfies the required privacy, residency, or capability rules.
     #[error("profile is not compatible: {0}")]
     Incompatible(String),
 }
@@ -127,6 +182,7 @@ pub fn normalize_provider_error(
 }
 
 impl Default for ModelResiliencePolicyRules {
+    /// Returns bounded retry defaults with internal privacy and chat capability.
     fn default() -> Self {
         Self {
             max_attempts: 3,
@@ -142,6 +198,7 @@ impl Default for ModelResiliencePolicyRules {
 }
 
 impl ModelResiliencePolicyDefinition {
+    /// Checks schema, identity, bounds, duplicate profiles, and compatibility.
     pub fn validate(&self) -> Result<(), PolicyError> {
         if self.schema_version != CONTRACT_VERSION {
             return Err(PolicyError::UnsupportedVersion(self.schema_version));
@@ -174,6 +231,7 @@ impl ModelResiliencePolicyDefinition {
         Ok(())
     }
 
+    /// Validates and hashes the policy under its stable contract identifier.
     pub fn canonical_hash(&self) -> Result<String, PolicyError> {
         self.validate()?;
         let bytes = serde_json::to_vec(self).map_err(|e| PolicyError::Invalid(e.to_string()))?;
@@ -184,6 +242,7 @@ impl ModelResiliencePolicyDefinition {
         Ok(hex::encode(hasher.finalize()))
     }
 
+    /// Returns the configured prefix of fallbacks that satisfies policy rules.
     pub fn compatible_fallbacks(&self) -> Result<Vec<&ModelProfileRef>, PolicyError> {
         self.validate()?;
         if !self.rules.allow_fallback || self.rules.max_fallbacks == 0 {
@@ -197,6 +256,7 @@ impl ModelResiliencePolicyDefinition {
             .collect())
     }
 
+    /// Selects a profile and bounded retry outcome for the reported failure.
     pub fn next_attempt(
         &self,
         attempt: u32,
@@ -244,6 +304,7 @@ impl ModelResiliencePolicyDefinition {
 /// The shipped baseline. Real profile resolution is still performed by the
 /// existing Core-owned routing catalog; this value is used for bounded status
 /// projection and deterministic contract tests.
+/// Returns the shipped bounded policy baseline for internal model calls.
 pub fn builtin_policy() -> ModelResiliencePolicyDefinition {
     let profile = ModelProfileRef {
         id: "default".into(),

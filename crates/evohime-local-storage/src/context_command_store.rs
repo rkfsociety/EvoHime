@@ -19,14 +19,18 @@ pub const RATE_LIMIT_MAX_CALLS: usize = 30;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandOutcome {
+    /// Command was applied successfully.
     Applied,
+    /// Command was denied because the rate limit was reached.
     RateLimited,
+    /// Command was rejected by validation or policy.
     Rejected,
     /// `summarize now`: запрошено, но ещё не применено к сборке.
     Pending,
 }
 
 impl CommandOutcome {
+    /// Returns the stable value persisted in the audit table.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Applied => "applied",
@@ -40,19 +44,31 @@ impl CommandOutcome {
 /// Запись журнала команд.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommandAuditRecord {
+    /// SQLite audit row identifier.
     pub id: i64,
+    /// Task that issued the command.
     pub task_id: String,
+    /// Stable command name.
     pub command: String,
+    /// Optional item or entity affected by the command.
     pub subject: Option<String>,
+    /// Persisted command outcome.
     pub outcome: String,
+    /// Audit timestamp in the store's integer time unit.
     pub created_at: i64,
 }
 
 /// Ошибка команды.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CommandError {
+    /// Command rate limit was exceeded during the configured time window.
     #[error("rate limit exceeded for {command}: more than {max} calls per minute")]
-    RateLimited { command: String, max: usize },
+    RateLimited {
+        /// Command that exceeded its limit.
+        command: String,
+        /// Maximum successful calls allowed in the window.
+        max: usize,
+    },
 }
 
 /// Хранилище команд контекста.
@@ -61,6 +77,7 @@ pub struct ContextCommandStore<'a> {
 }
 
 impl<'a> ContextCommandStore<'a> {
+    /// Creates a command store borrowing the caller-owned SQLite connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }

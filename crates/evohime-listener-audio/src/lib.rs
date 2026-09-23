@@ -2,18 +2,29 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+#![deny(missing_docs)]
 //! Детерминированный аудио-контур листенера.
 //!
 //! Этот крейт намеренно не содержит файлового API. PCM живёт только в памяти;
 //! Windows VirtualLock используется как best-effort защита страниц от pagefile.
+//!
+//! ```
+//! use evohime_listener_audio::resample_to_16khz;
+//!
+//! let samples = resample_to_16khz(&[0.0, 1.0, 2.0, 3.0, 4.0, 5.0], 48_000).unwrap();
+//! assert_eq!(samples, vec![0.0, 3.0]);
+//! ```
 
 use evohime_listener_contract::AmbientLimits;
 use std::collections::VecDeque;
 
+/// Ошибка формата PCM или захвата аудиоустройства.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum AudioError {
+    /// Частота дискретизации не поддерживается фиксированными дециматорами.
     #[error("unsupported sample rate {0}")]
     UnsupportedRate(u32),
+    /// Устройство или поток ввода недоступны.
     #[error("capture device is unavailable: {0}")]
     DeviceUnavailable(String),
 }
@@ -26,6 +37,7 @@ pub struct RingBuffer {
 }
 
 impl RingBuffer {
+    /// Создаёт пустое кольцо с заданным пределом сэмплов.
     pub fn new(capacity: usize) -> Self {
         Self {
             samples: VecDeque::with_capacity(capacity),
@@ -33,6 +45,7 @@ impl RingBuffer {
         }
     }
 
+    /// Добавляет сэмплы, удаляя самые старые при заполнении.
     pub fn push(&mut self, input: &[f32]) {
         for &sample in input {
             if self.samples.len() == self.capacity {
@@ -42,10 +55,12 @@ impl RingBuffer {
         }
     }
 
+    /// Копирует текущие сэмплы в хронологическом порядке.
     pub fn snapshot(&self) -> Vec<f32> {
         self.samples.iter().copied().collect()
     }
 
+    /// Перезаписывает сохранённые значения нулями и очищает кольцо.
     pub fn clear(&mut self) {
         for sample in &mut self.samples {
             *sample = 0.0;
@@ -54,6 +69,7 @@ impl RingBuffer {
     }
 }
 
+/// Блокирует страницы памяти сэмплов от выгрузки в pagefile; best effort.
 #[cfg(windows)]
 pub fn lock_memory(samples: &mut [f32]) -> bool {
     unsafe {
@@ -64,6 +80,7 @@ pub fn lock_memory(samples: &mut [f32]) -> bool {
     }
 }
 
+/// Возвращает `false` на платформах без реализации Windows `VirtualLock`.
 #[cfg(not(windows))]
 pub fn lock_memory(_samples: &mut [f32]) -> bool {
     false
@@ -73,7 +90,9 @@ pub fn lock_memory(_samples: &mut [f32]) -> bool {
 /// чтобы децимировать, а число каналов — чтобы свести в моно до VAD.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureFormat {
+    /// Частота устройства в сэмплах в секунду.
     pub sample_rate: u32,
+    /// Число чередующихся каналов входного кадра.
     pub channels: u16,
 }
 
@@ -87,6 +106,10 @@ pub struct CaptureFormat {
 /// Callback не передаётся готовым, а собирается из формата: иначе он замыкал
 /// бы копию предполагаемого формата, и настоящая частота устройства до него
 /// уже не дошла бы. Такая ошибка не падает, а тихо портит звук.
+/// Открывает системное устройство захвата Windows в shared mode.
+///
+/// Builder получает фактический формат устройства до поступления PCM; callback
+/// работает только с памятью и не записывает звук на диск.
 #[cfg(windows)]
 pub fn open_default_capture<F, B>(build: B) -> Result<(cpal::Stream, CaptureFormat), AudioError>
 where
@@ -151,8 +174,11 @@ where
 /// в поле `id` невозможна по построению.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaptureDevice {
+    /// Ограниченный opaque ID, производный от системного имени устройства.
     pub id: String,
+    /// Ограниченное отображаемое имя устройства.
     pub display_name: String,
+    /// Признак системного устройства ввода по умолчанию.
     pub is_default: bool,
 }
 
@@ -208,6 +234,7 @@ pub fn bound_device_name(name: &str) -> String {
 /// renderer доступа к `navigator.mediaDevices` нет по построению
 /// (`security.ts` отказывает во всех разрешениях), поэтому единственный
 /// источник списка — этот процесс.
+/// Перечисляет устройства захвата, видимые текущей сессии Windows.
 #[cfg(windows)]
 pub fn list_capture_devices() -> Result<Vec<CaptureDevice>, AudioError> {
     use cpal::traits::{DeviceTrait, HostTrait};
@@ -235,6 +262,7 @@ pub fn list_capture_devices() -> Result<Vec<CaptureDevice>, AudioError> {
     Ok(listed)
 }
 
+/// Сообщает, что перечисление устройств захвата доступно только в Windows.
 #[cfg(not(windows))]
 pub fn list_capture_devices() -> Result<Vec<CaptureDevice>, AudioError> {
     Ok(Vec::new())
@@ -245,6 +273,7 @@ pub fn list_capture_devices() -> Result<Vec<CaptureDevice>, AudioError> {
 ///
 /// Смена устройства не требует перезапуска процесса: вызывающий закрывает
 /// прежний поток и открывает новый этой же функцией.
+/// Открывает выбранное Windows-устройство и запускает его shared-mode поток.
 #[cfg(windows)]
 pub fn open_capture<F, B>(
     device_id: &str,
@@ -279,6 +308,7 @@ where
     open_device_capture(device, build)
 }
 
+/// Сообщает, что захват микрофона доступен только в Windows.
 #[cfg(not(windows))]
 pub fn open_capture<F, B>(_device_id: &str, _build: B) -> Result<(), AudioError>
 where
@@ -295,6 +325,7 @@ where
 /// Усреднение, а не «взять первый канал»: на стереогарнитуре речь часто
 /// заметно тише в одном из каналов, и выбор канала наугад срезал бы половину
 /// громкости ещё до VAD.
+/// Усредняет чередующиеся каналы до моно и отбрасывает неполный хвостовой кадр.
 pub fn downmix_to_mono(input: &[f32], channels: u16) -> Vec<f32> {
     let channels = channels.max(1) as usize;
     if channels == 1 {
@@ -311,6 +342,10 @@ pub fn downmix_to_mono(input: &[f32], channels: u16) -> Vec<f32> {
 /// проходит без изменений. Частота вроде 44,1 кГц осознанно остаётся
 /// ошибкой: дробное отношение потребовало бы интерполяции, а тихо испорченный
 /// звук хуже честного отказа.
+/// Преобразует PCM частотой 16, 32 или 48 кГц в формат 16 кГц.
+///
+/// Используется детерминированная целочисленная децимация; остальные частоты
+/// возвращают [`AudioError::UnsupportedRate`].
 pub fn resample_to_16khz(input: &[f32], sample_rate: u32) -> Result<Vec<f32>, AudioError> {
     let factor = match sample_rate {
         48_000 => 3,
@@ -321,13 +356,18 @@ pub fn resample_to_16khz(input: &[f32], sample_rate: u32) -> Result<Vec<f32>, Au
     Ok(input.iter().step_by(factor).copied().collect())
 }
 
+/// Результат измерения активности речи для одного PCM-кадра.
 #[derive(Debug, Clone, Copy)]
 pub struct VadDecision {
+    /// Превысил ли кадр текущий голосовой порог.
     pub voiced: bool,
+    /// Среднеквадратичная амплитуда кадра.
     pub rms: f32,
+    /// Число смен знака между соседними сэмплами.
     pub zero_crossings: u32,
 }
 
+/// Адаптивный детектор активности речи на основе энергии кадра.
 #[derive(Debug, Clone)]
 pub struct EnergyVad {
     noise_floor: f32,
@@ -342,6 +382,7 @@ impl Default for EnergyVad {
 }
 
 impl EnergyVad {
+    /// Классифицирует кадр и обновляет noise floor для неголосового сигнала.
     pub fn decide(&mut self, frame: &[f32]) -> VadDecision {
         if frame.is_empty() {
             return VadDecision {
@@ -368,11 +409,16 @@ impl EnergyVad {
     }
 }
 
+/// Завершённый сегмент речи в памяти, выданный [`Segmenter`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
+    /// Непрозрачный идентификатор объединённых последовательных сегментов.
     pub episode_id: String,
+    /// Моно PCM с частотой 16 кГц для этого сегмента.
     pub samples: Vec<f32>,
+    /// Продолжает ли сегмент более длинный речевой эпизод.
     pub continued: bool,
+    /// Номер первого входного кадра сегмента.
     pub start_frame: u64,
 }
 
@@ -399,6 +445,7 @@ struct ActiveSegment {
 }
 
 impl Segmenter {
+    /// Создаёт сегментатор с заданными ambient limits и частотой сэмплов.
     pub fn new(limits: AmbientLimits, sample_rate: usize) -> Self {
         let preroll = sample_rate * limits.pre_roll_ms as usize / 1000;
         Self {
@@ -412,6 +459,7 @@ impl Segmenter {
         }
     }
 
+    /// Очищает pre-roll и состояние активного сегмента.
     pub fn reset(&mut self) {
         self.ring.clear();
         self.active = None;
@@ -419,6 +467,7 @@ impl Segmenter {
         self.episode_elapsed_ms = 0;
     }
 
+    /// Добавляет кадр и возвращает сегменты, завершённые на этом кадре.
     pub fn push_frame(&mut self, frame: &[f32], decision: VadDecision) -> Vec<Segment> {
         let mut completed = Vec::new();
         self.ring.push(frame);

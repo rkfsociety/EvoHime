@@ -34,6 +34,18 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
 
+### Rust public API documentation (2026-09-24)
+
+- Локально пройдены `cargo doc --workspace --no-deps --locked`,
+  `cargo doc --workspace --lib --no-deps --locked` с `-D missing_docs`,
+  `-D rustdoc::broken_intra_doc_links` и `-D rustdoc::invalid_html_tags`, а
+  также `cargo test --workspace --doc --locked`; последний выполнил примеры
+  всех workspace crates успешно (один существующий environment-dependent
+  пример помечен ignored).
+- `pwsh -NoProfile -File scripts/documentation.tests.ps1` завершился `PASS`.
+  Изменения ещё не опубликованы, поэтому exact-commit GitHub CI — `UNAVAILABLE`
+  до push; после публикации результат будет проверен отдельно.
+
 ### Current code baseline and live gates (2026-09-21)
 
 - Для code baseline `cbd5aa6539ff873248a418ceb133e61fcb91417d` module router

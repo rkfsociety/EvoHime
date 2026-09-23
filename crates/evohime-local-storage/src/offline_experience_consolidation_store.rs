@@ -1,7 +1,10 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+/// Creates the revision history and immutable run-pin tables.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS offline_experience_consolidation (cycle_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(cycle_id,revision), UNIQUE(cycle_id,idempotency_key)); CREATE TABLE IF NOT EXISTS offline_experience_consolidation_run (run_id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, pinned_at_ms INTEGER NOT NULL);")
 }
+/// Stores the next consolidation revision, allowing only an identical idempotent replay.
+/// Revisions must be contiguous within a cycle.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -39,9 +42,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Returns the highest stored revision for a cycle, if any.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row("SELECT json FROM offline_experience_consolidation WHERE cycle_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|x|x.get(0)).optional()
 }
+/// Pins a run to one cycle revision and hash; conflicting pins for the run are rejected.
 pub fn pin(
     c: &Connection,
     run_id: &str,

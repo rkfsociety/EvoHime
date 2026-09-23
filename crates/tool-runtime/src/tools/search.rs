@@ -7,10 +7,14 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use unicode_normalization::UnicodeNormalization;
 
+/// Registry identifier for workspace text search.
 pub const NAME: &str = "filesystem.search";
+/// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str =
     "Search text in workspace files (ripgrep when available, built-in walk fallback otherwise)";
+/// Permission required to inspect workspace file contents.
 pub const PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
+/// Maximum time allowed for a search request.
 pub const TIMEOUT: Duration = Duration::from_secs(15);
 
 const SKIP_DIR_NAMES: &[&str] = &[
@@ -52,6 +56,16 @@ struct Input {
     limit: Option<usize>,
 }
 
+/// Searches workspace text using ripgrep when available and a local walker as
+/// fallback.
+///
+/// Search remains rooted in the workspace sandbox, skips sensitive names and
+/// common generated directories, and bounds both file and output sizes.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid queries or paths, denied access, timeout,
+/// and search or filesystem failures.
 pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
     let input: Input = serde_json::from_value(value).map_err(|e| ToolError::InvalidInput {
         tool: NAME.into(),

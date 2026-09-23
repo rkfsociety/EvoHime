@@ -3,29 +3,68 @@
 //! The Core contract owns the semantic evidence. This store owns only its
 //! bounded serialized snapshot and its revision fence; it never accepts raw
 //! provider responses, prompts or credential material.
+//!
+//! ```
+//! use evohime_local_storage::free_access_evidence_store::{
+//!     install_schema, put, FreeAccessEvidenceRecord,
+//! };
+//! let connection = rusqlite::Connection::open_in_memory()?;
+//! install_schema(&connection)?;
+//! let published = put(&connection, &FreeAccessEvidenceRecord {
+//!     provider_id: "provider-a".into(),
+//!     model_id: "model-a".into(),
+//!     credential_binding: "account-1".into(),
+//!     region: "global".into(),
+//!     revision: 1,
+//!     content_hash: "a".repeat(64),
+//!     evidence_json: br#"{"tier":"free"}"#.to_vec(),
+//!     observed_at_ms: 1,
+//!     expires_at_ms: 60_001,
+//!     invalidation: None,
+//! })?;
+//! assert!(published);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum encoded metadata size for one evidence record.
 pub const MAX_EVIDENCE_JSON_BYTES: usize = 128 * 1024;
+/// Maximum number of distinct evidence scopes stored at once.
 pub const MAX_EVIDENCE_ROWS: u32 = 2_048;
+/// Maximum UTF-8 byte length of provider and model scope identifiers.
 pub const MAX_SCOPE_TOKEN_BYTES: usize = 256;
+/// Maximum UTF-8 byte length of a region identifier.
 pub const MAX_REGION_BYTES: usize = 64;
+/// Maximum UTF-8 byte length of a non-secret credential binding identifier.
 pub const MAX_CREDENTIAL_BINDING_BYTES: usize = 128;
 
+/// Bounded metadata snapshot for one provider/model/credential/region scope.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FreeAccessEvidenceRecord {
+    /// Provider identifier.
     pub provider_id: String,
+    /// Model identifier within the provider.
     pub model_id: String,
+    /// Opaque account binding; must not contain credential material.
     pub credential_binding: String,
+    /// Provider region or region group.
     pub region: String,
+    /// Positive, monotonically increasing revision for this scope.
     pub revision: i64,
+    /// Lowercase or uppercase hexadecimal SHA-256 digest of the evidence.
     pub content_hash: String,
+    /// Serialized, metadata-only evidence object.
     pub evidence_json: Vec<u8>,
+    /// Observation time as Unix milliseconds.
     pub observed_at_ms: i64,
+    /// Expiration time as Unix milliseconds, later than observation time.
     pub expires_at_ms: i64,
+    /// Optional invalidation reason token.
     pub invalidation: Option<String>,
 }
 
+/// Creates the evidence table and indexes used for expiry and hash lookup.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS free_access_evidence (
@@ -123,6 +162,7 @@ pub fn put(
     Ok(changed)
 }
 
+/// Loads one record for the complete provider, model, account, and region scope.
 pub fn get(
     connection: &Connection,
     provider_id: &str,
@@ -155,6 +195,7 @@ pub fn get(
         .optional()
 }
 
+/// Returns the number of stored scopes.
 pub fn count(connection: &Connection) -> rusqlite::Result<u32> {
     connection.query_row("SELECT COUNT(*) FROM free_access_evidence", [], |row| {
         row.get(0)

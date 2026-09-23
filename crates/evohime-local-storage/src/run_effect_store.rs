@@ -2,6 +2,7 @@ use crate::{LocalDatabase, RunCheckpointRecord, RunEffectRecord, RunRecord, Stor
 use rusqlite::OptionalExtension;
 
 impl LocalDatabase {
+    /// Atomically ensures the run, checkpoint, and effect exist before returning the stored effect.
     pub fn prepare_run_effect(
         &self,
         run: &RunRecord,
@@ -54,6 +55,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Loads a durable run effect by its stable effect ID.
     pub fn get_run_effect(&self, effect_id: &str) -> Result<Option<RunEffectRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT effect_id, run_id, node_id, kind, idempotency_key, immutable_intent_hash,
@@ -77,6 +79,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Moves a prepared run effect into execution and returns its persisted state.
     pub fn mark_effect_executing(&self, effect_id: &str) -> Result<RunEffectRecord, StorageError> {
         self.connection.execute(
             "UPDATE run_effects SET state = 'executing', started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
@@ -87,6 +90,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Completes an executing effect with success/failure and an optional result hash.
     pub fn complete_run_effect(
         &self,
         effect_id: &str,
@@ -107,6 +111,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Stores an agent effect once and returns the persisted record.
     pub fn prepare_agent_run_effect(
         &self,
         effect: &RunEffectRecord,
@@ -134,6 +139,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Loads a durable agent effect by its stable effect ID.
     pub fn get_agent_run_effect(
         &self,
         effect_id: &str,
@@ -161,6 +167,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Moves a prepared agent effect into execution and returns its persisted state.
     pub fn mark_agent_effect_executing(
         &self,
         effect_id: &str,
@@ -175,6 +182,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Completes an executing agent effect with success/failure and an optional result hash.
     pub fn complete_agent_run_effect(
         &self,
         effect_id: &str,

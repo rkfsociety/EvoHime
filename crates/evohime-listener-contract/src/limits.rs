@@ -1,10 +1,15 @@
 use crate::error::ContractError;
 use serde::{Deserialize, Serialize};
 
+/// Minimum capture frame duration accepted by the listener.
 pub const MIN_FRAME_MS: u32 = 10;
+/// Maximum capture frame duration accepted by the listener.
 pub const MAX_FRAME_MS: u32 = 60;
+/// Hard ceiling for one utterance duration.
 pub const MAX_UTTERANCE_MS: u32 = 60_000;
+/// Hard ceiling for one ambient episode duration.
 pub const MAX_EPISODE_MS: u32 = 3_600_000;
+/// Hard ceiling for the transcript de-duplication window.
 pub const MAX_DEDUP_WINDOW_MS: u32 = 3_600_000;
 /// Ceiling for pre-roll and hangover windows.
 pub const MAX_WINDOW_MS: u32 = 5_000;
@@ -33,6 +38,7 @@ pub struct AmbientLimits {
 }
 
 impl AmbientLimits {
+    /// Default validated capture and segmentation limits.
     pub const DEFAULT: AmbientLimits = AmbientLimits {
         frame_ms: 30,
         pre_roll_ms: 300,
@@ -43,6 +49,7 @@ impl AmbientLimits {
         dedup_window_ms: 60_000,
     };
 
+    /// Validates this snapshot against hard bounds and cross-field rules.
     pub fn validate(&self) -> Result<(), ContractError> {
         if self.frame_ms < MIN_FRAME_MS || self.frame_ms > MAX_FRAME_MS {
             return Err(ContractError::LimitsOutOfBounds("frame_ms"));

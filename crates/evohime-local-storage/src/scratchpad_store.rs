@@ -21,23 +21,35 @@ pub const SCRATCHPAD_READ_LIMIT: usize = 100;
 /// усечения помечен явно.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScratchpadProjection {
+    /// Scratchpad entry identifier.
     pub id: String,
+    /// Entry category.
     pub category: String,
+    /// Entry lifecycle status.
     pub status: String,
+    /// Trust classification of the content.
     pub trust: String,
+    /// Entry revision number.
     pub revision: u32,
+    /// Creation timestamp.
     pub created_at: i64,
+    /// Last update timestamp.
     pub updated_at: i64,
+    /// Bounded text preview.
     pub preview: String,
+    /// Whether the preview omits some of the content.
     pub truncated: bool,
+    /// Optional external artifact locator for the full content.
     pub artifact_locator: Option<String>,
 }
 
 /// Ошибка операции над scratchpad.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScratchpadError {
+    /// A confirmed entry was changed in place instead of creating a new revision.
     #[error("confirmed entry {0} cannot be overwritten in place; write a new revision")]
     ConfirmedOverwrite(String),
+    /// Requested scratchpad entry does not exist.
     #[error("entry {0} was not found")]
     NotFound(String),
 }
@@ -48,6 +60,7 @@ pub struct ScratchpadStore<'a> {
 }
 
 impl<'a> ScratchpadStore<'a> {
+    /// Creates a store borrowing the caller-owned SQLite connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
@@ -108,6 +121,7 @@ impl<'a> ScratchpadStore<'a> {
         Ok(entry)
     }
 
+    /// Loads one scratchpad entry by identifier.
     pub fn get(&self, id: &str) -> Result<Option<ScratchpadEntry>, StorageError> {
         Ok(self
             .connection

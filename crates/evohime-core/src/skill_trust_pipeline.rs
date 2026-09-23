@@ -7,78 +7,125 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{fs, io::Read, path::Path};
 
+/// Identifier for the deterministic scanner rule set.
 pub const SCANNER_VERSION: &str = "skill-scanner-v1";
+/// Identifier for the policy used to interpret scanner and reviewer findings.
 pub const REVIEW_POLICY_VERSION: &str = "skill-review-policy-v1";
+/// Maximum number of files inspected in a skill package.
 pub const MAX_PACKAGE_FILES: usize = 128;
+/// Maximum number of findings retained in a trust record.
 pub const MAX_FINDINGS: usize = 128;
 
+/// Severity assigned to a scanner or reviewer finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingSeverity {
+    /// Informational observation with no identified risk.
     Info,
+    /// Low risk that does not require elevated review.
     Low,
+    /// Moderate concern that should be reviewed.
     Medium,
+    /// High-risk behavior requiring human review.
     High,
+    /// Behavior that blocks execution until the package is changed.
     Blocked,
 }
 
+/// Aggregate risk class computed from findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskClass {
+    /// No material risk was detected by the current rules.
     Low,
+    /// Moderate patterns were detected.
     Medium,
+    /// High-risk patterns require an explicit review.
     High,
+    /// A blocking pattern was detected.
     Blocked,
 }
 
+/// Trust gate state that controls whether a discovered skill may execute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustDecision {
+    /// Package contents are currently being inspected.
     Scanning,
+    /// Automated analysis requires a human decision.
     ReviewRequired,
+    /// A human review is in progress.
     Reviewing,
+    /// Package passed automated checks or an approving review.
     Trusted,
+    /// Package is isolated from execution pending further action.
     Quarantined,
+    /// Package was explicitly rejected.
     Rejected,
+    /// A non-blocked package was enabled by an attributable override.
     Enabled,
 }
 
+/// Bounded, redacted finding produced by skill scanning or review.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillFinding {
+    /// Stable machine-readable rule or reviewer code.
     pub code: String,
+    /// Severity assigned to the finding.
     pub severity: FindingSeverity,
+    /// Bounded package-relative location associated with the finding.
     pub relative_location: String,
+    /// Content digest used for correlation without exposing file contents.
     pub masked_fingerprint: String,
 }
 
+/// Trust decision and provenance for one exact skill package revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillTrustRecord {
+    /// Stable identifier of the discovered skill.
     pub skill_id: String,
+    /// Digest of the skill package revision that was scanned.
     pub content_hash: String,
+    /// Scanner rule-set version used to produce this record.
     pub scanner_version: String,
+    /// Review policy version used to interpret findings.
     pub review_policy_version: String,
+    /// Bounded scanner and reviewer findings.
     pub findings: Vec<SkillFinding>,
+    /// Aggregate severity class for the package.
     pub risk_class: RiskClass,
+    /// Current decision enforced before execution.
     pub decision: TrustDecision,
+    /// Optional actor who explicitly overrode a review-level decision.
     pub override_actor: Option<String>,
 }
 
+/// Outcome recommended by an external or human review.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewRecommendation {
+    /// Findings support trusting the package.
     Trusted,
+    /// More review is needed before execution.
     ReviewRequired,
+    /// Package should remain quarantined.
     Quarantined,
 }
 
+/// Bounded reviewer output merged into a skill trust record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillReviewReport {
+    /// Aggregate risk assessment made by the reviewer.
     pub risk_class: RiskClass,
+    /// Findings supporting the recommendation.
     pub findings: Vec<SkillFinding>,
+    /// Reviewer recommendation subject to policy enforcement.
     pub recommendation: ReviewRecommendation,
+    /// Short human-readable explanation of the decision.
     pub rationale_summary: String,
 }
 
+/// Applies a bounded review report without allowing a high-risk trust bypass.
 pub fn apply_review(
     record: &SkillTrustRecord,
     report: Option<&SkillReviewReport>,
@@ -109,6 +156,7 @@ pub fn apply_review(
     reviewed
 }
 
+/// Enables a non-blocked record when a non-empty override actor is supplied.
 pub fn apply_override(record: &SkillTrustRecord, actor: &str) -> SkillTrustRecord {
     let mut result = record.clone();
     if actor.trim().is_empty() || record.risk_class == RiskClass::Blocked {
@@ -120,19 +168,25 @@ pub fn apply_override(record: &SkillTrustRecord, actor: &str) -> SkillTrustRecor
     result
 }
 
+/// Package read, size, hash, or execution-trust failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SkillTrustError {
+    /// Current decision does not permit execution.
     #[error("skill trust decision is not executable: {0:?}")]
     NotExecutable(TrustDecision),
+    /// Current skill contents differ from the revision that was scanned.
     #[error("skill content hash changed during trust check")]
     HashMismatch,
+    /// Package contains more files than the scanner can inspect.
     #[error("skill trust package is too large")]
     PackageTooLarge,
+    /// Filesystem enumeration or bounded read failed.
     #[error("skill trust package could not be read: {0}")]
     Io(String),
 }
 
 impl SkillTrustRecord {
+    /// Allows execution only when the content hash matches and decision is trusted.
     pub fn can_execute(&self, current_hash: &str) -> Result<(), SkillTrustError> {
         if self.content_hash != current_hash {
             return Err(SkillTrustError::HashMismatch);
@@ -148,6 +202,7 @@ impl SkillTrustRecord {
     }
 }
 
+/// Scans a skill directory without executing its files and returns a trust record.
 pub fn scan_package(
     skill_id: &str,
     package_dir: &Path,

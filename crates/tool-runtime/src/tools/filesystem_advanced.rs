@@ -9,9 +9,13 @@ use tokio::fs;
 // delete: Delete files or directories
 // ============================================================================
 
+/// Registry identifier for sandboxed workspace deletion.
 pub const DELETE_NAME: &str = "filesystem.delete";
+/// Catalog summary for deletion; callers must obtain the configured approval.
 pub const DELETE_DESCRIPTION: &str = "Delete a file or directory (with confirmation required)";
+/// Permission required to delete workspace entries.
 pub const DELETE_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Maximum runtime for one delete operation.
 pub const DELETE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Deserialize)]
@@ -22,6 +26,15 @@ struct DeleteInput {
     expected_hash: Option<String>,
 }
 
+/// Deletes a workspace file or directory after checking its expected revision.
+///
+/// Directory removal is recursive only when explicitly requested. Approval is
+/// enforced by the surrounding tool registry policy.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid input, stale revisions, denied access, or
+/// filesystem failures.
 pub async fn delete(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: DeleteInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: DELETE_NAME.to_string(),
@@ -69,9 +82,13 @@ pub async fn delete(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // move: Rename or move files
 // ============================================================================
 
+/// Registry identifier for sandboxed file or directory moves.
 pub const MOVE_NAME: &str = "filesystem.move";
+/// Catalog summary for moving or renaming a workspace entry.
 pub const MOVE_DESCRIPTION: &str = "Move or rename a file or directory";
+/// Permission required to move workspace entries.
 pub const MOVE_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Maximum runtime for one move operation.
 pub const MOVE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +98,12 @@ struct MoveInput {
     expected_hash: Option<String>,
 }
 
+/// Moves a workspace file or directory after checking the expected source hash.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid paths, stale revisions, denied access, or
+/// filesystem failures.
 pub async fn move_file(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: MoveInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: MOVE_NAME.to_string(),
@@ -112,9 +135,13 @@ pub async fn move_file(ctx: &ToolContext, input: Value) -> Result<ToolResult, To
 // copy: Copy files or directories
 // ============================================================================
 
+/// Registry identifier for workspace copying.
 pub const COPY_NAME: &str = "filesystem.copy";
+/// Catalog summary for copying workspace files or directories.
 pub const COPY_DESCRIPTION: &str = "Copy a file or directory";
+/// Permission required to create copied workspace content.
 pub const COPY_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Maximum runtime for one copy operation.
 pub const COPY_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Deserialize)]
@@ -126,6 +153,15 @@ struct CopyInput {
     expected_hash: Option<String>,
 }
 
+/// Copies a sandboxed file or, with `recursive=true`, a directory tree.
+///
+/// File copies require an expected source hash. Directory copies reject
+/// symbolic links instead of following them.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid input, missing preconditions, symlinks,
+/// denied access, or filesystem failures.
 pub async fn copy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: CopyInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: COPY_NAME.to_string(),
@@ -231,9 +267,13 @@ async fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std
 // stat: Get file metadata
 // ============================================================================
 
+/// Registry identifier for workspace file metadata lookup.
 pub const STAT_NAME: &str = "filesystem.stat";
+/// Catalog summary for file and directory metadata lookup.
 pub const STAT_DESCRIPTION: &str = "Get file or directory metadata (size, modified, permissions)";
+/// Permission required to inspect workspace metadata.
 pub const STAT_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
+/// Maximum runtime for one metadata lookup.
 pub const STAT_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Deserialize)]
@@ -241,6 +281,14 @@ struct StatInput {
     path: String,
 }
 
+/// Returns metadata for an existing sandboxed workspace path.
+///
+/// Platform-specific permission metadata is included where the host exposes it.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid paths, denied access, or metadata I/O
+/// failures.
 pub async fn stat(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: StatInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: STAT_NAME.to_string(),
@@ -294,9 +342,13 @@ pub async fn stat(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 // mkdir: Create a directory
 // ============================================================================
 
+/// Registry identifier for creating workspace directories.
 pub const MKDIR_NAME: &str = "filesystem.mkdir";
+/// Catalog summary for directory creation.
 pub const MKDIR_DESCRIPTION: &str = "Create a directory (with parent directories if needed)";
+/// Permission required to create workspace directories.
 pub const MKDIR_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Maximum runtime for one directory-creation request.
 pub const MKDIR_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Deserialize)]
@@ -304,6 +356,12 @@ struct MkdirInput {
     path: String,
 }
 
+/// Creates a directory and any missing parents under the workspace root.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid paths, denied access, or filesystem
+/// failures.
 pub async fn mkdir(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: MkdirInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: MKDIR_NAME.to_string(),

@@ -1,7 +1,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Version of the team coordinator persistence schema.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 
+/// Creates team work-item, assignment, consultation, decision, and idempotency tables.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS team_coordinator_work_items (
@@ -40,6 +42,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Loads a previously stored result for an idempotency key.
 pub fn get_idempotency(connection: &Connection, key: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -50,6 +53,7 @@ pub fn get_idempotency(connection: &Connection, key: &str) -> rusqlite::Result<O
         .optional()
 }
 
+/// Persists the first result for an idempotency key and leaves any prior result unchanged.
 pub fn put_idempotency(
     connection: &Connection,
     key: &str,
@@ -62,21 +66,31 @@ pub fn put_idempotency(
     Ok(())
 }
 
+/// Fields required to insert one coordinator work item.
 pub struct PutWorkItemInput<'a> {
+    /// Stable work-item identifier.
     pub item_id: &'a str,
+    /// Revision to persist.
     pub revision: i64,
+    /// Current work-item status.
     pub status: &'a str,
+    /// Optional agent instance assigned to the item.
     pub assigned_instance_id: Option<&'a str>,
+    /// Number of dispatch attempts made for the item.
     pub attempt: i64,
+    /// Serialized work-item payload.
     pub item_json: &'a [u8],
+    /// Last update time in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Inserts a work item and its serialized coordinator state.
 pub fn put_work_item(connection: &Connection, input: PutWorkItemInput<'_>) -> rusqlite::Result<()> {
     connection.execute("INSERT INTO team_coordinator_work_items(work_item_id,revision,status,assigned_instance_id,attempt,item_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![input.item_id, input.revision, input.status, input.assigned_instance_id, input.attempt, input.item_json, input.now_ms])?;
     Ok(())
 }
 
+/// Loads a work item's serialized state by identifier.
 pub fn get_work_item(connection: &Connection, item_id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -87,6 +101,7 @@ pub fn get_work_item(connection: &Connection, item_id: &str) -> rusqlite::Result
         .optional()
 }
 
+/// Lists serialized work items newest update first, up to the requested limit.
 pub fn list_work_items(connection: &Connection, limit: usize) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut statement = connection.prepare(
         "SELECT item_json FROM team_coordinator_work_items ORDER BY updated_at_ms DESC LIMIT ?1",
@@ -95,17 +110,29 @@ pub fn list_work_items(connection: &Connection, limit: usize) -> rusqlite::Resul
     rows.collect()
 }
 
+/// Inputs for an optimistic work-item replacement.
 pub struct ReplaceWorkItemInput<'a> {
+    /// Work-item identifier to replace.
     pub item_id: &'a str,
+    /// Revision that must currently be stored.
     pub expected_revision: i64,
+    /// New revision to store.
     pub revision: i64,
+    /// New work-item status.
     pub status: &'a str,
+    /// Optional assigned agent instance.
     pub assigned_instance_id: Option<&'a str>,
+    /// Updated dispatch attempt count.
     pub attempt: i64,
+    /// Serialized replacement payload.
     pub item_json: &'a [u8],
+    /// Update time in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Replaces an item only when its current revision matches `expected_revision`.
+///
+/// Returns `false` when the item is missing or has advanced since it was read.
 pub fn replace_work_item(
     connection: &Connection,
     input: ReplaceWorkItemInput<'_>,
@@ -113,6 +140,7 @@ pub fn replace_work_item(
     Ok(connection.execute("UPDATE team_coordinator_work_items SET revision=?1,status=?2,assigned_instance_id=?3,attempt=?4,item_json=?5,updated_at_ms=?6 WHERE work_item_id=?7 AND revision=?8", params![input.revision, input.status, input.assigned_instance_id, input.attempt, input.item_json, input.now_ms, input.item_id, input.expected_revision])? == 1)
 }
 
+/// Persists a proposed assignment between a work item and a target agent instance.
 pub fn put_assignment(
     connection: &Connection,
     assignment_id: &str,
@@ -125,6 +153,7 @@ pub fn put_assignment(
     Ok(())
 }
 
+/// Persists a serialized consultation request.
 pub fn put_consultation(
     connection: &Connection,
     consultation_id: &str,
@@ -135,6 +164,7 @@ pub fn put_consultation(
     Ok(())
 }
 
+/// Persists a serialized coordinator decision for a work item.
 pub fn put_decision(
     connection: &Connection,
     decision_id: &str,

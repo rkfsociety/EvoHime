@@ -21,10 +21,15 @@ use serde::{Deserialize, Serialize};
 /// task: identity, the matcher's reasons, and the permissions it grants.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilitySelectionView {
+    /// Selected manifest's stable registry name.
     pub manifest_name: String,
+    /// Selected manifest version.
     pub version: String,
+    /// Human-readable reasons supplied by the deterministic matcher or user action.
     pub reasons: Vec<String>,
+    /// Effective permissions granted by the selected manifest.
     pub permissions: EffectivePermissions,
+    /// Tool-bound acceptance criteria derived from the manifest.
     pub acceptance_criteria: Vec<String>,
     /// True when the user pinned this selection, so future matcher runs
     /// must not silently swap it out for a higher-scoring manifest.
@@ -47,14 +52,19 @@ pub enum SelectionOrigin {
     Replaced,
 }
 
+/// Selection plus the rule that controls whether a later automatic match may replace it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilitySelectionState {
+    /// Selected manifest and its user-facing explanation.
     pub selection: CapabilitySelectionView,
+    /// Whether selection was automatic, pinned by the user, or explicitly replaced.
     pub origin: SelectionOrigin,
 }
 
+/// Failure to resolve a capability selection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectionError {
+    /// The capability registry could not evaluate the request.
     Registry(RegistryError),
     /// The matcher found no manifest satisfying the query.
     NoMatch,

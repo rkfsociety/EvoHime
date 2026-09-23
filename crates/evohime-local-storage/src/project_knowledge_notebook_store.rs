@@ -1,7 +1,10 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+/// Creates notebook revision history and immutable run-pin tables.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS project_knowledge_notebook (notebook_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(notebook_id,revision), UNIQUE(notebook_id,idempotency_key)); CREATE TABLE IF NOT EXISTS project_knowledge_notebook_pin (run_id TEXT PRIMARY KEY, notebook_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, pinned_at_ms INTEGER NOT NULL);")
 }
+/// Stores the next notebook revision, allowing only an identical idempotent replay.
+/// Revisions must be contiguous for the notebook.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -39,9 +42,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Returns the latest serialized notebook revision, if one exists.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row("SELECT json FROM project_knowledge_notebook WHERE notebook_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional()
 }
+/// Pins a run to a notebook revision and hash; conflicting pins for the run are rejected.
 pub fn pin(
     c: &Connection,
     run_id: &str,

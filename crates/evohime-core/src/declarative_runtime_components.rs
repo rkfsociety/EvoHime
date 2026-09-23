@@ -10,64 +10,104 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
+/// Current serialized schema version for runtime component configurations.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum length of a component or provider identifier.
 pub const MAX_ID: usize = 128;
+/// Maximum serialized size of the provider-specific definition.
 pub const MAX_DEFINITION_BYTES: usize = 64 * 1024;
+/// Maximum number of external credential references on one component.
 pub const MAX_SECRET_BINDINGS: usize = 64;
+/// Maximum number of capability references on one component.
 pub const MAX_CAPABILITIES: usize = 128;
+/// Maximum length of a provenance reference.
 pub const MAX_PROVENANCE: usize = 128;
 
+/// Names one external credential without embedding its secret value.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SecretBinding {
+    /// Provider-defined name used to bind the credential.
     pub name: String,
+    /// Opaque reference resolved by the credential subsystem at runtime.
     pub credential_ref: String,
 }
 
+/// Lifecycle state persisted for a declarative runtime component.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RuntimeState {
+    /// Definition is valid but has not started.
     Defined,
+    /// Startup has begun and has not reached a final outcome.
     Starting,
+    /// Component is ready for use.
     Ready,
+    /// Startup or execution failed.
     Failed,
+    /// The previous process outcome is unknown and must be reconciled.
     UnknownOutcome,
+    /// State is being reconciled against external runtime evidence.
     Reconciliation,
 }
 
+/// Data-only component definition and its integrity/provenance envelope.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ComponentConfig {
+    /// Schema version used to interpret this record.
     pub schema_version: u32,
+    /// Stable identifier for this component instance.
     pub component_id: String,
+    /// Kind of component described by the provider definition.
     pub component_type: ComponentType,
+    /// Registered provider responsible for interpreting the definition.
     pub provider_id: String,
+    /// Provider schema version used by this definition.
     pub provider_version: u32,
+    /// Provider-specific declarative data; contains no executable identity.
     pub definition_config: Value,
+    /// Last persisted runtime lifecycle state.
     pub runtime_state: RuntimeState,
+    /// Opaque credential references required by the component.
     pub secret_bindings: Vec<SecretBinding>,
+    /// Capabilities requested by the component definition.
     pub capability_refs: Vec<String>,
+    /// Policy revision under which the component was defined.
     pub policy_version: String,
+    /// Reference to the event or record establishing provenance.
     pub provenance_ref: String,
+    /// Monotonically increasing record revision.
     pub revision: u64,
+    /// Canonical SHA-256 digest with this field cleared during hashing.
     pub content_hash: String,
 }
 
+/// Current capability policy used when rehydrating a component.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PolicySnapshot {
+    /// Policy revision identifier.
     pub policy_version: String,
+    /// Capability references currently allowed by the policy.
     pub allowed_capabilities: BTreeSet<String>,
 }
 
+/// Invalid component data, provider mismatch, or fail-closed policy result.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ComponentError {
+    /// A field, bound, or content digest is invalid.
     #[error("invalid component config: {0}")]
     Invalid(&'static str),
+    /// The record uses a schema version this implementation cannot read.
     #[error("unsupported component schema version")]
     UnsupportedVersion,
+    /// The configured provider is absent or incompatible with this component.
     #[error("provider is not registered for this component")]
     UnknownProvider,
+    /// The current policy changed or denies a requested capability.
     #[error("component policy snapshot is stale or capability is denied")]
     PolicyDenied,
+    /// A credential binding is malformed or contains a secret value.
     #[error("secret bindings must contain credential references only")]
     SecretValue,
+    /// No migration is defined for the requested schema version pair.
     #[error("migration is unavailable")]
     MissingMigration,
 }
@@ -76,6 +116,7 @@ fn bounded(v: &str, max: usize) -> bool {
     !v.is_empty() && v.len() <= max && !v.chars().any(char::is_control)
 }
 
+/// Computes the stable SHA-256 digest of a component with `content_hash` cleared.
 pub fn canonical_hash(config: &ComponentConfig) -> Result<String, ComponentError> {
     let mut copy = config.clone();
     copy.content_hash.clear();
@@ -83,6 +124,7 @@ pub fn canonical_hash(config: &ComponentConfig) -> Result<String, ComponentError
     Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
 }
 
+/// Validates schema bounds, credential references, provider compatibility, and digest.
 pub fn validate(config: &ComponentConfig, providers: &Registry) -> Result<(), ComponentError> {
     if config.schema_version != SCHEMA_VERSION {
         return Err(ComponentError::UnsupportedVersion);
@@ -127,6 +169,7 @@ pub fn validate(config: &ComponentConfig, providers: &Registry) -> Result<(), Co
     Ok(())
 }
 
+/// Validates a persisted component against the current provider registry and policy.
 pub fn rehydrate(
     config: &ComponentConfig,
     providers: &Registry,
@@ -144,6 +187,7 @@ pub fn rehydrate(
     Ok(())
 }
 
+/// Migrates a serialized component between supported schema versions.
 pub fn migrate_json(input: Value, from: u32, to: u32) -> Result<Value, ComponentError> {
     if from == to {
         return Ok(input);
@@ -165,6 +209,7 @@ pub fn migrate_json(input: Value, from: u32, to: u32) -> Result<Value, Component
     Err(ComponentError::MissingMigration)
 }
 
+/// Rejects lifecycle changes that are not part of the supported transition graph.
 pub fn validate_transition(from: &RuntimeState, to: &RuntimeState) -> Result<(), ComponentError> {
     let allowed = matches!(
         (from, to),

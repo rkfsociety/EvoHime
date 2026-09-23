@@ -8,46 +8,74 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use thiserror::Error;
 
+/// Contract identifier for host resource telemetry snapshots.
 pub const CONTRACT_VERSION: &str = "host-resource-telemetry/v1";
+/// Revision identifier for the default host pressure thresholds.
 pub const POLICY_REVISION: &str = "host-pressure-policy/v1";
+/// Maximum number of recent snapshots retained by the service.
 pub const MAX_HISTORY: usize = 120;
+/// Maximum number of explanatory reasons attached to one snapshot.
 pub const MAX_REASONS: usize = 8;
+/// Maximum byte length of one pressure reason.
 pub const MAX_REASON_BYTES: usize = 96;
 
+/// Collection or validity state for a measured host resource metric.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricStatus {
+    /// A valid recent value is available.
     Available,
+    /// The collector returned no value.
     Unavailable,
+    /// The collector lacks permission to read the metric.
     PermissionDenied,
+    /// The host or collector does not support this metric.
     Unsupported,
+    /// Collection failed temporarily.
     TransientFailure,
+    /// A value exists but is older than the accepted freshness window.
     Stale,
+    /// The reported sample failed validation.
     InvalidSample,
+    /// Metric collection was not requested or attempted.
     NotCollected,
 }
 
+/// Aggregate resource pressure derived from current validated measurements.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum PressureLevel {
+    /// Pressure cannot be determined from available measurements.
     Unknown,
+    /// Measurements are within normal operating thresholds.
     Normal,
+    /// Available memory is below the elevated threshold.
     Elevated,
+    /// CPU, memory, or storage crossed a high-pressure threshold.
     High,
+    /// Memory or storage crossed a critical threshold.
     Critical,
 }
 
+/// One host measurement with provenance, freshness, and availability status.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MeasuredMetric {
+    /// Metric value; absent when the measurement is unavailable.
     pub value: Option<f64>,
+    /// Unit used by the value, such as percent or bytes.
     pub unit: String,
+    /// Collector or subsystem that produced the sample.
     pub source: String,
+    /// Unix timestamp in milliseconds when the sample was observed.
     pub observed_at_ms: i64,
+    /// Collector-reported validity horizon in milliseconds.
     pub freshness_ms: u64,
+    /// Availability and validity status for the sample.
     pub status: MetricStatus,
 }
 
 impl MeasuredMetric {
+    /// Creates a metric with no value and the supplied unavailable status.
     pub fn unavailable(unit: &str, source: &str, now_ms: i64, status: MetricStatus) -> Self {
         Self {
             value: None,
@@ -59,6 +87,7 @@ impl MeasuredMetric {
         }
     }
 
+    /// Checks value, provenance lengths, and timestamp bounds.
     pub fn validate(&self, now_ms: i64) -> Result<(), TelemetryError> {
         if self.unit.len() > 32
             || self.source.len() > 96
@@ -79,6 +108,7 @@ impl MeasuredMetric {
         Ok(())
     }
 
+    /// Returns whether an available sample falls within the requested age window.
     pub fn is_current(&self, now_ms: i64, max_age_ms: u64) -> bool {
         self.status == MetricStatus::Available
             && now_ms >= self.observed_at_ms
@@ -87,19 +117,29 @@ impl MeasuredMetric {
     }
 }
 
+/// Bounded snapshot of CPU, memory, storage, and derived pressure.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HostResourceSnapshot {
+    /// Telemetry contract identifier.
     pub contract_version: String,
+    /// Unique identifier for this sample snapshot.
     pub snapshot_id: String,
+    /// Unix timestamp in milliseconds for the snapshot.
     pub observed_at_ms: i64,
+    /// CPU utilization measurement as a percentage.
     pub cpu_percent: MeasuredMetric,
+    /// Available memory percentage.
     pub memory_available_percent: MeasuredMetric,
+    /// Free storage percentage for the measured volume.
     pub storage_free_percent: MeasuredMetric,
+    /// Pressure level computed from the measurements.
     pub pressure: PressureLevel,
+    /// Bounded explanations supporting the pressure level.
     pub reasons: Vec<String>,
 }
 
 impl HostResourceSnapshot {
+    /// Validates snapshot identity, reasons, and all constituent measurements.
     pub fn validate(&self, now_ms: i64) -> Result<(), TelemetryError> {
         if self.contract_version != CONTRACT_VERSION
             || self.snapshot_id.is_empty()
@@ -123,15 +163,24 @@ impl HostResourceSnapshot {
     }
 }
 
+/// Thresholds used to derive a pressure level from host measurements.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct PressurePolicy {
+    /// Revision identifier for this threshold set.
     pub revision: &'static str,
+    /// Maximum acceptable measurement age in milliseconds.
     pub max_age_ms: u64,
+    /// Available memory percentage below which pressure is elevated.
     pub memory_elevated_below_percent: f64,
+    /// Available memory percentage below which pressure is high.
     pub memory_high_below_percent: f64,
+    /// Available memory percentage below which pressure is critical.
     pub memory_critical_below_percent: f64,
+    /// Free storage percentage below which pressure is high.
     pub storage_high_below_percent: f64,
+    /// Free storage percentage below which pressure is critical.
     pub storage_critical_below_percent: f64,
+    /// CPU utilization percentage above which pressure is high.
     pub cpu_high_above_percent: f64,
 }
 
@@ -150,14 +199,18 @@ impl Default for PressurePolicy {
     }
 }
 
+/// Invalid sample or inability to determine pressure from current sensors.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum TelemetryError {
+    /// Sample fields or numeric values violate telemetry bounds.
     #[error("invalid telemetry sample")]
     InvalidSample,
+    /// One or more required metrics are stale or unavailable.
     #[error("snapshot is stale or unavailable")]
     UnknownPressure,
 }
 
+/// Validates a snapshot and derives pressure using the supplied thresholds.
 pub fn evaluate(
     snapshot: &HostResourceSnapshot,
     policy: PressurePolicy,
@@ -204,6 +257,7 @@ pub fn evaluate(
     Ok(level)
 }
 
+/// Service holding the active pressure policy and bounded recent history.
 #[derive(Debug, Clone)]
 pub struct HostTelemetryService {
     policy: PressurePolicy,
@@ -211,12 +265,14 @@ pub struct HostTelemetryService {
 }
 
 impl HostTelemetryService {
+    /// Creates an empty telemetry service using the supplied pressure policy.
     pub fn new(policy: PressurePolicy) -> Self {
         Self {
             policy,
             history: VecDeque::with_capacity(MAX_HISTORY),
         }
     }
+    /// Evaluates and records one sample, evicting the oldest when history is full.
     pub fn record(
         &mut self,
         mut snapshot: HostResourceSnapshot,
@@ -230,12 +286,15 @@ impl HostTelemetryService {
         self.history.push_back(snapshot);
         Ok(level)
     }
+    /// Returns the newest retained snapshot, if one has been recorded.
     pub fn latest(&self) -> Option<&HostResourceSnapshot> {
         self.history.back()
     }
+    /// Iterates over retained snapshots from oldest to newest.
     pub fn history(&self) -> impl Iterator<Item = &HostResourceSnapshot> {
         self.history.iter()
     }
+    /// Returns the policy currently used by this service.
     pub fn policy(&self) -> PressurePolicy {
         self.policy
     }

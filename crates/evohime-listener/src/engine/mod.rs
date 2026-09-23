@@ -22,8 +22,11 @@ use serde::Deserialize;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelRung {
+    /// Highest-capacity model rung shipped for normal listening.
     Small,
+    /// Middle model rung used after the first sustained RTF breach.
     Base,
+    /// Lowest-capacity fallback model rung.
     Tiny,
 }
 
@@ -31,6 +34,7 @@ impl ModelRung {
     /// Лестница целиком, от тяжёлой ступени к лёгкой.
     pub const LADDER: [ModelRung; 3] = [ModelRung::Small, ModelRung::Base, ModelRung::Tiny];
 
+    /// Возвращает стабильное имя ступени для манифеста и журналов.
     pub const fn as_str(self) -> &'static str {
         match self {
             ModelRung::Small => "small",
@@ -53,24 +57,37 @@ impl ModelRung {
 /// и никогда не выдаёт отказ за успех.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum EngineUnavailable {
+    /// Runtime tools directory could not be found.
     ToolsDirMissing,
+    /// Runtime manifest is missing.
     ManifestMissing,
+    /// Runtime manifest failed schema or integrity validation.
     ManifestInvalid,
+    /// A manifest path resolves outside the runtime root.
     ManifestPathEscapes,
+    /// A required runtime file is absent.
     FileMissing,
+    /// Runtime file size does not match the signed manifest metadata.
     SizeMismatch,
+    /// Runtime file hash does not match the manifest.
     HashMismatch,
     /// В каталоге рантайма лежит DLL, которой нет в манифесте. Загрузчик
     /// Windows подхватил бы её как зависимость мимо проверки хеша.
     UnexpectedFile,
+    /// A required runtime signature is absent.
     SignatureMissing,
+    /// Runtime signature is not rooted in an accepted signer.
     SignatureUntrusted,
+    /// Runtime binary ABI does not match the listener.
     AbiUnsupported,
+    /// A native runtime library could not be loaded.
     LoadFailed,
+    /// The selected model could not be loaded by the engine.
     ModelLoadFailed,
 }
 
 impl EngineUnavailable {
+    /// All stable unavailability codes in display order.
     pub const ALL: [EngineUnavailable; 13] = [
         EngineUnavailable::ToolsDirMissing,
         EngineUnavailable::ManifestMissing,
@@ -87,6 +104,7 @@ impl EngineUnavailable {
         EngineUnavailable::ModelLoadFailed,
     ];
 
+    /// Returns the stable machine-readable code for this failure.
     pub const fn as_str(self) -> &'static str {
         match self {
             EngineUnavailable::ToolsDirMissing => "tools_dir_missing",
@@ -146,6 +164,7 @@ impl std::fmt::Display for EngineError {
 /// в хранилище заведомо неверные `language = "und"` и `duration_ms = 0`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Recognition {
+    /// Recognized utterance text.
     pub text: String,
     /// Код языка от движка либо `und`, когда он его не сообщил.
     pub language: String,
@@ -154,6 +173,7 @@ pub struct Recognition {
 }
 
 impl Recognition {
+    /// Creates a text-only result with unknown language and no measured duration.
     pub fn text(value: impl Into<String>) -> Self {
         Self {
             text: value.into(),
@@ -163,7 +183,9 @@ impl Recognition {
     }
 }
 
+/// Audio recognition engine that reports bounded segment results.
 pub trait SpeechEngine: Send {
+    /// Recognizes one complete audio segment; partial hypotheses are not emitted.
     fn recognize(&mut self, samples: &[f32]) -> Result<Recognition, EngineError>;
     /// Opaque-токен версии: он уходит в `ambient.engine` и в метаданные
     /// эпизода, поэтому свободного текста в нём быть не может.
@@ -186,10 +208,12 @@ pub struct NullEngine {
 }
 
 impl NullEngine {
+    /// Creates an engine that consistently reports the supplied unavailability reason.
     pub fn new(reason: EngineUnavailable) -> Self {
         Self { reason }
     }
 
+    /// Returns the fixed reason this engine cannot recognize audio.
     pub fn reason(&self) -> EngineUnavailable {
         self.reason
     }
@@ -218,6 +242,7 @@ pub struct FixtureEngine {
 }
 
 impl FixtureEngine {
+    /// Creates a deterministic test engine from preselected recognition outputs.
     pub fn new(outputs: impl IntoIterator<Item = String>) -> Self {
         Self {
             outputs: outputs.into_iter().collect(),

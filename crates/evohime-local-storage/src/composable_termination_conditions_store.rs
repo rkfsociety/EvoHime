@@ -1,8 +1,22 @@
 //! Durable termination policy and first-trigger snapshots.
 use rusqlite::{params, Connection, OptionalExtension};
+
+/// Creates durable termination-policy and per-run state tables.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS termination_policies (id TEXT PRIMARY KEY, version INTEGER NOT NULL, content_json TEXT NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS termination_states (run_id TEXT PRIMARY KEY, policy_id TEXT NOT NULL, state_json TEXT NOT NULL, version INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts a termination policy if its ID has not already been stored.
+///
+/// Returns `false` for an existing policy ID; this operation does not replace
+/// the original policy.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite write error.
 pub fn put_policy(
     c: &Connection,
     id: &str,
@@ -16,6 +30,14 @@ pub fn put_policy(
         params![id, version as i64, json, hash, now],
     )? == 1)
 }
+/// Creates or compare-and-set updates one run's termination state.
+///
+/// `expected == 0` creates version 1; otherwise the update succeeds only when
+/// the stored version equals `expected`, then increments that version.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite write error.
 pub fn put_state(
     c: &Connection,
     run_id: &str,
@@ -34,6 +56,11 @@ pub fn put_state(
     };
     Ok(n == 1)
 }
+/// Loads the serialized termination state for a run, if present.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn get_state(c: &Connection, run_id: &str) -> rusqlite::Result<Option<String>> {
     c.query_row(
         "SELECT state_json FROM termination_states WHERE run_id=?1",

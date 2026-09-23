@@ -5,127 +5,211 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Schema version accepted by team coordination policies.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum number of participants allowed in a team or strategy.
 pub const MAX_MEMBERS: usize = 32;
+/// Maximum routing rules accepted by a strategy.
 pub const MAX_RULES: usize = 64;
+/// Maximum byte length accepted for role and policy text.
 pub const MAX_TEXT: usize = 256;
+/// Hard upper bound on turns in one team session.
 pub const MAX_TURNS: u64 = 100_000;
+/// Schema version accepted by persisted coordination strategies.
 pub const STRATEGY_CONTRACT_VERSION: u32 = 1;
 
+/// Participant identity, profile, and delegated capability allowlist.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamMemberSpec {
+    /// Stable role name used by routing policies.
     pub role: String,
+    /// Agent profile assigned to this participant.
     pub agent_profile: String,
+    /// Capabilities the enclosing runtime may grant to this participant.
     pub allowed_capabilities: Vec<String>,
 }
 
+/// Policy that chooses the next team member to receive a turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CoordinationPolicy {
+    /// Select eligible participants in stable round-robin order.
     RoundRobin,
+    /// Select a participant using a caller-provided selector.
     Selector,
+    /// Route the turn through an explicit handoff.
     DirectedHandoff,
-    RoleRouter { rules: BTreeMap<String, String> },
+    /// Choose a target role using configured role-routing rules.
+    RoleRouter {
+        /// Mapping from event or source role to the target role.
+        rules: BTreeMap<String, String>,
+    },
 }
 
+/// Versioned team membership and turn-limit configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamSpec {
+    /// Serialized contract version; must match the supported version constant.
     pub schema_version: u32,
+    /// Stable team identifier.
     pub id: String,
+    /// Positive revision of this team configuration.
     pub revision: u64,
+    /// Participants eligible for coordination.
     pub members: Vec<TeamMemberSpec>,
+    /// Policy that chooses the next participant.
     pub coordination: CoordinationPolicy,
+    /// Maximum consecutive turns one participant may receive.
     pub max_consecutive_turns_per_member: u32,
+    /// Maximum number of turns in this session.
     pub max_team_turns: u64,
+    /// Maximum repeated selections tolerated before rejecting a selection.
     pub repeated_selection_limit: u32,
 }
 
+/// Mutable selection counters and ownership state for one team session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamCoordinationState {
+    /// Team or strategy identifier owning this state.
     pub team_id: String,
+    /// Configuration revision used to initialize this state.
     pub policy_revision: u64,
+    /// Role currently responsible for the turn, if selected.
     pub current_owner: Option<String>,
+    /// Role that owned the preceding turn, if any.
     pub previous_owner: Option<String>,
+    /// Number of selections made in this session.
     pub turn_index: u64,
+    /// Turn count keyed by participant role.
     pub per_member_turns: BTreeMap<String, u64>,
+    /// Recent roles used to detect repeated selections.
     pub recent_selection_history: Vec<String>,
 }
 
+/// Auditable result of a team member selection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectionDecision {
+    /// Role selected to receive the next turn.
     pub selected_role: String,
+    /// Stable machine-readable reason for the selection.
     pub reason_code: String,
+    /// Input events considered during selection.
     pub input_event_ids: Vec<String>,
+    /// Whether selection used the configured fallback.
     pub fallback: bool,
 }
 
 /// Versioned strategy contract.  The strategy is a selector only: it cannot
 /// create participants, grant capabilities, or execute an effect.
+/// Supported strategy algorithms and routing data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum TeamCoordinationStrategyKind {
+    /// Select eligible participants in stable round-robin order.
     RoundRobin,
+    /// Select an eligible role using deterministic policy rules.
     RuleSelector,
+    /// Accept a bounded model proposal after role eligibility validation.
     ModelSelector,
+    /// Route roles through configured handoff routes.
     HandoffSwarm {
+        /// Allowed transitions keyed by the source role.
         routes: BTreeMap<String, Vec<String>>,
     },
+    /// Route roles along edges in a directed role graph.
     GraphDirected {
+        /// Outgoing target roles keyed by the source role.
         edges: BTreeMap<String, Vec<String>>,
     },
 }
 
+/// Versioned strategy bound to a session and protocol contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamCoordinationStrategy {
+    /// Serialized contract version; must match the supported version constant.
     pub schema_version: u32,
+    /// Stable strategy identifier.
     pub strategy_id: String,
+    /// Positive revision of this team configuration.
     pub revision: u64,
+    /// Session this strategy or state is bound to.
     pub session_id: String,
+    /// Protocol identifier constraining handoff routes.
     pub protocol_id: String,
+    /// Protocol snapshot hash captured for this session.
     pub protocol_hash: String,
+    /// Roles that may be selected by this strategy.
     pub eligible_roles: Vec<String>,
+    /// Selection algorithm and its routing configuration.
     pub kind: TeamCoordinationStrategyKind,
+    /// Optional eligible role used when selection cannot produce a candidate.
     pub fallback_role: Option<String>,
+    /// Maximum consecutive turns one participant may receive.
     pub max_consecutive_turns_per_member: u32,
+    /// Maximum number of turns in this session.
     pub max_team_turns: u64,
+    /// Maximum repeated selections tolerated before rejecting a selection.
     pub repeated_selection_limit: u32,
 }
 
 /// The only value a model selector may propose.  No rationale, prompt,
 /// provider identity, tool name, or executable identity crosses this boundary.
+/// Minimal participant identifier accepted from a selector proposal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParticipantIdentity {
+    /// Proposed participant role; validation must confirm it is eligible.
     pub role: String,
 }
 
+/// Strategy and policy state bound to one session revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StrategySessionState {
+    /// Session this strategy or state is bound to.
     pub session_id: String,
+    /// Stable strategy identifier.
     pub strategy_id: String,
+    /// Strategy revision used to initialize this state.
     pub strategy_revision: u64,
+    /// Protocol snapshot hash captured for this session.
     pub protocol_hash: String,
+    /// Turn counters and current/previous ownership state.
     pub coordination: TeamCoordinationState,
 }
 
+/// Validated and auditable result of strategy selection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StrategySelectionDecision {
+    /// Participant selected by the strategy.
     pub participant: ParticipantIdentity,
+    /// Stable machine-readable reason for the selection.
     pub reason_code: String,
+    /// Input events considered during selection.
     pub input_event_ids: Vec<String>,
+    /// Whether selection used the configured fallback.
     pub fallback: bool,
 }
 
+/// Validation or routing failure while evaluating a coordination policy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoordinationError {
+    /// A field is invalid; the payload is a stable field label.
     Invalid(&'static str),
+    /// The serialized contract version is not supported.
     UnsupportedVersion(u32),
+    /// A proposed role is not part of the team.
     UnknownRole,
+    /// A configured turn or repeated-selection limit was reached.
     LimitReached,
+    /// The selector returned a role that is not eligible.
     InvalidSelector,
+    /// No participant is available for selection.
     NoAvailableMember,
+    /// Strategy configuration failed validation.
     InvalidStrategy,
+    /// The protocol does not declare the requested route.
     ProtocolRouteDenied,
 }
 
+/// Validates a team and returns its SHA-256 hash over canonical JSON bytes.
 pub fn canonical_hash(spec: &TeamSpec) -> Result<String, CoordinationError> {
     validate_team(spec)?;
     let bytes =
@@ -153,6 +237,7 @@ fn valid_hash(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Checks strategy versions, bounds, roles, fallback, and configured routes.
 pub fn validate_strategy(strategy: &TeamCoordinationStrategy) -> Result<(), CoordinationError> {
     if strategy.schema_version != STRATEGY_CONTRACT_VERSION {
         return Err(CoordinationError::UnsupportedVersion(
@@ -211,6 +296,7 @@ pub fn validate_strategy(strategy: &TeamCoordinationStrategy) -> Result<(), Coor
     Ok(())
 }
 
+/// Validates a strategy and returns its SHA-256 hash over canonical JSON bytes.
 pub fn canonical_strategy_hash(
     strategy: &TeamCoordinationStrategy,
 ) -> Result<String, CoordinationError> {
@@ -220,6 +306,7 @@ pub fn canonical_strategy_hash(
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 
+/// Builds a session-bound strategy using team members and turn limits.
 pub fn strategy_from_team(
     team: &TeamSpec,
     session_id: &str,
@@ -251,6 +338,7 @@ pub fn strategy_from_team(
     Ok(strategy)
 }
 
+/// Creates empty strategy ownership and turn counters for a session.
 pub fn initial_strategy_state(
     strategy: &TeamCoordinationStrategy,
 ) -> Result<StrategySessionState, CoordinationError> {
@@ -329,6 +417,7 @@ fn strategy_candidate<'a>(
     Ok((candidate, false))
 }
 
+/// Selects an eligible role, applies bounded fallback, and returns updated session state.
 pub fn select_strategy(
     strategy: &TeamCoordinationStrategy,
     state: &StrategySessionState,
@@ -446,6 +535,7 @@ fn valid_text(value: &str) -> bool {
     !value.is_empty() && value.len() <= MAX_TEXT && !value.chars().any(char::is_control)
 }
 
+/// Validates a team definition before hashing or initializing session state.
 pub fn validate_team(spec: &TeamSpec) -> Result<(), CoordinationError> {
     if spec.schema_version != CONTRACT_VERSION {
         return Err(CoordinationError::UnsupportedVersion(spec.schema_version));
@@ -488,6 +578,7 @@ pub fn validate_team(spec: &TeamSpec) -> Result<(), CoordinationError> {
     Ok(())
 }
 
+/// Creates empty ownership and turn counters for a validated team.
 pub fn initial_state(spec: &TeamSpec) -> Result<TeamCoordinationState, CoordinationError> {
     validate_team(spec)?;
     Ok(TeamCoordinationState {
@@ -501,6 +592,7 @@ pub fn initial_state(spec: &TeamSpec) -> Result<TeamCoordinationState, Coordinat
     })
 }
 
+/// Selects the next team role and updates turn and ownership counters.
 pub fn select_next(
     spec: &TeamSpec,
     state: &TeamCoordinationState,

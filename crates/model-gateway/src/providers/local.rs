@@ -10,24 +10,38 @@ use crate::retry::RetryPolicy;
 use crate::tools::{NativeToolCall, ToolSpec};
 use std::time::Duration;
 
+/// Lifetime of one supervisor-issued local provider capability.
 pub const LOCAL_SESSION_TTL_MS: u64 = 30_000;
+/// Connection timeout for a local-provider request.
 pub const LOCAL_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Overall timeout for a local-provider request.
 pub const LOCAL_TOTAL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Tool identity and argument contract advertised by the local model service.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LocalToolCapability {
+    /// Stable tool name.
     pub name: String,
+    /// Tool schema version used when approval is required.
     pub version: String,
+    /// JSON Schema object describing accepted arguments.
     pub arguments_schema: serde_json::Value,
+    /// Whether Core must obtain approval before dispatching this tool.
     pub requires_approval: bool,
 }
 
+/// Versioned capabilities reported by a supervisor-owned local model.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LocalCapabilityMetadata {
+    /// Capability metadata schema identifier.
     pub schema_version: String,
+    /// Stable local model identifier.
     pub model_id: String,
+    /// Monotonic capability revision.
     pub capability_epoch: u64,
+    /// Whether the local provider supports request cancellation.
     pub cancellation: bool,
+    /// Tool contracts exposed by the local model.
     pub tools: Vec<LocalToolCapability>,
 }
 
@@ -35,13 +49,16 @@ pub struct LocalCapabilityMetadata {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderSessionCapability {
     token_hash: [u8; 32],
+    /// Request identifier to which this one-use capability is bound.
     pub request_id: String,
+    /// Expected service audience for redemption.
     pub audience: String,
     expires_at_ms: u64,
     redeemed: bool,
 }
 
 impl ProviderSessionCapability {
+    /// Issues a time-bounded, request-bound capability from supervisor token bytes.
     pub fn issue(token: &[u8], request_id: impl Into<String>, now_ms: u64) -> Self {
         use sha2::{Digest, Sha256};
         let mut hash = [0; 32];
@@ -55,6 +72,7 @@ impl ProviderSessionCapability {
         }
     }
 
+    /// Redeems this capability once when token, request, audience, and time match.
     pub fn redeem(
         &mut self,
         token: &[u8],
@@ -77,6 +95,7 @@ impl ProviderSessionCapability {
     }
 }
 
+/// Provider adapter constrained to supervisor-authenticated loopback service.
 #[derive(Debug)]
 pub struct LocalProvider {
     inner: LiteRouterProvider,
@@ -84,6 +103,7 @@ pub struct LocalProvider {
 }
 
 impl LocalProvider {
+    /// Creates the adapter and requires a nonempty supervisor session capability.
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
         if config.api_key.trim().is_empty() {
             return Err(ProviderError::Config(
@@ -101,10 +121,12 @@ impl LocalProvider {
         Ok(Self { inner, capability })
     }
 
+    /// Returns the currently validated local capability metadata.
     pub fn capability(&self) -> &LocalCapabilityMetadata {
         &self.capability
     }
 
+    /// Validates capability schema, model identity, revision, and tool declarations.
     pub fn validate_capability(capability: &LocalCapabilityMetadata) -> Result<(), ProviderError> {
         if capability.schema_version.split('-').next_back() != Some("v1")
             || capability.model_id.trim().is_empty()
@@ -125,6 +147,7 @@ impl LocalProvider {
         Ok(())
     }
 
+    /// Checks a native tool call against an advertised local tool schema.
     pub fn validate_tool_call(&self, call: &NativeToolCall) -> Result<(), ProviderError> {
         if call.id.trim().is_empty() || call.name.trim().is_empty() {
             return Err(ProviderError::Config("tool_call_malformed".into()));
@@ -151,6 +174,7 @@ impl LocalProvider {
         Ok(())
     }
 
+    /// Rejects endpoints that are not plain HTTP on a loopback host.
     pub fn validate_loopback(base_url: &str) -> Result<(), ProviderError> {
         let url = reqwest::Url::parse(base_url)
             .map_err(|_| ProviderError::Config("loopback_policy_violation".into()))?;

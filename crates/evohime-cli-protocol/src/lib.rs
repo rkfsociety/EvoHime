@@ -2,6 +2,7 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+#![deny(missing_docs)]
 //! Platform-neutral Core protocol client used by the Windows transport.
 //!
 //! Keeping framing, authentication and command envelopes independent from the
@@ -18,4 +19,5 @@ mod workflow_commands;
 #[cfg(test)]
 mod tests;
 
+/// Authenticated, sequenced client for headless Core commands and events.
 pub use client::CoreClient;

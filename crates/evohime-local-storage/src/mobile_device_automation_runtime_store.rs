@@ -1,8 +1,21 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Maximum accepted serialized mobile automation runtime state size.
 const MAX_RUNTIME_JSON_BYTES: usize = 64 * 1024;
+
+/// Creates the revisioned mobile automation runtime table transactionally.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS mobile_device_automation_runtime (id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(id,revision), UNIQUE(id,idempotency_key));")
 }
+/// Persists a mobile automation runtime revision with replay protection.
+///
+/// JSON larger than 64 KiB is rejected. A repeated idempotency key is accepted
+/// only when its revision and content hash match the original write.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized data, conflicting key reuse, or a
+/// database failure.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -32,6 +45,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Loads the JSON runtime snapshot at the highest revision for `id`.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row("SELECT json FROM mobile_device_automation_runtime WHERE id=?1 ORDER BY revision DESC LIMIT 1",params![id],|x|x.get(0)).optional()
 }

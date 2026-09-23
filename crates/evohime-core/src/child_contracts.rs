@@ -20,30 +20,55 @@ use std::{
 // Constants and Limits
 // ============================================================================
 
+/// Maximum character count for task and correlation identifiers.
 pub const MAX_ID_CHARS: usize = 128;
+/// Maximum character count for a delegated child role.
 pub const MAX_ROLE_CHARS: usize = 64;
+/// Maximum character count for a child-task purpose.
 pub const MAX_PURPOSE_CHARS: usize = 512;
+/// Maximum number of reduced context items sent to a child.
 pub const MAX_CONTEXT_ITEMS: usize = 32;
+/// Maximum character count for one reduced context item.
 pub const MAX_CONTEXT_ITEM_CHARS: usize = 2_048;
+/// Maximum aggregate serialized context size in bytes.
 pub const MAX_CONTEXT_BYTES: usize = 16 * 1024;
+/// Maximum serialized child output size in bytes.
 pub const MAX_OUTPUT_BYTES: usize = 32 * 1024;
+/// Maximum character count for one report text field.
 pub const MAX_REPORT_CHARS: usize = 8_192;
+/// Maximum evidence source references in one report.
 pub const MAX_SOURCES: usize = 32;
+/// Maximum character count for one evidence reference.
 pub const MAX_SOURCE_CHARS: usize = 512;
+/// Maximum grants in a child request.
 pub const MAX_GRANTS: usize = 16;
+/// Maximum character count for one grant value.
 pub const MAX_GRANT_CHARS: usize = 256;
+/// Maximum requested capabilities in a child request.
 pub const MAX_CAPABILITIES: usize = 16;
+/// Maximum character count for one capability identifier.
 pub const MAX_CAPABILITY_CHARS: usize = 64;
+/// Maximum serialized schema size in characters.
 pub const MAX_SCHEMA_CHARS: usize = 4_096;
+/// Maximum character count for a content hash.
 pub const MAX_HASH_CHARS: usize = 64;
+/// Maximum character count for a model identifier.
 pub const MAX_MODEL_ID_CHARS: usize = 128;
+/// Maximum character count for a tool version.
 pub const MAX_TOOL_VERSION_CHARS: usize = 64;
+/// Maximum evidence items in one child report.
 pub const MAX_EVIDENCE: usize = 32;
+/// Maximum changed paths in one child report.
 pub const MAX_CHANGED_PATHS: usize = 64;
+/// Maximum test results in one child report.
 pub const MAX_TESTS: usize = 32;
+/// Maximum risk entries in one child report.
 pub const MAX_RISKS: usize = 32;
+/// Hard upper bound on report revision attempts.
 pub const MAX_REVISIONS: u32 = 3;
+/// Default number of allowed report revisions.
 pub const DEFAULT_MAX_REVISIONS: u32 = 2;
+/// Current major and minor version of child-task contracts.
 pub const CONTRACT_VERSION: ContractVersion = ContractVersion { major: 1, minor: 0 };
 
 // ============================================================================
@@ -55,11 +80,14 @@ pub const CONTRACT_VERSION: ContractVersion = ContractVersion { major: 1, minor:
 /// Minor version changes are backward-compatible additive changes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 pub struct ContractVersion {
+    /// Breaking-compatible contract version component.
     pub major: u32,
+    /// Backward-compatible additive contract version component.
     pub minor: u32,
 }
 
 impl ContractVersion {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
     }
@@ -90,16 +118,19 @@ impl fmt::Display for ContractVersion {
 pub struct CorrelationId(String);
 
 impl CorrelationId {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new(id: impl Into<String>) -> Result<Self, ContractError> {
         let id = id.into();
         validate_text("correlation_id", &id, MAX_ID_CHARS, true)?;
         Ok(Self(id))
     }
 
+    /// Returns the identifier as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
+    /// Creates a fresh correlation identifier for a new child task.
     pub fn generate() -> Self {
         // Generate a deterministic correlation ID based on timestamp and random
         let timestamp = SystemTime::now()
@@ -138,6 +169,7 @@ pub struct CorrelationContext {
 }
 
 impl CorrelationContext {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new(task_id: CorrelationId, child_id: CorrelationId, parent_sequence: u64) -> Self {
         Self {
             task_id,
@@ -148,16 +180,19 @@ impl CorrelationContext {
         }
     }
 
+    /// Associates a tool-call identifier with this correlation context.
     pub fn with_tool_call(mut self, tool_call_id: CorrelationId) -> Self {
         self.tool_call_id = Some(tool_call_id);
         self
     }
 
+    /// Associates a receipt identifier with this correlation context.
     pub fn with_receipt(mut self, receipt_id: CorrelationId) -> Self {
         self.receipt_id = Some(receipt_id);
         self
     }
 
+    /// Checks that the required correlation identifiers are present.
     pub fn validate(&self) -> Result<(), ContractError> {
         // All IDs must be non-empty
         if self.task_id.0.is_empty() {
@@ -185,6 +220,7 @@ pub struct Grant {
 }
 
 impl Grant {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new(grant_type: impl Into<String>) -> Result<Self, ContractError> {
         let grant_type = grant_type.into();
         validate_text("grant_type", &grant_type, MAX_GRANT_CHARS, true)?;
@@ -194,6 +230,7 @@ impl Grant {
         })
     }
 
+    /// Adds a bounded scope to this grant, such as a workspace path.
     pub fn with_scope(mut self, scope: impl Into<String>) -> Result<Self, ContractError> {
         let scope = scope.into();
         validate_text("grant_scope", &scope, MAX_GRANT_CHARS, true)?;
@@ -238,6 +275,7 @@ impl Default for ChildBudget {
 }
 
 impl ChildBudget {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new() -> Self {
         Self {
             max_tokens: None,
@@ -246,16 +284,19 @@ impl ChildBudget {
         }
     }
 
+    /// Sets the maximum token budget for the child task.
     pub fn with_tokens(mut self, tokens: u64) -> Self {
         self.max_tokens = Some(tokens);
         self
     }
 
+    /// Sets the maximum execution time in seconds.
     pub fn with_time(mut self, seconds: u64) -> Self {
         self.max_time_seconds = Some(seconds);
         self
     }
 
+    /// Sets the maximum number of tool calls.
     pub fn with_tool_calls(mut self, calls: u64) -> Self {
         self.max_tool_calls = Some(calls);
         self
@@ -322,6 +363,7 @@ impl Default for Schema {
 }
 
 impl Schema {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new() -> Self {
         Self {
             json_schema: None,
@@ -330,6 +372,7 @@ impl Schema {
         }
     }
 
+    /// Sets and validates the JSON schema used for output validation.
     pub fn with_json_schema(mut self, schema: impl Into<String>) -> Result<Self, ContractError> {
         let schema = schema.into();
         validate_text("json_schema", &schema, MAX_SCHEMA_CHARS, false)?;
@@ -337,16 +380,19 @@ impl Schema {
         Ok(self)
     }
 
+    /// Sets the expected output content type.
     pub fn with_content_type(mut self, content_type: impl Into<String>) -> Self {
         self.content_type = Some(content_type.into());
         self
     }
 
+    /// Sets the maximum accepted serialized content size.
     pub fn with_max_bytes(mut self, max_bytes: usize) -> Self {
         self.max_bytes = Some(max_bytes);
         self
     }
 
+    /// Checks content against the configured schema and size limits.
     pub fn validate_content(&self, content: &str) -> Result<(), ContractError> {
         if let Some(max_bytes) = self.max_bytes {
             if content.len() > max_bytes {
@@ -408,6 +454,7 @@ pub struct Provenance {
 }
 
 impl Provenance {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new(parent_sequence: u64) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -425,6 +472,7 @@ impl Provenance {
         }
     }
 
+    /// Records the hash of the child task input.
     pub fn with_input_hash(mut self, hash: impl Into<String>) -> Result<Self, ContractError> {
         let hash = hash.into();
         validate_text("input_hash", &hash, MAX_HASH_CHARS, true)?;
@@ -432,6 +480,7 @@ impl Provenance {
         Ok(self)
     }
 
+    /// Records the hash of the evidence used by the task.
     pub fn with_evidence_hash(mut self, hash: impl Into<String>) -> Result<Self, ContractError> {
         let hash = hash.into();
         validate_text("evidence_hash", &hash, MAX_HASH_CHARS, true)?;
@@ -439,6 +488,7 @@ impl Provenance {
         Ok(self)
     }
 
+    /// Records the version of the tool used.
     pub fn with_tool_version(mut self, version: impl Into<String>) -> Result<Self, ContractError> {
         let version = version.into();
         validate_text("tool_version", &version, MAX_TOOL_VERSION_CHARS, false)?;
@@ -446,6 +496,7 @@ impl Provenance {
         Ok(self)
     }
 
+    /// Records the schema version used for validation.
     pub fn with_schema_version(
         mut self,
         version: impl Into<String>,
@@ -456,6 +507,7 @@ impl Provenance {
         Ok(self)
     }
 
+    /// Records the model identifier used for the task.
     pub fn with_model_id(mut self, model_id: impl Into<String>) -> Result<Self, ContractError> {
         let model_id = model_id.into();
         validate_text("model_id", &model_id, MAX_MODEL_ID_CHARS, true)?;
@@ -463,6 +515,7 @@ impl Provenance {
         Ok(self)
     }
 
+    /// Marks this provenance record as completed at the current time.
     pub fn mark_completed(mut self) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -531,10 +584,12 @@ pub struct TypedChildTaskRequest {
     #[serde(default)]
     pub allow_output_offload: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Privacy classification applied when output is offloaded.
     pub output_privacy: Option<String>,
 }
 
 impl TypedChildTaskRequest {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new(
         child_task_id: impl Into<String>,
         parent_task_id: impl Into<String>,
@@ -575,6 +630,7 @@ impl TypedChildTaskRequest {
         })
     }
 
+    /// Sets the reduced context after checking item and aggregate bounds.
     pub fn with_context(mut self, context: Vec<String>) -> Result<Self, ContractError> {
         if context.len() > MAX_CONTEXT_ITEMS {
             return Err(ContractError::TooManyItems {
@@ -596,6 +652,7 @@ impl TypedChildTaskRequest {
         Ok(self)
     }
 
+    /// Sets the child report size limit within the supported maximum.
     pub fn with_max_output_bytes(mut self, bytes: usize) -> Result<Self, ContractError> {
         if bytes == 0 || bytes > MAX_OUTPUT_BYTES {
             return Err(ContractError::OutputTooLarge {
@@ -607,6 +664,7 @@ impl TypedChildTaskRequest {
         Ok(self)
     }
 
+    /// Sets requested capabilities after validating their count and identifiers.
     pub fn with_capabilities(mut self, capabilities: Vec<String>) -> Result<Self, ContractError> {
         if capabilities.len() > MAX_CAPABILITIES {
             return Err(ContractError::TooManyItems {
@@ -624,6 +682,7 @@ impl TypedChildTaskRequest {
         Ok(self)
     }
 
+    /// Sets child grants after validating bounds and grant text.
     pub fn with_grants(mut self, grants: Vec<Grant>) -> Result<Self, ContractError> {
         if grants.len() > MAX_GRANTS {
             return Err(ContractError::TooManyItems {
@@ -635,21 +694,25 @@ impl TypedChildTaskRequest {
         Ok(self)
     }
 
+    /// Associates the schema used to validate child input.
     pub fn with_input_schema(mut self, schema: Schema) -> Self {
         self.input_schema = Some(schema);
         self
     }
 
+    /// Associates the schema used to validate child output.
     pub fn with_output_schema(mut self, schema: Schema) -> Self {
         self.output_schema = Some(schema);
         self
     }
 
+    /// Sets resource limits for the child task.
     pub fn with_budget(mut self, budget: ChildBudget) -> Self {
         self.budget = Some(budget);
         self
     }
 
+    /// Sets bounded criteria used by the parent to accept the report.
     pub fn with_acceptance_criteria(
         mut self,
         criteria: impl Into<String>,
@@ -660,11 +723,13 @@ impl TypedChildTaskRequest {
         Ok(self)
     }
 
+    /// Sets the report revision allowance within supported bounds.
     pub fn with_max_revisions(mut self, max: u32) -> Self {
         self.max_revisions = Some(max.min(MAX_REVISIONS));
         self
     }
 
+    /// Sets accessible context identifiers after validating the allowlist.
     pub fn with_input_context_ids(mut self, ids: Vec<String>) -> Result<Self, ContractError> {
         if ids.len() > MAX_CONTEXT_ITEMS {
             return Err(ContractError::TooManyItems {
@@ -679,6 +744,7 @@ impl TypedChildTaskRequest {
         Ok(self)
     }
 
+    /// Configures whether large output may be offloaded and its privacy class.
     pub fn with_output_offload(mut self, enabled: bool, privacy: Option<String>) -> Self {
         self.allow_output_offload = enabled;
         self.output_privacy = privacy;
@@ -824,9 +890,13 @@ impl TypedChildTaskRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TypedReportStatus {
+    /// The child completed the requested task.
     Complete,
+    /// The child returned a bounded result but could not finish fully.
     Partial,
+    /// The request or result was rejected by validation.
     Rejected,
+    /// Execution failed before producing an acceptable report.
     Failed,
 }
 
@@ -864,42 +934,61 @@ pub struct TypedChildReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accepted: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Structured evidence items supporting the report.
     pub evidence: Vec<EvidenceItem>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Repository paths changed by the child task.
     pub changed_paths: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Test outcomes reported by the child task.
     pub tests: Vec<TestResult>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Risks identified while performing the child task.
     pub risks: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Suggested next step for the parent task.
     pub next_action: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Reference to a validated offloaded report artifact.
     pub output_artifact: Option<ArtifactOutputRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Evidence locator and integrity metadata included in a typed report.
 pub struct EvidenceItem {
+    /// Bounded locator for the evidence or artifact.
     pub locator: String,
+    /// Human-readable description of the evidence or artifact.
     pub summary: String,
+    /// Integrity hash of the referenced content.
     pub content_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One named test outcome reported by a child task.
 pub struct TestResult {
+    /// Test name or stable identifier.
     pub name: String,
+    /// Reported test outcome.
     pub status: String,
     #[serde(default)]
+    /// Optional diagnostic detail for the test result.
     pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Locator and integrity metadata for offloaded child output.
 pub struct ArtifactOutputRef {
+    /// Bounded locator for the evidence or artifact.
     pub locator: String,
+    /// Integrity hash of the referenced content.
     pub content_hash: String,
+    /// Human-readable description of the evidence or artifact.
     pub summary: String,
 }
 
 impl TypedChildReport {
+    /// Validates the supplied value and constructs a new contract object.
     pub fn new(
         child_task_id: impl Into<String>,
         parent_task_id: impl Into<String>,
@@ -935,11 +1024,13 @@ impl TypedChildReport {
         })
     }
 
+    /// Sets the report completion status.
     pub fn with_status(mut self, status: TypedReportStatus) -> Self {
         self.status = status;
         self
     }
 
+    /// Sets and validates the report summary.
     pub fn with_summary(mut self, summary: impl Into<String>) -> Result<Self, ContractError> {
         let summary = summary.into();
         validate_text("summary", &summary, MAX_REPORT_CHARS, true)?;
@@ -948,6 +1039,7 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets findings after checking report bounds.
     pub fn with_findings(mut self, findings: Vec<String>) -> Result<Self, ContractError> {
         if findings.len() > MAX_CONTEXT_ITEMS {
             return Err(ContractError::TooManyItems {
@@ -963,6 +1055,7 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets evidence references after checking source bounds.
     pub fn with_sources(mut self, sources: Vec<String>) -> Result<Self, ContractError> {
         if sources.len() > MAX_SOURCES {
             return Err(ContractError::TooManyItems {
@@ -982,11 +1075,13 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets the confidence percentage.
     pub fn with_confidence(mut self, percent: u8) -> Self {
         self.confidence_percent = percent.min(100);
         self
     }
 
+    /// Sets report output data after checking size and content constraints.
     pub fn with_output_data(mut self, data: impl Into<String>) -> Result<Self, ContractError> {
         let data = data.into();
         // Validate against output schema if present
@@ -995,21 +1090,25 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets bounded error descriptions for the report.
     pub fn with_errors(mut self, errors: Vec<String>) -> Self {
         self.errors = Some(errors);
         self
     }
 
+    /// Sets the revision number for a revised report.
     pub fn with_revision(mut self, revision: u32) -> Self {
         self.revision = Some(revision);
         self
     }
 
+    /// Sets whether the parent accepted this report.
     pub fn with_accepted(mut self, accepted: bool) -> Self {
         self.accepted = Some(accepted);
         self
     }
 
+    /// Sets evidence items after validating their count and fields.
     pub fn with_evidence(mut self, evidence: Vec<EvidenceItem>) -> Result<Self, ContractError> {
         if evidence.len() > MAX_EVIDENCE {
             return Err(ContractError::TooManyItems {
@@ -1021,6 +1120,7 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets changed paths after validating path bounds.
     pub fn with_changed_paths(mut self, paths: Vec<String>) -> Result<Self, ContractError> {
         if paths.len() > MAX_CHANGED_PATHS {
             return Err(ContractError::TooManyItems {
@@ -1032,6 +1132,7 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets test results after validating their count and fields.
     pub fn with_tests(mut self, tests: Vec<TestResult>) -> Result<Self, ContractError> {
         if tests.len() > MAX_TESTS {
             return Err(ContractError::TooManyItems {
@@ -1043,6 +1144,7 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets risk descriptions after checking report bounds.
     pub fn with_risks(mut self, risks: Vec<String>) -> Result<Self, ContractError> {
         if risks.len() > MAX_RISKS {
             return Err(ContractError::TooManyItems {
@@ -1054,6 +1156,7 @@ impl TypedChildReport {
         Ok(self)
     }
 
+    /// Sets and validates the next action for the parent.
     pub fn with_next_action(mut self, action: impl Into<String>) -> Result<Self, ContractError> {
         let action = action.into();
         validate_text("next_action", &action, MAX_PURPOSE_CHARS, false)?;
@@ -1242,6 +1345,7 @@ pub fn validate_contract_version(
     }
 }
 
+/// Ensures every requested context identifier is in the parent-provided allowlist.
 pub fn validate_context_allowlist(
     request: &TypedChildTaskRequest,
     accessible_ids: &BTreeSet<String>,
@@ -1296,44 +1400,99 @@ pub fn validate_budget_subset(
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Invalid, oversized, incompatible, or unauthorized child contract data.
 pub enum ContractError {
     // Basic validation errors
+    /// A required text field is empty.
     EmptyField(&'static str),
-    FieldTooLong { field: &'static str, max: usize },
-    TooManyItems { field: &'static str, max: usize },
-    ContentTooLarge { actual: usize, max: usize },
-    OutputTooLarge { actual: usize, max: usize },
-    ContextTooLarge { actual: usize, max: usize },
+    /// A named text field exceeded its character bound.
+    FieldTooLong {
+        /// Name of the text field that exceeded its bound.
+        field: &'static str,
+        /// Maximum permitted character count.
+        max: usize,
+    },
+    /// A named collection exceeded its item-count bound.
+    TooManyItems {
+        /// Name of the collection that exceeded its bound.
+        field: &'static str,
+        /// Maximum permitted number of items.
+        max: usize,
+    },
+    /// Content exceeded the schema byte limit.
+    ContentTooLarge {
+        /// Actual content size in bytes.
+        actual: usize,
+        /// Maximum content size in bytes.
+        max: usize,
+    },
+    /// Serialized output exceeded the report size limit.
+    OutputTooLarge {
+        /// Actual serialized output size in bytes.
+        actual: usize,
+        /// Maximum accepted output size in bytes.
+        max: usize,
+    },
+    /// Aggregate child context exceeded its byte limit.
+    ContextTooLarge {
+        /// Actual aggregate context size in bytes.
+        actual: usize,
+        /// Maximum accepted context size in bytes.
+        max: usize,
+    },
+    /// Content did not satisfy its declared schema.
     SchemaValidation(String),
+    /// The contract versions are incompatible.
     VersionMismatch,
+    /// The recorded provenance no longer matches the request.
     StaleProvenance,
-    ContextIdNotAccessible { id: String },
+    /// A requested context identifier is outside the supplied allowlist.
+    ContextIdNotAccessible {
+        /// Context identifier outside the caller-provided allowlist.
+        id: String,
+    },
+    /// The report revision allowance was exhausted.
     TooManyRevisions,
+    /// The child grant set exceeds the parent grant set.
     GrantDrift,
+    /// Output artifact offload failed validation.
     ArtifactOffload(String),
 
     // Capability errors
+    /// The request contains a capability unavailable to child tasks.
     ForbiddenCapability(String),
+    /// A child request attempted to delegate another child.
     NestedChildForbidden,
 
     // Grant errors
-    GrantEscalation { grant: String },
+    /// A requested grant exceeds the parent grant.
+    GrantEscalation {
+        /// Child grant that exceeds the parent grant set.
+        grant: String,
+    },
+    /// The child budget exceeds the parent budget.
     BudgetExceedsParent,
 
     // Correlation errors
+    /// Correlation identifiers do not match the child request.
     CorrelationMismatch,
 
     // Task matching errors
+    /// The report child task identifier does not match the request.
     TaskMismatch,
+    /// The report parent task identifier does not match the request.
     ParentTaskMismatch,
 
     // Source errors
+    /// The report contains duplicate evidence sources.
     DuplicateSource,
 
     // Secret content
+    /// Report content appears to contain a secret or credential.
     SecretLikeContent,
 
     // Serialization
+    /// A contract value could not be serialized.
     SerializationError,
 }
 

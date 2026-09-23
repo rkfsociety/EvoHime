@@ -3,9 +3,23 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 const MAX_LIST_ROWS: usize = 256;
 const MAX_ITEM_BYTES: usize = 64 * 1024;
+
+/// Installs current-item and append-only transition-event tables.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> Result<(), rusqlite::Error> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS human_work_items (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL, item_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS human_work_item_events (item_id TEXT NOT NULL, revision INTEGER NOT NULL, event_type TEXT NOT NULL, metadata_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(item_id, revision));")
 }
+/// Saves a human work item and its transition event as one revisioned update.
+///
+/// Returns `false` for oversized JSON, a stale/equal revision, or an existing
+/// event at that revision. In those cases the transaction is not committed.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite error for failed reads or writes.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -41,6 +55,11 @@ pub fn save(
     tx.commit()?;
     Ok(true)
 }
+/// Loads serialized work items ordered by ID, capped at 256 rows.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     let mut s = c.prepare("SELECT item_json FROM human_work_items ORDER BY id LIMIT ?1")?;
     let rows = s.query_map([MAX_LIST_ROWS as i64], |r| r.get(0))?.collect();

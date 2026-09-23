@@ -5,41 +5,66 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Upper bound accepted for the iteration budget.
 pub const MAX_ITERATIONS: u32 = 10_000;
+/// Upper bound accepted for the tool-call budget.
 pub const MAX_TOOL_CALLS: u64 = 100_000;
+/// Upper bound accepted for the token budget.
 pub const MAX_TOKENS: u64 = 10_000_000;
+/// Upper bound accepted for the cost budget in micro-units.
 pub const MAX_COST_MICROS: u64 = 100_000_000;
 
+/// Immutable per-run limits checked before dispatching effects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunPolicy {
+    /// Maximum number of agent iterations.
     pub max_iterations: u32,
+    /// Maximum elapsed wall-clock time in milliseconds.
     pub max_wall_clock_ms: u64,
+    /// Maximum number of dispatched tool calls.
     pub max_tool_calls: u64,
+    /// Maximum number of model tokens consumed.
     pub max_tokens: u64,
+    /// Maximum model cost in micro-units.
     pub max_cost_micros: u64,
+    /// Whether effects require approval before dispatch.
     pub approval_required: bool,
 }
 
+/// Resource usage accumulated by one run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct RunUsage {
+    /// Number of iterations used.
     pub iterations: u32,
+    /// Elapsed wall-clock time in milliseconds.
     pub wall_clock_ms: u64,
+    /// Number of tool calls dispatched.
     pub tool_calls: u64,
+    /// Number of model tokens consumed.
     pub tokens: u64,
+    /// Model cost accumulated in micro-units.
     pub cost_micros: u64,
 }
 
+/// Terminal or gating condition reported for a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunStopReason {
+    /// The run completed its requested work.
     Completed,
+    /// The run is waiting for required user approval.
     ApprovalRequired,
+    /// The run was cancelled.
     Cancelled,
+    /// At least one configured resource limit was exceeded.
     BudgetExceeded,
+    /// The run's authorized scope no longer matches.
     ScopeDrift,
+    /// The selected model provider is unavailable.
     ProviderUnavailable,
 }
 
 impl RunPolicy {
+    /// Checks that all configured limits are valid and within implementation bounds.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.max_iterations == 0 || self.max_iterations > MAX_ITERATIONS {
             return Err("max_iterations out of bounds");
@@ -59,6 +84,7 @@ impl RunPolicy {
         Ok(())
     }
 
+    /// Rejects usage that exceeds any configured per-run limit.
     pub fn check(&self, usage: RunUsage) -> Result<(), RunStopReason> {
         if usage.iterations > self.max_iterations
             || usage.wall_clock_ms > self.max_wall_clock_ms

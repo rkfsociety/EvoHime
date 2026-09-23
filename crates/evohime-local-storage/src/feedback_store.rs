@@ -5,7 +5,7 @@
 //! registered in `lib.rs`'s migration ladder (SCHEMA_VERSION 13).
 //!
 //! Feedback data is local-only by construction. Nothing in this module
-//! sends data anywhere; see [`external_telemetry_allowed`] for the single,
+//! sends data anywhere; see [`crate::feedback_store::external_telemetry_allowed`] for the single,
 //! explicit, default-closed gate any *future* external telemetry sink must
 //! call before it may read feedback rows. No such sink exists yet in this
 //! codebase, and this module does not build one -- it only documents and
@@ -14,14 +14,23 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+/// Maximum UTF-8 byte length of a feedback record identifier.
 pub const MAX_ID_BYTES: usize = 256;
+/// Maximum UTF-8 byte length of a run identifier.
 pub const MAX_RUN_ID_BYTES: usize = 256;
+/// Maximum UTF-8 byte length of an optional task identifier.
 pub const MAX_TASK_ID_BYTES: usize = 256;
+/// Maximum UTF-8 byte length of an optional subject reference.
 pub const MAX_SUBJECT_REF_BYTES: usize = 256;
+/// Maximum UTF-8 byte length of a correction.
 pub const MAX_CORRECTION_BYTES: usize = 4 * 1024;
+/// Maximum UTF-8 byte length of a rejection reason.
 pub const MAX_REJECTION_REASON_BYTES: usize = 1024;
+/// Maximum UTF-8 byte length of an outcome label.
 pub const MAX_OUTCOME_BYTES: usize = 64;
+/// Maximum UTF-8 byte length of provenance text.
 pub const MAX_PROVENANCE_BYTES: usize = 2 * 1024;
+/// Maximum UTF-8 byte length of the timestamp representation.
 pub const MAX_TIMESTAMP_BYTES: usize = 64;
 
 /// Useful/not-useful signal. Tri-state: an explicit "neutral" exists for
@@ -30,8 +39,11 @@ pub const MAX_TIMESTAMP_BYTES: usize = 64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedbackSignal {
+    /// The user indicated that the associated result was useful.
     Useful,
+    /// The user indicated that the associated result was not useful.
     NotUseful,
+    /// Feedback was supplied without a direct usefulness judgment.
     Neutral,
 }
 
@@ -60,31 +72,40 @@ impl FeedbackSignal {
 /// text field here.
 pub type FeedbackOutcome = Option<String>;
 
+/// Validated user feedback tied to an existing run and optional subject.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeedbackRecord {
+    /// Unique identifier for the feedback row.
     pub id: String,
     /// Correlates to the existing `runs.id` / audit-trail `run_id` --
     /// feedback never invents a new correlation id.
     pub run_id: String,
+    /// Optional task identifier associated with the run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
     /// Existing tool-call / effect / approval identifier this feedback is
     /// about (e.g. `run_effects.effect_id` or an `ApprovalAuditEntry.approval_id`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subject_ref: Option<String>,
+    /// Explicit usefulness signal.
     pub signal: FeedbackSignal,
+    /// Optional correction text, redacted before persistence.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correction: Option<String>,
+    /// Optional reason for rejecting or disapproving the result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rejection_reason: Option<String>,
     /// e.g. "tool_succeeded", "tool_failed", "approval_granted", "approval_denied".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: FeedbackOutcome,
+    /// Origin of the feedback, such as a UI or tool-result channel.
     pub provenance: String,
+    /// Timestamp string supplied by the caller.
     pub created_at: String,
 }
 
 impl FeedbackRecord {
+    /// Builds and validates a record, redacting sensitive patterns in free-text feedback.
     pub fn new(input: FeedbackRecordInput) -> Result<Self, FeedbackStoreError> {
         let record = Self {
             id: input.id,
@@ -102,6 +123,7 @@ impl FeedbackRecord {
         Ok(record)
     }
 
+    /// Validates required identifiers and all configured byte-length limits.
     pub fn validate(&self) -> Result<(), FeedbackStoreError> {
         validate_required("id", &self.id, MAX_ID_BYTES)?;
         validate_required("run_id", &self.run_id, MAX_RUN_ID_BYTES)?;
@@ -130,28 +152,52 @@ impl FeedbackRecord {
     }
 }
 
+/// Caller-provided fields used to construct a validated [`FeedbackRecord`].
 #[derive(Debug, Clone)]
 pub struct FeedbackRecordInput {
+    /// Unique feedback identifier.
     pub id: String,
+    /// Existing run identifier to which feedback belongs.
     pub run_id: String,
+    /// Optional task identifier.
     pub task_id: Option<String>,
+    /// Optional tool call, effect, or approval identifier discussed by the feedback.
     pub subject_ref: Option<String>,
+    /// Usefulness judgment.
     pub signal: FeedbackSignal,
+    /// Optional correction, redacted by [`FeedbackRecord::new`].
     pub correction: Option<String>,
+    /// Optional rejection explanation, redacted by [`FeedbackRecord::new`].
     pub rejection_reason: Option<String>,
+    /// Optional bounded outcome label.
     pub outcome: FeedbackOutcome,
+    /// Source or channel that provided the feedback.
     pub provenance: String,
+    /// Timestamp string supplied by the caller.
     pub created_at: String,
 }
 
+/// Validation and database errors produced by feedback persistence operations.
 #[derive(Debug, thiserror::Error)]
 pub enum FeedbackStoreError {
+    /// A required field was empty.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Name of the required field that was empty.
+        field: &'static str,
+    },
+    /// A field exceeded its configured maximum byte length.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: usize },
+    Limit {
+        /// Name of the field that exceeded its bound.
+        field: &'static str,
+        /// Maximum allowed byte length.
+        max: usize,
+    },
+    /// A persisted feedback signal did not match a known value.
     #[error("invalid feedback signal")]
     InvalidSignal,
+    /// SQLite rejected a query or row conversion.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -209,6 +255,10 @@ fn redact_sensitive(value: &str) -> String {
 /// obvious place to check, and so the "opt-in only" contract is testable
 /// now rather than assumed later. Always call this immediately before any
 /// prospective external send -- never cache its result.
+/// Returns the explicit opt-in value used to guard any future external telemetry send.
+///
+/// The value is default-closed when callers pass `false`; callers must check it immediately
+/// before sending and must not cache the result.
 pub fn external_telemetry_allowed(opt_in_setting: bool) -> bool {
     opt_in_setting
 }
@@ -216,10 +266,14 @@ pub fn external_telemetry_allowed(opt_in_setting: bool) -> bool {
 /// Simple local aggregation: counts of feedback by signal, and rejection
 /// reason frequency. Intentionally not a general analytics engine -- P1
 /// scope only needs counts/group-by.
+/// Local counts and ranked groups produced by [`FeedbackStoreSql::aggregate`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeedbackAggregate {
+    /// Number of records with [`FeedbackSignal::Useful`].
     pub useful_count: i64,
+    /// Number of records with [`FeedbackSignal::NotUseful`].
     pub not_useful_count: i64,
+    /// Number of records with [`FeedbackSignal::Neutral`].
     pub neutral_count: i64,
     /// (rejection_reason, count), highest count first, bounded to the
     /// caller-supplied limit.
@@ -228,21 +282,25 @@ pub struct FeedbackAggregate {
     pub outcomes: Vec<(String, i64)>,
 }
 
-/// Parameterized SQL only; schema creation and migrations remain external.
+/// Parameterized SQL operations for feedback rows; schema creation remains external.
 pub struct FeedbackStoreSql;
 
 impl FeedbackStoreSql {
+    /// Insert statement used by [`Self::insert`].
     pub const INSERT: &'static str = "INSERT INTO feedback_entries
         (id, run_id, task_id, subject_ref, signal, correction, rejection_reason,
          outcome, provenance, created_at)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)";
+    /// Lookup statement used by [`Self::get_by_id`].
     pub const SELECT_BY_ID: &'static str = "SELECT id, run_id, task_id, subject_ref, signal,
         correction, rejection_reason, outcome, provenance, created_at
         FROM feedback_entries WHERE id = ?1";
+    /// Run listing statement used by [`Self::list_by_run`].
     pub const LIST_BY_RUN: &'static str = "SELECT id, run_id, task_id, subject_ref, signal,
         correction, rejection_reason, outcome, provenance, created_at
         FROM feedback_entries WHERE run_id = ?1 ORDER BY created_at DESC, id ASC LIMIT ?2";
 
+    /// Validates and inserts one feedback record using parameterized SQL.
     pub fn insert(
         connection: &Connection,
         record: &FeedbackRecord,
@@ -266,6 +324,7 @@ impl FeedbackStoreSql {
         Ok(())
     }
 
+    /// Retrieves a feedback record by its unique identifier.
     pub fn get_by_id(
         connection: &Connection,
         id: &str,

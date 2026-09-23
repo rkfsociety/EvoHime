@@ -7,28 +7,46 @@ use uuid::Uuid;
 
 use crate::tools;
 
+/// Errors returned while validating, authorizing, or executing a tool call.
 #[derive(Debug, Error)]
 pub enum ToolError {
+    /// No registered tool has the requested name.
     #[error("unknown tool: {0}")]
     UnknownTool(String),
+    /// The structured input is invalid for the selected tool.
     #[error("invalid input for {tool}: {message}")]
-    InvalidInput { tool: String, message: String },
+    InvalidInput {
+        /// Tool whose input failed validation.
+        tool: String,
+        /// Reason the supplied input was rejected.
+        message: String,
+    },
+    /// The permission policy denied the requested operation.
     #[error("permission denied: {0:?}")]
     PermissionDenied(Permission),
+    /// A referenced tool resource does not exist in the workspace.
     #[error("resource not found for {tool}: {path}{hint}")]
     NotFound {
+        /// Tool whose operation referenced the missing resource.
         tool: String,
+        /// Missing workspace-relative resource path.
         path: String,
+        /// Optional diagnostic hint for locating the resource.
         hint: String,
     },
+    /// The call requires a matching approval before execution.
     #[error("approval required for {}: {}", .0.tool, .0.approval_id)]
     NeedsApproval(Box<ApprovalRequired>),
+    /// The supplied approval does not match this call's identity and input.
     #[error("approval does not match this call")]
     ApprovalMismatch,
+    /// The matching approval was denied.
     #[error("approval was denied for this call")]
     ApprovalDenied,
+    /// The tool failed while performing its operation.
     #[error("tool execution failed: {0}")]
     Execution(String),
+    /// The configured tool deadline elapsed before completion.
     #[error("tool timed out after {0:?}")]
     TimedOut(Duration),
 }
@@ -38,36 +56,52 @@ pub enum ToolError {
 /// Boxed inside the error on purpose: it carries the whole tool input and the
 /// approval preview, so inlining it would put ~250 bytes on every
 /// `Result<_, ToolError>` in the crate, including the happy path.
+/// Context and preview required to approve a pending tool call.
 #[derive(Debug, Clone)]
 pub struct ApprovalRequired {
+    /// Registered tool name.
     pub tool: String,
+    /// Permission required by the call.
     pub permission: Permission,
+    /// Resolved resource scope shown to the approver.
     pub scope: String,
+    /// Identifier binding the approval decision to this call.
     pub approval_id: uuid::Uuid,
+    /// Structured input covered by the approval.
     pub input: Value,
+    /// Human-readable preview of the requested effect.
     pub preview: ApprovalPreview,
 }
 
+/// A chunk of output emitted while a tool is running.
 #[derive(Debug, Clone)]
 pub struct ToolProgress {
+    /// Output stream label, commonly `stdout` or `stderr`.
     pub stream: &'static str,
+    /// Text appended to the named stream.
     pub delta: String,
 }
 
+/// Per-call workspace, task, session, and optional progress context.
 #[derive(Debug, Clone)]
 pub struct ToolContext {
+    /// Absolute root of the task workspace.
     pub workspace_root: PathBuf,
+    /// Stable identity of the task invoking the tool.
     pub task_id: Uuid,
+    /// Optional permission session associated with the task.
     pub session_id: Option<Uuid>,
     /// Optional live progress channel (e.g. shell stdout/stderr chunks).
     pub progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ToolProgress>>,
 }
 
 impl ToolContext {
+    /// Creates the filesystem sandbox rooted at this context's workspace.
     pub fn sandbox(&self) -> Result<crate::WorkspaceSandbox, ToolError> {
         crate::WorkspaceSandbox::new(&self.workspace_root)
     }
 
+    /// Sends a progress chunk when a receiver is attached to this context.
     pub fn emit_progress(&self, stream: &'static str, delta: impl Into<String>) {
         if let Some(tx) = &self.progress_tx {
             let _ = tx.send(ToolProgress {
@@ -78,17 +112,25 @@ impl ToolContext {
     }
 }
 
+/// Text and structured output returned by a completed tool call.
 #[derive(Debug, Clone)]
 pub struct ToolResult {
+    /// Human-readable output for the caller.
     pub output: String,
+    /// Machine-readable output value.
     pub structured: Value,
 }
 
+/// Static registration data and policy requirements for a tool.
 #[derive(Debug, Clone)]
 pub struct ToolDefinition {
+    /// Stable tool identifier used for dispatch.
     pub name: &'static str,
+    /// Short user-facing description of the tool.
     pub description: &'static str,
+    /// Permissions checked before the tool can execute.
     pub permissions: &'static [Permission],
+    /// Maximum execution duration.
     pub timeout: Duration,
 }
 
@@ -152,20 +194,30 @@ impl ToolDefinition {
     }
 }
 
+/// Result of checking policy and scope without dispatching a tool.
 #[derive(Debug, Clone)]
 pub enum ToolPreflightDecision {
+    /// Policy permits this call without human approval.
     Allowed {
+        /// Canonical scope authorized for the operation.
         scope: String,
+        /// Summary presented if approval is requested later.
         preview: ApprovalPreview,
     },
+    /// Policy explicitly denied the required permission.
     Denied(Permission),
+    /// Policy requires approval before the tool can be dispatched.
     ApprovalRequired {
+        /// Permission that requires approval.
         permission: Permission,
+        /// Canonical scope covered by the approval.
         scope: String,
+        /// Summary presented to the approver.
         preview: ApprovalPreview,
     },
 }
 
+/// Registry for builtin tools, policy checks, approvals, and dispatch.
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: HashMap<&'static str, ToolDefinition>,
@@ -174,10 +226,17 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
+    /// Creates a registry containing all builtin tools and default policy.
+    ///
+    /// ```
+    /// let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
+    /// assert!(registry.list().iter().any(|tool| tool.name == "filesystem.read"));
+    /// ```
     pub fn bootstrap() -> Self {
         Self::bootstrap_with_permissions(PermissionEngine::new())
     }
 
+    /// Creates a builtin registry backed by the supplied permission engine.
     pub fn bootstrap_with_permissions(permissions: PermissionEngine) -> Self {
         let mut registry = Self::with_permissions(permissions);
         registry.register(ToolDefinition {
@@ -548,10 +607,12 @@ impl ToolRegistry {
         registry
     }
 
+    /// Creates an empty registry using the default permission engine.
     pub fn new() -> Self {
         Self::with_permissions(PermissionEngine::new())
     }
 
+    /// Creates an empty registry backed by the supplied permission engine.
     pub fn with_permissions(permissions: PermissionEngine) -> Self {
         Self {
             tools: HashMap::new(),
@@ -560,18 +621,21 @@ impl ToolRegistry {
         }
     }
 
+    /// Adds or replaces a registration and its derived manifest.
     pub fn register(&mut self, definition: ToolDefinition) {
         let manifest = definition.manifest();
         self.manifest_cache.insert(definition.name, manifest);
         self.tools.insert(definition.name, definition);
     }
 
+    /// Returns registered tools in stable name order.
     pub fn list(&self) -> Vec<&ToolDefinition> {
         let mut items: Vec<_> = self.tools.values().collect();
         items.sort_by_key(|tool| tool.name);
         items
     }
 
+    /// Returns cached manifests in stable tool-name order.
     pub fn manifests(&self) -> Vec<crate::ToolManifest> {
         self.list()
             .into_iter()
@@ -579,6 +643,7 @@ impl ToolRegistry {
             .collect()
     }
 
+    /// Returns a cloned manifest for a registered tool, if present.
     pub fn manifest_for(&self, name: &str) -> Option<crate::ToolManifest> {
         self.manifest_cache.get(name).cloned()
     }
@@ -634,6 +699,7 @@ impl ToolRegistry {
         Ok(ToolPreflightDecision::Allowed { scope, preview })
     }
 
+    /// Executes a tool using a fresh cancellation token.
     pub async fn execute(
         &self,
         ctx: &ToolContext,
@@ -644,6 +710,7 @@ impl ToolRegistry {
             .await
     }
 
+    /// Executes subject to policy, timeout, and caller cancellation.
     pub async fn execute_with_cancellation(
         &self,
         ctx: &ToolContext,
@@ -825,6 +892,7 @@ impl ToolRegistry {
         }
     }
 
+    /// Executes after Core has durably claimed approval for this call.
     pub async fn execute_after_durable_approval(
         &self,
         ctx: &ToolContext,
@@ -1020,6 +1088,7 @@ impl ToolRegistry {
             .await
     }
 
+    /// Executes a tool and races the call against the supplied cancellation.
     pub async fn execute_cancellable(
         &self,
         ctx: &ToolContext,
@@ -1034,6 +1103,7 @@ impl ToolRegistry {
         }
     }
 
+    /// Executes calls concurrently and returns results in input order.
     pub async fn execute_parallel(
         &self,
         ctx: &ToolContext,
@@ -1050,6 +1120,7 @@ impl ToolRegistry {
         futures_util::future::join_all(futures).await
     }
 
+    /// Returns the policy engine used by this registry.
     pub fn permissions(&self) -> &PermissionEngine {
         &self.permissions
     }

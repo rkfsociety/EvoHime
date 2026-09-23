@@ -8,293 +8,507 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+/// Serialized schema version for the context namespace contract.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum catalog nodes in one namespace snapshot.
 pub const MAX_NODES: usize = 4096;
+/// Maximum identifier size in bytes.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum stable reference size in bytes.
 pub const MAX_REF_BYTES: usize = 512;
+/// Maximum display-name size in bytes.
 pub const MAX_DISPLAY_BYTES: usize = 256;
+/// Maximum retrieval query size in bytes.
 pub const MAX_QUERY_BYTES: usize = 1024;
+/// Maximum projection levels advertised by one node.
 pub const MAX_PROJECTIONS_PER_NODE: usize = 3;
+/// Maximum content size permitted for a projection, in bytes.
 pub const MAX_PROJECTION_BYTES: usize = 16 * 1024;
+/// Maximum root nodes in one context view.
 pub const MAX_VIEW_ROOTS: usize = 128;
+/// Maximum allowed node kinds in one context view.
 pub const MAX_VIEW_KINDS: usize = 16;
+/// Maximum references pinned into one context view.
 pub const MAX_VIEW_REFS: usize = 128;
+/// Maximum explicit exclusions in one context view.
 pub const MAX_EXCLUSIONS: usize = 256;
+/// Maximum nodes visited during one retrieval.
 pub const MAX_VISITED: usize = 4096;
+/// Maximum traversal depth for one retrieval.
 pub const MAX_DEPTH: u8 = 32;
+/// Maximum entries in one retrieval trace collection.
 pub const MAX_TRACE_ITEMS: usize = 4096;
+/// Maximum token budget representable for one retrieval.
 pub const MAX_TOKEN_BUDGET: u32 = 8 * 1024 * 1024;
 
+/// Category of a metadata-only context namespace node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeKind {
+    /// Namespace grouping other context nodes.
     Namespace,
+    /// Scope grouping related memory records.
     MemoryScope,
+    /// Individual memory record.
     MemoryRecord,
+    /// Knowledge collection grouping sources and chunks.
     KnowledgeCollection,
+    /// Acquired knowledge source.
     KnowledgeSource,
+    /// Extracted knowledge unit from a source.
     KnowledgeChunk,
+    /// Installed skill or capability description.
     Skill,
+    /// Workspace instruction or guidance record.
     ProjectGuidance,
+    /// Project-owned artifact.
     ProjectArtifact,
+    /// Grounded research artifact.
     ResearchArtifact,
+    /// Root of a repository tree.
     RepositoryRoot,
+    /// Logical area within a repository.
     RepositoryArea,
+    /// Runtime-owned resource descriptor.
     RuntimeResource,
+    /// Node type supplied by a registered extension.
     CustomRegistered,
 }
 
+/// Detail level requested for a context projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectionLevel {
+    /// Minimal structural identity without a substantive summary.
     Abstract,
+    /// Bounded overview suitable for broad discovery.
     Overview,
+    /// More specific content requiring separate authorization.
     Detail,
 }
 
+/// Maximum sensitivity level allowed by a context view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Sensitivity {
+    /// Intended for unrestricted disclosure.
     Public,
+    /// Intended for internal use.
     Internal,
+    /// Private to the relevant user or workspace scope.
     Private,
+    /// Secret material that must not enter ordinary context projections.
     Secret,
 }
 
+/// Trust or instruction status assigned to a context node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustClass {
+    /// Source is authoritative for the represented fact or instruction.
     Authoritative,
+    /// Source has been reviewed by an authorized actor.
     Reviewed,
+    /// Source content is untrusted input.
     Untrusted,
+    /// Source contains instructions and must follow instruction-specific policy.
     Instruction,
 }
 
+/// Health state of the index used to discover a context node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IndexHealth {
+    /// Index is synchronized and available.
     Healthy,
+    /// Index updates are behind the source state.
     Lagging,
+    /// Only part of the source is represented in the index.
     PartiallyIndexed,
+    /// Index contents predate the current source revision.
     Stale,
+    /// Index data failed an integrity check.
     Corrupt,
+    /// Index is currently unavailable.
     Unavailable,
+    /// A rebuild is required before reliable lookup.
     RebuildRequired,
 }
 
+/// Freshness declaration for a source or projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Freshness {
+    /// Content matches the current source revision.
     Current,
+    /// Content is known to predate the current source revision.
     Stale,
+    /// Freshness could not be determined.
     Unknown,
 }
 
+/// Mechanism that produced a projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GeneratedBy {
+    /// Produced by deterministic Core logic.
     Deterministic,
+    /// Produced by the source's native representation.
     SourceNative,
+    /// Generated or summarized by a model.
     ModelGenerated,
+    /// Imported content that was reviewed.
     ImportedReviewed,
 }
 
+/// Action recorded for a node during context retrieval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VisitAction {
+    /// Node was evaluated as a possible retrieval candidate.
     Considered,
+    /// Traversal followed a relationship from this node.
     Expanded,
+    /// One or more projections from the node were included.
     Selected,
+    /// Node was skipped to respect a bound or score threshold.
     Pruned,
+    /// Node was excluded by authorization, scope, or validation.
     Rejected,
 }
 
+/// Stable explanation category recorded for a retrieval decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasonCode {
+    /// Query text semantically matched the node.
     SemanticMatch,
+    /// Node is closely associated with the active scope.
     ScopeAffinity,
+    /// Current content received a freshness preference.
     FreshnessBoost,
+    /// Node source has high authority for the requested information.
     HighAuthority,
+    /// A parent namespace was selected.
     ParentSelected,
+    /// Candidate score did not meet the selection threshold.
     BelowThreshold,
+    /// Candidate was omitted to stay within a resource budget.
     BudgetPruned,
+    /// Candidate projection was stale.
     StaleProjection,
+    /// Candidate was removed by authorization filtering.
     PermissionFiltered,
+    /// Candidate exceeded the allowed sensitivity ceiling.
     SensitivityFiltered,
+    /// Candidate duplicated content already represented in the context.
     DuplicateCoverage,
+    /// Candidate was explicitly named by the caller.
     ExplicitReference,
+    /// Required index data was unavailable.
     IndexUnavailable,
+    /// Traversal reached its maximum depth.
     DepthExceeded,
 }
 
+/// Overall status returned by context retrieval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureStatus {
+    /// Retrieval completed successfully.
     Ok,
+    /// No relevant authorized context was found.
     NoRelevantContext,
+    /// Index updates are behind the source state.
     IndexLagging,
+    /// Required index data is unavailable.
     IndexUnavailable,
+    /// Index integrity validation failed.
     IndexCorrupt,
+    /// A selected projection is stale.
     ProjectionStale,
+    /// Projection generation failed.
     ProjectionGenerationFailed,
+    /// Optional reranking could not be performed.
     RerankerUnavailable,
+    /// Reranking exceeded its allocated resource budget.
     RerankBudgetExceeded,
+    /// Retrieval exceeded its overall resource budget.
     RetrievalBudgetExceeded,
+    /// Authorization filtering removed every candidate.
     PermissionFilteredAll,
+    /// Required scope information is unavailable.
     ScopeUnavailable,
+    /// Retrieval returned only partial context coverage.
     PartialCoverage,
 }
 
+/// Origin class used for provenance-aware context handling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProvenanceClass {
+    /// Authored directly by the user.
     UserAuthored,
+    /// Authored by an assistant or model.
     AssistantAuthored,
+    /// Retrieved from persistent memory.
     RetrievedMemory,
+    /// Retrieved from a knowledge source.
     RetrievedKnowledge,
+    /// Loaded from project guidance.
     ProjectGuidance,
+    /// Loaded from a skill instruction source.
     SkillInstruction,
+    /// Produced as a tool result.
     ToolResult,
+    /// Supplied by the system runtime.
     SystemInstruction,
 }
 
+/// Bounded descriptor for a context object owned by another subsystem.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextNodeDescriptor {
+    /// Serialized descriptor schema version.
     pub schema_version: u32,
+    /// Stable namespace node identifier.
     pub node_id: String,
+    /// Stable locator for the object owned by another subsystem.
     pub stable_ref: String,
+    /// Category of the described context object.
     pub kind: NodeKind,
+    /// Bounded user-facing node name.
     pub display_name: String,
+    /// Optional stable reference of the logical parent node.
     pub logical_parent_ref: Option<String>,
+    /// Stable reference to the authoritative source object.
     pub source_ref: String,
+    /// Revision of the source represented by the descriptor.
     pub source_revision: u64,
+    /// Optional source content digest.
     pub source_content_hash: Option<String>,
+    /// Scope reference used for authorization checks.
     pub scope_ref: String,
+    /// Sensitivity classification used by the view ceiling.
     pub sensitivity: Sensitivity,
+    /// Trust classification used by retrieval policy.
     pub trust_class: TrustClass,
+    /// Projection levels available for this node.
     pub projection_capabilities: Vec<ProjectionLevel>,
+    /// Health state of the discovery index for this node.
     pub index_health: IndexHealth,
+    /// Freshness state of the source projection.
     pub freshness: Freshness,
+    /// Digest of the canonical node descriptor.
     pub content_hash: String,
 }
 
+/// Bounded view of a context node at one requested detail level.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextProjection {
+    /// Node described by this projection.
     pub node_id: String,
+    /// Detail level represented by the projection.
     pub level: ProjectionLevel,
+    /// Source revision used to generate the projection.
     pub source_revision: u64,
+    /// Source digest used to generate the projection, when available.
     pub source_content_hash: Option<String>,
+    /// Registered profile defining the projection method.
     pub projection_profile_ref: String,
+    /// Revision of the projection profile.
     pub projection_revision: u64,
+    /// Parser revision used to process the source.
     pub parser_revision: u64,
+    /// Policy revision applied when generating the projection.
     pub policy_revision: u64,
+    /// Reference to the stored projection content.
     pub content_ref: String,
+    /// Bounded summary content, when included inline.
     pub summary: Option<String>,
+    /// Estimated token cost of this projection.
     pub token_estimate: u32,
+    /// Whether the projection content was truncated.
     pub truncated: bool,
+    /// Freshness state of the projection.
     pub freshness: Freshness,
+    /// Mechanism that generated the projection.
     pub generated_by: GeneratedBy,
+    /// Digest of the projection content or canonical metadata.
     pub content_hash: String,
+    /// Provenance category of the projected content.
     pub provenance_class: ProvenanceClass,
 }
 
+/// Immutable authorization and scope snapshot for one run's context discovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextViewSnapshot {
+    /// Serialized context view schema version.
     pub schema_version: u32,
+    /// Stable identifier for this view snapshot.
     pub id: String,
+    /// Monotonically increasing view revision.
     pub revision: u64,
+    /// Run that owns this view snapshot.
     pub run_id: String,
+    /// Root nodes from which retrieval may traverse.
     pub root_nodes: Vec<String>,
+    /// Node kinds permitted in this view.
     pub allowed_kinds: Vec<NodeKind>,
+    /// Stable references explicitly excluded from the view.
     pub excluded_refs: Vec<String>,
+    /// Maximum sensitivity permitted for selected content.
     pub max_sensitivity: Sensitivity,
+    /// Source views contributing to this authorization snapshot.
     pub source_view_refs: Vec<String>,
+    /// Digest of the policy used to create the snapshot.
     pub policy_hash: String,
+    /// Index generations pinned for consistent retrieval.
     pub index_snapshot_refs: Vec<String>,
+    /// Snapshot creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Digest of the canonical view snapshot.
     pub content_hash: String,
 }
 
+/// Deterministic bounds and query references for one retrieval operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextRetrievalPlan {
+    /// Query used to rank eligible context nodes.
     pub query: String,
+    /// Candidate roots considered by the traversal.
     pub candidate_roots: Vec<String>,
+    /// Maximum graph traversal depth.
     pub max_depth: u8,
+    /// Maximum number of nodes visited.
     pub max_nodes_visited: usize,
+    /// Overall budget for overview projections, in tokens.
     pub max_projection_tokens: u32,
+    /// Separate budget for detail projections, in tokens.
     pub max_detail_tokens: u32,
+    /// Per-projection-level item budgets.
     pub per_level_budgets: BTreeMap<ProjectionLevel, usize>,
+    /// Whether tie-breaking and traversal order must be deterministic.
     pub deterministic: bool,
+    /// View revision this plan was built against.
     pub view_revision: u64,
+    /// Index generation reference used by the plan.
     pub index_snapshot_ref: String,
+    /// Policy revision used when creating the plan.
     pub policy_revision: u64,
+    /// Explicit stable references that should receive priority.
     pub explicit_refs: Vec<String>,
+    /// Digest of the canonical retrieval plan.
     pub content_hash: String,
 }
 
+/// One auditable decision made while traversing a context namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextNodeVisit {
+    /// Identifier of the visited namespace node.
     pub node_id: String,
+    /// Projection level selected for the node, if any.
     pub level: Option<ProjectionLevel>,
+    /// Action taken for this node.
     pub action: VisitAction,
+    /// Stable reason explaining the action.
     pub reason_code: ReasonCode,
+    /// Retrieval score assigned to the candidate.
     pub score: i32,
+    /// Estimated token cost charged to the candidate.
     pub token_cost: u32,
 }
 
+/// Bounded audit record for one complete context retrieval attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextRetrievalTrace {
+    /// Serialized trace schema version.
     pub schema_version: u32,
+    /// Stable trace identifier.
     pub id: String,
+    /// Run that owns this retrieval trace.
     pub run_id: String,
+    /// Context view snapshot used for authorization.
     pub view_ref: String,
+    /// Revision of the view snapshot.
     pub view_revision: u64,
+    /// Retrieval policy reference used for this attempt.
     pub retrieval_policy_ref: String,
+    /// Retrieval plan reference used for this attempt.
     pub query_plan_ref: String,
+    /// Ordered node decisions made during traversal.
     pub visited_nodes: Vec<ContextNodeVisit>,
+    /// Projection references selected for the result.
     pub selected_projections: Vec<String>,
+    /// Candidate references rejected during retrieval.
     pub rejected_candidates: Vec<String>,
+    /// Token cost attributed to each selected node.
     pub token_contributions: BTreeMap<String, u32>,
+    /// Fallback stages attempted in order.
     pub fallback_path: Vec<String>,
+    /// Aggregate index health observed during retrieval.
     pub index_health: IndexHealth,
+    /// Final ordered references supplied as context.
     pub final_context_refs: Vec<String>,
+    /// Overall retrieval outcome.
     pub status: FailureStatus,
+    /// Trace creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Digest of the canonical trace record.
     pub content_hash: String,
 }
 
+/// Selected projections and the audit trace for a retrieval attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetrievalResult {
+    /// Overall retrieval outcome.
     pub status: FailureStatus,
+    /// Projections selected for the final context.
     pub selected: Vec<ContextProjection>,
+    /// Bounded trace of candidate decisions.
     pub trace: ContextRetrievalTrace,
 }
 
+/// Idempotent command envelope for namespace-owned mutations.
 #[derive(Debug, Clone)]
 pub struct NamespaceCommand {
+    /// Registered operation name.
     pub operation: String,
+    /// Namespace targeted by the operation.
     pub namespace_id: String,
+    /// Serialized bounded operation payload.
     pub payload: Vec<u8>,
+    /// Expected namespace revision for optimistic concurrency.
     pub expected_revision: u64,
+    /// Key used to deduplicate retries of the same command.
     pub idempotency_key: String,
 }
 
+/// Validation, authorization, freshness, or resource failure in namespace operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NamespaceError {
+    /// Input violated a named contract rule.
     Invalid(&'static str),
+    /// Serialized data uses an unsupported schema version.
     UnsupportedVersion(u32),
+    /// A unique node or reference was duplicated.
     Duplicate,
+    /// Namespace relationships contain a cycle.
     Cycle,
+    /// The requested access is not authorized.
     Unauthorized,
+    /// Requested content exceeds the view's sensitivity ceiling.
     SensitivityDenied,
+    /// Snapshot or projection is stale.
     Stale,
+    /// Referenced namespace object does not exist.
     NotFound,
+    /// Retrieval exceeded a configured resource budget.
     BudgetExceeded,
+    /// A detail projection resolver is unavailable.
     DetailResolverUnavailable,
 }
 
@@ -340,7 +554,9 @@ fn is_sha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
+/// Supplies a source-authorized detail projection for a context node.
 pub trait ContextDetailResolver {
+    /// Resolves a detail-level projection from its authoritative source.
     fn resolve_detail(
         &self,
         node: &ContextNodeDescriptor,
@@ -348,6 +564,7 @@ pub trait ContextDetailResolver {
     ) -> Result<ContextProjection, NamespaceError>;
 }
 
+/// Resolver placeholder that always reports detail content as unavailable.
 pub struct UnavailableDetailResolver;
 
 impl ContextDetailResolver for UnavailableDetailResolver {
@@ -360,6 +577,7 @@ impl ContextDetailResolver for UnavailableDetailResolver {
     }
 }
 
+/// Resolves a detail projection and validates the returned projection against its node.
 pub fn resolve_detail_with<R: ContextDetailResolver>(
     resolver: &R,
     node: &ContextNodeDescriptor,
@@ -378,6 +596,7 @@ fn sensitivity_allowed(actual: Sensitivity, ceiling: Sensitivity) -> bool {
     actual <= ceiling
 }
 
+/// Validates a node descriptor's identifiers, bounds, capabilities, and digest.
 pub fn validate_node(node: &ContextNodeDescriptor) -> Result<(), NamespaceError> {
     if node.schema_version != SCHEMA_VERSION {
         return Err(NamespaceError::UnsupportedVersion(node.schema_version));
@@ -412,6 +631,7 @@ pub fn validate_node(node: &ContextNodeDescriptor) -> Result<(), NamespaceError>
     Ok(())
 }
 
+/// Validates projection identity, source revision, level, size, freshness, and digest.
 pub fn validate_projection(
     projection: &ContextProjection,
     node: &ContextNodeDescriptor,
@@ -459,6 +679,7 @@ pub fn validate_projection(
     Ok(())
 }
 
+/// Validates a view's roots, allowed kinds, exclusions, and policy references.
 pub fn validate_view(view: &ContextViewSnapshot) -> Result<(), NamespaceError> {
     if view.schema_version != SCHEMA_VERSION {
         return Err(NamespaceError::UnsupportedVersion(view.schema_version));
@@ -497,6 +718,7 @@ pub fn validate_view(view: &ContextViewSnapshot) -> Result<(), NamespaceError> {
     Ok(())
 }
 
+/// Validates query size, traversal and token budgets, references, and plan digest.
 pub fn validate_plan(plan: &ContextRetrievalPlan) -> Result<(), NamespaceError> {
     if !bounded(&plan.query, MAX_QUERY_BYTES)
         || plan.max_depth == 0
@@ -534,6 +756,7 @@ pub fn validate_plan(plan: &ContextRetrievalPlan) -> Result<(), NamespaceError> 
     Ok(())
 }
 
+/// Validates bounded trace collections, references, visits, and content digest.
 pub fn validate_trace(trace: &ContextRetrievalTrace) -> Result<(), NamespaceError> {
     if trace.schema_version != SCHEMA_VERSION
         || !valid_id(&trace.id)
@@ -583,6 +806,7 @@ pub fn validate_trace(trace: &ContextRetrievalTrace) -> Result<(), NamespaceErro
     Ok(())
 }
 
+/// Validates a catalog of nodes and rejects duplicate identities or invalid parent relationships.
 pub fn validate_catalog(nodes: &[ContextNodeDescriptor]) -> Result<(), NamespaceError> {
     if nodes.is_empty() || nodes.len() > MAX_NODES {
         return Err(NamespaceError::Invalid("catalog"));
@@ -612,6 +836,7 @@ pub fn validate_catalog(nodes: &[ContextNodeDescriptor]) -> Result<(), Namespace
 }
 
 impl ContextViewSnapshot {
+    /// Authorizes a node against this view's roots, exclusions, kinds, and sensitivity ceiling.
     pub fn authorize_node(
         &self,
         node: &ContextNodeDescriptor,
@@ -659,6 +884,7 @@ impl ContextViewSnapshot {
 }
 
 impl ContextRetrievalPlan {
+    /// Computes the canonical plan digest with `content_hash` cleared.
     pub fn canonical_hash_without_self(&self) -> Result<String, NamespaceError> {
         let mut copy = self.clone();
         copy.content_hash.clear();
@@ -667,6 +893,7 @@ impl ContextRetrievalPlan {
 }
 
 impl ContextViewSnapshot {
+    /// Computes the canonical view digest with `content_hash` cleared.
     pub fn canonical_hash_without_self(&self) -> Result<String, NamespaceError> {
         let mut copy = self.clone();
         copy.content_hash.clear();
@@ -675,6 +902,7 @@ impl ContextViewSnapshot {
 }
 
 impl ContextRetrievalTrace {
+    /// Computes the canonical trace digest with `content_hash` cleared.
     pub fn canonical_hash_without_self(&self) -> Result<String, NamespaceError> {
         let mut copy = self.clone();
         copy.content_hash.clear();
@@ -758,6 +986,10 @@ fn within_candidate_roots(
     false
 }
 
+/// Selects authorized projections deterministically within the plan's depth and token budgets.
+///
+/// Every candidate is checked against the immutable view and source revisions;
+/// the result includes a bounded trace of selection, rejection, and pruning decisions.
 pub fn retrieve(
     nodes: &[ContextNodeDescriptor],
     projections: &[ContextProjection],
@@ -979,6 +1211,7 @@ pub fn retrieve(
     })
 }
 
+/// Creates a child view whose authority is constrained by its parent snapshot.
 pub fn child_view(
     parent: &ContextViewSnapshot,
     child_id: String,
@@ -1077,6 +1310,7 @@ fn is_direct_child(
 }
 
 impl crate::EventJournal {
+    /// Applies an idempotent namespace command after validating its target and payload bounds.
     pub async fn context_namespace_command(
         &self,
         command: NamespaceCommand,

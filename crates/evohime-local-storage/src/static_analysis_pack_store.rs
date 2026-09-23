@@ -1,8 +1,12 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+/// Maximum serialized static-analysis pack size accepted by [`save`].
 pub const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
+/// Creates the revisioned static-analysis pack tables.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS static_analysis_pack_revisions (pack_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(pack_id, revision), UNIQUE(pack_id, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_static_analysis_pack_current ON static_analysis_pack_revisions(pack_id, revision DESC);")
 }
+/// Appends the next pack revision, capped by [`MAX_JSON_BYTES`].
+/// An identical idempotent replay succeeds; conflicting keys or non-contiguous revisions fail.
 pub fn save(
     connection: &Connection,
     pack_id: &str,
@@ -34,6 +38,7 @@ pub fn save(
     connection.execute("INSERT INTO static_analysis_pack_revisions(pack_id,revision,content_hash,json,idempotency_key,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6)", params![pack_id, revision, content_hash, json, idempotency_key, now_ms])?;
     Ok(())
 }
+/// Returns the latest serialized pack revision, if one exists.
 pub fn load_current(connection: &Connection, pack_id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection.query_row("SELECT json FROM static_analysis_pack_revisions WHERE pack_id=?1 ORDER BY revision DESC LIMIT 1", params![pack_id], |row| row.get(0)).optional()
 }

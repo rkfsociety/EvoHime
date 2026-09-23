@@ -6,8 +6,10 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum serialized profile, activation, snapshot, or idempotency response size.
 pub const MAX_RECORD_BYTES: usize = 64 * 1024;
 
+/// Creates tables and indexes for profile revisions, activation state, snapshots, and idempotency.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS execution_environment_profiles (
@@ -49,6 +51,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Loads the stored command digest and response for an owner-scoped idempotency key.
 pub fn load_idempotent_command(
     connection: &Connection,
     owner_scope: &str,
@@ -61,6 +64,10 @@ pub fn load_idempotent_command(
     ).optional()
 }
 
+/// Stores a bounded idempotency response without replacing an existing key.
+///
+/// Returns a SQLite error when the response exceeds [`MAX_RECORD_BYTES`]. Repeated keys are left
+/// unchanged so retries observe the original response.
 pub fn save_idempotent_command(
     connection: &Connection,
     owner_scope: &str,
@@ -80,17 +87,30 @@ pub fn save_idempotent_command(
     Ok(())
 }
 
+/// Values needed to append a profile revision and update its current projection.
 pub struct SaveProfileRevisionInput<'a> {
+    /// Stable profile identifier.
     pub id: &'a str,
+    /// Monotonically increasing revision number.
     pub revision: u64,
+    /// Profile scope used to select current state.
     pub scope: &'a str,
+    /// Lifecycle state stored with the profile.
     pub state: &'a str,
+    /// Digest of the serialized profile.
     pub hash: &'a str,
+    /// Serialized profile snapshot, bounded by [`MAX_RECORD_BYTES`].
     pub json: &'a [u8],
+    /// Actor credited with creating the revision.
     pub actor: &'a str,
+    /// Creation time in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Appends a profile revision and advances the current profile only to a newer revision.
+///
+/// Returns `false` when the serialized profile is too large, a stored revision is newer, or the
+/// revision already exists.
 pub fn save_profile_revision(
     connection: &Connection,
     input: SaveProfileRevisionInput<'_>,
@@ -118,6 +138,7 @@ pub fn save_profile_revision(
     Ok(true)
 }
 
+/// Loads the current serialized profile for an identifier.
 pub fn load_profile(connection: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -128,6 +149,7 @@ pub fn load_profile(connection: &Connection, id: &str) -> rusqlite::Result<Optio
         .optional()
 }
 
+/// Lists serialized profiles in identifier order, capped at 256 records.
 pub fn load_profiles(connection: &Connection, limit: usize) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut statement = connection
         .prepare("SELECT profile_json FROM execution_environment_profiles ORDER BY id LIMIT ?1")?;
@@ -137,17 +159,29 @@ pub fn load_profiles(connection: &Connection, limit: usize) -> rusqlite::Result<
     records
 }
 
+/// Values needed to record an activation and update the scope's current snapshot.
 pub struct SaveActivationInput<'a> {
+    /// Activated profile identifier.
     pub profile_id: &'a str,
+    /// Profile revision used for activation.
     pub revision: u64,
+    /// Scope whose current activation is updated.
     pub scope: &'a str,
+    /// Activation lifecycle state.
     pub status: &'a str,
+    /// Digest of the activation snapshot.
     pub snapshot_hash: &'a str,
+    /// Serialized activation record, bounded by [`MAX_RECORD_BYTES`].
     pub activation_json: &'a [u8],
+    /// Serialized environment snapshot, bounded by [`MAX_RECORD_BYTES`].
     pub snapshot_json: &'a [u8],
+    /// Activation time in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Records a bounded activation and advances the scope's current snapshot when its revision is newer.
+///
+/// Returns `false` if either serialized value exceeds [`MAX_RECORD_BYTES`].
 pub fn save_activation(
     connection: &Connection,
     input: SaveActivationInput<'_>,
@@ -164,6 +198,7 @@ pub fn save_activation(
     Ok(true)
 }
 
+/// Loads the current serialized environment snapshot for a scope.
 pub fn load_current(connection: &Connection, scope: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -174,6 +209,7 @@ pub fn load_current(connection: &Connection, scope: &str) -> rusqlite::Result<Op
         .optional()
 }
 
+/// Lists activation records for a scope newest first, capped at 256 records.
 pub fn load_activations(
     connection: &Connection,
     scope: &str,
@@ -214,6 +250,7 @@ pub fn bind_current_to_run(
     Ok(connection.execute("INSERT OR IGNORE INTO execution_environment_run_snapshots(run_id,scope,profile_id,revision,snapshot_hash,snapshot_json,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![run_id, scope, profile_id, revision as i64, snapshot_hash, snapshot_json, now_ms])? == 1)
 }
 
+/// Loads the immutable environment snapshot pinned to a run, if present.
 pub fn load_run_snapshot(
     connection: &Connection,
     run_id: &str,

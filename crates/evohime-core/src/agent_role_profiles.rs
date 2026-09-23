@@ -8,86 +8,142 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+/// Current serialized version for agent role profiles.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum identifier length for profiles, skills, tools, and grants.
 pub const MAX_ID_BYTES: usize = 96;
+/// Maximum byte length of objective, strategy, and constraint text.
 pub const MAX_TEXT_BYTES: usize = 8 * 1024;
+/// Maximum number of constraints, skills, tools, or grants.
 pub const MAX_ITEMS: usize = 32;
+/// Maximum number of fields in an input or output contract.
 pub const MAX_CONTRACT_FIELDS: usize = 16;
+/// Maximum serialized size of a canonical profile.
 pub const MAX_CANONICAL_BYTES: usize = 64 * 1024;
+/// Maximum default execution timeout in milliseconds.
 pub const MAX_TIMEOUT_MS: u64 = 3_600_000;
 
+/// Execution actor category requested by an agent role profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionMode {
+    /// A human performs the assigned work.
     Human,
+    /// An AI agent performs the assigned work.
     Ai,
 }
 
+/// One named field in a role's input or output contract.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractField {
+    /// Stable field identifier.
     pub name: String,
+    /// Human-readable or schema type name.
     pub type_name: String,
+    /// Whether callers must supply this field.
     pub required: bool,
 }
 
+/// Default resource limits for a runtime instance of a role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetDefaults {
+    /// Maximum execution duration in milliseconds.
     pub timeout_ms: u64,
+    /// Maximum number of steps permitted.
     pub max_steps: u32,
+    /// Maximum output size in bytes.
     pub max_output_bytes: u32,
 }
 
+/// Versioned role intent, requirements, contracts, and default budget.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentRoleProfile {
+    /// Profile schema version.
     pub schema_version: u32,
+    /// Stable profile identifier.
     pub id: String,
+    /// Monotonic profile revision.
     pub revision: u64,
+    /// Objective assigned to the role.
     pub objective: String,
+    /// Constraints the role must observe.
     pub constraints: Vec<String>,
+    /// Skill identifiers requested by this role.
     pub skills: Vec<String>,
+    /// Tool identifiers requested by this role.
     pub tools: Vec<String>,
+    /// Ordered strategy description for performing the objective.
     pub strategy: String,
+    /// Expected input fields for the role.
     pub input_contract: Vec<ContractField>,
+    /// Expected output fields for the role.
     pub output_contract: Vec<ContractField>,
+    /// Resource defaults applied when creating a runtime instance.
     pub budget_defaults: BudgetDefaults,
+    /// Whether a human or AI is expected to execute the role.
     pub execution_mode: ExecutionMode,
 }
 
+/// Immutable profile revision pinned to a runtime instance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileSnapshot {
+    /// Profile identifier captured at runtime creation.
     pub profile_id: String,
+    /// Profile revision captured at runtime creation.
     pub revision: u64,
+    /// Digest of the exact profile revision.
     pub content_hash: String,
 }
 
+/// Running role instance with a pinned profile and effective grants.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeInstance {
+    /// Stable runtime run identifier.
     pub run_id: String,
+    /// Profile revision pinned when the instance started.
     pub snapshot: ProfileSnapshot,
+    /// Grants surviving parent, policy, registry, and requested intersections.
     pub effective_grants: Vec<String>,
+    /// Current role runtime state.
     pub state: RunState,
 }
 
+/// Lifecycle state for an agent role runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunState {
+    /// Runtime is pinned to its profile and ready to execute.
     Pinned,
+    /// Runtime is executing the role objective.
     Running,
+    /// Cancellation has been requested.
     Cancelling,
+    /// Runtime completed successfully.
     Completed,
+    /// Runtime was cancelled.
     Cancelled,
+    /// Runtime failed.
     Failed,
+    /// Runtime outcome is not known.
     Unknown,
 }
 
+/// Invalid profile, revision, idempotency key, or requested capability.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoleProfileError {
+    /// Profile data or operation input is invalid.
     Invalid(&'static str),
+    /// Profile uses an unsupported schema version.
     UnsupportedVersion(u32),
+    /// Identifier conflicts with an existing profile or runtime.
     Duplicate,
+    /// Requested profile or runtime does not exist.
     NotFound,
+    /// Expected profile revision is no longer current.
     Stale,
+    /// Idempotency key was reused with different operation data.
     IdempotencyConflict,
+    /// Requested grants are not present in all required grant sources.
     CapabilityDenied,
 }
 
@@ -121,6 +177,7 @@ fn valid_items(values: &[String]) -> bool {
     values.len() <= MAX_ITEMS && values.iter().all(|v| valid_id(v))
 }
 
+/// Validates profile identity, contracts, field bounds, and default budget.
 pub fn validate_profile(profile: &AgentRoleProfile) -> Result<(), RoleProfileError> {
     if profile.schema_version != CONTRACT_VERSION {
         return Err(RoleProfileError::UnsupportedVersion(profile.schema_version));
@@ -158,6 +215,7 @@ pub fn validate_profile(profile: &AgentRoleProfile) -> Result<(), RoleProfileErr
     Ok(())
 }
 
+/// Validates a profile and returns its canonical SHA-256 digest.
 pub fn canonical_hash(profile: &AgentRoleProfile) -> Result<String, RoleProfileError> {
     validate_profile(profile)?;
     let bytes =
@@ -168,6 +226,7 @@ pub fn canonical_hash(profile: &AgentRoleProfile) -> Result<String, RoleProfileE
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 
+/// Intersects requested grants with parent, policy, and registry grants.
 pub fn effective_grants(
     parent: &[String],
     policy: &[String],
@@ -196,17 +255,23 @@ pub fn effective_grants(
     Ok(result)
 }
 
+/// In-memory profile and runtime registry with revision and idempotency checks.
 #[derive(Debug, Default)]
 pub struct AgentRoleProfilesRegistry {
+    /// Role profiles indexed by their stable identifiers.
     pub profiles: BTreeMap<String, AgentRoleProfile>,
+    /// Runtime instances indexed by run identifier.
     pub runs: BTreeMap<String, RuntimeInstance>,
+    /// Operation fingerprints indexed by idempotency key.
     pub idempotency: BTreeMap<String, String>,
 }
 
 impl AgentRoleProfilesRegistry {
+    /// Returns role profiles in stable identifier order.
     pub fn list(&self) -> Vec<AgentRoleProfile> {
         self.profiles.values().cloned().collect()
     }
+    /// Validates and registers a profile using an idempotency key.
     pub fn create(
         &mut self,
         profile: AgentRoleProfile,
@@ -227,6 +292,7 @@ impl AgentRoleProfilesRegistry {
         self.profiles.insert(profile.id.clone(), profile.clone());
         Ok(profile)
     }
+    /// Stores a newer profile revision after optimistic-concurrency validation.
     pub fn revise(
         &mut self,
         profile: AgentRoleProfile,
@@ -252,6 +318,7 @@ impl AgentRoleProfilesRegistry {
         self.profiles.insert(profile.id.clone(), profile.clone());
         Ok(profile)
     }
+    /// Pins the requested profile revision and computes effective runtime grants.
     pub fn start(
         &mut self,
         input: StartRuntimeInput<'_>,
@@ -285,6 +352,7 @@ impl AgentRoleProfilesRegistry {
         self.runs.insert(input.run_id, instance.clone());
         Ok(instance)
     }
+    /// Requests cancellation for a nonterminal runtime instance.
     pub fn cancel(&mut self, run_id: &str) -> Result<RuntimeInstance, RoleProfileError> {
         let run = self
             .runs
@@ -303,12 +371,19 @@ impl AgentRoleProfilesRegistry {
 
 /// Вход запуска runtime с явно разделёнными источниками grants.
 pub struct StartRuntimeInput<'a> {
+    /// New runtime identifier.
     pub run_id: String,
+    /// Profile to pin for the runtime.
     pub profile_id: &'a str,
+    /// Required current profile revision.
     pub revision: u64,
+    /// Capabilities requested by the runtime.
     pub grants: Vec<String>,
+    /// Capabilities granted by the parent runtime.
     pub parent: &'a [String],
+    /// Capabilities allowed by active policy.
     pub policy: &'a [String],
+    /// Capabilities registered for this profile/runtime class.
     pub registry: &'a [String],
 }
 

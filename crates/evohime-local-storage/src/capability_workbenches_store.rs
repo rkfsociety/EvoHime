@@ -1,7 +1,11 @@
+//! SQLite persistence for capability workbench instances, snapshots, and renewable leases.
+
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Schema version for the capability workbench tables.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 
+/// Creates the workbench instance, snapshot, lease tables, and lease-expiry index.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS capability_workbench_instances (
@@ -34,6 +38,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Inserts a workbench instance with its owner, revision, lifecycle, and serialized descriptor.
 pub fn put_instance(
     connection: &Connection,
     instance_id: &str,
@@ -47,6 +52,7 @@ pub fn put_instance(
     Ok(())
 }
 
+/// Loads the serialized descriptor for an instance, returning `None` if it is absent.
 pub fn get_instance(
     connection: &Connection,
     instance_id: &str,
@@ -60,6 +66,9 @@ pub fn get_instance(
         .optional()
 }
 
+/// Replaces an instance only when its current revision equals `expected_revision`.
+///
+/// Returns `false` when another writer has advanced the instance or the identifier is unknown.
 pub fn replace_instance(
     connection: &Connection,
     instance_id: &str,
@@ -72,6 +81,7 @@ pub fn replace_instance(
     Ok(connection.execute("UPDATE capability_workbench_instances SET revision=?1,lifecycle=?2,descriptor_json=?3,updated_at_ms=?4 WHERE instance_id=?5 AND revision=?6", params![revision, lifecycle, descriptor_json, now_ms, instance_id, expected_revision])? == 1)
 }
 
+/// Stores an immutable serialized snapshot associated with an instance revision.
 pub fn put_snapshot(
     connection: &Connection,
     snapshot_id: &str,
@@ -84,6 +94,7 @@ pub fn put_snapshot(
     Ok(())
 }
 
+/// Creates an active lease owned by `owner_id` until `expires_at_ms`.
 pub fn put_lease(
     connection: &Connection,
     lease_id: &str,
@@ -96,6 +107,9 @@ pub fn put_lease(
     Ok(())
 }
 
+/// Renews the named lease when it belongs to `owner_id`.
+///
+/// Returns `false` when the lease does not exist or has a different owner.
 pub fn renew_lease(
     connection: &Connection,
     lease_id: &str,
@@ -109,6 +123,9 @@ pub fn renew_lease(
     )? == 1)
 }
 
+/// Marks active leases expired when their expiry time is earlier than `now_ms`.
+///
+/// Returns the number of leases changed.
 pub fn expire_leases(connection: &Connection, now_ms: i64) -> rusqlite::Result<usize> {
     connection.execute(
         "UPDATE capability_workbench_leases SET state='expired' WHERE state='active' AND expires_at_ms < ?1",

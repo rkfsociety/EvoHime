@@ -57,6 +57,7 @@ pub struct ContextMetrics {
 }
 
 impl ContextMetrics {
+    /// Adds one drop to the counter for its stable reason code.
     pub fn record_drop(&mut self, reason: DropReason) {
         *self
             .drops_total
@@ -64,6 +65,7 @@ impl ContextMetrics {
             .or_default() += 1;
     }
 
+    /// Adds one application of a context-reduction ladder level.
     pub fn record_ladder_level(&mut self, level: LadderLevel) {
         *self
             .ladder_level_applied_total
@@ -71,6 +73,7 @@ impl ContextMetrics {
             .or_default() += 1;
     }
 
+    /// Adds one terminal budget failure to its stage counter.
     pub fn record_budget_unavailable(&mut self, stage: BudgetUnavailableStage) {
         *self
             .budget_unavailable_total
@@ -78,10 +81,12 @@ impl ContextMetrics {
             .or_default() += 1;
     }
 
+    /// Adds one provider-replanning outcome to the aggregate counters.
     pub fn record_replan(&mut self, outcome: &str) {
         *self.replan_total.entry(outcome.to_string()).or_default() += 1;
     }
 
+    /// Records category utilization as a fraction; ignores zero-sized budgets.
     pub fn record_utilization(&mut self, category: BudgetCategory, used: u32, budget: u32) {
         if budget == 0 {
             return;
@@ -92,6 +97,7 @@ impl ContextMetrics {
             .push(f64::from(used) / f64::from(budget));
     }
 
+    /// Records relative estimator drift and counts any under-estimate.
     pub fn record_estimator_drift(&mut self, relative: f64) {
         self.estimator_drift.push(relative);
         if relative < 0.0 {
@@ -99,10 +105,12 @@ impl ContextMetrics {
         }
     }
 
+    /// Records one context-selection latency sample in milliseconds.
     pub fn record_selection_latency(&mut self, millis: u64) {
         self.selection_latency_ms.push(millis);
     }
 
+    /// Increments the number of builds that used the fallback estimator.
     pub fn record_fallback_estimator(&mut self) {
         self.fallback_estimator_total += 1;
     }

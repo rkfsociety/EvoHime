@@ -31,24 +31,31 @@ use crate::profile::{ModelContextProfile, ProfileCatalog, STRATEGY_VERSION};
 /// `content_hash`, размер и оценку токенов.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnedContent {
+    /// Текстовое содержимое, разделяемое через `Arc`.
     Text(Arc<str>),
+    /// JSON-содержимое, разделяемое через `Arc`.
     Json(Arc<str>),
+    /// Двоичное содержимое, разделяемое через `Arc`.
     Binary(Arc<[u8]>),
 }
 
 impl OwnedContent {
+    /// Создаёт владеющее текстовое содержимое.
     pub fn text(value: impl Into<Arc<str>>) -> Self {
         Self::Text(value.into())
     }
 
+    /// Создаёт владеющее JSON-содержимое.
     pub fn json(value: impl Into<Arc<str>>) -> Self {
         Self::Json(value.into())
     }
 
+    /// Создаёт владеющее двоичное содержимое.
     pub fn binary(value: impl Into<Arc<[u8]>>) -> Self {
         Self::Binary(value.into())
     }
 
+    /// Возвращает форму содержимого для хэширования и оценки токенов.
     pub fn as_form(&self) -> ContentForm<'_> {
         match self {
             Self::Text(text) => ContentForm::Text(text),
@@ -70,11 +77,14 @@ impl OwnedContent {
 /// Кандидат контекста: атрибуты плюс содержимое.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanInput {
+    /// Метаданные кандидата, используемые политиками выбора.
     pub item: ContextItem,
+    /// Содержимое, соответствующее метаданным кандидата.
     pub content: OwnedContent,
 }
 
 impl PlanInput {
+    /// Объединяет метаданные и содержимое в одного кандидата планирования.
     pub fn new(item: ContextItem, content: OwnedContent) -> Self {
         Self { item, content }
     }
@@ -83,15 +93,21 @@ impl PlanInput {
 /// Запрос на сборку контекста для одного model call.
 #[derive(Debug, Clone)]
 pub struct PlanRequest {
+    /// Идентификатор задачи.
     pub task_id: String,
+    /// Идентификатор сессии.
     pub session_id: String,
+    /// Идентификатор отдельного вызова модели.
     pub model_call_id: String,
+    /// Идентификатор провайдера модели.
     pub provider: String,
+    /// Идентификатор модели у провайдера.
     pub model: String,
     /// Окно, заявленное провайдером, если известно.
     pub provider_window: Option<u32>,
     /// unix ms.
     pub now: i64,
+    /// Кандидаты, из которых планировщик собирает контекст.
     pub inputs: Vec<PlanInput>,
     /// Итог tool loadout (01.4), если он уже собран.
     pub loadout: Option<LoadoutRecord>,
@@ -108,16 +124,23 @@ pub struct PlanRequest {
 /// прочих ошибок Core.
 #[derive(Debug, Clone)]
 pub struct ContextPlan {
+    /// Профиль лимитов и стратегии для выбранной модели.
     pub profile: ModelContextProfile,
+    /// Рассчитанное распределение бюджета вызова.
     pub budget: ContextBudget,
     /// Выбранные item в порядке собранного контекста.
     pub selected: Vec<ContextItem>,
     /// Отброшенные item с причинами.
     pub dropped: Vec<ContextItem>,
+    /// Число токенов, оставленных для ответа и зарезервированных операций.
     pub reserves: u32,
+    /// Ledger результата планирования, включая его хэш.
     pub ledger: ContextLedgerEntry,
+    /// Диагностика работы лестницы сокращения.
     pub diagnostics: Vec<LadderDiagnostic>,
+    /// Причина отказа, если контекст нельзя отправить модели.
     pub unavailable: Option<BudgetUnavailable>,
+    /// Использовался ли консервативный fallback estimator.
     pub fallback_estimator: bool,
 }
 
@@ -127,10 +150,12 @@ impl ContextPlan {
         self.unavailable.is_none()
     }
 
+    /// Хэш ledger, связывающий результат планирования с вызовом модели.
     pub fn context_ledger_hash(&self) -> &str {
         &self.ledger.context_ledger_hash
     }
 
+    /// Итоговая оценка prompt в токенах.
     pub fn estimated_prompt_tokens(&self) -> u32 {
         self.ledger.estimated_prompt_tokens
     }
@@ -161,6 +186,7 @@ struct RefusalInput<'a> {
 }
 
 impl ContextPlanner {
+    /// Создаёт планировщик с указанным каталогом и необязательным estimator.
     pub fn new(catalog: ProfileCatalog, primary: Option<Arc<dyn TokenEstimator>>) -> Self {
         Self {
             catalog,
@@ -181,14 +207,17 @@ impl ContextPlanner {
         self.fallback_available = available;
     }
 
+    /// Метрики вызовов и отказов планировщика.
     pub fn metrics(&self) -> &ContextMetrics {
         &self.metrics
     }
 
+    /// Кэш оценок токенов, используемый этим планировщиком.
     pub fn cache(&self) -> &EstimateCache {
         &self.cache
     }
 
+    /// Каталог профилей, используемый для выбора модели.
     pub fn catalog(&self) -> &ProfileCatalog {
         &self.catalog
     }

@@ -6,39 +6,63 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+/// Current version of the workspace checkpoint persistence schema.
 pub const CHECKPOINT_SCHEMA_VERSION: u32 = 1;
+/// Maximum encoded size accepted for a checkpoint manifest.
 pub const MAX_MANIFEST_BYTES: usize = 256 * 1024;
 
+/// Persisted checkpoint metadata pointing to a snapshot held by the artifact store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceCheckpointRecord {
+    /// Stable identifier for this checkpoint.
     pub checkpoint_id: String,
+    /// Workspace that owns the checkpoint.
     pub workspace_id: String,
+    /// Optional task associated with the checkpoint.
     pub task_id: Option<String>,
+    /// Content hash of the checkpoint snapshot.
     pub snapshot_hash: String,
+    /// Serialized checkpoint manifest, bounded by [`MAX_MANIFEST_BYTES`].
     pub manifest_json: Vec<u8>,
+    /// Creation timestamp in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Whether retention policy must preserve this checkpoint.
     pub pinned: bool,
 }
 
+/// Compact checkpoint metadata returned by workspace listing queries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceCheckpointSummary {
+    /// Stable identifier for this checkpoint.
     pub checkpoint_id: String,
+    /// Optional task associated with the checkpoint.
     pub task_id: Option<String>,
+    /// Content hash of the checkpoint snapshot.
     pub snapshot_hash: String,
+    /// Creation timestamp in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Whether retention policy must preserve this checkpoint.
     pub pinned: bool,
 }
 
+/// Durable journal entry describing a checkpoint restore operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RestoreJournalRecord {
+    /// Unique identifier for this restore operation.
     pub operation_id: String,
+    /// Checkpoint the operation refers to.
     pub checkpoint_id: String,
+    /// Operation kind recorded by the caller.
     pub operation: String,
+    /// Current outcome or lifecycle state.
     pub state: String,
+    /// Serialized operation details.
     pub detail_json: Vec<u8>,
+    /// Record creation timestamp in Unix milliseconds.
     pub created_at_ms: i64,
 }
 
+/// Creates checkpoint and restore-journal tables and their lookup indexes if absent.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS workspace_state_checkpoints (
@@ -66,6 +90,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Inserts a checkpoint manifest, rejecting manifests larger than [`MAX_MANIFEST_BYTES`].
 pub fn insert_checkpoint(
     connection: &Connection,
     record: &WorkspaceCheckpointRecord,
@@ -92,6 +117,7 @@ pub fn insert_checkpoint(
     Ok(())
 }
 
+/// Loads a checkpoint by identifier, returning `None` when it does not exist.
 pub fn get_checkpoint(
     connection: &Connection,
     checkpoint_id: &str,
@@ -116,6 +142,7 @@ pub fn get_checkpoint(
         .optional()
 }
 
+/// Lists at most 256 checkpoint summaries for a workspace, newest first.
 pub fn list_checkpoint_summaries(
     connection: &Connection,
     workspace_id: &str,
@@ -137,6 +164,7 @@ pub fn list_checkpoint_summaries(
     rows.collect()
 }
 
+/// Appends a restore operation record to the journal.
 pub fn append_restore_journal(
     connection: &Connection,
     record: &RestoreJournalRecord,

@@ -205,6 +205,16 @@ fn wait_condition_satisfied(
 }
 
 impl EventJournal {
+    /// Reconciles durable background runs after a Core restart.
+    ///
+    /// Stale running states are repaired by the persistence layer using the
+    /// supplied wall-clock time. The return value is the number of affected
+    /// records.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the journal cannot read or update recovery
+    /// state.
     pub async fn recover_durable_background_execution(
         &self,
         now_ms: i64,
@@ -213,6 +223,15 @@ impl EventJournal {
         store::reconcile_after_restart(database.connection(), now_ms).map_err(StorageError::from)
     }
 
+    /// Fires due schedules and resumes runs whose wait conditions are satisfied.
+    ///
+    /// The result counts scheduled or resumed work. Malformed persisted wait
+    /// conditions are skipped rather than interpreted as satisfied.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] when schedule polling or a state transition
+    /// fails.
     pub async fn poll_durable_background_execution(
         &self,
         now_ms: i64,
@@ -454,6 +473,17 @@ impl EventJournal {
         Ok(fired)
     }
 
+    /// Executes a versioned durable-background operation and returns JSON bytes.
+    ///
+    /// Requests are bounded by the contract's ID, scope, and snapshot limits;
+    /// supported operations enforce owner scope, expected revision, and
+    /// idempotency according to the operation. Unsupported operation names are
+    /// rejected.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stable error string for invalid input, unsupported operations,
+    /// policy conflicts, storage failures, or serialization failures.
     pub async fn durable_background_command(
         &self,
         operation: &str,
@@ -870,6 +900,11 @@ impl EventJournal {
         serde_json::to_vec(&response).map_err(|_| "serialization_failed".into())
     }
 
+    /// Serializes an error into the redacted durable-background response shape.
+    ///
+    /// The projection reports an error code and explicitly excludes raw request
+    /// payloads and secrets. It falls back to a fixed JSON error record if
+    /// serialization fails.
     pub async fn durable_background_error_projection(&self, error: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({"status":"error","error_code":error_code(error),"raw_payload":false,"secrets":false})).unwrap_or_else(|_| br#"{"status":"error","error_code":"serialization_failed"}"#.to_vec())
     }

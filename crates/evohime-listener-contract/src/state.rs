@@ -9,14 +9,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ListeningState {
+    /// Capture is stopped and no startup is in progress.
     Stopped,
+    /// Device, permission, and engine checks are running before capture.
     Starting,
+    /// Capture is active and audio frames may be read.
     Listening,
+    /// User requested a pause; capture remains closed.
     PausedByUser,
+    /// Policy currently prevents capture; capture remains closed.
     PausedByPolicy,
+    /// Capture device is contested by another process or session.
     DeviceConflict,
+    /// Selected capture device disconnected.
     DeviceDisconnected,
+    /// Speech engine is unavailable.
     EngineUnavailable,
+    /// Capability permission was denied or revoked.
     Denied,
 }
 
@@ -25,24 +34,36 @@ pub enum ListeningState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ListeningReason {
+    /// Listening was started by the user's explicit request.
     UserRequest,
+    /// Current local time is within a configured quiet window.
     QuietHours,
+    /// Foreground application or title matched a policy blocklist.
     Blocklist,
+    /// A configured stop word stopped the current listening session.
     StopWord,
+    /// Microphone capability is denied.
     PermissionDenied,
+    /// Another process owns or conflicts with the selected device.
     DeviceConflict,
+    /// The selected device was disconnected.
     DeviceDisconnected,
+    /// Speech engine could not be initialized.
     EngineUnavailable,
     /// Движок распознавания не укладывается в бюджет даже на самой лёгкой
     /// модели лестницы (этап 04.4). Слушание остановлено политикой, а не
     /// пользователем и не отказом устройства.
     EngineDegraded,
+    /// System entered sleep and capture was stopped.
     SystemSleep,
+    /// Ambient event or transcript persistence failed.
     StorageFailed,
+    /// No more specific stable reason is available.
     Unknown,
 }
 
 impl ListeningState {
+    /// All lifecycle states in declaration order.
     pub const ALL: [ListeningState; 9] = [
         ListeningState::Stopped,
         ListeningState::Starting,
@@ -113,10 +134,12 @@ impl ListeningState {
         }
     }
 
+    /// Returns whether `next` is an allowed successor of this state.
     pub fn can_transition(self, next: ListeningState) -> bool {
         self.allowed_next().contains(&next)
     }
 
+    /// Applies an allowed transition or returns [`ContractError::InvalidTransition`].
     pub fn transition(self, next: ListeningState) -> Result<ListeningState, ContractError> {
         if self.can_transition(next) {
             Ok(next)

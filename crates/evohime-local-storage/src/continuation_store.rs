@@ -7,68 +7,119 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Immutable continuation policy revision and its scoped owner metadata.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct PolicyRecord {
+    /// Stable policy identifier.
     pub policy_id: String,
+    /// Immutable policy revision.
     pub revision: i64,
+    /// Owner scope to which the policy applies.
     pub owner_scope: String,
+    /// Actor that created or last updated this revision.
     pub actor: String,
+    /// Whether the policy is enabled.
     pub enabled: bool,
+    /// Canonical serialized policy definition.
     pub canonical_json: Vec<u8>,
+    /// Hash of the canonical policy definition.
     pub content_hash: String,
+    /// Revision creation time in milliseconds.
     pub created_at_ms: i64,
+    /// Most recent metadata update time in milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Continuation execution state, budgets, and captured policy/goal revisions.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RunRecord {
+    /// Stable continuation run identifier.
     pub run_id: String,
+    /// Key used to deduplicate run creation.
     pub idempotency_key: String,
+    /// Task being continued.
     pub task_id: String,
+    /// Optional prompt captured for the run.
     pub prompt: Option<String>,
+    /// Optional workspace path captured for the run.
     pub workspace_path: Option<String>,
+    /// Owner scope of the run.
     pub owner_scope: String,
+    /// Policy identifier selected for this run.
     pub policy_id: String,
+    /// Policy revision captured by this run.
     pub policy_revision: i64,
+    /// Policy content hash captured by this run.
     pub policy_hash: String,
+    /// Optional goal associated with the run.
     pub goal_id: Option<String>,
+    /// Optional goal version captured by the run.
     pub goal_version: Option<i64>,
+    /// Current run lifecycle state.
     pub state: String,
+    /// Number of continuation steps already performed.
     pub continuation_index: i64,
+    /// Maximum continuation steps allowed.
     pub max_continuations: i64,
+    /// Maximum model turns allowed.
     pub max_model_turns: i64,
+    /// Model turns consumed so far.
     pub used_model_turns: i64,
+    /// Optional token budget.
     pub token_budget: Option<i64>,
+    /// Tokens consumed so far.
     pub token_used: i64,
+    /// Optional cost budget in micros.
     pub cost_budget_micros: Option<i64>,
+    /// Cost consumed so far in micros.
     pub cost_used_micros: i64,
+    /// Reason the run stopped, if it has stopped.
     pub stop_reason: Option<String>,
+    /// Run creation timestamp in milliseconds.
     pub created_at_ms: i64,
+    /// Most recent run update timestamp in milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// One persisted gate attempt for a continuation run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttemptRecord {
+    /// Continuation run that owns the attempt.
     pub run_id: String,
+    /// Attempt sequence number within the run.
     pub attempt_index: i64,
+    /// Gate evaluated by the attempt.
     pub gate_id: String,
+    /// Fingerprint used to deduplicate equivalent attempts.
     pub fingerprint: String,
+    /// Attempt lifecycle state.
     pub state: String,
+    /// Serialized gate result payload.
     pub result_json: Vec<u8>,
+    /// Attempt creation timestamp in milliseconds.
     pub created_at_ms: i64,
 }
 
+/// Gate outcome recorded for one continuation attempt.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct GateResultRecord {
+    /// Continuation run that owns the result.
     pub run_id: String,
+    /// Gate that produced the result.
     pub gate_id: String,
+    /// Attempt sequence associated with the result.
     pub attempt_index: i64,
+    /// Gate outcome status.
     pub status: String,
+    /// Optional reference to the evidence supporting the outcome.
     pub evidence_ref: Option<String>,
+    /// Optional stable error code when evaluation failed.
     pub error_code: Option<String>,
+    /// Result creation timestamp in milliseconds.
     pub created_at_ms: i64,
 }
 
+/// Creates continuation policies, runs, actions, attempts, and gate-result tables.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS continuation_policies (
@@ -150,17 +201,26 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Inputs for an idempotent, state-fenced continuation action.
 #[derive(Clone, Copy)]
 pub struct TransitionActionInput<'a> {
+    /// Run to transition.
     pub run_id: &'a str,
+    /// Key used to make action retries return the original outcome.
     pub idempotency_key: &'a str,
+    /// Action name recorded in the result.
     pub action: &'a str,
+    /// State the run must currently have.
     pub expected_state: &'a str,
+    /// State to persist when the fence matches.
     pub next_state: &'a str,
+    /// Stop reason stored with the new state.
     pub stop_reason: &'a str,
+    /// Update timestamp in milliseconds.
     pub now_ms: i64,
 }
 
+/// Applies a state-fenced transition exactly once and returns its serialized outcome.
 pub fn apply_transition_action(
     connection: &mut Connection,
     input: TransitionActionInput<'_>,
@@ -212,6 +272,7 @@ pub fn apply_transition_action(
     Ok(result)
 }
 
+/// Persists a scoped policy revision; conflicting content for the same revision is ignored.
 pub fn save_policy(connection: &Connection, record: &PolicyRecord) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO continuation_policies
@@ -237,6 +298,7 @@ pub fn save_policy(connection: &Connection, record: &PolicyRecord) -> rusqlite::
     Ok(())
 }
 
+/// Loads one policy revision by ID, revision, and owner scope.
 pub fn get_policy(
     connection: &Connection,
     policy_id: &str,
@@ -267,6 +329,7 @@ pub fn get_policy(
         .optional()
 }
 
+/// Inserts a continuation run using the run's scoped idempotency key.
 pub fn create_run(connection: &Connection, record: &RunRecord) -> rusqlite::Result<()> {
     connection.execute(
         "INSERT INTO continuation_runs
@@ -303,6 +366,7 @@ pub fn create_run(connection: &Connection, record: &RunRecord) -> rusqlite::Resu
     Ok(())
 }
 
+/// Loads a continuation run by its stable ID.
 pub fn get_run(connection: &Connection, run_id: &str) -> rusqlite::Result<Option<RunRecord>> {
     connection
         .query_row(
@@ -343,6 +407,7 @@ pub fn get_run(connection: &Connection, run_id: &str) -> rusqlite::Result<Option
         .optional()
 }
 
+/// Loads a run by owner scope and idempotency key.
 pub fn get_run_by_idempotency(
     connection: &Connection,
     owner_scope: &str,
@@ -359,6 +424,7 @@ pub fn get_run_by_idempotency(
     run_id.map_or(Ok(None), |id| get_run(connection, &id))
 }
 
+/// Loads a run associated with the specified task and owner scope.
 pub fn get_run_by_task(
     connection: &Connection,
     task_id: &str,
@@ -374,6 +440,7 @@ pub fn get_run_by_task(
     run_id.map_or(Ok(None), |id| get_run(connection, &id))
 }
 
+/// Attaches task prompt/workspace context to a run that has not advanced past its initial state.
 pub fn attach_task_context(
     connection: &Connection,
     task_id: &str,
@@ -389,6 +456,7 @@ pub fn attach_task_context(
     Ok(changed == 1)
 }
 
+/// Lists continuation runs currently in a running state.
 pub fn list_running_runs(connection: &Connection) -> rusqlite::Result<Vec<RunRecord>> {
     let mut statement = connection.prepare(
         "SELECT run_id FROM continuation_runs WHERE state='running'
@@ -489,6 +557,7 @@ pub fn reserve_attempt(
     Ok(true)
 }
 
+/// Finishes a reserved attempt with its final state and serialized result.
 pub fn finish_attempt(
     connection: &Connection,
     run_id: &str,
@@ -505,6 +574,7 @@ pub fn finish_attempt(
     Ok(changed == 1)
 }
 
+/// Stops a run only when it is still in the caller's expected state.
 pub fn stop_run(
     connection: &Connection,
     run_id: &str,
@@ -520,6 +590,7 @@ pub fn stop_run(
     Ok(changed == 1)
 }
 
+/// Changes a run's state using an expected-state compare-and-set.
 pub fn transition_run(
     connection: &Connection,
     run_id: &str,
@@ -536,6 +607,7 @@ pub fn transition_run(
     Ok(changed == 1)
 }
 
+/// Lists a run's attempts newest first, with the requested limit clamped to 1–256.
 pub fn list_attempts(
     connection: &Connection,
     run_id: &str,
@@ -559,6 +631,7 @@ pub fn list_attempts(
     rows.collect()
 }
 
+/// Records the first gate result for a run, gate, and attempt tuple.
 pub fn record_gate_result(
     connection: &Connection,
     record: &GateResultRecord,
@@ -581,6 +654,7 @@ pub fn record_gate_result(
     Ok(())
 }
 
+/// Lists the latest recorded gate results for a run.
 pub fn list_latest_gate_results(
     connection: &Connection,
     run_id: &str,

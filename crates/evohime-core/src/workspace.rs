@@ -21,29 +21,45 @@ const IGNORED_DIRECTORIES: &[&str] = &[
     "obj",
     "target",
 ];
+/// Maximum number of directory entries returned by one listing.
 pub const MAX_LIST_ENTRIES: usize = 200;
+/// Maximum bytes accepted when reading one workspace text file.
 pub const MAX_READ_BYTES: usize = 512 * 1024;
 
+/// Metadata and content digest for one file included in a workspace manifest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ManifestEntry {
+    /// Workspace-relative normalized file path.
     pub relative_path: String,
+    /// Number of content bytes captured for this file.
     pub bytes: usize,
+    /// Stable digest of the captured file bytes.
     pub content_hash: String,
 }
 
+/// Bounded manifest of eligible text files in a workspace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WorkspaceManifest {
+    /// Files included in deterministic path order.
     pub entries: Vec<ManifestEntry>,
+    /// Digest of the canonical entry list.
     pub workspace_hash: String,
+    /// Total captured content size in bytes.
     pub total_bytes: usize,
 }
 
+/// Task, reference, and skill inputs used to assemble model context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextInput<'a> {
+    /// Short task title.
     pub title: &'a str,
+    /// Longer task description.
     pub description: &'a str,
+    /// Conditions that define acceptable task completion.
     pub acceptance_criteria: &'a str,
+    /// Work explicitly excluded from the task.
     pub non_goals: &'a str,
+    /// Workspace references rendered after task and skill sections.
     pub references: &'a [String],
     /// Context contributed by installed skills, as `(skill_name, content)`
     /// pairs. Assembly never trusts caller-supplied order: entries are
@@ -57,21 +73,34 @@ pub struct ContextInput<'a> {
     pub skill_context: &'a [(String, String)],
 }
 
+/// One bounded entry returned by workspace directory listing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WorkspaceEntry {
+    /// Entry name within its parent directory.
     pub name: String,
+    /// Normalized path relative to the selected workspace root.
     pub relative_path: String,
+    /// Whether the entry is a directory.
     pub directory: bool,
+    /// File size when the entry is a regular file.
     pub bytes: Option<usize>,
 }
 
+/// Result of a workspace directory listing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WorkspaceListing {
+    /// Normalized relative path that was listed.
     pub path: String,
+    /// Sorted entries returned for the directory.
     pub entries: Vec<WorkspaceEntry>,
+    /// Whether additional entries were omitted to honor the requested limit.
     pub truncated: bool,
 }
 
+/// Lists eligible immediate children of a workspace-relative directory.
+///
+/// Rejects paths that escape the canonical workspace root and limits the
+/// result to `max_entries` (at most [`MAX_LIST_ENTRIES`]).
 pub fn list_directory(
     root: impl AsRef<Path>,
     relative_path: &str,
@@ -132,6 +161,11 @@ pub fn list_directory(
     })
 }
 
+/// Reads a UTF-8 text file beneath a workspace root, enforcing a byte limit.
+///
+/// Returns `InvalidInput` for non-files or invalid limits, `PermissionDenied`
+/// when a path escapes the workspace, and `InvalidData` for oversized or
+/// non-UTF-8 content.
 pub fn read_text_file(
     root: impl AsRef<Path>,
     relative_path: &str,
@@ -210,6 +244,10 @@ fn is_ignored_directory(entry: &fs::DirEntry) -> bool {
         .unwrap_or(false)
 }
 
+/// Builds a deterministic manifest bounded by file count and total content bytes.
+///
+/// Symlinks, ignored directories, binaries, and unsupported file extensions
+/// are excluded. Files are sorted by path before computing the workspace digest.
 pub fn build_manifest(
     root: impl AsRef<Path>,
     max_files: usize,
@@ -261,6 +299,27 @@ pub fn build_manifest(
     })
 }
 
+/// Renders task, skill, and workspace reference sections within a character budget.
+///
+/// Skill entries are sorted by name so output does not depend on caller order.
+/// Later sections are truncated when the budget is exhausted.
+///
+/// # Example
+///
+/// ```
+/// use evohime_core::workspace::{assemble_context, ContextInput};
+///
+/// let references = vec!["src/lib.rs".to_string()];
+/// let context = assemble_context(ContextInput {
+///     title: "Review API",
+///     description: "Check the public Rust surface.",
+///     acceptance_criteria: "All exported items are documented.",
+///     non_goals: "Do not change runtime behavior.",
+///     references: &references,
+///     skill_context: &[],
+/// }, 2_000);
+/// assert!(context.starts_with("## Task\nReview API"));
+/// ```
 pub fn assemble_context(input: ContextInput<'_>, max_chars: usize) -> String {
     let mut sections = vec![
         ("Task", input.title),
@@ -336,6 +395,10 @@ fn collect_paths(root: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Computes the module's stable 64-bit non-cryptographic digest for content keys.
+///
+/// This FNV-1a digest is intended for deterministic local change detection, not
+/// for authenticity, signatures, or adversarial integrity verification.
 pub fn content_hash(bytes: &[u8]) -> String {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in bytes {

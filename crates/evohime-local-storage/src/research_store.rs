@@ -18,23 +18,44 @@ const MAX_PROVENANCE_LINK_BYTES: usize = 8 * 1024;
 const MAX_TTL_SECONDS: u64 = 31 * 24 * 60 * 60;
 
 /// A redacted, bounded piece of research evidence.
+///
+/// ```
+/// use evohime_local_storage::research_store::ResearchEvidenceRecord;
+///
+/// let evidence = ResearchEvidenceRecord {
+///     id: "evidence-1".into(),
+///     source_kind: "web".into(),
+///     source_ref: "https://example.invalid/spec".into(),
+///     redacted_excerpt: "The API returns a bounded result.".into(),
+///     source_hash: "sha256:abc123".into(),
+///     fetched_at: "2026-09-23T00:00:00Z".into(),
+///     ttl_seconds: 3600,
+///     provenance_link: Some("task-42".into()),
+/// };
+/// assert!(evidence.validate().is_ok());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResearchEvidenceRecord {
+    /// Stable identifier unique within the research evidence table.
     pub id: String,
+    /// Kind of source, such as a web page or repository document.
     pub source_kind: String,
     /// URL, local path, or another stable source locator.
     pub source_ref: String,
+    /// Excerpt stored after sensitive content has been redacted.
     pub redacted_excerpt: String,
     /// Hash of the redacted excerpt or canonical source payload.
     pub source_hash: String,
     /// RFC 3339 or another canonical UTC timestamp chosen by the caller.
     pub fetched_at: String,
+    /// Maximum age of this evidence in seconds; limited to 31 days.
     pub ttl_seconds: u64,
     /// Stable link to the task, run, or provenance record that used it.
     pub provenance_link: Option<String>,
 }
 
 impl ResearchEvidenceRecord {
+    /// Checks required text fields, byte limits, and the maximum evidence lifetime.
     pub fn validate(&self) -> Result<(), ResearchEvidenceError> {
         validate_text("id", &self.id, MAX_ID_BYTES)?;
         validate_text("source_kind", &self.source_kind, MAX_SOURCE_KIND_BYTES)?;
@@ -59,12 +80,24 @@ impl ResearchEvidenceRecord {
     }
 }
 
+/// Validation and SQLite failures from the research evidence contract.
 #[derive(Debug, thiserror::Error)]
 pub enum ResearchEvidenceError {
+    /// A required field is empty or whitespace-only.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Name of the empty field.
+        field: &'static str,
+    },
+    /// A field exceeds the byte limit shown in `max`.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: u64 },
+    Limit {
+        /// Name of the field that exceeded its limit.
+        field: &'static str,
+        /// Maximum permitted size in bytes or lifetime in seconds.
+        max: u64,
+    },
+    /// The underlying SQLite operation failed.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -108,9 +141,12 @@ fn validate_text(
 }
 
 /// SQL contract only; schema creation and migrations remain outside this API.
+///
+/// The caller must create a compatible `research_evidence` table before use.
 pub struct ResearchEvidenceSql;
 
 impl ResearchEvidenceSql {
+    /// SQL statement that inserts a validated evidence record.
     pub const INSERT: &'static str = r#"
         INSERT INTO research_evidence
             (id, source_kind, source_ref, redacted_excerpt, source_hash,
@@ -118,6 +154,7 @@ impl ResearchEvidenceSql {
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
     "#;
 
+    /// SQL statement that selects one evidence record by identifier.
     pub const SELECT_BY_ID: &'static str = r#"
         SELECT id, source_kind, source_ref, redacted_excerpt, source_hash,
                fetched_at, ttl_seconds, provenance_link
@@ -125,6 +162,7 @@ impl ResearchEvidenceSql {
         WHERE id = ?1
     "#;
 
+    /// SQL statement that selects records for one provenance link in identifier order.
     pub const SELECT_BY_PROVENANCE: &'static str = r#"
         SELECT id, source_kind, source_ref, redacted_excerpt, source_hash,
                fetched_at, ttl_seconds, provenance_link
@@ -133,8 +171,10 @@ impl ResearchEvidenceSql {
         ORDER BY id ASC
     "#;
 
+    /// SQL statement that deletes a record by identifier.
     pub const DELETE_BY_ID: &'static str = "DELETE FROM research_evidence WHERE id = ?1";
 
+    /// Validates and inserts a record using the caller-provided schema.
     pub fn insert(
         connection: &Connection,
         record: &ResearchEvidenceRecord,
@@ -159,6 +199,7 @@ impl ResearchEvidenceSql {
         Ok(())
     }
 
+    /// Returns the matching record, or `None` when the identifier is absent.
     pub fn get_by_id(
         connection: &Connection,
         id: &str,
@@ -169,6 +210,7 @@ impl ResearchEvidenceSql {
         Ok(record)
     }
 
+    /// Lists records associated with a provenance link in stable identifier order.
     pub fn list_by_provenance(
         connection: &Connection,
         provenance_link: &str,
@@ -180,6 +222,7 @@ impl ResearchEvidenceSql {
         Ok(records)
     }
 
+    /// Deletes a record and reports whether one row was removed.
     pub fn delete_by_id(connection: &Connection, id: &str) -> Result<bool, ResearchEvidenceError> {
         Ok(connection.execute(Self::DELETE_BY_ID, params![id])? == 1)
     }

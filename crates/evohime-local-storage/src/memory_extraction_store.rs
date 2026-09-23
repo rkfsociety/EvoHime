@@ -8,17 +8,31 @@
 use crate::memory_store::{MemoryRecord, MemoryStoreError, MemoryStoreSql};
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum byte length accepted for a source basis or idempotency key.
 pub const MAX_BASIS_BYTES: usize = 128;
 
+/// Outcome of publishing a memory extraction candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PublishOutcome {
-    Committed { memory_id: String },
-    AlreadyCommitted { memory_id: String },
-    SourceBasisAlreadyCaptured { memory_id: Option<String> },
+    /// A new memory record and lifecycle record were committed atomically.
+    Committed {
+        /// Identifier of the newly committed memory entry.
+        memory_id: String,
+    },
+    /// The idempotency key already names the committed memory record.
+    AlreadyCommitted {
+        /// Identifier of the memory entry committed by the prior attempt.
+        memory_id: String,
+    },
+    /// Another idempotency key already captured this source basis.
+    SourceBasisAlreadyCaptured {
+        /// Identifier of the entry that captured the source basis, if retained.
+        memory_id: Option<String>,
+    },
 }
 
-/// Installs the additive Plan 175 lifecycle table. No prompt, statement,
-/// transcript, provider URL or secret is accepted by this schema.
+/// Installs the additive lifecycle table for extraction publication.
+/// No prompt, statement, transcript, provider URL, or secret is stored here.
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS memory_extraction_lifecycle (

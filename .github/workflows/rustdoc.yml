@@ -1,0 +1,52 @@
+name: Rust documentation
+
+on:
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**/*.rs'
+      - 'crates/**/README.md'
+      - 'docs/**'
+      - '.github/workflows/rustdoc.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/**/*.rs'
+      - 'crates/**/README.md'
+      - 'docs/**'
+      - '.github/workflows/rustdoc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rustdoc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Workspace rustdoc and doc-tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      RUSTDOCFLAGS: -D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Check documentation links and stale references
+        shell: pwsh
+        run: ./scripts/documentation.tests.ps1
+      - name: Build workspace documentation
+        run: cargo doc --workspace --no-deps --locked
+      - name: Enforce documentation for every workspace library API
+        env:
+          RUSTDOCFLAGS: -D missing_docs -D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags
+        run: cargo doc --workspace --lib --no-deps --locked
+      - name: Run workspace documentation examples
+        run: cargo test --workspace --doc --locked

@@ -3,81 +3,128 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Current serialized schema version for edit protocol definitions.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum number of edit protocols accepted by a registry.
 pub const MAX_PROTOCOLS: usize = 16;
+/// Maximum size accepted for one edit input or replacement payload.
 pub const MAX_INPUT_BYTES: usize = 4 * 1024 * 1024;
+/// Maximum number of feedback-guided repair attempts.
 pub const MAX_REPAIR_ATTEMPTS: u8 = 3;
 
+/// Declarative edit strategy evaluated against a revision-bound source file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EditProtocol {
+    /// Replace one exact search string after confirming it occurs once.
     SearchReplace {
+        /// Exact text that must occur in the source.
         search: String,
+        /// Text substituted for the matched range.
         replace: String,
+        /// Required match count; currently only one is accepted.
         expected_matches: u32,
     },
+    /// Apply non-overlapping byte-offset replacements.
     Patch {
+        /// Operations applied from the end of the source toward its beginning.
         operations: Vec<PatchOperation>,
     },
+    /// Set top-level JSON object fields by JSON-pointer-like paths.
     Structured {
+        /// Fields to replace in the structured document.
         fields: Vec<StructuredField>,
     },
+    /// Replace the complete source with fixed content.
     WholeFile {
+        /// Complete replacement contents.
         content: String,
     },
 }
 
+/// One source byte range and its replacement text.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PatchOperation {
+    /// Inclusive start byte offset in the original UTF-8 text.
     pub start: usize,
+    /// Exclusive end byte offset in the original UTF-8 text.
     pub end: usize,
+    /// Text inserted in place of the selected range.
     pub replacement: String,
 }
 
+/// One structured-document field update.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StructuredField {
+    /// Top-level slash-prefixed object key to update.
     pub path: String,
+    /// String value written to that key.
     pub value: String,
 }
 
+/// Revision-bound edit request and its resource/output limits.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EditProtocolDefinition {
+    /// Schema version used to interpret this request.
     pub schema_version: u32,
+    /// Stable identifier for this edit protocol instance.
     pub protocol_id: String,
+    /// Nonzero revision of the protocol definition.
     pub revision: u64,
+    /// Model profile that produced or is permitted to execute the edit.
     pub model_profile_id: String,
+    /// Workspace-relative target path.
     pub file_path: String,
+    /// SHA-256 digest of the exact source revision required for application.
     pub expected_hash: String,
+    /// Strategy and replacement data for the edit.
     pub protocol: EditProtocol,
+    /// Maximum encoded output size in bytes.
     pub max_output_bytes: usize,
+    /// Current repair attempt, bounded by `MAX_REPAIR_ATTEMPTS`.
     pub repair_attempt: u8,
 }
 
+/// Dry-run summary of a validated edit against the expected source revision.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PreflightResult {
+    /// Digest of the edit protocol definition.
     pub protocol_hash: String,
+    /// Number of matched or applied operations.
     pub match_count: u32,
+    /// Digest of the proposed output.
     pub output_hash: String,
+    /// Encoded size of the proposed output.
     pub output_bytes: usize,
+    /// Whether the proposed output differs from the source.
     pub changed: bool,
 }
 
+/// Validation, revision, size, or repair-limit failure.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum EditProtocolError {
+    /// A protocol field or payload violates its contract.
     #[error("invalid edit protocol: {0}")]
     Invalid(&'static str),
+    /// The definition uses an unsupported schema version.
     #[error("unsupported edit protocol version")]
     UnsupportedVersion,
+    /// A valid expected source digest is required before editing.
     #[error("revision/hash precondition is required")]
     MissingPrecondition,
+    /// Search text occurs more than once, so replacement is ambiguous.
     #[error("ambiguous search/replace match")]
     AmbiguousMatch,
+    /// Patch offsets overlap, exceed the source, or split a UTF-8 character.
     #[error("edit range is invalid")]
     InvalidRange,
+    /// Proposed output exceeds the definition's size bound.
     #[error("edit output exceeds limit")]
     TooLarge,
+    /// No further repair attempt is permitted.
     #[error("repair attempts are exhausted")]
     RepairExhausted,
+    /// Source bytes do not match the expected digest.
     #[error("stale file revision")]
     StaleRevision,
 }
@@ -89,6 +136,7 @@ fn valid_text(value: &str, max: usize) -> bool {
     !value.is_empty() && value.len() <= max && !value.contains('\0')
 }
 
+/// Validates request identity, source precondition, strategy data, and size bounds.
 pub fn validate(definition: &EditProtocolDefinition) -> Result<(), EditProtocolError> {
     if definition.schema_version != SCHEMA_VERSION {
         return Err(EditProtocolError::UnsupportedVersion);
@@ -155,6 +203,7 @@ pub fn validate(definition: &EditProtocolDefinition) -> Result<(), EditProtocolE
     Ok(())
 }
 
+/// Validates and hashes a complete edit protocol definition.
 pub fn canonical_hash(definition: &EditProtocolDefinition) -> Result<String, EditProtocolError> {
     validate(definition)?;
     Ok(hash(&serde_json::to_vec(definition).map_err(|_| {
@@ -162,6 +211,7 @@ pub fn canonical_hash(definition: &EditProtocolDefinition) -> Result<String, Edi
     })?))
 }
 
+/// Evaluates the proposed edit without writing the target file.
 pub fn preflight(
     definition: &EditProtocolDefinition,
     original: &str,
@@ -237,6 +287,7 @@ pub fn preflight(
     })
 }
 
+/// Produces bounded structured feedback for a retryable edit failure.
 pub fn repair_feedback(
     error: &EditProtocolError,
     attempt: u8,

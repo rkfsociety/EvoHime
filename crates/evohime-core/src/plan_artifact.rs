@@ -7,27 +7,39 @@ pub use evohime_local_storage::plan_artifact::{
     MAX_STEPS, MAX_TEXT_CHARS, PLAN_ARTIFACT_SCHEMA_VERSION,
 };
 
+/// Request to create a policy-bound execution snapshot for an artifact.
 pub struct ExecutePlanArtifact<'a> {
+    /// Identifier of the artifact to execute.
     pub artifact_id: &'a str,
+    /// Expected artifact revision used to reject stale execution requests.
     pub expected_version: u64,
+    /// Digest of the policy snapshot that governs execution.
     pub policy_snapshot_hash: &'a str,
+    /// Optional task identifier associated with execution.
     pub task_id: Option<&'a str>,
+    /// Optional workflow run identifier associated with execution.
     pub workflow_run_id: Option<&'a str>,
+    /// Correlation identifier propagated to the execution snapshot.
     pub correlation_id: &'a str,
+    /// Idempotency key for retry-safe snapshot creation.
     pub idempotency_key: &'a str,
+    /// Request timestamp in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Core runtime authority for durable plan artifact operations.
 #[derive(Clone)]
 pub struct PlanArtifactRuntime {
     journal: crate::EventJournal,
 }
 
 impl PlanArtifactRuntime {
+    /// Creates a runtime backed by the event journal's database.
     pub fn new(journal: crate::EventJournal) -> Self {
         Self { journal }
     }
 
+    /// Loads an artifact by ID, returning `None` when absent.
     pub async fn get(
         &self,
         artifact_id: &str,
@@ -37,6 +49,7 @@ impl PlanArtifactRuntime {
             .get(artifact_id)
     }
 
+    /// Creates an artifact and publishes its creation event.
     pub async fn create(
         &self,
         artifact: &PlanArtifactV1,
@@ -54,6 +67,7 @@ impl PlanArtifactRuntime {
         Ok(value)
     }
 
+    /// Changes artifact status with optimistic concurrency and publishes an event.
     pub async fn transition(
         &self,
         artifact_id: &str,
@@ -79,6 +93,10 @@ impl PlanArtifactRuntime {
         Ok(value)
     }
 
+    /// Creates an immutable execution snapshot pinned to the supplied policy digest.
+    ///
+    /// The expected version, correlation ID, and idempotency key fence the request;
+    /// a successful snapshot is also published to the event journal.
     pub async fn execute(
         &self,
         request: ExecutePlanArtifact<'_>,

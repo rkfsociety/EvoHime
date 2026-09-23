@@ -9,51 +9,84 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, net::IpAddr};
 
+/// Maximum number of unique HTTPS hostnames in one policy.
 pub const MAX_ALLOWED_DOMAINS: usize = 64;
+/// Maximum accepted hostname length in bytes.
 pub const MAX_DOMAIN_BYTES: usize = 253;
+/// Hard ceiling for an allowed response body in bytes.
 pub const MAX_RESPONSE_BYTES: u64 = 16 * 1024 * 1024;
+/// Hard ceiling for a network request latency budget in milliseconds.
 pub const MAX_LATENCY_MS: u64 = 120_000;
+/// Hard ceiling for an estimated request cost in millionths of a currency unit.
 pub const MAX_COST_MICROS: u64 = 1_000_000;
+/// Maximum length of a machine-readable denial reason.
 pub const MAX_REASON_BYTES: usize = 96;
 
+/// Cache refresh rule for a network-backed capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RefreshPolicy {
+    /// Never refresh cached data.
     Never,
-    IfStale { max_age_seconds: u64 },
+    /// Refresh only when cached data exceeds the supplied age.
+    IfStale {
+        /// Maximum cache age in seconds before refreshing is eligible.
+        max_age_seconds: u64,
+    },
+    /// Refresh on every eligible request; requires refresh to be allowed.
     Always,
 }
 
+/// Host allowlist and resource budgets applied before network I/O.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NetworkCapabilityPolicy {
+    /// Normalized allowlisted DNS names; subdomains are included.
     pub allowed_domains: BTreeSet<String>,
+    /// Maximum response body size in bytes.
     pub max_response_bytes: u64,
+    /// Maximum request latency in milliseconds.
     pub max_latency_ms: u64,
+    /// Maximum estimated request cost in millionths of a currency unit.
     pub max_cost_micros: u64,
+    /// Whether this policy permits refreshing cached data.
     pub allow_refresh: bool,
+    /// Cache freshness rule for refresh-capable operations.
     pub refresh_policy: RefreshPolicy,
 }
 
+/// Bounded network operation metadata evaluated without performing I/O.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NetworkRequest {
+    /// HTTPS URL that will be used by the caller.
     pub url: String,
+    /// Expected response body size in bytes.
     pub expected_response_bytes: u64,
+    /// Expected request duration in milliseconds.
     pub expected_latency_ms: u64,
+    /// Estimated request cost in millionths of a currency unit.
     pub estimated_cost_micros: u64,
+    /// Whether the operation requests a cache refresh.
     pub refresh: bool,
+    /// Whether cancellation was requested before evaluation.
     pub cancelled: bool,
 }
 
+/// Allow or deny outcome from network capability evaluation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionKind {
+    /// The request satisfies the configured bounds and host allowlist.
     Allow,
+    /// The request violates at least one policy constraint.
     Deny,
 }
 
+/// Policy result with a bounded machine-readable reason.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NetworkDecision {
+    /// Whether the policy accepted or rejected the request.
     pub kind: DecisionKind,
+    /// Stable reason code capped at [`MAX_REASON_BYTES`].
     pub reason: String,
 }
 
@@ -72,21 +105,29 @@ impl NetworkDecision {
         }
     }
 
+    /// Returns whether the request passed this policy evaluation.
     pub fn is_allowed(&self) -> bool {
         self.kind == DecisionKind::Allow
     }
 }
 
+/// Invalid host, budget, or refresh configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PolicyError {
+    /// The allowlist contains an empty hostname.
     EmptyDomain,
+    /// A hostname is malformed or is an IP literal.
     InvalidDomain,
+    /// The allowlist exceeds [`MAX_ALLOWED_DOMAINS`].
     TooManyDomains,
+    /// A response, latency, or cost bound is outside the supported range.
     InvalidBudget,
+    /// The refresh age is invalid or conflicts with refresh permission.
     InvalidRefreshAge,
 }
 
 impl NetworkCapabilityPolicy {
+    /// Normalizes an allowlist and checks system limits before creating a policy.
     pub fn new(
         domains: impl IntoIterator<Item = String>,
         max_response_bytes: u64,
@@ -131,6 +172,29 @@ impl NetworkCapabilityPolicy {
         })
     }
 
+    /// Evaluates a request without resolving hosts or initiating network I/O.
+    ///
+    /// Only HTTPS URLs without embedded credentials are eligible. Local and
+    /// private-address targets are rejected. Callers must still apply policy
+    /// to redirects and perform connection-time SSRF checks.
+    ///
+    /// ```
+    /// use evohime_tool_runtime::network_capability::{
+    ///     NetworkCapabilityPolicy, NetworkRequest, RefreshPolicy,
+    /// };
+    /// let policy = NetworkCapabilityPolicy::new(
+    ///     ["example.com".to_owned()], 1024, 5000, 10, false, RefreshPolicy::Never,
+    /// ).unwrap();
+    /// let request = NetworkRequest {
+    ///     url: "https://example.com/data".into(),
+    ///     expected_response_bytes: 128,
+    ///     expected_latency_ms: 500,
+    ///     estimated_cost_micros: 1,
+    ///     refresh: false,
+    ///     cancelled: false,
+    /// };
+    /// assert!(policy.evaluate(&request).is_allowed());
+    /// ```
     pub fn evaluate(&self, request: &NetworkRequest) -> NetworkDecision {
         if request.cancelled {
             return NetworkDecision::deny("cancelled");

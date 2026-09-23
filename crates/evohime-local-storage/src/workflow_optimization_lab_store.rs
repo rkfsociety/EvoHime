@@ -1,7 +1,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
+/// Creates the tables used to persist workflow optimization runs, candidates, and evaluations.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS workflow_optimization_runs (run_id TEXT PRIMARY KEY, run_json BLOB NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS workflow_optimization_candidates (candidate_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, candidate_json BLOB NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS workflow_optimization_evaluations (evaluation_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, evaluation_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts an optimization run once; returns `false` when its ID already exists.
 pub fn put_run(
     c: &Connection,
     id: &str,
@@ -11,6 +13,7 @@ pub fn put_run(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("INSERT OR IGNORE INTO workflow_optimization_runs(run_id,run_json,content_hash,updated_at_ms) VALUES(?1,?2,?3,?4)",params![id,json,hash,now])?==1)
 }
+/// Loads the serialized optimization run for `id`, if it exists.
 pub fn get_run(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT run_json FROM workflow_optimization_runs WHERE run_id=?1",
@@ -19,6 +22,7 @@ pub fn get_run(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     )
     .optional()
 }
+/// Inserts a candidate once and associates it with its parent run.
 pub fn put_candidate(
     c: &Connection,
     id: &str,

@@ -15,20 +15,29 @@ use std::time::Duration;
 
 pub(crate) const MAX_RATE_LIMIT_BODY_BYTES: usize = 16 * 1024;
 
+/// Retry bounds applied to initial provider requests before streaming begins.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetryPolicy {
+    /// Number of retries after the first failed attempt.
     pub max_retries: u32,
+    /// Initial exponential backoff delay.
     pub base_delay: Duration,
+    /// Maximum delay between attempts.
     pub max_delay: Duration,
 }
 
+/// Classification for provider responses indicating rate limiting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RateLimitClass {
+    /// A temporary rate limit for which retry may succeed.
     Transient,
+    /// Provider quota or billing limit is exhausted.
     Exhausted,
+    /// Response does not establish whether the limit is temporary or exhausted.
     Unknown,
 }
 
+/// Classifies a provider status/body as a known rate limit, when applicable.
 pub fn classify_rate_limit(status: StatusCode, body: &str) -> Option<RateLimitClass> {
     let lower = body.to_ascii_lowercase();
     let rate_limited = status == StatusCode::TOO_MANY_REQUESTS
@@ -85,6 +94,7 @@ pub(crate) async fn read_bounded_rate_limit_body(response: reqwest::Response) ->
 }
 
 impl RetryPolicy {
+    /// Loads bounded retry settings from the `EVOHIME_LLM_*` environment variables.
     pub fn from_env() -> Self {
         Self {
             max_retries: env_u32("EVOHIME_LLM_MAX_RETRIES", 3),
@@ -93,6 +103,7 @@ impl RetryPolicy {
         }
     }
 
+    /// Creates a policy that disables retries.
     pub fn none() -> Self {
         Self {
             max_retries: 0,
@@ -101,6 +112,7 @@ impl RetryPolicy {
         }
     }
 
+    /// Creates a short-delay policy for deterministic tests.
     pub fn for_tests(max_retries: u32) -> Self {
         Self {
             max_retries,
@@ -110,6 +122,7 @@ impl RetryPolicy {
     }
 }
 
+/// Reports whether an HTTP status is eligible for an initial-request retry.
 pub fn is_retryable_status(status: StatusCode) -> bool {
     matches!(status.as_u16(), 408 | 429 | 500 | 502 | 503 | 504)
 }

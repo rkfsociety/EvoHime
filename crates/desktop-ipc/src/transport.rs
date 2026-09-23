@@ -2,6 +2,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::{encode_frame, FrameError, MAX_FRAME_BYTES};
 
+/// Reads one complete length-prefixed frame from an asynchronous stream.
 pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<u8>, FrameError> {
     let mut length_bytes = [0_u8; 4];
     reader
@@ -21,6 +22,7 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> Result<Vec<u8>,
     Ok(payload)
 }
 
+/// Encodes and writes one frame, then flushes the asynchronous stream.
 pub async fn write_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     payload: &[u8],

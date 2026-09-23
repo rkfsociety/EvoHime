@@ -7,49 +7,85 @@ use std::{process::Stdio, time::Duration};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
+/// Stable registry identifier for repository status reads.
 pub const STATUS_NAME: &str = "git.status";
+/// User-facing description of the repository status tool.
 pub const STATUS_DESCRIPTION: &str = "Show repository status";
+/// Permission required to inspect repository status.
 pub const STATUS_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+/// Maximum runtime for a repository status read.
 pub const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Stable registry identifier for repository diff reads.
 pub const DIFF_NAME: &str = "git.diff";
+/// User-facing description of the repository diff tool.
 pub const DIFF_DESCRIPTION: &str = "Show repository diff";
+/// Permission required to inspect repository diffs.
 pub const DIFF_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+/// Maximum runtime for a repository diff read.
 pub const DIFF_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Stable registry identifier for committing workspace changes.
 pub const COMMIT_NAME: &str = "git.commit";
+/// User-facing description of the commit tool.
 pub const COMMIT_DESCRIPTION: &str = "Create a git commit";
+/// Permission required to stage and commit repository changes.
 pub const COMMIT_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a repository commit.
 pub const COMMIT_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Stable registry identifier for fast-forward-only pulls.
 pub const PULL_NAME: &str = "git.pull";
+/// User-facing description of the pull tool.
 pub const PULL_DESCRIPTION: &str = "Pull updates from the configured remote";
+/// Permission required to update the local repository from a remote.
 pub const PULL_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a repository pull.
 pub const PULL_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Stable registry identifier for publishing commits to a remote.
 pub const PUSH_NAME: &str = "git.push";
+/// User-facing description of the push tool.
 pub const PUSH_DESCRIPTION: &str = "Push commits to the configured remote";
+/// Permission required to publish repository changes.
 pub const PUSH_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a repository push.
 pub const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Stable registry identifier for repository history reads.
 pub const LOG_NAME: &str = "git.log";
+/// User-facing description of the repository history tool.
 pub const LOG_DESCRIPTION: &str = "Show bounded repository history";
+/// Permission required to inspect repository history.
 pub const LOG_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+/// Maximum runtime for a repository history read.
 pub const LOG_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Stable registry identifier for showing a commit or object.
 pub const SHOW_NAME: &str = "git.show";
+/// User-facing description of the object display tool.
 pub const SHOW_DESCRIPTION: &str = "Show a bounded commit or object diff";
+/// Permission required to inspect repository objects.
 pub const SHOW_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+/// Maximum runtime for a repository object read.
 pub const SHOW_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Stable registry identifier for line ownership reads.
 pub const BLAME_NAME: &str = "git.blame";
+/// User-facing description of the line ownership tool.
 pub const BLAME_DESCRIPTION: &str = "Show line ownership for a workspace file range";
+/// Permission required to inspect repository line history.
 pub const BLAME_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+/// Maximum runtime for a line ownership read.
 pub const BLAME_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Stable registry identifier for changed-file listings.
 pub const CHANGED_FILES_NAME: &str = "git.changed_files";
+/// User-facing description of the changed-file listing tool.
 pub const CHANGED_FILES_DESCRIPTION: &str = "List changed files with status";
+/// Permission required to inspect changed-file status.
 pub const CHANGED_FILES_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+/// Maximum runtime for a changed-file listing.
 pub const CHANGED_FILES_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_GIT_OUTPUT_BYTES: usize = 256 * 1024;
 
@@ -93,11 +129,13 @@ struct BlameInput {
     end_line: Option<u32>,
 }
 
+/// Returns short branch and working-tree status for the workspace repository.
 pub async fn status(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     ensure_no_input(input)?;
     run_git(ctx, &["status", "--short", "--branch"]).await
 }
 
+/// Returns a bounded working-tree diff, optionally scoped to one path.
 pub async fn diff(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input = parse_optional_input::<DiffInput>(&input, DIFF_NAME)?;
     let mut args = vec!["diff", "--no-ext-diff", "--unified=3"];
@@ -108,6 +146,7 @@ pub async fn diff(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     run_git(ctx, &args).await
 }
 
+/// Stages all workspace changes and creates a commit with the supplied message.
 pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input: CommitInput =
         serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
@@ -131,6 +170,7 @@ pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
     }
 }
 
+/// Pulls from the configured remote using fast-forward-only semantics.
 pub async fn pull(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input = parse_optional_input::<RemoteInput>(&input, PULL_NAME)?;
     validate_configured_remote(ctx, input.remote.as_deref().unwrap_or("origin")).await?;
@@ -144,6 +184,7 @@ pub async fn pull(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     run_git(ctx, &args).await
 }
 
+/// Publishes local commits to the configured remote.
 pub async fn push(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input = parse_optional_input::<RemoteInput>(&input, PUSH_NAME)?;
 
@@ -161,6 +202,7 @@ pub async fn push(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     run_git(ctx, &args).await
 }
 
+/// Returns a bounded history for the current repository or an optional path.
 pub async fn log(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input: LogInput =
         serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
@@ -188,6 +230,7 @@ pub async fn log(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErro
     run_git(ctx, &args).await
 }
 
+/// Shows a bounded commit or object diff selected by the input reference.
 pub async fn show(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input: ShowInput =
         serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
@@ -203,6 +246,7 @@ pub async fn show(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
     run_git(ctx, &args).await
 }
 
+/// Returns line ownership for a bounded workspace-relative file range.
 pub async fn blame(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input: BlameInput =
         serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
@@ -236,6 +280,7 @@ pub async fn blame(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
     run_git(ctx, &args).await
 }
 
+/// Lists changed workspace files with their repository status.
 pub async fn changed_files(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     ensure_no_input_for(input, CHANGED_FILES_NAME)?;
     run_git(ctx, &["status", "--short", "--untracked-files=all"]).await

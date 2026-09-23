@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-23.
+Обновлено: 2026-09-24.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -23,6 +23,13 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 в доменные фасады.
 
 ## Актуальный code baseline
+
+Все 22 workspace packages проходят локальный rustdoc gate для каждого library
+target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
+Внешне достижимые Rust API снабжены предметными `///`-описаниями; примеры
+исполняются как workspace doc-tests. CI gate определён в
+`.github/workflows/rustdoc.yml`; точный post-push результат фиксируется в
+`release-evidence.md`.
 
 Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local подключение действий композера shell: выбор файлов текущего workspace, существующий выбор режима доступа через Core и флаг веб-поиска для следующего запроса. Новых IPC-контрактов и Core-owned state не добавлено.
 

@@ -2,15 +2,43 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+//! Model-provider routing, request contracts, retries, and structured outputs.
+//!
+//! The gateway selects providers from validated policy snapshots and exposes
+//! typed outcomes while keeping provider-specific transport behind adapters.
+//!
+//! ```
+//! use evohime_model_gateway::{ResponseContract, ResponseStrategy};
+//! use serde_json::json;
+//!
+//! let contract = ResponseContract::new(
+//!     "summary",
+//!     1,
+//!     json!({"type": "object", "required": ["text"]}),
+//!     ResponseStrategy::Auto,
+//! ).unwrap();
+//! contract.validate_value(&json!({"text": "done"})).unwrap();
+//! ```
+
+/// Gateway configuration and per-model route settings.
 pub mod config;
+/// Provider request, health, and route snapshot contracts.
 pub mod provider_contract;
+/// Provider adapter implementations.
 pub mod providers;
+/// Retry behavior for transient provider failures.
 pub mod retry;
+/// Evaluation catalog used to select routing candidates.
 pub mod routing_catalog;
+/// Privacy and capability rules for candidate selection.
 pub mod routing_policy;
+/// Runtime coordinator for model routing and fallback.
 pub mod routing_runtime;
+/// Privacy-filtered routing decision and health traces.
 pub mod routing_trace;
+/// Validation contracts for structured model responses.
 pub mod structured_response;
+/// Tool call and chat response types exposed by the gateway.
 pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
@@ -46,8 +74,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+/// Maximum response bytes accepted when fetching a provider model catalog.
 pub const MAX_MODEL_CATALOG_BYTES: usize = 512 * 1024;
+/// Maximum number of model entries accepted from one provider catalog.
 pub const MAX_MODEL_CATALOG_ENTRIES: usize = 2_048;
+/// Maximum model identifier length accepted from catalog responses.
 pub const MAX_MODEL_ID_CHARS: usize = 256;
 
 // Ниже — хелперы политики маршрутизации, к которым обращается только ветка
@@ -121,40 +152,64 @@ pub struct ModelGateway {
 /// provider call. The gateway owns transport; Core owns durable catalog and
 /// credential/health lifecycle metadata.
 pub trait RoutePreflight: Send + Sync {
+    /// Checks that the selected route/model is still eligible immediately before dispatch.
     fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError>;
 }
 
+/// Provider and route configuration exposed to the local desktop client.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelConfigResponse {
+    /// Default provider identifier.
     pub provider: String,
+    /// Default model identifier.
     pub model: String,
+    /// Base endpoint for the default route.
     pub base_url: String,
+    /// Whether the default route has the credentials/configuration it needs.
     pub configured: bool,
+    /// Model identifiers discovered for the default provider.
     pub available_models: Vec<String>,
+    /// Name of the route selected for default requests.
     pub default_route: String,
+    /// Configured routes safe to expose to the desktop client.
     pub routes: Vec<ModelRouteResponse>,
 }
 
+/// User-visible summary of one configured model route.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelRouteResponse {
+    /// Route name selected by callers.
     pub name: String,
+    /// Provider identifier for this route.
     pub provider: String,
+    /// Configured model identifier.
     pub model: String,
+    /// Public provider endpoint, with credentials omitted.
     pub base_url: String,
+    /// Whether the route is configured with required credentials.
     pub configured: bool,
+    /// Models discovered for this route.
     pub available_models: Vec<String>,
+    /// Billing classification used by the local UI.
     pub billing_mode: String,
     /// Wave 3B: Provider supports extended thinking
     pub supports_thinking: bool,
 }
 
+/// Provider result paired with the route decision and bounded attempt trace.
 #[derive(Debug, Clone)]
 pub struct PolicyChatResult {
+    /// Route that produced the result.
     pub selected_route: String,
+    /// Remaining route order available for fallback.
     pub fallback_chain: Vec<String>,
+    /// Provider response from the selected route.
     pub result: ChatResult,
+    /// Evaluated routing decision, when policy snapshot selection was used.
     pub decision: Option<SnapshotRouteDecision>,
+    /// Digest of the route snapshot used for this request.
     pub snapshot_hash: Option<String>,
+    /// Bounded route attempt trace, when collected.
     pub attempt_trace: Option<RunTrace>,
 }
 
@@ -219,8 +274,11 @@ pub(crate) async fn read_bounded_response(
 /// whether a request can fit at all.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ModelCatalogEntry {
+    /// Stable model identifier assigned by the provider.
     pub id: String,
+    /// Advertised input context capacity, when known.
     pub context_tokens: Option<u32>,
+    /// Advertised output token limit, when known.
     pub max_output_tokens: Option<u32>,
 }
 
@@ -309,6 +367,7 @@ fn clamp_tokens(value: u64) -> Option<u32> {
     (value > 0).then(|| u32::try_from(value).unwrap_or(u32::MAX))
 }
 
+/// Fetches the configured route's current model identifiers.
 pub async fn fetch_available_models(
     route: &ModelRouteConfig,
 ) -> Result<Vec<String>, ProviderError> {
@@ -320,6 +379,7 @@ pub async fn fetch_available_models(
 }
 
 impl ModelGateway {
+    /// Builds a gateway from validated route configuration.
     pub fn from_config(config: &ModelGatewayConfig) -> Result<Self, ProviderError> {
         if !config.routes.contains_key(&config.default_route) {
             return Err(ProviderError::Config(format!(
@@ -344,6 +404,7 @@ impl ModelGateway {
         })
     }
 
+    /// Builds a gateway around one provider for simple or test configurations.
     pub fn from_provider(provider: Arc<dyn ModelProvider>) -> Self {
         Self {
             default_route: "default".to_string(),
@@ -353,6 +414,7 @@ impl ModelGateway {
         }
     }
 
+    /// Builds a gateway with an explicit default route and route/provider map.
     pub fn from_routes(
         default_route: impl Into<String>,
         routes: HashMap<String, Arc<dyn ModelProvider>>,
@@ -369,21 +431,25 @@ impl ModelGateway {
         })
     }
 
+    /// Adds a Core-owned gate checked after selection and before every provider call.
     pub fn with_route_preflight(mut self, preflight: Arc<dyn RoutePreflight>) -> Self {
         self.route_preflight = Some(preflight);
         self
     }
 
+    /// Loads route configuration from the process environment.
     pub fn try_from_env() -> Result<Self, ProviderError> {
         Self::from_config(&ModelGatewayConfig::from_env()?)
     }
 
+    /// Builds a configuration response without waiting for catalog discovery.
     pub fn config_response(
         config: &ModelGatewayConfig,
     ) -> Result<ModelConfigResponse, ProviderError> {
         Self::config_response_with_models(config, &HashMap::new())
     }
 
+    /// Builds a configuration response with discovered models grouped by route.
     pub fn config_response_with_models(
         config: &ModelGatewayConfig,
         available_models: &HashMap<String, Vec<String>>,
@@ -430,22 +496,27 @@ impl ModelGateway {
         })
     }
 
+    /// Returns the provider kind for the default route.
     pub fn provider_kind(&self) -> ProviderKind {
         self.default_provider.kind()
     }
 
+    /// Returns the provider kind for a named configured route.
     pub fn route_provider_kind(&self, route: &str) -> Result<ProviderKind, ProviderError> {
         Ok(self.provider_for_route(route)?.kind())
     }
 
+    /// Reports whether a named route supports structured output.
     pub fn route_supports_structured_output(&self, route: &str) -> Result<bool, ProviderError> {
         Ok(self.provider_for_route(route)?.supports_structured_output())
     }
 
+    /// Returns the configured model name for the default route.
     pub fn model_name(&self) -> &str {
         self.default_provider.model_name()
     }
 
+    /// Resolves an optional request model against the route's configured default.
     pub fn resolve_model_name(
         &self,
         route: &str,
@@ -459,10 +530,12 @@ impl ModelGateway {
             .to_string())
     }
 
+    /// Returns the endpoint for the default route.
     pub fn base_url(&self) -> &str {
         self.default_provider.base_url()
     }
 
+    /// Starts a streaming chat request using the default route.
     pub fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream {
         match self.stream_chat_for_route(&self.default_route, messages) {
             Ok(stream) => stream,
@@ -472,6 +545,7 @@ impl ModelGateway {
         }
     }
 
+    /// Starts a streaming request using a named route and its configured model.
     pub fn stream_chat_for_route(
         &self,
         route: &str,
@@ -480,6 +554,7 @@ impl ModelGateway {
         self.dispatch_stream(route, None, messages)
     }
 
+    /// Starts a streaming request using an explicit route and model override.
     pub fn stream_chat_for_route_with_model(
         &self,
         route: &str,
@@ -501,6 +576,7 @@ impl ModelGateway {
         self.stream_chat_for_route_with_model(&self.default_route, Some(model), messages)
     }
 
+    /// Executes a tool-enabled chat request on the named route and model.
     pub async fn chat_with_tools_for_route(
         &self,
         route: &str,
@@ -557,6 +633,7 @@ impl ModelGateway {
             .result)
     }
 
+    /// Executes a tool-enabled request under route policy and returns selection evidence.
     pub async fn chat_with_tools_with_policy_and_route(
         &self,
         mode: RoutingMode,
@@ -730,6 +807,7 @@ impl ModelGateway {
         RoutingRuntime::plan(mode, request, &candidates, limits)
     }
 
+    /// Freezes eligible route candidates and policy inputs at the supplied time.
     pub fn route_policy_snapshot(
         &self,
         request: &RoutingRequest,
@@ -814,6 +892,7 @@ impl ModelGateway {
     /// Returns the exact immutable routing snapshot commitment used by the
     /// policy dispatch path. Core calls this immediately before committing a
     /// model-request envelope and passes the same request to dispatch.
+    /// Computes a provenance digest for the selected route snapshot.
     pub fn provenance_route_snapshot_hash(
         &self,
         request: &RoutingRequest,
@@ -821,6 +900,7 @@ impl ModelGateway {
         self.provenance_route_snapshot_hash_with_model(request, None)
     }
 
+    /// Computes a provenance digest including an optional model override.
     pub fn provenance_route_snapshot_hash_with_model(
         &self,
         request: &RoutingRequest,

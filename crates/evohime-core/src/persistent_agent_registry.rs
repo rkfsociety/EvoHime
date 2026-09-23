@@ -1689,6 +1689,17 @@ fn execute(
 }
 
 impl crate::EventJournal {
+    /// Executes a persistent agent registry command with durable idempotency.
+    ///
+    /// The command's actor and idempotency key are validated before execution.
+    /// Repeating the same key with the same command returns its stored result;
+    /// reusing the key for different command content is rejected as a conflict.
+    /// The serialized operation result is returned to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::StorageError`] for invalid command data, idempotency
+    /// conflicts, serialization failures, or storage errors.
     pub async fn persistent_agent_registry_command(
         &self,
         command: RegistryCommand,
@@ -1772,6 +1783,16 @@ impl crate::EventJournal {
             .map_err(|error| crate::StorageError::InvalidInput(error.to_string()))
     }
 
+    /// Recovers registry assignments that were left incomplete at startup.
+    ///
+    /// Recovery is persisted through the same idempotent registry command path
+    /// as ordinary operations. The returned count is the number of assignments
+    /// restored by that command.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::StorageError`] if the recovery operation cannot be
+    /// executed or its result cannot be decoded.
     pub async fn recover_persistent_agent_registry(&self) -> Result<usize, crate::StorageError> {
         let command = RegistryCommand {
             operation: "recover".into(),

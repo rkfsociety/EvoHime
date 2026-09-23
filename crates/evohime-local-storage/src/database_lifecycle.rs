@@ -26,6 +26,16 @@ use crate::{
 };
 
 impl LocalDatabase {
+    /// Opens a database and applies any pending schema migrations.
+    ///
+    /// This is the standard startup entry point. Existing databases are backed
+    /// up before migration; use [`Self::open_prepared`] only when startup has
+    /// already completed migration and schema installation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the path cannot be opened, the stored schema
+    /// is newer than this build, or migration fails.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Self::open_with_migrations(path)
     }

@@ -50,6 +50,7 @@ pub fn protect_action_row(
     Ok(output)
 }
 
+/// Authenticates and decodes a protected recovery projection.
 pub fn unprotect_action_row(
     envelope: &[u8],
     key: &[u8; 32],
@@ -80,6 +81,7 @@ pub fn unprotect_action_row(
     Ok(row)
 }
 
+/// Selects a deterministic sample of read-only actions using the bounded percentage rate.
 pub fn sampled_read_only(action_id: &str, tool_name: &str, rate: u8) -> bool {
     if rate == 0 {
         return false;
@@ -92,6 +94,7 @@ pub fn sampled_read_only(action_id: &str, tool_name: &str, rate: u8) -> bool {
     u16::from_be_bytes([digest[0], digest[1]]) % 100 < rate as u16
 }
 
+/// Encodes a size-limited result status and digest without persisting output contents.
 pub fn bounded_result_marker(
     status: &str,
     hash: &str,

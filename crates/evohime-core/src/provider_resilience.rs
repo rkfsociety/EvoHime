@@ -15,8 +15,11 @@ use std::time::Duration;
 /// Configuration for provider error handling.
 #[derive(Clone, Debug)]
 pub struct ProviderResilienceConfig {
+    /// Maximum time allowed for one model request, in seconds.
     pub model_timeout_secs: u64,
+    /// Maximum number of retries after the initial provider attempt.
     pub retry_max: u32,
+    /// Base delay used by exponential retry backoff, in milliseconds.
     pub backoff_base_ms: u64,
 }
 

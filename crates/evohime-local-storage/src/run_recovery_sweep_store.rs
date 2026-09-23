@@ -1,6 +1,13 @@
 use crate::{LocalDatabase, RecoveredRunRecord, StorageError};
 
 impl LocalDatabase {
+    /// Sets the persisted status of a workflow run.
+    ///
+    /// The update affects the row matching `run_id`; a missing run is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if SQLite cannot execute the update.
     pub fn update_run_status(&self, run_id: &str, status: &str) -> Result<(), StorageError> {
         self.connection.execute(
             "UPDATE runs SET status = ?1 WHERE id = ?2",
@@ -9,6 +16,16 @@ impl LocalDatabase {
         Ok(())
     }
 
+    /// Finds effects left in `executing` state and marks their outcome unknown.
+    ///
+    /// The recovery sweep releases associated leases, blocks workflow runs
+    /// whose effects need reconciliation, and appends a recovery event for each
+    /// affected record. All updates occur in one transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if any query, update, event serialization, or
+    /// transaction commit fails.
     pub fn recover_unknown_effects(&self) -> Result<Vec<RecoveredRunRecord>, StorageError> {
         let transaction = self.connection.unchecked_transaction()?;
         let mut statement = transaction.prepare(

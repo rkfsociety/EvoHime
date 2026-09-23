@@ -1,30 +1,48 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+/// Current schema version for offline consolidation cycles.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Lifecycle state of an offline consolidation cycle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Lifecycle {
+    /// Cycle is being prepared.
     Draft,
+    /// Cycle is eligible for use.
     Active,
+    /// Cycle has been replaced by a newer revision.
     Superseded,
+    /// Cycle failed validation or was explicitly invalidated.
     Invalid,
 }
+/// Bounded, content-addressed metadata for one offline consolidation cycle.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConsolidationCycle {
+    /// Schema version of this cycle.
     pub schema_version: u32,
+    /// Stable cycle identifier.
     pub id: String,
+    /// Monotonically increasing cycle revision.
     pub revision: u64,
+    /// Lifecycle state.
     pub lifecycle: Lifecycle,
+    /// Scope to which this cycle applies.
     pub scope: String,
+    /// Identifiers of source records considered by consolidation.
     pub input_refs: Vec<String>,
+    /// Hash identifying the resulting output.
     pub output_hash: String,
+    /// Hash of the canonical cycle metadata.
     pub content_hash: String,
 }
+/// Validation errors for offline consolidation metadata.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ConsolidationError {
+    /// The cycle failed schema, bounds, or content-hash validation.
     #[error("invalid offline consolidation cycle: {0}")]
     Invalid(String),
 }
+/// Computes the canonical SHA-256 hash with `content_hash` cleared.
 pub fn canonical_hash(c: &ConsolidationCycle) -> Result<String, ConsolidationError> {
     let mut n = c.clone();
     n.content_hash.clear();
@@ -32,6 +50,7 @@ pub fn canonical_hash(c: &ConsolidationCycle) -> Result<String, ConsolidationErr
         .map_err(|_| ConsolidationError::Invalid("not_serializable".into()))?;
     Ok(format!("{:x}", Sha256::digest(b)))
 }
+/// Validates the schema version, field bounds, references, and canonical hash.
 pub fn validate(c: &ConsolidationCycle) -> Result<(), ConsolidationError> {
     if c.schema_version != SCHEMA_VERSION {
         return Err(ConsolidationError::Invalid(
@@ -60,6 +79,7 @@ pub fn validate(c: &ConsolidationCycle) -> Result<(), ConsolidationError> {
     }
     Ok(())
 }
+/// Returns a deterministic metadata-only evaluation after validating the cycle.
 pub fn evaluate(c: &ConsolidationCycle) -> Result<serde_json::Value, ConsolidationError> {
     validate(c)?;
     Ok(

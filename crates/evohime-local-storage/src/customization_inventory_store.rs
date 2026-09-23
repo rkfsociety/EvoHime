@@ -1,8 +1,23 @@
 use rusqlite::{params, Connection};
+
 const MAX_INVENTORY_ITEMS: i64 = 256;
+
+/// Creates the versioned customization inventory table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS customization_inventory (id TEXT PRIMARY KEY, kind TEXT NOT NULL, version INTEGER NOT NULL, item_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts or replaces an inventory item only when its version is newer.
+///
+/// Item JSON is limited to 256 KiB. Returns `false` for an equal or stale
+/// version.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized JSON or failed writes.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -21,6 +36,11 @@ pub fn put(
         params![id, kind, v, j, now],
     )? == 1)
 }
+/// Loads inventory item JSON ordered by kind and ID, capped at 256 rows.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut s =
         c.prepare("SELECT item_json FROM customization_inventory ORDER BY kind,id LIMIT ?1")?;

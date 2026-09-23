@@ -1,8 +1,27 @@
+//! Persistence for versioned project instructions and immutable snapshots.
+//!
+//! ```
+//! use evohime_local_storage::project_instruction_stack_store::{
+//!     install_schema, list_rules, put_rule, PutRuleInput,
+//! };
+//! let connection = rusqlite::Connection::open_in_memory()?;
+//! install_schema(&connection)?;
+//! put_rule(&connection, PutRuleInput {
+//!     rule_id: "rule-1", revision: 1, source_kind: "workspace",
+//!     source_ref: "AGENTS.md", content_hash: "sha256:abc",
+//!     rule_json: br#"{"enabled":true}"#, now_ms: 1,
+//! })?;
+//! assert_eq!(list_rules(&connection, 10)?.len(), 1);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Current schema contract version.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 const MAX_LIST_ROWS: usize = 256;
 
+/// Creates tables for project rules, snapshots, and idempotency results.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS project_instruction_rules (
@@ -28,22 +47,32 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Input fields for a versioned project instruction rule write.
 #[derive(Clone, Copy)]
 pub struct PutRuleInput<'a> {
+    /// Stable rule identifier.
     pub rule_id: &'a str,
+    /// Monotonically increasing rule revision.
     pub revision: i64,
+    /// Origin category of the instruction.
     pub source_kind: &'a str,
+    /// Stable locator for the source instruction.
     pub source_ref: &'a str,
+    /// Digest of the canonical rule payload.
     pub content_hash: &'a str,
+    /// Serialized rule payload.
     pub rule_json: &'a [u8],
+    /// Update timestamp as Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Inserts or updates a rule only when its revision advances.
 pub fn put_rule(connection: &Connection, input: PutRuleInput<'_>) -> rusqlite::Result<()> {
     connection.execute("INSERT INTO project_instruction_rules(rule_id,revision,source_kind,source_ref,content_hash,rule_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(rule_id) DO UPDATE SET revision=excluded.revision,source_kind=excluded.source_kind,source_ref=excluded.source_ref,content_hash=excluded.content_hash,rule_json=excluded.rule_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision > project_instruction_rules.revision", params![input.rule_id, input.revision, input.source_kind, input.source_ref, input.content_hash, input.rule_json, input.now_ms])?;
     Ok(())
 }
 
+/// Lists serialized rules in identifier order, capped at 256 rows.
 pub fn list_rules(connection: &Connection, limit: usize) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut statement = connection
         .prepare("SELECT rule_json FROM project_instruction_rules ORDER BY rule_id LIMIT ?1")?;
@@ -53,6 +82,7 @@ pub fn list_rules(connection: &Connection, limit: usize) -> rusqlite::Result<Vec
     rows
 }
 
+/// Inserts an immutable snapshot; an existing identifier is left unchanged.
 pub fn put_snapshot(
     connection: &Connection,
     snapshot_id: &str,
@@ -65,6 +95,7 @@ pub fn put_snapshot(
     Ok(())
 }
 
+/// Returns the serialized immutable snapshot, if present.
 pub fn get_snapshot(
     connection: &Connection,
     snapshot_id: &str,
@@ -78,6 +109,7 @@ pub fn get_snapshot(
         .optional()
 }
 
+/// Returns the result previously stored for an idempotency key, if present.
 pub fn get_idempotency(connection: &Connection, key: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -88,6 +120,7 @@ pub fn get_idempotency(connection: &Connection, key: &str) -> rusqlite::Result<O
         .optional()
 }
 
+/// Stores a result only if the idempotency key has not been used before.
 pub fn put_idempotency(
     connection: &Connection,
     key: &str,

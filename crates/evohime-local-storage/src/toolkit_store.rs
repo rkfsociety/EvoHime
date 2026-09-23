@@ -1,35 +1,58 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of toolkit versions in the catalog.
 pub const MAX_ENTRIES: usize = 256;
+/// Maximum number of versions retained for one toolkit identifier.
 pub const MAX_VERSIONS_PER_TOOLKIT: usize = 32;
+/// Maximum size of one serialized toolkit manifest.
 pub const MAX_METADATA_BYTES: usize = 64 * 1024;
 
+/// Persisted toolkit version metadata and its bounded manifest.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolkitRecord {
+    /// Stable toolkit identifier.
     pub toolkit_id: String,
+    /// Toolkit semantic or package version.
     pub version: String,
+    /// Digest of the toolkit manifest.
     pub manifest_hash: String,
+    /// Source registry or origin label.
     pub source: String,
+    /// Optional digest of the toolkit package bytes.
     pub package_hash: Option<String>,
+    /// Optional declared license.
     pub license: Option<String>,
+    /// Current catalog lifecycle state.
     pub status: String,
+    /// Core version constraint declared by the toolkit.
     pub compatible_core: String,
+    /// Serialized toolkit manifest, bounded by [`MAX_METADATA_BYTES`].
     pub manifest_json: Vec<u8>,
+    /// Catalog creation timestamp.
     pub created_at: String,
+    /// Last catalog update timestamp.
     pub updated_at: String,
 }
 
+/// Audit entry for a toolkit lifecycle transition.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolkitAuditRecord {
+    /// Toolkit identifier.
     pub toolkit_id: String,
+    /// Toolkit version affected by the transition.
     pub version: String,
+    /// Previous lifecycle state, if one existed.
     pub from_status: Option<String>,
+    /// New lifecycle state.
     pub to_status: String,
+    /// Bounded reason supplied for the transition.
     pub reason: String,
+    /// Transition timestamp.
     pub created_at: String,
 }
 
+/// Creates the toolkit version catalog and lifecycle audit tables.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS toolkit_versions (
@@ -66,6 +89,9 @@ fn validate_text(name: &str, value: &str, max: usize) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Adds a discovered toolkit version without replacing an existing version.
+///
+/// Enforces global, per-toolkit, and manifest-size limits.
 pub fn discover(connection: &Connection, record: &ToolkitRecord) -> rusqlite::Result<()> {
     validate_text("toolkit_id", &record.toolkit_id, 256)?;
     validate_text("version", &record.version, 64)?;
@@ -104,6 +130,7 @@ pub fn discover(connection: &Connection, record: &ToolkitRecord) -> rusqlite::Re
     Ok(())
 }
 
+/// Lists catalog records ordered by toolkit identifier and version, capped at [`MAX_ENTRIES`].
 pub fn list(connection: &Connection, limit: usize) -> rusqlite::Result<Vec<ToolkitRecord>> {
     let mut statement = connection.prepare("SELECT toolkit_id,version,manifest_hash,source,package_hash,license,status,compatible_core,manifest_json,created_at,updated_at FROM toolkit_versions ORDER BY toolkit_id,version LIMIT ?1")?;
     statement
@@ -125,6 +152,9 @@ pub fn list(connection: &Connection, limit: usize) -> rusqlite::Result<Vec<Toolk
         .and_then(|rows| rows.collect())
 }
 
+/// Changes a toolkit lifecycle state and appends a bounded audit reason.
+///
+/// A quarantined toolkit cannot be enabled through this method; use the explicit restore flow.
 pub fn transition(
     connection: &Connection,
     toolkit_id: &str,
@@ -209,6 +239,7 @@ pub fn rollback(
     tx.commit()
 }
 
+/// Lists lifecycle audit records for one toolkit, newest first and capped at 1,024 rows.
 pub fn audit(
     connection: &Connection,
     toolkit_id: &str,

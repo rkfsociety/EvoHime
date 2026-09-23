@@ -9,16 +9,26 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Serialized contract version for the benchmark matrix.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Stable identifier for the benchmark matrix contract.
 pub const CONTRACT_ID: &str = "agent-benchmark-matrix-v1";
+/// Maximum number of challenges in one suite.
 pub const MAX_CHALLENGES: usize = 256;
+/// Maximum model or agent profiles in one suite.
 pub const MAX_PROFILES: usize = 64;
+/// Maximum attempts for each challenge/profile combination.
 pub const MAX_ATTEMPTS: usize = 32;
+/// Maximum requested benchmark parallelism.
 pub const MAX_PARALLELISM: usize = 16;
+/// Maximum identifier field length in Unicode scalar values.
 pub const MAX_ID_CHARS: usize = 128;
+/// Maximum free-text field length in Unicode scalar values.
 pub const MAX_TEXT_CHARS: usize = 16_384;
 
+/// Executes one benchmark challenge without granting access to provider or tool registries.
 pub trait BenchmarkExecutor {
+    /// Runs one seeded attempt for the supplied challenge and profile pair.
     fn execute(
         &self,
         challenge: &BenchmarkChallenge,
@@ -28,6 +38,7 @@ pub trait BenchmarkExecutor {
     ) -> AttemptResult;
 }
 
+/// Deterministic synthetic executor used for reproducible contract checks.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DeterministicBenchmarkExecutor;
 
@@ -98,6 +109,7 @@ impl BenchmarkExecutor for DeterministicBenchmarkExecutor {
     }
 }
 
+/// Executor implementation that marks attempts unavailable without side effects.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UnavailableBenchmarkExecutor;
 
@@ -124,6 +136,11 @@ impl BenchmarkExecutor for UnavailableBenchmarkExecutor {
     }
 }
 
+/// Runs every challenge/model/agent combination with a bounded deterministic seed sequence.
+///
+/// The caller supplies the executor, so the matrix layer does not create
+/// provider credentials or tool capabilities. Output digests and comparison
+/// records contain bounded metrics and redaction status.
 pub fn run_matrix<E: BenchmarkExecutor>(
     suite: &BenchmarkSuite,
     policy: &BenchmarkPolicy,
@@ -185,209 +202,359 @@ pub fn run_matrix<E: BenchmarkExecutor>(
     })
 }
 
+/// Versioned benchmark task definition with synthetic or external fixture binding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BenchmarkChallenge {
+    /// Stable challenge identifier.
     pub id: String,
+    /// Challenge definition version.
     pub version: String,
+    /// Challenge category used for reporting.
     pub category: String,
+    /// Objective supplied to the benchmarked agent.
     pub objective: String,
+    /// Fixture reference consumed by the injected executor.
     pub fixture_ref: String,
+    /// Registered success-evaluator reference.
     pub success_evaluator: String,
+    /// Setup profile reference needed before execution.
     pub setup_profile: String,
+    /// Other challenge identifiers that must be satisfied first.
     pub dependencies: Vec<String>,
+    /// Labels used to group or filter challenges.
     pub tags: Vec<String>,
+    /// Whether evaluation must use synthetic fixtures only.
     pub synthetic_only: bool,
+    /// Maximum action steps for this challenge.
     pub max_steps: u32,
+    /// Optional per-attempt token budget.
     pub max_tokens: Option<u32>,
+    /// Optional per-attempt cost budget in micro-units.
     pub max_cost_micros: Option<u64>,
+    /// Maximum execution time in milliseconds.
     pub timeout_ms: u64,
+    /// Maintenance, improvement, or exploratory suite partition.
     pub set: BenchmarkSet,
+    /// Whether the challenge is security-sensitive.
     pub security: bool,
 }
 
+/// Lifecycle lane used to group benchmark challenges.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum BenchmarkSet {
+    /// Detects regressions in maintained behavior.
     Maintain,
+    /// Measures progress on targeted improvements.
     Improve,
+    /// Explores behavior beyond the current required baseline.
     Explore,
 }
 
+/// Immutable model configuration referenced by a benchmark suite.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelProfile {
+    /// Stable profile identifier.
     pub id: String,
+    /// Provider name or registry identity.
     pub provider: String,
+    /// Model identifier within the provider.
     pub model: String,
+    /// Optional reasoning effort setting.
     pub reasoning_effort: Option<String>,
+    /// Optional temperature in thousandths.
     pub temperature_millis: Option<u32>,
+    /// Optional maximum generated token count.
     pub max_output_tokens: Option<u32>,
+    /// Optional routing profile reference.
     pub routing_profile: Option<String>,
+    /// Digest of the canonical model profile.
     pub content_hash: String,
 }
 
+/// Snapshot of agent prompt, memory, context, and tool-routing configurations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentProfile {
+    /// Stable profile identifier.
     pub id: String,
+    /// Prompt configuration version.
     pub prompt_version: String,
+    /// Memory policy version.
     pub memory_policy_version: String,
+    /// Context policy version.
     pub context_policy_version: String,
+    /// Tool-routing configuration version.
     pub tool_routing_version: String,
+    /// Optional child-agent policy version.
     pub child_policy_version: Option<String>,
+    /// Optional continuation policy version.
     pub continuation_policy_version: Option<String>,
+    /// Optional digest of the installed skill set.
     pub skills_set_hash: Option<String>,
+    /// Optional digest of the refinement state.
     pub refinement_state_hash: Option<String>,
+    /// Digest of the canonical agent profile.
     pub content_hash: String,
 }
 
+/// One benchmark suite containing challenges and profile combinations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BenchmarkSuite {
+    /// Stable suite identifier.
     pub id: String,
+    /// Suite version used to scope comparisons.
     pub version: String,
+    /// Challenges included in the matrix.
     pub challenges: Vec<BenchmarkChallenge>,
+    /// Model configurations included in the matrix.
     pub model_profiles: Vec<ModelProfile>,
+    /// Agent configurations included in the matrix.
     pub agent_profiles: Vec<AgentProfile>,
+    /// Pass-rate, latency, cost, and security thresholds.
     pub thresholds: Thresholds,
 }
 
+/// Acceptance thresholds applied to benchmark aggregates.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Thresholds {
+    /// Minimum pass rate in thousandths, from 0 to 1000.
     pub min_pass_rate_millis: u32,
+    /// Optional maximum 95th-percentile latency in milliseconds.
     pub max_latency_p95_ms: Option<u64>,
+    /// Optional maximum 95th-percentile cost in micro-units.
     pub max_cost_p95_micros: Option<u64>,
+    /// Maximum tolerated security failures.
     pub max_security_failures: u32,
 }
 
+/// Deterministic attempt count, resource budgets, seed, and execution mode for a matrix run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BenchmarkPolicy {
+    /// Attempts executed for each challenge/model/agent combination.
     pub attempts: u16,
+    /// Maximum requested parallel attempt count.
     pub max_parallelism: u16,
+    /// Seed used to derive repeatable attempt seeds.
     pub seed: u64,
+    /// Optional aggregate token budget for the full matrix.
     pub global_token_budget: Option<u64>,
+    /// Optional aggregate cost budget in micro-units.
     pub global_cost_budget_micros: Option<u64>,
+    /// Whether the run uses deterministic or real execution.
     pub mode: BenchmarkMode,
 }
 
+/// Execution environment requested for a benchmark run.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum BenchmarkMode {
+    /// Use a deterministic or fixture-backed executor.
     Deterministic,
+    /// Use an externally supplied real executor.
     Real,
 }
 
+/// Outcome category returned by one benchmark attempt.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AttemptOutcome {
+    /// Attempt satisfied the challenge's success evaluator.
     Passed,
+    /// Attempt completed but did not satisfy the success evaluator.
     Failed,
+    /// A prerequisite prevented the attempt from proceeding.
     PrerequisiteFailed,
+    /// Policy or suite configuration skipped the attempt.
     Skipped,
+    /// Required executor capability was unavailable.
     Unavailable,
+    /// Outcome could not be determined.
     Unknown,
+    /// Attempt was blocked before execution.
     Blocked,
+    /// Attempt result violated the benchmark contract.
     Invalid,
 }
 
+/// Normalized failure classification for a benchmark attempt.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureClass {
+    /// Agent reasoning produced an incorrect result.
     Reasoning,
+    /// Agent selected an inappropriate tool.
     WrongTool,
+    /// Tool arguments did not satisfy the tool contract.
     InvalidArguments,
+    /// Permission policy denied the operation.
     Permission,
+    /// Agent violated an approval requirement.
     ApprovalViolation,
+    /// Agent claimed a capability that was not available.
     HallucinatedCapability,
+    /// Attempt exceeded its time limit.
     Timeout,
+    /// Attempt or run exceeded its resource budget.
     BudgetExceeded,
+    /// Model provider returned an error.
     Provider,
+    /// Infrastructure or executor failed.
     Infrastructure,
+    /// Recovery after a failure did not succeed.
     Recovery,
+    /// Success evaluator failed or rejected invalidly.
     Evaluator,
+    /// Attempt violated a security requirement.
     Security,
 }
 
+/// Bounded metrics and outcome for one attempt.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AttemptResult {
+    /// Final outcome category.
     pub outcome: AttemptOutcome,
+    /// Optional normalized failure classification.
     pub failure_class: Option<FailureClass>,
+    /// Whether the attempt triggered a security violation.
     pub security_violation: bool,
+    /// End-to-end latency in milliseconds.
     pub latency_ms: u64,
+    /// Number of execution steps used.
     pub steps: u32,
+    /// Prompt token count.
     pub prompt_tokens: u32,
+    /// Completion token count.
     pub completion_tokens: u32,
+    /// Attempt cost in micro-units.
     pub cost_micros: u64,
+    /// Digest of the bounded output, not raw output text.
     pub output_digest: String,
+    /// Digest of the tool trace, not raw tool contents.
     pub tool_trace_digest: String,
 }
 
+/// Aggregated counts, percentiles, and failure-class totals for attempts.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Metrics {
+    /// Total number of attempts.
     pub attempts: u32,
+    /// Attempts with a completed pass or failure outcome.
     pub completed: u32,
+    /// Attempts that passed.
     pub passed: u32,
+    /// Pass rate in thousandths, from 0 to 1000.
     pub pass_rate_millis: u32,
+    /// Number of attempts classified as timeouts.
     pub timeout_count: u32,
+    /// Number of security failures.
     pub security_failures: u32,
+    /// 50th-percentile completed-attempt latency in milliseconds.
     pub p50_latency_ms: Option<u64>,
+    /// 95th-percentile completed-attempt latency in milliseconds.
     pub p95_latency_ms: Option<u64>,
+    /// 99th-percentile completed-attempt latency in milliseconds.
     pub p99_latency_ms: Option<u64>,
+    /// 50th-percentile completed-attempt cost in micro-units.
     pub p50_cost_micros: Option<u64>,
+    /// 95th-percentile completed-attempt cost in micro-units.
     pub p95_cost_micros: Option<u64>,
+    /// 99th-percentile completed-attempt cost in micro-units.
     pub p99_cost_micros: Option<u64>,
+    /// Count by normalized failure class.
     pub failure_classes: BTreeMap<FailureClass, u32>,
 }
 
+/// Compatible prior metrics used as a regression comparison baseline.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Baseline {
+    /// Stable baseline identifier.
     pub id: String,
+    /// Suite version associated with the baseline.
     pub suite_version: String,
+    /// Challenge represented by the baseline.
     pub challenge_id: String,
+    /// Digest of the model profile used to produce the baseline.
     pub model_profile_hash: String,
+    /// Digest of the agent profile used to produce the baseline.
     pub agent_profile_hash: String,
+    /// Aggregated metrics from the baseline run.
     pub metrics: Metrics,
+    /// Source commit used to generate the baseline.
     pub source_commit: String,
+    /// Baseline revision.
     pub revision: u64,
 }
 
+/// Result of comparing current benchmark metrics with a baseline and thresholds.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ComparisonVerdict {
+    /// Current metrics improved against the compatible baseline.
     Improved,
+    /// Metrics remain within accepted bounds.
     Stable,
+    /// Current results violate a threshold or regress from baseline.
     Regressed,
+    /// Completed samples are insufficient for comparison.
     Inconclusive,
+    /// No compatible prior baseline exists.
     New,
+    /// Run could not proceed.
     Blocked,
+    /// Configuration or data failed validation.
     Invalid,
 }
 
+/// Per-combination comparison result and security hard-failure flag.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BenchmarkComparison {
+    /// Verdict derived from metrics and thresholds.
     pub verdict: ComparisonVerdict,
+    /// Whether the result exceeds a configured security-failure threshold.
     pub security_hard_failure: bool,
+    /// Bounded explanation for the comparison verdict.
     pub reason: String,
 }
 
+/// Redacted outcome report for one benchmark matrix run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BenchmarkReport {
+    /// Contract identifier used to produce the report.
     pub contract_id: String,
+    /// Digest of the benchmark contract identifier.
     pub contract_hash: String,
+    /// Stable run identifier.
     pub run_id: String,
+    /// Source commit identifier used for the run.
     pub source_commit: String,
+    /// Suite identifier.
     pub suite_id: String,
+    /// Suite version.
     pub suite_version: String,
+    /// Model profile identifiers included in the run.
     pub model_profile_ids: Vec<String>,
+    /// Agent profile identifiers included in the run.
     pub agent_profile_ids: Vec<String>,
+    /// Aggregated metrics keyed by challenge/model/agent combination.
     pub metrics: BTreeMap<String, Metrics>,
+    /// Threshold and baseline comparison keyed by combination.
     pub comparisons: BTreeMap<String, BenchmarkComparison>,
+    /// Must be `redacted` before the report is exposed.
     pub redaction_status: String,
 }
 
+/// Invalid benchmark data, exceeded limits, sensitive output, or duplicate identifiers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BenchmarkValidationError {
+    /// A field does not satisfy the contract.
     InvalidField(String),
+    /// Input contract version is not supported.
     UnsupportedVersion(u32),
+    /// A collection or run exceeds a configured limit.
     Limit(String),
+    /// A sensitive field was not safely redacted.
     SensitiveField(String),
+    /// An identifier was duplicated.
     Duplicate(String),
 }
 
@@ -425,6 +592,7 @@ fn valid_hash(name: &str, value: &str) -> Result<(), BenchmarkValidationError> {
 }
 
 impl BenchmarkChallenge {
+    /// Validates challenge identifiers, references, bounds, and runtime limits.
     pub fn validate(&self) -> Result<(), BenchmarkValidationError> {
         bounded("challenge.id", &self.id)?;
         bounded("challenge.version", &self.version)?;
@@ -444,6 +612,7 @@ impl BenchmarkChallenge {
 }
 
 impl ModelProfile {
+    /// Validates model identity fields and the canonical profile digest shape.
     pub fn validate(&self) -> Result<(), BenchmarkValidationError> {
         bounded("model.id", &self.id)?;
         bounded("model.provider", &self.provider)?;
@@ -452,6 +621,7 @@ impl ModelProfile {
     }
 }
 impl AgentProfile {
+    /// Validates version references and the canonical profile digest shape.
     pub fn validate(&self) -> Result<(), BenchmarkValidationError> {
         bounded("agent.id", &self.id)?;
         bounded("agent.prompt_version", &self.prompt_version)?;
@@ -463,6 +633,7 @@ impl AgentProfile {
 }
 
 impl BenchmarkSuite {
+    /// Validates suite contents, uniqueness, profile bounds, and pass-rate threshold.
     pub fn validate(&self) -> Result<(), BenchmarkValidationError> {
         bounded("suite.id", &self.id)?;
         bounded("suite.version", &self.version)?;
@@ -496,6 +667,7 @@ impl BenchmarkSuite {
         Ok(())
     }
 
+    /// Computes the canonical SHA-256 digest of the serialized suite.
     pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
         let bytes = serde_json::to_vec(self)?;
         Ok(hex::encode(Sha256::digest(bytes)))
@@ -503,6 +675,7 @@ impl BenchmarkSuite {
 }
 
 impl BenchmarkPolicy {
+    /// Checks that attempt count and requested parallelism are within bounds.
     pub fn validate(&self) -> Result<(), BenchmarkValidationError> {
         if self.attempts == 0 || self.attempts as usize > MAX_ATTEMPTS {
             return Err(BenchmarkValidationError::Limit("attempts".into()));
@@ -514,6 +687,31 @@ impl BenchmarkPolicy {
     }
 }
 
+/// Aggregates pass rate, security failures, failure classes, latency, and cost percentiles.
+///
+/// Only passed and failed outcomes count as completed attempts; unavailable
+/// and unknown outcomes are excluded from the pass-rate denominator.
+///
+/// # Example
+///
+/// ```
+/// use evohime_core::agent_benchmark_matrix::{aggregate_attempts, AttemptResult};
+///
+/// let metrics = aggregate_attempts(&[AttemptResult {
+///     outcome: evohime_core::agent_benchmark_matrix::AttemptOutcome::Passed,
+///     failure_class: None,
+///     security_violation: false,
+///     latency_ms: 12,
+///     steps: 1,
+///     prompt_tokens: 10,
+///     completion_tokens: 5,
+///     cost_micros: 2,
+///     output_digest: "a".repeat(64),
+///     tool_trace_digest: "b".repeat(64),
+/// }]);
+/// assert_eq!(metrics.pass_rate_millis, 1000);
+/// assert_eq!(metrics.completed, 1);
+/// ```
 pub fn aggregate_attempts(attempts: &[AttemptResult]) -> Metrics {
     let mut metrics = Metrics {
         attempts: attempts.len() as u32,
@@ -573,6 +771,7 @@ fn percentile(values: &mut [u64], percentile: u64) -> Option<u64> {
     values.get(index.min(values.len() - 1)).copied()
 }
 
+/// Compares current metrics against security and performance thresholds and an optional baseline.
 pub fn compare_metrics(
     current: &Metrics,
     baseline: Option<&Baseline>,
@@ -632,6 +831,7 @@ pub fn compare_metrics(
     }
 }
 
+/// Returns a serialized report only when its redaction marker confirms safe projection.
 pub fn redact_report(report: &BenchmarkReport) -> Result<Value, BenchmarkValidationError> {
     if report.redaction_status != "redacted" {
         return Err(BenchmarkValidationError::SensitiveField(

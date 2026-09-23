@@ -4,10 +4,15 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Registry identifier for unified-diff file patching.
 pub const NAME: &str = "filesystem.patch";
+/// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Apply a unified diff to one workspace file";
+/// Permission required to modify workspace contents.
 pub const PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Maximum duration for one patch operation.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
+/// Maximum UTF-8 byte length accepted for a patch payload.
 pub const MAX_PATCH_BYTES: usize = 131_072;
 
 #[derive(Deserialize)]
@@ -46,6 +51,17 @@ pub(crate) fn validate_input(value: &Value) -> Result<(), ToolError> {
     validate_patch_bytes(&input.patch)
 }
 
+/// Applies a unified diff only when the target's current revision matches the
+/// supplied expected hash.
+///
+/// The file is read and written through the revision-safe workspace boundary;
+/// invalid hunks, oversized patches, missing files, and stale hashes are
+/// rejected without applying a partial patch.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid input, denied access, missing files,
+/// mismatched revisions, malformed hunks, or write failures.
 pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
     let input = parse_input(value)?;
     let (_, original) = crate::revision_safe_workspace_files::read(ctx, &input.path)

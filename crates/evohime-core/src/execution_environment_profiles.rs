@@ -9,18 +9,26 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Maximum number of owner references in one profile.
 pub const MAX_BINDINGS: usize = 32;
+/// Maximum byte length for identifiers accepted by this contract.
 pub const MAX_ID_BYTES: usize = 128;
 
+/// Scope that determines which environment profile applies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum EnvironmentScope {
+    /// Applies to all application sessions.
     Application,
+    /// Applies within one workspace.
     Workspace,
+    /// Applies within one project.
     Project,
+    /// Applies as the default for a conversation.
     ConversationDefault,
 }
 impl EnvironmentScope {
+/// Returns the relative precedence of this scope.
     pub fn precedence(self) -> u8 {
         match self {
             Self::Application => 0,
@@ -31,101 +39,163 @@ impl EnvironmentScope {
     }
 }
 
+/// Owner-managed resource categories that a profile may reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Ord, PartialOrd)]
 #[serde(rename_all = "snake_case")]
 pub enum BindingKind {
+    /// References a model routing policy.
     ModelRouting,
+    /// References an execution backend.
     ExecutionBackend,
+    /// References an external agent preset.
     ExternalAgentPreset,
+    /// References a workbench configuration.
     Workbench,
+    /// References an MCP server configuration.
     McpServer,
+    /// References a selected set of skills.
     SkillSet,
+    /// References project instruction sources.
     InstructionStack,
+    /// References a tool execution policy.
     ExecutionPolicy,
+    /// References an approval policy.
     ApprovalPolicy,
+    /// References a run continuation policy.
     ContinuationPolicy,
+    /// References an execution budget policy.
     BudgetPolicy,
+    /// References an owner-managed credential association.
     CredentialBinding,
 }
 
+/// Revision matching policy for one owner reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReferenceMode {
+    /// Requires the exact configured revision.
     PinnedRevision,
+    /// Follows a newer revision when the owner reports it compatible.
     FollowCompatible,
 }
 
+/// Aggregate health state produced during binding preflight.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProfileState {
+    /// Every required binding resolved without diagnostics.
     Ready,
+    /// Required bindings resolved with revision drift or compatibility concerns.
     NeedsReview,
+    /// Only optional bindings have issues.
     Degraded,
+    /// A required binding is unavailable or denied.
     Broken,
 }
 
+/// Earliest lifecycle boundary at which an environment change is safe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SafeBoundary {
+    /// Takes effect only when a new run starts.
     NewRunOnly,
+    /// Takes effect at the next turn boundary.
     NextTurn,
+    /// Takes effect only for a new conversation.
     NewConversationOnly,
 }
 
+/// Reference to an owner-managed resource and its required revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvironmentBinding {
+    /// Category of owner-managed resource referenced by this binding.
     pub kind: BindingKind,
+    /// Owner-assigned resource identifier.
     pub reference: String,
+    /// Revision required by this binding.
     pub revision: u64,
+    /// Policy for matching the referenced resource revision.
     pub mode: ReferenceMode,
+    /// Whether an unresolved binding prevents activation.
     pub required: bool,
 }
 
+/// Versioned set of references composing an execution environment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionEnvironmentProfile {
+    /// Stable profile identifier.
     pub id: String,
+    /// Revision required by this binding.
     pub revision: u64,
+    /// Scope whose precedence applies to this profile.
     pub scope: EnvironmentScope,
+    /// Owner references composed by the profile.
     pub bindings: Vec<EnvironmentBinding>,
+    /// Integrity hash over the canonical profile content.
     pub content_hash: String,
 }
 
+/// Stable diagnostic describing a failed or uncertain binding.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BindingDiagnostic {
+    /// Category of owner-managed resource referenced by this binding.
     pub kind: BindingKind,
+    /// Owner-assigned resource identifier.
     pub reference: String,
+    /// Stable machine-readable diagnostic code.
     pub code: String,
+    /// Whether an unresolved binding prevents activation.
     pub required: bool,
 }
 
+/// Resolution result used to decide whether a profile can be activated.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Preflight {
+    /// Aggregate result of checking the profile bindings.
     pub state: ProfileState,
+    /// Earliest execution boundary at which changes can take effect.
     pub boundary: SafeBoundary,
+    /// Binding problems discovered during preflight.
     pub diagnostics: Vec<BindingDiagnostic>,
+    /// Resolved owner revisions keyed by binding identity.
     pub resolved_revisions: BTreeMap<String, u64>,
 }
 
+/// Immutable, hashed profile state captured for a run boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EffectiveEnvironmentSnapshot {
+    /// Identifier of the effective profile.
     pub profile_id: String,
+    /// Revision of the effective profile.
     pub profile_revision: u64,
+    /// Content hash of the effective profile.
     pub profile_hash: String,
+    /// Aggregate result of checking the profile bindings.
     pub state: ProfileState,
+    /// Earliest execution boundary at which changes can take effect.
     pub boundary: SafeBoundary,
+    /// Resolved owner revisions keyed by binding identity.
     pub resolved_revisions: BTreeMap<String, u64>,
+    /// Integrity hash over the effective environment snapshot.
     pub snapshot_hash: String,
 }
 
+/// Idempotent request routed to the authoritative profile owner.
 #[derive(Debug, Clone)]
 pub struct EnvironmentProfileCommand {
+    /// Owner-supported profile command name.
     pub operation: String,
+    /// Identifier of the effective profile.
     pub profile_id: String,
+    /// Scope and owner identity authorized to process the command.
     pub owner_scope: String,
+    /// Serialized command input interpreted by the owning subsystem.
     pub payload: Vec<u8>,
+    /// Revision precondition for optimistic concurrency.
     pub expected_revision: u64,
+    /// Stable key used to deduplicate command retries.
     pub idempotency_key: String,
 }
 
@@ -149,16 +219,29 @@ fn command_hash(command: &EnvironmentProfileCommand) -> String {
     )
 }
 
+/// Result returned by an owner when resolving a resource reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OwnerAvailability {
-    Available { revision: u64, compatible: bool },
+    /// Owner resolved the reference and reports its revision compatibility.
+    Available {
+        /// Revision selected by the resource owner.
+        revision: u64,
+        /// Whether the owner considers that revision compatible.
+        compatible: bool,
+    },
+    /// The referenced owner resource does not exist.
     Missing,
+    /// The owning subsystem could not resolve the reference.
     UnavailableOwner,
+    /// The owner denied resolution under its policy.
     PolicyDenied,
+    /// The reference is outside the caller or profile scope.
     ScopeDenied,
 }
 
+/// Owner adapter that resolves references without granting capabilities.
 pub trait EnvironmentBindingResolver {
+    /// Resolves one reference through its authoritative owner without changing state.
     fn resolve(&self, binding: &EnvironmentBinding) -> OwnerAvailability;
 }
 
@@ -169,6 +252,8 @@ pub struct SqliteEnvironmentResolver<'a> {
     connection: &'a Connection,
 }
 impl<'a> SqliteEnvironmentResolver<'a> {
+/// Creates a profile and computes its canonical content hash.
+    /// Creates a resolver over existing owner metadata.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
@@ -194,14 +279,19 @@ impl EnvironmentBindingResolver for SqliteEnvironmentResolver<'_> {
     }
 }
 
+/// Validation or activation failure for an environment profile.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum EnvironmentProfileError {
+    /// Profile or owner identifier is malformed.
     #[error("invalid profile id")]
     InvalidId,
+    /// A binding violates its required fields or bounds.
     #[error("invalid binding")]
     InvalidBinding,
+    /// The profile contains duplicate references of the same kind.
     #[error("duplicate binding")]
     DuplicateBinding,
+    /// Preflight state cannot be activated as a new effective environment.
     #[error("profile is not activatable: {0:?}")]
     NotActivatable(ProfileState),
 }
@@ -243,6 +333,7 @@ fn validate_profile(profile: &ExecutionEnvironmentProfile) -> Result<(), Environ
 }
 
 impl ExecutionEnvironmentProfile {
+/// Creates a profile and computes its canonical content hash.
     pub fn new(
         id_value: String,
         revision: u64,
@@ -277,6 +368,7 @@ impl ExecutionEnvironmentProfile {
     }
 }
 
+/// Resolves profile bindings and reports activation health without granting capabilities.
 pub fn preflight(
     profile: &ExecutionEnvironmentProfile,
     resolver: &impl EnvironmentBindingResolver,
@@ -374,6 +466,7 @@ pub fn preflight(
     }
 }
 
+/// Creates a hashed immutable snapshot when the preflight state is activatable.
 pub fn effective_snapshot(
     profile: &ExecutionEnvironmentProfile,
     check: &Preflight,
@@ -401,6 +494,7 @@ pub fn effective_snapshot(
 }
 
 impl crate::EventJournal {
+/// Routes an idempotent profile command to the authoritative storage owner.
     pub async fn execution_environment_profile_command(
         &self,
         command: EnvironmentProfileCommand,

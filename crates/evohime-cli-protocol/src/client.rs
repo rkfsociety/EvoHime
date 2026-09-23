@@ -3,6 +3,7 @@ use evohime_desktop_ipc::{generated, session, transport};
 use prost::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
 
+/// Authenticated client bound to one Core session and ordered event stream.
 pub struct CoreClient<S> {
     pub(crate) stream: S,
     pub(crate) sequence: u64,
@@ -15,6 +16,10 @@ impl<S> CoreClient<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    /// Authenticates the CLI role over an already-connected async stream.
+    ///
+    /// `context` must be the supervisor-issued launch context. Events at or
+    /// before `after_sequence` are not replayed by this client.
     pub async fn connect(
         stream: S,
         context: &session::LaunchContext,
@@ -61,6 +66,7 @@ where
         Ok(client)
     }
 
+    /// Returns the last event sequence consumed by this session.
     pub fn sequence(&self) -> u64 {
         self.sequence
     }

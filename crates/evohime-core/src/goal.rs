@@ -14,16 +14,19 @@ pub use evohime_local_storage::goal::{
 use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
 
+/// Core-authorized runtime operations for durable goals.
 #[derive(Clone)]
 pub struct GoalRuntime {
     journal: crate::EventJournal,
 }
 
 impl GoalRuntime {
+    /// Creates a goal runtime over the event journal's database.
     pub fn new(journal: crate::EventJournal) -> Self {
         Self { journal }
     }
 
+    /// Loads one goal by ID, returning `None` when it does not exist.
     pub async fn get(
         &self,
         goal_id: &str,
@@ -32,6 +35,7 @@ impl GoalRuntime {
         GoalStore::new(database.connection()).get(goal_id)
     }
 
+    /// Lists goals in a workspace, bounded by the storage contract's read limit.
     pub async fn list(
         &self,
         workspace_id: &str,
@@ -41,6 +45,9 @@ impl GoalRuntime {
         GoalStore::new(database.connection()).list(workspace_id, limit)
     }
 
+    /// Returns recovery projections enriched with warnings from linked runs.
+    ///
+    /// This read-only operation does not retry interrupted workflows or children.
     pub async fn recovery(
         &self,
         workspace_id: &str,
@@ -84,6 +91,7 @@ impl GoalRuntime {
         Ok(projections)
     }
 
+    /// Creates a goal with the supplied Core-authored mutation command.
     pub async fn create(
         &self,
         goal: &GoalV1,
@@ -93,6 +101,7 @@ impl GoalRuntime {
         GoalStore::new(database.connection()).create(goal, command)
     }
 
+    /// Transitions a goal using optimistic concurrency via `expected_version`.
     pub async fn transition(
         &self,
         goal_id: &str,
@@ -104,6 +113,7 @@ impl GoalRuntime {
         GoalStore::new(database.connection()).transition(goal_id, expected_version, status, command)
     }
 
+    /// Updates the objective or criteria if the expected version still matches.
     pub async fn update(
         &self,
         goal_id: &str,
@@ -122,6 +132,7 @@ impl GoalRuntime {
         )
     }
 
+    /// Applies criterion evidence and updates goal completion state atomically.
     pub async fn verify_criterion(
         &self,
         goal_id: &str,
@@ -138,6 +149,10 @@ impl GoalRuntime {
         )
     }
 
+    /// Links a goal to an existing workflow, child run, or checkpoint.
+    ///
+    /// Returns a reference-not-found error when the referenced durable record is
+    /// absent; a client request alone cannot establish that the reference exists.
     pub async fn link_reference(
         &self,
         goal_id: &str,
@@ -294,11 +309,13 @@ fn table_exists(
 
 /// Stable workspace scope used by the Goal contract. The path itself remains
 /// a shell concern and is never persisted in a Goal or sent in a projection.
+/// Equivalent path spellings normalize to the same opaque identifier.
 pub fn workspace_id_from_path(path: &str) -> String {
     let normalized = path.trim().replace('\\', "/").to_ascii_lowercase();
     hex::encode(Sha256::digest(normalized.as_bytes()))
 }
 
+/// Returns the current Unix timestamp in milliseconds, saturating at `i64::MAX`.
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -84,8 +84,11 @@ impl AppEntry {
 /// нельзя.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resolution {
+    /// One catalog entry matched the query.
     Found(AppEntry),
+    /// Multiple catalog entries matched and require a user choice.
     Ambiguous(Vec<String>),
+    /// No catalog entry matched the query.
     NotFound,
 }
 
@@ -171,10 +174,12 @@ impl AppCatalog {
         }
     }
 
+    /// Returns all entries in stable identifier order.
     pub fn entries(&self) -> &[AppEntry] {
         &self.entries
     }
 
+    /// Looks up an application by its stable catalog identifier.
     pub fn get(&self, id: &str) -> Option<&AppEntry> {
         self.entries.iter().find(|entry| entry.id == id)
     }

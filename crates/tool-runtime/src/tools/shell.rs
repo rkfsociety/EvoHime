@@ -12,9 +12,13 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
+/// Registry identifier for direct program execution.
 pub const NAME: &str = "shell.execute";
+/// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Execute a program directly inside the workspace";
+/// Permission required before a process may be started.
 pub const PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
+/// Default execution deadline; request-specific values cannot exceed this cap.
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_OUTPUT: usize = 1024 * 1024;
 
@@ -28,6 +32,17 @@ struct Input {
     timeout_ms: Option<u64>,
 }
 
+/// Runs one approved program with bounded output and cooperative cancellation.
+///
+/// Invocation is resolved into a program and argument list rather than passed
+/// through a command shell. The working directory is constrained to the
+/// supplied workspace context; shell executables and scripting runtimes are
+/// rejected by policy.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid input, denied execution, cancellation,
+/// timeout, process failure, or I/O errors.
 pub async fn execute(
     ctx: &ToolContext,
     value: Value,

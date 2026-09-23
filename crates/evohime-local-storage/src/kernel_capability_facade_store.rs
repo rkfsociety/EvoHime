@@ -1,7 +1,17 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Creates the versioned kernel-capability facade table transactionally.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS kernel_capability_facade (record_id TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(record_id,revision), UNIQUE(record_id,idempotency_key));")
 }
+/// Appends the next revision for a capability facade record.
+///
+/// Revisions must be contiguous for each record ID; the record kind and
+/// idempotency key are stored alongside the serialized facade state.
+///
+/// # Errors
+///
+/// Returns a SQLite error when the revision is stale or the write fails.
 #[allow(clippy::too_many_arguments)]
 pub fn save(
     c: &Connection,
@@ -32,6 +42,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Returns the serialized facade state from the latest record revision.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row("SELECT json FROM kernel_capability_facade WHERE record_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional()
 }

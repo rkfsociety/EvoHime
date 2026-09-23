@@ -1,3 +1,5 @@
+//! Command-line entry point for running and inspecting EvoHime Core tasks.
+
 #![cfg_attr(
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)

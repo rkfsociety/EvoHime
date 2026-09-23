@@ -7,6 +7,15 @@ impl EventJournal {
         self.database_pool.checkout()
     }
 
+    /// Opens the Core event journal, applying migrations and starting its writer.
+    ///
+    /// The journal creates an independent prepared-database pool for concurrent
+    /// reads while writes are serialized through a bounded queue.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if database migration, pool setup, or writer
+    /// startup fails.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         let path = path.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(LocalDatabase::open_with_migrations(&path)?));
@@ -80,6 +89,7 @@ impl EventJournal {
         &self.database
     }
 
+    /// Returns the filesystem path used to open this journal's database.
     pub fn database_path(&self) -> &std::path::Path {
         self.database_path.as_ref()
     }
@@ -198,6 +208,14 @@ impl EventJournal {
         .map_err(|error| crate::workspace_rag::RagError::InvalidConfig(error.to_string()))?
     }
 
+    /// Returns index generation and freshness metadata for a workspace.
+    ///
+    /// Uses a read lease so index inspection does not lock the writer database.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RagError` if the database lease is
+    /// unavailable or status lookup fails.
     pub async fn workspace_index_status(
         &self,
         workspace_root: &std::path::Path,
@@ -211,6 +229,15 @@ impl EventJournal {
         crate::workspace_rag::get_index_status(database.connection(), workspace_root)
     }
 
+    /// Searches indexed workspace knowledge using the requested filters.
+    ///
+    /// Hybrid vector retrieval is controlled by `hybrid`; this convenience
+    /// method omits progress notifications.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RagError` for index, lease, or search
+    /// failures.
     pub async fn search_workspace_knowledge(
         &self,
         workspace_root: &std::path::Path,
@@ -228,6 +255,15 @@ impl EventJournal {
         .await
     }
 
+    /// Searches indexed workspace knowledge and reports bounded retrieval progress.
+    ///
+    /// The callback runs on the blocking retrieval worker and must be `Send` and
+    /// `'static`. Hybrid retrieval is opt-in.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RagError` for lease, worker, or search
+    /// failures.
     pub async fn search_workspace_knowledge_with_progress(
         &self,
         workspace_root: &std::path::Path,
@@ -268,6 +304,15 @@ impl EventJournal {
         .map_err(|error| crate::workspace_rag::RagError::InvalidConfig(error.to_string()))?
     }
 
+    /// Builds a bounded, citation-validated model context from search evidence.
+    ///
+    /// The current limits cap the context at 8,192 estimated tokens, 12 evidence
+    /// blocks, and 32 citations before finalizing their workspace provenance.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RagError` for database, evidence, or
+    /// citation validation failures.
     pub async fn build_workspace_evidence_context(
         &self,
         workspace_root: &std::path::Path,
@@ -290,6 +335,15 @@ impl EventJournal {
         )
     }
 
+    /// Revalidates citations in a previously built evidence context.
+    ///
+    /// Use this before exposing or dispatching the context after intermediate
+    /// processing that may have changed its selected evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RagError` if evidence or citation
+    /// provenance is invalid.
     pub async fn finalize_workspace_evidence_context(
         &self,
         workspace_root: &std::path::Path,
@@ -305,6 +359,15 @@ impl EventJournal {
         )
     }
 
+    /// Builds the opt-in hybrid vector index for a workspace.
+    ///
+    /// The operation runs on a blocking worker and observes the supplied
+    /// cancellation token. Returns an optional status detail from the indexer.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RagError` for database, worker, or index
+    /// failures.
     pub async fn build_workspace_vector_index(
         &self,
         workspace_root: &std::path::Path,
@@ -336,6 +399,14 @@ impl EventJournal {
         .map_err(|error| crate::workspace_rag::RagError::InvalidConfig(error.to_string()))?
     }
 
+    /// Verifies that a workspace document chunk still matches its indexed hash.
+    ///
+    /// This is a read-only provenance check; it does not rebuild the index.
+    ///
+    /// # Errors
+    ///
+    /// Returns `RagError` if the read lease or
+    /// provenance query fails.
     pub async fn verify_workspace_document_provenance(
         &self,
         workspace_root: &std::path::Path,

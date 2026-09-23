@@ -1,10 +1,10 @@
 //! Test-only helper binary used by the kill-9 model test
 //! (`crates/evohime-core/tests/kill9_recovery.rs`).
 //!
-//! It opens the durable local database at the path given as argv[1], drives
+//! It opens the durable local database at the path given as `argv[1]`, drives
 //! a run's effect into the `executing` state exactly like a real Core
 //! process performing a bounded Build effect would, signals readiness by
-//! writing the marker file given as argv[2], and then blocks forever
+//! writing the marker file given as `argv[2]`, and then blocks forever
 //! (simulating "still doing work"). The parent test process forcibly
 //! terminates this process (`TerminateProcess` via `Child::kill()`) once the
 //! marker file appears, leaving the effect stuck in `executing` in storage

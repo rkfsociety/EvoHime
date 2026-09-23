@@ -11,7 +11,7 @@ const MAX_RULES_BYTES: usize = 256 * 1024;
 /// 2. Если файл пуст → вернуть Ok(PolicyRuleSet::defaults())
 /// 3. Если файл содержит `[]` (пустой JSON массив) → вернуть Ok(PolicyRuleSet::new(vec![]))
 /// 4. Если файл битый JSON → залогировать и вернуть Ok(PolicyRuleSet::defaults())
-/// 5. Если JSON валиден → десериализовать в Vec<PolicyRule>, вернуть Ok(PolicyRuleSet::new(...))
+/// 5. Если JSON валиден → десериализовать в `Vec<PolicyRule>`, вернуть Ok(PolicyRuleSet::new(...))
 pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
     let rules_path = path.join("permissions.json");
 

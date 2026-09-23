@@ -18,6 +18,7 @@ where
         Ok(event)
     }
 
+    /// Reads and validates the next event from the authenticated Core stream.
     pub async fn next(&mut self) -> Result<generated::EventEnvelope, String> {
         self.read_event().await
     }

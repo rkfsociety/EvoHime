@@ -3,10 +3,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 const MAX_QUEUE: i64 = 512;
 const MAX_BYTES: i64 = 64 * 1024;
 const MAX_CONSENT_BYTES: usize = 64 * 1024;
+/// Creates consent, bounded event-queue, and idempotency tables.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS telemetry_consent (id INTEGER PRIMARY KEY CHECK(id=1), consent_json BLOB NOT NULL, revision INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS telemetry_queue (event_id TEXT PRIMARY KEY, category TEXT NOT NULL, event_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS telemetry_idempotency (idempotency_key TEXT PRIMARY KEY, operation TEXT NOT NULL);")
 }
 
+/// Returns the current consent revision, if consent has been recorded.
 pub fn consent_revision(c: &Connection) -> rusqlite::Result<Option<u64>> {
     c.query_row(
         "SELECT revision FROM telemetry_consent WHERE id=1",
@@ -17,12 +19,14 @@ pub fn consent_revision(c: &Connection) -> rusqlite::Result<Option<u64>> {
     .map(|value| value.map(|revision| revision as u64))
 }
 
+/// Claims an idempotency key once; duplicate claims return `false`.
 pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite::Result<bool> {
     Ok(c.execute(
         "INSERT OR IGNORE INTO telemetry_idempotency VALUES(?1,?2)",
         params![key, operation],
     )? == 1)
 }
+/// Stores consent only when its revision advances; payloads above 64 KiB are rejected.
 pub fn put_consent(c: &Connection, j: &[u8], revision: u64) -> rusqlite::Result<()> {
     if j.len() > MAX_CONSENT_BYTES {
         return Err(rusqlite::Error::ToSqlConversionFailure(
@@ -35,6 +39,7 @@ pub fn put_consent(c: &Connection, j: &[u8], revision: u64) -> rusqlite::Result<
     )?;
     Ok(())
 }
+/// Adds an event if its ID is new and the queue remains within its row and byte limits.
 pub fn put_event(
     c: &Connection,
     id: &str,
@@ -48,6 +53,7 @@ pub fn put_event(
     )?;
     Ok(n == 1)
 }
+/// Lists queued event payloads in creation order, capped at 512 rows.
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut s = c.prepare(
         "SELECT event_json FROM telemetry_queue ORDER BY created_at_ms,event_id LIMIT 512",
@@ -55,6 +61,7 @@ pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let rows = s.query_map([], |r| r.get(0))?.collect();
     rows
 }
+/// Clears queued events, consent state, and idempotency claims.
 pub fn clear(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch(
         "DELETE FROM telemetry_queue; DELETE FROM telemetry_consent; DELETE FROM telemetry_idempotency;",

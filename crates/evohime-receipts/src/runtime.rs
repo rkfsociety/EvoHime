@@ -65,10 +65,15 @@ pub use crate::runtime_recovery::recover_database;
 pub use crate::runtime_request_contract::ModelRequestReceiptInput;
 pub use crate::runtime_schema::install_schema;
 
+/// Default lifetime of an approval intent in milliseconds.
 pub const APPROVAL_TTL_MS: i64 = 600_000;
+/// Maximum number of actions held in non-terminal runtime states.
 pub const MAX_PENDING_ACTIONS: i64 = 1024;
+/// Maximum bytes stored for a human-readable action preview.
 pub const MAX_PREVIEW_BYTES: usize = crate::CONTRACT_MAX_PREVIEW_BYTES;
+/// Maximum canonical bytes accepted for tool-call input.
 pub const MAX_CALL_INPUT_BYTES: usize = 262_144;
+/// Maximum encrypted recovery projection size, including nonce and tag.
 pub const MAX_PROTECTED_ROW_BYTES: usize = 512;
 const BOUNDED_METRICS: &[&str] = &[
     "receipt_pre_latency_ms",
@@ -141,12 +146,14 @@ fn stored_hash_for_action(
         .map_err(RuntimeError::from)
 }
 
+/// SQLite-backed lifecycle coordinator for action and model-request receipts.
 pub struct ReceiptRuntime<'a> {
     connection: &'a mut Connection,
     signer: &'a dyn ReceiptSigner,
 }
 
 impl<'a> ReceiptRuntime<'a> {
+    /// Creates a runtime over an existing database connection and signer.
     pub fn new(
         connection: &'a mut Connection,
         signer: &'a dyn ReceiptSigner,
@@ -158,6 +165,7 @@ impl<'a> ReceiptRuntime<'a> {
 
     /// Appends a request-commit receipt to the existing signed chain. Only
     /// identifiers and the immutable envelope hash are signed.
+    /// Appends a signed model-request receipt containing identifiers and hashes.
     pub fn append_model_request_receipt(
         &mut self,
         input: ModelRequestReceiptInput<'_>,
@@ -299,6 +307,7 @@ impl<'a> ReceiptRuntime<'a> {
         })
     }
 
+    /// Validates policy inputs and records a prepared, approval, or refusal receipt.
     pub fn prepare(&mut self, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
         self.prepare_inner(request, false)
     }
@@ -306,6 +315,7 @@ impl<'a> ReceiptRuntime<'a> {
     /// Imports an already Core-created approval id from the PermissionEngine.
     /// This is only for the compatibility approval producer; the renderer
     /// still cannot choose an id.
+    /// Resumes preparation using an existing, still-valid approval intent.
     pub fn prepare_existing_approval(
         &mut self,
         request: ActionRequest,
@@ -517,6 +527,7 @@ impl<'a> ReceiptRuntime<'a> {
         }
     }
 
+    /// Records that dispatch began for a prepared action.
     pub fn mark_started(&self, action_id: Uuid) -> Result<(), RuntimeError> {
         require_ready(self.connection)?;
         let changed = self.connection.execute("UPDATE receipt_actions SET dispatch_state='started',tool_started_at_ms=?2 WHERE action_id=?1 AND state='prepared' AND dispatch_state='not_started'", params![action_id.to_string(), now_ms()])?;
@@ -526,6 +537,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Records that the tool returned and the action awaits terminal processing.
     pub fn mark_returned(&self, action_id: Uuid) -> Result<(), RuntimeError> {
         require_ready(self.connection)?;
         let changed = self.connection.execute(
@@ -614,7 +626,7 @@ impl<'a> ReceiptRuntime<'a> {
         self.claim_approval_checked(request, approval_id, |_| true)
     }
 
-    /// Same as [`Self::claim_approval`] but re-applies the caller's current
+    /// Same as the test-only `claim_approval` helper but re-applies the caller's current
     /// policy decision as part of the atomic claim gate. `recheck_policy`
     /// receives the request and must return `true` only if the exact same
     /// call is still `allow`/`approval_required` under the *current* policy
@@ -766,6 +778,7 @@ impl<'a> ReceiptRuntime<'a> {
         self.claim_approval_checked(request, approval_id, recheck_policy)
     }
 
+    /// Appends the terminal receipt and closes the action lifecycle.
     pub fn complete(
         &mut self,
         request: &ActionRequest,
@@ -901,6 +914,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(hash)
     }
 
+    /// Records a policy refusal without dispatching the requested tool.
     pub fn refuse(&mut self, request: &ActionRequest, code: &str) -> Result<String, RuntimeError> {
         require_ready(self.connection)?;
         if !matches!(
@@ -996,6 +1010,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(hash)
     }
 
+    /// Marks an interrupted action for bounded startup recovery.
     pub fn mark_pending_recovery(&self, action_id: Uuid, code: &str) -> Result<(), RuntimeError> {
         if !valid_recovery_code(code) {
             return Err(RuntimeError::Code("schema_violation"));
@@ -1267,6 +1282,7 @@ impl<'a> ReceiptRuntime<'a> {
         ).optional().map_err(RuntimeError::from)
     }
 
+    /// Stores an encrypted, bounded recovery projection for an action.
     pub fn store_protected_action(
         &self,
         row: &ProtectedActionRow,
@@ -1280,6 +1296,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Stores a protected envelope when the action row itself cannot hold it.
     pub fn store_protected_envelope(
         &self,
         row: &ProtectedActionRow,
@@ -1396,6 +1413,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(true)
     }
 
+    /// Loads and decrypts a protected recovery projection for an action.
     pub fn load_protected_action(
         &self,
         action_id: Uuid,
@@ -1418,6 +1436,7 @@ impl<'a> ReceiptRuntime<'a> {
     /// is deterministic and never chosen at random: a row rewrapped by a
     /// concurrent rotation batch must decrypt with the new key, while an
     /// unrewrapped row still decrypts with the old one.
+    /// Loads the primary protected projection, falling back to the envelope store.
     pub fn load_protected_action_with_fallback(
         &self,
         action_id: Uuid,
@@ -1430,6 +1449,7 @@ impl<'a> ReceiptRuntime<'a> {
         }
     }
 
+    /// Removes protected recovery data after a terminal receipt is durable.
     pub fn delete_protected_after_terminal(&self, action_id: Uuid) -> Result<(), RuntimeError> {
         let terminal: Option<String> = self
             .connection
@@ -1452,6 +1472,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Moves an inconsistent action into quarantine with a bounded reason code.
     pub fn quarantine(&self, action_id: Uuid, reason: &str) -> Result<(), RuntimeError> {
         if reason.is_empty() || reason.len() > 128 {
             return Err(RuntimeError::Code("schema_violation"));
@@ -1528,10 +1549,12 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(hash)
     }
 
+    /// Returns the current persisted lifecycle state for an action, if present.
     pub fn action(&self, action_id: Uuid) -> Result<Option<ActionState>, RuntimeError> {
         Ok(self.connection.query_row("SELECT action_id,state,dispatch_state,pre_receipt_hash,terminal_receipt_hash,tool_args_hash FROM receipt_actions WHERE action_id=?1", [action_id.to_string()], |r| Ok(ActionState { action_id:r.get(0)?,state:r.get(1)?,dispatch_state:r.get(2)?,pre_receipt_hash:r.get(3)?,terminal_receipt_hash:r.get(4)?,tool_args_hash:r.get(5)? })).optional()?)
     }
 
+    /// Returns the creation and expiry timestamps for an approval intent.
     pub fn approval_deadline(&self, approval_id: Uuid) -> Result<(i64, i64), RuntimeError> {
         self.connection.query_row(
             "SELECT created_monotonic_ms,deadline_monotonic_ms FROM receipt_approval_intents WHERE approval_id=?1",
@@ -1540,10 +1563,12 @@ impl<'a> ReceiptRuntime<'a> {
         ).map_err(RuntimeError::from)
     }
 
+    /// Reads the configured deterministic read-only audit sampling rates.
     pub fn audit_sampling_config(&self) -> Result<(u8, u8), RuntimeError> {
         self.connection.query_row("SELECT audit_sampling_rate,sampling_policy_version FROM receipt_runtime_config WHERE id=1", [], |row| Ok((row.get::<_, i64>(0)? as u8, row.get::<_, i64>(1)? as u8))).map_err(RuntimeError::from)
     }
 
+    /// Updates bounded audit sampling rates for read-only and mutating actions.
     pub fn set_audit_sampling_rate(
         &self,
         authenticated_core_command: bool,
@@ -1564,6 +1589,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Persists a small marker for a read-only action omitted from full sampling.
     pub fn store_unsampled_read_only_marker(
         &self,
         action_id: Uuid,
@@ -1603,6 +1629,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Returns lifecycle counts used by runtime health reporting.
     pub fn counts(&self) -> Result<RuntimeCounts, RuntimeError> {
         Ok(RuntimeCounts {
             pending: self.connection.query_row("SELECT COUNT(*) FROM receipt_actions WHERE state IN ('awaiting_approval','prepared','pending_recovery')", [], |r| r.get(0))?,
@@ -1612,6 +1639,7 @@ impl<'a> ReceiptRuntime<'a> {
         })
     }
 
+    /// Returns named counters for receipt lifecycle outcomes.
     pub fn metrics(&self) -> Result<RuntimeMetrics, RuntimeError> {
         let mut statement = self.connection.prepare(
             "SELECT metric,value FROM receipt_runtime_metrics ORDER BY metric LIMIT 128",
@@ -1630,6 +1658,7 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(RuntimeMetrics { counters })
     }
 
+    /// Returns the active storage-key re-encryption job, when one exists.
     pub fn storage_rotation_job(&self) -> Result<Option<StorageRotationJob>, RuntimeError> {
         Ok(self.connection.query_row(
             "SELECT job_id,old_key_id,new_key_id,cursor,generation,state FROM receipt_storage_rotation WHERE id=1",
@@ -1640,6 +1669,7 @@ impl<'a> ReceiptRuntime<'a> {
         ).optional()?)
     }
 
+    /// Returns bounded diagnostic counts without receipt payloads or secrets.
     pub fn diagnostic_counts(&self) -> Result<BTreeMap<String, i64>, RuntimeError> {
         let mut statement = self.connection.prepare("SELECT code,COUNT(*) FROM receipt_runtime_diagnostics GROUP BY code ORDER BY code LIMIT 16")?;
         let rows = statement.query_map([], |row| {

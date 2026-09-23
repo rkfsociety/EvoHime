@@ -5,9 +5,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Registry identifier for remote MCP JSON-RPC calls.
 pub const NAME: &str = "mcp.call";
+/// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Call a remote MCP JSON-RPC endpoint";
+/// Permission required to call an MCP endpoint.
 pub const PERMISSIONS: &[Permission] = &[Permission::McpCall];
+/// Maximum request duration; input cannot raise the timeout beyond this cap.
 pub const TIMEOUT: Duration = Duration::from_secs(20);
 const ALLOWED_HOSTS_ENV: &str = "EVOHIME_MCP_ALLOWED_HOSTS";
 
@@ -20,6 +24,16 @@ struct Input {
     timeout_ms: Option<u64>,
 }
 
+/// Sends one bounded JSON-RPC request to an allowed MCP endpoint.
+///
+/// URL, redirects, DNS-resolved peer address, and final response URL are checked
+/// by the SSRF policy. The optional request timeout can shorten, but not extend,
+/// the tool's maximum deadline.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for malformed or disallowed URLs, unsafe peers,
+/// transport failures, timeout, and invalid endpoint responses.
 pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
     let _ = ctx.sandbox()?;
     let input: Input = serde_json::from_value(value).map_err(|error| ToolError::InvalidInput {

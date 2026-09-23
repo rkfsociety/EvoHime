@@ -1,7 +1,16 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Adds the revisioned voice-output adapter table within the schema transaction.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS optional_voice_output_adapter (id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(id,revision), UNIQUE(id,idempotency_key));")
 }
+/// Stores a voice-output adapter revision with idempotent replay protection.
+///
+/// A repeated key succeeds only when revision and content hash are unchanged.
+///
+/// # Errors
+///
+/// Returns a SQLite error for conflicting key reuse or database failures.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -26,6 +35,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Returns the serialized adapter configuration at the highest revision.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT json FROM optional_voice_output_adapter WHERE id=?1 ORDER BY revision DESC LIMIT 1",

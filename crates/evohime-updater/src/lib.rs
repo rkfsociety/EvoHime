@@ -2,6 +2,41 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+#![deny(missing_docs)]
+//! Transactional updater primitives for validating and replacing installations.
+//!
+//! Operations preserve backups and transaction state so an interrupted update
+//! can recover or roll back without modifying unrelated installation files.
+//!
+//! A release manifest can be parsed and validated before an artifact is applied:
+//!
+//! ```
+//! use evohime_tx::component_manifest::Manifest;
+//!
+//! let json = br#"{
+//!   "schema":"evohime.component-manifest.v1",
+//!   "product":"EvoHime",
+//!   "release_id":"release-1",
+//!   "os":"windows",
+//!   "architecture":"x64",
+//!   "release_commit":"0000000000000000000000000000000000000000",
+//!   "components":[{
+//!     "id":"core",
+//!     "version":"1.0.0",
+//!     "artifact":"core.zip",
+//!     "path":"evohime-core.exe",
+//!     "size":1,
+//!     "sha256":"0000000000000000000000000000000000000000000000000000000000000000",
+//!     "dependencies":[],
+//!     "required":true,
+//!     "protocol":"desktop-ipc-v1",
+//!     "restart":"core"
+//!   }]
+//! }"#;
+//! let manifest = Manifest::parse(json).unwrap();
+//! assert_eq!(manifest.component("core").unwrap().version, "1.0.0");
+//! ```
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -10,6 +45,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+/// Component inventory used to scope package installation and rollback.
 pub mod component_manifest;
 
 /// Keeps every process in the update chain detached from a console window.
@@ -68,11 +104,14 @@ enum TransactionPhase {
     Restored,
 }
 
+/// Result of attempting to recover an interrupted transaction.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RecoveryResult {
+    /// Whether transaction state was found and recovery completed.
     pub recovered: bool,
 }
 
+/// Transaction that backs up, commits, or restores an installation update.
 pub struct UpdateTransaction {
     operation_id: String,
     install_dir: PathBuf,
@@ -85,6 +124,7 @@ pub struct UpdateTransaction {
     ui_previous_pointer: Option<Vec<u8>>,
 }
 
+/// Verifies that every required native component exists in the installation.
 pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
     validate_absolute(install_dir, "install directory")?;
     for component in UpdateTransaction::COMPONENTS {
@@ -102,6 +142,7 @@ pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Runs a full installer under a transaction and rolls back on failure.
 pub fn run_update(
     installer: &Path,
     install_dir: &Path,
@@ -184,8 +225,11 @@ pub fn run_update(
 
 /// Options of a staged apply, produced by a local rebuild of the sources.
 pub struct StagedApply<'a> {
+    /// Locally rebuilt package directory to install.
     pub staging: &'a Path,
+    /// Existing product installation to replace.
     pub install_dir: &'a Path,
+    /// Directory used for the transaction journal and backup.
     pub state_dir: &'a Path,
     /// Shell process that must exit before its files can be replaced.
     pub wait_pid: Option<u32>,
@@ -284,18 +328,27 @@ pub fn apply_selected_staged(
 /// boundary; the previous pointer is restored if restart or health fails.
 /// Inputs for [`apply_component_set_staged`].
 pub struct ComponentSetApply<'a> {
+    /// Directory containing staged native files and an optional UI bundle.
     pub staging: &'a Path,
+    /// Existing product installation to update.
     pub install_dir: &'a Path,
+    /// Directory used for transaction state and backups.
     pub state_dir: &'a Path,
+    /// Native component paths selected for replacement.
     pub native_selected: &'a [String],
+    /// Optional renderer bundle version to activate.
     pub ui_version: Option<&'a str>,
     /// Replace the complete Electron shell payload, including resources/app.asar.
     pub shell_host: bool,
+    /// Shell process that must exit before its files can be replaced.
     pub wait_pid: Option<u32>,
+    /// Executable to relaunch after applying the update.
     pub relaunch: Option<&'a Path>,
+    /// Health marker written by the relaunched application.
     pub health_file: Option<&'a Path>,
 }
 
+/// Applies a selected set of native components and an optional renderer bundle.
 pub fn apply_component_set_staged(options: ComponentSetApply<'_>) -> io::Result<()> {
     let ComponentSetApply {
         staging,
@@ -853,6 +906,7 @@ fn stop_relaunched_process(child: &mut Option<Child>) {
 }
 
 impl UpdateTransaction {
+    /// Native files required by every supported installation.
     pub const COMPONENTS: [&'static str; 4] = [
         "EvoHime.exe",
         "evohime-core.exe",
@@ -860,6 +914,7 @@ impl UpdateTransaction {
         "evohime.manifest.json",
     ];
 
+    /// Native component paths that may be updated independently.
     pub const SELECTABLE_COMPONENTS: [&'static str; 8] = [
         "EvoHime.exe",
         "evohime-core.exe",
@@ -871,6 +926,7 @@ impl UpdateTransaction {
         "evohime-verify.exe",
     ];
 
+    /// Prepares a transaction covering the required native components.
     pub fn prepare(install_dir: &Path, state_dir: &Path) -> io::Result<Self> {
         Self::prepare_selected(
             install_dir,
@@ -882,6 +938,7 @@ impl UpdateTransaction {
         )
     }
 
+    /// Prepares a transaction for the selected native component paths.
     pub fn prepare_selected(
         install_dir: &Path,
         state_dir: &Path,
@@ -959,14 +1016,17 @@ impl UpdateTransaction {
         Ok(transaction)
     }
 
+    /// Returns the transaction backup directory.
     pub fn backup_dir(&self) -> &Path {
         &self.backup_dir
     }
 
+    /// Returns the unique identifier assigned to this transaction.
     pub fn operation_id(&self) -> &str {
         &self.operation_id
     }
 
+    /// Returns the path of the persisted transaction state file.
     pub fn state_path(&self) -> &Path {
         &self.state_path
     }
@@ -977,12 +1037,14 @@ impl UpdateTransaction {
         self.write_state(TransactionPhase::Installing)
     }
 
+    /// Marks the update committed and removes its backup and state file.
     pub fn commit(&self) -> io::Result<()> {
         self.write_state(TransactionPhase::Committed)?;
         fs::remove_dir_all(&self.backup_dir)?;
         fs::remove_file(&self.state_path)
     }
 
+    /// Restores backed-up files and removes transaction state after rollback.
     pub fn rollback(&self) -> io::Result<()> {
         self.write_state(TransactionPhase::RollbackRequired)?;
         match self.scope {
@@ -1024,6 +1086,7 @@ impl UpdateTransaction {
         fs::remove_file(&self.state_path)
     }
 
+    /// Recovers an interrupted transaction found in `state_dir`.
     pub fn recover(state_dir: &Path) -> io::Result<RecoveryResult> {
         validate_absolute(state_dir, "state directory")?;
         let state_path = state_dir.join("transaction.json");

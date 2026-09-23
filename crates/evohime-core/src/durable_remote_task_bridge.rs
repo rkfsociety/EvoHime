@@ -6,79 +6,130 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+/// Current schema version for durable remote task records.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum byte length of remote task identifiers and references.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum serialized request payload size.
 pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
+/// Maximum byte length of a result artifact reference.
 pub const MAX_RESULT_REF_BYTES: usize = 512;
+/// Maximum operations declared by one remote toolset.
 pub const MAX_TOOLSET_OPERATIONS: usize = 64;
+/// Maximum poll attempts allowed for one remote task.
 pub const MAX_POLL_ATTEMPTS: u32 = 32;
 
+/// Trusted adapter family responsible for a remote operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteProviderKind {
+    /// Model Context Protocol provider.
     Mcp,
+    /// Registered integration provider.
     IntegrationProvider,
 }
 
+/// Durable lifecycle state reported for a remote task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RemoteTaskStatus {
+    /// Request is recorded but has not been dispatched.
     Pending,
+    /// Remote operation is in progress or being polled.
     Running,
+    /// Remote provider requires additional input.
     InputRequired,
+    /// Operation completed and produced an artifact reference.
     Completed,
+    /// Operation failed.
     Failed,
+    /// Cancellation was requested and awaits transport confirmation.
     CancelRequested,
+    /// Remote operation confirmed cancellation.
     Cancelled,
+    /// Transport outcome cannot be determined safely.
     Unknown,
 }
 
 impl RemoteTaskStatus {
+    /// Returns whether the task has reached a non-retryable terminal state.
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
     }
 }
 
+/// Allow-listed remote operations exposed by one provider toolset.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteTaskToolset {
+    /// Toolset schema version.
     pub schema_version: u32,
+    /// Stable toolset identifier.
     pub id: String,
+    /// Monotonic toolset revision.
     pub version: u64,
+    /// Trusted adapter family.
     pub provider_kind: RemoteProviderKind,
+    /// Registered provider reference.
     pub provider_ref: String,
+    /// Operations permitted by this toolset.
     pub operation_names: Vec<String>,
+    /// Digest binding toolset metadata.
     pub content_hash: String,
 }
 
+/// Durable state and provenance for one remote operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteTaskRecord {
+    /// Record schema version.
     pub schema_version: u32,
+    /// Stable remote task identifier.
     pub id: String,
+    /// Optimistic-concurrency revision.
     pub version: u64,
+    /// Toolset that authorized the operation.
     pub toolset_id: String,
+    /// Operation selected from the toolset allow-list.
     pub operation: String,
+    /// Current remote task lifecycle state.
     pub status: RemoteTaskStatus,
+    /// Sanitized adapter transport status.
     pub transport_status: String,
+    /// Digest of the original bounded request payload.
     pub request_hash: String,
+    /// Optional artifact reference containing the completed result.
     pub result_artifact_ref: Option<String>,
+    /// Run or event reference establishing provenance.
     pub provenance_ref: String,
+    /// Number of poll leases already issued.
     pub poll_attempts: u32,
+    /// Optional earliest next poll time in Unix milliseconds.
     pub next_poll_at_ms: Option<i64>,
+    /// Current poll lease owner, if a poll is active.
     pub lease_owner: Option<String>,
+    /// Unix timestamp in milliseconds when the task was created.
     pub created_at_ms: i64,
+    /// Unix timestamp in milliseconds when the record last changed.
     pub updated_at_ms: i64,
+    /// Digest of this record with this field cleared.
     pub content_hash: String,
 }
 
+/// Resource limits applied to remote task creation and polling.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteTaskPolicy {
+    /// Policy schema version.
     pub schema_version: u32,
+    /// Maximum number of durable remote tasks.
     pub max_tasks: usize,
+    /// Maximum polling attempts per task.
     pub max_poll_attempts: u32,
+    /// Maximum request payload size in bytes.
     pub max_payload_bytes: usize,
+    /// Maximum result artifact reference length.
     pub max_result_ref_bytes: usize,
 }
 
+/// Returns the conservative built-in remote task limits.
 pub fn default_policy() -> RemoteTaskPolicy {
     RemoteTaskPolicy {
         schema_version: SCHEMA_VERSION,
@@ -89,26 +140,37 @@ pub fn default_policy() -> RemoteTaskPolicy {
     }
 }
 
+/// Remote task validation, version, lifecycle, lease, or resource-limit failure.
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum RemoteTaskError {
+    /// Stored data uses an unsupported schema version.
     #[error("unsupported remote task schema version {0}")]
     UnsupportedVersion(u32),
+    /// Identifier, reference, or integrity metadata is invalid.
     #[error("invalid remote task identifier or reference")]
     InvalidIdentifier,
+    /// Request payload exceeds the configured size bound.
     #[error("remote task payload limit exceeded")]
     PayloadLimit,
+    /// Poll attempt limit was reached.
     #[error("remote task poll budget exhausted")]
     PollLimit,
+    /// Requested operation is absent from the toolset allow-list.
     #[error("remote task operation is not allowed by toolset")]
     OperationDenied,
+    /// Requested lifecycle transition is invalid.
     #[error("remote task transition is invalid")]
     InvalidTransition,
+    /// Caller expected an obsolete record version.
     #[error("remote task version is stale")]
     StaleVersion,
+    /// Poll lease belongs to another owner.
     #[error("remote task is not leased by this owner")]
     LeaseDenied,
+    /// Completed result is missing its required artifact reference.
     #[error("remote task result must use an artifact reference")]
     InvalidResult,
+    /// Canonical record serialization failed.
     #[error("remote task serialization failed")]
     Serialization,
 }
@@ -121,6 +183,7 @@ fn valid_id(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"._-:/".contains(&b))
 }
 
+/// Checks policy version and ensures configured bounds stay within hard limits.
 pub fn validate_policy(policy: &RemoteTaskPolicy) -> Result<(), RemoteTaskError> {
     if policy.schema_version != SCHEMA_VERSION
         || policy.max_tasks == 0
@@ -137,6 +200,7 @@ pub fn validate_policy(policy: &RemoteTaskPolicy) -> Result<(), RemoteTaskError>
     Ok(())
 }
 
+/// Validates toolset identity, operation allow-list, and provider reference.
 pub fn validate_toolset(
     toolset: &RemoteTaskToolset,
     policy: &RemoteTaskPolicy,
@@ -157,6 +221,7 @@ pub fn validate_toolset(
     Ok(())
 }
 
+/// Validates task identity, toolset authorization, result reference, and poll bounds.
 pub fn validate_record(
     record: &RemoteTaskRecord,
     toolset: &RemoteTaskToolset,
@@ -190,6 +255,7 @@ pub fn validate_record(
     Ok(())
 }
 
+/// Validates payload size and computes the request's SHA-256 digest.
 pub fn request_hash(payload: &[u8], policy: &RemoteTaskPolicy) -> Result<String, RemoteTaskError> {
     validate_policy(policy)?;
     if payload.len() > policy.max_payload_bytes {
@@ -198,6 +264,7 @@ pub fn request_hash(payload: &[u8], policy: &RemoteTaskPolicy) -> Result<String,
     Ok(hex::encode(Sha256::digest(payload)))
 }
 
+/// Creates and validates an undispatched task for an allow-listed operation.
 pub fn build_record(
     id: String,
     toolset: &RemoteTaskToolset,
@@ -239,6 +306,7 @@ pub fn build_record(
     Ok(record)
 }
 
+/// Recomputes a task record's integrity digest after a state change.
 pub fn refresh_content_hash(record: &mut RemoteTaskRecord) -> Result<(), RemoteTaskError> {
     record.content_hash.clear();
     let bytes = serde_json::to_vec(record).map_err(|_| RemoteTaskError::Serialization)?;
@@ -246,6 +314,7 @@ pub fn refresh_content_hash(record: &mut RemoteTaskRecord) -> Result<(), RemoteT
     Ok(())
 }
 
+/// Requests cancellation using an expected record revision.
 pub fn cancel(
     record: &mut RemoteTaskRecord,
     expected_version: u64,
@@ -269,6 +338,7 @@ pub fn cancel(
     Ok(())
 }
 
+/// Acquires the next bounded poll attempt for one owner.
 pub fn lease_for_poll(
     record: &mut RemoteTaskRecord,
     owner: &str,
@@ -302,6 +372,7 @@ pub fn lease_for_poll(
     Ok(())
 }
 
+/// Projects durable task status without request payload or credential data.
 pub fn status_projection(record: &RemoteTaskRecord) -> serde_json::Value {
     serde_json::json!({
         "schema_version": record.schema_version,

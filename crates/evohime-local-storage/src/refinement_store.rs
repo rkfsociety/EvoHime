@@ -6,46 +6,80 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+/// Version of the continual-refinement persistence schema.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
+/// Maximum size of each serialized candidate, evidence, conflicts, or source-task JSON value.
 pub const MAX_JSON_BYTES: usize = 64 * 1024;
 
+/// Bounded summary of one immutable refinement candidate revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CandidateRow {
+    /// Stable candidate identifier.
     pub id: String,
+    /// Immutable candidate revision.
     pub revision: i64,
+    /// Scope that owns the candidate.
     pub owner_scope: String,
+    /// Candidate category.
     pub kind: String,
+    /// Target subsystem or behavior the candidate concerns.
     pub target: String,
+    /// Candidate lifecycle status.
     pub status: String,
+    /// Stable key used to detect duplicate refinement patterns.
     pub pattern_key: String,
+    /// Short human-readable title.
     pub title: String,
+    /// Bounded rationale for the candidate.
     pub rationale: String,
+    /// Digest of canonical candidate content.
     pub content_hash: String,
+    /// Confidence score recorded by the producer.
     pub confidence: u32,
+    /// Number of evidence references stored with the candidate.
     pub evidence_count: u32,
+    /// Number of conflicting candidate references.
     pub conflict_count: u32,
+    /// Digest of the policy snapshot used for evaluation.
     pub policy_snapshot_hash: String,
+    /// Optimistic concurrency version for status transitions.
     pub version: i64,
+    /// Idempotency key used to admit the candidate.
     pub idempotency_key: String,
+    /// Optional error classification associated with its current status.
     pub error_code: Option<String>,
+    /// Candidate creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Last candidate update time in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Serialization, size, concurrency, or idempotency errors from refinement persistence.
 #[derive(Debug, thiserror::Error)]
 pub enum RefinementStoreError {
+    /// A SQLite query or row conversion failed.
     #[error("sqlite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    /// A serialized value could not be parsed or encoded.
     #[error("json operation failed: {0}")]
     Json(#[from] serde_json::Error),
+    /// One of the bounded JSON values exceeded [`MAX_JSON_BYTES`].
     #[error("refinement value exceeds bounded JSON limit")]
     TooLarge,
+    /// Candidate revision did not match the caller's expected version.
     #[error("candidate version conflict: expected {expected}, current {current}")]
-    VersionConflict { expected: i64, current: i64 },
+    VersionConflict {
+        /// Version expected by the caller.
+        expected: i64,
+        /// Version currently stored.
+        current: i64,
+    },
+    /// An idempotency key was reused with a different request hash.
     #[error("idempotency key was reused with a different request")]
     IdempotencyConflict,
 }
 
+/// Creates the candidate, event, and idempotency tables and indexes.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS refinement_candidates (
@@ -94,33 +128,52 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// SQLite store for candidate revisions, refinement events, and idempotency records.
 pub struct RefinementStore<'a> {
     connection: &'a Connection,
 }
 
+/// Inputs needed to insert a candidate and its bounded JSON components.
 pub struct InsertCandidateInput<'a> {
+    /// Summary fields for the candidate revision.
     pub row: &'a CandidateRow,
+    /// Serialized candidate content, bounded by [`MAX_JSON_BYTES`].
     pub content_json: &'a str,
+    /// Serialized source task identifiers, bounded by [`MAX_JSON_BYTES`].
     pub source_task_ids_json: &'a str,
+    /// Serialized evidence references, bounded by [`MAX_JSON_BYTES`].
     pub evidence_json: &'a str,
+    /// Serialized conflict references, bounded by [`MAX_JSON_BYTES`].
     pub conflicts_json: &'a str,
 }
 
+/// Inputs for an optimistic status transition with optional idempotency.
 pub struct TransitionWithIdempotencyInput<'a> {
+    /// Candidate identifier.
     pub id: &'a str,
+    /// Candidate revision to transition.
     pub revision: i64,
+    /// Current version required for compare-and-swap.
     pub expected_version: i64,
+    /// New candidate status.
     pub status: &'a str,
+    /// Optional error classification to persist with the transition.
     pub error_code: Option<&'a str>,
+    /// Transition time in Unix milliseconds.
     pub now_ms: i64,
+    /// Optional owner-scoped idempotency key and request digest.
     pub idempotency: Option<(&'a str, &'a str)>,
 }
 
 impl<'a> RefinementStore<'a> {
+    /// Creates a store borrowing the caller-owned SQLite connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
 
+    /// Inserts a candidate revision and its creation event in one transaction.
+    ///
+    /// Each serialized JSON component is limited to [`MAX_JSON_BYTES`].
     pub fn insert_candidate(
         &self,
         input: InsertCandidateInput<'_>,
@@ -181,6 +234,7 @@ impl<'a> RefinementStore<'a> {
         Ok(())
     }
 
+    /// Loads a candidate summary by identifier and revision.
     pub fn get(
         &self,
         id: &str,
@@ -223,6 +277,9 @@ impl<'a> RefinementStore<'a> {
             .map_err(Into::into)
     }
 
+    /// Replays a previous admission for the same owner scope and request hash.
+    ///
+    /// Returns an idempotency conflict if the key exists with a different hash.
     pub fn replay_idempotency(
         &self,
         owner_scope: &str,
@@ -253,6 +310,7 @@ impl<'a> RefinementStore<'a> {
         self.get(&candidate_id, revision)
     }
 
+    /// Lists candidate summaries for an owner scope, newest update first, capped at 128 rows.
     pub fn list(
         &self,
         owner_scope: &str,
@@ -294,6 +352,7 @@ impl<'a> RefinementStore<'a> {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Changes candidate status only if its current optimistic version matches.
     pub fn transition(
         &self,
         id: &str,
@@ -314,6 +373,7 @@ impl<'a> RefinementStore<'a> {
         })
     }
 
+    /// Applies a version-checked status transition and optionally records its idempotency key.
     pub fn transition_with_idempotency(
         &self,
         input: TransitionWithIdempotencyInput<'_>,

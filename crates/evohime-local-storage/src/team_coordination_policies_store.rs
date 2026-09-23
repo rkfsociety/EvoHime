@@ -1,32 +1,54 @@
 //! Durable versioned Team Coordination policy/state metadata (schema v63).
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Inputs to save a strategy snapshot with optimistic concurrency and idempotency.
 pub struct StrategyStateInput<'a> {
+    /// Team coordination session identifier.
     pub session_id: &'a str,
+    /// Stable strategy identifier.
     pub strategy_id: &'a str,
+    /// Immutable strategy revision.
     pub strategy_revision: u64,
+    /// Digest of the protocol contract used by the strategy.
     pub protocol_hash: &'a str,
+    /// Serialized strategy definition.
     pub strategy_json: &'a [u8],
+    /// Serialized mutable strategy state.
     pub state_json: &'a [u8],
+    /// Current snapshot version expected by the caller; zero creates it.
     pub expected_version: u64,
+    /// Idempotency key for the save operation.
     pub idempotency_key: &'a str,
+    /// Save time in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Loaded strategy definition and state snapshot for one session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StrategyStateRecord {
+    /// Stable strategy identifier.
     pub strategy_id: String,
+    /// Immutable strategy revision.
     pub strategy_revision: u64,
+    /// Digest of the associated protocol.
     pub protocol_hash: String,
+    /// Serialized strategy definition.
     pub strategy_json: Vec<u8>,
+    /// Serialized mutable strategy state.
     pub state_json: Vec<u8>,
+    /// Optimistic concurrency version.
     pub version: u64,
 }
 
+/// Creates policy, team state, and per-session strategy snapshot tables.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS team_coordination_policies (team_id TEXT NOT NULL, revision INTEGER NOT NULL, policy_json BLOB NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(team_id, revision)); CREATE TABLE IF NOT EXISTS team_coordination_states (team_id TEXT PRIMARY KEY NOT NULL, policy_revision INTEGER NOT NULL, state_json BLOB NOT NULL, version INTEGER NOT NULL, idempotency_key TEXT, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS team_coordination_strategy_snapshots (session_id TEXT PRIMARY KEY NOT NULL, strategy_id TEXT NOT NULL, strategy_revision INTEGER NOT NULL, protocol_hash TEXT NOT NULL, strategy_json BLOB NOT NULL, state_json BLOB NOT NULL, version INTEGER NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
 
+/// Creates or advances a strategy snapshot when its expected version matches.
+///
+/// Repeating an identical request with the same idempotency key succeeds without incrementing the
+/// version; stale requests return `false`.
 pub fn save_strategy_state(
     c: &Connection,
     input: StrategyStateInput<'_>,
@@ -62,6 +84,7 @@ pub fn save_strategy_state(
     )? == 1)
 }
 
+/// Loads a session's strategy definition and state snapshot.
 pub fn load_strategy_state(
     c: &Connection,
     session_id: &str,
@@ -74,6 +97,7 @@ pub fn load_strategy_state(
     .optional()
 }
 
+/// Inserts an immutable team policy revision if it is not already present.
 pub fn save_policy(
     c: &Connection,
     team_id: &str,
@@ -85,6 +109,7 @@ pub fn save_policy(
     Ok(c.execute("INSERT OR IGNORE INTO team_coordination_policies(team_id,revision,policy_json,content_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5)", params![team_id, revision as i64, json, hash, now_ms])? == 1)
 }
 
+/// Creates or advances team state using version fencing and an idempotency key.
 pub fn save_state(
     c: &Connection,
     team_id: &str,
@@ -111,6 +136,7 @@ pub fn save_state(
     Ok(c.execute("INSERT INTO team_coordination_states(team_id,policy_revision,state_json,version,idempotency_key,updated_at_ms) VALUES (?1,?2,?3,1,?4,?5)", params![team_id, policy_revision as i64, json, idempotency_key, now_ms])? == 1)
 }
 
+/// Loads policy revision, serialized state, and concurrency version for a team.
 pub fn load_state(c: &Connection, team_id: &str) -> rusqlite::Result<Option<(u64, Vec<u8>, u64)>> {
     c.query_row(
         "SELECT policy_revision,state_json,version FROM team_coordination_states WHERE team_id=?1",

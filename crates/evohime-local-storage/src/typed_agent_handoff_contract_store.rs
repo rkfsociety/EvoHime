@@ -1,9 +1,12 @@
 //! Durable HandoffRecord storage (schema v64), metadata only.
 use rusqlite::{params, Connection, OptionalExtension};
+/// Serialized packet, serialized state, status string, and optimistic-lock version for a handoff.
 pub type HandoffStorageRow = (Vec<u8>, Vec<u8>, String, u64);
+/// Creates the metadata table for typed agent handoffs.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS typed_agent_handoffs (handoff_id TEXT PRIMARY KEY NOT NULL, packet_json BLOB NOT NULL, state_json BLOB NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts a handoff at version 1; duplicate IDs return `false`.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -14,6 +17,7 @@ pub fn put(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("INSERT OR IGNORE INTO typed_agent_handoffs(handoff_id,packet_json,state_json,state,version,updated_at_ms) VALUES (?1,?2,?3,?4,1,?5)", params![id,packet,state,status,now])? == 1)
 }
+/// Changes a handoff state only when its current version equals `expected`.
 pub fn transition(
     c: &Connection,
     id: &str,
@@ -24,6 +28,7 @@ pub fn transition(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("UPDATE typed_agent_handoffs SET state_json=?1,state=?2,version=version+1,updated_at_ms=?3 WHERE handoff_id=?4 AND version=?5", params![state,status,now,id,expected as i64])? == 1)
 }
+/// Loads a handoff packet and its current state, status, and version.
 pub fn load(c: &Connection, id: &str) -> rusqlite::Result<Option<HandoffStorageRow>> {
     c.query_row(
         "SELECT packet_json,state_json,state,version FROM typed_agent_handoffs WHERE handoff_id=?1",

@@ -1,12 +1,20 @@
 use serde::Serialize;
 
+/// Bounded, read-only plan and specification prepared from a task description.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TaskPlanSpec {
+    /// Generated task plan text.
     pub plan: String,
+    /// Generated specification containing the task's criteria and context.
     pub spec: String,
+    /// Whether generating this result avoided writing files.
     pub read_only: bool,
 }
 
+/// Builds a read-only plan and specification, truncating each to `max_chars`.
+///
+/// The supplied acceptance criteria, non-goals, and context are included in
+/// the specification so downstream planning can preserve the task boundary.
 pub fn build_task_plan_spec(
     title: &str,
     description: &str,

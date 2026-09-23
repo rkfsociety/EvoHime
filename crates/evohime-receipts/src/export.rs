@@ -33,20 +33,28 @@ type ActiveCheckpointRow = (
     String,
 );
 
+/// Failure while querying, verifying, or writing a receipt export.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ExportError {
+    /// Receipt storage could not be queried.
     #[error("receipts.db_unavailable")]
     DbUnavailable,
+    /// Filter identifiers, time bounds, or limits are invalid.
     #[error("receipts.invalid_filter")]
     InvalidFilter,
+    /// The matching chain closure exceeds the requested bound.
     #[error("receipts.limit_exceeded")]
     LimitExceeded,
+    /// The requested export range contains no eligible receipts.
     #[error("receipts.empty_range")]
     EmptyRange,
+    /// The destination already exists and will not be overwritten.
     #[error("receipts.export_exists")]
     ExportExists,
+    /// Export files could not be written or verified.
     #[error("receipts.export_io")]
     ExportIo,
+    /// A referenced receipt or export resource does not exist.
     #[error("receipts.not_found")]
     NotFound,
 }
@@ -57,33 +65,54 @@ impl From<rusqlite::Error> for ExportError {
     }
 }
 
+/// Optional task, run, action, and timestamp filters for receipt queries.
 #[derive(Debug, Clone, Default)]
 pub struct ReceiptFilter {
+    /// Restricts results to this task identifier.
     pub task_id: Option<String>,
+    /// Restricts results to this run identifier.
     pub run_id: Option<String>,
+    /// Restricts results to this action identifier.
     pub action_id: Option<String>,
+    /// Inclusive lower bound for creation time in Unix milliseconds.
     pub from_ms: Option<i64>,
+    /// Exclusive upper bound for creation time in Unix milliseconds.
     pub to_ms: Option<i64>,
 }
 
+/// Public, payload-free summary of one signed receipt record.
 #[derive(Debug, Clone, Serialize)]
 pub struct ReceiptSummary {
+    /// Stable receipt identifier.
     pub receipt_id: String,
+    /// Durable sequence position in the receipt table.
     pub sequence: i64,
+    /// Action identifier associated with the receipt.
     pub action_id: String,
+    /// Receipt category, such as pre-execution or terminal.
     pub receipt_kind: String,
+    /// Recorded action outcome.
     pub action_status: String,
+    /// Owning task identifier.
     pub task_id: String,
+    /// Owning run identifier.
     pub run_id: String,
+    /// Signer key identifier.
     pub key_id: String,
+    /// Creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Digest of the canonical receipt envelope.
     pub receipt_hash: String,
+    /// Digest of the preceding receipt, if this is not the chain root.
     pub previous_receipt_hash: Option<String>,
 }
 
+/// Bounded receipt listing tied to the observed database sequence snapshot.
 #[derive(Debug, Clone, Serialize)]
 pub struct ListResult {
+    /// Highest sequence visible when the listing began.
     pub snapshot_last_sequence: i64,
+    /// Matching payload-free receipt summaries, newest first.
     pub rows: Vec<ReceiptSummary>,
 }
 
@@ -144,6 +173,7 @@ fn snapshot_last_sequence(connection: &Connection) -> Result<i64, ExportError> {
 /// `ListReceipts`: bounded, filtered summaries. Does not expand to chain
 /// closure — that expansion is specific to verify/export, where the
 /// predecessor chain itself is the thing being checked.
+/// Lists at most 500 matching receipt summaries without expanding chain closure.
 pub fn list_receipts(
     connection: &Connection,
     filter: &ReceiptFilter,
@@ -276,10 +306,14 @@ fn load_closure_rows(
     Ok((rows, requested_count, selected_count))
 }
 
+/// Chain verification outcome and the size of the requested/selected ranges.
 #[derive(Debug, Clone, Serialize)]
 pub struct VerifyResult {
+    /// Cryptographic and structural result for the selected chain range.
     pub verification: ChainVerification,
+    /// Number of rows that directly matched the filter.
     pub requested_count: i64,
+    /// Number of rows included after predecessor closure expansion.
     pub selected_count: i64,
 }
 
@@ -340,25 +374,41 @@ fn active_checkpoint_prefix_for_first_row(
     )
 }
 
+/// Integrity metadata for one file in an immutable export bundle.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExportManifestFile {
+    /// Relative filename within the bundle.
     pub name: String,
+    /// File size in bytes.
     pub bytes: u64,
+    /// Lowercase hexadecimal SHA-256 digest.
     pub sha256: String,
 }
 
+/// Snapshot identity, counts, chain boundaries, and file digests for an export.
 #[derive(Debug, Clone, Serialize)]
 pub struct ExportManifest {
+    /// Manifest schema version.
     pub manifest_version: u8,
+    /// Unique identifier for this export snapshot.
     pub export_id: String,
+    /// UTC creation timestamp.
     pub created_at: String,
+    /// Highest database sequence visible to the export operation.
     pub snapshot_last_sequence: i64,
+    /// Number of records directly matching the filter.
     pub requested_count: i64,
+    /// Number of records selected after chain closure expansion.
     pub selected_count: i64,
+    /// Number of records written to the bundle.
     pub record_count: i64,
+    /// Number of records successfully finalized in the output files.
     pub actual_exported_count: i64,
+    /// Hash at the beginning of the exported chain range, when nonempty.
     pub first_receipt_hash: Option<String>,
+    /// Hash at the end of the exported chain range, when nonempty.
     pub last_receipt_hash: Option<String>,
+    /// Files included in the bundle with size and digest metadata.
     pub files: Vec<ExportManifestFile>,
 }
 
@@ -410,6 +460,7 @@ fn canonical_destination(destination: &Path) -> Result<PathBuf, ExportError> {
 /// `ExportReceipts`. Writes an atomic staging directory, then renames it to
 /// `destination`. `key_history_jsonl` is the caller's already-loaded, signed
 /// `KeyTransition` history (from `ReceiptKeyManager::load_history`).
+/// Writes a new immutable JSONL bundle and manifest for a bounded filtered range.
 pub fn export_receipts(
     connection: &Connection,
     key_history: &[KeyTransition],

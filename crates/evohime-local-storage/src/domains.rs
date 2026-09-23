@@ -8,6 +8,7 @@
 #![allow(ambiguous_glob_imports)]
 
 pub mod memory {
+    //! Facade for durable memory records, candidate publication, and recall views.
     pub use crate::memory_extraction_store::{publish_candidate, PublishOutcome};
     pub use crate::memory_store::{
         install_schema, InsertSessionNoteInput, MemoryExtractionFields, MemoryPrivacy,
@@ -22,6 +23,7 @@ pub mod memory {
 }
 
 pub mod runs {
+    //! Facade for checkpoints, continuations, and run-scoped persisted state.
     pub use crate::checkpoint_forking_store::*;
     pub use crate::continuation_store::*;
     pub use crate::task_checkpoint::*;
@@ -29,6 +31,7 @@ pub mod runs {
 }
 
 pub mod workflow {
+    //! Facade for workflow packages, artifacts, optimization, and worktree isolation.
     pub use crate::artifact_store::*;
     pub use crate::task_worktree_isolation_store::*;
     pub use crate::workflow_optimization_lab_store::*;
@@ -37,17 +40,20 @@ pub mod workflow {
 }
 
 pub mod agents {
+    //! Facade for child-agent and persistent-agent registry records.
     pub use crate::child_store::*;
     pub use crate::persistent_agent_registry_store::*;
     pub use crate::retained_child_store::*;
 }
 
 pub mod audit {
+    //! Facade for conversation, execution-ledger, and reconciliation evidence.
     pub use crate::conversation_event_log_store::*;
     pub use crate::execution_ledger::*;
     pub use crate::reconciliation_verifier::*;
 }
 
 pub mod receipts {
+    //! Facade for model-provenance receipt persistence.
     pub use crate::model_provenance::*;
 }

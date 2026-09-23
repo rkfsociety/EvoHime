@@ -16,10 +16,15 @@ use serde::{Deserialize, Serialize};
 
 /// Потолки полей. Общие для storage (08-2) и IPC/Electron (08-3) — так что
 /// значение, отклонённое здесь, не может тихо проскочить дальше по слоям.
+/// Maximum UTF-8 byte length for identifiers in ledger events.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum UTF-8 byte length for digest fields.
 pub const MAX_DIGEST_BYTES: usize = 128;
+/// Maximum UTF-8 byte length for an error classification.
 pub const MAX_ERROR_CLASS_BYTES: usize = 256;
+/// Maximum UTF-8 byte length for short descriptive fields.
 pub const MAX_SHORT_TEXT_BYTES: usize = 256;
+/// Maximum number of artifact references attached to one observation.
 pub const MAX_ARTIFACT_REFS: usize = 32;
 
 /// `event_id` детерминированного legacy-mapping — hex SHA-256, всегда 64 байта.
@@ -27,25 +32,52 @@ pub const LEGACY_EVENT_ID_HEX_LEN: usize = 64;
 
 const LEGACY_EVENT_ID_DOMAIN: &[u8] = b"evohime.legacy.event.v1";
 
+/// Validation and persistence failures for the execution ledger contract.
 #[derive(Debug, thiserror::Error)]
 pub enum LedgerContractError {
+    /// A required field was empty.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Field that was empty.
+        field: &'static str,
+    },
+    /// A field exceeded its maximum byte length.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: usize },
+    Limit {
+        /// Field that exceeded its limit.
+        field: &'static str,
+        /// Maximum byte length allowed for the field.
+        max: usize,
+    },
+    /// A scoped correlation field conflicts with the declared run scope.
     #[error("{field} is not valid for run_scope {run_scope:?}")]
     ScopeMismatch {
+        /// Field that conflicts with the declared scope.
         field: &'static str,
+        /// Scope that does not permit the field.
         run_scope: RunScope,
     },
+    /// A scoped event omitted the required logical session identifier.
     #[error("session_id is required outside system/legacy run_scope")]
     MissingSessionId,
+    /// The requested action state transition is not allowed.
     #[error("illegal state transition from {from:?} to {to:?}")]
-    IllegalTransition { from: ActionState, to: ActionState },
+    IllegalTransition {
+        /// Current action state.
+        from: ActionState,
+        /// Requested action state.
+        to: ActionState,
+    },
+    /// One action has multiple terminal outcomes in the supplied event set.
     #[error("action {action_id} has more than one terminal outcome")]
-    DuplicateTerminalOutcome { action_id: String },
+    DuplicateTerminalOutcome {
+        /// Action identifier with conflicting terminal events.
+        action_id: String,
+    },
+    /// Event contained more artifact references than the contract permits.
     #[error("too many artifact refs: {0} exceeds {MAX_ARTIFACT_REFS}")]
     TooManyArtifactRefs(usize),
+    /// A SQLite query or row conversion failed.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -102,14 +134,20 @@ impl PartialEq for LedgerContractError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunScope {
+    /// Run is part of a workflow execution.
     Workflow,
+    /// Run is attached to an individual work item.
     WorkItem,
+    /// Run has an independent owner in a standalone execution context.
     Standalone,
+    /// Event is system-scoped and does not require a session identifier.
     System,
+    /// Event was mapped from a legacy event row.
     Legacy,
 }
 
 impl RunScope {
+    /// Returns the stable snake-case value stored in the ledger.
     pub fn as_str(self) -> &'static str {
         match self {
             RunScope::Workflow => "workflow",
@@ -120,6 +158,7 @@ impl RunScope {
         }
     }
 
+    /// Parses a stored scope value, returning `None` for unknown strings.
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "workflow" => RunScope::Workflow,
@@ -139,24 +178,40 @@ impl RunScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionState {
+    /// Action exists but is not yet eligible to run.
     Pending,
+    /// Action is ready for dispatch.
     Ready,
+    /// Action is currently executing.
     Running,
+    /// Action is waiting for an approval decision.
     WaitingApproval,
+    /// Cancellation has been requested but is not yet terminal.
     Cancelling,
+    /// Action completed successfully.
     Succeeded,
+    /// Action failed.
     Failed,
+    /// Action exceeded its execution time limit.
     TimedOut,
+    /// Action was cancelled.
     Cancelled,
+    /// Action was blocked by a policy or prerequisite.
     Blocked,
+    /// Action was denied by a policy or approval decision.
     Denied,
+    /// Action was skipped without execution.
     Skipped,
+    /// Action completed with a degraded outcome.
     Degraded,
+    /// The execution outcome cannot be determined safely.
     UnknownOutcome,
+    /// Action was moved to a dead-letter state.
     DeadLetter,
 }
 
 impl ActionState {
+    /// All stable action states in their canonical order.
     pub const ALL: &'static [ActionState] = &[
         ActionState::Pending,
         ActionState::Ready,
@@ -175,6 +230,7 @@ impl ActionState {
         ActionState::DeadLetter,
     ];
 
+    /// Returns the stable snake-case value stored in the ledger.
     pub fn as_str(self) -> &'static str {
         match self {
             ActionState::Pending => "pending",
@@ -195,6 +251,7 @@ impl ActionState {
         }
     }
 
+    /// Parses a stored action state, returning `None` for unknown strings.
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "pending" => ActionState::Pending,
@@ -216,6 +273,7 @@ impl ActionState {
         })
     }
 
+    /// Returns whether this state has no legal outgoing transition.
     pub fn is_terminal(self) -> bool {
         !matches!(
             self,
@@ -230,6 +288,7 @@ impl ActionState {
     /// Допустимые следующие состояния. Терминальные состояния не имеют
     /// исходящих переходов — терминальный action нельзя представить
     /// одновременно с двумя исходами.
+    /// Returns the allowed next states for this state.
     pub fn allowed_transitions(self) -> &'static [ActionState] {
         use ActionState::*;
         match self {
@@ -252,6 +311,16 @@ impl ActionState {
         }
     }
 
+    /// Checks whether `to` is among this state's allowed successors.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use evohime_local_storage::execution_ledger::ActionState;
+    ///
+    /// assert!(ActionState::Ready.can_transition_to(ActionState::Running));
+    /// assert!(!ActionState::Succeeded.can_transition_to(ActionState::Running));
+    /// ```
     pub fn can_transition_to(self, to: ActionState) -> bool {
         self.allowed_transitions().contains(&to)
     }
@@ -347,7 +416,9 @@ fn bounded_opt(
 /// только хэш и род артефакта.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactRef {
+    /// Content digest of the referenced artifact.
     pub content_hash: String,
+    /// Artifact kind label.
     pub kind: String,
 }
 
@@ -363,11 +434,15 @@ impl ArtifactRef {
     }
 }
 
+/// Result recorded for an approval intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalOutcome {
+    /// Approval was granted.
     Approved,
+    /// Approval was explicitly rejected.
     Rejected,
+    /// Approval expired before a decision was recorded.
     Expired,
 }
 
@@ -376,7 +451,9 @@ pub enum ApprovalOutcome {
 /// lookup. Само значение секрета в типе физически отсутствует.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RedactionMeta {
+    /// Whether redaction detected secret-bearing content.
     pub secrets_present: bool,
+    /// Optional keyed digest used to compare redacted values without exposing them.
     pub digest: Option<String>,
 }
 
@@ -392,39 +469,62 @@ impl RedactionMeta {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExecutionEventBody {
+    /// Describes an action request before it is dispatched.
     ActionRequest {
+        /// Requested action category.
         action_kind: String,
+        /// Capability requested for the action.
         requested_capability: String,
     },
+    /// Describes a tool invocation without retaining its raw input.
     ToolCall {
+        /// Registered tool name.
         tool_name: String,
+        /// Digest of the canonical tool call.
         tool_call_hash: String,
         /// Пусто до появления `tool/manifest/v1` (план 07-1).
         manifest_hash: Option<String>,
     },
+    /// Describes a bounded observation and links any stored artifacts.
     Observation {
+        /// Digest of the bounded observation summary.
         summary_digest: String,
+        /// Content-addressed references to observation artifacts.
         artifact_refs: Vec<ArtifactRef>,
     },
+    /// Links a completed tool action to its receipt digest.
     ToolReceipt {
+        /// Action identifier associated with the receipt.
         receipt_action_id: String,
+        /// Digest of the receipt content.
         receipt_hash: String,
     },
+    /// Records a classified failure without retaining unbounded provider details.
     TypedFailure {
+        /// Bounded failure category.
         error_class: String,
+        /// Optional provider-supplied error identifier.
         provider_error_id: Option<String>,
     },
+    /// Records the decision made for an approval intent.
     ApprovalDecision {
+        /// Approval request identifier.
         approval_intent_id: String,
+        /// Recorded approval outcome.
         decision: ApprovalOutcome,
         /// Пусто до capability snapshot (план 09-1).
         snapshot_hash: Option<String>,
     },
+    /// Records a bounded cancellation classification.
     Cancellation {
+        /// Bounded cancellation reason category.
         reason_class: String,
     },
+    /// Records a recovery decision and digest of its supporting evidence.
     RecoveryDecision {
+        /// Recovery choice made by the runtime.
         decision: String,
+        /// Digest of evidence supporting the choice.
         evidence_digest: String,
     },
 }
@@ -522,29 +622,48 @@ impl ExecutionEventBody {
 /// Typed execution event — канонический versioned контракт плана 08-1.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionEventV1 {
+    /// Version of this event schema.
     pub schema_version: u32,
+    /// Stable event identifier; legacy events use the deterministic mapping helper.
     pub event_id: String,
     /// Заполняется storage-слоем (08-2) при публикации; здесь просто поле.
     pub sequence_id: Option<i64>,
+    /// Owner scope for `run_id`.
     pub run_scope: RunScope,
+    /// Run identifier interpreted in `run_scope`.
     pub run_id: String,
     /// Логическая execution session (не transport `session_epoch`).
     /// Обязателен вне `System`/`Legacy` scope.
     pub session_id: Option<String>,
+    /// Task associated with the event.
     pub task_id: String,
+    /// Event creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Action state after this event, when it changes or reports state.
     pub state_after: Option<ActionState>,
+    /// Optional action identifier.
     pub action_id: Option<String>,
+    /// Optional tool call identifier.
     pub tool_call_id: Option<String>,
+    /// Optional observation identifier.
     pub observation_id: Option<String>,
+    /// Optional tool receipt identifier.
     pub receipt_id: Option<String>,
+    /// Optional failure identifier.
     pub failure_id: Option<String>,
+    /// Workflow run identifier, present only for workflow scope.
     pub workflow_run_id: Option<String>,
+    /// Workflow node identifier, present only for workflow scope.
     pub node_id: Option<String>,
+    /// Workflow attempt identifier, present only for workflow scope.
     pub attempt_id: Option<String>,
+    /// Optional externally visible effect identifier.
     pub effect_id: Option<String>,
+    /// Optional model request identifier.
     pub model_request_id: Option<String>,
+    /// Typed, bounded event-specific payload.
     pub body: ExecutionEventBody,
+    /// Metadata describing redaction without retaining secret values.
     pub redaction: RedactionMeta,
 }
 

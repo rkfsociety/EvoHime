@@ -6,117 +6,201 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Serialized contract version for persisted code review records.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum changed paths in a review target or coverage record.
 pub const MAX_PATHS: usize = 512;
+/// Maximum findings attached to a review.
 pub const MAX_FINDINGS: usize = 512;
+/// Maximum evidence references attached to one finding.
 pub const MAX_EVIDENCE_REFS: usize = 32;
+/// Maximum UTF-8 byte length for bounded review text.
 pub const MAX_TEXT_BYTES: usize = 8 * 1024;
 
+/// Source revision range reviewed by the lane.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetKind {
+    /// A locally persisted agent-authored change set.
     LocalWorkspaceChangeSet,
+    /// A change set produced through the agent Git workflow.
     AgentGitChangeSet,
+    /// A diff from a task worktree.
     TaskWorktreeDiff,
+    /// A range between two commits.
     CommitRange,
+    /// A remote pull request diff.
     RemotePullRequest,
 }
 
+/// Lifecycle state attached to a review finding.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FindingState {
+    /// Finding has not yet been addressed.
     Open,
+    /// A reviewer has acknowledged the finding.
     Acknowledged,
+    /// A code change resolved the finding.
     ResolvedByCode,
+    /// Finding was dismissed as not actionable.
     Dismissed,
+    /// Risk was accepted without changing the code.
     AcceptedRisk,
+    /// A newer review superseded this finding.
     Superseded,
+    /// Finding no longer applies to the current target.
     Stale,
 }
 
+/// Coverage result for the files in a review target.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CoverageState {
+    /// All eligible files were reviewed.
     Complete,
+    /// Some eligible files could not be reviewed.
     Partial,
+    /// The target scope is unsupported.
     UnsupportedScope,
+    /// Review execution failed.
     Failed,
+    /// Coverage cannot be determined.
     Unknown,
 }
 
+/// Overall disposition of a code review.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewVerdict {
+    /// No actionable changes were found within the recorded coverage.
     Clean,
+    /// The review found changes that should be addressed.
     ChangesRequested,
+    /// Coverage was insufficient to make a complete assessment.
     ReviewIncomplete,
+    /// A human decision is required.
     NeedsHumanReview,
+    /// Review could not proceed due to a blocking condition.
     Blocked,
+    /// Verdict is not known.
     Unknown,
 }
 
+/// Immutable identity and source revisions for a code review target.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodeReviewTarget {
+    /// Schema version for this target record.
     pub schema_version: u32,
+    /// Stable target identifier.
     pub id: String,
+    /// Kind of source being reviewed.
     pub kind: TargetKind,
+    /// Base commit or source revision.
     pub base_revision: String,
+    /// Head commit or source revision.
     pub head_revision: String,
+    /// Digest of the diff bytes.
     pub diff_hash: String,
+    /// Optional fingerprint of the workspace used for review.
     pub workspace_fingerprint: Option<String>,
+    /// Changed repository-relative paths in the target.
     pub changed_paths: Vec<String>,
+    /// Target creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Digest of the target metadata excluding this field.
     pub content_hash: String,
 }
 
+/// Bounded finding metadata and evidence references for a reviewed target.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodeReviewFinding {
+    /// Stable finding identifier.
     pub id: String,
+    /// Content-derived identity used to reconcile findings across revisions.
     pub fingerprint: String,
+    /// Review target identifier.
     pub target_id: String,
+    /// Finding category, such as correctness or security.
     pub category: String,
+    /// Severity label assigned by the reviewer.
     pub severity: String,
+    /// Confidence label assigned by the reviewer.
     pub confidence: String,
+    /// Repository-relative file reference.
     pub file_ref: String,
+    /// Short finding title.
     pub title: String,
+    /// Current disposition of the finding.
     pub state: FindingState,
+    /// Artifact or evidence identifiers supporting the finding.
     pub evidence_refs: Vec<String>,
+    /// Digest of the finding metadata excluding this field.
     pub content_hash: String,
 }
 
+/// File counts and explicit reasons for review coverage gaps.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodeReviewCoverage {
+    /// Number of changed files in the target.
     pub changed_files: u32,
+    /// Number of files eligible for automated review.
     pub eligible_files: u32,
+    /// Number of eligible files actually reviewed.
     pub reviewed_files: u32,
+    /// Generated files intentionally excluded from review.
     pub skipped_generated: Vec<String>,
+    /// Files whose format or language was unsupported.
     pub unsupported_files: Vec<String>,
+    /// Files omitted because required context could not be obtained.
     pub context_failures: Vec<String>,
+    /// Aggregate state of review coverage.
     pub state: CoverageState,
+    /// Digest of coverage metadata excluding this field.
     pub content_hash: String,
 }
 
+/// Complete versioned review result tied to one immutable target.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodeReviewRecord {
+    /// Schema version for the review record.
     pub schema_version: u32,
+    /// Stable identifier for the logical review.
     pub review_id: String,
+    /// Monotonically increasing review revision.
     pub revision: u64,
+    /// Source target analyzed in this revision.
     pub target: CodeReviewTarget,
+    /// Findings produced for the target.
     pub findings: Vec<CodeReviewFinding>,
+    /// Coverage evidence for the review.
     pub coverage: CodeReviewCoverage,
+    /// Overall review disposition.
     pub verdict: ReviewVerdict,
+    /// Whether the previous review execution was interrupted.
     pub interrupted: bool,
+    /// Digest of the review record excluding this field.
     pub content_hash: String,
 }
 
+/// Validation, size-bound, concurrency, and idempotency failures for review persistence.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CodeReviewError {
+    /// Record content or identity is invalid.
     #[error("invalid code review record: {0}")]
     Invalid(String),
+    /// Record exceeded a collection or text bound.
     #[error("code review record exceeds a contract limit: {0}")]
     LimitExceeded(String),
+    /// The requested revision does not match the current revision.
     #[error("stale code review revision: expected {expected}, current {current}")]
-    Stale { expected: u64, current: u64 },
+    Stale {
+        /// Revision expected by the caller.
+        expected: u64,
+        /// Current stored revision.
+        current: u64,
+    },
+    /// An idempotency key was reused with different review content.
     #[error("idempotency key conflict")]
     IdempotencyConflict,
 }
@@ -128,12 +212,14 @@ fn hash<T: Serialize>(value: &T) -> Result<String, CodeReviewError> {
 }
 
 impl CodeReviewTarget {
+    /// Computes the target content hash, then validates the sealed target.
     pub fn seal(mut self) -> Result<Self, CodeReviewError> {
         self.content_hash.clear();
         self.content_hash = hash(&self)?;
         self.validate()?;
         Ok(self)
     }
+    /// Validates target identity, changed paths, and its canonical content hash.
     pub fn validate(&self) -> Result<(), CodeReviewError> {
         if self.schema_version != SCHEMA_VERSION
             || self.id.trim().is_empty()
@@ -164,6 +250,7 @@ impl CodeReviewTarget {
 }
 
 impl CodeReviewFinding {
+    /// Computes the finding content hash, then validates its metadata.
     pub fn seal(mut self) -> Result<Self, CodeReviewError> {
         self.content_hash.clear();
         self.content_hash = hash(&self)?;
@@ -197,6 +284,7 @@ impl CodeReviewFinding {
 }
 
 impl CodeReviewCoverage {
+    /// Computes the coverage content hash, then validates counts, paths, and digest.
     pub fn seal(mut self) -> Result<Self, CodeReviewError> {
         self.content_hash.clear();
         self.content_hash = hash(&self)?;
@@ -231,6 +319,7 @@ impl CodeReviewCoverage {
 }
 
 impl CodeReviewRecord {
+    /// Seals nested records and computes the final review digest.
     pub fn seal(mut self) -> Result<Self, CodeReviewError> {
         self.target = self.target.seal()?;
         self.findings = self
@@ -244,6 +333,7 @@ impl CodeReviewRecord {
         self.validate()?;
         Ok(self)
     }
+    /// Validates identity, target linkage, collection bounds, and nested digests.
     pub fn validate(&self) -> Result<(), CodeReviewError> {
         if self.schema_version != SCHEMA_VERSION
             || self.review_id.trim().is_empty()
@@ -273,16 +363,20 @@ impl CodeReviewRecord {
     }
 }
 
+/// SQLite repository that stores immutable revisions of code review records.
 pub struct CodeReviewStore<'a> {
     connection: &'a Connection,
 }
 impl<'a> CodeReviewStore<'a> {
+    /// Creates a store borrowing the caller-owned SQLite connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
+    /// Creates the code review revision table and current-revision index in `tx`.
     pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
         tx.execute_batch("CREATE TABLE IF NOT EXISTS code_review_revisions (review_id TEXT NOT NULL, revision INTEGER NOT NULL, target_hash TEXT NOT NULL, status TEXT NOT NULL, review_json BLOB NOT NULL, idempotency_key TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(review_id, revision), UNIQUE(review_id, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_code_review_current ON code_review_revisions(review_id, revision DESC);")
     }
+    /// Seals and inserts the next review revision using optimistic concurrency and idempotency.
     pub fn save(
         &self,
         record: &CodeReviewRecord,
@@ -326,6 +420,7 @@ impl<'a> CodeReviewStore<'a> {
         self.connection.execute("INSERT INTO code_review_revisions(review_id,revision,target_hash,status,review_json,idempotency_key,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![record.review_id, record.revision, record.target.content_hash, format!("{:?}", record.verdict), json, idempotency_key, now_ms]).map_err(|e| CodeReviewError::Invalid(e.to_string()))?;
         Ok(record)
     }
+    /// Loads the latest persisted review revision for an identifier.
     pub fn load_current(
         &self,
         review_id: &str,
@@ -334,6 +429,9 @@ impl<'a> CodeReviewStore<'a> {
     }
 }
 
+/// Marks findings absent from a new target's fingerprints as stale and reseals the prior review.
+///
+/// The target must be a new revision with a different target identifier.
 pub fn reconcile(
     previous: &mut CodeReviewRecord,
     current_target: &CodeReviewTarget,

@@ -1,7 +1,21 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Creates the immutable revision and idempotency table for verified checkpoints.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS verified_git_checkpoints (id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(id,revision), UNIQUE(id,idempotency_key));")
 }
+/// Stores a verified Git-checkpoint revision with idempotent replay handling.
+///
+/// Repeating a key with the same revision and content hash is accepted;
+/// conflicting key reuse is rejected.
+///
+/// # Errors
+///
+/// Returns a SQLite error for conflicting reuse or failed writes.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -26,6 +40,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Loads the checkpoint JSON at the highest stored revision for `id`.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT json FROM verified_git_checkpoints WHERE id=?1 ORDER BY revision DESC LIMIT 1",

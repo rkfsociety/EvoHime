@@ -7,6 +7,10 @@ fn bounded(value: &str, max: usize) -> bool {
     !value.is_empty() && value.len() <= max && !value.bytes().any(|byte| byte.is_ascii_control())
 }
 
+/// Parses one command and validates its bounded text arguments.
+///
+/// The first element is the command name. For `run`, workspace should be passed
+/// explicitly when deterministic parsing is required.
 pub fn parse_args(args: &[String]) -> Result<Command, ParseError> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(ParseError::Usage);

@@ -2,6 +2,7 @@ use crate::{LocalDatabase, RunRecord, RunSnapshots, StorageError};
 use rusqlite::OptionalExtension;
 
 impl LocalDatabase {
+    /// Creates a run and returns the stored record, including its immutable snapshots.
     pub fn create_run(&self, run: &RunRecord) -> Result<RunRecord, StorageError> {
         self.connection.execute(
             "INSERT INTO runs(id, work_item_id, status, policy_snapshot, role_snapshot,
@@ -20,6 +21,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Loads a run by ID, returning `None` when it does not exist.
     pub fn get_run(&self, id: &str) -> Result<Option<RunRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id, work_item_id, status, policy_snapshot, role_snapshot,
@@ -40,6 +42,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Serializes the supplied role, skill, policy, and model-route snapshots into a new run.
     pub fn create_run_with_snapshots(
         &self,
         id: &str,
@@ -59,6 +62,7 @@ impl LocalDatabase {
         self.create_run(&run)
     }
 
+    /// Loads and deserializes the snapshots captured when the run was created.
     pub fn get_run_snapshots(&self, id: &str) -> Result<Option<RunSnapshots>, StorageError> {
         let Some(run) = self.get_run(id)? else {
             return Ok(None);
@@ -71,6 +75,7 @@ impl LocalDatabase {
         }))
     }
 
+    /// Creates a run only if its ID is absent, then returns the stored record.
     pub fn create_run_if_absent(&self, run: &RunRecord) -> Result<RunRecord, StorageError> {
         self.connection.execute(
             "INSERT OR IGNORE INTO runs(id, work_item_id, status, policy_snapshot, role_snapshot,

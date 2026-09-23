@@ -1,8 +1,23 @@
 use rusqlite::{params, Connection};
+
 const MAX_OPERATORS: i64 = 256;
+
+/// Creates the durable reasoning-operator definition table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS reasoning_operator_definitions (id TEXT PRIMARY KEY, version INTEGER NOT NULL, content_hash TEXT NOT NULL, definition_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts a reasoning operator or applies a definition with a newer version.
+///
+/// Definitions are limited to 256 KiB. Equal or stale versions leave the
+/// stored definition unchanged.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized definitions or failed writes.
 pub fn put(c: &Connection, id: &str, v: u32, h: &str, j: &[u8], now: i64) -> rusqlite::Result<()> {
     if j.len() > 256 * 1024 {
         return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
@@ -15,6 +30,11 @@ pub fn put(c: &Connection, id: &str, v: u32, h: &str, j: &[u8], now: i64) -> rus
     )?;
     Ok(())
 }
+/// Loads operator definitions ordered by ID, capped at 256 rows.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut s = c.prepare(
         "SELECT definition_json FROM reasoning_operator_definitions ORDER BY id LIMIT ?1",

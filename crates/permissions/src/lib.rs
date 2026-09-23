@@ -2,15 +2,30 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+#![deny(missing_docs)]
 //! Permission checks, scoped overrides, and approval audit (roadmap P2).
 //!
 //! Global modes persist via `app_settings.permissions`.
 //! Session overrides + path grants persist via `app_settings.permission_scopes` (Stage 7.22).
+//!
+//! ```
+//! use evohime_permissions::{glob_match, Permission, PermissionMode, PolicyRule, PolicyRuleSet};
+//!
+//! let rules = PolicyRuleSet::new(vec![PolicyRule {
+//!     permission: Permission::FilesystemRead,
+//!     pattern: "*.env".into(),
+//!     mode: PermissionMode::Deny,
+//! }]);
+//! assert!(glob_match("*.env", "backend/.env"));
+//! assert_eq!(rules.resolve(Permission::FilesystemRead, "backend/.env"), Some(PermissionMode::Deny));
+//! ```
 
 mod pattern;
 mod policy;
 
+/// Case-insensitive wildcard matcher used by permission policy rules.
 pub use pattern::glob_match;
+/// Permission rule and ordered rule-set types.
 pub use policy::{PolicyRule, PolicyRuleSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -22,49 +37,74 @@ use std::{
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
+/// Capability category controlled by the permission engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
+    /// Read files within an authorized workspace.
     FilesystemRead,
+    /// Create, modify, or delete workspace files.
     FilesystemWrite,
+    /// Execute a shell command.
     ShellExecute,
+    /// Inspect repository state and history.
     GitRead,
+    /// Change repository state or publish changes.
     GitWrite,
+    /// Access an interactive browser session.
     BrowserAccess,
+    /// Call a Model Context Protocol server.
     McpCall,
+    /// Search stored project memory.
     MemorySearch,
     /// Ambient microphone capture (plan 04).  Default `Deny`; never touched by
     /// [`PermissionEngine::set_all_modes`].
     MicrophoneListen,
 }
 
+/// Configured outcome when a permission check reaches this mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionMode {
+    /// Require an approval for each matching operation.
     Ask,
+    /// Permit the operation subject to harder policy denies.
     Allow,
+    /// Reject the operation without requesting approval.
     Deny,
 }
 
+/// Result of resolving a permission check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionDecision {
+    /// The operation is allowed by the effective policy.
     Allowed,
+    /// The operation requires an approval token.
     NeedsApproval,
+    /// The operation is denied.
     Denied,
 }
 
+/// Bounded user-facing description attached to an approval request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalPreview {
+    /// Short operation category shown in the approval UI.
     pub kind: String,
+    /// Human-readable summary of the requested operation.
     pub summary: String,
+    /// Optional shell command associated with the operation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    /// Optional working directory for the command.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// Optional filesystem path affected by the operation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// Optional additional context shown to the user.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
+    /// Whether one or more preview fields were shortened to the size limit.
     #[serde(default)]
     pub truncated: bool,
 }
@@ -72,6 +112,7 @@ pub struct ApprovalPreview {
 const MAX_APPROVAL_PREVIEW_TEXT_BYTES: usize = 8 * 1024;
 
 impl ApprovalPreview {
+    /// Truncates every text field to the approval preview size limit.
     pub fn bounded(mut self) -> Self {
         let (kind, kind_truncated) = bound_preview_text(self.kind);
         let (summary, summary_truncated) = bound_preview_text(self.summary);
@@ -131,11 +172,17 @@ impl Default for ApprovalPreview {
 /// «совпадение» там, где его нет.
 #[derive(Debug, Clone, Copy)]
 pub struct CallIdentity<'a> {
+    /// Task that requested the tool call.
     pub task_id: Uuid,
+    /// Session associated with the task, when available.
     pub session_id: Option<Uuid>,
+    /// Name of the tool being called.
     pub tool_name: &'a str,
+    /// Capability required by the tool call.
     pub permission: Permission,
+    /// Resource scope checked by the permission engine.
     pub scope: &'a str,
+    /// Exact JSON input supplied to the tool.
     pub input: &'a serde_json::Value,
 }
 
@@ -152,29 +199,41 @@ impl CallIdentity<'_> {
     }
 }
 
+/// Approval request bound to a task, capability, scope, and tool input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalRequest {
+    /// Unique approval identifier.
     pub id: Uuid,
+    /// Task that owns this request.
     pub task_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Session that owns this request, when available.
     pub session_id: Option<Uuid>,
+    /// Name of the tool awaiting approval.
     pub tool_name: String,
+    /// Capability required by the operation.
     pub permission: Permission,
     /// Relative path, URL, or `"workspace"`.
     pub scope: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Optional command associated with the operation.
     pub command: Option<String>,
     /// Hash of the tool name, normalized scope, and exact canonical input.
     #[serde(default)]
     pub call_hash: String,
+    /// Bounded description displayed to the user.
     pub preview: ApprovalPreview,
 }
 
+/// Lifecycle state of an approval request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalState {
+    /// Awaiting a user decision.
     Pending,
+    /// Approved by the user.
     Granted,
+    /// Rejected by the user.
     Denied,
 }
 
@@ -187,42 +246,63 @@ struct ApprovalRecord {
 /// Context for a scoped permission check.
 #[derive(Debug, Clone, Default)]
 pub struct PermissionCheck<'a> {
+    /// Session used to resolve session-specific overrides.
     pub session_id: Option<Uuid>,
+    /// Optional resource path used to resolve path grants.
     pub path: Option<&'a str>,
+    /// Optional command used to match command policy rules.
     pub command: Option<&'a str>,
 }
 
+/// Persistable permission grant scoped to a resource path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PathGrant {
+    /// Capability granted or denied for this path.
     pub permission: Permission,
+    /// Normalized resource path covered by the grant.
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Session to which this grant applies, or `None` for all sessions.
     pub session_id: Option<Uuid>,
+    /// Decision applied to matching checks.
     pub mode: PermissionMode,
     /// Unix millis; `None` means until cleared / process restart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at_ms: Option<u64>,
 }
 
+/// Persistable permission override scoped to one session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionOverride {
+    /// Session receiving the override.
     pub session_id: Uuid,
+    /// Capability affected by the override.
     pub permission: Permission,
+    /// Decision used for this capability in the session.
     pub mode: PermissionMode,
 }
 
+/// Recorded decision retained for approval auditing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalAuditEntry {
+    /// Approval request identifier.
     pub approval_id: Uuid,
+    /// Task that requested the operation.
     pub task_id: Uuid,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Session associated with the operation, when available.
     pub session_id: Option<Uuid>,
+    /// Name of the tool that requested access.
     pub tool_name: String,
+    /// Capability checked by the engine.
     pub permission: Permission,
+    /// Resource scope evaluated by the engine.
     pub scope: String,
     /// Exact canonical call binding retained for offline approval audit.
     pub call_hash: String,
+    /// Final approval decision.
     pub decision: ApprovalState,
+    /// Unix timestamp in milliseconds when the decision was recorded.
     pub at_ms: u64,
     /// True when grant also installed a temporary path allow for the session.
     #[serde(default)]
@@ -232,8 +312,10 @@ pub struct ApprovalAuditEntry {
 /// Durable snapshot of session overrides + path grants (Stage 7.22).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PermissionScopesSnapshot {
+    /// Session-specific capability overrides.
     #[serde(default)]
     pub session_overrides: Vec<SessionOverride>,
+    /// Path-specific grants.
     #[serde(default)]
     pub path_grants: Vec<PathGrant>,
 }
@@ -241,6 +323,7 @@ pub struct PermissionScopesSnapshot {
 const DEFAULT_TEMP_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
 const MAX_AUDIT_ENTRIES: usize = 200;
 
+/// Concurrent permission policy, approvals, scoped grants, and audit log.
 #[derive(Clone)]
 pub struct PermissionEngine {
     modes: Arc<RwLock<HashMap<Permission, PermissionMode>>>,
@@ -269,6 +352,7 @@ impl Default for PermissionEngine {
 }
 
 impl PermissionEngine {
+    /// Creates an engine with the built-in default modes.
     pub fn new() -> Self {
         let mut modes = HashMap::new();
         modes.insert(Permission::FilesystemRead, PermissionMode::Allow);
@@ -298,6 +382,7 @@ impl PermissionEngine {
         *self.audit_tx.write().await = Some(tx);
     }
 
+    /// Returns the configured global mode for a capability.
     pub async fn mode(&self, permission: Permission) -> PermissionMode {
         self.modes
             .read()
@@ -307,6 +392,7 @@ impl PermissionEngine {
             .unwrap_or(PermissionMode::Ask)
     }
 
+    /// Sets the global mode for one capability.
     pub async fn set_mode(&self, permission: Permission, mode: PermissionMode) {
         self.modes.write().await.insert(permission, mode);
     }
@@ -319,6 +405,7 @@ impl PermissionEngine {
     /// in `ipc_bridge.rs` calls this for any value (`full` → `Allow`,
     /// `read_only` → `Deny`, anything else → `Ask`), so without the exclusion
     /// a routine mode change would silently open the microphone.
+    /// Sets the same global mode for every capability except microphone capture.
     pub async fn set_all_modes(&self, mode: PermissionMode) {
         let mut modes = self.modes.write().await;
         for permission in [
@@ -335,6 +422,7 @@ impl PermissionEngine {
         }
     }
 
+    /// Sets a session-specific mode for one capability.
     pub async fn set_session_mode(
         &self,
         session_id: Uuid,
@@ -347,6 +435,7 @@ impl PermissionEngine {
             .insert((session_id, permission), mode);
     }
 
+    /// Removes a session-specific mode and restores inherited behavior.
     pub async fn clear_session_mode(&self, session_id: Uuid, permission: Permission) {
         self.session_modes
             .write()
@@ -354,6 +443,7 @@ impl PermissionEngine {
             .remove(&(session_id, permission));
     }
 
+    /// Adds or replaces a path grant, optionally scoped to a session and TTL.
     pub async fn set_path_grant(
         &self,
         permission: Permission,
@@ -379,6 +469,7 @@ impl PermissionEngine {
         });
     }
 
+    /// Removes a matching path grant.
     pub async fn clear_path_grant(
         &self,
         permission: Permission,
@@ -394,6 +485,7 @@ impl PermissionEngine {
     }
 
     /// Global-only check (settings / legacy callers).
+    /// Resolves a capability using its global mode and policy rules.
     pub async fn check(&self, permission: Permission) -> PermissionDecision {
         self.check_scoped(permission, &PermissionCheck::default())
             .await
@@ -404,6 +496,7 @@ impl PermissionEngine {
     /// Callers that accepted a display name or user-facing path must provide
     /// the canonical, resolved subject here so policy rules cannot be bypassed
     /// by presenting a different label to the permission engine.
+    /// Resolves a scoped capability check against the supplied subject.
     pub async fn check_scoped_with_subject(
         &self,
         permission: Permission,
@@ -422,6 +515,7 @@ impl PermissionEngine {
     /// 3. session permission mode
     /// 4. matching policy `Allow`/`Ask`
     /// 5. global mode
+    /// Resolves a capability check using the path and command in `check`.
     pub async fn check_scoped(
         &self,
         permission: Permission,
@@ -510,6 +604,7 @@ impl PermissionEngine {
         mode_to_decision(mode)
     }
 
+    /// Creates an approval request without session or input binding.
     pub async fn create_approval(
         &self,
         task_id: Uuid,
@@ -528,6 +623,7 @@ impl PermissionEngine {
         .await
     }
 
+    /// Creates an approval request scoped to an optional session.
     pub async fn create_approval_scoped(
         &self,
         task_id: Uuid,
@@ -547,14 +643,17 @@ impl PermissionEngine {
         .await
     }
 
+    /// Replaces the ordered permission policy rules.
     pub async fn set_policy_rules(&self, rules: PolicyRuleSet) {
         *self.policy_rules.write().await = rules;
     }
 
+    /// Returns a clone of the active ordered policy rules.
     pub async fn policy_rules(&self) -> PolicyRuleSet {
         self.policy_rules.read().await.clone()
     }
 
+    /// Creates an approval request cryptographically bound to the exact call.
     pub async fn create_approval_scoped_for_call(
         &self,
         task_id: Uuid,
@@ -580,6 +679,7 @@ impl PermissionEngine {
         .await
     }
 
+    /// Creates a call-bound approval with an optional command preview.
     pub async fn create_approval_scoped_for_call_with_command(
         &self,
         call: CallIdentity<'_>,
@@ -593,6 +693,7 @@ impl PermissionEngine {
         .await
     }
 
+    /// Creates a call-bound approval with command and bounded UI preview.
     pub async fn create_approval_scoped_for_call_with_command_and_preview(
         &self,
         call: CallIdentity<'_>,
@@ -643,6 +744,7 @@ impl PermissionEngine {
         request
     }
 
+    /// Records the user's decision for a pending approval request.
     pub async fn resolve(&self, id: Uuid, granted: bool) -> Option<ApprovalState> {
         self.resolve_with_options(id, granted, false).await
     }
@@ -701,6 +803,7 @@ impl PermissionEngine {
         Some(state)
     }
 
+    /// Returns an approval request and its current state, if it exists.
     pub async fn approval(&self, id: Uuid) -> Option<(ApprovalRequest, ApprovalState)> {
         self.approvals
             .read()
@@ -709,6 +812,7 @@ impl PermissionEngine {
             .map(|r| (r.request.clone(), r.state))
     }
 
+    /// Verifies an approval against a call and returns its current state.
     pub async fn approval_matches_call(
         &self,
         id: Uuid,
@@ -757,6 +861,7 @@ impl PermissionEngine {
         }
     }
 
+    /// Returns all persisted session-specific capability overrides.
     pub async fn list_session_overrides(&self) -> Vec<SessionOverride> {
         self.session_modes
             .read()
@@ -770,6 +875,7 @@ impl PermissionEngine {
             .collect()
     }
 
+    /// Returns active path grants as persistable records.
     pub async fn list_path_grants(&self) -> Vec<PathGrant> {
         self.purge_expired_grants().await;
         let now = Instant::now();
@@ -830,6 +936,7 @@ impl PermissionEngine {
         *self.path_grants.write().await = grants;
     }
 
+    /// Returns the bounded in-memory approval audit history.
     pub async fn audit_log(&self) -> Vec<ApprovalAuditEntry> {
         self.audit.read().await.clone()
     }
@@ -986,6 +1093,7 @@ pub const FINGERPRINT_INPUT_VERSION: u8 = 1;
 /// verifier can never silently round them.
 const SAFE_INTEGER_BOUND: i64 = 9_007_199_254_740_991;
 
+/// Produces a deterministic JSON fingerprint for binding approvals to inputs.
 pub fn fingerprint_input(input: &serde_json::Value) -> String {
     match input {
         serde_json::Value::Null => "null".to_string(),
@@ -1088,6 +1196,7 @@ fn typed_int64(decimal: String) -> String {
     )
 }
 
+/// Hashes a tool name, scope, and canonical input into an approval binding.
 pub fn canonical_call_hash(tool_name: &str, scope: &str, input: &serde_json::Value) -> String {
     let payload = format!("{}\n{}\n{}", tool_name, scope, fingerprint_input(input));
     let digest = Sha256::digest(payload.as_bytes());

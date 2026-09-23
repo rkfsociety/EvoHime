@@ -1,6 +1,11 @@
 use super::*;
 
 impl ToolAgent {
+    /// Creates a tool agent with the default approval coordinator.
+    ///
+    /// The agent starts without a journal, selected-model override, receipt
+    /// keys, or routing approvals; use the builder methods to attach those
+    /// capabilities before running tasks.
     pub fn new(gateway: Arc<ModelGateway>, tools: Arc<ToolRegistry>) -> Self {
         Self::new_with_approvals(gateway, tools, ApprovalCoordinator::default())
     }
@@ -107,6 +112,10 @@ impl ToolAgent {
         Ok((instructions, source_refs, snapshot.content_hash))
     }
 
+    /// Creates a tool agent with an explicitly supplied approval coordinator.
+    ///
+    /// This constructor is useful when the caller owns approval state shared
+    /// across agents or task sessions.
     pub fn new_with_approvals(
         gateway: Arc<ModelGateway>,
         tools: Arc<ToolRegistry>,
@@ -145,21 +154,25 @@ impl ToolAgent {
         self
     }
 
+    /// Attaches the durable event journal used for persistence and recovery.
     pub fn with_journal(mut self, journal: EventJournal) -> Self {
         self.journal = Some(journal);
         self
     }
 
+    /// Attaches the key manager used to sign and verify execution receipts.
     pub fn with_receipt_keys(mut self, keys: Arc<ReceiptKeyManager>) -> Self {
         self.receipt_keys = Some(keys);
         self
     }
 
+    /// Attaches approvals for requests that change provider/model routing.
     pub fn with_routing_approvals(mut self, approvals: RoutingApprovalRegistry) -> Self {
         self.routing_approvals = Some(approvals);
         self
     }
 
+    /// Replaces the built-in workflow registry with a caller-provided registry.
     pub fn with_workflow_registry(
         mut self,
         registry: Arc<crate::workflow_registry::WorkflowRegistry>,

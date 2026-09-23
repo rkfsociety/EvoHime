@@ -1,6 +1,7 @@
 use crate::runtime_contract::RuntimeError;
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Installs or upgrades the receipt runtime tables and their integrity constraints.
 pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS receipt_records (

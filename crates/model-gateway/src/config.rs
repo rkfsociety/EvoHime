@@ -11,18 +11,26 @@ pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
 /// Default OpenAI-compatible model.
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
+/// Default model for the OpenAI Responses transport.
 pub const OPENAI_CODEX_DEFAULT_MODEL: &str = "gpt-5-codex";
+/// Default loopback endpoint for the supervisor-authenticated local provider.
 pub const LOCAL_DEFAULT_BASE_URL: &str = "http://127.0.0.1:49152/v1";
+/// Default loopback endpoint for Ollama's OpenAI-compatible API.
 pub const OLLAMA_DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434/v1";
 
+/// Endpoint, model, and credential configuration shared by compatible providers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteRouterConfig {
+    /// Provider API key; callers must keep it out of serialized UI responses.
     pub api_key: String,
+    /// Normalized provider base URL.
     pub base_url: String,
+    /// Default model identifier for this provider.
     pub model: String,
 }
 
 impl LiteRouterConfig {
+    /// Reads LiteRouter settings from `LITEROUTER_*` environment variables.
     pub fn from_env() -> Self {
         let api_key = env::var("LITEROUTER_API_KEY").unwrap_or_default();
         let base_url = env::var("LITEROUTER_BASE_URL")
@@ -36,10 +44,12 @@ impl LiteRouterConfig {
         }
     }
 
+    /// Returns the normalized `/chat/completions` endpoint URL.
     pub fn chat_completions_url(&self) -> String {
         format!("{}/chat/completions", self.base_url.trim_end_matches('/'))
     }
 
+    /// Reads OpenAI-compatible settings from `OPENAI_*` environment variables.
     pub fn openai_compatible_from_env() -> Self {
         let api_key = env::var("OPENAI_API_KEY").unwrap_or_default();
         let base_url =
@@ -53,6 +63,7 @@ impl LiteRouterConfig {
         }
     }
 
+    /// Reads OpenAI Responses settings from `OPENAI_*` environment variables.
     pub fn openai_responses_from_env() -> Self {
         let api_key = env::var("OPENAI_API_KEY").unwrap_or_default();
         let base_url =
@@ -68,9 +79,12 @@ impl LiteRouterConfig {
     }
 }
 
+/// Provider-specific configuration for one named model route.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRouteConfig {
+    /// Transport/provider implementation selected for the route.
     pub provider: ProviderKind,
+    /// Endpoint, model, and credential values consumed by the provider adapter.
     pub literouter: LiteRouterConfig,
     /// Wave 3B: Provider supports extended thinking
     #[serde(default = "default_thinking_support")]
@@ -104,6 +118,7 @@ impl ModelRouteConfig {
         }
     }
 
+    /// Builds a LiteRouter route with explicit credentials, endpoint, and model.
     pub fn literouter(
         api_key: impl Into<String>,
         base_url: impl Into<String>,
@@ -112,6 +127,7 @@ impl ModelRouteConfig {
         Self::with_provider(ProviderKind::LiteRouter, api_key, base_url, model)
     }
 
+    /// Builds a route using the OpenAI-compatible chat-completions transport.
     pub fn openai_compatible(
         api_key: impl Into<String>,
         base_url: impl Into<String>,
@@ -120,6 +136,7 @@ impl ModelRouteConfig {
         Self::with_provider(ProviderKind::OpenAICompatible, api_key, base_url, model)
     }
 
+    /// Builds a route using the OpenAI Responses transport.
     pub fn openai_responses(
         api_key: impl Into<String>,
         base_url: impl Into<String>,
@@ -138,10 +155,12 @@ impl ModelRouteConfig {
         Self::with_provider(ProviderKind::Local, session_capability, base_url, model)
     }
 
+    /// Builds a local Ollama route without an API credential.
     pub fn ollama(base_url: impl Into<String>, model: impl Into<String>) -> Self {
         Self::with_provider(ProviderKind::Ollama, String::new(), base_url, model)
     }
 
+    /// Builds the mock provider route for tests and local contract checks.
     pub fn mock(model: impl Into<String>) -> Self {
         Self {
             provider: ProviderKind::Mock,
@@ -154,6 +173,7 @@ impl ModelRouteConfig {
         }
     }
 
+    /// Reports whether the provider has the minimum endpoint/credential settings.
     pub fn configured(&self) -> bool {
         match self.provider {
             ProviderKind::LiteRouter
@@ -166,13 +186,17 @@ impl ModelRouteConfig {
     }
 }
 
+/// Named route map and default route used to construct a model gateway.
 #[derive(Debug, Clone)]
 pub struct ModelGatewayConfig {
+    /// Name of the route used by default operations.
     pub default_route: String,
+    /// Configured provider routes keyed by their local route name.
     pub routes: HashMap<String, ModelRouteConfig>,
 }
 
 impl ModelGatewayConfig {
+    /// Loads either `MODEL_ROUTES_JSON` or the single-route environment settings.
     pub fn from_env() -> Result<Self, ProviderError> {
         if let Ok(raw_routes) = env::var("MODEL_ROUTES_JSON") {
             return parse_routes_from_json(&raw_routes);

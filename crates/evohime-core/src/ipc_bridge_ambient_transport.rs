@@ -310,6 +310,11 @@ fn add_text_size(
 }
 
 impl IpcBridge {
+    /// Sets the model identity used by model-aware IPC operations on this bridge.
+    ///
+    /// Consumes and returns the bridge so callers can configure it while
+    /// building the connection handler. This only selects identity metadata;
+    /// it does not change provider credentials or perform a model request.
     pub fn with_selected_model(mut self, selected: SelectedModel) -> Self {
         self.selected_model = selected;
         self

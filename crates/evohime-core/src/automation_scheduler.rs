@@ -7,44 +7,67 @@
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, TimeZone, Utc};
 
+/// Maximum number of missed schedule slots retained by the scheduler.
 pub const MAX_MISSED_SLOTS: u32 = 8;
+/// Default grace period after a daily slot, in milliseconds.
 pub const DEFAULT_MISSED_GRACE_MS: i64 = 5 * 60 * 1_000;
 
+/// Daily wall-clock schedule in a fixed UTC offset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DailySchedule {
+    /// Scheduled local hour in the range `0..=23`.
     pub hour: u8,
+    /// Scheduled local minute in the range `0..=59`.
     pub minute: u8,
+    /// Fixed offset used to calculate each local schedule slot.
     pub timezone: FixedOffset,
+    /// Maximum delay after a slot before it is classified as missed.
     pub missed_grace_ms: i64,
 }
 
+/// Last schedule slot durably processed by the caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchedulerCursor {
+    /// RFC 3339 timestamp of the last processed slot, if any.
     pub last_slot: Option<String>,
 }
 
+/// Decision produced for the current daily schedule slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchedulerDecision {
+    /// The current slot is not due or has already been processed.
     NotDue,
+    /// The slot is due and within the configured grace period.
     Trigger {
+        /// RFC 3339 timestamp identifying the schedule slot.
         slot: String,
+        /// Stable key the caller can use to deduplicate execution.
         idempotency_key: String,
     },
+    /// The slot is due but its grace period has elapsed.
     Missed {
+        /// RFC 3339 timestamp identifying the missed slot.
         slot: String,
+        /// Stable key the caller can use to deduplicate missed-slot handling.
         idempotency_key: String,
     },
 }
 
+/// Invalid time, timezone, or grace-period input to the scheduler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchedulerError {
+    /// Hour is outside `0..=23`.
     InvalidHour,
+    /// Minute is outside `0..=59`.
     InvalidMinute,
+    /// Grace period or timestamp input is invalid.
     InvalidGrace,
+    /// Timezone offset is outside the supported fixed-offset range.
     InvalidTimezone,
 }
 
 impl DailySchedule {
+    /// Creates a daily schedule using a fixed offset in minutes east of UTC.
     pub fn new(
         hour: u8,
         minute: u8,
@@ -73,10 +96,12 @@ impl DailySchedule {
         })
     }
 
+    /// Creates a UTC schedule with the default missed-slot grace period.
     pub fn utc(hour: u8, minute: u8) -> Result<Self, SchedulerError> {
         Self::new(hour, minute, 0, DEFAULT_MISSED_GRACE_MS)
     }
 
+    /// Determines whether the current slot should trigger, be ignored, or be marked missed.
     pub fn decide(
         &self,
         definition_id: &str,

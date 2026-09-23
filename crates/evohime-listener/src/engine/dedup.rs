@@ -21,6 +21,7 @@ pub const DEDUP_RECENT_DEPTH: usize = 5;
 /// Решение по одному высказыванию.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Admission {
+    /// Text was unique within the deduplication window.
     Accepted,
     /// Точный повтор нормализованного текста в окне.
     SuppressedExact,
@@ -29,6 +30,7 @@ pub enum Admission {
 }
 
 impl Admission {
+    /// Reports whether the text should be forwarded to Core.
     pub const fn accepted(self) -> bool {
         matches!(self, Admission::Accepted)
     }
@@ -51,6 +53,7 @@ pub struct Deduplicator {
 }
 
 impl Deduplicator {
+    /// Creates an empty deduplication window of the supplied duration.
     pub fn new(window_ms: u32) -> Self {
         Self {
             window_ms,
@@ -64,6 +67,7 @@ impl Deduplicator {
         self.suppressed
     }
 
+    /// Clears remembered utterances while preserving the session suppression count.
     pub fn reset(&mut self) {
         self.recent.clear();
     }

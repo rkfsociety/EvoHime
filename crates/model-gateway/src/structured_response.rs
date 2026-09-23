@@ -6,60 +6,94 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+/// Schema version for structured response contracts.
 pub const STRUCTURED_RESPONSE_SCHEMA_VERSION: u32 = 1;
+/// Maximum serialized bytes accepted for one output schema.
 pub const MAX_SCHEMA_BYTES: usize = 64 * 1024;
+/// Maximum identifier length for a structured response contract.
 pub const MAX_CONTRACT_ID_BYTES: usize = 128;
+/// Maximum repair attempts after invalid model output.
 pub const MAX_REPAIR_ATTEMPTS: u32 = 2;
+/// Maximum total provider attempts including initial request and repairs.
 pub const MAX_TOTAL_ATTEMPTS: u32 = 3;
 
+/// Supported methods for requesting constrained model output.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ResponseStrategy {
+    /// Select a supported strategy from route capabilities.
     Auto,
+    /// Require the provider's native structured-output mode.
     ProviderNative,
+    /// Encode the schema as a synthetic function tool call.
     SyntheticTool,
 }
 
+/// Immutable structured-output contract with schema and strategy metadata.
+/// Versioned schema and strategy used to constrain one model response.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResponseContract {
+    /// Contract schema version.
     pub schema_version: u32,
+    /// Stable caller-provided contract identifier.
     pub contract_id: String,
+    /// Monotonic contract revision.
     pub revision: u64,
+    /// JSON Schema object describing accepted output.
     pub schema: Value,
+    /// Provider-native or synthetic strategy policy.
     pub strategy: ResponseStrategy,
+    /// Digest of the contract with this field cleared.
     pub contract_hash: String,
 }
 
+/// Parsed model value and evidence describing how it satisfied the contract.
+/// Validated model output paired with the contract that accepted it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ResponseResult {
+    /// Identifier of the response contract.
     pub contract_id: String,
+    /// Digest of the response contract.
     pub contract_hash: String,
+    /// Strategy that produced the validated value.
     pub strategy: ResponseStrategy,
+    /// Number of provider attempts consumed.
     pub attempts: u32,
+    /// Parsed output value that passed schema validation.
     pub value: Value,
 }
 
+/// Contract, parsing, validation, or provider failure during structured generation.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ResponseError {
+    /// Contract schema version is not supported by this crate.
     #[error("unsupported structured response version: {0}")]
     UnsupportedVersion(u32),
+    /// Contract schema or identifier is malformed or exceeds a bound.
     #[error("structured response schema is invalid: {0}")]
     Schema(String),
+    /// Provider output could not be parsed as the required JSON value.
     #[error("structured response parse failed")]
     Parse,
+    /// Parsed output does not satisfy the contract schema.
     #[error("structured response validation failed: {0}")]
     Validation(String),
+    /// Provider returned more than one synthetic structured result.
     #[error("multiple structured outputs returned")]
     Multiple,
+    /// The selected route does not support the required response strategy.
     #[error("structured response strategy is unsupported")]
     Unsupported,
+    /// Invalid output exhausted the configured repair attempts.
     #[error("structured response repair limit exceeded")]
     RepairLimit,
+    /// Provider request failed while generating structured output.
     #[error("provider unavailable: {0}")]
     Provider(String),
 }
 
 impl ResponseContract {
+    /// Creates a validated contract and computes its content hash.
     pub fn new(
         id: impl Into<String>,
         revision: u64,
@@ -78,6 +112,7 @@ impl ResponseContract {
         value.contract_hash = value.compute_hash()?;
         Ok(value)
     }
+    /// Computes the contract digest with the self-referential hash field cleared.
     pub fn compute_hash(&self) -> Result<String, ResponseError> {
         let mut copy = self.clone();
         copy.contract_hash.clear();
@@ -85,6 +120,7 @@ impl ResponseContract {
             serde_json::to_vec(&copy).map_err(|_| ResponseError::Schema("contract_json".into()))?;
         Ok(hex::encode(Sha256::digest(bytes)))
     }
+    /// Validates schema bounds, contract identity, and any stored digest.
     pub fn validate_schema(&self) -> Result<(), ResponseError> {
         if self.schema_version != STRUCTURED_RESPONSE_SCHEMA_VERSION {
             return Err(ResponseError::UnsupportedVersion(self.schema_version));
@@ -109,6 +145,7 @@ impl ResponseContract {
         }
         Ok(())
     }
+    /// Checks a parsed model value against supported JSON Schema constraints.
     pub fn validate_value(&self, value: &Value) -> Result<(), ResponseError> {
         self.validate_schema()?;
         if self
@@ -165,6 +202,7 @@ fn valid_contract_id(value: &str) -> bool {
 }
 
 impl ModelGateway {
+    /// Requests a schema-constrained response and validates the returned JSON value.
     pub async fn structured_response(
         &self,
         route: &str,

@@ -22,12 +22,19 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Length in bytes of the per-Core-generation shared secret.
 pub const SECRET_BYTES: usize = 32;
+/// Length in bytes of each single-use handshake nonce.
 pub const NONCE_BYTES: usize = 32;
+/// Default connection nonce lifetime in milliseconds.
 pub const DEFAULT_NONCE_TTL_MS: u64 = 30_000;
+/// Hard maximum connection nonce lifetime in milliseconds.
 pub const MAX_NONCE_TTL_MS: u64 = 300_000;
+/// Maximum number of Unicode scalar values in handshake identifiers.
 pub const MAX_IDENTIFIER_CHARS: usize = 128;
+/// Required Windows named-pipe prefix.
 pub const PIPE_PREFIX: &str = r"\\.\pipe\";
+/// Stem used for Core-owned named-pipe instances.
 pub const PIPE_NAME_STEM: &str = "evohime-core-";
 
 /// Roles a client may claim in the handshake. Every role is still subject to
@@ -35,14 +42,19 @@ pub const PIPE_NAME_STEM: &str = "evohime-core-";
 /// transport accepts.
 pub const ALLOWED_CLIENT_ROLES: [&str; 3] = ["shell", "listener", "cli"];
 
+/// Invalid secrets, identifiers, nonce limits, or secure random generation.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum SessionError {
+    /// A secret or nonce is not hexadecimal of the required length.
     #[error("session value is not lowercase hex of the expected length")]
     MalformedValue,
+    /// A pipe or client identity violates the identifier constraints.
     #[error("identifier is empty or exceeds the {MAX_IDENTIFIER_CHARS} character limit")]
     InvalidIdentifier,
+    /// A configured nonce lifetime is zero or over the hard maximum.
     #[error("nonce time-to-live must be between 1 and {MAX_NONCE_TTL_MS} ms")]
     InvalidTtl,
+    /// The operating system secure random source failed.
     #[error("secure random generation failed")]
     RandomFailure,
 }
@@ -51,22 +63,31 @@ pub enum SessionError {
 /// bounded protocol error and never leaks the expected secret or nonce.
 #[derive(Debug, thiserror::Error, PartialEq, Eq, Clone, Copy)]
 pub enum HandshakeRejection {
+    /// The client and Core use incompatible protocol major versions.
     #[error("protocol major versions are incompatible")]
     MajorMismatch,
+    /// Client or peer identity data is malformed.
     #[error("client identity is malformed")]
     MalformedIdentity,
+    /// The observed operating-system identity differs from the launch context.
     #[error("client identity does not match the launch context")]
     IdentityMismatch,
+    /// The client role is not accepted by this transport.
     #[error("client role is not accepted on this transport")]
     UnknownRole,
+    /// No unconsumed nonce was issued for the connection.
     #[error("no nonce was issued for this connection")]
     NonceUnavailable,
+    /// The issued nonce expired before verification.
     #[error("the issued nonce expired")]
     NonceExpired,
+    /// The client answered with a different nonce.
     #[error("the answered nonce does not match the issued one")]
     NonceMismatch,
+    /// The HMAC proof does not match the expected proof.
     #[error("the authentication proof is invalid")]
     ProofMismatch,
+    /// The client supplied too many capability names.
     #[error("capability list is not bounded")]
     UnboundedCapabilities,
 }
@@ -131,10 +152,12 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
 pub struct SessionSecret(String);
 
 impl SessionSecret {
+    /// Generates a cryptographically random secret for one Core generation.
     pub fn generate() -> Result<Self, SessionError> {
         Ok(Self(random_hex(SECRET_BYTES)?))
     }
 
+    /// Parses a hexadecimal secret of exactly [`SECRET_BYTES`] bytes.
     pub fn parse(value: &str) -> Result<Self, SessionError> {
         if !is_hex_of_len(value, SECRET_BYTES) {
             return Err(SessionError::MalformedValue);
@@ -147,6 +170,20 @@ impl SessionSecret {
         &self.0
     }
 
+    /// Computes the lowercase hex HMAC-SHA256 handshake proof.
+    ///
+    /// The value binds the role and client identifier to the issued nonce.
+    /// The known-answer example uses a fixed test key, not a production secret.
+    ///
+    /// ```
+    /// use evohime_desktop_ipc::session::{SessionSecret, NONCE_BYTES, SECRET_BYTES};
+    /// let secret = SessionSecret::parse(&"ab".repeat(SECRET_BYTES)).unwrap();
+    /// let nonce = "cd".repeat(NONCE_BYTES);
+    /// assert_eq!(
+    ///     secret.proof("shell", "shell-1", &nonce),
+    ///     "736f6218169dbdeee94f2b5c92552114f4b4703bcbe96f6f06af1d66dc678c63",
+    /// );
+    /// ```
     pub fn proof(&self, role: &str, client_id: &str, nonce: &str) -> String {
         let message = format!("{role}\n{client_id}\n{nonce}");
         hex_encode(&hmac_sha256(self.0.as_bytes(), message.as_bytes()))
@@ -163,7 +200,9 @@ impl std::fmt::Debug for SessionSecret {
 /// Single-use, time-bounded value issued by Core for one connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthNonce {
+    /// Lowercase hexadecimal nonce value sent to the client.
     pub value: String,
+    /// Expiry time in Unix milliseconds.
     pub expires_at_ms: u64,
 }
 
@@ -172,25 +211,35 @@ pub struct AuthNonce {
 /// explicitly enabled developer launch without a supervisor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LaunchContext {
+    /// Named pipe used to connect to this Core generation.
     pub pipe_name: String,
+    /// Shared secret used to authenticate each client connection.
     pub secret: SessionSecret,
     #[serde(default)]
+    /// Expected Windows user SID; empty only for an explicit developer launch.
     pub expected_user_sid: String,
     #[serde(default)]
+    /// Expected logon session identity, when enforced by the supervisor.
     pub expected_logon_session: String,
     #[serde(default)]
+    /// Time the supervisor created this context in Unix milliseconds.
     pub issued_at_ms: u64,
     #[serde(default)]
+    /// Process identifier of the supervisor that launched Core.
     pub supervisor_pid: u32,
     #[serde(default)]
+    /// Named event used to detect supervisor liveness.
     pub supervisor_liveness_event: String,
     #[serde(default)]
+    /// Optional authenticated supervisor control pipe.
     pub supervisor_pipe_name: Option<String>,
     #[serde(default)]
+    /// Optional secret authenticating the supervisor control pipe.
     pub supervisor_secret: Option<SessionSecret>,
 }
 
 impl LaunchContext {
+    /// Generates a Core pipe name and secret for the supplied host identity.
     pub fn generate(
         expected_user_sid: String,
         expected_logon_session: String,
@@ -209,6 +258,7 @@ impl LaunchContext {
         })
     }
 
+    /// Validates pipe names, secret encoding, and bounded identity metadata.
     pub fn validate(&self) -> Result<(), SessionError> {
         validate_pipe_name(&self.pipe_name)?;
         SessionSecret::parse(self.secret.expose())?;
@@ -247,6 +297,7 @@ pub fn generate_pipe_name() -> Result<String, SessionError> {
     Ok(format!("{PIPE_PREFIX}{PIPE_NAME_STEM}{}", random_hex(16)?))
 }
 
+/// Generates an unpredictable named pipe for supervisor control traffic.
 pub fn generate_supervisor_pipe_name() -> Result<String, SessionError> {
     Ok(format!(
         "{PIPE_PREFIX}evohime-supervisor-{}",
@@ -254,6 +305,7 @@ pub fn generate_supervisor_pipe_name() -> Result<String, SessionError> {
     ))
 }
 
+/// Checks the required named-pipe prefix and safe bounded suffix characters.
 pub fn validate_pipe_name(value: &str) -> Result<(), SessionError> {
     let Some(name) = value.strip_prefix(PIPE_PREFIX) else {
         return Err(SessionError::InvalidIdentifier);
@@ -300,25 +352,37 @@ pub fn write_launch_context(
 /// as claimed by the client itself.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PeerIdentity {
+    /// User SID observed by the operating system for the connected peer.
     pub user_sid: String,
+    /// Logon-session identity observed for the connected peer.
     pub logon_session: String,
 }
 
 /// Everything the transport needs to judge one handshake.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HandshakeRequest {
+    /// Protocol major version advertised by the client.
     pub protocol_major: u32,
+    /// Stable client identifier included in the proof.
     pub client_id: String,
+    /// Client role included in the proof and checked against the allowlist.
     pub client_role: String,
+    /// Single-use nonce issued by Core for this connection.
     pub nonce: String,
+    /// HMAC proof over role, client id, and nonce.
     pub proof: String,
+    /// Bounded capability names offered by the client.
     pub capabilities: Vec<String>,
+    /// Host-observed identity used to bind authentication to the launch context.
     pub peer: PeerIdentity,
 }
 
+/// Client identity accepted by the handshake verifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifiedHandshake {
+    /// Verified client identifier.
     pub client_id: String,
+    /// Verified client role.
     pub client_role: String,
 }
 
@@ -331,6 +395,7 @@ pub struct HandshakeVerifier {
 }
 
 impl HandshakeVerifier {
+    /// Creates a verifier for one launch context and bounded nonce lifetime.
     pub fn new(context: LaunchContext, nonce_ttl_ms: u64) -> Result<Self, SessionError> {
         context.validate()?;
         if nonce_ttl_ms == 0 || nonce_ttl_ms > MAX_NONCE_TTL_MS {
@@ -343,6 +408,7 @@ impl HandshakeVerifier {
         })
     }
 
+    /// Returns the Core pipe name covered by this verifier.
     pub fn pipe_name(&self) -> &str {
         &self.context.pipe_name
     }

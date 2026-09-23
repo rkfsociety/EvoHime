@@ -1,6 +1,7 @@
 use super::*;
 
 impl EventJournal {
+    /// Stores validated verification evidence for the supplied target and fingerprint.
     pub async fn save_verification_evidence(
         &self,
         target_id: &str,
@@ -24,6 +25,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Saves one model calibration session at the specified revision.
     pub async fn save_local_model_calibration_session(
         &self,
         session: &crate::local_model_performance_calibration::LocalModelCalibrationSession,
@@ -46,6 +48,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Persists a measured local-model performance profile.
     pub async fn save_local_model_performance_profile(
         &self,
         profile: &crate::local_model_performance_calibration::LocalModelPerformanceProfile,
@@ -73,6 +76,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Recovers grounded research sessions that were left incomplete by a previous Core run.
     pub async fn recover_grounded_research_sessions(&self) -> Result<usize, String> {
         let database = self.database.lock().await;
         evohime_local_storage::grounded_research_store::GroundedResearchStore::mark_active_sessions_interrupted(
@@ -95,6 +99,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Loads one grounded research revision by its stable identifier.
     pub async fn get_grounded_research_revision(
         &self,
         revision_id: &str,
@@ -111,6 +116,7 @@ impl EventJournal {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Saves a grounded research session and its bounded metadata.
     pub async fn save_grounded_research_session(
         &self,
         session_id: &str,
@@ -143,6 +149,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Persists one evidence item associated with a grounded research session.
     pub async fn save_grounded_research_evidence_item(
         &self,
         evidence: &crate::research::EvidenceItem,
@@ -161,6 +168,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Loads one grounded research artifact by its identifier.
     pub async fn get_grounded_research_artifact(
         &self,
         artifact_id: &str,
@@ -175,6 +183,7 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Stores the computed delta for a grounded research revision.
     pub async fn save_grounded_research_delta(
         &self,
         delta: &crate::research::ResearchDelta,
@@ -195,6 +204,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Applies a validated lifecycle transition to a grounded research session.
     pub async fn transition_grounded_research_session(
         &self,
         session_id: &str,
@@ -215,6 +225,7 @@ impl EventJournal {
         .map_err(str::to_owned)
     }
 
+    /// Creates a project record for the supplied workspace and metadata.
     pub async fn create_project(
         &self,
         id: &str,
@@ -226,6 +237,7 @@ impl EventJournal {
         database.create_project(id, title, workspace_path, source_ref)
     }
 
+    /// Loads a project by its stable identifier.
     pub async fn get_project(
         &self,
         id: &str,
@@ -234,6 +246,7 @@ impl EventJournal {
         database.get_project(id)
     }
 
+    /// Finds a project associated with the normalized workspace path.
     pub async fn get_project_by_workspace_path(
         &self,
         workspace_path: &str,
@@ -496,6 +509,7 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Returns the bounded chain of memory records that superseded or replaced the given record.
     pub async fn memory_supersession_chain(
         &self,
         id: &str,
@@ -580,6 +594,7 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Lists unexpired notes belonging to the supplied memory session.
     pub async fn list_memory_session_notes(
         &self,
         session_id: &str,
@@ -594,6 +609,7 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Deletes session notes whose expiry time is at or before `now`.
     pub async fn purge_expired_memory_session_notes(&self, now: &str) -> Result<usize, String> {
         let database = self.database.lock().await;
         evohime_local_storage::domains::memory::MemoryStoreSql::purge_expired_session_notes(

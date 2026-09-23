@@ -7,30 +7,49 @@ use crate::child_contracts::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Default lease duration for one child task.
 pub const DEFAULT_LEASE_MS: u64 = 30_000;
+/// Default interval between child lease heartbeats.
 pub const DEFAULT_HEARTBEAT_MS: u64 = 5_000;
+/// Maximum transport retries before moving a child to failure.
 pub const MAX_TRANSPORT_RETRIES: u8 = 3;
+/// Default maximum child output kept inline in its report.
 pub const DEFAULT_INLINE_MAX_BYTES: usize = 32 * 1024;
+/// Retention duration for dead-lettered child tasks.
 pub const DEAD_LETTER_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Lifecycle states for one delegated child task.
 pub enum CoordinatorState {
+    /// Child request was created and validated.
     Created,
+    /// Child request is waiting to run.
     Queued,
+    /// Child execution is in progress.
     Running,
+    /// Returned report is being checked against the contract.
     Validating,
+    /// Checks passed but parent approval is still pending.
     WaitingParentAcceptance,
+    /// Required checks passed and the parent approved the result.
     Accepted,
+    /// Parent rejected the child report.
     Rejected,
+    /// Child execution or report validation failed.
     Failed,
+    /// Child execution was cancelled.
     Cancelled,
+    /// Child lease or execution deadline expired.
     TimedOut,
+    /// Owner or runtime aborted the child.
     Aborted,
+    /// A required check failed and the result needs revision.
     RevisePlan,
 }
 
 impl CoordinatorState {
+    /// Returns the stable snake-case representation of this lifecycle state.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Created => "created",
@@ -47,6 +66,7 @@ impl CoordinatorState {
             Self::RevisePlan => "revise_plan",
         }
     }
+    /// Parses a stable lifecycle state name, returning None for unknown values.
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "created" => Self::Created,
@@ -64,6 +84,7 @@ impl CoordinatorState {
             _ => return None,
         })
     }
+    /// Returns whether this state cannot transition to another state.
     pub fn terminal(self) -> bool {
         matches!(
             self,
@@ -76,6 +97,7 @@ impl CoordinatorState {
                 | Self::RevisePlan
         )
     }
+    /// Checks whether the requested lifecycle transition is allowed.
     pub fn can_transition(self, next: Self) -> bool {
         matches!(
             (self, next),
@@ -106,25 +128,38 @@ impl CoordinatorState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Wall-clock and monotonic lease data used to detect lost child processes.
 pub struct ChildLease {
+    /// Stable identifier of the delegated child task.
     pub child_task_id: String,
+    /// Revision attempt number, with zero representing the initial attempt.
     pub revision: u32,
+    /// Lease issue time as Unix epoch milliseconds.
     pub issued_at_wall_ms: u64,
+    /// Wall-clock expiration time as Unix epoch milliseconds.
     pub deadline_wall_ms: u64,
+    /// Expected interval between lease heartbeats.
     pub heartbeat_interval_ms: u64,
+    /// Time of the last heartbeat as Unix epoch milliseconds.
     pub last_heartbeat_wall_ms: u64,
+    /// Whether the owning child process is believed to be alive.
     pub process_alive: bool,
     #[serde(default)]
+    /// Lease creation timestamp from the monotonic clock.
     pub created_monotonic_ms: u64,
     #[serde(default)]
+    /// Lease expiration timestamp from the monotonic clock.
     pub deadline_monotonic_ms: u64,
     #[serde(default)]
+    /// Boot identity for comparing monotonic timestamps safely.
     pub clock_boot_id: String,
     #[serde(default)]
+    /// Operating-system process identifier holding the lease.
     pub holder_process_id: String,
 }
 
 impl ChildLease {
+    /// Creates a lease with wall-clock and monotonic deadlines.
     pub fn new(
         child_task_id: impl Into<String>,
         revision: u32,
@@ -145,6 +180,7 @@ impl ChildLease {
             holder_process_id: std::process::id().to_string(),
         }
     }
+    /// Extends a live lease and records the current heartbeat time.
     pub fn heartbeat(&mut self, now_ms: u64, duration_ms: u64) -> bool {
         if !self.is_live(now_ms) {
             return false;
@@ -154,44 +190,66 @@ impl ChildLease {
         self.deadline_monotonic_ms = now_ms.saturating_add(duration_ms);
         true
     }
+    /// Checks process liveness and wall-clock lease expiry.
     pub fn is_live(&self, now_ms: u64) -> bool {
         self.process_alive && now_ms <= self.deadline_wall_ms
     }
+    /// Checks process liveness and monotonic expiry for the same boot.
     pub fn is_live_in_boot(&self, now_monotonic_ms: u64, boot_id: &str) -> bool {
         self.process_alive
             && self.clock_boot_id == boot_id
             && now_monotonic_ms <= self.deadline_monotonic_ms
     }
+    /// Marks the lease holder as no longer alive.
     pub fn expire(&mut self) {
         self.process_alive = false;
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Durable state needed to recover one child task.
 pub struct CoordinatorCheckpoint {
+    /// Stable identifier of the delegated child task.
     pub child_task_id: String,
+    /// Identifier of the parent task that delegated the child.
     pub parent_task_id: String,
+    /// Current coordinator lifecycle state.
     pub state: CoordinatorState,
+    /// Revision attempt number, with zero representing the initial attempt.
     pub revision: u32,
+    /// Monotonic event sequence assigned by the parent task.
     pub parent_sequence: u64,
+    /// Lease used to detect process loss or timeout.
     pub lease: ChildLease,
+    /// Integrity hash of the latest accepted report, if any.
     pub report_hash: Option<String>,
+    /// Number of transport retries used in the current attempt.
     pub retry_count: u8,
+    /// Stable machine-readable reason for the current result.
     pub reason_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Invalid state transition, lost lease, exhausted retry, or invalid checkpoint.
 pub enum CoordinatorError {
+    /// The requested transition is not allowed.
     InvalidTransition,
+    /// The child is already in a terminal state.
     TerminalState,
+    /// The child lease expired or no longer matches the current process.
     LeaseLost,
+    /// The transport retry allowance is exhausted.
     RetryExhausted,
+    /// The report revision allowance is exhausted.
     RevisionExhausted,
+    /// The checkpoint belongs to another parent.
     ParentMismatch,
+    /// The checkpoint or child identifier is invalid.
     InvalidCheckpoint,
 }
 
 #[derive(Debug, Clone)]
+/// Core-owned child lifecycle coordinator and checkpoint store.
 pub struct Coordinator {
     checkpoints: BTreeMap<String, CoordinatorCheckpoint>,
     next_sequence: BTreeMap<String, u64>,
@@ -204,17 +262,20 @@ impl Default for Coordinator {
 }
 
 impl Coordinator {
+    /// Creates a lease with wall-clock and monotonic deadlines.
     pub fn new() -> Self {
         Self {
             checkpoints: BTreeMap::new(),
             next_sequence: BTreeMap::new(),
         }
     }
+    /// Allocates the next monotonic event sequence for a parent task.
     pub fn next_parent_sequence(&mut self, parent: &str) -> u64 {
         let value = self.next_sequence.entry(parent.to_owned()).or_insert(0);
         *value += 1;
         *value
     }
+    /// Creates and stores an initial checkpoint for a validated child request.
     pub fn create(
         &mut self,
         request: &TypedChildTaskRequest,
@@ -238,6 +299,7 @@ impl Coordinator {
             .insert(request.child_task_id.clone(), checkpoint.clone());
         Ok(checkpoint)
     }
+    /// Applies a legal child state transition and records its reason.
     pub fn transition(
         &mut self,
         child: &str,
@@ -258,6 +320,7 @@ impl Coordinator {
         checkpoint.reason_code = reason;
         Ok(checkpoint.clone())
     }
+    /// Extends a live lease and records the current heartbeat time.
     pub fn heartbeat(&mut self, child: &str, now_ms: u64) -> Result<(), CoordinatorError> {
         let c = self
             .checkpoints
@@ -269,6 +332,7 @@ impl Coordinator {
             Err(CoordinatorError::LeaseLost)
         }
     }
+    /// Restores a checkpoint or fails it when its lease is no longer live.
     pub fn recover(
         &mut self,
         checkpoint: CoordinatorCheckpoint,
@@ -292,6 +356,7 @@ impl Coordinator {
             .insert(failed.child_task_id.clone(), failed.clone());
         Ok(failed)
     }
+    /// Returns the current checkpoint for a child task, if present.
     pub fn checkpoint(&self, child: &str) -> Option<&CoordinatorCheckpoint> {
         self.checkpoints.get(child)
     }
@@ -330,6 +395,7 @@ impl Coordinator {
         Ok(checkpoint.clone())
     }
 
+    /// Consumes one transport retry or moves the child to failure.
     pub fn retry_transport(&mut self, child: &str) -> Result<bool, CoordinatorError> {
         let checkpoint = self
             .checkpoints
@@ -345,6 +411,7 @@ impl Coordinator {
         Ok(true)
     }
 
+    /// Marks a child failed with the stable dead-letter reason.
     pub fn mark_dead_letter(
         &mut self,
         child: &str,
@@ -359,6 +426,7 @@ impl Coordinator {
         Ok(checkpoint.clone())
     }
 
+    /// Recovers a checkpoint using boot-scoped monotonic lease evidence.
     pub fn recover_with_boot(
         &mut self,
         checkpoint: CoordinatorCheckpoint,
@@ -373,6 +441,7 @@ impl Coordinator {
         self.recover(checkpoint, now_monotonic_ms)
     }
 
+    /// Projects the checkpoint into its durable storage record.
     pub fn to_storage_record(
         &self,
         child: &str,
@@ -411,20 +480,33 @@ impl Coordinator {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Safe parent-facing projection of child state and lease status.
 pub struct ChildProjection {
+    /// Stable event identifier projected to the parent.
     pub event_id: String,
+    /// Identifier of the parent task that delegated the child.
     pub parent_task_id: String,
+    /// Stable identifier of the delegated child task.
     pub child_task_id: String,
+    /// Delegated child role.
     pub role: String,
+    /// Revision attempt number, with zero representing the initial attempt.
     pub revision: u32,
+    /// Current coordinator lifecycle state.
     pub state: CoordinatorState,
+    /// Stable machine-readable reason for the current result.
     pub reason_code: Option<String>,
+    /// Monotonic event sequence assigned by the parent task.
     pub parent_sequence: u64,
+    /// Optional child budget bound by the request.
     pub budget: Option<crate::child_contracts::ChildBudget>,
+    /// Whether the coordinator lease is still live.
     pub lease_live: bool,
+    /// Whether the task has entered dead-letter retention.
     pub dead_letter: bool,
 }
 
+/// Verifies requested context identifiers against the available parent allowlist.
 pub fn selected_context(
     request: &TypedChildTaskRequest,
     available: &BTreeSet<String>,
@@ -437,6 +519,7 @@ pub fn selected_context(
     Ok(request.input_context_ids.clone())
 }
 
+/// Removes full artifact access and ensures summary access for reviewer roles.
 pub fn reviewer_grants(grants: &[Grant], role: &str) -> Vec<Grant> {
     if role != "reviewer" {
         return grants.to_vec();
@@ -458,6 +541,7 @@ pub fn reviewer_grants(grants: &[Grant], role: &str) -> Vec<Grant> {
     result
 }
 
+/// Sorts reports by parent sequence and evidence hash for stable fan-in.
 pub fn deterministic_fan_in(reports: &mut [TypedChildReport]) {
     reports.sort_by(|a, b| {
         a.provenance
@@ -468,29 +552,45 @@ pub fn deterministic_fan_in(reports: &mut [TypedChildReport]) {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Provenance-bearing evidence candidate returned by a child.
 pub struct EvidenceCandidate {
+    /// Stable identifier of the delegated child task.
     pub child_task_id: String,
+    /// Artifact or evidence locator.
     pub locator: String,
+    /// Normalized path scope used to resolve evidence conflicts.
     pub path_scope: String,
+    /// Integrity hash of evidence content.
     pub content_hash: String,
+    /// Evidence publication time as Unix epoch milliseconds.
     pub published_at_ms: u64,
+    /// Monotonic event sequence assigned by the parent task.
     pub parent_sequence: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Evidence excluded because a deterministic winner covers its scope.
 pub struct SupersededEvidence {
+    /// Artifact or evidence locator.
     pub locator: String,
+    /// Locator of the evidence selected over this entry.
     pub superseded_by: String,
+    /// Stable reason this evidence was superseded.
     pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Deterministic selection and supersession result for child evidence.
 pub struct FanInResolution {
+    /// Winning evidence candidates in deterministic order.
     pub selected: Vec<EvidenceCandidate>,
+    /// Candidates excluded by duplicate or scope conflict.
     pub superseded: Vec<SupersededEvidence>,
+    /// Conflicts that cannot be safely resolved automatically.
     pub unknowns: Vec<String>,
 }
 
+/// Selects evidence deterministically and records duplicate or superseded entries.
 pub fn resolve_fan_in_conflicts(candidates: &[EvidenceCandidate]) -> FanInResolution {
     let mut ordered = candidates.to_vec();
     ordered.sort_by(|left, right| {
@@ -548,14 +648,19 @@ pub fn resolve_fan_in_conflicts(candidates: &[EvidenceCandidate]) -> FanInResolu
     }
 }
 
+/// Returns the parent chain used to authorize an artifact read.
 pub fn correlation_parent_chain(correlation: &CorrelationContext) -> Vec<String> {
     vec![correlation.task_id.as_str().to_owned()]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Parent-facing report acceptance state after independent checks.
 pub enum AcceptanceDecision {
+    /// Required checks passed and the parent approved the result.
     Accepted,
+    /// A required check failed and the result needs revision.
     RevisePlan,
+    /// Checks passed but parent approval is still pending.
     WaitingParentAcceptance,
 }
 
@@ -592,6 +697,7 @@ pub fn validate_tool_call_grants(
         .map_err(|_| ContractError::GrantDrift)
 }
 
+/// Checks for a current locator-scoped full artifact grant.
 pub fn artifact_full_read_allowed(grants: &[Grant], locator: &str) -> bool {
     grants.iter().any(|grant| {
         grant.grant_type == "artifact_read_full"
@@ -604,10 +710,15 @@ pub fn artifact_full_read_allowed(grants: &[Grant], locator: &str) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Metadata-only artifact result returned without full content.
 pub struct ArtifactSummaryProjection {
+    /// Artifact or evidence locator.
     pub locator: String,
+    /// Integrity hash of evidence content.
     pub content_hash: String,
+    /// Bounded artifact summary that may be shown without full access.
     pub summary: String,
+    /// Artifact payload length in bytes.
     pub bytes: u64,
 }
 
@@ -615,16 +726,25 @@ pub struct ArtifactSummaryProjection {
 /// only the returned summary; no full blob is exposed without a current,
 /// locator-scoped full grant and explicit selected-context membership.
 pub struct ReadArtifactForChildInput<'a> {
+    /// Authoritative artifact store used for the read.
     pub store: &'a evohime_local_storage::domains::workflow::ArtifactStore<'a>,
+    /// Child and parent correlation identifiers used for authorization.
     pub correlation: &'a CorrelationContext,
+    /// Context references explicitly selected for the child.
     pub selected_context_ids: &'a [String],
+    /// Current parent grants checked at the read boundary.
     pub grants: &'a [Grant],
+    /// Artifact or evidence locator.
     pub locator: &'a str,
+    /// Whether full artifact content is requested instead of metadata only.
     pub full: bool,
+    /// Artifact access purpose recorded by the store.
     pub kind: &'a str,
+    /// Current operation time as Unix epoch milliseconds.
     pub now_ms: i64,
 }
 
+/// Reads a selected artifact fully when authorized, otherwise returns its summary.
 pub fn read_artifact_for_child(
     input: ReadArtifactForChildInput<'_>,
 ) -> Result<Result<String, ArtifactSummaryProjection>, ContractError> {

@@ -5,53 +5,92 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::Arc};
 
+/// Stable contract identifier stored with provider reliability metadata.
 pub const CONTRACT_ID: &str = "free-provider-reliability-routing-v1";
+/// Schema version for persisted provider profiles.
 pub const PROVIDER_PROFILE_SCHEMA_VERSION: u16 = 1;
+/// Schema version for a normalized model descriptor.
 pub const PROVIDER_MODEL_DESCRIPTOR_SCHEMA_VERSION: u16 = 1;
+/// Maximum UTF-8 length of a provider profile identifier.
 pub const MAX_PROVIDER_PROFILE_ID_BYTES: usize = 128;
+/// Maximum UTF-8 length of a transport name.
 pub const MAX_PROVIDER_PROFILE_TRANSPORT_BYTES: usize = 64;
+/// Maximum UTF-8 length of a provider endpoint.
 pub const MAX_PROVIDER_PROFILE_ENDPOINT_BYTES: usize = 512;
+/// Maximum UTF-8 length of a provider region.
 pub const MAX_PROVIDER_PROFILE_REGION_BYTES: usize = 64;
+/// Maximum UTF-8 length of an opaque credential binding handle.
 pub const MAX_PROVIDER_PROFILE_CREDENTIAL_BINDING_BYTES: usize = 128;
+/// Maximum UTF-8 length of a model identifier.
 pub const MAX_PROVIDER_MODEL_ID_BYTES: usize = 256;
+/// Maximum accepted reliability latency sample in milliseconds.
 pub const MAX_RELIABILITY_LATENCY_MS: f64 = 86_400_000.0;
+/// Schema version for free-access evidence.
 pub const FREE_ACCESS_EVIDENCE_SCHEMA_VERSION: u16 = 1;
+/// Maximum number of limits carried by free-access evidence.
 pub const MAX_FREE_ACCESS_LIMITS: usize = 16;
+/// Maximum number of successful samples retained in evidence.
 pub const MAX_FREE_ACCESS_SAMPLES: u32 = 256;
+/// Maximum confidence value in basis points (100 percent).
 pub const MAX_FREE_ACCESS_CONFIDENCE_BPS: u16 = 10_000;
+/// Maximum lifetime of free-access evidence in milliseconds.
 pub const MAX_FREE_ACCESS_TTL_MS: u64 = 31 * 24 * 60 * 60 * 1_000;
+/// Maximum advertised capability flags for one model.
 pub const MAX_PROVIDER_MODEL_CAPABILITIES: usize = 16;
+/// Maximum entries accepted from one provider catalog response.
 pub const MAX_PROVIDER_CATALOG_ENTRIES: usize = 2_048;
+/// Schema version for provider catalog snapshots.
 pub const PROVIDER_CATALOG_SCHEMA_VERSION: u16 = 1;
+/// Maximum lifetime of a provider catalog snapshot in milliseconds.
 pub const MAX_PROVIDER_CATALOG_TTL_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 
+/// Shared, lock-protected provider catalog snapshots indexed by provider id.
 pub type ProviderCatalogCache = Arc<std::sync::RwLock<HashMap<String, ProviderCatalogSnapshot>>>;
+/// Shared, lock-protected free-access evidence indexed by provider/model scope.
 pub type FreeAccessEvidenceCache = Arc<std::sync::RwLock<HashMap<String, FreeAccessEvidence>>>;
 
+/// Creates an empty provider catalog cache.
 pub fn new_provider_catalog_cache() -> ProviderCatalogCache {
     Arc::new(std::sync::RwLock::new(HashMap::new()))
 }
 
+/// Creates an empty free-access evidence cache.
 pub fn new_free_access_evidence_cache() -> FreeAccessEvidenceCache {
     Arc::new(std::sync::RwLock::new(HashMap::new()))
 }
 
+/// Provider families recognized by the local routing metadata contract.
+/// Privacy behavior declared or observed for provider processing.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderFamily {
+    /// OpenRouter hosted provider.
     OpenRouter,
+    /// Groq hosted provider.
     Groq,
+    /// Google Gemini provider.
     Gemini,
+    /// Mistral hosted provider.
     Mistral,
+    /// Cloudflare Workers AI provider.
     CloudflareWorkersAi,
+    /// NVIDIA NIM provider.
     NvidiaNim,
+    /// Cerebras hosted provider.
     Cerebras,
+    /// Hugging Face provider.
     HuggingFace,
+    /// LiteRouter provider.
     LiteRouter,
+    /// OpenAI hosted provider.
     OpenAi,
+    /// Ollama provider.
     Ollama,
+    /// A local model provider not covered by another family.
     Local,
+    /// A deterministic mock provider used in tests.
     Mock,
+    /// Provider family is not known.
     #[default]
     Unknown,
 }
@@ -77,14 +116,21 @@ impl ProviderFamily {
     }
 }
 
+/// Wire protocol used to communicate with a model provider.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TransportKind {
+    /// Chat Completions-compatible transport.
     OpenAiCompatible,
+    /// OpenAI Responses transport.
     OpenAiResponses,
+    /// Ollama native transport.
     Ollama,
+    /// Local in-process or local-server transport.
     Local,
+    /// Test-only mock transport.
     Mock,
+    /// Transport kind is not known.
     #[default]
     Unknown,
 }
@@ -102,20 +148,31 @@ impl TransportKind {
     }
 }
 
+/// Validated provider configuration without provider secrets.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderProfile {
+    /// Serialization schema version.
     #[serde(default = "default_provider_profile_schema_version")]
     pub schema_version: u16,
+    /// Stable identifier of the configured provider.
     pub provider_id: String,
+    /// Recognized provider family, if known.
     #[serde(default)]
     pub provider_family: ProviderFamily,
+    /// Gateway transport name.
     pub transport: String,
+    /// Normalized gateway transport kind.
     #[serde(default)]
     pub transport_kind: TransportKind,
+    /// Provider endpoint; bounded and validated before persistence.
     pub endpoint: String,
+    /// Provider region or deployment region.
     pub region: String,
+    /// Opaque key binding handle; never contains credential material.
     pub credential_binding: String,
+    /// Digest of the canonical profile fields.
     pub content_hash: String,
+    /// Monotonic profile revision.
     #[serde(default = "default_revision")]
     pub revision: u64,
 }
@@ -128,80 +185,120 @@ fn default_revision() -> u64 {
     1
 }
 
+/// Capabilities a model may advertise or have verified.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelCapability {
+    /// Text/chat completion.
     Chat,
+    /// Incremental response streaming.
     Streaming,
+    /// Native tool/function calls.
     ToolCalls,
+    /// Constrained structured output.
     StructuredOutput,
+    /// Image or other visual input.
     Vision,
+    /// Provider-supported reasoning mode.
     Reasoning,
 }
 
+/// Evidence state for one model capability.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CapabilityState {
+    /// Capability is supported.
     Supported,
+    /// Capability is explicitly not supported.
     Unsupported,
+    /// Support has not been established.
     #[default]
     Unknown,
 }
 
+/// Origin of a model capability claim.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CapabilityProvenance {
+    /// Capability was declared by the provider.
     ProviderDeclared,
+    /// Capability was observed in a verified interaction.
     Observed,
+    /// Origin has not been established.
     #[default]
     Unknown,
 }
 
+/// Capability value paired with its state and evidence origin.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CapabilityFlag {
+    /// Capability being described.
     pub capability: ModelCapability,
+    /// Whether the capability is supported.
     pub state: CapabilityState,
+    /// Source of the support claim.
     pub provenance: CapabilityProvenance,
 }
 
+/// Privacy behavior declared or observed for provider processing.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyClass {
+    /// Data is kept on the local machine.
     LocalOnly,
+    /// Provider controls processing and retention.
     ProviderControlled,
+    /// Provider may retain submitted data.
     ProviderRetained,
+    /// Privacy behavior is unknown.
     #[default]
     Unknown,
 }
 
+/// Origin of token/usage measurements.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UsageSource {
+    /// Usage count was reported by the provider.
     ProviderReported,
+    /// Usage count was measured by the gateway.
     GatewayMeasured,
+    /// Usage source has not been established.
     #[default]
     Unknown,
 }
 
+/// Typed units and provenance for provider usage values.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UsageMetadata {
+    /// Unit used for input usage.
     pub input_unit: CreditUnit,
+    /// Unit used for output usage.
     pub output_unit: CreditUnit,
+    /// Source that supplied or measured the usage.
     pub source: UsageSource,
 }
 
+/// Known limits for one model; absent values mean the limit is unknown.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModelLimits {
+    /// Context window size in tokens, when known.
     pub context_tokens: Option<u32>,
+    /// Maximum generated output in tokens, when known.
     pub max_output_tokens: Option<u32>,
 }
 
+/// Availability lifecycle of a provider model.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelLifecycle {
+    /// Model is available for new calls.
     Active,
+    /// Model remains known but should no longer be selected by default.
     Deprecated,
+    /// Model is currently unavailable.
     Unavailable,
+    /// Lifecycle state is unknown.
     #[default]
     Unknown,
 }
@@ -210,29 +307,49 @@ pub enum ModelLifecycle {
 /// entry. It carries provenance and policy metadata, but never a raw response.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderModelDescriptor {
+    /// Descriptor schema version.
     pub schema_version: u16,
+    /// Provider owning this model.
     pub provider_id: String,
+    /// Normalized provider family.
     pub provider_family: ProviderFamily,
+    /// Transport used to call the model.
     pub transport_kind: TransportKind,
+    /// Provider's stable model identifier.
     pub model_id: String,
+    /// Profile revision used to derive this descriptor.
     pub profile_revision: u64,
+    /// Profile digest used to derive this descriptor.
     pub profile_content_hash: String,
+    /// Catalog snapshot revision containing the model.
     pub catalog_revision: u64,
+    /// Catalog snapshot digest containing the model.
     pub catalog_content_hash: String,
+    /// Known context and output limits.
     pub limits: ModelLimits,
+    /// Capability claims with their provenance.
     pub capabilities: Vec<CapabilityFlag>,
+    /// Privacy classification for model requests.
     pub privacy: PrivacyClass,
+    /// Usage units and measurement provenance.
     pub usage: UsageMetadata,
+    /// Current model lifecycle state.
     pub lifecycle: ModelLifecycle,
 }
 
+/// Freshness or failure state of a provider catalog snapshot.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderCatalogState {
+    /// Catalog was fetched and validated successfully.
     Fresh,
+    /// Last known catalog is available but past its freshness window.
     Stale,
+    /// Catalog could not be fetched or validated.
     Unavailable,
+    /// Provider rejected the credential binding.
     CredentialRejected,
+    /// Provider does not support model discovery.
     DiscoveryUnsupported,
 }
 
@@ -259,19 +376,31 @@ impl ProviderCatalogState {
     }
 }
 
+/// Stable failure category for provider catalog refresh.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CatalogFailureCode {
+    /// Connection or network failure.
     Network,
+    /// Provider did not respond within the allowed duration.
     Timeout,
+    /// Provider rejected the configured credential.
     CredentialRejected,
+    /// Provider rate limit prevented discovery.
     RateLimited,
+    /// Requested model was not found.
     ModelNotFound,
+    /// Provider response violated the expected format.
     MalformedResponse,
+    /// Provider response exceeded the configured size bound.
     ResponseTooLarge,
+    /// Catalog contained more entries than accepted.
     EntryLimitExceeded,
+    /// Response protocol did not match the configured transport.
     ProtocolMismatch,
+    /// Provider does not implement model discovery.
     DiscoveryUnsupported,
+    /// Failure category is not classified.
     Unknown,
 }
 
@@ -315,62 +444,103 @@ impl CatalogFailureCode {
 /// eligibility semantics only.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProviderCatalogSnapshot {
+    /// Catalog snapshot schema version.
     pub schema_version: u16,
+    /// Provider whose models were observed.
     pub provider_id: String,
+    /// Opaque credential binding that scoped the observation.
     pub credential_binding: String,
+    /// Region used for model discovery.
     pub region: String,
+    /// Provider profile revision used for the discovery request.
     pub profile_revision: u64,
+    /// Digest of the provider profile used for discovery.
     pub profile_content_hash: String,
+    /// Monotonic snapshot revision.
     pub revision: u64,
+    /// Digest of the canonical catalog contents.
     pub catalog_content_hash: String,
+    /// Refresh outcome and current freshness state.
     pub state: ProviderCatalogState,
+    /// Validated model descriptors; bounded by `MAX_PROVIDER_CATALOG_ENTRIES`.
     pub models: Vec<ProviderModelDescriptor>,
+    /// Time at which this catalog was observed in Unix milliseconds.
     pub observed_at_ms: u64,
+    /// Time at which the snapshot expires in Unix milliseconds.
     pub expires_at_ms: u64,
+    /// Classified refresh failure, if the snapshot is unavailable.
     pub failure: Option<CatalogFailureCode>,
 }
+/// Coarse provider-declared free-access label retained for compatibility.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FreeAccessState {
+    /// Provider advertises recurring free access.
     Free,
+    /// Provider advertises free usage subject to limits.
     FreeTierLimited,
+    /// Access depends on temporary trial credits.
     TrialCredits,
+    /// Access requires payment.
     Paid,
+    /// Access conditions are unknown.
     Unknown,
+    /// Access conditions are experimental or unstable.
     Experimental,
+    /// A previous advisory state requires a refresh before use.
     UnknownNeedsRefresh,
 }
 
 /// Evidence state is deliberately more precise than the historical advisory
 /// `FreeAccessState`: trial credit, one-time credit and recurring free access
 /// must never collapse into one boolean.
+///
+/// This state is derived from validated observations and is used by strict
+/// free-only routing checks.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ObservedFreeAccessState {
+    /// Recurring free access was successfully observed.
     VerifiedFreeLimited,
+    /// Access is available only through a time-limited trial.
     TrialOnly,
+    /// Access is available only through a finite one-time credit.
     CreditOnly,
+    /// The account must complete an activation step.
     ActivationRequired,
+    /// Only paid access was observed.
     PaidOnly,
+    /// Available evidence does not establish the access type.
     Unknown,
 }
 
+/// State of any provider-side activation required before access.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ActivationState {
+    /// No activation step is required.
     NotRequired,
+    /// Activation is required but has not completed.
     Required,
+    /// Required activation has completed.
     Completed,
+    /// Activation requirements are unknown.
     Unknown,
 }
 
+/// Kind of allowance observed for a provider account or model.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AllowanceKind {
+    /// Allowance renews on a recurring schedule.
     Recurring,
+    /// Allowance is a time-limited trial credit.
     TrialCredit,
+    /// Allowance is a finite one-time credit.
     OneTimeCredit,
+    /// No free allowance was observed.
     None,
+    /// Allowance kind is unknown.
     Unknown,
 }
 
@@ -379,59 +549,94 @@ pub enum AllowanceKind {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CreditUnit {
+    /// Number of requests.
     Requests,
+    /// Number of model tokens.
     Tokens,
+    /// Number of text characters.
     Characters,
+    /// Duration in seconds.
     Seconds,
+    /// Currency amount in micro-units.
     CurrencyMicros,
+    /// Unit is not known.
     Unknown,
 }
 
+/// Scope to which an observed access limit applies.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceLimitScope {
+    /// Limit applies to the provider account.
     Account,
+    /// Limit applies across a provider.
     Provider,
+    /// Limit applies to one model.
     Model,
 }
 
+/// Source of an observed allowance limit.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceLimitSource {
+    /// Limit was explicitly declared by the provider.
     ProviderDeclared,
+    /// Limit was inferred from observed usage.
     Observed,
+    /// Limit source is unknown.
     Unknown,
 }
 
+/// Event that invalidates previously collected free-access evidence.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceInvalidation {
+    /// Billing became required.
     BillingRequired,
+    /// Provider restricted the account.
     AccountRestricted,
+    /// Provider quota was exhausted.
     QuotaExhausted,
+    /// Provider model catalog changed.
     CatalogChanged,
+    /// Credential binding changed.
     CredentialChanged,
+    /// Evidence was invalidated manually.
     Manual,
 }
 
+/// Time and invalidation status of evidence at a particular observation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceFreshness {
+    /// Evidence remains within its validity interval.
     Fresh,
+    /// Current time precedes the observation timestamp.
     Stale,
+    /// Evidence passed its expiration timestamp.
     Expired,
+    /// Evidence was explicitly invalidated.
     Invalidated,
 }
 
+/// One typed provider access limit with its source and observation time.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FreeAccessLimit {
+    /// Scope to which this limit applies.
     pub scope: EvidenceLimitScope,
+    /// Origin of the limit value.
     pub source: EvidenceLimitSource,
+    /// Unit used by `limit` and `remaining`.
     pub unit: CreditUnit,
+    /// Whether the allowance renews, is finite, or is absent.
     pub allowance: AllowanceKind,
+    /// Total allowance, if reported or measured.
     pub limit: Option<u64>,
+    /// Remaining allowance at observation time, if known.
     pub remaining: Option<u64>,
+    /// Observation time in Unix milliseconds.
     pub observed_at_ms: u64,
+    /// Next reset time in Unix milliseconds, if known.
     pub resets_at_ms: Option<u64>,
 }
 
@@ -457,27 +662,46 @@ impl FreeAccessLimit {
 /// `credential_binding` is an opaque scope handle, never credential material.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FreeAccessEvidence {
+    /// Evidence serialization schema version.
     pub schema_version: u16,
+    /// Provider that was observed.
     pub provider_id: String,
+    /// Model that was observed.
     pub model_id: String,
+    /// Opaque credential scope; never credential material.
     pub credential_binding: String,
+    /// Region associated with the observation.
     pub region: String,
+    /// Coarse provider-advertised access label.
     pub advertised_state: FreeAccessState,
+    /// More precise access state derived from validated evidence.
     pub observed_state: ObservedFreeAccessState,
+    /// Activation requirement/state at observation time.
     pub activation: ActivationState,
+    /// Kind of access allowance established by the evidence.
     pub allowance: AllowanceKind,
+    /// Typed account/provider/model limits observed.
     pub limits: Vec<FreeAccessLimit>,
+    /// Number of successful calls supporting the observation.
     pub successful_sample_count: u32,
+    /// Confidence score in basis points from 0 through 10,000.
     pub confidence_bps: u16,
+    /// Evidence observation time in Unix milliseconds.
     pub observed_at_ms: u64,
+    /// Evidence expiration time in Unix milliseconds.
     pub expires_at_ms: u64,
+    /// Reason the evidence was invalidated, when applicable.
     pub invalidation: Option<EvidenceInvalidation>,
+    /// Bounded failure reason; must not contain credentials or raw payloads.
     pub failure_reason: Option<String>,
+    /// Digest of the canonical evidence content.
     pub content_hash: String,
+    /// Monotonic evidence revision.
     pub revision: u64,
 }
 
 impl FreeAccessEvidence {
+    /// Validates schema, bounds, timestamps, digest syntax, and state consistency.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.schema_version != FREE_ACCESS_EVIDENCE_SCHEMA_VERSION
             || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
@@ -519,6 +743,7 @@ impl FreeAccessEvidence {
         Ok(())
     }
 
+    /// Classifies evidence at `now_ms`, prioritizing explicit invalidation.
     pub fn freshness_at(&self, now_ms: u64) -> EvidenceFreshness {
         if self.invalidation.is_some() {
             EvidenceFreshness::Invalidated
@@ -533,6 +758,10 @@ impl FreeAccessEvidence {
 
     /// The strict gate used by a future `FreeOnly` resolver. Advisory labels,
     /// trial credits, one-time credits and stale evidence do not pass it.
+    ///
+    /// This predicate deliberately requires successful observations and a
+    /// recurring allowance; the coarse provider-advertised label alone is
+    /// insufficient.
     pub fn is_strictly_free_at(&self, now_ms: u64) -> bool {
         self.validate().is_ok()
             && self.freshness_at(now_ms) == EvidenceFreshness::Fresh
@@ -545,6 +774,10 @@ impl FreeAccessEvidence {
             && self.successful_sample_count > 0
     }
 
+    /// Converts validated evidence into the local storage row representation.
+    ///
+    /// Returns an error for invalid evidence or values that cannot fit the
+    /// storage schema's signed integer timestamps/revision fields.
     pub fn to_storage_record(
         &self,
     ) -> Result<
@@ -577,6 +810,11 @@ impl FreeAccessEvidence {
         )
     }
 
+    /// Loads and cross-checks evidence against its storage row metadata.
+    ///
+    /// A mismatch in provider/model scope, revision, digest, timestamps, or
+    /// invalidation state is rejected instead of returning a partially trusted
+    /// record.
     pub fn from_storage_record(
         record: &evohime_local_storage::free_access_evidence_store::FreeAccessEvidenceRecord,
     ) -> Result<Self, &'static str> {
@@ -619,39 +857,67 @@ fn invalidation_code(value: EvidenceInvalidation) -> &'static str {
 fn valid_content_hash(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
+/// Coarse reliability category used to compare candidate model routes.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReliabilityClass {
+    /// Repeated observations show consistently fast successful responses.
     Excellent,
+    /// Responses meet the healthy reliability thresholds.
     Healthy,
+    /// Recent latency or error rate is worse than the healthy threshold.
     Degraded,
+    /// Repeated observations show unstable latency or success rate.
     Unstable,
+    /// Route is temporarily held in cooldown.
     CoolingDown,
+    /// Provider quota currently restricts use.
     QuotaLimited,
+    /// Route is known to be unavailable.
     Unavailable,
+    /// Insufficient evidence exists to classify reliability.
     Unknown,
 }
+/// Reliability measurements for one provider/model pair.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReliabilitySnapshot {
+    /// Provider owning the observed model.
     pub provider_id: String,
+    /// Model identifier for the observations.
     pub model_id: String,
+    /// Number of samples included in the statistics.
     pub sample_count: u32,
+    /// Fraction of successful requests in the sample, from 0.0 through 1.0.
     pub success_rate: f64,
+    /// 50th-percentile response latency in milliseconds, when available.
     pub p50_ms: Option<f64>,
+    /// 95th-percentile response latency in milliseconds, when available.
     pub p95_ms: Option<f64>,
+    /// Latency variation in milliseconds, when available.
     pub jitter_ms: Option<f64>,
+    /// Derived reliability class.
     pub class: ReliabilityClass,
 }
+/// Human-readable reason why a provider/model route was selected.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RouteSelectionExplanation {
+    /// Selected provider identifier.
     pub provider_id: String,
+    /// Selected model identifier.
     pub model_id: String,
+    /// Stable route-selection rationale.
     pub reason: String,
+    /// Free-access state associated with the candidate.
     pub free_state: FreeAccessState,
+    /// Reliability category associated with the candidate.
     pub reliability: ReliabilityClass,
 }
 
 impl ProviderProfile {
+    /// Adapts a configured gateway route into validated provider metadata.
+    ///
+    /// Provider IDs are normalized from the route's transport and endpoint;
+    /// the result stores only an opaque credential binding, not a secret.
     pub fn from_route_config(route: &ModelRouteConfig) -> Result<Self, &'static str> {
         let (provider_id, provider_family, transport_kind) = match route.provider {
             evohime_model_gateway::providers::ProviderKind::LiteRouter => (
@@ -715,6 +981,7 @@ impl ProviderProfile {
         Ok(profile)
     }
 
+    /// Checks schema, identity, endpoint, credential binding, and content hash.
     pub fn validate(&self) -> Result<(), &'static str> {
         self.validate_without_hash()?;
         if !valid_content_hash(&self.content_hash) {
@@ -744,6 +1011,7 @@ impl ProviderProfile {
         Ok(())
     }
 
+    /// Returns the explicit transport, or infers it from the legacy transport name.
     pub fn resolved_transport_kind(&self) -> TransportKind {
         if self.transport_kind != TransportKind::Unknown {
             return self.transport_kind;
@@ -751,6 +1019,9 @@ impl ProviderProfile {
         parsed_transport_kind(&self.transport)
     }
 
+    /// Serializes this profile and its model descriptors into the storage record shape.
+    ///
+    /// Rejects mismatched provider/profile revisions and invalid catalog metadata.
     pub fn to_storage_record(
         &self,
         descriptors: &[ProviderModelDescriptor],
@@ -841,6 +1112,10 @@ impl CapabilityFlag {
 }
 
 impl ProviderModelDescriptor {
+    /// Creates a descriptor from a gateway catalog entry and its source revisions.
+    ///
+    /// Capability, privacy, usage, and lifecycle metadata remain unknown until
+    /// separately established by trusted evidence.
     pub fn from_catalog_entry(
         profile: &ProviderProfile,
         entry: &ModelCatalogEntry,
@@ -875,6 +1150,7 @@ impl ProviderModelDescriptor {
         Ok(descriptor)
     }
 
+    /// Checks descriptor identity, hashes, limits, and unique capability flags.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.schema_version != PROVIDER_MODEL_DESCRIPTOR_SCHEMA_VERSION
             || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
@@ -906,6 +1182,9 @@ impl ProviderModelDescriptor {
 }
 
 impl ProviderCatalogSnapshot {
+    /// Builds a fresh, normalized snapshot from a successfully discovered catalog.
+    ///
+    /// Duplicate model IDs are collapsed by [`normalize_catalog_entries`].
     pub fn fresh_from_catalog(
         profile: &ProviderProfile,
         entries: &[ModelCatalogEntry],
@@ -957,6 +1236,7 @@ impl ProviderCatalogSnapshot {
         Ok(snapshot)
     }
 
+    /// Builds a failed catalog snapshot with no model entries.
     pub fn failure(
         profile: &ProviderProfile,
         revision: u64,
@@ -986,6 +1266,7 @@ impl ProviderCatalogSnapshot {
         Ok(snapshot)
     }
 
+    /// Checks snapshot bounds, revisions, model consistency, and state/failure pairing.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.schema_version != PROVIDER_CATALOG_SCHEMA_VERSION
             || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
@@ -1043,6 +1324,7 @@ impl ProviderCatalogSnapshot {
         Ok(())
     }
 
+    /// Returns whether a named model may route under this fresh snapshot at `now_ms`.
     pub fn route_eligible_at(&self, model_id: &str, now_ms: u64) -> bool {
         self.validate().is_ok()
             && self.state == ProviderCatalogState::Fresh
@@ -1051,6 +1333,7 @@ impl ProviderCatalogSnapshot {
             && self.models.iter().any(|model| model.model_id == model_id)
     }
 
+    /// Converts validated descriptors back to the gateway catalog representation.
     pub fn gateway_entries(&self) -> Result<Vec<ModelCatalogEntry>, &'static str> {
         self.validate()?;
         Ok(self
@@ -1064,6 +1347,7 @@ impl ProviderCatalogSnapshot {
             .collect())
     }
 
+    /// Retains a previous model list as stale evidence after a refresh failure.
     pub fn stale_after_failure(
         profile: &ProviderProfile,
         previous: &Self,
@@ -1110,6 +1394,7 @@ impl ProviderCatalogSnapshot {
         Ok(snapshot)
     }
 
+    /// Encodes the snapshot together with its matching profile for local storage.
     pub fn to_storage_record(
         &self,
         profile: &ProviderProfile,
@@ -1142,6 +1427,7 @@ impl ProviderCatalogSnapshot {
         Ok(record)
     }
 
+    /// Reconstructs and validates a snapshot from a persisted profile/catalog record.
     pub fn from_storage_record(
         record: &evohime_local_storage::provider_profile_catalog_store::ProviderProfileCatalogRecord,
     ) -> Result<Self, &'static str> {
@@ -1222,6 +1508,7 @@ pub struct ProviderCatalogRoutePreflight {
 }
 
 impl ProviderCatalogRoutePreflight {
+    /// Creates a dispatch preflight backed by route configuration and catalog cache.
     pub fn new(
         config: evohime_model_gateway::ModelGatewayConfig,
         cache: ProviderCatalogCache,
@@ -1291,6 +1578,7 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
     }
 }
 
+/// Sorts catalog entries deterministically and keeps one entry per model ID.
 pub fn normalize_catalog_entries(
     entries: &[ModelCatalogEntry],
 ) -> Result<Vec<ModelCatalogEntry>, &'static str> {
@@ -1308,12 +1596,14 @@ pub fn normalize_catalog_entries(
     Ok(normalized)
 }
 
+/// Computes the SHA-256 digest of the normalized catalog JSON representation.
 pub fn catalog_content_hash(entries: &[ModelCatalogEntry]) -> Result<String, &'static str> {
     let normalized = normalize_catalog_entries(entries)?;
     let json = serde_json::to_vec(&normalized).map_err(|_| "invalid provider catalog snapshot")?;
     Ok(hex::encode(Sha256::digest(json)))
 }
 
+/// Maps a gateway error to a stable, non-sensitive catalog failure category.
 pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
     let message = match error {
         ProviderError::Config(message)
@@ -1481,6 +1771,7 @@ fn valid_credential_binding(value: &str) -> bool {
         && !value.to_ascii_lowercase().starts_with("aiza")
 }
 impl ReliabilitySnapshot {
+    /// Checks bounded metrics and verifies that the stored class matches the metrics.
     pub fn validate(&self) -> Result<(), &'static str> {
         if !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
             || !valid_model_id(&self.model_id)
@@ -1517,6 +1808,7 @@ fn valid_latency(value: Option<f64>) -> bool {
     })
 }
 
+/// Classifies reliability using the contract's sample-count and success-rate thresholds.
 pub fn classify(snapshot: &ReliabilitySnapshot) -> ReliabilityClass {
     if snapshot.sample_count < 3 {
         ReliabilityClass::Unknown

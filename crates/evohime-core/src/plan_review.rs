@@ -15,8 +15,11 @@ use tokio_util::sync::CancellationToken;
 use evohime_model_gateway::providers::{ChatMessage, ChatRole, ProviderError};
 use evohime_model_gateway::{ChatStreamItem, ModelGateway};
 
+/// Minimum number of independent reviewer models required for synthesis.
 pub const MIN_REVIEWERS: usize = 2;
+/// Maximum number of reviewer models accepted for one plan review.
 pub const MAX_REVIEWERS: usize = 8;
+/// Maximum source or revised plan size in bytes.
 pub const MAX_PLAN_BYTES: usize = 512 * 1024;
 
 // Разделители, которыми промпты отбивают документы друг от друга. Модель
@@ -35,7 +38,9 @@ const CONTEXT_CLOSE: &str = "--- КОНЕЦ СОСЕДНИХ ПЛАНОВ ---";
 /// он начнёт противоречить соседям. Потолки держат промпт в пределах окна
 /// модели — контекст обрезается, а не роняет правку.
 pub const MAX_CONTEXT_DOCUMENTS: usize = 8;
+/// Maximum combined Markdown size for neighboring plan context.
 pub const MAX_CONTEXT_BYTES: usize = 192 * 1024;
+/// Maximum number of link hops followed when collecting neighboring plans.
 pub const MAX_CONTEXT_DEPTH: usize = 2;
 
 /// Соседний план, приложенный к промпту только для сверки.
@@ -44,77 +49,118 @@ pub const MAX_CONTEXT_DEPTH: usize = 2;
 /// модели, ни в файл — только в контекст запроса.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextDocument {
+    /// Relative file name identifying the neighboring plan.
     pub file_name: String,
+    /// Markdown supplied read-only for consistency checks.
     pub markdown: String,
 }
 
+/// Bounded request for multi-model review of one or more plan files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewRequest {
+    /// Stable identifier for this review operation.
     pub review_id: String,
+    /// Primary plan file name shown in results.
     pub file_name: String,
+    /// All plan filenames covered by this review.
     pub file_names: Vec<String>,
+    /// Markdown body reviewed by each model.
     pub source_markdown: String,
+    /// Distinct models asked to review the plan.
     pub reviewer_models: Vec<String>,
+    /// Model that synthesizes completed reviewer feedback.
     pub synthesis_model: String,
     /// Планы, на которые ссылается проверяемый: рецензент видит их только для
     /// сверки. Пустой список — обычное дело для одиночного плана.
     pub context_documents: Vec<ContextDocument>,
 }
 
+/// Output from one reviewer model.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReviewerResult {
+    /// Model identifier used for review.
     pub model: String,
+    /// Completion status such as completed, failed, or cancelled.
     pub status: String,
+    /// Reviewer text when the call completed.
     pub content: String,
+    /// Bounded provider or cancellation error, if any.
     pub error: Option<String>,
 }
 
+/// Combined reviewer outputs and synthesized plan feedback.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReviewResult {
+    /// Identifier copied from the review request.
     pub review_id: String,
+    /// Primary plan filename.
     pub file_name: String,
     #[serde(default)]
+    /// Plan filenames included in the review.
     pub file_names: Vec<String>,
+    /// Model that produced the synthesis.
     pub synthesis_model: String,
+    /// Individual reviewer outputs in request order.
     pub reviewers: Vec<ReviewerResult>,
+    /// Synthesized Markdown report.
     pub final_markdown: String,
 }
 
+/// Progress event emitted while reviewers and synthesis are running.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewProgress {
+    /// Review operation identifier.
     pub review_id: String,
+    /// Current phase, such as reviewers or synthesis.
     pub stage: String,
+    /// Current phase status.
     pub status: String,
+    /// Model associated with the progress event, when applicable.
     pub model: Option<String>,
+    /// Number of reviewer calls completed so far.
     pub completed: usize,
+    /// Total reviewer calls requested.
     pub total: usize,
 }
 
+/// Invalid plan input, reviewer set, cancellation, or provider failure.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ReviewError {
+    /// Review operation identifier is empty.
     #[error("review id is empty")]
     EmptyReviewId,
+    /// Plan Markdown is empty.
     #[error("Markdown plan is empty")]
     EmptyPlan,
+    /// Review text is empty.
     #[error("review text is empty")]
     EmptyReview,
+    /// Plan exceeds the maximum byte length.
     #[error("Markdown plan exceeds {MAX_PLAN_BYTES} bytes")]
     PlanTooLarge,
+    /// Neighboring plan context exceeds document or byte bounds.
     #[error("linked plans exceed {MAX_CONTEXT_DOCUMENTS} documents or {MAX_CONTEXT_BYTES} bytes")]
     ContextTooLarge,
+    /// Reviewer count is out of bounds or contains duplicate/invalid models.
     #[error("review requires between {MIN_REVIEWERS} and {MAX_REVIEWERS} unique models")]
     InvalidReviewerCount,
+    /// One or more model identifiers are malformed.
     #[error("model identifier is invalid")]
     InvalidModel,
+    /// Caller cancelled the review or revision.
     #[error("review was cancelled")]
     Cancelled,
+    /// Provider call failed.
     #[error("provider error: {0}")]
     Provider(String),
     #[error(
         "review cannot be synthesized: {failed} of {total} reviewers failed or were cancelled ({reason})"
     )]
+    /// At least one reviewer did not complete, so synthesis was skipped.
     IncompleteReviewers {
+        /// Number of reviewers that failed or were cancelled.
         failed: usize,
+        /// Total number of requested reviewers.
         total: usize,
         /// Why the first reviewer gave up. Without it the user is told that a
         /// review failed but not whether to retry, switch models or wait.
@@ -123,6 +169,7 @@ pub enum ReviewError {
 }
 
 impl ReviewRequest {
+    /// Validates plan size, context bounds, and unique model selection.
     pub fn validate(&self) -> Result<(), ReviewError> {
         if self.review_id.trim().is_empty() {
             return Err(ReviewError::EmptyReviewId);
@@ -150,6 +197,7 @@ impl ReviewRequest {
     }
 }
 
+/// Reviews a plan with multiple models and returns synthesized feedback.
 pub async fn run_review(
     gateway: Arc<ModelGateway>,
     request: ReviewRequest,
@@ -158,6 +206,7 @@ pub async fn run_review(
     run_review_with_progress(gateway, request, cancellation, Arc::new(|_| {})).await
 }
 
+/// Reviews a plan sequentially while reporting reviewer and synthesis progress.
 pub async fn run_review_with_progress(
     gateway: Arc<ModelGateway>,
     request: ReviewRequest,
@@ -342,25 +391,38 @@ pub async fn run_review_with_progress(
     })
 }
 
+/// Request to revise a reviewed plan while preserving linked-plan context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevisionRequest {
+    /// Stable identifier for this revision operation.
     pub revision_id: String,
+    /// Review operation whose findings are being applied.
     pub review_id: String,
+    /// Plan file name being revised.
     pub file_name: String,
+    /// Original Markdown plan.
     pub source_markdown: String,
+    /// Synthesized review findings supplied to the editor model.
     pub review_markdown: String,
+    /// Model selected to revise the plan.
     pub model: String,
     /// Те же соседние планы, что видел рецензент. Правка без них — главный
     /// способ получить внутренне складный план, противоречащий соседям.
     pub context_documents: Vec<ContextDocument>,
 }
 
+/// Rewritten plan returned for caller review before persistence.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RevisionResult {
+    /// Revision operation identifier.
     pub revision_id: String,
+    /// Source review identifier.
     pub review_id: String,
+    /// Plan filename that was revised.
     pub file_name: String,
+    /// Model that produced the revision.
     pub model: String,
+    /// Complete revised Markdown returned to the caller.
     pub revised_markdown: String,
     /// С чем правка сверялась. Пользователь должен видеть это до сохранения:
     /// пустой список означает, что редактор работал вслепую по одному файлу.
@@ -370,14 +432,19 @@ pub struct RevisionResult {
     pub context_files: Vec<String>,
 }
 
+/// Progress event for a single-model plan revision.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevisionProgress {
+    /// Revision operation identifier.
     pub revision_id: String,
+    /// Current revision phase status.
     pub status: String,
+    /// Model producing the revised plan.
     pub model: String,
 }
 
 impl RevisionRequest {
+    /// Validates revision identity, source and review text, model, and context bounds.
     pub fn validate(&self) -> Result<(), ReviewError> {
         if self.revision_id.trim().is_empty() || self.review_id.trim().is_empty() {
             return Err(ReviewError::EmptyReviewId);
@@ -404,6 +471,7 @@ impl RevisionRequest {
 /// A diff would be cheaper to transfer, but models are far more reliable at
 /// reproducing a document than at addressing hunks, and the caller shows the
 /// result before anything touches the original file.
+/// Revises a plan in memory and returns complete Markdown without writing files.
 pub async fn run_revision(
     gateway: Arc<ModelGateway>,
     request: RevisionRequest,

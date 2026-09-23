@@ -1,6 +1,7 @@
 use crate::{EventRecord, LocalDatabase, StorageError, ToolMetricInput, ToolMetricRecord};
 
 impl LocalDatabase {
+    /// Appends a task event and returns its sequence ID.
     pub fn append_event(
         &self,
         task_id: &str,
@@ -14,6 +15,7 @@ impl LocalDatabase {
         Ok(self.connection.last_insert_rowid())
     }
 
+    /// Appends a task event through an existing transaction and returns its sequence ID.
     pub fn append_event_in_transaction(
         transaction: &rusqlite::Transaction<'_>,
         task_id: &str,
@@ -47,6 +49,7 @@ impl LocalDatabase {
         Ok((sequence, sql_ms, commit_ms))
     }
 
+    /// Records one tool invocation outcome and returns the metric row ID.
     pub fn record_tool_metric(&self, input: ToolMetricInput<'_>) -> Result<i64, StorageError> {
         self.connection.execute(
             "INSERT INTO run_tool_metrics(task_id, tool_name, iteration, ok, failure_kind, recovery_hint, escalated)
@@ -64,6 +67,7 @@ impl LocalDatabase {
         Ok(self.connection.last_insert_rowid())
     }
 
+    /// Reads a task's tool metrics in ascending insertion order, up to `limit` rows.
     pub fn read_tool_metrics(
         &self,
         task_id: &str,
@@ -92,6 +96,7 @@ impl LocalDatabase {
     /// Reads the most recent `run_tool_metrics` rows across all tasks,
     /// newest first, bounded by `limit`. Used by Core Doctor log/metrics
     /// export; carries no secrets (tool names, outcomes, recovery hints).
+    /// Reads the most recently inserted tool metrics across all tasks, newest first.
     pub fn read_recent_tool_metrics(
         &self,
         limit: usize,
@@ -124,6 +129,7 @@ impl LocalDatabase {
         Ok(statement.query_row([], |row| row.get(0))?)
     }
 
+    /// Reads journal events after `after_sequence` in ascending sequence order.
     pub fn read_events_after(
         &self,
         after_sequence: i64,
@@ -146,6 +152,7 @@ impl LocalDatabase {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Reads one task's events up to `limit`, returning them oldest first.
     pub fn read_task_events(
         &self,
         task_id: &str,

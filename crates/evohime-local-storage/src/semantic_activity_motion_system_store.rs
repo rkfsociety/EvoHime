@@ -1,7 +1,17 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Creates the versioned snapshot table inside the caller's schema transaction.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS semantic_activity_motion_system (id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(id,revision), UNIQUE(id,idempotency_key));")
 }
+/// Saves a semantic activity/motion snapshot using an idempotency key.
+///
+/// Replaying the same key with the same revision and content hash succeeds
+/// without inserting a duplicate; reusing it for different content is rejected.
+///
+/// # Errors
+///
+/// Returns a SQLite error for write failures or an idempotency conflict.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -26,6 +36,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Returns the JSON snapshot with the highest revision for `id`, if present.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row("SELECT json FROM semantic_activity_motion_system WHERE id=?1 ORDER BY revision DESC LIMIT 1",params![id],|x|x.get(0)).optional()
 }

@@ -36,6 +36,7 @@ pub struct RtfLadder {
 }
 
 impl RtfLadder {
+    /// Starts a session at the selected model rung.
     pub fn new(rung: ModelRung) -> Self {
         Self {
             rung,
@@ -44,10 +45,12 @@ impl RtfLadder {
         }
     }
 
+    /// Returns the current model rung.
     pub const fn rung(&self) -> ModelRung {
         self.rung
     }
 
+    /// Reports whether the final rung was exhausted and listening degraded.
     pub const fn degraded(&self) -> bool {
         self.degraded
     }

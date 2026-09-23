@@ -14,10 +14,12 @@ pub struct OpenAICompatibleProvider {
 }
 
 impl OpenAICompatibleProvider {
+    /// Creates the adapter with retry defaults loaded from the environment.
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
         Self::with_retry(config, RetryPolicy::from_env())
     }
 
+    /// Creates the adapter with an explicit retry policy.
     pub fn with_retry(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
         if config.api_key.is_empty() {
             return Err(ProviderError::Config(
@@ -29,14 +31,17 @@ impl OpenAICompatibleProvider {
         })
     }
 
+    /// Returns the endpoint, model, and credential configuration.
     pub fn config(&self) -> &LiteRouterConfig {
         self.inner.config()
     }
 
+    /// Returns the configured retry policy.
     pub fn retry_policy(&self) -> &RetryPolicy {
         self.inner.retry_policy()
     }
 
+    /// Returns the `/chat/completions` URL for this provider.
     pub fn chat_completions_url(&self) -> String {
         self.inner.chat_completions_url()
     }

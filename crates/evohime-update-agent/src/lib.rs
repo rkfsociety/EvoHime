@@ -2,6 +2,20 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+#![deny(missing_docs)]
+//! Bounded updater recovery journal and filesystem recovery operations.
+//!
+//! The journal records an update operation's phase and active slot so startup
+//! recovery can validate and resume or roll back an interrupted transaction.
+//!
+//! ```
+//! use evohime_update_agent::RecoveryJournal;
+//!
+//! let journal = RecoveryJournal::new("update-42", "prepared");
+//! journal.validate().unwrap();
+//! assert_eq!(journal.active_slot, "active");
+//! ```
+
 use serde::{
     de::{Deserializer, Error as DeError},
     Deserialize, Serialize,
@@ -11,24 +25,38 @@ use std::cmp::Ordering;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+/// Version of the serialized recovery journal schema.
 pub const RECOVERY_SCHEMA: u32 = 1;
+/// Maximum accepted serialized recovery journal size in bytes.
 pub const MAX_RECOVERY_BYTES: usize = 32 * 1024;
+/// Maximum number of recovery attempts recorded in the journal.
 pub const MAX_RECOVERY_ATTEMPTS: u32 = 3;
 
+/// Persisted state needed to recover an interrupted update operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RecoveryJournal {
+    /// Schema version, which must equal [`RECOVERY_SCHEMA`].
     pub schema: u32,
+    /// Identifier for the update operation.
     pub operation_id: String,
+    /// Current transaction phase.
     pub phase: String,
+    /// Slot that should currently serve as active (`active` or `fallback`).
     pub active_slot: String,
+    /// Version associated with the active slot.
     pub active_version: String,
+    /// SHA-256 digest associated with the active slot, when available.
     pub active_sha256: String,
+    /// Whether a fallback slot is available.
     pub fallback_available: bool,
+    /// Number of recovery attempts already made.
     pub retry_count: u32,
+    /// Stable diagnostic reason code, if recovery previously failed.
     pub reason_code: Option<String>,
 }
 
 impl RecoveryJournal {
+    /// Creates a journal for an operation and phase with empty slot metadata.
     pub fn new(operation_id: impl Into<String>, phase: impl Into<String>) -> Self {
         Self {
             schema: RECOVERY_SCHEMA,
@@ -43,6 +71,7 @@ impl RecoveryJournal {
         }
     }
 
+    /// Checks schema, phase, slot, size, and retry invariants.
     pub fn validate(&self) -> Result<(), String> {
         if self.schema != RECOVERY_SCHEMA
             || self.operation_id.is_empty()
@@ -75,6 +104,7 @@ impl RecoveryJournal {
     }
 }
 
+/// Validates and atomically writes a recovery journal to `path`.
 pub fn write_recovery_journal(path: &Path, journal: &RecoveryJournal) -> Result<(), String> {
     journal.validate()?;
     let bytes = serde_json::to_vec(journal).map_err(|e| e.to_string())?;
@@ -98,6 +128,7 @@ pub fn write_recovery_journal(path: &Path, journal: &RecoveryJournal) -> Result<
     result
 }
 
+/// Reads and validates a recovery journal; returns `None` when the file is absent.
 pub fn read_recovery_journal(path: &Path) -> Result<Option<RecoveryJournal>, String> {
     if !path.is_file() {
         return Ok(None);
@@ -111,6 +142,7 @@ pub fn read_recovery_journal(path: &Path) -> Result<Option<RecoveryJournal>, Str
     Ok(Some(journal))
 }
 
+/// Validates the size, PE headers, and SHA-256 digest of a downloaded artifact.
 pub fn validate_pe_artifact(
     path: &Path,
     expected_size: u64,
@@ -256,14 +288,19 @@ mod recovery_tests {
     }
 }
 
+/// Published module metadata used to select a compatible update set.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ModuleRecord {
+    /// Stable module identifier.
     pub id: String,
+    /// Three-component version string.
     pub version: String,
     #[serde(default, deserialize_with = "deserialize_nullable_vec")]
+    /// Required module identifiers; absent and `null` values deserialize empty.
     pub dependencies: Vec<String>,
 }
 
+/// Deserializes a nullable dependency value as zero, one, or many strings.
 pub fn deserialize_nullable_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -279,27 +316,40 @@ where
     }
 }
 
+/// Component versions currently installed on the device.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct InstalledManifest {
+    /// Installed modules and their dependency metadata.
     pub components: Vec<ModuleRecord>,
 }
 
+/// Ordered module identifiers selected for an update.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct UpdatePlan {
+    /// Modules to update, ordered by the published dependency graph.
     pub modules: Vec<String>,
 }
 
+/// User-facing updater state returned by the update agent.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct UpdaterStatus {
+    /// Status payload schema identifier.
     pub schema: &'static str,
+    /// Current updater phase.
     pub phase: &'static str,
+    /// Localized or stable message describing the current state.
     pub message: String,
+    /// Stable error code, when the operation failed.
     pub error: Option<String>,
+    /// Module identifiers involved in the current operation.
     pub modules: Vec<String>,
+    /// Update candidates available for selection.
     pub available: Vec<UpdaterModuleStatus>,
     #[serde(skip_serializing_if = "is_false")]
+    /// Whether the shell must exit before applying the update.
     pub requires_exit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Recovery state attached when an interrupted update was detected.
     pub recovery: Option<RecoveryStatus>,
 }
 
@@ -307,50 +357,82 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+/// Recovery state exposed to the updater UI.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct RecoveryStatus {
+    /// Recovery transaction phase.
     pub phase: String,
+    /// Slot currently designated active.
     pub active_slot: String,
+    /// Version currently designated active.
     pub active_version: String,
+    /// Whether a fallback slot can be restored.
     pub fallback_available: bool,
+    /// Recovery attempts already made.
     pub retry_count: u32,
+    /// Stable reason code from the last recovery failure, if any.
     pub reason_code: Option<String>,
 }
 
+/// Summary of one module update available to the user.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct UpdaterModuleStatus {
+    /// Stable module identifier.
     pub module: String,
+    /// Version currently installed.
     pub installed: String,
+    /// Version offered by the update manifest.
     pub available: String,
+    /// Short description of the update.
     pub summary: String,
+    /// Human-readable change descriptions.
     pub changes: Vec<String>,
 }
 
+/// Download metadata and user-facing details for one update candidate.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct UpdateCandidate {
+    /// Stable module identifier.
     pub module: String,
+    /// Version currently installed.
     pub installed: String,
+    /// Version offered by the update manifest.
     pub available: String,
+    /// Short description of the update.
     pub summary: String,
+    /// Human-readable change descriptions.
     pub changes: Vec<String>,
+    /// Modules that must also be present or updated.
     pub dependencies: Vec<String>,
+    /// Restart behavior required to finish applying the update.
     pub restart: String,
+    /// Relative artifact name in the update package.
     pub artifact: String,
+    /// Expected artifact size in bytes.
     pub size: u64,
+    /// Expected SHA-256 digest in hexadecimal form.
     pub sha256: String,
+    /// Source URL from which the artifact is downloaded.
     pub download_url: String,
 }
 
+/// Installed component path and integrity metadata.
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstalledComponent {
+    /// Stable component identifier.
     pub id: String,
+    /// Relative path of the component in the installation.
     pub path: String,
+    /// Expected component size in bytes.
     pub size: u64,
+    /// Expected SHA-256 digest in hexadecimal form.
     pub sha256: String,
 }
 
+/// Immutable inventory of installed package components.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ComponentManifest {
+    /// Components whose paths and integrity values are verified at startup.
     pub components: Vec<InstalledComponent>,
 }
 
@@ -444,6 +526,7 @@ fn hash_reader_matches<R: Read>(
             == expected_sha256.to_ascii_lowercase())
 }
 
+/// Selects outdated modules and any outdated dependencies they require.
 pub fn select_outdated(
     installed: &InstalledManifest,
     available: &[ModuleRecord],
@@ -559,6 +642,7 @@ pub fn select_outdated(
     })
 }
 
+/// Compares three-component numeric versions; invalid values use lexical order.
 pub fn compare_semver(left: &str, right: &str) -> Ordering {
     match (parse_semver(left), parse_semver(right)) {
         (Some(left), Some(right)) => left.cmp(&right),
@@ -566,6 +650,7 @@ pub fn compare_semver(left: &str, right: &str) -> Ordering {
     }
 }
 
+/// Returns whether `value` contains exactly three numeric version components.
 pub fn is_valid_semver(value: &str) -> bool {
     parse_semver(value).is_some()
 }

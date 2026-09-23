@@ -1,8 +1,21 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Maximum serialized runtime snapshot size accepted by [`save`].
 const MAX_RUNTIME_JSON_BYTES: usize = 64 * 1024;
+
+/// Creates the revisioned computer-use runtime table in the caller's transaction.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS native_computer_use_runtime (id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(id,revision), UNIQUE(id,idempotency_key));")
 }
+/// Saves a computer-use runtime snapshot with idempotent replay protection.
+///
+/// Snapshots larger than 64 KiB are rejected. Repeating a key with matching
+/// revision and content hash is a no-op; a conflicting reuse is an error.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized data, conflicting keys, or database
+/// failures.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -32,6 +45,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Loads the highest-revision runtime snapshot for `id`, if one exists.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT json FROM native_computer_use_runtime WHERE id=?1 ORDER BY revision DESC LIMIT 1",

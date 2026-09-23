@@ -4,9 +4,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Registry identifier for the workspace text-file reader.
 pub const NAME: &str = "filesystem.read";
+/// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Read a UTF-8 text file from the workspace";
+/// Permission required before the tool can read workspace files.
 pub const PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
+/// Default execution deadline for one read request.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Deserialize)]
@@ -14,6 +18,16 @@ struct Input {
     path: String,
 }
 
+/// Reads a UTF-8 file through the revision-safe workspace boundary.
+///
+/// The returned structured value includes byte length, content hash, revision,
+/// and a display preview. The preview is limited to 200 lines; reads outside
+/// the authorized workspace are rejected.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid input, missing files, denied access, or
+/// filesystem failures.
 pub async fn execute(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input: Input = serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
         tool: NAME.to_string(),

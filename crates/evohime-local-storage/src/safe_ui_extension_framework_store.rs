@@ -1,7 +1,20 @@
 use rusqlite::{params, Connection, OptionalExtension};
+
+/// Creates the persisted UI-extension lifecycle table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS safe_ui_extensions (extension_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, lifecycle TEXT NOT NULL, extension_json BLOB NOT NULL, manifest_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts an extension record without replacing an existing ID.
+///
+/// Returns `false` when the extension ID is already present.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite write error.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -13,6 +26,11 @@ pub fn put(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("INSERT OR IGNORE INTO safe_ui_extensions(extension_id,revision,lifecycle,extension_json,manifest_hash,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",params![id,revision,state,json,hash,now])?==1)
 }
+/// Loads the serialized extension record by ID, if present.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT extension_json FROM safe_ui_extensions WHERE extension_id=?1",
@@ -22,6 +40,13 @@ pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     .optional()
 }
 
+/// Replaces an extension only when `expected_revision` is still current.
+///
+/// Returns `false` for an absent record or stale expected revision.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite write error.
 #[allow(clippy::too_many_arguments)]
 pub fn replace(
     c: &Connection,

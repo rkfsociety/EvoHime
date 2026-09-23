@@ -10,29 +10,47 @@ use sha2::{Digest, Sha256};
 
 use crate::StorageError;
 
+/// Version of the analysis kernel contract implemented by this crate.
 pub const ANALYSIS_KERNEL_VERSION: u32 = 1;
+/// Version of the serialized session and object schemas.
 pub const ANALYSIS_KERNEL_SCHEMA_VERSION: u32 = 1;
+/// Maximum UTF-8 byte length for kernel, task, workspace, and object identifiers.
 pub const ANALYSIS_KERNEL_MAX_ID_BYTES: usize = 128;
+/// Maximum UTF-8 byte length for an object's logical name.
 pub const ANALYSIS_KERNEL_MAX_NAME_BYTES: usize = 128;
+/// Maximum size of an inline object value in bytes.
 pub const ANALYSIS_KERNEL_MAX_INLINE_BYTES: usize = 16 * 1024;
+/// Maximum number of object references in one kernel session.
 pub const ANALYSIS_KERNEL_MAX_OBJECTS: usize = 1024;
+/// Maximum aggregate object size tracked for a kernel session.
 pub const ANALYSIS_KERNEL_MAX_OBJECT_BYTES: u64 = 256 * 1024 * 1024;
+/// Maximum serialized result size stored for an idempotency key.
 pub const ANALYSIS_KERNEL_MAX_IDEMPOTENCY_RESULT_BYTES: usize = 16 * 1024;
+/// Maximum number of sessions returned by the running-session query.
 pub const ANALYSIS_KERNEL_MAX_RUNNING_SESSIONS: usize = 256;
 
+/// Persisted lifecycle state for an analysis kernel session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KernelStatus {
+    /// Session metadata was created but execution has not begun.
     Created,
+    /// Kernel is currently executing.
     Running,
+    /// Kernel stopped normally.
     Stopped,
+    /// Kernel exited unexpectedly.
     Crashed,
+    /// Kernel state was reset.
     Reset,
+    /// A declared execution limit was exceeded.
     LimitExceeded,
+    /// Kernel execution is blocked by policy or host control.
     Blocked,
 }
 
 impl KernelStatus {
+    /// Returns the stable snake-case representation stored in SQLite.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Created => "created",
@@ -46,14 +64,18 @@ impl KernelStatus {
     }
 }
 
+/// Persistence lifetime for an analysis-kernel object reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KernelObjectPersistence {
+    /// Object belongs only to the current session and may be discarded on shutdown.
     Ephemeral,
+    /// Object is backed by a durable artifact reference.
     Checkpointed,
 }
 
 impl KernelObjectPersistence {
+    /// Returns the stable snake-case representation stored in SQLite.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Ephemeral => "ephemeral",
@@ -62,16 +84,22 @@ impl KernelObjectPersistence {
     }
 }
 
+/// Data sensitivity classification used to decide whether inline storage is allowed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KernelSensitivity {
+    /// Data is suitable for unrestricted local display.
     Public,
+    /// Data is internal to the application.
     Internal,
+    /// Data requires additional handling and must not be inlined.
     Sensitive,
+    /// Data is secret and must not be inlined.
     Secret,
 }
 
 impl KernelSensitivity {
+    /// Returns the stable snake-case representation stored in SQLite.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Public => "public",
@@ -81,24 +109,35 @@ impl KernelSensitivity {
         }
     }
 
+    /// Reports whether this sensitivity permits inline object data.
     pub const fn allows_inline(self) -> bool {
         matches!(self, Self::Public | Self::Internal)
     }
 }
 
+/// Resource and time limits enforced for one analysis kernel session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KernelLimitsV1 {
+    /// Maximum CPU time in milliseconds.
     pub cpu_time_ms: u64,
+    /// Maximum memory use in bytes.
     pub memory_bytes: u64,
+    /// Maximum captured output size in bytes.
     pub output_bytes: u64,
+    /// Maximum number of object references.
     pub object_count: u32,
+    /// Maximum aggregate object size in bytes.
     pub object_bytes: u64,
+    /// Maximum host requests per minute.
     pub host_requests_per_minute: u32,
+    /// Idle timeout in milliseconds.
     pub idle_timeout_ms: u64,
+    /// Absolute session lifetime in milliseconds.
     pub lifetime_timeout_ms: u64,
 }
 
 impl Default for KernelLimitsV1 {
+    /// Uses the bounded local runtime defaults defined by the kernel contract.
     fn default() -> Self {
         Self {
             cpu_time_ms: 30_000,
@@ -114,6 +153,15 @@ impl Default for KernelLimitsV1 {
 }
 
 impl KernelLimitsV1 {
+    /// Checks that every configured limit is non-zero and within contract bounds.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use evohime_local_storage::analysis_kernel::KernelLimitsV1;
+    ///
+    /// KernelLimitsV1::default().validate().unwrap();
+    /// ```
     pub fn validate(&self) -> Result<(), AnalysisKernelError> {
         if self.cpu_time_ms == 0 || self.cpu_time_ms > 10 * 60 * 1000 {
             return Err(AnalysisKernelError::InvalidLimits("cpu_time_ms"));
@@ -142,23 +190,37 @@ impl KernelLimitsV1 {
     }
 }
 
+/// Versioned metadata describing one persistent analysis kernel session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisKernelSessionV1 {
+    /// Serialized session schema version.
     pub schema_version: u32,
+    /// Stable session identifier.
     pub id: String,
+    /// Task that owns the session.
     pub task_id: String,
+    /// Workspace associated with the session.
     pub workspace_id: String,
+    /// Runtime contract version expected by the session.
     pub runtime_version: String,
+    /// Digest of the package manifest used to initialize the session.
     pub package_manifest_hash: String,
+    /// Digest of the effective policy snapshot.
     pub policy_hash: String,
+    /// Current session lifecycle state.
     pub status: KernelStatus,
+    /// Monotonically increasing session revision.
     pub revision: u64,
+    /// Resource limits bound to this session.
     pub limits: KernelLimitsV1,
+    /// Session creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Last session update time in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
 impl AnalysisKernelSessionV1 {
+    /// Validates schema, required identifiers, hashes, runtime version, and limits.
     pub fn validate(&self) -> Result<(), AnalysisKernelError> {
         if self.schema_version != ANALYSIS_KERNEL_SCHEMA_VERSION {
             return Err(AnalysisKernelError::UnsupportedVersion(self.schema_version));
@@ -185,11 +247,13 @@ impl AnalysisKernelSessionV1 {
         Ok(())
     }
 
+    /// Serializes the validated session to deterministic JSON bytes.
     pub fn canonical_json(&self) -> Result<Vec<u8>, AnalysisKernelError> {
         self.validate()?;
         serde_json::to_vec(self).map_err(|_| AnalysisKernelError::Serialization)
     }
 
+    /// Computes a SHA-256 digest of the canonical serialized session.
     pub fn content_hash(&self) -> Result<String, AnalysisKernelError> {
         let mut hasher = Sha256::new();
         hasher.update(self.canonical_json()?);
@@ -197,23 +261,37 @@ impl AnalysisKernelSessionV1 {
     }
 }
 
+/// Metadata reference to an object owned by the analysis kernel or artifact store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KernelObjectRefV1 {
+    /// Stable object reference identifier.
     pub id: String,
+    /// Session that owns this object.
     pub kernel_id: String,
+    /// Bounded logical name used by the session.
     pub logical_name: String,
+    /// Optional type label supplied by the producer.
     pub type_hint: String,
+    /// Object content size in bytes.
     pub size: u64,
+    /// Sensitivity classification that controls inline handling.
     pub sensitivity: KernelSensitivity,
+    /// Whether the object is ephemeral or artifact-backed.
     pub persistence: KernelObjectPersistence,
+    /// Optional content hash for the object bytes.
     pub content_hash: Option<String>,
+    /// Optional locator in the Core-owned artifact store.
     pub artifact_locator: Option<String>,
+    /// Provenance label for the object.
     pub provenance: String,
+    /// Creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Invalidation time, if this object is no longer usable.
     pub invalidated_at_ms: Option<i64>,
 }
 
 impl KernelObjectRefV1 {
+    /// Validates identifiers, names, sizes, hashes, sensitivity, and persistence constraints.
     pub fn validate(&self) -> Result<(), AnalysisKernelError> {
         validate_id("id", &self.id)?;
         validate_id("kernel_id", &self.kernel_id)?;
@@ -249,38 +327,59 @@ impl KernelObjectRefV1 {
     }
 }
 
+/// Validation and persistence errors in the analysis kernel contract.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AnalysisKernelError {
+    /// Requested schema version is unsupported.
     #[error("unsupported analysis kernel version {0}")]
     UnsupportedVersion(u32),
+    /// A session or object field violated its contract.
     #[error("invalid analysis kernel field {0}")]
     InvalidField(&'static str),
+    /// A resource limit was zero or exceeded its maximum.
     #[error("invalid analysis kernel limits: {0}")]
     InvalidLimits(&'static str),
+    /// Object size exceeded the per-session bound.
     #[error("analysis kernel object is too large: {0} bytes")]
     ObjectTooLarge(u64),
+    /// Serialized request exceeded the accepted request size.
     #[error("analysis kernel request is too large: {0} bytes")]
     RequestTooLarge(usize),
+    /// The requested operation is prohibited by the kernel contract.
     #[error("analysis kernel operation is not permitted")]
     ForbiddenOperation,
+    /// The requested capability is prohibited by policy.
     #[error("analysis kernel capability is not permitted")]
     ForbiddenCapability,
+    /// Object metadata lacks a required artifact locator.
     #[error("analysis kernel object requires an ArtifactStore reference")]
     MissingArtifactRef,
+    /// A checkpointed object lacks its digest or artifact locator.
     #[error("checkpointed object requires a hash and ArtifactStore reference")]
     CheckpointRequiresArtifact,
+    /// Secret-classified object metadata is rejected by this contract.
     #[error("secret kernel objects are not accepted")]
     SecretObject,
+    /// Process memory was requested as durable persisted state.
     #[error("analysis kernel values cannot be persisted as process memory")]
     ProcessMemoryPersistence,
+    /// Canonical serialization could not be produced.
     #[error("analysis kernel canonical serialization failed")]
     Serialization,
+    /// Sensitive data was supplied through a field that permits only inline-safe content.
     #[error("analysis kernel sensitive inline payload is forbidden")]
     SensitiveInlinePayload,
+    /// Session revision did not match the caller's expected revision.
     #[error("analysis kernel optimistic version conflict: expected {expected}, current {current}")]
-    VersionConflict { expected: u64, current: u64 },
+    VersionConflict {
+        /// Revision expected by the caller.
+        expected: u64,
+        /// Revision currently stored.
+        current: u64,
+    },
 }
 
+/// Creates the analysis kernel session, object, event, and idempotency tables and indexes.
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS analysis_kernel_sessions (
@@ -334,15 +433,18 @@ pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     )
 }
 
+/// SQLite repository for session metadata, object references, events, and idempotency results.
 pub struct AnalysisKernelStore<'a> {
     connection: &'a Connection,
 }
 
 impl<'a> AnalysisKernelStore<'a> {
+    /// Creates a store borrowing the caller-owned SQLite connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
 
+    /// Validates and inserts a new session record.
     pub fn create_session(&self, session: &AnalysisKernelSessionV1) -> Result<(), StorageError> {
         session.validate()?;
         let limits = serde_json::to_vec(&session.limits)?;
@@ -368,6 +470,7 @@ impl<'a> AnalysisKernelStore<'a> {
         Ok(())
     }
 
+    /// Loads a session by identifier, returning `None` when it does not exist.
     pub fn get_session(&self, id: &str) -> Result<Option<AnalysisKernelSessionV1>, StorageError> {
         self.connection
             .query_row(
@@ -404,6 +507,7 @@ impl<'a> AnalysisKernelStore<'a> {
             .map_err(StorageError::from)
     }
 
+    /// Lists running sessions in identifier order, capped by [`ANALYSIS_KERNEL_MAX_RUNNING_SESSIONS`].
     pub fn list_running_sessions(&self) -> Result<Vec<AnalysisKernelSessionV1>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id FROM analysis_kernel_sessions WHERE status='running' ORDER BY id LIMIT ?1",
@@ -421,6 +525,9 @@ impl<'a> AnalysisKernelStore<'a> {
             .collect()
     }
 
+    /// Changes a session's status only if its current revision matches `expected_revision`.
+    ///
+    /// Returns the incremented revision or a version-conflict error when another writer won.
     pub fn set_status(
         &self,
         id: &str,
@@ -444,6 +551,7 @@ impl<'a> AnalysisKernelStore<'a> {
         Ok(expected_revision + 1)
     }
 
+    /// Validates and inserts an object reference without replacing an existing identifier.
     pub fn put_object(&self, object: &KernelObjectRefV1) -> Result<(), StorageError> {
         object.validate()?;
         self.connection.execute(
@@ -469,6 +577,7 @@ impl<'a> AnalysisKernelStore<'a> {
         Ok(())
     }
 
+    /// Lists a session's object references in creation order, capped at [`ANALYSIS_KERNEL_MAX_OBJECTS`].
     pub fn list_objects(&self, kernel_id: &str) -> Result<Vec<KernelObjectRefV1>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id,kernel_id,logical_name,type_hint,size,sensitivity,persistence,content_hash,
@@ -498,6 +607,7 @@ impl<'a> AnalysisKernelStore<'a> {
             .map_err(StorageError::from)
     }
 
+    /// Appends a bounded event payload and returns its SQLite sequence identifier.
     pub fn append_event(
         &self,
         kernel_id: &str,
@@ -519,6 +629,7 @@ impl<'a> AnalysisKernelStore<'a> {
         Ok(self.connection.last_insert_rowid())
     }
 
+    /// Loads a previously stored result for a session-scoped operation key.
     pub fn get_idempotency(
         &self,
         kernel_id: &str,
@@ -536,6 +647,7 @@ impl<'a> AnalysisKernelStore<'a> {
             .map_err(StorageError::from)
     }
 
+    /// Stores an operation result once, enforcing key and result-size bounds.
     pub fn put_idempotency(
         &self,
         kernel_id: &str,

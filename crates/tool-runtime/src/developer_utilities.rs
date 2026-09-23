@@ -16,20 +16,33 @@ use sha2::{Digest, Sha256, Sha512};
 use std::time::Duration;
 use uuid::Uuid;
 
+/// Contract version attached to every developer-utility result.
 pub const VERSION: &str = "1.0.0";
+/// Maximum UTF-8 input size accepted by text-based utilities.
 pub const MAX_INPUT_BYTES: usize = 256 * 1024;
+/// Maximum rendered output size returned by a utility.
 pub const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 
+/// Tool ID for standard Base64 encoding.
 pub const BASE64_ENCODE: &str = "utility.base64.encode";
+/// Tool ID for standard Base64 decoding to UTF-8 text.
 pub const BASE64_DECODE: &str = "utility.base64.decode";
+/// Tool ID for SHA-256 text hashing.
 pub const HASH_SHA256: &str = "utility.hash.sha256";
+/// Tool ID for SHA-512 text hashing.
 pub const HASH_SHA512: &str = "utility.hash.sha512";
+/// Tool ID for pretty-printing valid JSON.
 pub const JSON_FORMAT: &str = "utility.json.format";
+/// Tool ID for compacting valid JSON.
 pub const JSON_MINIFY: &str = "utility.json.minify";
+/// Tool ID for generating a random UUID v4.
 pub const UUID_V4: &str = "utility.uuid.v4";
+/// Tool ID for generating a cryptographically random token.
 pub const TOKEN_GENERATE: &str = "utility.token.generate";
+/// Tool ID for converting text between supported case styles.
 pub const TEXT_CASE: &str = "utility.text.case_convert";
 
+/// All utility tool IDs supported by [`execute`].
 pub const ALL_NAMES: &[&str] = &[
     BASE64_ENCODE,
     BASE64_DECODE,
@@ -42,9 +55,12 @@ pub const ALL_NAMES: &[&str] = &[
     TEXT_CASE,
 ];
 
+/// Catalog summary shared by the pure local utilities.
 pub const DESCRIPTION: &str =
     "Bounded local developer utility; no shell, filesystem, network or model call";
+/// Utilities require no additional capability permission.
 pub const PERMISSIONS: &[evohime_permissions::Permission] = &[];
+/// Maximum runtime advertised for utility execution.
 pub const TIMEOUT: Duration = Duration::from_secs(2);
 
 fn text_input<'a>(name: &str, input: &'a Value) -> Result<&'a str, ToolError> {
@@ -91,6 +107,16 @@ fn result(name: &str, value: Value, output: String, kind: &str) -> Result<ToolRe
     Ok(ToolResult { output, structured })
 }
 
+/// Executes one bounded, stateless developer utility by its registered ID.
+///
+/// Operations are local and do not access the workspace, network, process
+/// shell, model provider, or persistent state. Text input is capped at
+/// [`MAX_INPUT_BYTES`] and rendered output at [`MAX_OUTPUT_BYTES`].
+///
+/// # Errors
+///
+/// Returns [`ToolError`] when the operation ID is unknown, input is malformed
+/// or too large, decoding fails, or output exceeds the response limit.
 pub async fn execute(
     _ctx: &ToolContext,
     name: &str,

@@ -1,8 +1,22 @@
 use rusqlite::{params, Connection};
+
 const MAX_LINEAGES: i64 = 256;
+
+/// Creates the immutable checkpoint-fork lineage table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS checkpoint_fork_lineages (fork_run_id TEXT PRIMARY KEY, source_checkpoint_id TEXT NOT NULL, parent_run_id TEXT NOT NULL, lineage_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL);")
 }
+/// Persists one fork lineage; retries do not overwrite the original record.
+///
+/// The serialized lineage is limited to 256 KiB.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized lineage data or failed writes.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -22,6 +36,11 @@ pub fn put(
     )?;
     Ok(())
 }
+/// Loads fork lineage records ordered by fork run ID, capped at 256 rows.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut s = c.prepare(
         "SELECT lineage_json FROM checkpoint_fork_lineages ORDER BY fork_run_id LIMIT ?1",

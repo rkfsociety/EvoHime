@@ -7,27 +7,42 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Current schema version for sensitive-data policies and metadata.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum input size scanned by one redaction operation.
 pub const MAX_INPUT_BYTES: usize = 64 * 1024;
+/// Maximum nested JSON depth traversed by structured redaction.
 pub const MAX_JSON_DEPTH: usize = 16;
+/// Maximum JSON values visited by structured redaction.
 pub const MAX_JSON_NODES: usize = 512;
+/// Number of trailing characters retained between streaming chunks.
 pub const STREAM_CARRY_CHARS: usize = 96;
 
+/// Built-in sensitive value detector used by a redaction rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Detector {
+    /// Detects email-like addresses.
     Email,
+    /// Detects provider-style secret tokens.
     SecretToken,
+    /// Detects bearer authorization tokens.
     BearerToken,
+    /// Detects private-key material that must be blocked.
     PrivateKey,
 }
 
+/// Transformation applied when a detector finds a value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
+    /// Replaces the value with a rule-labelled marker.
     Redact,
+    /// Preserves only a small portion of the value.
     Mask,
+    /// Replaces the value with a one-way digest.
     Hash,
+    /// Rejects the operation without returning the value.
     Block,
 }
 
@@ -42,64 +57,99 @@ impl Action {
     }
 }
 
+/// Versioned rule binding one detector to one enforcement action.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SensitiveDataRule {
+    /// Stable rule identifier included in redaction metadata.
     pub id: String,
+    /// Rule schema version.
     pub version: u32,
+    /// Sensitive-data pattern to detect.
     pub detector: Detector,
+    /// Transformation or rejection to apply to a match.
     pub action: Action,
 }
 
+/// Destination-specific limits and rules for a redaction boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Policy {
+    /// Policy schema version.
     pub version: u32,
+    /// Boundary receiving the transformed data.
     pub destination: String,
+    /// Ordered detector rules applied to input values.
     pub rules: Vec<SensitiveDataRule>,
+    /// Maximum input size in bytes.
     pub max_input_bytes: usize,
+    /// Maximum structured JSON nesting depth.
     pub max_json_depth: usize,
+    /// Maximum structured JSON nodes traversed.
     pub max_json_nodes: usize,
 }
 
+/// Validated policy paired with its stable integrity digest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicySnapshot {
+    /// Policy enforced by the redaction operation.
     pub policy: Policy,
+    /// Digest used to identify the exact policy revision.
     pub policy_hash: String,
 }
 
+/// Bounded audit metadata returned without exposing matched raw values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RedactionMetadata {
+    /// Guardrail contract version used for this operation.
     pub contract_version: u32,
+    /// Digest of the policy applied to the value.
     pub policy_hash: String,
+    /// Destination for which the value was prepared.
     pub destination: String,
+    /// Strongest action applied to any match, if a match occurred.
     pub action: Option<Action>,
+    /// Identifiers of rules that matched.
     pub rule_ids: Vec<String>,
+    /// Number of non-overlapping matches transformed.
     pub match_count: usize,
+    /// Whether policy blocked the value from being returned.
     pub blocked: bool,
+    /// Encoded length of the transformed output.
     pub output_bytes: usize,
 }
 
+/// Transformed text and metadata describing the redaction performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RedactionResult {
+    /// Redacted, masked, or hashed output text.
     pub value: String,
+    /// Policy and action metadata without raw matched values.
     pub metadata: RedactionMetadata,
 }
 
+/// Invalid policy, oversized input, malformed structure, or blocked data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum GuardrailError {
+    /// Policy or metadata uses an unsupported guardrail version.
     #[error("unsupported guardrail contract version")]
     UnsupportedVersion,
+    /// Policy fields or detector rules are invalid.
     #[error("invalid guardrail policy")]
     InvalidPolicy,
+    /// Text or serialized structured input exceeds its configured bound.
     #[error("guardrail input exceeds bound")]
     InputTooLarge,
+    /// JSON depth or node count exceeds its traversal bound.
     #[error("structured payload exceeds traversal bound")]
     StructuredPayloadTooLarge,
+    /// A matched detector uses the blocking action.
     #[error("sensitive data blocked by policy")]
     Blocked(RedactionMetadata),
+    /// Structured input could not be parsed or transformed.
     #[error("malformed structured payload")]
     MalformedStructuredPayload,
 }
 
+/// Creates the default detector set for a named destination.
 pub fn default_policy(destination: impl Into<String>) -> PolicySnapshot {
     let policy = Policy {
         version: CONTRACT_VERSION,
@@ -146,6 +196,7 @@ pub fn default_policy(destination: impl Into<String>) -> PolicySnapshot {
     }
 }
 
+/// Validates a policy and computes its versioned integrity digest.
 pub fn snapshot(policy: Policy) -> Result<PolicySnapshot, GuardrailError> {
     if policy.version != CONTRACT_VERSION
         || policy.destination.is_empty()
@@ -174,6 +225,7 @@ pub fn snapshot(policy: Policy) -> Result<PolicySnapshot, GuardrailError> {
     })
 }
 
+/// Applies text detectors and returns transformed content with bounded metadata.
 pub fn redact_text(
     snapshot: &PolicySnapshot,
     input: &str,
@@ -249,6 +301,7 @@ pub fn redact_text(
     Ok(result)
 }
 
+/// Recursively redacts string values in a bounded JSON value.
 pub fn redact_json(
     snapshot: &PolicySnapshot,
     value: &serde_json::Value,
@@ -321,12 +374,14 @@ pub fn redact_json(
     ))
 }
 
+/// Incremental text redactor that retains a bounded suffix between chunks.
 pub struct StreamingRedactor {
     snapshot: PolicySnapshot,
     carry: String,
 }
 
 impl StreamingRedactor {
+    /// Creates a streaming redactor for a validated policy snapshot.
     pub fn new(snapshot: PolicySnapshot) -> Self {
         Self {
             snapshot,
@@ -334,6 +389,7 @@ impl StreamingRedactor {
         }
     }
 
+    /// Adds a chunk and returns only the prefix safe from cross-chunk matches.
     pub fn push_chunk(&mut self, chunk: &str) -> Result<RedactionResult, GuardrailError> {
         if self.carry.len().saturating_add(chunk.len()) > self.snapshot.policy.max_input_bytes {
             return Err(GuardrailError::InputTooLarge);
@@ -366,6 +422,7 @@ impl StreamingRedactor {
         redact_text(&self.snapshot, &stable)
     }
 
+    /// Redacts and returns the remaining buffered suffix.
     pub fn finish(mut self) -> Result<RedactionResult, GuardrailError> {
         let result = redact_text(&self.snapshot, &self.carry)?;
         self.carry.clear();

@@ -3,77 +3,134 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+/// Schema version written on every persisted conversation event.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum number of events returned by a single history page.
 pub const MAX_PAGE_EVENTS: usize = 200;
 
+/// Persisted conversation event with separate authoritative and renderer payloads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredConversationEvent {
+    /// Conversation that owns the event.
     pub conversation_id: String,
+    /// Globally unique event identifier.
     pub event_id: String,
+    /// Monotonic sequence within the conversation.
     pub sequence: u64,
+    /// Event timestamp in Unix milliseconds.
     pub timestamp_ms: i64,
+    /// Event kind used by consumers.
     pub kind: String,
+    /// Event category used for routing or filtering.
     pub category: String,
+    /// Canonical payload used by Core as authoritative state.
     pub authoritative_payload: Vec<u8>,
+    /// Sanitized payload suitable for renderer delivery.
     pub renderer_payload: Vec<u8>,
+    /// Optional request/correlation identifier.
     pub correlation_id: Option<String>,
+    /// Optional identifier of the event that caused this event.
     pub causation_id: Option<String>,
+    /// Optional task identifier associated with the event.
     pub task_id: Option<String>,
+    /// Optional run identifier associated with the event.
     pub run_id: Option<String>,
+    /// Optional conversation turn identifier.
     pub turn_id: Option<String>,
+    /// Optional client message ID used for idempotent acceptance.
     pub client_message_id: Option<String>,
+    /// Retention class that governs compaction eligibility.
     pub persistence_class: String,
+    /// Sensitivity classification for the event data.
     pub sensitivity: String,
+    /// Payload schema version.
     pub schema_version: u32,
 }
 
+/// Input fields for appending a conversation event.
 #[derive(Debug, Clone)]
 pub struct NewConversationEvent<'a> {
+    /// Conversation receiving the event.
     pub conversation_id: &'a str,
+    /// Workspace that owns the conversation.
     pub workspace_id: &'a str,
+    /// Event kind.
     pub kind: &'a str,
+    /// Event category.
     pub category: &'a str,
+    /// Canonical Core payload.
     pub authoritative_payload: &'a [u8],
+    /// Renderer-safe payload.
     pub renderer_payload: &'a [u8],
+    /// Optional correlation identifier.
     pub correlation_id: Option<&'a str>,
+    /// Optional causating event identifier.
     pub causation_id: Option<&'a str>,
+    /// Optional task identifier.
     pub task_id: Option<&'a str>,
+    /// Optional run identifier.
     pub run_id: Option<&'a str>,
+    /// Optional turn identifier.
     pub turn_id: Option<&'a str>,
+    /// Optional client message identifier.
     pub client_message_id: Option<&'a str>,
+    /// Retention class (`durable`, `compactable`, `transient_stream`, or `derived_only`).
     pub persistence_class: &'a str,
+    /// Sensitivity classification.
     pub sensitivity: &'a str,
+    /// Event timestamp in Unix milliseconds.
     pub timestamp_ms: i64,
 }
 
+/// Result of accepting a client message into the conversation log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageAcceptance {
+    /// Accepted or previously stored event.
     pub event: StoredConversationEvent,
+    /// Task identifier bound to this accepted message.
     pub task_id: String,
+    /// Whether the request matched a previously accepted message.
     pub deduplicated: bool,
+    /// Current durable dispatch state for the message.
     pub dispatch_state: String,
 }
 
+/// A bounded conversation history page and its cursor metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationEventPage {
+    /// Events included in sequence order.
     pub events: Vec<StoredConversationEvent>,
+    /// First event sequence in this page, if non-empty.
     pub oldest_sequence: Option<u64>,
+    /// Last event sequence in this page, if non-empty.
     pub newest_sequence: Option<u64>,
+    /// Whether an earlier page may be available.
     pub has_older: bool,
+    /// Whether a later page may be available.
     pub has_newer: bool,
+    /// Oldest sequence still valid as replay history.
     pub earliest_available_sequence: u64,
 }
 
+/// Validation, idempotency, cursor-retention, and database errors for conversation storage.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ConversationStoreError {
+    /// An identifier, payload, or page parameter failed validation.
     #[error("conversation input is invalid")]
     InvalidInput,
+    /// A client message ID was reused with a different content hash.
     #[error("client message id was reused with different content")]
     IdempotencyConflict,
+    /// Requested history precedes the retained replay boundary.
     #[error("history cursor is no longer retained")]
-    CursorExpired { earliest_available_sequence: u64 },
+    CursorExpired {
+        /// Earliest sequence that remains available for history paging.
+        earliest_available_sequence: u64,
+    },
+    /// The conversation metadata does not exist.
     #[error("conversation was not found")]
     ConversationNotFound,
+    /// An underlying SQL operation or persisted-data check failed.
     #[error("conversation storage failed: {0}")]
     Sql(String),
 }
@@ -84,6 +141,7 @@ impl From<rusqlite::Error> for ConversationStoreError {
     }
 }
 
+/// Creates the conversation event log and its deduplication, binding, and compaction tables.
 pub fn install_schema(connection: &Connection) -> Result<(), ConversationStoreError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS conversation_log_metadata (
@@ -162,17 +220,27 @@ pub fn install_schema(connection: &Connection) -> Result<(), ConversationStoreEr
     Ok(())
 }
 
+/// Fields for idempotently accepting a client message into a conversation.
 pub struct AcceptMessageInput<'a> {
+    /// Conversation receiving the message.
     pub conversation_id: &'a str,
+    /// Workspace expected to own the conversation.
     pub workspace_id: &'a str,
+    /// Task created or associated with this message.
     pub task_id: &'a str,
+    /// Client-generated idempotency identifier.
     pub client_message_id: &'a str,
+    /// Canonical message payload used by Core.
     pub authoritative_payload: &'a [u8],
+    /// Renderer-safe message payload.
     pub renderer_payload: &'a [u8],
+    /// Expected lowercase or uppercase hexadecimal content hash.
     pub content_hash: &'a str,
+    /// Acceptance timestamp in Unix milliseconds.
     pub timestamp_ms: i64,
 }
 
+/// Accepts a message once by client ID and content hash, returning prior state on identical replay.
 pub fn accept_message(
     connection: &Connection,
     input: AcceptMessageInput<'_>,
@@ -284,6 +352,7 @@ pub fn accept_message(
     })
 }
 
+/// Claims one accepted message for dispatch; only the first caller receives `true`.
 pub fn claim_message_dispatch(
     connection: &Connection,
     conversation_id: &str,
@@ -297,6 +366,7 @@ pub fn claim_message_dispatch(
     )? == 1)
 }
 
+/// Marks a claimed message dispatched or returns it to accepted state after failure.
 pub fn finish_message_dispatch(
     connection: &Connection,
     conversation_id: &str,
@@ -313,6 +383,7 @@ pub fn finish_message_dispatch(
     Ok(())
 }
 
+/// Appends a conversation event in its own transaction.
 pub fn append_event(
     connection: &Connection,
     event: NewConversationEvent<'_>,
@@ -323,6 +394,7 @@ pub fn append_event(
     Ok(stored)
 }
 
+/// Appends a conversation event using the caller's transaction.
 pub fn append_event_in_transaction(
     transaction: &Transaction<'_>,
     event: NewConversationEvent<'_>,
@@ -388,6 +460,7 @@ pub fn append_event_in_transaction(
     Ok(stored)
 }
 
+/// Reads events after a sequence cursor, rejecting cursors older than retained history.
 pub fn history_after(
     connection: &Connection,
     conversation_id: &str,
@@ -438,6 +511,7 @@ pub fn history_after(
     })
 }
 
+/// Reads events before a sequence cursor, returning them in ascending sequence order.
 pub fn history_before(
     connection: &Connection,
     conversation_id: &str,
@@ -560,6 +634,7 @@ fn verify_compacted_boundary(
     Ok(())
 }
 
+/// Returns the conversation, client message, and workspace bound to a task, if present.
 pub fn task_binding(
     connection: &Connection,
     task_id: &str,

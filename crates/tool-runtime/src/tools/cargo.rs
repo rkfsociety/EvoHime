@@ -13,9 +13,13 @@ const MAX_CARGO_OUTPUT_BYTES: usize = 1024 * 1024;
 // cargo.build: Build Rust project
 // ============================================================================
 
+/// Registry identifier for the Cargo build action.
 pub const BUILD_NAME: &str = "cargo.build";
+/// Human-readable description shown for the Cargo build action.
 pub const BUILD_DESCRIPTION: &str = "Build Rust project (cargo build)";
+/// Permission required before invoking Cargo build.
 pub const BUILD_PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
+/// Maximum time allowed for a Cargo build invocation.
 pub const BUILD_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +32,10 @@ struct BuildInput {
     features: Option<String>,
 }
 
+/// Runs `cargo build` in the task workspace with optional release, package, and feature flags.
+///
+/// Returns bounded stdout on success and a [`ToolError::Execution`] containing bounded stderr
+/// when Cargo exits unsuccessfully.
 pub async fn build(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: BuildInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: BUILD_NAME.to_string(),
@@ -78,9 +86,13 @@ pub async fn build(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 // cargo.test: Run tests
 // ============================================================================
 
+/// Registry identifier for the Cargo test action.
 pub const TEST_NAME: &str = "cargo.test";
+/// Human-readable description shown for the Cargo test action.
 pub const TEST_DESCRIPTION: &str = "Run Rust tests (cargo test)";
+/// Permission required before invoking Cargo test.
 pub const TEST_PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
+/// Maximum time allowed for a Cargo test invocation.
 pub const TEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Deserialize)]
@@ -95,6 +107,10 @@ struct TestInput {
     doc: bool,
 }
 
+/// Runs `cargo test` in the task workspace with optional package, target, doc, and test filters.
+///
+/// A non-zero Cargo exit status is represented in the returned result's `success` field and
+/// captured output rather than as a tool execution error.
 pub async fn test(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: TestInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: TEST_NAME.to_string(),
@@ -149,9 +165,13 @@ pub async fn test(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 // cargo.fmt: Format code
 // ============================================================================
 
+/// Registry identifier for the Cargo formatting action.
 pub const FMT_NAME: &str = "cargo.fmt";
+/// Human-readable description shown for the Cargo formatting action.
 pub const FMT_DESCRIPTION: &str = "Format Rust code (cargo fmt)";
+/// Permission required because formatting may write workspace files.
 pub const FMT_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Maximum time allowed for a formatting invocation.
 pub const FMT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Deserialize)]
@@ -160,6 +180,9 @@ struct FmtInput {
     check: bool,
 }
 
+/// Runs `cargo fmt` in the task workspace, optionally checking without modifying files.
+///
+/// In check mode, formatting differences are returned as [`ToolError::Execution`].
 pub async fn fmt(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: FmtInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: FMT_NAME.to_string(),
@@ -205,9 +228,13 @@ pub async fn fmt(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErro
 // cargo.clippy: Linting
 // ============================================================================
 
+/// Registry identifier for the Clippy action.
 pub const CLIPPY_NAME: &str = "cargo.clippy";
+/// Human-readable description shown for the Clippy action.
 pub const CLIPPY_DESCRIPTION: &str = "Run Rust linter (cargo clippy)";
+/// Permission required before invoking Clippy.
 pub const CLIPPY_PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
+/// Maximum time allowed for a Clippy invocation.
 pub const CLIPPY_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Deserialize)]
@@ -218,6 +245,7 @@ struct ClippyInput {
     all_targets: bool,
 }
 
+/// Runs Clippy in the task workspace and treats lint failures as tool execution errors.
 pub async fn clippy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: ClippyInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: CLIPPY_NAME.to_string(),
@@ -266,9 +294,13 @@ pub async fn clippy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // cargo.check: Type-check without building
 // ============================================================================
 
+/// Registry identifier for the Cargo check action.
 pub const CHECK_NAME: &str = "cargo.check";
+/// Human-readable description shown for the Cargo check action.
 pub const CHECK_DESCRIPTION: &str = "Type-check Rust code without building (cargo check)";
+/// Permission required before invoking Cargo check.
 pub const CHECK_PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
+/// Maximum time allowed for a Cargo check invocation.
 pub const CHECK_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Deserialize)]
@@ -277,6 +309,9 @@ struct CheckInput {
     package: Option<String>,
 }
 
+/// Runs `cargo check` in the task workspace, optionally limited to one package.
+///
+/// Returns bounded compiler output on success and a tool execution error on a non-zero exit.
 pub async fn check(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: CheckInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: CHECK_NAME.to_string(),

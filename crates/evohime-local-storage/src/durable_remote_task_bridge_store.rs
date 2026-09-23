@@ -2,10 +2,23 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Creates the durable remote-task record table if it does not already exist.
+///
+/// # Errors
+///
+/// Returns the SQLite schema installation error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS remote_task_records (remote_task_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, status TEXT NOT NULL, content_hash TEXT NOT NULL, record_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
 
+/// Inserts or advances a remote-task record when its version is newer.
+///
+/// Returns `true` when the row was inserted or updated and `false` when an
+/// existing row has an equal or greater version.
+///
+/// # Errors
+///
+/// Returns the SQLite write error.
 pub fn put_record(
     c: &Connection,
     id: &str,
@@ -18,6 +31,11 @@ pub fn put_record(
     Ok(c.execute("INSERT INTO remote_task_records(remote_task_id,version,status,content_hash,record_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(remote_task_id) DO UPDATE SET version=excluded.version,status=excluded.status,content_hash=excluded.content_hash,record_json=excluded.record_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > remote_task_records.version", params![id, version as i64, status, hash, json, now_ms])? > 0)
 }
 
+/// Loads the serialized record for a remote task ID, if one exists.
+///
+/// # Errors
+///
+/// Returns the SQLite query error.
 pub fn get_record(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT record_json FROM remote_task_records WHERE remote_task_id=?1",

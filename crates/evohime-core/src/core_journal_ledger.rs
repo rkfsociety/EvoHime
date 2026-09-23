@@ -5,6 +5,15 @@ fn serialize_payload<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, StorageE
 }
 
 impl EventJournal {
+    /// Appends one Core event to the durable journal and returns its sequence.
+    ///
+    /// Writes are serialized through the journal writer so event ordering is
+    /// stable across concurrent producers.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the writer stops, serialization fails, or
+    /// persistence fails.
     pub async fn record(&self, event: &CoreEvent) -> Result<i64, StorageError> {
         let task_id = match event {
             CoreEvent::ModelContext { task_id, .. }
@@ -344,6 +353,13 @@ impl EventJournal {
         result
     }
 
+    /// Persists one tool execution metric and returns its record sequence.
+    ///
+    /// The iteration counter is saturated to the storage integer range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the metric cannot be written.
     pub async fn record_tool_metric(&self, metric: ToolMetric<'_>) -> Result<i64, StorageError> {
         let database = self.database.lock().await;
         database.record_tool_metric(evohime_local_storage::ToolMetricInput {
@@ -357,6 +373,11 @@ impl EventJournal {
         })
     }
 
+    /// Reads up to `limit` tool metrics associated with a task.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the journal query fails.
     pub async fn tool_metrics(
         &self,
         task_id: &str,
@@ -366,6 +387,14 @@ impl EventJournal {
         database.read_tool_metrics(task_id, limit)
     }
 
+    /// Searches project-scoped lessons matching a query.
+    ///
+    /// Results are read from the durable memory store using the supplied time
+    /// and result limit.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the memory query fails.
     pub async fn search_lessons(
         &self,
         scope_id: &str,
@@ -385,6 +414,13 @@ impl EventJournal {
         .map_err(|error| StorageError::InvalidRecovery(error.to_string()))
     }
 
+    /// Validates and stores a project lesson through the memory write gate.
+    ///
+    /// Returns the record after the store applies its upsert semantics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if governance validation or persistence fails.
     pub async fn record_lesson(
         &self,
         record: &evohime_local_storage::domains::memory::MemoryRecord,
@@ -399,6 +435,14 @@ impl EventJournal {
         .map_err(|error| StorageError::InvalidRecovery(error.to_string()))
     }
 
+    /// Reads journal events strictly after `after_sequence`.
+    ///
+    /// The caller chooses the page limit. Use [`Self::replay_bounded`] when a
+    /// hard upper bound and replay-gap metadata are needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if a read lease or query fails.
     pub async fn replay(
         &self,
         after_sequence: i64,
@@ -422,6 +466,14 @@ impl EventJournal {
             .unwrap_or(0)
     }
 
+    /// Reads a bounded journal page and reports whether earlier events are absent.
+    ///
+    /// At most 512 events are returned regardless of the requested limit. The
+    /// batch includes first/last sequence information for reconnect recovery.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if a read lease or query fails.
     pub async fn replay_bounded(
         &self,
         after_sequence: i64,
@@ -450,6 +502,11 @@ impl EventJournal {
         })
     }
 
+    /// Reads the most recent review-history events up to `limit`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if a read lease or query fails.
     pub async fn review_history(&self, limit: usize) -> Result<Vec<EventRecord>, StorageError> {
         let lease = self.checkout_read_database()?;
         let database = lease.database().ok_or_else(|| {
@@ -458,6 +515,15 @@ impl EventJournal {
         database.read_review_events(limit)
     }
 
+    /// Inspects a backup file without restoring it.
+    ///
+    /// The preview runs on a blocking worker and returns the backup metadata
+    /// used to decide whether a restore is compatible.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the file is unreadable, invalid, or the
+    /// preview worker fails.
     pub async fn preview_database_backup(
         &self,
         path: impl AsRef<std::path::Path>,
@@ -470,6 +536,15 @@ impl EventJournal {
             })?
     }
 
+    /// Creates a database backup and reports progress on the supplied callback.
+    ///
+    /// Backup construction runs on a blocking worker while holding the database
+    /// lease for a consistent snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if backup validation, writing, or the worker
+    /// fails.
     pub async fn create_database_backup(
         &self,
         path: impl AsRef<std::path::Path>,
@@ -484,6 +559,15 @@ impl EventJournal {
             .map_err(|error| StorageError::InvalidInput(format!("backup worker failed: {error}")))?
     }
 
+    /// Creates a database backup with progress and cooperative cancellation.
+    ///
+    /// The cancellation callback is polled by the backup worker between work
+    /// units; cancellation is reported as an error and does not publish a
+    /// completed backup.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if cancelled or if backup construction fails.
     pub async fn create_database_backup_with_cancel(
         &self,
         path: impl AsRef<std::path::Path>,
@@ -501,6 +585,15 @@ impl EventJournal {
         .map_err(|error| StorageError::InvalidInput(format!("backup worker failed: {error}")))?
     }
 
+    /// Restores a backup after creating a safety copy at `safety_path`.
+    ///
+    /// After restoration, the prepared read-database pool is invalidated so
+    /// subsequent reads reopen the restored schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if backup validation, safety-copy creation,
+    /// restoration, or the worker fails.
     pub async fn restore_database(
         &self,
         backup_path: impl AsRef<std::path::Path>,
@@ -521,6 +614,15 @@ impl EventJournal {
         result
     }
 
+    /// Restores a backup with progress reporting and cooperative cancellation.
+    ///
+    /// A safety copy is created before replacement. The read pool is invalidated
+    /// after the restore attempt completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if cancelled or if validation, safety-copy
+    /// creation, restoration, or the worker fails.
     pub async fn restore_database_with_cancel(
         &self,
         backup_path: impl AsRef<std::path::Path>,
@@ -574,6 +676,15 @@ impl EventJournal {
         })
     }
 
+    /// Persists a verified recovery decision for one run/effect transition.
+    ///
+    /// The supplied recovery record carries the idempotency key, verifier,
+    /// evidence, and decision needed by the storage transition contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] for invalid transitions, conflicting replay, or
+    /// persistence failure.
     pub async fn transition_recovery(
         &self,
         transition: RecoveryTransition<'_>,

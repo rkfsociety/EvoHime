@@ -585,27 +585,42 @@ fn typed_snapshot_actions(events: &[EventRecord]) -> Vec<serde_json::Value> {
     latest.into_values().collect()
 }
 
+/// Failure while decoding, validating, or framing an IPC bridge message.
 #[derive(Debug, thiserror::Error)]
 pub enum IpcBridgeError {
+    /// A framed IPC read or write failed.
     #[error("IPC frame failed: {0}")]
     Frame(#[from] FrameError),
+    /// A protobuf envelope could not be decoded.
     #[error("protobuf message failed: {0}")]
     Protobuf(#[from] prost::DecodeError),
+    /// A JSON payload could not be decoded or encoded.
     #[error("JSON payload failed: {0}")]
     Json(#[from] serde_json::Error),
 }
 
+/// Redacted model selection metadata projected to authenticated IPC clients.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelConfigSnapshot {
+    /// Provider identifier, without provider credentials.
     pub provider: String,
+    /// Configured routing family or route name.
     pub route: String,
+    /// Selected model identifier.
     pub model: String,
+    /// Whether the provider route has the configuration required to run.
     pub configured: bool,
 }
 
 type ConversationSubscription =
     Arc<tokio::sync::RwLock<Option<(String, std::collections::BTreeSet<String>)>>>;
 
+/// Core-owned handler for authenticated desktop IPC requests and event projections.
+///
+/// The bridge coordinates durable journal state with shared Core services and
+/// emits bounded, redacted payloads to clients. Its fields are private so the
+/// process identity and security-sensitive registries remain controlled by the
+/// Core constructors.
 pub struct IpcBridge {
     journal: EventJournal,
     receipt_keys: Arc<ReceiptKeyManager>,

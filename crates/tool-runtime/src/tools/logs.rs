@@ -8,17 +8,25 @@ use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
+/// Registry identifier for reading the end of a log file.
 pub const TAIL_NAME: &str = "logs.tail";
+/// User-facing description of the log tail action.
 pub const TAIL_DESCRIPTION: &str = "Read last N lines from a log file";
+/// Permission required to read a log file.
 pub const TAIL_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
+/// Maximum execution time for a log tail request.
 pub const TAIL_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_TAIL_LINES: usize = 1_000;
 const MAX_TAIL_LINE_BYTES: usize = 64 * 1024;
 const MAX_TAIL_OUTPUT_BYTES: usize = 1024 * 1024;
 
+/// Registry identifier for searching log files.
 pub const GREP_NAME: &str = "logs.grep";
+/// User-facing description of the log search action.
 pub const GREP_DESCRIPTION: &str = "Search log files for a pattern";
+/// Permission required to read searched log files.
 pub const GREP_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
+/// Maximum execution time for a log search request.
 pub const GREP_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_GREP_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_GREP_MATCHES: usize = 1_000;
@@ -40,6 +48,10 @@ fn default_lines() -> usize {
     50
 }
 
+/// Returns up to the requested final lines from a sandbox-resolved log file.
+///
+/// The request is capped at 1,000 lines, 64 KiB per line, and 1 MiB of returned text. A missing
+/// or unreadable path is reported as a tool error.
 pub async fn tail(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: TailInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: TAIL_NAME.to_string(),
@@ -130,6 +142,10 @@ struct GrepInput {
     _context_lines: usize,
 }
 
+/// Searches one sandbox-resolved file or directory tree for a literal text pattern.
+///
+/// Results are bounded by per-file, match-count, line-length, and total-output limits. The
+/// `context_lines` input is accepted for compatibility but currently does not add context lines.
 pub async fn grep(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: GrepInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: GREP_NAME.to_string(),

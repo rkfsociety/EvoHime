@@ -8,18 +8,25 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncReadExt;
 
+/// Maximum size accepted for one mediated file in bytes.
 pub const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
 
+/// Logical storage namespace for a mediated workspace file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Namespace {
+    /// Immutable user-provided files under `.evohime/uploads`.
     Uploads,
+    /// Files under the task workspace root.
     Workspace,
+    /// Generated files under `.evohime/outputs`.
     Outputs,
+    /// Task-scoped temporary files under `.evohime/scratch`.
     Scratch,
 }
 
 impl Namespace {
+    /// Returns the stable lowercase namespace name used in logical paths.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Uploads => "uploads",
@@ -41,33 +48,53 @@ impl Namespace {
     }
 }
 
+/// Content identity and revision metadata returned by a mediated file operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileRef {
+    /// Namespace that owns this file.
     pub namespace: Namespace,
+    /// Namespace-relative path with normalized separators.
     pub path: String,
+    /// SHA-256 digest of the file contents.
     pub content_hash: String,
+    /// Stable 64-bit prefix derived from the content hash.
     pub revision: u64,
+    /// File size in bytes.
     pub bytes: usize,
 }
 
+/// Path, revision, size, and I/O errors from mediated file operations.
 #[derive(Debug, thiserror::Error)]
 pub enum RevisionError {
+    /// The logical path is empty, absolute, or otherwise malformed.
     #[error("invalid revision-safe workspace path")]
     InvalidPath,
+    /// The path traverses outside its namespace or resolves through a symlink.
     #[error("revision-safe workspace path escapes its namespace")]
     Escape,
+    /// The file exceeds [`MAX_FILE_BYTES`].
     #[error("file exceeds the bounded size limit")]
     TooLarge,
+    /// The expected and observed content digests differ.
     #[error("stale file revision: expected {expected}, observed {observed}")]
-    Stale { expected: String, observed: String },
+    Stale {
+        /// Digest supplied by the caller.
+        expected: String,
+        /// Digest currently observed on disk.
+        observed: String,
+    },
+    /// An existing file write omitted its expected content digest.
     #[error("file revision precondition is required for an existing file")]
     MissingPrecondition,
+    /// Upload namespace files cannot be modified after creation.
     #[error("uploads are immutable")]
     Immutable,
+    /// The underlying filesystem operation failed.
     #[error("file operation failed: {0}")]
     Io(#[from] std::io::Error),
 }
 
+/// Parses an optional namespace prefix and returns its normalized relative path.
 pub fn parse_logical_path(value: &str) -> Result<(Namespace, String), RevisionError> {
     if value.is_empty() || value.contains('\0') || Path::new(value).is_absolute() {
         return Err(RevisionError::InvalidPath);
@@ -147,6 +174,7 @@ fn resolve(
     Ok((namespace, relative.to_owned(), resolved))
 }
 
+/// Resolves a logical path and rejects traversal or namespace escapes.
 pub fn resolve_logical(
     ctx: &ToolContext,
     logical: &str,
@@ -177,6 +205,7 @@ fn make_ref(namespace: Namespace, path: String, bytes: &[u8]) -> FileRef {
     }
 }
 
+/// Reads a bounded UTF-8 file and returns its digest and revision metadata.
 pub async fn read(ctx: &ToolContext, logical: &str) -> Result<(FileRef, String), RevisionError> {
     let (namespace, path, resolved) = resolve(ctx, logical, false)?;
     let bytes = read_bounded(&resolved).await?;
@@ -184,6 +213,7 @@ pub async fn read(ctx: &ToolContext, logical: &str) -> Result<(FileRef, String),
     Ok((make_ref(namespace, path, &bytes), text))
 }
 
+/// Writes bounded content; replacing an existing file requires its current digest.
 pub async fn write(
     ctx: &ToolContext,
     logical: &str,
@@ -216,6 +246,7 @@ pub async fn write(
     Ok(make_ref(namespace, path, content))
 }
 
+/// Confirms that a file still has the digest previously observed by the caller.
 pub async fn assert_precondition(
     ctx: &ToolContext,
     logical: &str,
@@ -231,6 +262,7 @@ pub async fn assert_precondition(
     Ok(())
 }
 
+/// Deletes a file after its digest is checked or a directory when `recursive` is true.
 pub async fn delete(
     ctx: &ToolContext,
     logical: &str,
@@ -260,6 +292,7 @@ pub async fn delete(
     Ok((namespace, path, is_dir))
 }
 
+/// Moves a file or directory between logical namespaces after revision checking.
 pub async fn move_file(
     ctx: &ToolContext,
     from: &str,
@@ -314,6 +347,7 @@ async fn read_bounded(path: &Path) -> Result<Vec<u8>, RevisionError> {
     Ok(bytes)
 }
 
+/// Maps a revision-boundary error to the public tool error contract.
 pub fn permission(error: RevisionError, tool: &str, permission: Permission) -> ToolError {
     match error {
         RevisionError::Escape => ToolError::PermissionDenied(permission),

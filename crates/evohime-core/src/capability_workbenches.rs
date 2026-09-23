@@ -6,93 +6,150 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Serialized schema version for workbench descriptors and snapshots.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum byte length accepted for workbench identifiers.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum tools in one workbench descriptor.
 pub const MAX_TOOLS: usize = 128;
+/// Maximum shared resources in one descriptor or snapshot.
 pub const MAX_RESOURCES: usize = 64;
+/// Maximum credential or resource leases retained in a snapshot.
 pub const MAX_LEASES: usize = 32;
+/// Maximum admitted concurrent calls per instance.
 pub const MAX_IN_FLIGHT: usize = 32;
+/// Maximum serialized snapshot size in bytes.
 pub const MAX_SNAPSHOT_BYTES: usize = 256 * 1024;
+/// Minimum accepted resource lease duration.
 pub const MIN_LEASE_TTL_MS: u64 = 1_000;
+/// Maximum accepted resource lease duration.
 pub const MAX_LEASE_TTL_MS: u64 = 24 * 60 * 60 * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Lifecycle state of one logical workbench instance.
 pub enum Lifecycle {
+    /// Instance is constructed but has not started.
     Created,
+    /// Instance startup is in progress.
     Starting,
+    /// Instance is available for capability-checked calls.
     Ready,
+    /// Instance is shutting down.
     Stopping,
+    /// Instance is stopped and accepts no calls.
     Stopped,
+    /// Instance state is being reset.
     Resetting,
+    /// Instance missed its lease heartbeat and requires recovery.
     Degraded,
+    /// Instance failed and requires owner intervention.
     Failed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Lifetime and owner scope for a workbench instance.
 pub enum WorkbenchScope {
+    /// Instance lifetime is limited to one run.
     RunScoped,
+    /// Instance lifetime is limited to one goal.
     GoalScoped,
+    /// Instance is owned by a project.
     ProjectScoped,
+    /// Instance lifetime is limited to a user session.
     UserSessionScoped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Call scheduling semantics for a workbench.
 pub enum Concurrency {
+    /// Admit at most one call at a time.
     Exclusive,
+    /// Allow concurrent requests but execute them in a serialized order.
     Serialized,
+    /// Allow calls to execute concurrently up to the configured limit.
     Parallel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Lifecycle state of a resource lease.
 pub enum ResourceLeaseState {
+    /// Lease is valid and held by its owner.
     Active,
+    /// Lease passed its expiration time.
     Expired,
+    /// Lease was recovered after owner or runtime restart.
     Recovered,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Outcome of a cancellation request.
 pub enum CancellationOutcome {
+    /// An active operation accepted cancellation.
     Cancelled,
+    /// The operation was already complete or stopped.
     AlreadyTerminal,
+    /// No matching operation or cancellation outcome was found.
     Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Result category for a workbench tool call.
 pub enum CallOutcome {
+    /// Call completed successfully.
     Success,
+    /// Workbench or tool is unavailable.
     Unavailable,
+    /// Call was rejected by capability or policy checks.
     Denied,
+    /// No matching operation or cancellation outcome was found.
     Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Owner, expiry, and heartbeat data for a leased resource.
 pub struct WorkbenchResourceLease {
+    /// Serialized schema version supported by the contract.
     pub schema_version: u32,
+    /// Stable identifier for this lease.
     pub lease_id: String,
+    /// Workbench instance owning this lease or call.
     pub instance_id: String,
+    /// Owner authorized to manage this instance.
     pub owner_id: String,
+    /// Current lifecycle or result state.
     pub state: ResourceLeaseState,
+    /// Lease expiration time as Unix epoch milliseconds.
     pub expires_at_ms: u64,
+    /// Most recent lease heartbeat time as Unix epoch milliseconds.
     pub heartbeat_at_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Structured result of a tool call handled by a workbench.
 pub struct WorkbenchCallResult {
+    /// Serialized schema version supported by the contract.
     pub schema_version: u32,
+    /// Workbench instance owning this lease or call.
     pub instance_id: String,
+    /// Stable tool identifier within the workbench.
     pub tool_id: String,
+    /// Result category for the invocation.
     pub outcome: CallOutcome,
+    /// Structured tool output, excluding secret material.
     pub value: serde_json::Value,
+    /// Optional stable error category.
     pub error_code: Option<String>,
+    /// Cancellation result associated with the call.
     pub cancellation: CancellationOutcome,
 }
 
+/// Classifies cancellation from active and terminal operation state.
 pub fn cancellation_outcome(active: bool, terminal: bool) -> CancellationOutcome {
     if active {
         CancellationOutcome::Cancelled
@@ -104,77 +161,125 @@ pub fn cancellation_outcome(active: bool, terminal: bool) -> CancellationOutcome
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Tool identity and required capability exposed by a workbench.
 pub struct ToolDescriptor {
+    /// Stable descriptor, tool, or resource identifier.
     pub id: String,
+    /// Capability required to invoke the tool.
     pub capability: String,
+    /// Human-readable tool title.
     pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Logical resource advertised by a workbench.
 pub struct SharedResource {
+    /// Stable descriptor, tool, or resource identifier.
     pub id: String,
+    /// Logical resource category.
     pub class: String,
+    /// Whether the resource is currently available.
     pub available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Versioned tools, resources, and concurrency policy for an instance.
 pub struct WorkbenchDescriptor {
+    /// Serialized schema version supported by the contract.
     pub schema_version: u32,
+    /// Stable descriptor, tool, or resource identifier.
     pub id: String,
+    /// Descriptor revision string used to bind snapshots.
     pub version: String,
+    /// Workbench implementation category.
     pub kind: String,
+    /// Owner and lifecycle scope for the instance.
     pub scope: WorkbenchScope,
+    /// Policy for overlapping calls.
     pub concurrency: Concurrency,
+    /// Maximum concurrent calls admitted.
     pub max_in_flight: u32,
+    /// Duration after which a missed heartbeat triggers recovery.
     pub lease_ttl_ms: u64,
+    /// Tools advertised by the workbench.
     pub tools: Vec<ToolDescriptor>,
+    /// Logical resources advertised by the workbench.
     pub resources: Vec<SharedResource>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Portable logical state for recovery without process handles or secret values.
 pub struct WorkbenchSnapshot {
+    /// Serialized schema version supported by the contract.
     pub schema_version: u32,
+    /// Workbench instance owning this lease or call.
     pub instance_id: String,
+    /// Version of the descriptor captured in this snapshot.
     pub descriptor_version: String,
+    /// Monotonic instance revision.
     pub revision: u64,
+    /// Lifecycle state captured for recovery.
     pub lifecycle: Lifecycle,
+    /// Safe JSON state retained across recovery.
     pub logical_state: serde_json::Value,
+    /// Credential identifiers only; secret values are never serialized.
     pub credential_refs: Vec<String>,
+    /// Logical resource identifiers held by the instance.
     pub resource_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Core-owned lifecycle and admission state for a workbench.
 pub struct WorkbenchInstance {
+    /// Serialized schema version supported by the contract.
     pub schema_version: u32,
+    /// Workbench instance owning this lease or call.
     pub instance_id: String,
+    /// Owner authorized to manage this instance.
     pub owner_id: String,
+    /// Validated descriptor that defines this instance's tools and limits.
     pub descriptor: WorkbenchDescriptor,
+    /// Lifecycle state captured for recovery.
     pub lifecycle: Lifecycle,
+    /// Monotonic instance revision.
     pub revision: u64,
+    /// Number of calls currently admitted.
     pub in_flight: u32,
+    /// Time of the most recent heartbeat as Unix epoch milliseconds.
     pub last_heartbeat_ms: u64,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
+/// Validation, lifecycle, size, concurrency, or capability failure.
 pub enum WorkbenchError {
+    /// The serialized schema version is unsupported.
     #[error("unsupported workbench schema version {0}")]
     UnsupportedVersion(u32),
+    /// An identifier is malformed or exceeds its limit.
     #[error("invalid or oversized workbench identifier")]
     InvalidId,
+    /// A descriptor collection or concurrency limit was exceeded.
     #[error("workbench descriptor exceeds a bounded collection limit")]
     Bounds,
+    /// Lease duration is outside its supported range.
     #[error("invalid lease TTL")]
     InvalidLease,
+    /// Snapshot contains sensitive or process-local state.
     #[error("snapshot contains forbidden sensitive or process state")]
     ForbiddenSnapshotField,
+    /// Serialized snapshot exceeds the supported size.
     #[error("snapshot exceeds the bounded size limit")]
     SnapshotTooLarge,
+    /// The requested lifecycle transition is not allowed.
     #[error("invalid lifecycle transition")]
     InvalidTransition,
+    /// The caller supplied an outdated instance revision.
     #[error("stale workbench revision")]
     StaleRevision,
+    /// Concurrency or lifecycle state prevents admission.
     #[error("workbench concurrency limit reached")]
     Busy,
+    /// The caller lacks the capability required by the tool.
     #[error("capability is not granted")]
     CapabilityDenied,
 }
@@ -185,6 +290,7 @@ fn valid_id(value: &str) -> bool {
         && !value.bytes().any(|byte| byte.is_ascii_control())
 }
 
+/// Checks descriptor identity, collection bounds, uniqueness, and lease TTL.
 pub fn validate_descriptor(descriptor: &WorkbenchDescriptor) -> Result<(), WorkbenchError> {
     if descriptor.schema_version != SCHEMA_VERSION {
         return Err(WorkbenchError::UnsupportedVersion(
@@ -259,6 +365,7 @@ fn contains_forbidden(value: &serde_json::Value) -> bool {
     }
 }
 
+/// Rejects process-local or sensitive fields and enforces size limits.
 pub fn validate_snapshot(snapshot: &WorkbenchSnapshot) -> Result<(), WorkbenchError> {
     if snapshot.schema_version != SCHEMA_VERSION
         || !valid_id(&snapshot.instance_id)
@@ -282,6 +389,7 @@ pub fn validate_snapshot(snapshot: &WorkbenchSnapshot) -> Result<(), WorkbenchEr
 }
 
 impl WorkbenchInstance {
+    /// Creates a validated workbench instance in the created state.
     pub fn new(
         instance_id: String,
         owner_id: String,
@@ -304,6 +412,7 @@ impl WorkbenchInstance {
         })
     }
 
+    /// Applies a lifecycle transition using an expected revision.
     pub fn transition(
         &mut self,
         target: Lifecycle,
@@ -321,6 +430,7 @@ impl WorkbenchInstance {
         Ok(())
     }
 
+    /// Returns only tools whose capabilities appear in the supplied grants.
     pub fn visible_tools<'a>(&'a self, grants: &[String]) -> Vec<&'a ToolDescriptor> {
         self.descriptor
             .tools
@@ -329,6 +439,7 @@ impl WorkbenchInstance {
             .collect()
     }
 
+    /// Admits a call after capability, lifecycle, and concurrency checks.
     pub fn admit_call(
         &mut self,
         capability: &str,
@@ -353,14 +464,17 @@ impl WorkbenchInstance {
         Ok(())
     }
 
+    /// Releases one admitted in-flight call slot.
     pub fn finish_call(&mut self) {
         self.in_flight = self.in_flight.saturating_sub(1);
     }
 
+    /// Refreshes the instance lease timestamp.
     pub fn heartbeat(&mut self, now_ms: u64) {
         self.last_heartbeat_ms = now_ms;
     }
 
+    /// Marks an expired instance degraded and clears abandoned call counts.
     pub fn recover_if_expired(&mut self, now_ms: u64) -> bool {
         if now_ms.saturating_sub(self.last_heartbeat_ms) > self.descriptor.lease_ttl_ms {
             self.in_flight = 0;
@@ -372,6 +486,7 @@ impl WorkbenchInstance {
         }
     }
 
+    /// Creates and validates a portable snapshot of logical state.
     pub fn snapshot(
         &self,
         logical_state: serde_json::Value,

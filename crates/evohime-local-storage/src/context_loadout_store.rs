@@ -1,7 +1,22 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Creates the append-only context-loadout revision table and current index.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS context_loadout_revisions (profile_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(profile_id,revision), UNIQUE(profile_id,idempotency_key)); CREATE INDEX IF NOT EXISTS idx_context_loadout_current ON context_loadout_revisions(profile_id,revision DESC);")
 }
+/// Appends the next revision for a context-loadout profile.
+///
+/// Replaying a key with the same hash and JSON is idempotent. Revisions must be
+/// contiguous, and conflicting key reuse is rejected.
+///
+/// # Errors
+///
+/// Returns a SQLite error for revision conflicts, idempotency conflicts, or
+/// failed writes.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -36,6 +51,11 @@ pub fn save(
     c.execute("INSERT INTO context_loadout_revisions(profile_id,revision,content_hash,json,idempotency_key,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6)",params![id,rev,hash,json,key,now])?;
     Ok(())
 }
+/// Loads the JSON from the highest stored revision for a profile ID.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row("SELECT json FROM context_loadout_revisions WHERE profile_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional()
 }

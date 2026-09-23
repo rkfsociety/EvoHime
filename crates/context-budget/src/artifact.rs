@@ -26,6 +26,7 @@ pub enum ArtifactRefStatus {
 }
 
 impl ArtifactRefStatus {
+    /// Returns the stable serialized value for this artifact state.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Live => "live",
@@ -34,6 +35,7 @@ impl ArtifactRefStatus {
         }
     }
 
+    /// Parses a stored status; unknown values currently fall back to `Live`.
     pub fn parse(value: &str) -> Self {
         match value {
             "expired" => Self::Expired,
@@ -46,26 +48,37 @@ impl ArtifactRefStatus {
 /// Ссылка задачи на артефакт. Locator выдаётся владельцу и его детям.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactRef {
+    /// Opaque locator used to retrieve this artifact.
     pub locator: String,
+    /// Normalized content digest used for integrity and deduplication.
     pub content_hash: String,
+    /// Task that created the artifact.
     pub task_id: String,
     /// Задача-владелец: доступ наследуется только вниз, к дочерним задачам.
     pub owner_task_id: String,
+    /// Stored content size in bytes.
     pub bytes: u64,
+    /// Privacy label controlling whether content may be offloaded.
     pub privacy: Privacy,
+    /// Current storage lifecycle state.
     pub status: ArtifactRefStatus,
+    /// Unix timestamp in seconds when the artifact was created.
     pub created_at: i64,
+    /// Unix timestamp in seconds when content was last accessed.
     pub last_access_at: i64,
+    /// Optional lifetime from creation, in milliseconds.
     pub ttl_ms: Option<i64>,
     /// Bounded summary, остающийся в контексте вместо содержимого.
     pub summary: String,
 }
 
 impl ArtifactRef {
+    /// Returns whether the content remains available for retrieval.
     pub fn is_readable(&self) -> bool {
         self.status == ArtifactRefStatus::Live
     }
 
+    /// Returns whether this reference's configured TTL has elapsed.
     pub fn ttl_expired(&self, now: i64) -> bool {
         self.ttl_ms
             .is_some_and(|ttl| now > self.created_at.saturating_add(ttl))
@@ -75,7 +88,9 @@ impl ArtifactRef {
 /// Квоты store: на задачу и на диск целиком.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactQuota {
+    /// Maximum bytes attributed to one task.
     pub per_task_bytes: u64,
+    /// Maximum bytes held by the artifact store.
     pub total_bytes: u64,
     /// TTL по умолчанию для нового артефакта.
     pub default_ttl_ms: i64,
@@ -94,24 +109,46 @@ impl Default for ArtifactQuota {
 /// Ошибка операции store.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ArtifactError {
+    /// The item's privacy classification forbids offloading its content.
     #[error("privacy label {0} forbids offload")]
     PrivacyForbidsOffload(&'static str),
+    /// Caller task is outside the artifact owner's task subtree.
     #[error("artifact {locator} is not accessible from task {task_id}")]
-    AccessDenied { locator: String, task_id: String },
+    AccessDenied {
+        /// Artifact locator requested by the caller.
+        locator: String,
+        /// Caller task identifier that failed access validation.
+        task_id: String,
+    },
+    /// Artifact reference exists but is expired or otherwise unreadable.
     #[error("artifact {locator} is {status}")]
-    NotReadable { locator: String, status: String },
+    NotReadable {
+        /// Artifact locator whose content is unavailable.
+        locator: String,
+        /// Current status that prevents reading the artifact.
+        status: String,
+    },
+    /// Retrieved bytes did not match the stored content digest.
     #[error("artifact {locator} failed the hash check: expected {expected}, got {actual}")]
     HashMismatch {
+        /// Locator whose data failed verification.
         locator: String,
+        /// Digest stored in the artifact reference.
         expected: String,
+        /// Digest computed from the retrieved content.
         actual: String,
     },
+    /// Storage request exceeds the per-task or whole-store quota.
     #[error("artifact quota exceeded: {scope} needs {needed} bytes, {available} available")]
     QuotaExceeded {
+        /// Quota scope that was exceeded.
         scope: &'static str,
+        /// Additional bytes required by the request.
         needed: u64,
+        /// Bytes still available within the quota.
         available: u64,
     },
+    /// Underlying storage backend failed.
     #[error("artifact store failed: {0}")]
     Backend(String),
 }
@@ -133,15 +170,20 @@ pub struct EvictionPlan {
     pub evicted: Vec<String>,
     /// Locator'ы, ссылки на которые помечаются `expired`.
     pub marked_expired: Vec<String>,
+    /// Number of content bytes selected for removal.
     pub freed_bytes: u64,
 }
 
 /// Кандидат вытеснения.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvictionCandidate {
+    /// Locator to consider for eviction.
     pub locator: String,
+    /// Stored content size in bytes.
     pub bytes: u64,
+    /// Last-access timestamp used to break eviction ties.
     pub last_access_at: i64,
+    /// Whether the artifact TTL has elapsed.
     pub ttl_expired: bool,
     /// Ссылается ли на артефакт живой ledger entry или confirmed scratchpad.
     pub referenced: bool,
@@ -181,9 +223,13 @@ pub fn plan_eviction(candidates: &[EvictionCandidate], needed_bytes: u64) -> Evi
 /// не считается доступным dedup-hit для нового offload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactTombstone {
+    /// Digest retained for audit after content removal.
     pub content_hash: String,
+    /// Size of the removed content in bytes.
     pub bytes: u64,
+    /// Unix timestamp in seconds when the content was removed.
     pub removed_at: i64,
+    /// Stable reason for removing the content.
     pub reason: String,
 }
 

@@ -24,6 +24,7 @@ pub enum ToolGroup {
 }
 
 impl ToolGroup {
+    /// Returns the stable serialized tool-group name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Mandatory => "mandatory",
@@ -37,9 +38,11 @@ impl ToolGroup {
 /// остаются видимыми и никогда не скрываются.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolRegistryEntry {
+    /// Stable identifier passed to the model and checked at execution time.
     pub id: String,
     /// Capability, к которой относится инструмент.
     pub capability: String,
+    /// Access class used for ordering and approval presentation.
     pub group: ToolGroup,
     /// JSON-схема инструмента.
     pub schema_json: String,
@@ -56,7 +59,9 @@ pub struct ToolRegistryEntry {
 /// Правило intent router.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IntentRule {
+    /// Stable rule identifier recorded in decision diagnostics.
     pub id: String,
+    /// Intent name selected when this rule wins.
     pub intent: String,
     /// Ключевые слова capability в нижнем регистре.
     pub keywords: Vec<String>,
@@ -69,17 +74,23 @@ pub struct IntentRule {
 /// Deny/approval-правило: запрещает конкретные capability независимо от intent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DenyRule {
+    /// Stable policy rule identifier.
     pub id: String,
+    /// Capability rejected regardless of intent selection.
     pub capability: String,
+    /// Bounded policy reason returned when a tool is rejected.
     pub reason: String,
 }
 
 /// Versioned таблица правил.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IntentRules {
+    /// Version of the rule table used to make a decision.
     pub version: String,
+    /// Ordered intent matching rules.
     pub rules: Vec<IntentRule>,
     #[serde(default)]
+    /// Capability-level deny rules applied after intent classification.
     pub deny: Vec<DenyRule>,
 }
 
@@ -96,11 +107,15 @@ impl Default for IntentRules {
 /// Результат работы router.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IntentDecision {
+    /// Chosen intent label, or [`FALLBACK_INTENT`] for uncertain input.
     pub intent: String,
     /// 0.0..1.0. Ноль означает неопределённый intent.
     pub confidence: f64,
+    /// Identifiers of the rules contributing to the decision.
     pub matched_rules: Vec<String>,
+    /// Rule-table version used during classification.
     pub rules_version: String,
+    /// Whether the selected intent permits mutation tools.
     pub allows_mutation: bool,
     /// Использован ли безопасный read-only fallback.
     pub fallback: bool,
@@ -227,10 +242,13 @@ pub fn route_intent(
 /// Собранный loadout.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolLoadout {
+    /// Stable identifier derived from the selected tool set and decision.
     pub loadout_id: String,
+    /// Intent classification and policy decisions that shaped this loadout.
     pub decision: IntentDecision,
     /// Инструменты в детерминированном порядке: обязательные, затем остальные.
     pub tools: Vec<ToolRegistryEntry>,
+    /// Estimated schema tokens included in the model request.
     pub schema_tokens: u32,
     /// Инструменты, не поместившиеся в `tool_schema_reserve`.
     pub omitted_tool_ids: Vec<String>,
@@ -262,10 +280,15 @@ impl ToolLoadout {
 /// loadout id, matched rule и policy reason.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LoadoutMiss {
+    /// Tool identifier rejected by the active loadout.
     pub tool_id: String,
+    /// Intent associated with the attempted call.
     pub intent: String,
+    /// Active loadout identifier.
     pub loadout_id: String,
+    /// Matching intent rule, if one selected the loadout.
     pub matched_rule: Option<String>,
+    /// Bounded reason the tool is unavailable or denied.
     pub policy_reason: String,
 }
 

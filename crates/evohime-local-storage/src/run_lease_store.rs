@@ -2,6 +2,7 @@ use crate::{LocalDatabase, RunLeaseRecord, StorageError};
 use rusqlite::OptionalExtension;
 
 impl LocalDatabase {
+    /// Acquires a run lease, replacing an expired lease or renewing the same lease ID.
     pub fn acquire_run_lease(
         &self,
         run_id: &str,
@@ -33,6 +34,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Loads the current lease for a run, if present.
     pub fn get_run_lease(&self, run_id: &str) -> Result<Option<RunLeaseRecord>, StorageError> {
         Ok(self
             .connection
@@ -54,6 +56,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Renews an unexpired run lease when its ID, owner, and generation all match.
     pub fn heartbeat_run_lease(
         &self,
         run_id: &str,
@@ -76,6 +79,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Releases a run lease only when its ID, owner, and generation match.
     pub fn release_run_lease(
         &self,
         run_id: &str,
@@ -90,6 +94,7 @@ impl LocalDatabase {
         Ok(())
     }
 
+    /// Acquires an agent-run lease, replacing an expired lease or renewing the same lease ID.
     pub fn acquire_agent_run_lease(
         &self,
         run_id: &str,
@@ -123,6 +128,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Loads the current agent-run lease, if present.
     pub fn get_agent_run_lease(
         &self,
         run_id: &str,
@@ -147,6 +153,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Renews an unexpired agent-run lease when its fencing fields all match.
     pub fn heartbeat_agent_run_lease(
         &self,
         run_id: &str,
@@ -171,6 +178,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Releases an agent-run lease only when its fencing fields match.
     pub fn release_agent_run_lease(
         &self,
         run_id: &str,

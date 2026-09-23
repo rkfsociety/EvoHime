@@ -56,6 +56,7 @@ impl FileRole {
         matches!(self, FileRole::WhisperDll | FileRole::SupportDll)
     }
 
+    /// Возвращает стабильное имя роли в runtime manifest.
     pub const fn as_str(self) -> &'static str {
         match self {
             FileRole::WhisperDll => "whisper_dll",
@@ -66,6 +67,7 @@ impl FileRole {
     }
 }
 
+/// ABI sizes and identity expected from the native whisper runtime.
 #[derive(Clone, Debug, Deserialize)]
 pub struct RuntimeAbi {
     /// Токен ABI, который знает этот код. Чужой токен — отказ, а не попытка.
@@ -76,39 +78,54 @@ pub struct RuntimeAbi {
     pub full_params_size: u32,
 }
 
+/// Hash- and size-pinned runtime file declared by the manifest.
 #[derive(Clone, Debug, Deserialize)]
 pub struct RuntimeFile {
+    /// Policy role that determines whether the file is required or signed.
     pub role: FileRole,
     /// Относительный путь внутри каталога рантайма.
     pub name: String,
+    /// Lowercase SHA-256 digest of the file contents.
     pub sha256: String,
+    /// Exact file size in bytes.
     pub size: u64,
 }
 
+/// Hash- and size-pinned model file for one recognition rung.
 #[derive(Clone, Debug, Deserialize)]
 pub struct RuntimeModel {
+    /// Model ladder rung represented by this file.
     pub rung: ModelRung,
+    /// Relative file path under the runtime root.
     pub name: String,
+    /// Lowercase SHA-256 digest of the model file.
     pub sha256: String,
+    /// Exact model size in bytes.
     pub size: u64,
 }
 
 /// Разобранный `listener-runtime.json`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct RuntimeManifest {
+    /// Manifest schema version supported by the resolver.
     pub schema: u32,
     /// Версия движка целиком, например `whisper-small-q5_1`. Уезжает в
     /// `ambient.engine` как opaque-токен.
     pub version: String,
+    /// ABI metadata checked before loading native libraries.
     pub abi: RuntimeAbi,
+    /// Runtime library files required or optionally declared by the package.
     pub files: Vec<RuntimeFile>,
+    /// Recognition model files available to the model ladder.
     pub models: Vec<RuntimeModel>,
 }
 
 /// Проверенный набор рантайма: пути уже сверены с хешами манифеста.
 #[derive(Clone, Debug)]
 pub struct ResolvedRuntime {
+    /// Validated root directory containing this runtime package.
     pub root: PathBuf,
+    /// Parsed manifest whose files were checked successfully.
     pub manifest: RuntimeManifest,
     /// Абсолютные пути обязательных и найденных опциональных файлов. Роль
     /// `support_dll` может встречаться несколько раз, поэтому карта хранит
@@ -122,6 +139,7 @@ pub struct ResolvedRuntime {
 }
 
 impl ResolvedRuntime {
+    /// Returns the verified whisper DLL path, when present.
     pub fn whisper_dll(&self) -> Option<&Path> {
         self.files
             .get(&FileRole::WhisperDll)
@@ -137,6 +155,7 @@ impl ResolvedRuntime {
             .find(|rung| self.models.contains_key(rung))
     }
 
+    /// Returns the verified model path for the requested rung.
     pub fn model_path(&self, rung: ModelRung) -> Option<&Path> {
         self.models.get(&rung).map(PathBuf::as_path)
     }
@@ -145,9 +164,11 @@ impl ResolvedRuntime {
 /// Источник переменных окружения. Отдельный трейт — чтобы тесты не мутировали
 /// процесс: `std::env::set_var` глобален и делает тесты зависимыми от порядка.
 pub trait EnvSource {
+    /// Reads an environment value without mutating process-global state.
     fn var_os(&self, key: &str) -> Option<OsString>;
 }
 
+/// Adapter that reads values from the current process environment.
 pub struct ProcessEnv;
 
 impl EnvSource for ProcessEnv {
@@ -204,6 +225,7 @@ pub fn resolve(env: &dyn EnvSource) -> Result<ResolvedRuntime, EngineUnavailable
     resolve_in(&candidate_dirs(env))
 }
 
+/// Tries candidate runtime roots in order and returns the last diagnostic on failure.
 pub fn resolve_in(candidates: &[PathBuf]) -> Result<ResolvedRuntime, EngineUnavailable> {
     let mut last = EngineUnavailable::ToolsDirMissing;
     for candidate in candidates {

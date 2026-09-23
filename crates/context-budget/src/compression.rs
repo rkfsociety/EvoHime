@@ -35,6 +35,7 @@ pub enum HierarchyLevel {
 }
 
 impl HierarchyLevel {
+    /// Returns the stable serialized name of this priority level.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::RecoveredUnverified => "recovered_unverified",
@@ -102,6 +103,7 @@ pub enum ConflictResolution {
 }
 
 impl ConflictResolution {
+    /// Returns the stable serialized name of this resolution.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::UserConfirm => "user_confirm",
@@ -116,9 +118,13 @@ impl ConflictResolution {
 /// silent override.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Conflict {
+    /// Shared key whose values conflict.
     pub key: String,
+    /// Identifier of the first conflicting context item.
     pub left_id: String,
+    /// Identifier of the second conflicting context item.
     pub right_id: String,
+    /// Deterministic resolution classification for the pair.
     pub resolution: ConflictResolution,
     /// Bounded причина: чем именно записи расходятся.
     pub detail: String,
@@ -345,15 +351,19 @@ pub fn prune(items: &mut [ContextItem], now: i64) -> Vec<(String, DropReason)> {
 /// запрет tool calls/retries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SummarizerConfig {
+    /// Maximum estimated tokens allowed for the generated summary.
     pub summary_budget_tokens: u32,
     /// Верхняя граница текста, который Core отправляет модели-суммаризатору.
     /// Лимит ограничивает prompt вызова, а не набор сжимаемых item: сжатие
     /// покрывает весь набор целиком, иначе лестница не смогла бы вернуть
     /// контекст в бюджет.
     pub input_limit_tokens: u32,
+    /// Version recorded with the summary result and ledger entry.
     pub version: String,
     /// Вызов summarizer не может вызывать инструменты и не повторяется.
+    /// Whether the summarizer may request tools; must remain false.
     pub tools_allowed: bool,
+    /// Whether the summarizer may retry after an unsuccessful attempt.
     pub retries_allowed: bool,
 }
 
@@ -372,8 +382,11 @@ impl Default for SummarizerConfig {
 /// Результат вызова модели-суммаризатора до проверок.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawSummary {
+    /// Identifier assigned to the resulting summary item.
     pub summary_id: String,
+    /// Source item identifiers represented by the summary.
     pub source_ids: Vec<String>,
+    /// Estimated token count of the summary text.
     pub estimated_tokens: u32,
     /// Текст summary — нужен только для schema/policy-проверки, наружу не идёт.
     pub text: String,
@@ -382,8 +395,10 @@ pub struct RawSummary {
 /// Модельный summarizer. Реализация подставляется Core: это вызов того же model
 /// gateway с отдельным low-cost profile.
 pub trait SummaryModel {
+    /// Returns whether the model can accept a summary request now.
     fn available(&self) -> bool;
 
+    /// Summarizes the selected items under the supplied bounded configuration.
     fn summarize(
         &mut self,
         items: &[ContextItem],
@@ -402,6 +417,7 @@ pub struct BoundedSummarizer<M: SummaryModel> {
 }
 
 impl<M: SummaryModel> BoundedSummarizer<M> {
+    /// Creates a summarizer with an optional model and deterministic fallback.
     pub fn new(model: Option<M>, config: SummarizerConfig) -> Self {
         Self {
             model,
@@ -410,6 +426,7 @@ impl<M: SummaryModel> BoundedSummarizer<M> {
         }
     }
 
+    /// Returns the limits and retry policy applied to model requests.
     pub fn config(&self) -> &SummarizerConfig {
         &self.config
     }

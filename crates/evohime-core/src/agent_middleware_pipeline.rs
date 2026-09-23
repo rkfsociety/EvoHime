@@ -8,33 +8,55 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
+/// Serialized schema version for middleware pipeline definitions.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Stable identifier for the middleware pipeline contract.
 pub const CONTRACT_ID: &str = "agent-middleware-pipeline-v1";
+/// Maximum middleware specifications in one pipeline.
 pub const MAX_MIDDLEWARE: usize = 32;
+/// Maximum hook phases attached to one middleware specification.
 pub const MAX_PHASES: usize = 8;
+/// Maximum character count for pipeline identifiers and keys.
 pub const MAX_ID_CHARS: usize = 128;
+/// Maximum character count for policy reason text.
 pub const MAX_TEXT_CHARS: usize = 512;
+/// Maximum events emitted for one pipeline evaluation.
 pub const MAX_EVENTS: usize = 256;
+/// Maximum serialized size of one pipeline event.
 pub const MAX_EVENT_BYTES: usize = 16 * 1024;
+/// Maximum nested middleware intervention depth.
 pub const MAX_INTERVENTION_DEPTH: u8 = 4;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
+/// Lifecycle hook at which a middleware policy may observe or constrain work.
 pub enum HookPhase {
+    /// Before agent processing begins.
     BeforeAgent,
+    /// After agent processing completes.
     AfterAgent,
+    /// Before model invocation.
     BeforeModel,
+    /// After model response processing.
     AfterModel,
+    /// Around a model call while preserving the model authorization boundary.
     WrapModelCall,
+    /// Before a tool call is admitted.
     BeforeTool,
+    /// Around a tool call while preserving existing tool grants.
     WrapToolCall,
+    /// After a tool call completes.
     AfterTool,
+    /// Before handing work to another agent.
     BeforeHandoff,
+    /// Before workflow state becomes durable.
     BeforeWorkflowStateCommit,
+    /// Before content is sent to an external destination.
     BeforeExternalPublish,
 }
 
 impl HookPhase {
+    /// All hook phases supported by this contract in stable order.
     pub const ALL: [Self; 11] = [
         Self::BeforeAgent,
         Self::AfterAgent,
@@ -52,126 +74,234 @@ impl HookPhase {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Visibility classification for middleware-produced state and events.
 pub enum StateClass {
+    /// Visible only to the owning execution context.
     Private,
+    /// Persistable state intended for recovery.
     Checkpoint,
+    /// Safe metadata that may be exposed to the parent or UI.
     Public,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
+/// Non-executable policy action supported by the middleware contract.
 pub enum BuiltinPolicy {
+    /// Record metadata without changing the operation.
     Observe,
-    Narrow { max_bytes: u32 },
-    Redact { fields: Vec<String> },
-    Block { reason: String },
-    PauseForApproval { reason: String },
-    Abort { reason: String },
+    /// Reduce the input to a bounded byte size.
+    Narrow {
+        /// Maximum byte length retained after applying this policy.
+        max_bytes: u32,
+    },
+    /// Remove the named fields from the visible input.
+    Redact {
+        /// Field names removed from the middleware-visible value.
+        fields: Vec<String>,
+    },
+    /// Prevent the operation with a stable reason.
+    Block {
+        /// Bounded reason recorded for the blocked operation.
+        reason: String,
+    },
+    /// Operation is waiting for an approval decision.
+    PauseForApproval {
+        /// Bounded reason attached to the approval request.
+        reason: String,
+    },
+    /// Terminate the current operation with a stable reason.
+    Abort {
+        /// Bounded reason recorded for the aborted operation.
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Declared middleware interaction mode.
 pub enum HandlerMode {
+    /// Observe execution without transforming inputs or results.
     ObserveOnly,
+    /// Apply a built-in allow, narrow, or block decision.
     Policy,
+    /// Apply a declared deterministic transformation.
     Transform,
+    /// Pause at an explicit approval boundary.
     ApprovalGate,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Behavior when middleware evaluation fails.
 pub enum FailurePolicy {
+    /// Block when middleware evaluation fails.
     FailClosed,
+    /// Fail the enclosing operation when middleware evaluation fails.
     FailOperation,
+    /// Continue when middleware evaluation fails, subject to caller policy.
     FailOpen,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Versioned middleware policy bound to selected hook phases.
 pub struct MiddlewareSpec {
+    /// Stable middleware identifier.
     pub id: String,
+    /// Positive middleware specification revision.
     pub version: u32,
+    /// Ordering priority; lower values execute first.
     pub priority: u16,
+    /// Hook phases where this policy is evaluated.
     pub phases: Vec<HookPhase>,
+    /// Visibility class attached to middleware events.
     pub state_class: StateClass,
+    /// Built-in non-executable policy action.
     pub policy: BuiltinPolicy,
+    /// Declared interaction mode for this middleware.
     pub mode: HandlerMode,
+    /// Failure behavior selected for this middleware.
     pub failure_policy: FailurePolicy,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Hashed ordered set of middleware policy specifications.
 pub struct PipelineDefinition {
+    /// Serialized contract version supported by this definition.
     pub schema_version: u32,
+    /// Stable pipeline definition identifier.
     pub definition_id: String,
+    /// Monotonic pipeline definition revision.
     pub revision: u64,
+    /// Middleware policies evaluated for this pipeline.
     pub middleware: Vec<MiddlewareSpec>,
+    /// Integrity hash of the canonical pipeline definition.
     pub contract_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Immutable definition and capability snapshot bound to one run.
 pub struct PipelineRunSnapshot {
+    /// Execution run bound to the pipeline snapshot.
     pub run_id: String,
+    /// Stable pipeline definition identifier.
     pub definition_id: String,
+    /// Pipeline definition revision captured for the run.
     pub definition_revision: u64,
+    /// Integrity hash of the canonical pipeline definition.
     pub contract_hash: String,
+    /// Hash of the effective policy snapshot.
     pub policy_hash: String,
+    /// Hash of the capability set that must remain unchanged.
     pub capability_snapshot_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Idempotent request to evaluate middleware at one hook phase.
 pub struct MiddlewareRequest {
+    /// Execution run bound to the pipeline snapshot.
     pub run_id: String,
+    /// Request correlation identifier.
     pub correlation_id: String,
+    /// Stable key preventing duplicate policy evaluation.
     pub idempotency_key: String,
+    /// Lifecycle phase being evaluated.
     pub phase: HookPhase,
+    /// Hash of the immutable input being evaluated.
     pub input_hash: String,
+    /// Hash of the capability set that must remain unchanged.
     pub capability_snapshot_hash: String,
     #[serde(default)]
+    /// Nested intervention depth used to prevent reentrant loops.
     pub intervention_depth: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Auditable narrowed input produced by a middleware policy.
 pub struct ImmutableOverride {
+    /// Hash of the immutable input being evaluated.
     pub input_hash: String,
+    /// Middleware policy that produced this override.
     pub source_middleware_id: String,
+    /// Provenance label for the immutable override.
     pub provenance: String,
+    /// Bounded explanation for the policy action.
     pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Decision returned by middleware evaluation.
 pub enum PipelineOutcome {
+    /// No policy blocked or narrowed the operation.
     Allowed,
+    /// Input was narrowed or redacted by a middleware policy.
     Overridden(ImmutableOverride),
-    Blocked { reason: String },
+    /// A middleware policy blocked the operation.
+    Blocked {
+        /// Policy reason that prevented the operation.
+        reason: String,
+    },
+    /// Idempotency key was already evaluated.
     Duplicate,
+    /// Run or capability snapshot no longer matches.
     StaleSnapshot,
+    /// Evaluation was cancelled.
     Cancelled,
+    /// A supported bound was exceeded.
     LimitExceeded,
+    /// Middleware evaluation could not be completed.
     Unavailable,
+    /// Outcome could not be determined.
     Unknown,
-    PauseForApproval { reason: String },
-    Aborted { reason: String },
+    /// Operation is waiting for an approval decision.
+    PauseForApproval {
+        /// Policy reason requiring an approval decision.
+        reason: String,
+    },
+    /// A middleware policy aborted the operation.
+    Aborted {
+        /// Policy reason that terminated the operation.
+        reason: String,
+    },
+    /// Maximum nested intervention depth was reached.
     ReentrantLimit,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Ordered metadata-only event emitted for one evaluated middleware.
 pub struct PipelineEvent {
+    /// Stable identifier for this pipeline event.
     pub event_id: String,
+    /// Execution run bound to the pipeline snapshot.
     pub run_id: String,
+    /// Request correlation identifier.
     pub correlation_id: String,
+    /// Monotonic event sequence within the run.
     pub sequence: u64,
+    /// Lifecycle phase being evaluated.
     pub phase: HookPhase,
+    /// Visibility class attached to middleware events.
     pub state_class: StateClass,
+    /// Middleware decision recorded for this event.
     pub outcome: PipelineOutcome,
+    /// Redaction state for the event payload.
     pub redaction_status: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Invalid contract, exceeded bound, capability expansion, or serialization failure.
 pub enum PipelineError {
+    /// A pipeline value or invariant is invalid.
     Invalid(&'static str),
+    /// A middleware count, phase, or text bound was exceeded.
     Limit(&'static str),
+    /// The serialized middleware contract version is unsupported.
     UnsupportedVersion(u32),
+    /// Middleware attempted to expand the caller capability set.
     CapabilityExpansion,
+    /// A serialized pipeline event exceeded its byte limit.
     EventTooLarge,
+    /// A contract value could not be serialized.
     Serialization(String),
 }
 impl std::fmt::Display for PipelineError {
@@ -202,6 +332,7 @@ fn hash<T: Serialize>(value: &T) -> Result<String, PipelineError> {
 }
 
 impl PipelineDefinition {
+    /// Validates and hashes a versioned pipeline definition.
     pub fn new(
         definition_id: impl Into<String>,
         revision: u64,
@@ -218,11 +349,13 @@ impl PipelineDefinition {
         value.validate()?;
         Ok(value)
     }
+    /// Computes the canonical definition hash with the stored hash cleared.
     pub fn compute_hash(&self) -> Result<String, PipelineError> {
         let mut copy = self.clone();
         copy.contract_hash.clear();
         hash(&copy)
     }
+    /// Validates schema version, middleware uniqueness, phase bounds, and integrity hash.
     pub fn validate(&self) -> Result<(), PipelineError> {
         if self.schema_version != CONTRACT_VERSION {
             return Err(PipelineError::UnsupportedVersion(self.schema_version));
@@ -266,6 +399,7 @@ impl PipelineDefinition {
 }
 
 impl PipelineRunSnapshot {
+    /// Checks the run snapshot matches the pipeline and current capability hash.
     pub fn validate_against(
         &self,
         definition: &PipelineDefinition,
@@ -284,6 +418,7 @@ impl PipelineRunSnapshot {
 }
 
 #[derive(Debug, Clone)]
+/// Per-run middleware evaluator with idempotency and stable ordering.
 pub struct AgentMiddlewarePipelineService {
     definition: PipelineDefinition,
     snapshot: PipelineRunSnapshot,
@@ -292,6 +427,7 @@ pub struct AgentMiddlewarePipelineService {
 }
 
 impl AgentMiddlewarePipelineService {
+    /// Validates and hashes a versioned pipeline definition.
     pub fn new(
         definition: PipelineDefinition,
         snapshot: PipelineRunSnapshot,
@@ -305,9 +441,11 @@ impl AgentMiddlewarePipelineService {
             next_sequence: 0,
         })
     }
+    /// Returns the immutable contract hash captured for this run.
     pub fn contract_hash(&self) -> &str {
         &self.snapshot.contract_hash
     }
+    /// Evaluates matching middleware in stable order with idempotency and event bounds.
     pub fn evaluate(
         &mut self,
         request: &MiddlewareRequest,

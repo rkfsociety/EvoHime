@@ -1,7 +1,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
+/// Creates the table for versioned dependency-aware task graphs.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS dependency_task_graphs (graph_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, graph_json BLOB NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts a graph revision once; duplicate graph IDs return `false`.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -12,6 +14,7 @@ pub fn put(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("INSERT OR IGNORE INTO dependency_task_graphs(graph_id,revision,graph_json,content_hash,updated_at_ms) VALUES(?1,?2,?3,?4,?5)",params![id,revision,json,hash,now])?==1)
 }
+/// Replaces a graph only when its current revision matches `expected`.
 pub fn replace(
     c: &Connection,
     id: &str,
@@ -23,6 +26,7 @@ pub fn replace(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("UPDATE dependency_task_graphs SET revision=?3,graph_json=?4,content_hash=?5,updated_at_ms=?6 WHERE graph_id=?1 AND revision=?2",params![id,expected,revision,json,hash,now])?==1)
 }
+/// Returns the serialized graph for `id`, if it exists.
 pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT graph_json FROM dependency_task_graphs WHERE graph_id=?1",

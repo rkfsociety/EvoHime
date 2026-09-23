@@ -32,6 +32,7 @@ pub enum LadderLevel {
 }
 
 impl LadderLevel {
+    /// Стабильный идентификатор уровня для ledger и диагностики.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ExpiredDuplicateSuperseded => "l1_expired_duplicate_superseded",
@@ -73,25 +74,33 @@ pub trait OffloadSink {
     /// считается исчерпанным, а в ledger пишется diagnostic.
     fn available(&self) -> bool;
 
+    /// Выгружает item и возвращает locator и размер оставляемого summary.
     fn offload(&mut self, item: &ContextItem) -> Result<OffloadOutcome, String>;
 }
 
 /// Результат сжатия набора item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SummaryOutcome {
+    /// Идентификатор созданного summary.
     pub summary_id: String,
+    /// Идентификаторы исходных записей, вошедших в summary.
     pub source_ids: Vec<String>,
+    /// Оценка summary в токенах.
     pub summary_tokens: u32,
+    /// Версия summarizer или deterministic fallback.
     pub summarizer_version: String,
     /// Применён ли deterministic fallback вместо вызова summarizer.
     pub fallback: bool,
+    /// Причина использования fallback, если он был выбран.
     pub fallback_reason: Option<String>,
 }
 
 /// Возможность сжатия истории (реализуется этапом 01.3).
 pub trait Summarizer {
+    /// Проверяет доступность механизма сжатия.
     fn available(&self) -> bool;
 
+    /// Сжимает заданные элементы и возвращает описание результата.
     fn summarize(&mut self, items: &[ContextItem]) -> Result<SummaryOutcome, String>;
 }
 
@@ -124,17 +133,24 @@ impl Summarizer for NoSummarizer {
 /// Diagnostic уровня лестницы. Bounded: только идентификаторы и причины.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LadderDiagnostic {
+    /// Уровень, сформировавший диагностику.
     pub level: LadderLevel,
+    /// Машиночитаемый код причины.
     pub code: String,
+    /// Ограниченное описание причины без содержимого item.
     pub detail: String,
 }
 
 /// Итог прохода лестницы.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LadderOutcome {
+    /// Уровни, которые изменили состояние выбора.
     pub levels_applied: Vec<LadderLevel>,
+    /// Диагностика недоступных или неприменимых уровней.
     pub diagnostics: Vec<LadderDiagnostic>,
+    /// Результаты созданного сжатия истории.
     pub summaries: Vec<SummaryOutcome>,
+    /// Число байт, выгруженных в artifact store.
     pub offloaded_bytes: u64,
     /// Сколько токенов резервов освобождено уровнем L6.
     pub reserves_released: u32,
@@ -150,6 +166,7 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// Выбирает все переданные item и сохраняет размер резервов.
     pub fn new(items: Vec<ContextItem>, reserves: u32) -> Self {
         let mut selection = Self { items, reserves };
         for item in &mut selection.items {
@@ -177,6 +194,7 @@ impl Selection {
             .fold(0, u32::saturating_add)
     }
 
+    /// Суммарное число токенов обязательных и необязательных выбранных item.
     pub fn context_tokens(&self) -> u32 {
         self.mandatory_tokens()
             .saturating_add(self.optional_tokens())
@@ -187,10 +205,12 @@ impl Selection {
         self.optional_tokens().saturating_add(self.reserves)
     }
 
+    /// Итератор выбранных item в исходном порядке.
     pub fn selected(&self) -> impl Iterator<Item = &ContextItem> {
         self.items.iter().filter(|item| item.selected)
     }
 
+    /// Итератор отброшенных item в исходном порядке.
     pub fn dropped(&self) -> impl Iterator<Item = &ContextItem> {
         self.items.iter().filter(|item| !item.selected)
     }
@@ -221,7 +241,9 @@ impl Selection {
 
 /// Вход лестницы.
 pub struct LadderContext<'a> {
+    /// Текущее время в Unix milliseconds для проверки срока годности.
     pub now: i64,
+    /// Профиль модели, задающий обязательные и необязательные резервы.
     pub profile: &'a ModelContextProfile,
     /// Цель лестницы: `context_tokens <= target_tokens`.
     pub goal_context_tokens: u32,

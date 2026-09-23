@@ -393,6 +393,7 @@ pub struct DriveOutcome {
 // ---------------------------------------------------------------------------
 
 impl EventJournal {
+    /// Persists a workflow run and its initial node records atomically.
     pub async fn insert_workflow_run(
         &self,
         run: &WorkflowRunRecord,
@@ -419,6 +420,7 @@ impl EventJournal {
             .unwrap_or_default()
     }
 
+    /// Loads the persisted state of one workflow run.
     pub async fn workflow_run(
         &self,
         run_id: &str,
@@ -427,6 +429,7 @@ impl EventJournal {
         store::get_run(database.connection(), run_id)
     }
 
+    /// Lists workflow runs, bounded by the requested page size.
     pub async fn list_workflow_runs(
         &self,
         limit: usize,
@@ -435,6 +438,7 @@ impl EventJournal {
         store::list_runs(database.connection(), limit)
     }
 
+    /// Loads the persisted node states for one workflow run.
     pub async fn workflow_run_nodes(
         &self,
         run_id: &str,
@@ -443,6 +447,7 @@ impl EventJournal {
         store::list_nodes(database.connection(), run_id)
     }
 
+    /// Loads execution attempts recorded for one workflow run.
     pub async fn workflow_run_attempts(
         &self,
         run_id: &str,
@@ -451,6 +456,7 @@ impl EventJournal {
         store::list_attempts(database.connection(), run_id)
     }
 
+    /// Lists durable events recorded for one workflow run.
     pub async fn list_workflow_events(
         &self,
         run_id: &str,
@@ -461,6 +467,7 @@ impl EventJournal {
         store::list_events(database.connection(), run_id, after_sequence, limit)
     }
 
+    /// Marks a workflow run for cooperative cancellation.
     pub async fn request_workflow_cancel(
         &self,
         run_id: &str,
@@ -470,6 +477,7 @@ impl EventJournal {
         store::request_cancel(database.connection(), run_id, now_ms)
     }
 
+    /// Recovers nonterminal runs left behind by a previous Core process.
     pub async fn recover_workflow_runs(
         &self,
         now_ms: i64,

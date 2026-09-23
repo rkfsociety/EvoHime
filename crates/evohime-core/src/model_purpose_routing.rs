@@ -9,31 +9,51 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Schema version for purpose-routing policies.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Stable identifier included in routing policy hashes.
 pub const CONTRACT_ID: &str = "model-purpose-routing-v1";
+/// Maximum number of distinct purposes a policy may route.
 pub const MAX_PURPOSES: usize = 32;
+/// Maximum length of a profile reference or capability name.
 pub const MAX_PROFILE_REF: usize = 128;
+/// Maximum number of capabilities required by one purpose.
 pub const MAX_CAPABILITIES: usize = 16;
 
+/// Category of model call used to select a profile and invocation requirements.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelCallPurpose {
+    /// Main user-facing reasoning call.
     PrimaryReasoning,
+    /// Producing or modifying source code.
     CodeEditing,
+    /// Reasoning about system structure and component boundaries.
     ArchitectureReasoning,
+    /// Selecting an appropriate tool for a task.
     ToolSelection,
+    /// Selecting collaborators for a task.
     TeamSelection,
+    /// Selecting relevant context for a model call.
     ContextSelection,
+    /// Condensing information into a shorter representation.
     Summarization,
+    /// Compressing accumulated conversation or task state.
     Compaction,
+    /// Producing a commit message from a change set.
     CommitMessage,
+    /// Reviewing code, plans, or other artifacts.
     Review,
+    /// Judging or ranking candidate outputs.
     Judge,
+    /// Refining an existing candidate output.
     Refinement,
+    /// Simulating a proposed action or outcome.
     Simulation,
 }
 
 impl ModelCallPurpose {
+    /// Returns the stable snake-case identifier used in serialized contracts.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::PrimaryReasoning => "primary_reasoning",
@@ -53,56 +73,83 @@ impl ModelCallPurpose {
     }
 }
 
+/// Maximum tool authority permitted for a purpose route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolCeiling {
+    /// Model calls must not receive tools.
     NoTools,
+    /// Only read-only tools may be exposed.
     ReadOnly,
+    /// Workspace-safe tools may be exposed.
     WorkspaceSafe,
+    /// Tools granted by the active authorization may be exposed.
     Granted,
 }
 
+/// Amount of task context a purpose route may receive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContextPolicy {
+    /// Include only the minimum routing and request context.
     Minimal,
+    /// Include context selected for the current task.
     Task,
+    /// Permit the full available context set.
     Full,
 }
 
+/// Privacy, capability, tool, and context requirements for one model purpose.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PurposeRequirements {
+    /// Capabilities the chosen profile must support.
     pub capabilities: BTreeSet<String>,
+    /// Minimum privacy classification required of the provider.
     pub required_privacy: PrivacyClass,
+    /// Maximum tool authority allowed for the invocation.
     pub tool_ceiling: ToolCeiling,
+    /// Context inclusion policy for the invocation.
     pub context_policy: ContextPolicy,
 }
 
+/// Selected profile reference and constraints for a model-call purpose.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PurposeRoute {
+    /// Identifier of the model profile to resolve for this purpose.
     pub profile_ref: String,
+    /// Requirements that must accompany this route.
     pub requirements: PurposeRequirements,
 }
 
+/// Versioned mapping from model-call purposes to profile requirements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelPurposeRoutingPolicy {
+    /// Serialized schema version.
     pub schema_version: u32,
+    /// Contract identifier expected by this implementation.
     pub policy_id: String,
+    /// Monotonic policy revision; zero is invalid.
     pub version: u64,
+    /// Route for each supported model-call purpose.
     pub routes: BTreeMap<ModelCallPurpose, PurposeRoute>,
 }
 
+/// Policy validation or purpose lookup failure.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RoutingError {
+    /// The serialized policy version is unsupported.
     #[error("unsupported model purpose routing schema")]
     UnsupportedVersion,
+    /// A policy field or route violates the contract.
     #[error("invalid model purpose routing policy: {0}")]
     Invalid(&'static str),
+    /// No route was configured for the requested purpose.
     #[error("purpose route is not configured")]
     MissingPurpose,
 }
 
 impl ModelPurposeRoutingPolicy {
+    /// Checks schema identity, bounds, references, and compatible requirement pairs.
     pub fn validate(&self) -> Result<(), RoutingError> {
         if self.schema_version != CONTRACT_VERSION {
             return Err(RoutingError::UnsupportedVersion);
@@ -139,6 +186,7 @@ impl ModelPurposeRoutingPolicy {
         Ok(())
     }
 
+    /// Validates the policy and hashes its stable contract identifier and JSON.
     pub fn canonical_hash(&self) -> Result<String, RoutingError> {
         self.validate()?;
         let bytes = serde_json::to_vec(self).map_err(|_| RoutingError::Invalid("serialization"))?;
@@ -149,6 +197,7 @@ impl ModelPurposeRoutingPolicy {
         Ok(hex::encode(hash.finalize()))
     }
 
+    /// Validates the policy and returns the route configured for `purpose`.
     pub fn route(&self, purpose: ModelCallPurpose) -> Result<&PurposeRoute, RoutingError> {
         self.validate()?;
         self.routes
@@ -157,6 +206,7 @@ impl ModelPurposeRoutingPolicy {
     }
 }
 
+/// Builds the built-in routing table with a conservative task-context default.
 pub fn builtin_policy() -> ModelPurposeRoutingPolicy {
     let requirements = PurposeRequirements {
         capabilities: ["chat".into()].into_iter().collect(),
@@ -196,6 +246,7 @@ pub fn builtin_policy() -> ModelPurposeRoutingPolicy {
     }
 }
 
+/// Maps a known task-class label to its model purpose, defaulting to reasoning.
 pub fn purpose_for_task_class(task_class: Option<&str>) -> ModelCallPurpose {
     match task_class.unwrap_or_default() {
         "code_editing" | "editing" => ModelCallPurpose::CodeEditing,

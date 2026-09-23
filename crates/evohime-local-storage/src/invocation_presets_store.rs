@@ -4,6 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::StorageError;
 
+/// Creates the immutable, owner-scoped invocation preset revision table.
 pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS invocation_presets (
@@ -17,17 +18,26 @@ pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     Ok(())
 }
 
+/// Values required to insert one immutable invocation preset revision.
 #[derive(Clone, Copy)]
 pub struct SaveRevisionInput<'a> {
+    /// Scope that owns the preset.
     pub owner_scope: &'a str,
+    /// Stable preset identifier.
     pub id: &'a str,
+    /// Immutable revision number.
     pub revision: u64,
+    /// Serialized preset definition.
     pub content_json: &'a str,
+    /// Hash of the serialized definition.
     pub content_hash: &'a str,
+    /// Lifecycle state associated with this revision.
     pub state: &'a str,
+    /// Creation/update timestamp in milliseconds.
     pub now_ms: i64,
 }
 
+/// Inserts a preset revision once; existing `(owner_scope, id, revision)` rows are unchanged.
 pub fn save_revision(
     connection: &Connection,
     input: SaveRevisionInput<'_>,
@@ -48,6 +58,7 @@ pub fn save_revision(
     Ok(changed == 1)
 }
 
+/// Reads an immutable revision's JSON, content hash, and state for its owner.
 pub fn read_revision(
     connection: &Connection,
     owner_scope: &str,

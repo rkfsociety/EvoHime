@@ -1,8 +1,23 @@
 use rusqlite::{params, Connection, OptionalExtension};
+
 const MAX_REGISTRY_ENTRIES: i64 = 256;
+
+/// Creates the versioned event-visualizer descriptor table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS event_visualizer_registry (id TEXT PRIMARY KEY, version INTEGER NOT NULL, content_hash TEXT NOT NULL, descriptor_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts or updates a descriptor only when its version is newer.
+///
+/// Descriptor JSON is limited to 256 KiB. Equal or stale versions leave the
+/// current entry unchanged.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized descriptors or failed writes.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -19,12 +34,22 @@ pub fn put(
     c.execute("INSERT INTO event_visualizer_registry(id,version,content_hash,descriptor_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,descriptor_json=excluded.descriptor_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > event_visualizer_registry.version",params![id,version,hash,json,now])?;
     Ok(())
 }
+/// Loads descriptors ordered by ID, capped at 256 entries.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut s =
         c.prepare("SELECT descriptor_json FROM event_visualizer_registry ORDER BY id LIMIT ?1")?;
     let rows = s.query_map([MAX_REGISTRY_ENTRIES], |r| r.get(0))?;
     rows.collect()
 }
+/// Loads one serialized descriptor by ID, if present.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT descriptor_json FROM event_visualizer_registry WHERE id=?1",

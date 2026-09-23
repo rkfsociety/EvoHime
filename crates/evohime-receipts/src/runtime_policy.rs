@@ -54,6 +54,7 @@ type CapabilityBindingRow = (
 
 type ApprovalBindingRow = (Option<String>, Option<String>, Option<i64>, Option<i64>);
 
+/// Binds a validated capability snapshot and hook-chain version to a prepared action.
 pub fn bind_capability_to_action(
     connection: &Connection,
     action_id: Uuid,
@@ -119,6 +120,7 @@ pub fn bind_capability_to_action(
     Ok(())
 }
 
+/// Persists an immutable policy decision associated with an action.
 pub fn persist_policy_decision(
     connection: &Connection,
     action_id: Uuid,
@@ -161,6 +163,7 @@ pub fn persist_policy_decision(
     Ok(())
 }
 
+/// Computes the canonical input hash after enforcing the receipt call-size limit.
 pub fn canonical_call_hash(
     tool_name: &str,
     normalized_scope: &str,

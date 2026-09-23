@@ -3,65 +3,110 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
+/// Current schema version for persisted diagnostics snapshots.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum encoded length of identifiers and short labels.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum encoded length of resource references and fingerprints.
 pub const MAX_REF_BYTES: usize = 512;
+/// Maximum encoded length of one diagnostic message.
 pub const MAX_MESSAGE_BYTES: usize = 16 * 1024;
+/// Maximum number of diagnostics accepted in one snapshot.
 pub const MAX_DIAGNOSTICS: usize = 2048;
+/// Maximum number of providers accepted by a diagnostics producer.
 pub const MAX_PROVIDERS: usize = 64;
 
+/// Identity and trust metadata for a diagnostics-producing provider.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Provider {
+    /// Stable provider identifier.
     pub id: String,
+    /// Provider release or schema version.
     pub version: String,
+    /// Provider kind, such as compiler or linter.
     pub kind: String,
+    /// Trust category assigned to the provider.
     pub trust_class: String,
+    /// Digest binding the provider metadata to its registered definition.
     pub content_hash: String,
 }
+/// Workspace and file revision to which a diagnostic is bound.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Binding {
+    /// Stable identifier for the workspace root.
     pub workspace_root_id: String,
+    /// Fingerprint of the workspace state.
     pub workspace_fingerprint: String,
+    /// Canonical workspace-relative file reference.
     pub file_ref: String,
+    /// Optional digest of the file contents observed by the provider.
     pub file_hash: Option<String>,
+    /// Optional source-control or editor revision for the file.
     pub file_revision: Option<String>,
 }
+/// One provider-reported issue tied to a workspace revision.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Diagnostic {
+    /// Provider-local identifier for this diagnostic.
     pub id: String,
+    /// File and workspace revision associated with the result.
     pub binding: Binding,
+    /// Severity label, for example `error` or `warning`.
     pub severity: String,
+    /// Name of the diagnostic source.
     pub source: String,
+    /// Optional source-specific diagnostic code.
     pub code: Option<String>,
+    /// Human-readable explanation of the issue.
     pub message: String,
+    /// Provider that produced the diagnostic.
     pub provider_id: String,
+    /// Stable fingerprint used to compare snapshots.
     pub fingerprint: String,
+    /// Whether the diagnostic is known to refer to an older file revision.
     pub stale: bool,
 }
+/// Integrity-bound set of diagnostics for one workspace revision.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Snapshot {
+    /// Stable snapshot identifier.
     pub id: String,
+    /// Workspace fingerprint shared by all diagnostics in this snapshot.
     pub workspace_fingerprint: String,
+    /// Diagnostics captured for the workspace.
     pub diagnostics: Vec<Diagnostic>,
+    /// Canonical digest of the snapshot with this field cleared.
     pub content_hash: String,
 }
+/// Classification of diagnostics between two workspace snapshots.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Delta {
+    /// Snapshot used as the comparison baseline.
     pub baseline_snapshot_id: String,
+    /// Snapshot being compared with the baseline.
     pub current_snapshot_id: String,
+    /// Diagnostics present only in the current snapshot.
     pub introduced: Vec<Diagnostic>,
+    /// Diagnostics present only in the baseline snapshot.
     pub resolved: Vec<Diagnostic>,
+    /// Diagnostics with matching fingerprints in both snapshots.
     pub persisting: Vec<Diagnostic>,
+    /// Current diagnostics explicitly marked as stale.
     pub stale: Vec<Diagnostic>,
 }
+/// Invalid, oversized, or workspace-stale diagnostics data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
+    /// Input uses a schema version this implementation cannot read.
     #[error("unsupported diagnostics schema version")]
     UnsupportedVersion,
+    /// Input exceeds a documented size or item-count bound.
     #[error("diagnostics input exceeds bounds")]
     TooLarge,
+    /// A required field, path, or integrity digest is invalid.
     #[error("invalid diagnostics: {0}")]
     Invalid(String),
+    /// Snapshots belong to different workspace revisions.
     #[error("diagnostics are stale")]
     Stale,
 }
@@ -72,6 +117,7 @@ fn bounded(value: &str, max: usize, name: &str) -> Result<(), Error> {
     }
     Ok(())
 }
+/// Checks provider identity, version, trust metadata, and digest fields.
 pub fn validate_provider(p: &Provider) -> Result<(), Error> {
     bounded(&p.id, MAX_ID_BYTES, "provider_id")?;
     bounded(&p.version, MAX_ID_BYTES, "provider_version")?;
@@ -79,6 +125,7 @@ pub fn validate_provider(p: &Provider) -> Result<(), Error> {
     bounded(&p.trust_class, MAX_ID_BYTES, "trust_class")?;
     bounded(&p.content_hash, MAX_REF_BYTES, "content_hash")
 }
+/// Checks diagnostic bounds and ensures its file reference stays workspace-relative.
 pub fn validate_diagnostic(d: &Diagnostic) -> Result<(), Error> {
     bounded(&d.id, MAX_ID_BYTES, "id")?;
     bounded(
@@ -106,10 +153,12 @@ pub fn validate_diagnostic(d: &Diagnostic) -> Result<(), Error> {
     }
     Ok(())
 }
+/// Serializes a value deterministically and returns its SHA-256 digest.
 pub fn canonical_hash<T: Serialize>(value: &T) -> Result<String, Error> {
     let bytes = serde_json::to_vec(value).map_err(|e| Error::Invalid(e.to_string()))?;
     Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
 }
+/// Validates all snapshot entries and verifies the snapshot content digest.
 pub fn validate_snapshot(s: &Snapshot) -> Result<(), Error> {
     bounded(&s.id, MAX_ID_BYTES, "snapshot_id")?;
     bounded(
@@ -130,6 +179,7 @@ pub fn validate_snapshot(s: &Snapshot) -> Result<(), Error> {
     }
     Ok(())
 }
+/// Classifies diagnostics by fingerprint across snapshots of the same workspace.
 pub fn delta(baseline: &Snapshot, current: &Snapshot) -> Result<Delta, Error> {
     validate_snapshot(baseline)?;
     validate_snapshot(current)?;

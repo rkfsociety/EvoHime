@@ -35,13 +35,19 @@ pub const ALLOWED_LOG_FIELDS: &[&str] = &[
     "code",
 ];
 
+/// Lifecycle status of the optional speech engine.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EngineStatus {
+    /// Engine is idle and not performing an update.
     Idle,
+    /// Model or engine files are being downloaded.
     Downloading,
+    /// Downloaded files are being checked before activation.
     Verifying,
+    /// Engine version passed validation and may be used.
     Approved,
+    /// Download, validation, or activation failed.
     Failed,
 }
 
@@ -53,13 +59,18 @@ pub enum EngineStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtractionState {
+    /// Transcript extraction is disabled by policy.
     Disabled,
+    /// Transcript is queued for extraction.
     Pending,
+    /// Transcript extraction completed.
     Done,
+    /// Transcript extraction failed.
     Failed,
 }
 
 impl ExtractionState {
+    /// All extraction states in declaration order.
     pub const ALL: [ExtractionState; 4] = [
         ExtractionState::Disabled,
         ExtractionState::Pending,
@@ -84,11 +95,15 @@ impl ExtractionState {
     }
 }
 
+/// Reason a retention operation removed ambient records.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetentionTrigger {
+    /// User explicitly requested deletion.
     Manual,
+    /// Retention policy expired the record.
     Policy,
+    /// Record passed the configured forget window.
     ForgetWindow,
 }
 
@@ -101,11 +116,14 @@ pub enum RetentionTrigger {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalKind {
+    /// Non-executable suggestion shown as a decision card.
     Suggestion,
+    /// Non-executable reminder shown as a decision card.
     Reminder,
 }
 
 impl ProposalKind {
+    /// All supported proposal kinds in declaration order.
     pub const ALL: [ProposalKind; 2] = [ProposalKind::Suggestion, ProposalKind::Reminder];
 
     /// Wire and storage form; the same two spellings are the `CHECK`
@@ -117,6 +135,7 @@ impl ProposalKind {
         }
     }
 
+    /// Parses a stable wire value; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
@@ -136,14 +155,17 @@ pub enum VoiceCommandKind {
 }
 
 impl VoiceCommandKind {
+    /// All supported ambient voice-command kinds.
     pub const ALL: [VoiceCommandKind; 1] = [VoiceCommandKind::OpenApp];
 
+    /// Returns the stable wire and storage representation.
     pub const fn as_str(self) -> &'static str {
         match self {
             VoiceCommandKind::OpenApp => "open_app",
         }
     }
 
+    /// Parses a stable wire value; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
@@ -158,14 +180,20 @@ impl VoiceCommandKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceCommandState {
+    /// A decision card is waiting for the user.
     Pending,
+    /// The requested application was launched.
     Launched,
+    /// The user declined the command.
     Declined,
+    /// The command expired before a decision.
     Expired,
+    /// Launch failed after the user approved the command.
     Failed,
 }
 
 impl VoiceCommandState {
+    /// All voice-command lifecycle states in declaration order.
     pub const ALL: [VoiceCommandState; 5] = [
         VoiceCommandState::Pending,
         VoiceCommandState::Launched,
@@ -174,6 +202,7 @@ impl VoiceCommandState {
         VoiceCommandState::Failed,
     ];
 
+    /// Returns the stable wire and storage representation.
     pub const fn as_str(self) -> &'static str {
         match self {
             VoiceCommandState::Pending => "pending",
@@ -184,10 +213,12 @@ impl VoiceCommandState {
         }
     }
 
+    /// Parses a stable wire value; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|state| state.as_str() == value)
     }
 
+    /// Returns whether this command state has no further transitions.
     pub const fn is_terminal(self) -> bool {
         !matches!(self, VoiceCommandState::Pending)
     }
@@ -203,14 +234,20 @@ impl VoiceCommandState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalState {
+    /// A proposal card is awaiting the user's decision.
     Proposed,
+    /// The user accepted the proposal.
     Accepted,
+    /// The user declined the proposal.
     Declined,
+    /// The user muted future proposals for this subject.
     Muted,
+    /// The proposal expired or its source episode was removed.
     Expired,
 }
 
 impl ProposalState {
+    /// All proposal lifecycle states in declaration order.
     pub const ALL: [ProposalState; 5] = [
         ProposalState::Proposed,
         ProposalState::Accepted,
@@ -219,6 +256,7 @@ impl ProposalState {
         ProposalState::Expired,
     ];
 
+    /// Returns the stable wire and storage representation.
     pub const fn as_str(self) -> &'static str {
         match self {
             ProposalState::Proposed => "proposed",
@@ -229,6 +267,7 @@ impl ProposalState {
         }
     }
 
+    /// Parses a stable wire value; unknown values are rejected.
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|state| state.as_str() == value)
     }
@@ -240,11 +279,15 @@ impl ProposalState {
     }
 }
 
+/// Severity assigned to a typed ambient event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LogLevel {
+    /// Informational event.
     Info,
+    /// Degraded or failed subsystem state.
     Warn,
+    /// Operation failed and needs error handling.
     Error,
 }
 
@@ -258,27 +301,45 @@ pub enum LogLevel {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum AmbientLogEvent {
+    /// Listening lifecycle state or capture failure changed.
     State {
+        /// New listening lifecycle state.
         state: ListeningState,
+        /// Closed-set reason for the state.
         reason: ListeningReason,
+        /// Active opaque device identifier, if one is selected.
         active_device_id: Option<DeviceId>,
     },
+    /// Speech engine status or download progress changed.
     Engine {
+        /// Engine lifecycle status.
         status: EngineStatus,
+        /// Opaque engine build identifier, when available.
         engine_version: Option<EngineVersion>,
+        /// Download progress percentage, when a download is active.
         progress_pct: Option<u8>,
     },
+    /// An ambient episode or its transcript extraction changed.
     Transcript {
+        /// Opaque identifier of the ambient episode.
         episode_id: EpisodeId,
+        /// Unix timestamp in milliseconds when the episode began.
         started_at_ms: u64,
+        /// Number of utterances recorded in the episode.
         utterance_count: u32,
+        /// Transcript extraction lifecycle state.
         extraction_state: ExtractionState,
     },
+    /// Ambient records were removed by a retention operation.
     Retention {
+        /// Number of records removed by the retention operation.
         deleted_count: u32,
+        /// Closed-set reason for the retention operation.
         trigger: RetentionTrigger,
     },
+    /// A non-executable proposal was created or resolved.
     Proposal {
+        /// Opaque identifier of the proposal card.
         proposal_id: ProposalId,
         /// Эпизод-источник. `None` означает, что источника уже нет: карточку
         /// решают после удаления транскрипта. Поле существует ради удаления —
@@ -286,11 +347,13 @@ pub enum AmbientLogEvent {
         /// `ambient.proposal` исчезает вместе с эпизодом по тому же индексу,
         /// что и `ambient.transcript`.
         episode_id: Option<EpisodeId>,
+        /// Proposal category; proposals are non-executable suggestions.
         kind: ProposalKind,
         /// Bounded, opaque form of the canonical subject. The card's text has
         /// no field here at all: it is read back with a command, exactly as
         /// `memory.pending` withholds `statement`.
         subject_key: SubjectKey,
+        /// Current lifecycle state of the proposal card.
         proposal_state: ProposalState,
     },
     /// Услышанная команда. Ни фразы, ни её обрывка здесь нет: `app_id` —
@@ -298,18 +361,26 @@ pub enum AmbientLogEvent {
     /// списка, а не то, что человек сказал. Заголовок приложения читается
     /// отдельной командой, ровно как текст карточки предложения.
     VoiceCommand {
+        /// Opaque identifier of the pending voice command.
         command_id: CommandId,
+        /// Closed-set action requested by the command.
         kind: VoiceCommandKind,
+        /// Resolved application catalog key.
         app_id: AppId,
+        /// Current decision or launch state.
         command_state: VoiceCommandState,
     },
+    /// Ambient operation failed with a stable error code.
     Error {
+        /// Stable error code safe to emit in an ambient log.
         code: AmbientErrorCode,
+        /// Listening state at the time of the error.
         state: ListeningState,
     },
 }
 
 impl AmbientLogEvent {
+    /// Returns the stable event name associated with this variant.
     pub const fn event_name(&self) -> &'static str {
         match self {
             AmbientLogEvent::State { .. } => "ambient.state",
@@ -348,6 +419,7 @@ impl AmbientLogEvent {
         }
     }
 
+    /// Returns the severity assigned to this event category and state.
     pub const fn level(&self) -> LogLevel {
         match self {
             AmbientLogEvent::Error { .. } => LogLevel::Error,
@@ -372,6 +444,7 @@ impl AmbientLogEvent {
 /// The ambient path holds one of these instead of a raw structured logger, so
 /// there is no reachable call that writes arbitrary JSON from ambient code.
 pub trait AmbientLogSink {
+    /// Records one typed ambient event.
     fn record(&self, event: &AmbientLogEvent);
 }
 

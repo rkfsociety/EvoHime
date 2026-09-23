@@ -1,6 +1,7 @@
 use crate::error::ContractError;
 use serde::{Deserialize, Serialize};
 
+/// Maximum UTF-8 byte length accepted by every opaque identifier type.
 pub const MAX_ID_BYTES: usize = 128;
 
 /// Identifiers are bounded opaque tokens, never sentences.
@@ -33,12 +34,14 @@ macro_rules! bounded_id {
         pub struct $name(String);
 
         impl $name {
+            /// Validates and constructs this bounded opaque identifier.
             pub fn new(value: impl Into<String>) -> Result<Self, ContractError> {
                 let value = value.into();
                 validate_id(&value, $field)?;
                 Ok(Self(value))
             }
 
+            /// Returns the identifier token without allocating a new string.
             pub fn as_str(&self) -> &str {
                 &self.0
             }

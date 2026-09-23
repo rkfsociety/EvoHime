@@ -5,13 +5,19 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 
+/// Maximum number of pending mailbox messages retained for one child.
 pub const MAX_PENDING_PER_CHILD: i64 = 32;
 
+/// Errors returned by retained-child metadata and mailbox operations.
 #[derive(Debug)]
 pub enum RetainedStoreError {
+    /// An underlying SQLite operation failed.
     Sql(rusqlite::Error),
+    /// Serialization or deserialization of a stored record failed.
     Json(serde_json::Error),
+    /// The bounded child mailbox has reached its capacity.
     LimitExceeded,
+    /// A unique identifier or idempotency key was already used.
     Duplicate,
 }
 impl fmt::Display for RetainedStoreError {
@@ -31,6 +37,7 @@ impl From<serde_json::Error> for RetainedStoreError {
     }
 }
 
+/// Creates retained-child, follow-up, mailbox, and parent-sequence tables.
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS retained_children (
         parent_id TEXT NOT NULL, child_id TEXT NOT NULL, family_root_id TEXT NOT NULL,
@@ -59,27 +66,47 @@ fn parse<T: DeserializeOwned>(value: &[u8]) -> Result<T, RetainedStoreError> {
     Ok(serde_json::from_slice(value)?)
 }
 
+/// Operations for parent-scoped retained children and their durable mailbox.
 pub struct RetainedChildStore;
+/// Fields for creating or advancing a parent's retained-child record.
 pub struct UpsertChildInput<'a, T> {
+    /// Parent task that owns the retained child.
     pub parent_id: &'a str,
+    /// Retained child identifier.
     pub child_id: &'a str,
+    /// Root identifier of the retained child family.
     pub family_root_id: &'a str,
+    /// Child record revision.
     pub revision: u64,
+    /// Registry version used to fence updates.
     pub registry_version: u64,
+    /// Child lifecycle state.
     pub lifecycle: &'a str,
+    /// Serialized child record.
     pub record: &'a T,
+    /// Record creation timestamp in milliseconds.
     pub created_at_ms: u64,
+    /// Most recent activity timestamp in milliseconds.
     pub last_active_at_ms: u64,
+    /// Retention deadline in milliseconds.
     pub retained_until_ms: u64,
 }
 
+/// Fields required to persist one child follow-up request idempotently.
 pub struct InsertFollowUpInput<'a, T> {
+    /// Parent task that owns the child.
     pub parent_id: &'a str,
+    /// Target child identifier.
     pub child_id: &'a str,
+    /// Unique key used to deduplicate this request.
     pub idempotency_key: &'a str,
+    /// Child revision expected by the caller.
     pub expected_revision: u64,
+    /// Parent event sequence associated with the request.
     pub parent_sequence: u64,
+    /// Serialized follow-up request.
     pub request: &'a T,
+    /// Request creation timestamp in milliseconds.
     pub now_ms: u64,
 }
 
@@ -90,29 +117,47 @@ impl<'a, T> Clone for InsertFollowUpInput<'a, T> {
     }
 }
 
+/// Fields for inserting one serialized message into a child's mailbox.
 #[derive(Clone, Copy)]
 pub struct InsertMailboxInput<'a, T> {
+    /// Parent task that owns the mailbox.
     pub parent_id: &'a str,
+    /// Child receiving the message.
     pub child_id: &'a str,
+    /// Unique key used to deduplicate the enqueue operation.
     pub idempotency_key: &'a str,
+    /// Stable mailbox message identifier.
     pub message_id: &'a str,
+    /// Parent event sequence used to order messages.
     pub parent_sequence: u64,
+    /// Serialized mailbox entry.
     pub entry: &'a T,
+    /// Message creation timestamp in milliseconds.
     pub now_ms: u64,
 }
 
+/// Inputs for atomically saving a follow-up and enqueuing its generated mailbox entry.
 pub struct EnqueueFollowUpInput<'a, R, F> {
+    /// Parent task that owns the child.
     pub parent_id: &'a str,
+    /// Target child identifier.
     pub child_id: &'a str,
+    /// Idempotency key for this follow-up.
     pub idempotency_key: &'a str,
+    /// Child revision expected by the request.
     pub expected_revision: u64,
+    /// Serialized follow-up request value.
     pub request: &'a R,
+    /// Stable identifier for the generated mailbox message.
     pub message_id: &'a str,
+    /// Builds the mailbox entry using its allocated parent sequence.
     pub build_entry: F,
+    /// Operation timestamp in milliseconds.
     pub now_ms: u64,
 }
 
 impl RetainedChildStore {
+    /// Allocates the next monotonically increasing sequence for a parent.
     pub fn next_parent_sequence(
         connection: &mut Connection,
         parent_id: &str,
@@ -131,6 +176,7 @@ impl RetainedChildStore {
         tx.commit()?;
         Ok(n as u64)
     }
+    /// Upserts a retained child only when its registry version is newer.
     pub fn upsert_child<T: Serialize>(
         connection: &Connection,
         input: UpsertChildInput<'_, T>,
@@ -138,6 +184,7 @@ impl RetainedChildStore {
         connection.execute("INSERT INTO retained_children(parent_id,child_id,family_root_id,registry_version,revision,lifecycle,record_json,created_at_ms,last_active_at_ms,retained_until_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(parent_id,child_id) DO UPDATE SET family_root_id=excluded.family_root_id,registry_version=excluded.registry_version,revision=excluded.revision,lifecycle=excluded.lifecycle,record_json=excluded.record_json,last_active_at_ms=excluded.last_active_at_ms,retained_until_ms=excluded.retained_until_ms WHERE retained_children.registry_version < excluded.registry_version",params![input.parent_id,input.child_id,input.family_root_id,input.registry_version as i64,input.revision as i64,input.lifecycle,json(input.record)?,input.created_at_ms as i64,input.last_active_at_ms as i64,input.retained_until_ms as i64])?;
         Ok(())
     }
+    /// Loads and deserializes a retained child record by parent and child ID.
     pub fn get_child<T: DeserializeOwned>(
         connection: &Connection,
         parent_id: &str,
@@ -153,6 +200,7 @@ impl RetainedChildStore {
             .map(|x| parse(&x))
             .transpose()
     }
+    /// Lists a parent's retained children, excluding records whose retention deadline has passed.
     pub fn list_children<T: DeserializeOwned>(
         connection: &Connection,
         parent_id: &str,
@@ -167,6 +215,7 @@ impl RetainedChildStore {
         rows.map(|r| r.map_err(RetainedStoreError::from).and_then(|x| parse(&x)))
             .collect()
     }
+    /// Persists a follow-up request once using its idempotency key.
     pub fn insert_follow_up<T: Serialize>(
         connection: &Connection,
         input: InsertFollowUpInput<'_, T>,
@@ -174,6 +223,7 @@ impl RetainedChildStore {
         let n=connection.execute("INSERT OR IGNORE INTO child_follow_ups(idempotency_key,parent_id,child_id,expected_revision,parent_sequence,request_json,outcome,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,'pending',?7)",params![input.idempotency_key,input.parent_id,input.child_id,input.expected_revision as i64,input.parent_sequence as i64,json(input.request)?,input.now_ms as i64])?;
         Ok(n == 1)
     }
+    /// Returns whether a follow-up idempotency key has already been recorded.
     pub fn has_follow_up(connection: &Connection, key: &str) -> Result<bool, RetainedStoreError> {
         Ok(connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM child_follow_ups WHERE idempotency_key=?1)",
@@ -181,6 +231,7 @@ impl RetainedChildStore {
             |r| r.get(0),
         )?)
     }
+    /// Inserts one mailbox message unless its identifier/key already exists or the queue is full.
     pub fn insert_mailbox<T: Serialize>(
         connection: &Connection,
         input: InsertMailboxInput<'_, T>,
@@ -207,6 +258,7 @@ impl RetainedChildStore {
         }
         Ok(n == 1)
     }
+    /// Atomically records a follow-up, allocates its sequence, and inserts its mailbox entry.
     pub fn enqueue_follow_up<R: Serialize, E: Serialize, F: FnOnce(u64) -> E>(
         connection: &mut Connection,
         input: EnqueueFollowUpInput<'_, R, F>,
@@ -244,6 +296,7 @@ impl RetainedChildStore {
         tx.commit()?;
         Ok(true)
     }
+    /// Loads and deserializes one mailbox entry by message ID.
     pub fn get_mailbox<T: DeserializeOwned>(
         connection: &Connection,
         parent_id: &str,
@@ -259,6 +312,7 @@ impl RetainedChildStore {
             .map(|x| parse(&x))
             .transpose()
     }
+    /// Changes a retained child's lifecycle state.
     pub fn mark_lifecycle(
         connection: &Connection,
         parent_id: &str,
@@ -268,6 +322,7 @@ impl RetainedChildStore {
     ) -> Result<bool, RetainedStoreError> {
         Ok(connection.execute("UPDATE retained_children SET lifecycle=?3,registry_version=?4 WHERE parent_id=?1 AND child_id=?2 AND registry_version < ?4", params![parent_id, child_id, lifecycle, registry_version as i64])? == 1)
     }
+    /// Returns the number of pending messages for a child.
     pub fn pending_count(
         connection: &Connection,
         parent_id: &str,
@@ -275,6 +330,7 @@ impl RetainedChildStore {
     ) -> Result<u32, RetainedStoreError> {
         Ok(connection.query_row("SELECT COUNT(*) FROM child_mailbox WHERE parent_id=?1 AND receiver_id=?2 AND delivery IN ('pending','dispatched')", params![parent_id, child_id], |r| r.get::<_, i64>(0))? as u32)
     }
+    /// Deletes a retained child and its associated durable records.
     pub fn delete_child(
         connection: &Connection,
         parent_id: &str,
@@ -283,6 +339,7 @@ impl RetainedChildStore {
     ) -> Result<bool, RetainedStoreError> {
         Ok(connection.execute("UPDATE retained_children SET lifecycle='deleted', registry_version=registry_version+1 WHERE parent_id=?1 AND child_id=?2 AND registry_version=?3 AND lifecycle <> 'deleted'", params![parent_id, child_id, expected_registry_version as i64])? == 1)
     }
+    /// Advances a mailbox message from its expected delivery state.
     pub fn transition_mailbox(
         connection: &Connection,
         parent_id: &str,
@@ -296,18 +353,21 @@ impl RetainedChildStore {
         }
         Ok(connection.execute("UPDATE child_mailbox SET delivery=?4, delivered_at_ms=?5 WHERE parent_id=?1 AND message_id=?2 AND delivery=?3", params![parent_id, message_id, from, to, delivered_at_ms.map(|x| x as i64)])? == 1)
     }
+    /// Marks overdue delivered messages as having an unknown outcome.
     pub fn reconcile_unknown(
         connection: &Connection,
         parent_id: &str,
     ) -> Result<u32, RetainedStoreError> {
         Ok(connection.execute("UPDATE child_mailbox SET delivery='unknown' WHERE parent_id=?1 AND delivery='dispatched'", [parent_id])? as u32)
     }
+    /// Marks all delivered messages as having an unknown outcome after recovery.
     pub fn reconcile_all_unknown(connection: &Connection) -> Result<u32, RetainedStoreError> {
         Ok(connection.execute(
             "UPDATE child_mailbox SET delivery='unknown' WHERE delivery='dispatched'",
             [],
         )? as u32)
     }
+    /// Expires retained-child records and mailbox entries whose retention deadline has passed.
     pub fn expire_due(connection: &Connection, now_ms: u64) -> Result<u32, RetainedStoreError> {
         Ok(connection.execute("UPDATE child_mailbox SET delivery='expired' WHERE delivery IN ('pending','dispatched') AND created_at_ms < ?1", [now_ms.saturating_sub(24 * 60 * 60 * 1000) as i64])? as u32)
     }

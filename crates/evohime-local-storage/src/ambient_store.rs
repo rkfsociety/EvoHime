@@ -102,6 +102,7 @@ impl AmbientStoreSql {
         Ok(())
     }
 
+    /// Sets an episode's end timestamp once; returns `false` if it is already closed or absent.
     pub fn close_episode(
         connection: &Connection,
         episode_id: &str,
@@ -117,6 +118,7 @@ impl AmbientStoreSql {
         Ok(changed > 0)
     }
 
+    /// Updates an episode's extraction lifecycle state and reports whether it exists.
     pub fn set_extraction_state(
         connection: &Connection,
         episode_id: &str,
@@ -187,6 +189,7 @@ impl AmbientStoreSql {
         Ok(true)
     }
 
+    /// Loads one validated episode by ID, if present.
     pub fn get_episode(
         connection: &Connection,
         episode_id: &str,
@@ -219,6 +222,7 @@ impl AmbientStoreSql {
         Ok(records)
     }
 
+    /// Lists an episode's utterances up to the bounded read limit.
     pub fn list_utterances(
         connection: &Connection,
         episode_id: &str,
@@ -241,6 +245,7 @@ impl AmbientStoreSql {
         Ok(records)
     }
 
+    /// Lists removal tombstones up to the bounded read limit.
     pub fn list_tombstones(
         connection: &Connection,
         limit: usize,
@@ -443,6 +448,7 @@ impl AmbientStoreSql {
         Ok(ProposalInsert::Created)
     }
 
+    /// Loads one proposal by ID, if present.
     pub fn get_proposal(
         connection: &Connection,
         proposal_id: &str,
@@ -555,6 +561,7 @@ impl AmbientStoreSql {
         Ok(())
     }
 
+    /// Lists stored subject-mute keys, capped at [`MAX_ROWS_PER_READ`].
     pub fn list_mute_keys(connection: &Connection) -> Result<Vec<String>, AmbientStoreError> {
         let mut statement = connection
             .prepare("SELECT mute_key FROM ambient_proposal_mutes ORDER BY mute_key LIMIT ?1")?;
@@ -580,6 +587,7 @@ impl AmbientStoreSql {
         )?)
     }
 
+    /// Loads the current ambient proactivity counters, if initialized.
     pub fn load_counters(
         connection: &Connection,
     ) -> Result<Option<ProactivityCountersRow>, AmbientStoreError> {
@@ -602,6 +610,7 @@ impl AmbientStoreSql {
             .optional()?)
     }
 
+    /// Persists the proactivity counters after validating their non-negative counts.
     pub fn save_counters(
         connection: &Connection,
         row: ProactivityCountersRow,

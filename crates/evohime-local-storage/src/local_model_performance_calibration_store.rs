@@ -2,10 +2,13 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum size of each serialized calibration payload.
 pub const MAX_JSON_BYTES: usize = 64 * 1024;
 
+/// Revision, identity JSON, state, sample JSON, and cancellation flag for a calibration session.
 pub type SessionRow = (i64, Vec<u8>, String, Vec<u8>, bool);
 
+/// Creates the calibration session and immutable performance profile tables.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS local_model_calibration_sessions (
@@ -25,6 +28,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Inserts or advances a session by exactly one revision with bounded non-empty JSON fields.
 #[allow(clippy::too_many_arguments)]
 pub fn put_session(
     connection: &Connection,
@@ -61,6 +65,7 @@ pub fn put_session(
     Ok(changed == 1)
 }
 
+/// Loads a calibration session's revision, identity, state, samples, and cancellation flag.
 pub fn get_session(
     connection: &Connection,
     session_id: &str,
@@ -83,6 +88,7 @@ pub fn get_session(
         .optional()
 }
 
+/// Inserts a validated profile revision; duplicate profile revisions return `false`.
 #[allow(clippy::too_many_arguments)]
 pub fn put_profile(
     connection: &Connection,

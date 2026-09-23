@@ -6,6 +6,7 @@ impl<S> CoreClient<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    /// Starts a workflow through the authenticated Core command channel.
     pub async fn start_workflow(
         &mut self,
         task_id: String,

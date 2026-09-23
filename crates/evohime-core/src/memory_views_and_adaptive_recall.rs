@@ -9,120 +9,197 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 use std::fmt;
 
+/// Current schema version for memory views and adaptive recall policies.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum logical scopes in one view.
 pub const MAX_SCOPES: usize = 64;
+/// Maximum root scopes exposed by one view.
 pub const MAX_VIEW_SCOPES: usize = 16;
+/// Maximum identifier length for scopes, views, and memory records.
 pub const MAX_ID: usize = 128;
+/// Maximum query length accepted for adaptive retrieval.
 pub const MAX_QUERY: usize = 512;
+/// Maximum results returned from a single recall decision.
 pub const MAX_RESULTS: usize = 64;
+/// Maximum descendant depth available to one view.
 pub const MAX_DEPTH: u8 = 8;
 
+/// Node in the logical memory-scope hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogicalMemoryScope {
+    /// Stable scope identifier.
     pub id: String,
+    /// Optional parent scope identifier.
     pub parent_id: Option<String>,
+    /// Sensitivity classification of records in this scope.
     pub sensitivity: Sensitivity,
 }
 
+/// Sensitivity class attached to a logical memory scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Sensitivity {
+    /// Safe for broad disclosure.
     Public,
+    /// Internal workspace or product data.
     Internal,
+    /// Private user data requiring restricted access.
     Private,
+    /// Secret data, excluded from memory view construction.
     Secret,
 }
 
+/// Read and write rights associated with a memory view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryViewRights {
+    /// Whether retrieval from visible scopes is permitted.
     pub read: bool,
+    /// Whether writes to visible scopes are permitted.
     pub write: bool,
 }
 
+/// Bounded view that narrows access to a subset of the memory hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryView {
+    /// View schema version.
     pub schema_version: u32,
+    /// Stable view identifier.
     pub id: String,
+    /// Monotonic view revision.
     pub revision: u64,
+    /// Owner scope responsible for the view.
     pub owner_scope: String,
+    /// Scope hierarchy considered by this view.
     pub scopes: Vec<LogicalMemoryScope>,
+    /// Root scopes visible to the view.
     pub root_scope_ids: Vec<String>,
+    /// Read and write rights for visible scopes.
     pub rights: MemoryViewRights,
+    /// Maximum descendant depth available beneath a root scope.
     pub max_depth: u8,
+    /// Maximum number of candidates returned by recall.
     pub max_results: usize,
 }
 
+/// Retrieval depth strategy requested by the caller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecallMode {
+    /// Retrieve from the shallow configured depth.
     Shallow,
+    /// Retrieve as deeply as the view permits.
     Deep,
+    /// Choose shallow or composite depth based on query complexity.
     Auto,
 }
 
+/// Estimated structure of the retrieval query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryComplexity {
+    /// Query asks for one simple fact or relation.
     Simple,
+    /// Query combines multiple criteria or reasoning steps.
     Composite,
+    /// Complexity was not determined.
     Unknown,
 }
 
+/// Depth and result limits used by adaptive recall.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdaptiveRecallPolicy {
+    /// Policy schema version.
     pub schema_version: u32,
+    /// Default depth for shallow retrieval.
     pub shallow_depth: u8,
+    /// Maximum configured depth for explicit deep retrieval.
     pub deep_depth: u8,
+    /// Depth chosen automatically for composite queries.
     pub auto_composite_depth: u8,
+    /// Maximum result count requested by policy.
     pub max_results: usize,
 }
 
+/// Resolved retrieval depth, visible scopes, scoring signals, and read barrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecallDecision {
+    /// Mode requested by the caller.
     pub mode: RecallMode,
+    /// Effective depth after applying policy and view bounds.
     pub effective_depth: u8,
+    /// Effective result limit after applying policy and view bounds.
     pub result_limit: usize,
+    /// Scope identifiers visible to the recall operation.
     pub visible_scope_ids: Vec<String>,
+    /// Score components available to candidate ranking.
     pub score_components: Vec<String>,
+    /// Memory read-barrier generation captured for freshness checks.
     pub read_barrier_generation: u64,
+    /// Stable reason explaining the chosen recall depth.
     pub reason_code: String,
 }
 
+/// Candidate memory record and independent ranking signals.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecallCandidate {
+    /// Stable memory record identifier.
     pub record_id: String,
+    /// Scope containing the candidate.
     pub scope_id: String,
+    /// Lexical relevance score.
     pub lexical_score: i64,
+    /// Freshness score for the candidate.
     pub freshness_score: i64,
+    /// Provenance quality score.
     pub provenance_score: i64,
 }
 
+/// Candidate after deterministic weighted scoring.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScoredRecallCandidate {
+    /// Stable memory record identifier.
     pub record_id: String,
+    /// Scope containing the candidate.
     pub scope_id: String,
+    /// Total score used to order candidates.
     pub total_score: i64,
+    /// Component scores retained for explanation.
     pub score_breakdown: BTreeScoreBreakdown,
 }
 
+/// Score components contributing to candidate ranking.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BTreeScoreBreakdown {
+    /// Lexical relevance contribution.
     pub lexical: i64,
+    /// Freshness contribution.
     pub freshness: i64,
+    /// Provenance contribution.
     pub provenance: i64,
 }
 
+/// Invalid view, scope, policy, query, or candidate input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemoryViewError {
+    /// A field or view invariant is invalid.
     Invalid(&'static str),
+    /// Input uses an unsupported schema version.
     UnsupportedVersion(u32),
+    /// Identifier conflicts with another record.
     Duplicate,
+    /// Requested record or scope does not exist.
     NotFound,
+    /// View does not permit reading from the requested scope.
     ReadDenied,
+    /// View does not permit writing to the requested scope.
     WriteDenied,
+    /// Requested scope is outside the view's root hierarchy.
     ScopeOutsideView,
+    /// Requested retrieval depth exceeds the view limit.
     DepthOutsideView,
+    /// Query text or complexity metadata is invalid.
     InvalidQuery,
+    /// Candidate identity or score inputs are invalid.
     InvalidCandidate,
 }
 
@@ -152,6 +229,7 @@ fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"._/-".contains(&byte))
 }
 
+/// Validates scope identifiers, parent references, uniqueness, and acyclic hierarchy.
 pub fn validate_scopes(scopes: &[LogicalMemoryScope]) -> Result<(), MemoryViewError> {
     if scopes.is_empty() || scopes.len() > MAX_SCOPES {
         return Err(MemoryViewError::Invalid("scopes"));
@@ -184,6 +262,7 @@ pub fn validate_scopes(scopes: &[LogicalMemoryScope]) -> Result<(), MemoryViewEr
     Ok(())
 }
 
+/// Validates view bounds, rights, roots, and excluded secret scopes.
 pub fn validate_view(view: &MemoryView) -> Result<(), MemoryViewError> {
     if view.schema_version != SCHEMA_VERSION {
         return Err(MemoryViewError::UnsupportedVersion(view.schema_version));
@@ -217,12 +296,14 @@ pub fn validate_view(view: &MemoryView) -> Result<(), MemoryViewError> {
     Ok(())
 }
 
+/// Validates a view and computes its canonical serialized digest.
 pub fn canonical_hash(view: &MemoryView) -> Result<String, MemoryViewError> {
     validate_view(view)?;
     let bytes = serde_json::to_vec(view).map_err(|_| MemoryViewError::Invalid("serialization"))?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 
+/// Returns whether a scope is within the roots and descendant depth of a view.
 pub fn scope_visible(view: &MemoryView, scope_id: &str) -> Result<bool, MemoryViewError> {
     validate_view(view)?;
     if !valid_id(scope_id) {
@@ -248,6 +329,7 @@ pub fn scope_visible(view: &MemoryView, scope_id: &str) -> Result<bool, MemoryVi
     Ok(false)
 }
 
+/// Requires read rights and scope visibility for a memory read.
 pub fn authorize_read(view: &MemoryView, scope_id: &str) -> Result<(), MemoryViewError> {
     validate_view(view)?;
     if !view.rights.read {
@@ -258,6 +340,7 @@ pub fn authorize_read(view: &MemoryView, scope_id: &str) -> Result<(), MemoryVie
         .ok_or(MemoryViewError::ScopeOutsideView)
 }
 
+/// Requires both read and write rights for a visible memory scope.
 pub fn authorize_write(view: &MemoryView, scope_id: &str) -> Result<(), MemoryViewError> {
     authorize_read(view, scope_id)?;
     if !view.rights.write {
@@ -266,6 +349,7 @@ pub fn authorize_write(view: &MemoryView, scope_id: &str) -> Result<(), MemoryVi
     Ok(())
 }
 
+/// Validates shallow/deep depth relationships and result limits.
 pub fn validate_recall_policy(policy: &AdaptiveRecallPolicy) -> Result<(), MemoryViewError> {
     if policy.schema_version != SCHEMA_VERSION {
         return Err(MemoryViewError::UnsupportedVersion(policy.schema_version));
@@ -282,6 +366,7 @@ pub fn validate_recall_policy(policy: &AdaptiveRecallPolicy) -> Result<(), Memor
     Ok(())
 }
 
+/// Selects effective depth and result count within policy and view bounds.
 pub fn decide_recall(
     view: &MemoryView,
     policy: &AdaptiveRecallPolicy,
@@ -327,6 +412,7 @@ pub fn decide_recall(
 
 /// Deterministic, explainable composite score.  All components are supplied
 /// by Core-owned retrieval adapters; the view only filters the eligible set.
+/// Ranks visible candidates deterministically using lexical, freshness, and provenance scores.
 pub fn rank_candidates(
     view: &MemoryView,
     mut candidates: Vec<RecallCandidate>,

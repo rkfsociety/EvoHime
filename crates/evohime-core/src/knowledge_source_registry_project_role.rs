@@ -4,172 +4,291 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
+/// Serialized schema version accepted by knowledge registry records.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum sources admitted by one knowledge policy.
 pub const MAX_SOURCES: usize = 128;
+/// Maximum target bindings associated with one source.
 pub const MAX_BINDINGS_PER_SOURCE: usize = 32;
+/// Maximum indexed chunks retained for one source.
 pub const MAX_CHUNKS_PER_SOURCE: usize = 1024;
+/// Maximum retrieval hits returned to a caller.
 pub const MAX_HITS: usize = 128;
+/// Maximum identifier length accepted by the registry.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum serialized source or collection size in bytes.
 pub const MAX_SOURCE_BYTES: usize = 64 * 1024;
+/// Maximum content bytes accepted in one knowledge chunk.
 pub const MAX_CHUNK_BYTES: usize = 64 * 1024;
+/// Maximum serialized source manifest size in bytes.
 pub const MAX_MANIFEST_BYTES: usize = 256 * 1024;
+/// Maximum evidence excerpt size in bytes.
 pub const MAX_EVIDENCE_BYTES: usize = 256 * 1024;
+/// Maximum token budget assigned to one knowledge view.
 pub const MAX_VIEW_TOKENS: usize = 16_384;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Source media or provider category for a knowledge source.
 pub enum SourceKind {
+    /// Files discovered under an authorized workspace root.
     WorkspaceFiles,
+    /// Plain text document.
     TextDocument,
+    /// Markdown document with executable content excluded.
     MarkdownDocument,
+    /// PDF document processed by a bounded text extractor.
     PdfDocument,
+    /// JSON document processed as structured text.
     JsonDocument,
+    /// CSV document processed as tabular text.
     CsvDocument,
+    /// Previously captured web content; fetching is not implied.
     WebSnapshot,
+    /// References to existing workspace artifacts.
     ArtifactCollection,
+    /// Owner-registered provider reference.
     CustomProvider,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Ingestion and availability lifecycle of a source.
 pub enum SourceStatus {
+    /// Collection is registered but not yet ready.
     Registered,
+    /// Source is queued for ingestion.
     PendingIngestion,
+    /// Source content is being indexed.
     Indexing,
+    /// All selected source references are available.
     Ready,
+    /// One or more source revisions require refresh.
     Stale,
+    /// A replacement index is being built.
     Reindexing,
+    /// Ingestion failed.
     Failed,
+    /// Target cannot retrieve from the source.
     Disabled,
+    /// Source was removed from active use.
     Removed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Data sensitivity level used to prevent unsafe disclosure.
 pub enum Sensitivity {
+    /// May be exposed to any authorized target.
     Public,
+    /// May be exposed only within the owning project or organization.
     Internal,
+    /// May be exposed only to a view with explicit secret sensitivity.
     Secret,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Owner type that may receive a source binding.
 pub enum TargetKind {
+    /// Project-level target.
     Project,
+    /// Agent role target.
     AgentRole,
+    /// Workflow definition target.
     Workflow,
+    /// Team protocol target.
     TeamProtocol,
+    /// Single session target.
     Session,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Whether a target may retrieve from a bound source.
 pub enum AccessMode {
+    /// Target may retrieve authorized source content.
     ReadOnly,
+    /// Target cannot retrieve from the source.
     Disabled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Versioned metadata and provenance for a reference knowledge source.
 pub struct KnowledgeSource {
+    /// Serialized schema version supported by this record.
     pub schema_version: u32,
+    /// Stable view or collection identifier.
     pub id: String,
+    /// Monotonic source or collection revision.
     pub version: u64,
+    /// Source format or provider category.
     pub kind: SourceKind,
+    /// Human-readable source name.
     pub display_name: String,
+    /// Owner-controlled reference to the original source.
     pub origin_ref: String,
+    /// Optional project that owns the source.
     pub project_id: Option<String>,
+    /// Stable fingerprint used to detect source changes.
     pub source_fingerprint: String,
+    /// Maximum data sensitivity assigned to this content.
     pub sensitivity: Sensitivity,
+    /// Trust provenance category for the source.
     pub trust_class: String,
+    /// Versioned parser and ingestion profile reference.
     pub ingestion_profile_id: String,
+    /// Current source ingestion and availability state.
     pub status: SourceStatus,
+    /// Identity that registered the source.
     pub created_by: String,
+    /// Source registration time as Unix epoch milliseconds.
     pub created_at_ms: i64,
+    /// Optional indexing time as Unix epoch milliseconds.
     pub last_indexed_at_ms: Option<i64>,
+    /// Integrity hash for canonical source, view, or chunk content.
     pub content_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Authorization link from a source to an owner target.
 pub struct KnowledgeBinding {
+    /// Identifier of the source being bound or cited.
     pub source_id: String,
+    /// Owner category receiving the source binding.
     pub target_kind: TargetKind,
+    /// Identifier of the target whose bindings are considered.
     pub target_id: String,
+    /// Read policy granted to the target.
     pub access_mode: AccessMode,
+    /// Optional profile controlling retrieval behavior.
     pub retrieval_profile_id: Option<String>,
+    /// Relative retrieval preference for this binding.
     pub priority: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Run-scoped, sensitivity-bounded set of authorized source identifiers.
 pub struct KnowledgeView {
+    /// Serialized schema version supported by this record.
     pub schema_version: u32,
+    /// Stable view or collection identifier.
     pub id: String,
+    /// Execution run that owns this view.
     pub run_id: String,
+    /// Authorized source identifiers included in the view or collection.
     pub source_ids: Vec<String>,
+    /// Highest sensitivity level permitted in the view.
     pub max_sensitivity: Sensitivity,
+    /// Retrieval configuration applied to the source set.
     pub retrieval_profile: String,
+    /// Optional view expiration time as Unix epoch milliseconds.
     pub expires_at_ms: Option<i64>,
+    /// Integrity hash for canonical source, view, or chunk content.
     pub content_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Bounded indexed excerpt with source revision and locator provenance.
 pub struct KnowledgeChunk {
+    /// Stable view or collection identifier.
     pub id: String,
+    /// Identifier of the source being bound or cited.
     pub source_id: String,
+    /// Exact source revision from which the chunk was indexed.
     pub source_revision: u64,
+    /// Chunk order within the source revision.
     pub ordinal: u32,
+    /// Stable source-relative location of the content.
     pub locator: String,
+    /// Bounded, sanitized content excerpt stored for retrieval.
     pub content_projection: String,
+    /// Integrity hash for canonical source, view, or chunk content.
     pub content_hash: String,
+    /// Maximum data sensitivity assigned to this content.
     pub sensitivity: Sensitivity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Scored excerpt candidate returned within an authorized view.
 pub struct KnowledgeHit {
+    /// Identifier of the source being bound or cited.
     pub source_id: String,
+    /// Exact source revision from which the chunk was indexed.
     pub source_revision: u64,
+    /// Identifier of the matching chunk.
     pub chunk_id: String,
+    /// Stable source-relative location of the content.
     pub locator: String,
+    /// Bounded evidence excerpt presented to the caller.
     pub excerpt: String,
+    /// Deterministic retrieval score.
     pub score: u32,
+    /// Reasons the chunk matched the query.
     pub match_reasons: Vec<String>,
+    /// Freshness state of the indexed source content.
     pub freshness: String,
+    /// Trust provenance category for the source.
     pub trust_class: String,
 }
 
 /// A bounded, versioned set of references to existing KnowledgeSource records.
 /// It never owns or duplicates source/chunk content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Versioned set of references to existing source records.
 pub struct KnowledgeCollection {
+    /// Serialized schema version supported by this record.
     pub schema_version: u32,
+    /// Stable view or collection identifier.
     pub id: String,
+    /// Monotonic source or collection revision.
     pub version: u64,
+    /// Authorized source identifiers included in the view or collection.
     pub source_ids: Vec<String>,
+    /// Retrieval configuration applied to the source set.
     pub retrieval_profile: String,
+    /// Owner scope for this collection.
     pub scope: String,
+    /// Current source ingestion and availability state.
     pub status: CollectionStatus,
+    /// Integrity hash for canonical source, view, or chunk content.
     pub content_hash: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Registration and freshness state of a knowledge collection.
 pub enum CollectionStatus {
+    /// Collection is registered but not yet ready.
     Registered,
+    /// All selected source references are available.
     Ready,
+    /// One or more source revisions require refresh.
     Stale,
+    /// Target cannot retrieve from the source.
     Disabled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Hard bounds controlling source, chunk, evidence, and view sizes.
 pub struct KnowledgePolicy {
+    /// Serialized schema version supported by this record.
     pub schema_version: u32,
+    /// Maximum sources in a view or collection.
     pub max_sources: usize,
+    /// Maximum owner bindings per source.
     pub max_bindings_per_source: usize,
+    /// Maximum indexed chunks per source.
     pub max_chunks_per_source: usize,
+    /// Maximum search hits returned.
     pub max_hits: usize,
+    /// Maximum evidence excerpt size in bytes.
     pub max_evidence_bytes: usize,
+    /// Maximum context tokens allocated to the view.
     pub max_view_tokens: usize,
 }
 
+/// Returns the standard hard limits for knowledge registry operations.
 pub fn default_policy() -> KnowledgePolicy {
     KnowledgePolicy {
         schema_version: SCHEMA_VERSION,
@@ -183,29 +302,42 @@ pub fn default_policy() -> KnowledgePolicy {
 }
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
+/// Validation, authorization, sensitivity, identity, or content-bound failure.
 pub enum KnowledgeError {
+    /// Serialized knowledge schema is unsupported.
     #[error("unsupported knowledge schema version {0}")]
     UnsupportedVersion(u32),
+    /// Identifier, locator, or reference is invalid.
     #[error("invalid knowledge identifier or locator")]
     InvalidIdentifier,
+    /// Source policy limit was exceeded.
     #[error("knowledge source limit exceeded")]
     SourceLimit,
+    /// Per-source binding limit was exceeded.
     #[error("knowledge binding limit exceeded")]
     BindingLimit,
+    /// Chunk, manifest, evidence, or view size limit was exceeded.
     #[error("knowledge chunk or evidence limit exceeded")]
     ContentLimit,
+    /// Duplicate source or collection identity was found.
     #[error("duplicate knowledge identity")]
     DuplicateIdentity,
+    /// Source is not ready for retrieval.
     #[error("knowledge source is not retrieval-ready")]
     NotReady,
+    /// The target is not authorized to retrieve this source or hit.
     #[error("knowledge source is not authorized in the view")]
     Unauthorized,
+    /// A source exceeds the view sensitivity ceiling.
     #[error("secret knowledge cannot enter a lower-sensitivity view")]
     SensitivityViolation,
+    /// A file reference escapes its allowlisted root.
     #[error("knowledge path escapes its allowlisted root")]
     PathEscape,
+    /// Active content, macros, scripts, or remote fetch are not allowed.
     #[error("document scripts/macros and embedded fetch are not allowed")]
     ExecutableContent,
+    /// A knowledge record could not be serialized.
     #[error("knowledge serialization failed")]
     Serialization,
 }
@@ -218,6 +350,7 @@ fn valid_id(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"._-:/".contains(&b))
 }
 
+/// Checks configured limits against supported hard maxima.
 pub fn validate_policy(policy: &KnowledgePolicy) -> Result<(), KnowledgeError> {
     if policy.schema_version != SCHEMA_VERSION
         || policy.max_sources == 0
@@ -238,6 +371,7 @@ pub fn validate_policy(policy: &KnowledgePolicy) -> Result<(), KnowledgeError> {
     Ok(())
 }
 
+/// Validates source identity, trust references, and serialized size.
 pub fn validate_source(
     source: &KnowledgeSource,
     policy: &KnowledgePolicy,
@@ -266,6 +400,7 @@ pub fn validate_source(
     Ok(())
 }
 
+/// Validates target and source identifiers for an authorization binding.
 pub fn validate_binding(
     binding: &KnowledgeBinding,
     policy: &KnowledgePolicy,
@@ -283,6 +418,7 @@ pub fn validate_binding(
     Ok(())
 }
 
+/// Checks collection revision, unique source IDs, size, and content hash.
 pub fn validate_collection(
     collection: &KnowledgeCollection,
     policy: &KnowledgePolicy,
@@ -317,19 +453,31 @@ pub fn validate_collection(
     Ok(())
 }
 
+/// Sources, bindings, target, sensitivity, and policy used to build a view.
 pub struct BuildViewInput<'a> {
+    /// Stable view or collection identifier.
     pub id: String,
+    /// Execution run that owns this view.
     pub run_id: String,
+    /// Validated source records eligible for selection.
     pub sources: &'a [KnowledgeSource],
+    /// Owner-scoped source authorization records.
     pub bindings: &'a [KnowledgeBinding],
+    /// Owner category receiving the source binding.
     pub target_kind: TargetKind,
+    /// Identifier of the target whose bindings are considered.
     pub target_id: &'a str,
+    /// Highest sensitivity level permitted in the view.
     pub max_sensitivity: Sensitivity,
+    /// Retrieval configuration applied to the source set.
     pub retrieval_profile: String,
+    /// Optional view expiration time as Unix epoch milliseconds.
     pub expires_at_ms: Option<i64>,
+    /// Hard limits applied while validating and building the view.
     pub policy: &'a KnowledgePolicy,
 }
 
+/// Builds a sensitivity-bounded view from ready sources authorized for one target.
 pub fn build_view(input: BuildViewInput<'_>) -> Result<KnowledgeView, KnowledgeError> {
     validate_policy(input.policy)?;
     let mut ids = BTreeSet::new();
@@ -369,17 +517,27 @@ pub fn build_view(input: BuildViewInput<'_>) -> Result<KnowledgeView, KnowledgeE
     Ok(view)
 }
 
+/// Collection and authorization context used to build a view from its sources.
 pub struct BuildCollectionViewInput<'a> {
+    /// Collection whose source identifiers define the candidate source set.
     pub collection: &'a KnowledgeCollection,
+    /// Validated source records eligible for selection.
     pub sources: &'a [KnowledgeSource],
+    /// Owner-scoped source authorization records.
     pub bindings: &'a [KnowledgeBinding],
+    /// Owner category receiving the source binding.
     pub target_kind: TargetKind,
+    /// Identifier of the target whose bindings are considered.
     pub target_id: &'a str,
+    /// Highest sensitivity level permitted in the view.
     pub max_sensitivity: Sensitivity,
+    /// Optional view expiration time as Unix epoch milliseconds.
     pub expires_at_ms: Option<i64>,
+    /// Hard limits applied while validating and building the view.
     pub policy: &'a KnowledgePolicy,
 }
 
+/// Resolves a collection through current owner bindings into a run-scoped view.
 pub fn build_collection_view(
     input: BuildCollectionViewInput<'_>,
 ) -> Result<KnowledgeView, KnowledgeError> {
@@ -410,6 +568,7 @@ pub fn build_collection_view(
     })
 }
 
+/// Ensures a retrieval hit belongs to the view and satisfies evidence bounds.
 pub fn validate_hit(
     hit: &KnowledgeHit,
     view: &KnowledgeView,

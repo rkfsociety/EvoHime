@@ -14,15 +14,20 @@ use serde::{Deserialize, Serialize};
 const MAX_TASK_ID_BYTES: usize = 256;
 const MAX_STATE_JSON_BYTES: usize = 64 * 1024;
 
+/// Source of a task's active capability selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionOrigin {
+    /// Automatically selected from the available capabilities.
     Auto,
+    /// Explicitly pinned by the user for the task.
     Pinned,
+    /// Explicitly replaced by the user for the task.
     Replaced,
 }
 
 impl SelectionOrigin {
+    /// Returns the stable snake-case value stored in SQLite.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -41,15 +46,35 @@ impl SelectionOrigin {
     }
 }
 
+/// Persisted selection state associated with one task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilitySelectionRecord {
+    /// Task identity used as the row's unique key.
     pub task_id: String,
+    /// Whether the selection was automatic, pinned, or replaced.
     pub origin: SelectionOrigin,
+    /// Name of the selected capability manifest.
     pub manifest_name: String,
+    /// Canonical JSON representation of the capability selection state.
     pub state_json: String,
 }
 
 impl CapabilitySelectionRecord {
+    /// Checks that identifiers and state JSON are non-empty and within limits.
+    ///
+    /// ```
+    /// use evohime_local_storage::capability_selection_store::{
+    ///     CapabilitySelectionRecord, SelectionOrigin,
+    /// };
+    ///
+    /// let record = CapabilitySelectionRecord {
+    ///     task_id: "task-42".into(),
+    ///     origin: SelectionOrigin::Pinned,
+    ///     manifest_name: "rust-review".into(),
+    ///     state_json: r#"{"selected":["rust-review"]}"#.into(),
+    /// };
+    /// assert!(record.validate().is_ok());
+    /// ```
     pub fn validate(&self) -> Result<(), CapabilitySelectionStoreError> {
         validate_text("task_id", &self.task_id, MAX_TASK_ID_BYTES)?;
         validate_text("manifest_name", &self.manifest_name, MAX_TASK_ID_BYTES)?;
@@ -58,14 +83,27 @@ impl CapabilitySelectionRecord {
     }
 }
 
+/// Validation and SQLite errors from capability-selection persistence.
 #[derive(Debug, thiserror::Error)]
 pub enum CapabilitySelectionStoreError {
+    /// A required field contains only whitespace or is empty.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Name of the required field that was empty.
+        field: &'static str,
+    },
+    /// A field exceeds its byte-length limit.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: usize },
+    Limit {
+        /// Name of the field that exceeded its bound.
+        field: &'static str,
+        /// Maximum permitted field size in bytes.
+        max: usize,
+    },
+    /// The stored origin value is not recognized.
     #[error("invalid selection origin")]
     InvalidOrigin,
+    /// SQLite rejected the query or persistence operation.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -110,9 +148,11 @@ fn validate_text(
 }
 
 /// SQL contract only; schema creation and migrations remain outside this API.
+/// Constants and operations in this type expect `capability_selections` to exist.
 pub struct CapabilitySelectionStoreSql;
 
 impl CapabilitySelectionStoreSql {
+    /// Upsert statement keyed by task identity.
     pub const INSERT_OR_REPLACE: &'static str = r#"
         INSERT INTO capability_selections
             (task_id, origin, manifest_name, state_json)
@@ -123,12 +163,14 @@ impl CapabilitySelectionStoreSql {
             state_json = excluded.state_json
     "#;
 
+    /// Select statement for one task's persisted selection.
     pub const SELECT_BY_TASK_ID: &'static str = r#"
         SELECT task_id, origin, manifest_name, state_json
         FROM capability_selections
         WHERE task_id = ?1
     "#;
 
+    /// Delete statement for one task's persisted selection.
     pub const DELETE_BY_TASK_ID: &'static str =
         "DELETE FROM capability_selections WHERE task_id = ?1";
 
@@ -153,6 +195,7 @@ impl CapabilitySelectionStoreSql {
         Ok(())
     }
 
+    /// Loads the saved selection for a task, if one exists.
     pub fn get_by_task_id(
         connection: &Connection,
         task_id: &str,
@@ -163,6 +206,7 @@ impl CapabilitySelectionStoreSql {
         Ok(record)
     }
 
+    /// Deletes a task selection and reports whether a row was removed.
     pub fn delete_by_task_id(
         connection: &Connection,
         task_id: &str,

@@ -26,6 +26,11 @@ use crate::{IpcBridge, StructuredLogger};
 const HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
 const OUTBOUND_FRAME_CAPACITY: usize = 128;
 
+/// Validated launch settings for Core's Windows named-pipe server.
+///
+/// Construct this value from the supervisor-provided [`LaunchContext`].
+/// Unauthenticated contexts are accepted only for an explicit developer-mode
+/// launch; packaged launches require authentication.
 pub struct PipeServerConfig {
     context: LaunchContext,
     /// When false, a client that skips authentication is still served and the
@@ -61,6 +66,7 @@ impl PipeServerConfig {
         })
     }
 
+    /// Returns the validated supervisor launch context used by the server.
     pub fn context(&self) -> &LaunchContext {
         &self.context
     }
@@ -123,6 +129,17 @@ fn now_ms() -> u64 {
         .unwrap_or_default()
 }
 
+/// Runs Core's authenticated Windows named-pipe server until a fatal I/O or
+/// setup error occurs.
+///
+/// The server creates an owner-only pipe, authenticates clients according to
+/// `config`, and forwards accepted requests through `bridge`. Connection and
+/// protocol events are written through `logger`.
+///
+/// # Errors
+///
+/// Returns an error when pipe security, connection I/O, authentication setup,
+/// or server initialization fails.
 pub async fn run_windows_pipe(
     config: PipeServerConfig,
     bridge: Arc<IpcBridge>,

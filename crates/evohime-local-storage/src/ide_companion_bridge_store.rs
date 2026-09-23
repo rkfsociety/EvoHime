@@ -1,8 +1,24 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
 const MAX_BRIDGE_JSON_BYTES: usize = 64 * 1024;
+
+/// Creates the revisioned IDE companion bridge snapshot table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS ide_companion_bridge (id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(id,revision), UNIQUE(id,idempotency_key));")
 }
+/// Saves an IDE companion bridge snapshot with bounded JSON and replay checks.
+///
+/// JSON is limited to 64 KiB. Reusing a key succeeds only for the same revision
+/// and content hash.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized content, conflicting key reuse, or
+/// failed writes.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -32,6 +48,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Loads the bridge snapshot at the greatest revision for `id`.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT json FROM ide_companion_bridge WHERE id=?1 ORDER BY revision DESC LIMIT 1",

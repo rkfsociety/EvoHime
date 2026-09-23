@@ -47,19 +47,30 @@ use evohime_permissions::{Permission, PermissionMode};
 /// The ten categories named in the master plan's Stage 7 eval checklist.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EvalCategory {
+    /// Selection prefers the relevant skill over a near match.
     SkillSelection,
+    /// Tool allowlist and manifests enforce declared bounds.
     Allowlist,
+    /// Plan validation accepts valid plans and rejects invalid dependencies.
     PlanQuality,
+    /// IPC negotiation preserves compatible client behavior.
     IpcCompatibility,
+    /// Workflow cancellation follows the declared cancellation policy.
     Cancellation,
+    /// Replayed operations preserve idempotency and state consistency.
     Replay,
+    /// Research and response evidence retain source citations.
     Citations,
+    /// Memory retrieval respects scope and relevance contracts.
     MemoryRetrieval,
+    /// Model routing follows privacy and route-selection policy.
     Routing,
+    /// UI projections report Core state without inventing outcomes.
     UiTruthfulness,
 }
 
 impl EvalCategory {
+    /// All categories covered by the deterministic eval suite.
     pub const ALL: [EvalCategory; 10] = [
         EvalCategory::SkillSelection,
         EvalCategory::Allowlist,
@@ -73,6 +84,7 @@ impl EvalCategory {
         EvalCategory::UiTruthfulness,
     ];
 
+    /// Returns the stable snake-case label used in eval reports.
     pub fn label(self) -> &'static str {
         match self {
             EvalCategory::SkillSelection => "skill_selection",
@@ -91,32 +103,44 @@ impl EvalCategory {
 
 /// One bounded, deterministic eval scenario and its outcome.
 pub struct EvalCase {
+    /// Category used to group this scenario in reports.
     pub category: EvalCategory,
+    /// Stable scenario name.
     pub name: &'static str,
     run: fn() -> Result<(), String>,
 }
 
+/// Result of running one deterministic evaluation case.
 pub struct EvalResult {
+    /// Category used to group this result in reports.
     pub category: EvalCategory,
+    /// Stable scenario name.
     pub name: &'static str,
+    /// Whether the case's contract assertion succeeded.
     pub passed: bool,
+    /// Failure detail when the case did not pass.
     pub detail: Option<String>,
 }
 
+/// Aggregate outcomes from the registered deterministic evaluation cases.
 #[derive(Debug, Default)]
 pub struct EvalSummary {
+    /// Category, scenario name, pass state, and optional failure detail per case.
     pub results: Vec<(EvalCategory, &'static str, bool, Option<String>)>,
 }
 
 impl EvalSummary {
+    /// Returns the number of evaluated cases.
     pub fn total(&self) -> usize {
         self.results.len()
     }
 
+    /// Returns the number of cases that passed.
     pub fn passed(&self) -> usize {
         self.results.iter().filter(|(_, _, ok, _)| *ok).count()
     }
 
+    /// Returns whether every recorded case passed.
     pub fn all_passed(&self) -> bool {
         self.passed() == self.total()
     }
@@ -162,6 +186,7 @@ pub fn run_all() -> EvalSummary {
     EvalSummary { results }
 }
 
+/// Returns the registered deterministic evaluation cases.
 pub fn all_cases() -> Vec<EvalCase> {
     vec![
         EvalCase {

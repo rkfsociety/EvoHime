@@ -11,46 +11,77 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+/// Current schema version for project instruction rules and snapshots.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum number of instruction files loaded for one workspace.
 pub const MAX_RULES: usize = 64;
+/// Maximum size accepted for one instruction source file.
 pub const MAX_SINGLE_RULE_BYTES: usize = 64 * 1024;
+/// Maximum combined source bytes accepted in one compiled snapshot.
 pub const MAX_SNAPSHOT_BYTES: usize = 256 * 1024;
+/// Maximum estimated token count in one compiled snapshot.
 pub const MAX_TOKENS: usize = 16_384;
+/// Maximum byte length of a stable instruction identifier.
 pub const MAX_ID_BYTES: usize = 128;
 
+/// Origin class used for instruction precedence and trust projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceKind {
+    /// User-level global instruction source.
     Global,
+    /// Instruction stored at the workspace root.
     Workspace,
+    /// Instruction stored in a nested workspace directory.
     Nested,
+    /// Compatible instruction file such as an `AGENTS.md` source.
     Compatible,
 }
 
+/// Rule activation condition applied during snapshot compilation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Activation {
+    /// Include the rule regardless of path or explicit selection.
     Always,
+    /// Include when the current file path matches the rule's path filters.
     RelevantPath,
+    /// Include only when explicitly selected by the caller.
     Explicit,
 }
 
+/// Parsed, untrusted Markdown instruction with scope and activation metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectRule {
+    /// Rule schema version.
     pub schema_version: u32,
+    /// Stable identifier derived from metadata or source location.
     pub id: String,
+    /// Source class used for ordering and trust classification.
     pub source_kind: SourceKind,
+    /// Bounded source locator relative to the workspace or global root.
     pub source_ref: String,
+    /// Revision derived from the source bytes.
     pub source_revision: u64,
+    /// Directory scope to which the rule applies.
     pub scope: String,
+    /// Included workspace-relative path prefixes.
     pub paths: Vec<String>,
+    /// Excluded workspace-relative path prefixes.
     pub exclude_paths: Vec<String>,
+    /// Activation condition used during compilation.
     pub activation: Activation,
+    /// Precedence within rules of the same source class.
     pub priority: i32,
+    /// Instruction Markdown treated as untrusted text.
     pub content: String,
+    /// Whether the rule is enabled for compilation.
     pub enabled: bool,
+    /// Sensitivity classification inferred from metadata.
     pub sensitivity: String,
+    /// Digest of the rule's source and parsed content.
     pub content_hash: String,
+    /// Parsed bounded frontmatter metadata.
     pub parsed_metadata: BTreeMap<String, String>,
 }
 
@@ -58,15 +89,22 @@ pub struct ProjectRule {
 /// stack is the storage and precedence authority for this alias.
 pub type ProjectGuidanceDocument = ProjectRule;
 
+/// Resource limits applied when discovering and compiling instruction sources.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectInstructionStackPolicy {
+    /// Policy schema version.
     pub schema_version: u32,
+    /// Maximum number of source files to inspect.
     pub max_rule_files: usize,
+    /// Maximum size of one source file.
     pub max_single_rule_bytes: usize,
+    /// Maximum total source size across the snapshot.
     pub max_total_rule_bytes: usize,
+    /// Maximum estimated token count for active instructions.
     pub max_total_tokens: usize,
 }
 
+/// Returns the standard bounded instruction discovery and compilation policy.
 pub fn default_policy() -> ProjectInstructionStackPolicy {
     ProjectInstructionStackPolicy {
         schema_version: SCHEMA_VERSION,
@@ -77,37 +115,63 @@ pub fn default_policy() -> ProjectInstructionStackPolicy {
     }
 }
 
+/// Compiled active rules, diagnostics, source hashes, and size accounting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstructionSnapshot {
+    /// Snapshot schema version.
     pub schema_version: u32,
+    /// Canonical workspace root associated with this snapshot.
     pub workspace_root: String,
+    /// Rules selected for the current context.
     pub active_rules: Vec<ProjectRule>,
+    /// Relevant rules excluded because they are disabled or explicitly inactive.
     pub inactive_relevant_rules: Vec<String>,
+    /// Non-fatal discovery or compilation diagnostics.
     pub diagnostics: Vec<String>,
+    /// Digests of all sources considered during compilation.
     pub source_hashes: Vec<String>,
+    /// Total source bytes considered.
     pub total_bytes: usize,
+    /// Estimated token count for active rule content.
     pub estimated_tokens: usize,
+    /// Unix timestamp in milliseconds when compilation completed.
     pub created_at_ms: i64,
+    /// Digest of the complete snapshot with this field cleared.
     pub content_hash: String,
 }
 
+/// Safe metadata projection for exposing one rule to downstream consumers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectRuleProjection {
+    /// Stable instruction identifier.
     pub id: String,
+    /// Instruction source class.
     pub source_kind: SourceKind,
+    /// Bounded source locator.
     pub source_ref: String,
+    /// Directory scope.
     pub scope: String,
+    /// Included path filters.
     pub paths: Vec<String>,
+    /// Activation condition.
     pub activation: Activation,
+    /// Rule precedence.
     pub priority: i32,
+    /// Whether the rule is enabled.
     pub enabled: bool,
+    /// Sensitivity classification.
     pub sensitivity: String,
+    /// Digest of rule content.
     pub content_hash: String,
+    /// Source revision captured during discovery.
     pub source_revision: u64,
+    /// Explanation for inclusion in the current context.
     pub why_active: String,
+    /// Trust classification for downstream handling.
     pub trust_class: String,
 }
 
+/// Classifies instructions for safe downstream handling without granting authority.
 pub fn trust_class(rule: &ProjectRule) -> &'static str {
     match rule.source_kind {
         SourceKind::Global
@@ -123,6 +187,7 @@ pub fn trust_class(rule: &ProjectRule) -> &'static str {
     }
 }
 
+/// Projects rule metadata while retaining its untrusted-content classification.
 pub fn project_rule(rule: &ProjectRule, why_active: &str) -> ProjectRuleProjection {
     ProjectRuleProjection {
         id: rule.id.clone(),
@@ -141,6 +206,7 @@ pub fn project_rule(rule: &ProjectRule, why_active: &str) -> ProjectRuleProjecti
     }
 }
 
+/// Produces a redacted, bounded JSON status projection of a compiled snapshot.
 pub fn project_snapshot(snapshot: &InstructionSnapshot) -> serde_json::Value {
     serde_json::json!({
         "schema_version": snapshot.schema_version,
@@ -156,28 +222,40 @@ pub fn project_snapshot(snapshot: &InstructionSnapshot) -> serde_json::Value {
     })
 }
 
+/// Instruction schema, path, source, content, or resource-limit failure.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum InstructionError {
+    /// Input uses an unsupported schema version.
     #[error("unsupported instruction schema version {0}")]
     UnsupportedVersion(u32),
+    /// Resolved source path is outside its permitted workspace root.
     #[error("instruction path escapes the workspace root")]
     PathEscape,
+    /// Source filename is not in the explicit discovery allow-list.
     #[error("instruction source is not allowlisted")]
     UnallowlistedSource,
+    /// One instruction source exceeds its byte limit.
     #[error("instruction file is too large")]
     RuleTooLarge,
+    /// Number of instruction files exceeds its limit.
     #[error("instruction rule limit exceeded")]
     RuleLimit,
+    /// Snapshot byte or token budget was exceeded.
     #[error("instruction snapshot budget exceeded")]
     BudgetExceeded,
+    /// Frontmatter syntax or supported metadata is invalid.
     #[error("invalid instruction frontmatter")]
     InvalidFrontmatter,
+    /// Instruction text or identifier is invalid.
     #[error("invalid instruction text or identifier")]
     InvalidText,
+    /// Frontmatter attempts to declare tools, grants, or other authority metadata.
     #[error("instruction contains authority-bearing metadata")]
     AuthorityMetadata,
+    /// Snapshot serialization failed.
     #[error("instruction serialization failed")]
     Serialization,
+    /// Filesystem operation failed.
     #[error("instruction filesystem error: {0}")]
     Io(String),
 }
@@ -377,6 +455,7 @@ fn glob_match(pattern: &str, path: &str) -> bool {
     walk(&p, &s)
 }
 
+/// Checks whether an enabled rule matches explicit selection and the current path.
 pub fn rule_applies(
     rule: &ProjectRule,
     relevant_paths: &[String],
@@ -399,6 +478,7 @@ pub fn rule_applies(
     }
 }
 
+/// Validates instruction discovery and compilation budget limits.
 pub fn validate_policy(policy: &ProjectInstructionStackPolicy) -> Result<(), InstructionError> {
     if policy.schema_version != SCHEMA_VERSION {
         return Err(InstructionError::UnsupportedVersion(policy.schema_version));
@@ -417,6 +497,7 @@ pub fn validate_policy(policy: &ProjectInstructionStackPolicy) -> Result<(), Ins
     Ok(())
 }
 
+/// Compiles discovered rules into a precedence-ordered, content-hashed snapshot.
 pub fn compile_snapshot(
     root: &Path,
     mut rules: Vec<ProjectRule>,
@@ -553,6 +634,7 @@ fn is_generated_or_vcs_directory(path: &Path) -> bool {
     )
 }
 
+/// Reads allow-listed instruction files under the supplied workspace roots.
 pub fn discover_rules(
     workspace_root: &Path,
     global_rules_root: Option<&Path>,
@@ -630,10 +712,12 @@ fn read_bounded_rule(path: &Path) -> Result<Vec<u8>, InstructionError> {
     Ok(bytes)
 }
 
+/// Resolves the optional global instruction root from the supported environment setting.
 pub fn global_rules_root_from_env() -> Option<PathBuf> {
     std::env::var_os("APPDATA").map(|value| PathBuf::from(value).join("EvoHime").join("rules"))
 }
 
+/// Discovers and compiles workspace guidance using the standard policy.
 pub fn discover_guidance(
     root: &Path,
     global_root: Option<&Path>,

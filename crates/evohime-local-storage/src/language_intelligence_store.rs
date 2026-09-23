@@ -1,8 +1,11 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+/// Maximum serialized record size accepted by [`put`].
 pub const MAX_JSON_BYTES: usize = 256 * 1024;
+/// Creates the revisioned language-intelligence record table.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS language_intelligence_records (id TEXT PRIMARY KEY NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, record_json BLOB NOT NULL, status TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_language_intelligence_kind ON language_intelligence_records(kind, updated_at_ms);")
 }
+/// Inserts or advances a bounded record when its revision is newer or an identical replay.
 #[allow(clippy::too_many_arguments)]
 pub fn put(
     connection: &Connection,
@@ -27,7 +30,9 @@ pub fn put(
     }
     connection.execute("INSERT INTO language_intelligence_records(id,kind,revision,content_hash,record_json,status,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,content_hash=excluded.content_hash,record_json=excluded.record_json,status=excluded.status,updated_at_ms=excluded.updated_at_ms WHERE excluded.revision > language_intelligence_records.revision OR (excluded.revision = language_intelligence_records.revision AND excluded.content_hash = language_intelligence_records.content_hash)", params![id, kind, revision as i64, hash, json, status, now_ms]).map(|n| n == 1).map_err(|_| "sqlite")
 }
+/// Record kind, serialized payload, lifecycle status, and revision.
 pub type StoredRecord = (String, Vec<u8>, String, u64);
+/// Loads a record's kind, serialized payload, status, and revision by ID.
 #[allow(clippy::type_complexity)]
 pub fn get(
     connection: &Connection,

@@ -14,46 +14,74 @@ const BUILTIN_CATALOG: &str = include_str!("../profiles.json");
 /// Профиль модели. Все значения — в токенах, кроме `offload_threshold_bytes`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelContextProfile {
+    /// Schema version for deserializing and validating this profile.
     pub schema_version: u32,
     /// Версия профиля. Любое изменение значений — новый `profile_version`:
     /// правка «на месте» запрещена, потому что версия входит в hash ledger.
     pub profile_version: String,
+    /// Provider identifier to which this profile applies.
     pub provider: String,
+    /// Model identifier or prefix to which this profile applies.
     pub model: String,
+    /// Provider-reported maximum context window in tokens.
     pub max_context_tokens: u32,
+    /// Desired context size before reserves.
     pub target_tokens: u32,
+    /// Soft ceiling that triggers context reduction.
     pub soft_limit_tokens: u32,
+    /// Hard ceiling that must not be exceeded.
     pub hard_limit_tokens: u32,
+    /// Maximum size allowed for mandatory context.
     pub absolute_mvc_max_limit: u32,
+    /// Tokens reserved for tool schemas.
     pub tool_schema_reserve: u32,
+    /// Tokens reserved for tool calls and their protocol framing.
     pub tool_call_reserve: u32,
+    /// Tokens reserved for the final model answer.
     pub final_answer_reserve: u32,
+    /// Tokens reserved for streaming overhead.
     pub streaming_reserve: u32,
+    /// Tokens reserved for a provider retry or replan.
     pub retry_reserve: u32,
+    /// Priority threshold below which optional items are low priority.
     pub low_priority_cutoff: u8,
+    /// Content size at which an eligible item may be offloaded, in bytes.
     pub offload_threshold_bytes: u64,
 }
 
 /// Нарушение правил валидности профиля. Невалидный профиль не используется.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProfileError {
+    /// Token ceilings are not in strictly increasing order.
     #[error("profile {profile_version}: ordering violated ({detail})")]
     Ordering {
+        /// Profile that failed validation.
         profile_version: String,
+        /// Bounded description of the violated ordering.
         detail: String,
     },
+    /// Target size plus reserved tokens exceeds the soft ceiling.
     #[error("profile {profile_version}: target_tokens + reserves_total > soft_limit_tokens ({target} + {reserves} > {soft})")]
     TargetWithReserves {
+        /// Profile that failed validation.
         profile_version: String,
+        /// Configured target size.
         target: u32,
+        /// Sum of the configured token reserves.
         reserves: u32,
+        /// Configured soft ceiling.
         soft: u32,
     },
+    /// Maximum mandatory context plus reserves exceeds the hard ceiling.
     #[error("profile {profile_version}: absolute_mvc_max_limit + reserves_total > hard_limit_tokens ({mvc} + {reserves} > {hard})")]
     MvcWithReserves {
+        /// Profile that failed validation.
         profile_version: String,
+        /// Configured mandatory-context ceiling.
         mvc: u32,
+        /// Sum of the configured token reserves.
         reserves: u32,
+        /// Configured hard ceiling.
         hard: u32,
     },
 }
@@ -220,6 +248,7 @@ pub struct CatalogEntry {
     #[serde(default)]
     pub model_prefix: String,
     #[serde(flatten)]
+    /// Context token profile selected when provider and model match.
     pub profile: ModelContextProfile,
 }
 
@@ -319,6 +348,7 @@ impl ProfileCatalog {
 }
 
 /// Окно, которое предполагается для неизвестной модели без подсказки провайдера.
+/// Assumed context window when neither catalog nor provider supplies one.
 pub const DEFAULT_UNKNOWN_WINDOW: u32 = 32_768;
 
 #[cfg(test)]

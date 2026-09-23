@@ -5,10 +5,23 @@ use rusqlite::{params, Connection, OptionalExtension};
 const MAX_LIST_ROWS: usize = 32;
 const MAX_PROFILE_BYTES: usize = 64 * 1024;
 
+/// Creates current-profile and immutable historical-revision tables.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_role_profiles (id TEXT PRIMARY KEY NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, profile_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS agent_role_profile_revisions (profile_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, profile_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(profile_id, revision));")
 }
 
+/// Stores a new role-profile revision and updates its current projection.
+///
+/// Profile JSON is limited to 64 KiB. Older or equal revisions and duplicate
+/// revision rows return `false` without changing the stored profile.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite read or write error.
 pub fn save_revision(
     connection: &Connection,
     id: &str,
@@ -40,6 +53,11 @@ pub fn save_revision(
     Ok(true)
 }
 
+/// Loads one immutable historical profile revision by ID and revision number.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn load_json(
     connection: &Connection,
     id: &str,
@@ -48,6 +66,11 @@ pub fn load_json(
     connection.query_row("SELECT profile_json FROM agent_role_profile_revisions WHERE profile_id = ?1 AND revision = ?2", params![id, revision as i64], |row| row.get(0)).optional()
 }
 
+/// Loads current role profiles ordered by ID, capped at 32 rows.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn load_all_json(connection: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     let mut statement =
         connection.prepare("SELECT profile_json FROM agent_role_profiles ORDER BY id LIMIT ?1")?;

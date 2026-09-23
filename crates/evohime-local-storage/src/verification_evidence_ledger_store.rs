@@ -1,5 +1,14 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Stores bounded verification evidence in the caller's active schema.
+///
+/// Evidence is scoped by its target and lane, and duplicate `evidence_id`
+/// values are left unchanged. The serialized evidence limit is 64 KiB.
+///
+/// # Errors
+///
+/// Returns a stable string error for invalid fields, oversized evidence, or
+/// SQLite write failure.
 #[allow(clippy::too_many_arguments)]
 pub fn put(
     connection: &Connection,
@@ -30,6 +39,11 @@ pub fn put(
     connection.execute("INSERT OR IGNORE INTO verification_evidence_ledger (evidence_id,target_id,lane_id,status,fingerprint,evidence_json,created_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)", params![evidence_id, target_id, lane_id, status, fingerprint, evidence_json, now_ms]).map(|count| count == 1).map_err(|_| "sqlite")
 }
 
+/// Loads the serialized evidence for an ID, if it exists.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn get(connection: &Connection, evidence_id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(

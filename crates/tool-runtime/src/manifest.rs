@@ -4,6 +4,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+/// Discriminator identifying the supported tool manifest schema.
 pub const MANIFEST_KIND: &str = "tool/manifest/v1";
 
 /// Canonical input-schema catalog for builtin tools.  The registry and Core
@@ -119,75 +120,121 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
     }
 }
 
+/// Where the tool implementation comes from.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolOrigin {
+    /// Tool shipped with this runtime.
     Builtin,
+    /// Tool exposed by a configured Model Context Protocol server.
     Mcp,
+    /// Tool discovered from an installed catalog package.
     Catalog,
 }
 
+/// Declared class of effects a tool may cause.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SideEffectClass {
+    /// The tool reads or computes without changing external state.
     ReadOnly,
+    /// The tool may change workspace or application state.
     Mutating,
+    /// The tool may remove or irreversibly replace data.
     Destructive,
+    /// The tool communicates with a network service.
     Network,
 }
 
+/// Approval requirement applied before a tool call is dispatched.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalMode {
+    /// The tool never requires a separate approval.
     Never,
+    /// Approval is required when permission policy requests it.
     OnPermission,
+    /// Every invocation requires an approval decision.
     Always,
 }
 
+/// Versioned description of a tool's interface and execution constraints.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ToolManifest {
+    /// Schema discriminator; must equal [`MANIFEST_KIND`].
     pub kind: String,
+    /// Stable identifier used to select this tool.
     pub tool_id: String,
+    /// Version of the tool implementation.
     pub version: String,
+    /// Display label for user-facing surfaces.
     pub display_name: String,
+    /// Human-readable description of the tool's purpose.
     pub description: String,
+    /// JSON Schema for accepted input; must be an object.
     pub input_schema: Value,
+    /// JSON Schema for produced output; must be an object.
     pub output_schema: Value,
+    /// Capability category used by policy and discovery.
     pub capability_class: String,
+    /// Broad class of effects the tool may perform.
     pub side_effect: SideEffectClass,
+    /// Identity of the provider that supplies the implementation.
     pub provider_identity: String,
+    /// Permissions required before invocation.
     pub required_permissions: Vec<Permission>,
+    /// Approval policy declared by the tool.
     pub approval: ApprovalMode,
+    /// Workspace boundary applied to the tool.
     pub workspace_scope: String,
+    /// Network hosts the tool may contact.
     pub network_domains: Vec<String>,
+    /// Secret identifiers the tool is allowed to reference.
     pub secret_references: Vec<String>,
+    /// Maximum call duration in milliseconds.
     pub timeout_ms: u64,
+    /// Maximum output size in bytes.
     pub output_size_limit: u64,
+    /// Retry behavior category for the implementation.
     pub retry_class: String,
+    /// Whether the implementation accepts cancellation.
     pub supports_cancellation: bool,
+    /// Origin category of the implementation.
     pub origin: ToolOrigin,
+    /// Reference identifying the source of the implementation.
     pub source_reference: String,
+    /// Optional package digest for catalog-provided tools.
     pub package_hash: Option<String>,
+    /// Optional license identifier for the implementation package.
     pub license: Option<String>,
+    /// Core version range supported by this tool.
     pub compatible_core: String,
+    /// Tool manifest protocol version.
     pub protocol_version: String,
 }
 
+/// Validation failures for a tool manifest.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ManifestError {
+    /// The discriminator does not match the supported manifest schema.
     #[error("manifest kind must be {MANIFEST_KIND}")]
     WrongKind,
+    /// A required string field is empty.
     #[error("manifest field is empty: {0}")]
     EmptyField(&'static str),
+    /// An input or output schema is not a JSON object.
     #[error("schema must be a JSON object: {0}")]
     InvalidSchema(&'static str),
+    /// A schema allows undeclared properties.
     #[error("manifest contains permissive additionalProperties schema")]
     PermissiveSchema,
+    /// Timeout or maximum output size is zero.
     #[error("invalid timeout or output limit")]
     InvalidLimits,
 }
 
 impl ToolManifest {
+    /// Checks required fields, object schemas, strict properties, and limits.
     pub fn validate(&self) -> Result<(), ManifestError> {
         if self.kind != MANIFEST_KIND {
             return Err(ManifestError::WrongKind);
@@ -220,10 +267,12 @@ impl ToolManifest {
         Ok(())
     }
 
+    /// Serializes this manifest to JSON bytes.
     pub fn canonical_json(&self) -> Result<Vec<u8>, serde_json::Error> {
         serde_json::to_vec(self)
     }
 
+    /// Computes a SHA-256 digest over the serialized manifest.
     pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
         let mut h = Sha256::new();
         h.update(self.canonical_json()?);

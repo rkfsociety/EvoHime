@@ -1,5 +1,9 @@
 use super::*;
 
+/// Coordinates Core commands, task execution, event persistence, and shell notifications.
+///
+/// Clones share the same command queue and state. Required event delivery uses
+/// bounded channels, while the broadcast receiver is intended for observers.
 #[derive(Clone)]
 pub struct TaskCoordinator {
     commands: mpsc::Sender<CoreCommand>,
@@ -85,6 +89,10 @@ mod workspace_children;
 mod workspace_context;
 
 impl TaskCoordinator {
+    /// Creates a coordinator without an executor or event journal.
+    ///
+    /// `buffer` sets the bounded command and notification capacities; zero is
+    /// promoted to one. The returned receiver observes broadcast events.
     pub fn new(buffer: usize) -> (Self, broadcast::Receiver<CoreEvent>) {
         Self::build(buffer, None, None)
     }
@@ -129,6 +137,7 @@ impl TaskCoordinator {
         let _ = self.journalled_tx.send(sequence);
     }
 
+    /// Replaces the registry used to approve provider/model routing changes.
     pub async fn attach_routing_approvals(&self, approvals: RoutingApprovalRegistry) {
         self.state.lock().await.routing_approvals = approvals;
     }
@@ -151,6 +160,9 @@ impl TaskCoordinator {
             .record(snapshot, now_ms)
     }
 
+    /// Creates a coordinator with an optional task executor and no journal.
+    ///
+    /// The returned broadcast receiver observes emitted events.
     pub fn new_with_executor(
         buffer: usize,
         executor: Option<Arc<dyn TaskExecutor>>,
@@ -158,6 +170,10 @@ impl TaskCoordinator {
         Self::build(buffer, executor, None)
     }
 
+    /// Creates a coordinator with an optional executor and durable event journal.
+    ///
+    /// Journal writes complete before the `journalled` watch signal advances.
+    /// The returned broadcast receiver is for observers, not durable delivery.
     pub fn new_with_journal(
         buffer: usize,
         executor: Option<Arc<dyn TaskExecutor>>,
@@ -284,6 +300,11 @@ impl TaskCoordinator {
     // команду, поэтому размер Err-варианта здесь неизбежен и боксировать его нельзя
     // без слома API диспетчеризации.
     #[allow(clippy::result_large_err)]
+    /// Enqueues a Core command and waits for bounded queue capacity.
+    ///
+    /// # Errors
+    ///
+    /// Returns the unsent command if the coordinator's receiver has closed.
     pub async fn dispatch(
         &self,
         command: CoreCommand,

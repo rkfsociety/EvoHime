@@ -3,6 +3,7 @@ use rusqlite::{Connection, OptionalExtension};
 use crate::{LocalDatabase, StorageError};
 
 impl LocalDatabase {
+    /// Returns the on-disk path of this database.
     pub fn path(&self) -> &std::path::Path {
         &self.path
     }
@@ -20,10 +21,20 @@ impl LocalDatabase {
         &mut self.connection
     }
 
+    /// Returns the SQLite `user_version` recorded by the migration system.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the pragma query fails.
     pub fn schema_version(&self) -> Result<u32, StorageError> {
         Ok(Self::read_schema_version(&self.connection)?)
     }
 
+    /// Reports whether the current schema contains the durable `events` table.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if SQLite cannot inspect the schema.
     pub fn has_events_table(&self) -> Result<bool, StorageError> {
         Ok(self
             .connection
@@ -36,6 +47,14 @@ impl LocalDatabase {
             .is_some())
     }
 
+    /// Returns or stores a command result keyed by client and request IDs.
+    ///
+    /// A matching command hash returns the previous result. Reusing the same
+    /// IDs with a different hash is rejected; an empty new result is not stored.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] for a deduplication conflict or SQLite failure.
     pub fn record_deduplicated(
         &self,
         client_id: &str,

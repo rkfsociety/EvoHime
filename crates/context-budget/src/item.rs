@@ -87,16 +87,24 @@ impl ItemKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BudgetCategory {
+    /// Agent system policy and instructions.
     System,
+    /// Current user request and constraints.
     User,
+    /// Retrieved memory and evidence.
     Memory,
+    /// Tool schemas and execution context.
     Tools,
+    /// Conversation history and tool outputs.
     History,
+    /// Task decisions and scratchpad state.
     Scratchpad,
+    /// Model response tokens, which use a separate output reserve.
     Output,
 }
 
 impl BudgetCategory {
+    /// Returns the stable category name used by metrics and ledgers.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::System => "system",
@@ -139,6 +147,7 @@ pub enum Trust {
 }
 
 impl Trust {
+    /// Returns the stable serialized trust label.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Unverified => "unverified",
@@ -162,6 +171,7 @@ pub enum Privacy {
 }
 
 impl Privacy {
+    /// Returns the stable serialized privacy label.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Workspace => "workspace",
@@ -180,12 +190,16 @@ impl Privacy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScratchpadStatus {
+    /// Editable note that has not been confirmed by the user.
     Draft,
+    /// User-confirmed note eligible for normal scratchpad use.
     Confirmed,
+    /// Note recovered after restart and not yet re-confirmed.
     Recovered,
 }
 
 impl ScratchpadStatus {
+    /// Returns the stable serialized status label.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Draft => "draft",
@@ -201,22 +215,34 @@ impl ScratchpadStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DropReason {
+    /// Item was excluded to satisfy a category or total token ceiling.
     OverBudget,
+    /// Item fell below the active low-priority threshold.
     LowPriority,
+    /// Equivalent content was already present in the selected context.
     Duplicate,
+    /// A newer item superseded this revision.
     Superseded,
+    /// Item exceeded its TTL or retention period.
     Expired,
+    /// Item trust was insufficient for its intended context level.
     Unverified,
+    /// Full content moved to artifact storage and was replaced by a reference.
     Offloaded,
+    /// Tool result no longer belonged to a valid call/result pair.
     StaleToolOutput,
+    /// Privacy policy prohibited including or offloading the content.
     PrivacyRestricted,
+    /// Tool state was malformed or could not be paired safely.
     InvalidToolState,
+    /// An active policy explicitly excluded the item.
     PolicyDenied,
     /// Значение, не входящее в известный справочник этой версии.
     Unknown,
 }
 
 impl DropReason {
+    /// Returns the stable serialized reason code.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::OverBudget => "over_budget",
@@ -256,16 +282,23 @@ impl DropReason {
 /// Элемент контекста. Полный набор атрибутов из 01.1.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextItem {
+    /// Stable identifier of this context item.
     pub id: String,
+    /// Owning task identifier.
     pub task_id: String,
+    /// Session that produced or owns the item.
     pub session_id: String,
+    /// Optional identifier of the parent item or source.
     pub parent_id: Option<String>,
+    /// Semantic type that determines mandatory status and budget category.
     pub kind: ItemKind,
     /// Происхождение item (имя инструмента, `memory`, `user` и т.п.).
     pub source: String,
     /// Базовый приоритет 0..100, больше значит важнее.
     pub priority: u8,
+    /// Trust classification used within an instruction hierarchy level.
     pub trust: Trust,
+    /// Privacy classification controlling offload and diagnostics.
     pub privacy: Privacy,
     /// unix ms.
     pub created_at: i64,
@@ -275,14 +308,21 @@ pub struct ContextItem {
     pub ttl_ms: Option<i64>,
     /// Retention в миллисекундах от `created_at`; `None` — бессрочно.
     pub retention_ms: Option<i64>,
+    /// Whether this item is protected from ordinary eviction.
     pub pinned: bool,
     /// Ревизия item в пределах одного `parent_id`/ключа.
     pub version: u32,
+    /// Tokenizer version used to compute `estimated_tokens`.
     pub tokenizer_version: String,
+    /// Normalized digest used for deduplication and ledger identity.
     pub content_hash: String,
+    /// Original content size in bytes.
     pub bytes: u64,
+    /// Estimated number of model tokens in this item.
     pub estimated_tokens: u32,
+    /// Whether the planner selected this item for the outgoing context.
     pub selected: bool,
+    /// Reason the item was excluded or replaced, if any.
     pub drop_reason: Option<DropReason>,
     /// Статус scratchpad, если item пришёл из scratchpad (01.2).
     #[serde(default)]
@@ -305,6 +345,7 @@ fn default_true() -> bool {
 }
 
 /// Порог, ниже которого item считается низкоприоритетным по умолчанию.
+/// Default threshold used to classify optional low-priority items.
 pub const DEFAULT_LOW_PRIORITY_CUTOFF: u8 = 30;
 
 impl ContextItem {
@@ -369,6 +410,7 @@ pub struct ContextItemBuilder {
 }
 
 impl ContextItemBuilder {
+    /// Starts an item with default metadata and the required identity fields.
     pub fn new(id: impl Into<String>, kind: ItemKind, content_hash: impl Into<String>) -> Self {
         Self {
             item: ContextItem {
@@ -401,84 +443,100 @@ impl ContextItemBuilder {
         }
     }
 
+    /// Assigns the owning task and session identifiers.
     pub fn task(mut self, task_id: impl Into<String>, session_id: impl Into<String>) -> Self {
         self.item.task_id = task_id.into();
         self.item.session_id = session_id.into();
         self
     }
 
+    /// Assigns the item origin, such as a tool name or `user`.
     pub fn source(mut self, source: impl Into<String>) -> Self {
         self.item.source = source.into();
         self
     }
 
+    /// Assigns base priority, clamped to the supported `0..=100` range.
     pub fn priority(mut self, priority: u8) -> Self {
         self.item.priority = priority.min(100);
         self
     }
 
+    /// Assigns the trust classification.
     pub fn trust(mut self, trust: Trust) -> Self {
         self.item.trust = trust;
         self
     }
 
+    /// Assigns the privacy classification.
     pub fn privacy(mut self, privacy: Privacy) -> Self {
         self.item.privacy = privacy;
         self
     }
 
+    /// Assigns creation time and initializes last-used time to match.
     pub fn created_at(mut self, created_at: i64) -> Self {
         self.item.created_at = created_at;
         self.item.last_used_at = created_at;
         self
     }
 
+    /// Sets a TTL in milliseconds from the creation time.
     pub fn ttl_ms(mut self, ttl_ms: i64) -> Self {
         self.item.ttl_ms = Some(ttl_ms);
         self
     }
 
+    /// Sets a retention period in milliseconds from the creation time.
     pub fn retention_ms(mut self, retention_ms: i64) -> Self {
         self.item.retention_ms = Some(retention_ms);
         self
     }
 
+    /// Marks whether ordinary context reduction may remove this item.
     pub fn pinned(mut self, pinned: bool) -> Self {
         self.item.pinned = pinned;
         self
     }
 
+    /// Sets the revision number within this item's parent or conflict key.
     pub fn version(mut self, version: u32) -> Self {
         self.item.version = version;
         self
     }
 
+    /// Associates this item with its source parent item.
     pub fn parent(mut self, parent_id: impl Into<String>) -> Self {
         self.item.parent_id = Some(parent_id.into());
         self
     }
 
+    /// Marks the scratchpad lifecycle state when this item came from scratchpad.
     pub fn scratchpad_status(mut self, status: ScratchpadStatus) -> Self {
         self.item.scratchpad_status = Some(status);
         self
     }
 
+    /// Assigns the deterministic key used to detect conflicting revisions.
     pub fn conflict_key(mut self, key: impl Into<String>) -> Self {
         self.item.conflict_key = Some(key.into());
         self
     }
 
+    /// Records whether a tool result has a complete matching call/result pair.
     pub fn tool_pair_complete(mut self, complete: bool) -> Self {
         self.item.tool_pair_complete = complete;
         self
     }
 
+    /// Sets raw byte size and estimated model-token count.
     pub fn sizes(mut self, bytes: u64, estimated_tokens: u32) -> Self {
         self.item.bytes = bytes;
         self.item.estimated_tokens = estimated_tokens;
         self
     }
 
+    /// Returns the configured context item.
     pub fn build(self) -> ContextItem {
         self.item
     }

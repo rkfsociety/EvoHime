@@ -1,31 +1,48 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
+/// Maximum serialized size of one architecture snapshot record.
 pub const MAX_RECORD_BYTES: usize = 512 * 1024;
 
+/// Stored architecture snapshot metadata and its bounded serialized record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotRecord {
+    /// Stable workspace identity associated with the snapshot.
     pub workspace_identity: String,
+    /// Source revision from which the snapshot was derived.
     pub source_revision: String,
+    /// Digest of the snapshot content.
     pub snapshot_hash: String,
+    /// Snapshot lifecycle state.
     pub state: String,
+    /// Serialized snapshot record, bounded by [`MAX_RECORD_BYTES`].
     pub record_json: Vec<u8>,
 }
 
+/// Inputs used to write a bounded architecture snapshot record.
 #[derive(Debug, Clone, Copy)]
 pub struct PutInput<'a> {
+    /// Stable snapshot identifier.
     pub snapshot_id: &'a str,
+    /// Workspace identity for the snapshot.
     pub workspace_identity: &'a str,
+    /// Source revision represented by the snapshot.
     pub source_revision: &'a str,
+    /// Digest of the snapshot content.
     pub snapshot_hash: &'a str,
+    /// Snapshot lifecycle state.
     pub state: &'a str,
+    /// Serialized snapshot record bytes.
     pub record_json: &'a [u8],
+    /// Last update time in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Creates the snapshot records, refresh state tables, and workspace lookup index.
 pub fn install_schema(c: &Connection) -> Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS architecture_snapshot_records (snapshot_id TEXT PRIMARY KEY, workspace_identity TEXT NOT NULL, source_revision TEXT NOT NULL, snapshot_hash TEXT NOT NULL, state TEXT NOT NULL, record_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_architecture_snapshot_workspace ON architecture_snapshot_records(workspace_identity, updated_at_ms DESC); CREATE TABLE IF NOT EXISTS architecture_snapshot_refresh (snapshot_id TEXT PRIMARY KEY, state TEXT NOT NULL, last_error TEXT, updated_at_ms INTEGER NOT NULL);")
 }
 
+/// Inserts or replaces the refresh status and last error for a snapshot.
 pub fn set_refresh_state(
     c: &Connection,
     snapshot_id: &str,
@@ -37,6 +54,7 @@ pub fn set_refresh_state(
     Ok(())
 }
 
+/// Inserts or replaces a snapshot record unless its serialized body exceeds the size bound.
 pub fn put(c: &Connection, input: PutInput<'_>) -> Result<bool> {
     if input.record_json.len() > MAX_RECORD_BYTES {
         return Ok(false);
@@ -44,10 +62,12 @@ pub fn put(c: &Connection, input: PutInput<'_>) -> Result<bool> {
     Ok(c.execute("INSERT INTO architecture_snapshot_records(snapshot_id,workspace_identity,source_revision,snapshot_hash,state,record_json,updated_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(snapshot_id) DO UPDATE SET workspace_identity=excluded.workspace_identity,source_revision=excluded.source_revision,snapshot_hash=excluded.snapshot_hash,state=excluded.state,record_json=excluded.record_json,updated_at_ms=excluded.updated_at_ms", params![input.snapshot_id, input.workspace_identity, input.source_revision, input.snapshot_hash, input.state, input.record_json, input.updated_at_ms])? == 1)
 }
 
+/// Loads snapshot metadata and its serialized record by identifier.
 pub fn get(c: &Connection, id: &str) -> Result<Option<SnapshotRecord>> {
     c.query_row("SELECT workspace_identity,source_revision,snapshot_hash,state,record_json FROM architecture_snapshot_records WHERE snapshot_id=?1", [id], |r| Ok(SnapshotRecord { workspace_identity: r.get(0)?, source_revision: r.get(1)?, snapshot_hash: r.get(2)?, state: r.get(3)?, record_json: r.get(4)? })).optional()
 }
 
+/// Lists snapshot summaries for one workspace, newest update first and capped at 256 rows.
 pub fn list(
     c: &Connection,
     workspace_identity: &str,

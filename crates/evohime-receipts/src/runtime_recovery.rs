@@ -4,6 +4,7 @@ use crate::runtime_platform::{boot_id, monotonic_ms};
 use rusqlite::{params, Connection};
 use std::time::{Duration, Instant};
 
+/// Reconciles interrupted receipt actions and returns the number of recovered rows.
 pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError> {
     let recovery_started = Instant::now();
     install_schema(connection)?;

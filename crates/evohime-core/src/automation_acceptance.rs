@@ -2,11 +2,16 @@
 
 use crate::automation::TriggerRequestV1;
 
+/// Maximum persisted events retained for one automation run.
 pub const MAX_DURABLE_EVENTS_PER_RUN: usize = 256;
+/// Maximum snapshots retained for one automation run.
 pub const MAX_SNAPSHOTS_PER_RUN: usize = 64;
+/// Maximum number of archived automation runs retained by policy.
 pub const MAX_ARCHIVE_RUNS: usize = 10_000;
+/// Retention period for archived runs in milliseconds.
 pub const ARCHIVE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 
+/// Returns a deterministic, valid trigger request for automation acceptance checks.
 pub fn acceptance_fixture() -> TriggerRequestV1 {
     TriggerRequestV1 {
         owner_scope: "owner".into(),

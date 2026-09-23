@@ -9,6 +9,12 @@ pub use evohime_local_storage::code_review_lane_store::{
     CodeReviewTarget, CoverageState, FindingState, ReviewVerdict, TargetKind,
 };
 
+/// Derives a conservative verdict that cannot mark incomplete coverage as clean.
+///
+/// Interrupted reviews and partial, failed, unknown, or unsupported coverage
+/// yield [`ReviewVerdict::ReviewIncomplete`]. Open critical or high findings
+/// yield [`ReviewVerdict::ChangesRequested`]; otherwise the recorded verdict is
+/// preserved after validating the record.
 pub fn conservative_verdict(record: &CodeReviewRecord) -> Result<ReviewVerdict, CodeReviewError> {
     record.validate()?;
     if record.interrupted

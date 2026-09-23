@@ -1,11 +1,13 @@
 use super::*;
 
 impl EventJournal {
+    /// Loads one work item by identifier.
     pub async fn get_work_item(&self, id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
         let database = self.database.lock().await;
         database.get_work_item(id)
     }
 
+    /// Creates a work item in durable storage.
     pub async fn create_work_item(
         &self,
         item: &WorkItemRecord,
@@ -14,6 +16,7 @@ impl EventJournal {
         database.create_work_item(item)
     }
 
+    /// Updates a work item only when its stored version matches `expected_version`.
     pub async fn update_work_item_status(
         &self,
         id: &str,
@@ -24,6 +27,7 @@ impl EventJournal {
         database.update_work_item_status(id, expected_version, status)
     }
 
+    /// Adds a dependency edge between two work items.
     pub async fn add_dependency(
         &self,
         from_id: &str,
@@ -34,6 +38,7 @@ impl EventJournal {
         database.add_dependency(from_id, to_id, kind)
     }
 
+    /// Lists work items using the requested bounded query.
     pub async fn list_work_items(
         &self,
         project_id: &str,
@@ -42,6 +47,7 @@ impl EventJournal {
         database.list_work_items(project_id)
     }
 
+    /// Returns the dependency graph for a task.
     pub async fn list_task_graph(
         &self,
         project_id: &str,
@@ -53,6 +59,7 @@ impl EventJournal {
         ))
     }
 
+    /// Returns the next work item whose dependencies are ready.
     pub async fn next_ready_task(
         &self,
         project_id: &str,
@@ -61,6 +68,7 @@ impl EventJournal {
         database.next_ready(project_id)
     }
 
+    /// Imports a validated product-requirements document into durable work items.
     pub async fn import_prd(
         &self,
         provenance_id: &str,
@@ -81,6 +89,7 @@ impl EventJournal {
         )
     }
 
+    /// Persists a versioned snapshot for a task.
     pub async fn save_snapshot(
         &self,
         id: &str,
@@ -92,6 +101,7 @@ impl EventJournal {
         database.save_snapshot(id, run_id, workspace_hash, payload)
     }
 
+    /// Loads the newest persisted snapshot for a task, if one exists.
     pub async fn latest_snapshot_for_task(
         &self,
         task_id: &str,
@@ -100,6 +110,7 @@ impl EventJournal {
         database.latest_snapshot_for_task(task_id)
     }
 
+    /// Loads a snapshot by its identifier.
     pub async fn get_snapshot(
         &self,
         snapshot_id: &str,
@@ -108,6 +119,7 @@ impl EventJournal {
         database.get_snapshot(snapshot_id)
     }
 
+    /// Loads a run record by its identifier.
     pub async fn get_run(
         &self,
         run_id: &str,
@@ -116,6 +128,7 @@ impl EventJournal {
         database.get_run(run_id)
     }
 
+    /// Records intent to perform a build effect before dispatch.
     pub async fn begin_build_effect(
         &self,
         run_id: &str,
@@ -191,6 +204,7 @@ impl EventJournal {
         }
     }
 
+    /// Marks a previously recorded build effect as completed.
     pub async fn complete_build_effect(
         &self,
         run_id: &str,
@@ -205,6 +219,7 @@ impl EventJournal {
         Ok(effect)
     }
 
+    /// Extends the lease for a build effect that is still running.
     pub async fn heartbeat_build_effect(
         &self,
         run_id: &str,
@@ -213,6 +228,7 @@ impl EventJournal {
         database.heartbeat_run_lease(run_id, &format!("lease-{run_id}"), "core", 1, 30)
     }
 
+    /// Records the start of an agent run before dispatching its effects.
     pub async fn begin_agent_run(
         &self,
         run_id: &str,
@@ -263,6 +279,7 @@ impl EventJournal {
         }
     }
 
+    /// Extends the lease for an agent run that is still active.
     pub async fn heartbeat_agent_run(
         &self,
         run_id: &str,
@@ -271,6 +288,7 @@ impl EventJournal {
         database.heartbeat_agent_run_lease(run_id, &format!("lease-{run_id}"), "core", 1, 30)
     }
 
+    /// Completes an agent run and records its final outcome.
     pub async fn complete_agent_run(
         &self,
         run_id: &str,
@@ -283,6 +301,7 @@ impl EventJournal {
         Ok(effect)
     }
 
+    /// Reconciles a build effect whose outcome may be unknown after interruption.
     pub async fn reconcile_build_effect(
         &self,
         run_id: &str,
@@ -302,6 +321,7 @@ impl EventJournal {
         Ok(record)
     }
 
+    /// Recovers task and effect state left by a previous Core process.
     pub async fn recover_after_restart(
         &self,
     ) -> Result<Vec<evohime_local_storage::RecoveredRunRecord>, StorageError> {
@@ -309,6 +329,7 @@ impl EventJournal {
         database.recover_unknown_effects()
     }
 
+    /// Recovers interrupted tasks and reconciles their outstanding effects.
     pub async fn recover_and_reconcile_after_restart(
         &self,
     ) -> Result<Vec<evohime_local_storage::RunReconciliationRecord>, StorageError> {
@@ -477,6 +498,7 @@ impl EventJournal {
         Ok(reconciliations)
     }
 
+    /// Persists an audit record associated with the task journal.
     pub async fn record_audit(
         &self,
         subject_id: &str,
@@ -487,6 +509,7 @@ impl EventJournal {
         database.append_event(subject_id, event_type, payload)
     }
 
+    /// Returns the ordered history associated with a task.
     pub async fn task_history(
         &self,
         task_id: &str,
@@ -496,6 +519,7 @@ impl EventJournal {
         database.read_task_events(task_id, limit)
     }
 
+    /// Writes an event only if its deduplication key has not already been recorded.
     pub async fn record_deduplicated(
         &self,
         client_id: &str,

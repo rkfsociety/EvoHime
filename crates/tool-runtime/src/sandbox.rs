@@ -2,12 +2,14 @@ use crate::ToolError;
 use evohime_permissions::Permission;
 use std::path::{Path, PathBuf};
 
+/// Resolves filesystem paths beneath a canonical workspace root.
 #[derive(Debug, Clone)]
 pub struct WorkspaceSandbox {
     root: PathBuf,
 }
 
 impl WorkspaceSandbox {
+    /// Canonicalizes and validates a directory to use as the workspace root.
     pub fn new(root: impl AsRef<Path>) -> Result<Self, ToolError> {
         let root = root
             .as_ref()
@@ -21,14 +23,17 @@ impl WorkspaceSandbox {
         Ok(Self { root })
     }
 
+    /// Returns the canonical workspace root.
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Resolves an existing workspace-relative path for a filesystem read.
     pub fn resolve_existing(&self, path: &str) -> Result<PathBuf, ToolError> {
         self.resolve_existing_for_tool(path, "workspace")
     }
 
+    /// Resolves an existing path and attributes missing-resource errors to `tool`.
     pub fn resolve_existing_for_tool(&self, path: &str, tool: &str) -> Result<PathBuf, ToolError> {
         let candidate = self.root.join(path);
         let resolved = match candidate.canonicalize() {
@@ -47,6 +52,7 @@ impl WorkspaceSandbox {
         self.ensure_inside(resolved, Permission::FilesystemRead)
     }
 
+    /// Resolves a new or existing path for writing without leaving the workspace.
     pub fn resolve_for_write(&self, path: &str) -> Result<PathBuf, ToolError> {
         let candidate = self.root.join(path);
         let parent = candidate.parent().ok_or_else(|| ToolError::InvalidInput {

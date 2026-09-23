@@ -9,10 +9,14 @@ use serde_json::json;
 use std::time::Duration;
 use tokio::io::AsyncRead;
 
+/// Stable identifier used to register this direct-process tool.
 pub const NAME: &str = "process.run";
+/// User-facing description of the direct-process tool.
 pub const DESCRIPTION: &str =
     "Run a process with improved timeout and streaming (replaces shell.execute)";
+/// Permission required before the process can be started.
 pub const PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
+/// Default maximum runtime for the process tool.
 pub const TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +32,11 @@ struct Input {
     env: Option<std::collections::HashMap<String, String>>,
 }
 
+/// Starts a validated executable with bounded output, environment, and timeout.
+///
+/// The `command` field names the executable directly; a shell command string
+/// is not interpreted. The working directory, when supplied, must remain
+/// inside the task workspace.
 pub async fn execute(ctx: &ToolContext, value: serde_json::Value) -> Result<ToolResult, ToolError> {
     let input: Input = serde_json::from_value(value).map_err(|e| ToolError::InvalidInput {
         tool: NAME.to_string(),

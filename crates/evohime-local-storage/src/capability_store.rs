@@ -31,12 +31,16 @@ const MAX_MANIFEST_JSON_BYTES: usize = 256 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ManifestKind {
+    /// Manifest contains role definitions only.
     Role,
+    /// Manifest contains skill definitions only.
     Skill,
+    /// Manifest contains both roles and skills.
     Mixed,
 }
 
 impl ManifestKind {
+    /// Returns the stable value persisted in the catalog table.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Role => "role",
@@ -62,14 +66,20 @@ impl ManifestKind {
 pub struct CapabilityManifestRecord {
     /// The manifest name; also the registry's unique identity.
     pub id: String,
+    /// Derived listing classification for the manifest contents.
     pub kind: ManifestKind,
+    /// Manifest version string.
     pub version: String,
+    /// Risk class declared by the manifest.
     pub risk_class: String,
+    /// Content digest of the canonical manifest.
     pub content_hash: String,
+    /// Canonical serialized manifest JSON.
     pub manifest_json: String,
 }
 
 impl CapabilityManifestRecord {
+    /// Validates all required fields and their storage byte bounds.
     pub fn validate(&self) -> Result<(), CapabilityStoreError> {
         validate_text("id", &self.id, MAX_ID_BYTES)?;
         validate_text("version", &self.version, MAX_VERSION_BYTES)?;
@@ -84,14 +94,27 @@ impl CapabilityManifestRecord {
     }
 }
 
+/// Validation or database errors from the capability manifest catalog.
 #[derive(Debug, thiserror::Error)]
 pub enum CapabilityStoreError {
+    /// A required record field was empty.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Name of the empty field.
+        field: &'static str,
+    },
+    /// A record field exceeded its byte limit.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: usize },
+    Limit {
+        /// Name of the field that exceeded the limit.
+        field: &'static str,
+        /// Maximum permitted byte length.
+        max: usize,
+    },
+    /// The stored kind column did not match a recognized value.
     #[error("invalid manifest kind")]
     InvalidKind,
+    /// A SQLite query or row conversion failed.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -139,6 +162,7 @@ fn validate_text(
 pub struct CapabilityStoreSql;
 
 impl CapabilityStoreSql {
+    /// Inserts a manifest or replaces the existing row with the same identifier.
     pub const INSERT_OR_REPLACE: &'static str = r#"
         INSERT INTO capability_manifests
             (id, kind, version, risk_class, content_hash, manifest_json)
@@ -151,12 +175,14 @@ impl CapabilityStoreSql {
             manifest_json = excluded.manifest_json
     "#;
 
+    /// Selects one manifest by its identifier.
     pub const SELECT_BY_ID: &'static str = r#"
         SELECT id, kind, version, risk_class, content_hash, manifest_json
         FROM capability_manifests
         WHERE id = ?1
     "#;
 
+    /// Selects catalog rows ordered by installation time and identifier.
     pub const SELECT_ALL: &'static str = r#"
         SELECT id, kind, version, risk_class, content_hash, manifest_json
         FROM capability_manifests
@@ -164,6 +190,7 @@ impl CapabilityStoreSql {
         LIMIT ?1
     "#;
 
+    /// Deletes a manifest row by identifier.
     pub const DELETE_BY_ID: &'static str = "DELETE FROM capability_manifests WHERE id = ?1";
 
     /// Inserts a new manifest, or replaces the row of the same id (used for
@@ -189,6 +216,7 @@ impl CapabilityStoreSql {
         Ok(())
     }
 
+    /// Loads a manifest by identifier, returning `None` when it is not installed.
     pub fn get_by_id(
         connection: &Connection,
         id: &str,
@@ -216,6 +244,7 @@ impl CapabilityStoreSql {
         Ok(records)
     }
 
+    /// Deletes a manifest by identifier and reports whether a row was removed.
     pub fn delete_by_id(connection: &Connection, id: &str) -> Result<bool, CapabilityStoreError> {
         Ok(connection.execute(Self::DELETE_BY_ID, params![id])? == 1)
     }

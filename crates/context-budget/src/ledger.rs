@@ -13,51 +13,71 @@ pub const CONTEXT_LEDGER_SCHEMA_VERSION: u32 = 1;
 /// Один выбранный item в собранном контексте.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SelectedItemRecord {
+    /// Identifier of the selected context item.
     pub id: String,
+    /// Token estimate included in the request ledger.
     pub estimated_tokens: u32,
 }
 
 /// Один отброшенный item и причина.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DroppedItemRecord {
+    /// Identifier of the item excluded from the context.
     pub id: String,
+    /// Stable reason for excluding or replacing the item.
     pub drop_reason: DropReason,
 }
 
 /// Применённое compression-решение.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompressionRecord {
+    /// Identifier of the generated summary item.
     pub summary_id: String,
+    /// Identifiers represented by the generated summary.
     pub source_ids: Vec<String>,
     /// Отношение размера summary к размеру исходных item.
     pub compression_ratio: f64,
+    /// Version of the compression strategy used for this summary.
     pub summarizer_version: String,
     #[serde(default)]
+    /// Token ceiling applied to the summary output.
     pub summary_budget: u32,
     #[serde(default)]
+    /// Whether deterministic fallback replaced model summarization.
     pub fallback: bool,
     #[serde(default)]
+    /// Bounded reason for using the deterministic fallback, if applicable.
     pub fallback_reason: Option<String>,
 }
 
 /// Итог работы обязательного минимума: часть, число item и токены.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MandatoryPartRecord {
+    /// Required context part summarized by this record.
     pub part: MandatoryPart,
+    /// Number of items included in this part.
     pub items: u32,
+    /// Estimated tokens contributed by this part.
     pub tokens: u32,
 }
 
 /// Итог tool loadout (этап 01.4).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct LoadoutRecord {
+    /// Stable identifier of the selected tool loadout.
     pub loadout_id: String,
+    /// Intent classification used to select the loadout.
     pub intent: String,
+    /// Version of the intent and loadout rules.
     pub rules_version: String,
+    /// Rule that selected this loadout, when one matched.
     pub matched_rule: Option<String>,
+    /// Tool identifiers included in the request.
     pub tool_ids: Vec<String>,
+    /// Estimated tokens consumed by tool schemas.
     pub schema_tokens: u32,
     #[serde(default)]
+    /// Whether a safe fallback loadout was selected.
     pub fallback: bool,
 }
 
@@ -65,11 +85,14 @@ pub struct LoadoutRecord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LedgerOutcome {
+    /// Context was sent to the model provider.
     Sent,
+    /// Context assembly terminated without a model call.
     BudgetUnavailable,
 }
 
 impl LedgerOutcome {
+    /// Returns the stable serialized outcome name.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Sent => "sent",
@@ -81,36 +104,61 @@ impl LedgerOutcome {
 /// Запись `context_ledger`: одна запись на один model call. Записи immutable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextLedgerEntry {
+    /// Stable identifier for this ledger entry.
     pub id: String,
+    /// Schema version used to serialize the entry.
     pub schema_version: u32,
+    /// Task associated with the model call.
     pub task_id: String,
+    /// Session associated with the model call.
     pub session_id: String,
+    /// Provider request identifier for this call.
     pub model_call_id: String,
     /// unix ms.
     pub created_at: i64,
+    /// Provider selected for the model call.
     pub provider: String,
+    /// Model selected for the call.
     pub model: String,
+    /// Version of the context profile applied to this call.
     pub profile_version: String,
     /// JSON-снимок профиля.
     pub profile_snapshot: String,
+    /// Token estimator version used to estimate request size.
     pub tokenizer_version: String,
+    /// Content normalization version used for item hashes.
     pub normalizer_version: String,
+    /// Context planning strategy version.
     pub strategy_version: String,
+    /// Tokens consumed by required context items.
     pub mandatory_tokens: u32,
+    /// Tokens consumed by selected optional items.
     pub selected_optional_tokens: u32,
+    /// Tokens reserved for system or output requirements.
     pub reserves_tokens: u32,
+    /// Estimated total prompt tokens sent to the provider.
     pub estimated_prompt_tokens: u32,
+    /// Selected context items in their exact request order.
     pub selected_items: Vec<SelectedItemRecord>,
+    /// Items excluded or replaced during planning.
     pub dropped_items: Vec<DroppedItemRecord>,
+    /// Per-part counts and token totals for mandatory context.
     pub mandatory_parts: Vec<MandatoryPartRecord>,
+    /// Reduction-ladder levels applied to fit the context.
     pub ladder_levels_applied: Vec<LadderLevel>,
+    /// Summary and source relationships created during compression.
     pub compression: Vec<CompressionRecord>,
+    /// Selected tool loadout and its token cost, if tool selection applied.
     pub loadout: Option<LoadoutRecord>,
+    /// Whether the fallback estimator supplied the token estimate.
     pub fallback_estimator: bool,
     /// Идентификатор записи, ре-план которой выполняется.
     pub replan_of: Option<String>,
+    /// Outcome of sending the measured prompt.
     pub outcome: LedgerOutcome,
+    /// Terminal budget failure detail when no provider call was made.
     pub budget_unavailable: Option<BudgetUnavailable>,
+    /// Digest of the finalized context planning decisions.
     pub context_ledger_hash: String,
 }
 
@@ -232,8 +280,11 @@ fn push_field(input: &mut String, key: &str, value: &str) {
 /// поэтому запись ledger остаётся immutable и hash-стабильной.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextLedgerUsage {
+    /// Identifier of the immutable ledger entry this usage describes.
     pub ledger_id: String,
+    /// Provider-reported prompt token count.
     pub actual_prompt_tokens: u32,
+    /// Provider-reported completion token count.
     pub actual_completion_tokens: u32,
     /// Относительная погрешность оценки.
     pub estimator_drift: f64,
@@ -243,7 +294,9 @@ pub struct ContextLedgerUsage {
 
 /// Политика ротации: запись хранится, пока выполняется хотя бы одно условие —
 /// возраст менее 30 дней или запись относится к одной из последних 200 сессий.
+/// Minimum number of days for which ledger records are retained.
 pub const LEDGER_RETENTION_DAYS: i64 = 30;
+/// Number of most recent sessions whose records are retained regardless of age.
 pub const LEDGER_RETAINED_SESSIONS: usize = 200;
 
 #[cfg(test)]

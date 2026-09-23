@@ -11,26 +11,42 @@ pub const CONTEXT_BUDGET_SCHEMA_VERSION: u32 = 1;
 /// Уровни бюджета одной категории.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CategoryBudget {
+    /// Desired tokens assigned to the category.
     pub target_tokens: u32,
+    /// Threshold that starts context reduction for the category.
     pub soft_limit_tokens: u32,
+    /// Maximum tokens the category can consume.
     pub hard_limit_tokens: u32,
 }
 
 /// Core-owned бюджет контекста: общие уровни профиля плюс уровни по категориям.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextBudget {
+    /// Schema version of this serialized budget.
     pub schema_version: u32,
+    /// Profile version from which this budget was derived.
     pub profile_version: String,
+    /// Desired context token count, excluding reserved tokens.
     pub target_tokens: u32,
+    /// Soft context ceiling, including applicable reserves.
     pub soft_limit_tokens: u32,
+    /// Hard context ceiling, including reserves.
     pub hard_limit_tokens: u32,
+    /// Total tokens reserved for system constraints and response needs.
     pub reserves_total: u32,
+    /// Budget for system policy and instruction content.
     pub system: CategoryBudget,
+    /// Budget for the current user request.
     pub user: CategoryBudget,
+    /// Budget for retrieved memory content.
     pub memory: CategoryBudget,
+    /// Budget for tool descriptions and pending calls.
     pub tools: CategoryBudget,
+    /// Budget for conversation history.
     pub history: CategoryBudget,
+    /// Budget for the task scratchpad.
     pub scratchpad: CategoryBudget,
+    /// Reserved output budget for the model response.
     pub output: CategoryBudget,
 }
 
@@ -83,6 +99,7 @@ impl ContextBudget {
         }
     }
 
+    /// Returns the token limits assigned to one budget category.
     pub fn category(&self, category: BudgetCategory) -> CategoryBudget {
         match category {
             BudgetCategory::System => self.system,
@@ -116,14 +133,20 @@ impl ContextBudget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MandatoryPart {
+    /// System safety policy that must remain in every request.
     SafetyPolicy,
+    /// Approval semantics required for safe tool execution.
     ApprovalPolicy,
+    /// Current user prompt.
     UserPrompt,
+    /// Unfinished tool call required to resume execution.
     PendingToolCall,
+    /// Cancellation context required to honor user cancellation.
     Cancellation,
 }
 
 impl MandatoryPart {
+    /// Returns the stable serialization name of this required context part.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SafetyPolicy => "safety_policy",
@@ -170,6 +193,7 @@ pub struct MinimumViableContext {
     pub items: Vec<ContextItem>,
     /// Причина включения каждой части: `(часть, число item, токены)`.
     pub parts: Vec<(MandatoryPart, u32, u32)>,
+    /// Estimated token count of all selected mandatory items.
     pub tokens: u32,
 }
 
@@ -225,6 +249,7 @@ impl MinimumViableContext {
         self.parts.last().map(|(part, _, _)| *part)
     }
 
+    /// Returns whether an item with this identifier is in the selected minimum.
     pub fn contains(&self, id: &str) -> bool {
         self.items.iter().any(|item| item.id == id)
     }
@@ -234,13 +259,18 @@ impl MinimumViableContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BudgetUnavailableStage {
+    /// Mandatory context alone exceeds the available capacity.
     MandatoryOverflow,
+    /// Optional item drops could not bring the request within budget.
     DropsExhausted,
+    /// A provider-specific replanning attempt failed.
     ProviderReplanFailed,
+    /// No usable token estimator was available.
     EstimatorUnavailable,
 }
 
 impl BudgetUnavailableStage {
+    /// Returns the stable serialized name of this failure stage.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MandatoryOverflow => "mandatory_overflow",
@@ -252,17 +282,24 @@ impl BudgetUnavailableStage {
 }
 
 /// Код отказа. Терминальный результат сборки, а не исключение внутри неё.
+/// Stable machine-readable code for a terminal context-budget failure.
 pub const BUDGET_UNAVAILABLE_CODE: &str = "budget_unavailable";
 
 /// Терминальный результат сборки контекста. Model call при этом не выполняется,
 /// автоматический retry запрещён на всех уровнях.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetUnavailable {
+    /// Stable terminal error code.
     pub code: String,
+    /// Stage at which context construction stopped.
     pub stage: BudgetUnavailableStage,
+    /// Tokens required by the request and mandatory context.
     pub required_tokens: u32,
+    /// Tokens available under the active profile and reserves.
     pub available_tokens: u32,
+    /// Active model context profile version.
     pub profile_version: String,
+    /// Tokenizer or estimator version used for the calculation.
     pub tokenizer_version: String,
     /// Hash частичной сборки.
     pub context_ledger_hash: String,
@@ -271,6 +308,7 @@ pub struct BudgetUnavailable {
 }
 
 impl BudgetUnavailable {
+    /// Creates a terminal budget failure without ledger or missing-part detail.
     pub fn new(
         stage: BudgetUnavailableStage,
         required_tokens: u32,
@@ -290,11 +328,13 @@ impl BudgetUnavailable {
         }
     }
 
+    /// Adds the mandatory context part that caused the overflow, if known.
     pub fn with_missing_part(mut self, part: Option<MandatoryPart>) -> Self {
         self.missing_part = part;
         self
     }
 
+    /// Adds the digest of the partial context ledger.
     pub fn with_ledger_hash(mut self, hash: impl Into<String>) -> Self {
         self.context_ledger_hash = hash.into();
         self

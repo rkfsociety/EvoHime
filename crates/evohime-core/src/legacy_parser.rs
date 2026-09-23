@@ -70,6 +70,15 @@ const TOOL_CALL_MARKERS: [&str; 6] = [
 /// Models without native tool calling print the call itself into the message,
 /// so the prose ends where the first call begins. Sending the raw content to
 /// the shell would put XML in the middle of the conversation.
+///
+/// ```
+/// use evohime_core::visible_agent_text;
+///
+/// assert_eq!(
+///     visible_agent_text("I'll inspect this. <function_calls>…"),
+///     "I'll inspect this."
+/// );
+/// ```
 pub fn visible_agent_text<'a>(content: &'a str) -> Cow<'a, str> {
     let cut = TOOL_CALL_MARKERS
         .iter()

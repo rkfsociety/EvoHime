@@ -6,58 +6,98 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum serialized condition, snapshot, or background schedule specification size.
 pub const MAX_JSON_BYTES: usize = 64 * 1024;
+/// Maximum number of queued runs permitted by queue metadata.
 pub const MAX_QUEUE_ROWS: u32 = 4096;
 
+/// Configuration and revision metadata for a durable automation queue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueueRecord {
+    /// Stable queue identifier.
     pub queue_id: String,
+    /// Scope that owns the queue.
     pub owner_scope: String,
+    /// Monotonically increasing queue configuration revision.
     pub revision: u64,
+    /// Maximum number of simultaneously active runs.
     pub max_active: u32,
+    /// Maximum queued-run count, bounded by [`MAX_QUEUE_ROWS`].
     pub max_queued: u32,
+    /// Scheduling priority label.
     pub priority: String,
+    /// Policy applied when the queue is full.
     pub overflow_policy: String,
+    /// Digest of the canonical queue configuration.
     pub content_hash: String,
 }
 
+/// Persisted wait condition and optional scheduled wakeup for a run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitRecord {
+    /// Automation run identifier.
     pub run_id: String,
+    /// Monotonically increasing wait revision.
     pub revision: u64,
+    /// Serialized condition, bounded by [`MAX_JSON_BYTES`].
     pub condition_json: Vec<u8>,
+    /// Optional due time in Unix milliseconds.
     pub wake_at_ms: Option<i64>,
+    /// Wait lifecycle state.
     pub state: String,
 }
 
+/// Immutable dispatch attempt record used for recovery and diagnostics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttemptRecord {
+    /// Unique identifier for the attempt.
     pub attempt_id: String,
+    /// Automation run the dispatcher attempted.
     pub run_id: String,
+    /// Run generation captured by the attempt.
     pub generation: u64,
+    /// Identifier of the dispatcher that claimed the run.
     pub dispatcher_id: String,
+    /// Attempt lifecycle state.
     pub state: String,
+    /// Stable outcome category.
     pub outcome_code: String,
+    /// Optional dispatch start time in Unix milliseconds.
     pub started_at_ms: Option<i64>,
+    /// Optional dispatch completion time in Unix milliseconds.
     pub ended_at_ms: Option<i64>,
 }
 
+/// Background-specific scheduling policy associated with an automation schedule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackgroundScheduleRecord {
+    /// Stable schedule identifier.
     pub schedule_id: String,
+    /// Definition invoked by the schedule.
     pub definition_id: String,
+    /// Schedule revision.
     pub revision: u64,
+    /// Owner scope for the schedule.
     pub owner_scope: String,
+    /// Serialized recurrence specification, bounded by [`MAX_JSON_BYTES`].
     pub spec_json: String,
+    /// Policy for a scheduled occurrence missed while unavailable.
     pub missed_fire_policy: String,
+    /// Policy governing overlapping occurrences.
     pub overlap_policy: String,
+    /// Whether the schedule is enabled.
     pub enabled: bool,
+    /// Last processed schedule slot, if any.
     pub last_slot: Option<String>,
+    /// Local hour for the schedule.
     pub hour: u8,
+    /// Local minute for the schedule.
     pub minute: u8,
+    /// Time-zone offset in minutes.
     pub timezone_minutes: i32,
 }
 
+/// Adds background execution columns and creates queue, wait, wakeup, and attempt tables.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     for (name, definition) in [
         (
@@ -124,6 +164,9 @@ fn bounded(bytes: &[u8]) -> bool {
     !bytes.is_empty() && bytes.len() <= MAX_JSON_BYTES
 }
 
+/// Updates background metadata on an existing automation run.
+///
+/// Returns `false` for an empty run ID, queue reference, priority, or an empty/oversized snapshot.
 #[allow(clippy::too_many_arguments)]
 pub fn save_run_metadata(
     c: &Connection,
@@ -146,6 +189,7 @@ pub fn save_run_metadata(
     )? == 1)
 }
 
+/// Loads a queue only when both its identifier and owner scope match.
 pub fn get_queue(
     c: &Connection,
     queue_id: &str,
@@ -158,6 +202,7 @@ pub fn get_queue(
     ).optional()
 }
 
+/// Returns the queued and active run counts for a queue and owner scope.
 pub fn queue_load(
     c: &Connection,
     queue_id: &str,
@@ -170,6 +215,9 @@ pub fn queue_load(
     )
 }
 
+/// Dead-letters the oldest queued run in a queue and returns its identifier.
+///
+/// Returns `None` when the queue has no queued run.
 pub fn drop_oldest_queued(
     c: &mut Connection,
     queue_id: &str,
@@ -202,6 +250,7 @@ pub fn drop_oldest_queued(
     Ok(changed.then_some(run_id))
 }
 
+/// Finds the oldest queued run with the given queue-scoped concurrency key.
 pub fn find_queued_by_concurrency_key(
     c: &Connection,
     queue_id: &str,
@@ -215,6 +264,7 @@ pub fn find_queued_by_concurrency_key(
     ).optional()
 }
 
+/// Finds the oldest not-yet-terminal run with the given queue-scoped concurrency key.
 pub fn find_active_by_concurrency_key(
     c: &Connection,
     queue_id: &str,
@@ -228,6 +278,7 @@ pub fn find_active_by_concurrency_key(
     ).optional()
 }
 
+/// Inserts or revision-updates a queue, enforcing queue bounds and required fields.
 pub fn save_queue(c: &Connection, record: &QueueRecord, now_ms: i64) -> rusqlite::Result<bool> {
     if record.queue_id.is_empty()
         || record.owner_scope.is_empty()
@@ -244,6 +295,9 @@ pub fn save_queue(c: &Connection, record: &QueueRecord, now_ms: i64) -> rusqlite
     )? == 1)
 }
 
+/// Lists queues for an owner scope, or all scopes when `owner_scope` is empty.
+///
+/// The requested result count is clamped to 1 through 256.
 pub fn list_queues(
     c: &Connection,
     owner_scope: &str,
@@ -265,6 +319,9 @@ pub fn list_queues(
     rows.collect()
 }
 
+/// Persists a newer wait revision and schedules its wakeup when one is specified.
+///
+/// Returns `false` for an invalid or oversized condition, empty run ID, or zero revision.
 pub fn put_wait(c: &mut Connection, record: &WaitRecord, now_ms: i64) -> rusqlite::Result<bool> {
     if !bounded(&record.condition_json) || record.run_id.is_empty() || record.revision == 0 {
         return Ok(false);
@@ -280,6 +337,7 @@ pub fn put_wait(c: &mut Connection, record: &WaitRecord, now_ms: i64) -> rusqlit
     Ok(changed == 1)
 }
 
+/// Lists active wakeups due at or before `now_ms`, ordered by due time.
 pub fn due_wakeups(
     c: &Connection,
     now_ms: i64,
@@ -292,6 +350,7 @@ pub fn due_wakeups(
     rows.collect()
 }
 
+/// Lists waiting or scheduled records ordered by next wake time and run identifier.
 pub fn list_waits(c: &Connection, limit: u32) -> rusqlite::Result<Vec<WaitRecord>> {
     let mut s = c.prepare("SELECT run_id,revision,condition_json,wake_at_ms,state FROM automation_waits WHERE state IN ('waiting','scheduled') ORDER BY COALESCE(wake_at_ms,9223372036854775807),run_id LIMIT ?1")?;
     let rows = s.query_map([limit.clamp(1, 256)], |row| {
@@ -306,6 +365,7 @@ pub fn list_waits(c: &Connection, limit: u32) -> rusqlite::Result<Vec<WaitRecord
     rows.collect()
 }
 
+/// Marks a matching wait revision satisfied and deactivates its wakeups.
 pub fn complete_wait(
     c: &Connection,
     run_id: &str,
@@ -320,6 +380,7 @@ pub fn complete_wait(
     Ok(changed == 1)
 }
 
+/// Marks one active wakeup as consumed, returning whether its state changed.
 pub fn mark_wakeup_consumed(c: &Connection, wake_key: &str, now_ms: i64) -> rusqlite::Result<bool> {
     Ok(c.execute(
         "UPDATE automation_wakeups SET active=0,created_at_ms=?1 WHERE wake_key=?2 AND active=1",
@@ -327,6 +388,7 @@ pub fn mark_wakeup_consumed(c: &Connection, wake_key: &str, now_ms: i64) -> rusq
     )? == 1)
 }
 
+/// Inserts a dispatch attempt once, rejecting records with missing identifiers or zero generation.
 pub fn insert_attempt(
     c: &Connection,
     attempt: &AttemptRecord,
@@ -342,6 +404,7 @@ pub fn insert_attempt(
     Ok(c.execute("INSERT OR IGNORE INTO automation_attempts(attempt_id,run_id,generation,dispatcher_id,state,outcome_code,started_at_ms,ended_at_ms,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)", params![attempt.attempt_id,attempt.run_id,attempt.generation as i64,attempt.dispatcher_id,attempt.state,attempt.outcome_code,attempt.started_at_ms,attempt.ended_at_ms,now_ms])? == 1)
 }
 
+/// Lists a run's dispatch attempts newest first, bounded to at most 256 rows.
 pub fn list_attempts(
     c: &Connection,
     run_id: &str,
@@ -363,10 +426,12 @@ pub fn list_attempts(
     rows.collect()
 }
 
+/// Marks in-flight attempts as requiring reconciliation after a process restart.
 pub fn reconcile_after_restart(c: &Connection, now_ms: i64) -> rusqlite::Result<u32> {
     Ok(c.execute("UPDATE automation_attempts SET state='reconcile_required', outcome_code='unknown_after_restart', ended_at_ms=?1 WHERE state IN ('dispatching','running')", [now_ms])? as u32)
 }
 
+/// Loads the serialized background snapshot stored on an automation run.
 pub fn background_snapshot(c: &Connection, run_id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT background_snapshot_json FROM automation_runs WHERE run_id=?1",
@@ -376,6 +441,9 @@ pub fn background_snapshot(c: &Connection, run_id: &str) -> rusqlite::Result<Opt
     .optional()
 }
 
+/// Persists background schedule fields alongside the canonical automation schedule.
+///
+/// Returns `false` when policy labels or the serialized recurrence specification are invalid.
 pub fn save_background_schedule(
     c: &Connection,
     record: &crate::automation_store::AutomationScheduleRecord,
@@ -398,6 +466,9 @@ pub fn save_background_schedule(
     )? == 1)
 }
 
+/// Lists background schedules for an owner scope, or all scopes when it is empty.
+///
+/// Results are ordered by schedule identifier and limited to at most 256 rows.
 pub fn list_background_schedules(
     c: &Connection,
     owner_scope: &str,

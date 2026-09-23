@@ -9,14 +9,20 @@ use crate::item::{ContextItem, ContextItemBuilder, ItemKind, Privacy, Scratchpad
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScratchpadCategory {
+    /// Подтверждённые сведения о задаче.
     Facts,
+    /// Вопросы, на которые ещё нет ответа.
     OpenQuestions,
+    /// Принятые решения.
     Decisions,
+    /// Выводы из результатов инструментов.
     ToolFindings,
+    /// Дальнейшие действия.
     NextActions,
 }
 
 impl ScratchpadCategory {
+    /// Возвращает стабильное snake_case-представление категории.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Facts => "facts",
@@ -27,6 +33,7 @@ impl ScratchpadCategory {
         }
     }
 
+    /// Разбирает стабильное строковое представление категории.
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "facts" => Some(Self::Facts),
@@ -38,6 +45,7 @@ impl ScratchpadCategory {
         }
     }
 
+    /// Возвращает все категории в стабильном порядке.
     pub fn all() -> [Self; 5] {
         [
             Self::Facts,
@@ -63,6 +71,7 @@ pub enum ConfirmationBasis {
 }
 
 impl ConfirmationBasis {
+    /// Возвращает стабильное snake_case-представление основания.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::ToolProvenanceVerified => "tool_provenance_verified",
@@ -75,23 +84,36 @@ impl ConfirmationBasis {
 /// Запись scratchpad.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScratchpadEntry {
+    /// Уникальный идентификатор этой ревизии записи.
     pub id: String,
+    /// Идентификатор задачи-владельца записи.
     pub task_id: String,
+    /// Идентификатор сессии-владельца записи.
     pub session_id: String,
+    /// Семантическая категория заметки.
     pub category: ScratchpadCategory,
+    /// Статус черновика, подтверждения или восстановления.
     pub status: ScratchpadStatus,
+    /// Уровень доверия к содержимому.
     pub trust: Trust,
+    /// Классификация приватности содержимого.
     pub privacy: Privacy,
     /// Номер ревизии. Перезапись подтверждённой записи допускается только новой
     /// ревизией с conflict entry, а не silent override.
     pub revision: u32,
     /// Ключ, объединяющий ревизии одной записи.
     pub parent_id: Option<String>,
+    /// Содержимое заметки.
     pub content: String,
+    /// Хэш содержимого для проверки изменений и идентичности.
     pub content_hash: String,
+    /// Время создания записи в Unix milliseconds.
     pub created_at: i64,
+    /// Время последнего изменения в Unix milliseconds.
     pub updated_at: i64,
+    /// Необязательный срок жизни записи в миллисекундах.
     pub ttl_ms: Option<i64>,
+    /// Основание подтверждения, если запись имеет подтверждённый статус.
     pub confirmation: Option<ConfirmationBasis>,
     /// Locator артефакта, если содержимое выгружено.
     #[serde(default)]
@@ -285,6 +307,7 @@ pub fn recover_after_restart(
 /// Пометка изоляции: недоверенные внешние данные оборачиваются в envelope и не
 /// разбираются как policy, даже если имитируют system-инструкцию.
 pub const DATA_NOT_INSTRUCTIONS_OPEN: &str = "<data_not_instructions>";
+/// Закрывающий маркер envelope для недоверенных данных.
 pub const DATA_NOT_INSTRUCTIONS_CLOSE: &str = "</data_not_instructions>";
 
 /// Результат проверки внешнего tool output на prompt-injection.

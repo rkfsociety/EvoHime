@@ -3,28 +3,47 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+/// Maximum serialized size for impact and change-plan metadata.
 pub const MAX_JSON_BYTES: usize = 64 * 1024;
+/// Maximum serialized evidence size accepted by the protocol.
 pub const MAX_EVIDENCE_BYTES: usize = 8 * 1024;
 
+/// Durable run metadata binding a change plan to a plan revision and workspace checkpoint.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IncrementalChangeRunRecord {
+    /// Stable incremental-change run identifier.
     pub run_id: String,
+    /// Optimistic concurrency version.
     pub version: u64,
+    /// Current protocol state.
     pub state: String,
+    /// Plan artifact bound to this run.
     pub plan_artifact_id: String,
+    /// Immutable plan revision bound to this run.
     pub plan_revision: u64,
+    /// Digest of the bound plan content.
     pub plan_content_hash: String,
+    /// Workspace checkpoint used as the baseline.
     pub checkpoint_id: String,
+    /// Digest of the checkpoint snapshot.
     pub checkpoint_snapshot_hash: String,
+    /// Fingerprint of the baseline scope and content.
     pub baseline_fingerprint: String,
+    /// Serialized impact analysis.
     pub impact_json: Vec<u8>,
+    /// Serialized proposed change plan.
     pub change_plan_json: Vec<u8>,
+    /// Serialized verification evidence.
     pub evidence_json: Vec<u8>,
+    /// Unique request key preventing duplicate run creation.
     pub idempotency_key: String,
+    /// Run creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Last run update time in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Creates the incremental change run table and its update-time index.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS incremental_change_runs (
@@ -49,6 +68,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Creates a run once per run identifier and idempotency key.
 pub fn create(
     connection: &Connection,
     record: &IncrementalChangeRunRecord,
@@ -79,6 +99,7 @@ pub fn create(
     Ok(changed == 1)
 }
 
+/// Loads a run by identifier, returning `None` when it does not exist.
 pub fn get(
     connection: &Connection,
     run_id: &str,
@@ -113,6 +134,7 @@ pub fn get(
         .optional()
 }
 
+/// Loads the run associated with an idempotency key, if present.
 pub fn get_by_idempotency(
     connection: &Connection,
     idempotency_key: &str,
@@ -127,6 +149,9 @@ pub fn get_by_idempotency(
     run_id.map_or(Ok(None), |id| get(connection, &id))
 }
 
+/// Advances a run only when its version and observed baseline fingerprint still match.
+///
+/// The transition increments the stored version and replaces its evidence payload.
 pub fn transition(
     connection: &Connection,
     run_id: &str,

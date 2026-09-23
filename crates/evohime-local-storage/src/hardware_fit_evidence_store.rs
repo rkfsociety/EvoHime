@@ -2,9 +2,12 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum serialized observation and catalog snapshot size.
 pub const MAX_JSON_BYTES: usize = 128 * 1024;
+/// Maximum number of distinct hardware-fit observations retained.
 pub const MAX_OBSERVATIONS: u32 = 2048;
 
+/// Creates observation and catalog snapshot tables for hardware-fit evidence.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS hardware_fit_observations (
@@ -28,6 +31,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Inserts or advances an observation by one revision, enforcing payload and row limits.
 pub fn put(
     connection: &Connection,
     id: &str,
@@ -79,6 +83,7 @@ pub fn put(
         .map_err(|_| "sqlite")
 }
 
+/// Loads an observation's revision, JSON payload, and content hash.
 pub fn get(connection: &Connection, id: &str) -> rusqlite::Result<Option<(i64, Vec<u8>, String)>> {
     connection.query_row(
         "SELECT revision, observation_json, content_hash FROM hardware_fit_observations WHERE observation_id=?1",
@@ -86,6 +91,7 @@ pub fn get(connection: &Connection, id: &str) -> rusqlite::Result<Option<(i64, V
     ).optional()
 }
 
+/// Returns the number of stored hardware-fit observations.
 pub fn count(connection: &Connection) -> rusqlite::Result<u32> {
     connection.query_row(
         "SELECT COUNT(*) FROM hardware_fit_observations",
@@ -94,6 +100,7 @@ pub fn count(connection: &Connection) -> rusqlite::Result<u32> {
     )
 }
 
+/// Stores a catalog snapshot revision while preventing an untrusted snapshot from replacing a trusted one.
 pub fn put_catalog_snapshot(
     connection: &Connection,
     revision: i64,

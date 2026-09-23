@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Обновлено: 2026-09-21.
+Обновлено: 2026-09-24.
 
 Этот каталог описывает поддерживаемый Windows desktop-продукт. Корневой [`README.md`](../README.md) — пользовательское описание продукта и установка; главный источник команд запуска, требований и критериев проверки — [`AGENTS.md`](../AGENTS.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md), а технические release evidence — в [`release-evidence.md`](release-evidence.md).
 
@@ -17,6 +17,7 @@
 | Проверить дизайн окна обновления | [`update-window-design.md`](update-window-design.md), [`.codex/updater-window-preview.html`](../.codex/updater-window-preview.html) | Утверждённая композиция, состояния и визуальный контракт Electron updater |
 | Проверить пользовательское self-repair/self-update | [`current-state.md`](current-state.md), [`architecture.md`](architecture.md), [`release-evidence.md`](release-evidence.md) | Ручной repair-run, обязательные provider/model, CI gates, health-check и rollback |
 | Проверить границы безопасности | [`../SECURITY.md`](../SECURITY.md) | Угрозы, доверие, диагностика и релизные проверки |
+| Документировать Rust API | [`../AGENTS.md`](../AGENTS.md), [`../.github/workflows/rustdoc.yml`](../.github/workflows/rustdoc.yml) | Предметные `///`-описания, проверка полноты library API и doc-tests workspace |
 
 ## Справочные разделы
 

@@ -76,7 +76,9 @@ pub struct CapabilityMetadata {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionClass {
+    /// Provider executes on the local machine or its loopback services.
     Local,
+    /// Provider executes on infrastructure outside the local machine.
     Cloud,
 }
 
@@ -84,15 +86,20 @@ pub enum ExecutionClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
+    /// The provider passed probing and is currently eligible.
     Ready,
+    /// The provider cannot currently serve requests.
     Unavailable,
+    /// The observation is older than its configured time-to-live.
     Stale,
+    /// The provider responds but has a known limitation or reduced availability.
     Degraded,
 }
 
 /// Initial health snapshot for a candidate.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CandidateHealthSnapshot {
+    /// Health classification observed for this candidate.
     pub status: HealthStatus,
     /// Wall-clock timestamp when observed.
     pub observed_at: u64,
@@ -111,6 +118,7 @@ impl CandidateHealthSnapshot {
         Self::ready_at(ttl_ms, now)
     }
 
+    /// Creates a ready health snapshot with an explicit observation time.
     pub fn ready_at(ttl_ms: u64, now: u64) -> Self {
         Self {
             status: HealthStatus::Ready,
@@ -126,6 +134,7 @@ impl CandidateHealthSnapshot {
         self.is_fresh_at(current_time_ms())
     }
 
+    /// Checks freshness against a caller-supplied clock value.
     pub fn is_fresh_at(&self, now: u64) -> bool {
         now < self.observed_at + self.ttl_ms
     }
@@ -296,6 +305,7 @@ impl RoutePolicySnapshot {
         )
     }
 
+    /// Creates a validated snapshot using an explicit deterministic timestamp.
     pub fn new_at(
         run_id: String,
         candidates: Vec<CandidateEntry>,
@@ -383,14 +393,20 @@ impl Clone for RunHealthOverlay {
 /// Circuit entry with metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitEntry {
+    /// Current breaker state.
     pub state: CircuitState,
+    /// Time when the circuit entered the open state.
     pub opened_at: Option<u64>,
+    /// Number of failures accumulated for the route.
     pub failure_count: u32,
+    /// Most recent failure category, if any.
     pub last_failure_category: Option<FailureCategory>,
+    /// End of the temporary rate-limit cooldown, if active.
     pub cooldown_until_ms: Option<u64>,
 }
 
 impl CircuitEntry {
+    /// Creates a closed circuit with empty failure state.
     pub fn new() -> Self {
         Self {
             state: CircuitState::Closed,
@@ -422,13 +438,17 @@ pub struct RouteFailures {
 /// Reason why a route was excluded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExclusionReason {
+    /// Stable reason code for excluding the route from this run.
     pub reason: String,
+    /// Attempt index at which the route was excluded.
     pub attempt_id: u32,
+    /// Health-overlay generation associated with the exclusion.
     pub generation: u64,
 }
 
 impl RunHealthOverlay {
     /// Creates a new overlay for a run.
+    /// Creates an empty mutable health overlay scoped to one run.
     pub fn new(run_id: &str) -> Self {
         Self {
             schema_version: OVERLAY_SCHEMA_VERSION.to_string(),
@@ -454,6 +474,7 @@ impl RunHealthOverlay {
         self.record_failure_at(route_id, attempt_id, category, config, current_time_ms())
     }
 
+    /// Records a failure using a caller-supplied time for deterministic evaluation.
     pub fn record_failure_at(
         &self,
         route_id: &str,
@@ -571,6 +592,7 @@ impl RunHealthOverlay {
         self.is_cooldown_expired_at(route_id, current_time_ms())
     }
 
+    /// Checks cooldown expiry against a caller-supplied clock value.
     pub fn is_cooldown_expired_at(&self, route_id: &str, now: u64) -> bool {
         let circuits = self.circuits.read();
         match circuits.get(route_id) {
@@ -700,20 +722,31 @@ impl RetryConfig {
     }
 }
 
+/// Per-candidate route eligibility and rejection details from snapshot selection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotCandidateDecision {
+    /// Stable route identifier.
     pub route_id: String,
+    /// Capability revision evaluated for the candidate.
     pub capability_epoch: u64,
+    /// Health state used during selection.
     pub health_status: HealthStatus,
+    /// Circuit-breaker state used during selection.
     pub circuit_state: CircuitState,
+    /// Stable rejection code when the candidate was not eligible.
     pub reject_reason: Option<String>,
 }
 
+/// Selected route, fallback order, and candidate decisions from one snapshot evaluation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotRouteDecision {
+    /// Route selected for the request, if one was eligible.
     pub selected_route: Option<String>,
+    /// Ordered fallback candidates after the selected route.
     pub fallback_chain: Vec<String>,
+    /// Eligibility decisions for every candidate in the snapshot.
     pub candidates: Vec<SnapshotCandidateDecision>,
+    /// Stable explanation code for the overall selection.
     pub reason_code: String,
 }
 
@@ -1001,33 +1034,48 @@ pub enum ProbeResult {
 /// Probe failure reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeFailure {
+    /// The bounded provider health request exceeded its timeout.
     Timeout,
+    /// The provider endpoint refused or could not establish a connection.
     ConnectionRefused,
+    /// The provider response could not be parsed.
     MalformedResponse,
+    /// The response did not satisfy the expected capability schema.
     SchemaMismatch(String),
+    /// The request or response exceeded configured byte limits.
     SizeLimitExceeded,
+    /// The probe was cancelled before completion.
     Cancellation,
 }
 
 /// Errors for snapshot operations.
 #[derive(Debug, Error)]
 pub enum SnapshotError {
+    /// Candidate count exceeds the snapshot bound.
     #[error("too many candidates: {0} > {MAX_SNAPSHOT_CANDIDATES}")]
     TooManyCandidates(usize),
+    /// A route identifier is empty or exceeds the allowed grammar/bound.
     #[error("invalid route ID: {0}")]
     InvalidRouteId(String),
+    /// A model name is empty or exceeds the allowed grammar/bound.
     #[error("invalid model name: {0}")]
     InvalidModelName(String),
+    /// Multiple candidates use the same route identifier.
     #[error("duplicate route ID: {0}")]
     DuplicateRouteId(String),
+    /// Snapshot data declares an unsupported schema version.
     #[error("unsupported schema version: {0}")]
     UnsupportedSchemaVersion(String),
+    /// Snapshot data could not be serialized.
     #[error("serialization error: {0}")]
     Serialization(String),
+    /// Snapshot data could not be deserialized.
     #[error("deserialization error: {0}")]
     Deserialization(String),
+    /// Serialized snapshot did not preserve its canonical digest.
     #[error("round-trip hash mismatch")]
     RoundTripHashMismatch,
+    /// Required snapshot data is absent.
     #[error("missing required field: {0}")]
     MissingField(String),
 }
@@ -1035,10 +1083,13 @@ pub enum SnapshotError {
 /// Errors for overlay operations.
 #[derive(Debug, Error)]
 pub enum OverlayError {
+    /// Overlay operation targeted a run other than the overlay owner.
     #[error("run ID mismatch")]
     RunIdMismatch,
+    /// Update generation predates the latest accepted overlay generation.
     #[error("stale generation: expected >= {0}, got {1}")]
     StaleGeneration(u64, u64),
+    /// Attempt identifier did not increase monotonically.
     #[error("invalid attempt ID: must be monotonic")]
     InvalidAttemptId,
 }
@@ -1046,18 +1097,25 @@ pub enum OverlayError {
 /// Errors for retry configuration.
 #[derive(Debug, Error)]
 pub enum RetryConfigError {
+    /// Total attempt limit is zero or exceeds its supported bound.
     #[error("invalid max_attempts")]
     InvalidMaxAttempts,
+    /// Per-route attempt limit is zero or exceeds the total attempt limit.
     #[error("invalid max_attempts_per_route")]
     InvalidMaxAttemptsPerRoute,
+    /// Backoff minimum/maximum values are inconsistent.
     #[error("invalid backoff configuration")]
     InvalidBackoff,
+    /// Jitter ratio falls outside its supported range.
     #[error("invalid jitter ratio")]
     InvalidJitter,
+    /// Maximum elapsed time is zero or exceeds the supported bound.
     #[error("invalid max_elapsed_ms")]
     InvalidMaxElapsed,
+    /// Failure thresholds are zero or inconsistent.
     #[error("invalid threshold")]
     InvalidThreshold,
+    /// Cooldown duration is outside its supported range.
     #[error("invalid cooldown_ms")]
     InvalidCooldown,
 }
@@ -1106,9 +1164,13 @@ pub struct AttemptTrace {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunResult {
+    /// The run completed successfully.
     Success,
+    /// The run failed before producing a successful result.
     Failed,
+    /// The run was cancelled.
     Cancelled,
+    /// No eligible route remained for another attempt.
     RouteExhausted,
 }
 

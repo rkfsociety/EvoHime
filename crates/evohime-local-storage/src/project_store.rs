@@ -3,6 +3,7 @@ use rusqlite::OptionalExtension;
 use crate::{LocalDatabase, ProjectPolicyRecord, ProjectRecord, StorageError};
 
 impl LocalDatabase {
+    /// Creates or updates a project identified by `id` and returns its stored record.
     pub fn create_project(
         &self,
         id: &str,
@@ -20,6 +21,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Loads a project by ID, returning `None` when it is absent.
     pub fn get_project(&self, id: &str) -> Result<Option<ProjectRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id, title, workspace_path, source_ref, version FROM projects WHERE id = ?1",
@@ -37,6 +39,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Finds the project whose workspace path exactly matches `workspace_path`.
     pub fn get_project_by_workspace_path(
         &self,
         workspace_path: &str,
@@ -57,6 +60,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Loads the versioned policy for a project, if one has been stored.
     pub fn get_project_policy(
         &self,
         project_id: &str,
@@ -78,6 +82,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Creates or updates a project policy, checking `expected_version` when supplied.
     pub fn upsert_project_policy(
         &self,
         project_id: &str,

@@ -7,46 +7,70 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Signed quality evidence comparing a smaller route with its reference route.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EvaluationRecord {
+    /// Version of the evaluation catalog containing this record.
     pub catalog_version: String,
+    /// Task category for which the quality comparison is valid.
     pub task_class: String,
+    /// Digest of the evaluation dataset used for scoring.
     pub dataset_hash: String,
+    /// Reference route against which the smaller model was evaluated.
     pub large_route_id: String,
+    /// Route whose use is conditionally approved by this record.
     pub small_route_id: String,
+    /// Metric name used by the evaluation, such as a task-quality score.
     pub metric: String,
+    /// Measured score for the reference route.
     pub large_score: f64,
+    /// Measured score for the smaller route.
     pub small_score: f64,
+    /// Minimum acceptable score for the smaller route.
     pub quality_floor: f64,
+    /// Catalog generation time in Unix milliseconds.
     pub generated_at: u64,
+    /// Time after which the evidence must no longer authorize the route.
     pub expires_at: u64,
+    /// Canonical content digest used to detect record modification.
     pub signature: String,
 }
 
+/// Failure to parse, validate, authenticate, or access evaluation evidence.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CatalogError {
+    /// No nonempty evaluation records were provided.
     #[error("catalog is empty")]
     Empty,
+    /// A JSONL record could not be parsed or validated.
     #[error("malformed catalog line")]
     Malformed,
+    /// A record digest did not match its canonical content.
     #[error("catalog signature mismatch")]
     Signature,
+    /// A record contains invalid schema values or bounds.
     #[error("catalog schema is invalid")]
     Schema,
+    /// The requested evaluation evidence has expired.
     #[error("catalog is expired")]
     Expired,
+    /// Evaluation evidence does not match the requested route pair.
     #[error("catalog route mismatch")]
     RouteMismatch,
+    /// A catalog file operation failed.
     #[error("catalog I/O error: {0}")]
     Io(String),
 }
 
+/// Validated evaluation records used to gate smaller model routes.
 #[derive(Debug, Clone, Default)]
 pub struct EvaluationCatalog {
+    /// Sorted evaluation records loaded from one signed catalog snapshot.
     pub records: Vec<EvaluationRecord>,
 }
 
 impl EvaluationCatalog {
+    /// Parses JSONL, validates every record and digest, and sorts the catalog.
     pub fn load_jsonl(text: &str, expected_signature: Option<&str>) -> Result<Self, CatalogError> {
         let mut records = Vec::new();
         for line in text.lines().filter(|line| !line.trim().is_empty()) {
@@ -74,6 +98,7 @@ impl EvaluationCatalog {
         Ok(Self { records })
     }
 
+    /// Reads and validates a catalog file from disk.
     pub fn load_file(path: &Path, expected_signature: Option<&str>) -> Result<Self, CatalogError> {
         Self::load_jsonl(
             &fs::read_to_string(path).map_err(|error| CatalogError::Io(error.to_string()))?,
@@ -81,6 +106,7 @@ impl EvaluationCatalog {
         )
     }
 
+    /// Finds unexpired evidence for an exact task and route pair.
     pub fn record(
         &self,
         task_class: &str,
@@ -96,6 +122,7 @@ impl EvaluationCatalog {
         })
     }
 
+    /// Checks whether the smaller route meets floor and relative-quality constraints.
     pub fn small_route_allowed(
         &self,
         task_class: &str,
@@ -111,6 +138,7 @@ impl EvaluationCatalog {
             && record.small_score >= record.large_score - quality_delta
     }
 
+    /// Computes the canonical digest with the signature field cleared.
     pub fn canonical_signature(record: &EvaluationRecord) -> Result<String, CatalogError> {
         let mut value = serde_json::to_value(record).map_err(|_| CatalogError::Malformed)?;
         if let Some(object) = value.as_object_mut() {
@@ -145,19 +173,23 @@ pub struct CatalogStore {
 }
 
 impl CatalogStore {
+    /// Loads and validates the catalog at the supplied runtime path.
     pub fn load(path: impl Into<PathBuf>) -> Result<Self, CatalogError> {
         let path = path.into();
         let catalog = EvaluationCatalog::load_file(&path, None)?;
         Ok(Self { path, catalog })
     }
 
+    /// Returns the external catalog path managed by this store.
     pub fn path(&self) -> &Path {
         &self.path
     }
+    /// Returns the currently validated immutable catalog snapshot.
     pub fn catalog(&self) -> &EvaluationCatalog {
         &self.catalog
     }
 
+    /// Validates and atomically replaces the external catalog file.
     pub fn replace(&mut self, content: &str) -> Result<(), CatalogError> {
         let catalog = EvaluationCatalog::atomic_replace(&self.path, content)?;
         self.catalog = catalog;

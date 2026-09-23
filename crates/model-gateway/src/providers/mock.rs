@@ -13,6 +13,7 @@ pub struct MockProvider {
 }
 
 impl MockProvider {
+    /// Creates a mock provider that emits the supplied text chunks.
     pub fn new(model: impl Into<String>, chunks: Vec<String>) -> Self {
         Self {
             model: model.into(),
@@ -22,6 +23,7 @@ impl MockProvider {
         }
     }
 
+    /// Creates a mock response containing assistant tool-call requests.
     pub fn with_tool_calls(
         model: impl Into<String>,
         chunks: Vec<String>,
@@ -35,6 +37,7 @@ impl MockProvider {
         }
     }
 
+    /// Creates a mock provider that returns a sequence of complete tool-call results.
     pub fn with_tool_call_sequence(model: impl Into<String>, sequence: Vec<ChatResult>) -> Self {
         Self {
             model: model.into(),

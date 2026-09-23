@@ -1,14 +1,20 @@
 use serde_json::Value;
 
+/// Relative impact tier assigned before a tool call is executed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ToolRiskLevel {
+    /// No material side effect is expected.
     None,
+    /// Limited side effects with narrow scope.
     Low,
+    /// Meaningful changes or external effects may occur.
     Medium,
+    /// Arbitrary command execution or similarly broad effects may occur.
     High,
 }
 
 impl ToolRiskLevel {
+    /// Returns the stable lowercase label used by policy and telemetry.
     pub fn as_str(&self) -> &'static str {
         match self {
             ToolRiskLevel::None => "none",

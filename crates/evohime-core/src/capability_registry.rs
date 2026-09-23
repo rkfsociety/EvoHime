@@ -7,43 +7,69 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fmt};
 
+/// Maximum number of capability manifests in one registry query.
 pub const MAX_MANIFESTS: usize = 128;
+/// Maximum length of a manifest, role, or skill name.
 pub const MAX_NAME_CHARS: usize = 128;
+/// Maximum length of a version string.
 pub const MAX_VERSION_CHARS: usize = 64;
+/// Maximum length of a hexadecimal content digest.
 pub const MAX_HASH_CHARS: usize = 128;
+/// Maximum length of an encoded signature.
 pub const MAX_SIGNATURE_CHARS: usize = 512;
+/// Maximum number of tools, domains, roles, or skills in a manifest.
 pub const MAX_ITEMS: usize = 64;
+/// Maximum length of one manifest list item.
 pub const MAX_ITEM_CHARS: usize = 128;
+/// Maximum length of one protected workspace path.
 pub const MAX_PATH_CHARS: usize = 512;
+/// Maximum intent text length used during capability matching.
 pub const MAX_INTENT_CHARS: usize = 2_048;
+/// Maximum capability matches returned from one query.
 pub const MAX_MATCHES: usize = 32;
 
+/// Risk ceiling assigned to a capability manifest or request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskClass {
+    /// Low-impact read or metadata operation.
     Low,
+    /// Operation with bounded workspace or provider effects.
     Medium,
+    /// High-impact operation requiring stronger policy controls.
     High,
 }
 
+/// Immutable reference to a role included in a capability package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoleRef {
+    /// Role identifier.
     pub name: String,
+    /// Role profile version.
     pub version: String,
+    /// Digest of the referenced role content.
     pub content_hash: String,
 }
 
+/// Immutable reference to a skill included in a capability package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillRef {
+    /// Skill identifier.
     pub name: String,
+    /// Skill package version.
     pub version: String,
+    /// Digest of the referenced skill content.
     pub content_hash: String,
 }
 
+/// Signed package metadata declaring roles, skills, permissions, and install policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityManifest {
+    /// Stable publisher-assigned package name.
     pub name: String,
+    /// Package version.
     pub version: String,
+    /// Digest of the downloaded package bytes.
     pub content_hash: String,
     /// Hex-encoded (128 char) Ed25519 signature over
     /// `signed_message(name, version, content_hash)`, produced by the
@@ -55,12 +81,19 @@ pub struct CapabilityManifest {
     /// that produced `signature`. An id not present in the embedded trust
     /// root causes `validate()` to fail closed.
     pub signing_key_id: String,
+    /// Role profiles included by reference.
     pub roles: Vec<RoleRef>,
+    /// Skill packages included by reference.
     pub skills: Vec<SkillRef>,
+    /// Tools the package requests permission to use.
     pub allowed_tools: Vec<String>,
+    /// Network domains the package requests permission to contact.
     pub allowed_domains: Vec<String>,
+    /// Workspace paths protected from package modifications.
     pub protected_paths: Vec<String>,
+    /// Maximum risk class declared by the publisher.
     pub risk_class: RiskClass,
+    /// Installation and update behavior requested by the package.
     pub install: InstallPolicy,
 }
 
@@ -70,6 +103,7 @@ pub struct CapabilityManifest {
 /// discovered dynamically.
 #[derive(Debug, Clone, Copy)]
 pub struct TrustedSigningKey {
+    /// Stable identifier selected by a manifest's `signing_key_id`.
     pub key_id: &'static str,
     /// Hex-encoded (64 char) raw Ed25519 public key.
     pub public_key_hex: &'static str,
@@ -85,60 +119,108 @@ pub const TRUSTED_SIGNING_KEYS: &[TrustedSigningKey] = &[TrustedSigningKey {
     public_key_hex: "6cafe3cad26efdee80e7dc617a9d5fdf74407c0ceaae88ec759833b573a821df",
 }];
 
+/// Installation and rollback constraints declared by a package.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstallPolicy {
+    /// Source type from which the package may be installed.
     pub source: InstallSource,
+    /// Whether installation scripts may be run; currently rejected when true.
     pub allow_install_scripts: bool,
+    /// Whether updates may be applied to this installation.
     pub allow_update: bool,
+    /// Whether failed updates must restore the previous package revision.
     pub rollback_on_failure: bool,
 }
 
+/// Supported source type for a capability package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InstallSource {
+    /// Locally selected archive.
     LocalArchive,
+    /// Archive retrieved using HTTPS.
     HttpsArchive,
 }
 
+/// Permissions remaining after manifest and caller grant intersection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EffectivePermissions {
+    /// Tools permitted for the selected capability.
     pub allowed_tools: Vec<String>,
+    /// Network domains permitted for the selected capability.
     pub allowed_domains: Vec<String>,
+    /// Workspace paths protected from modification.
     pub protected_paths: Vec<String>,
+    /// Effective risk class requested by the caller.
     pub risk_class: RiskClass,
 }
 
+/// Bounded intent and permission requirements for capability matching.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatchQuery {
+    /// User or workflow intent to match against manifest names.
     pub intent: String,
+    /// Tools that the selected manifest must permit.
     pub required_tools: Vec<String>,
+    /// Domains that the selected manifest must permit.
     pub required_domains: Vec<String>,
+    /// Maximum risk class accepted by the caller.
     pub requested_risk: RiskClass,
 }
 
+/// One ranked capability match with its effective permissions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MatchResult {
+    /// Matched manifest name.
     pub manifest_name: String,
+    /// Matched manifest version.
     pub version: String,
+    /// Deterministic metadata-based relevance score.
     pub score: u16,
+    /// Permissions after intersecting manifest and request constraints.
     pub permissions: EffectivePermissions,
 }
 
+/// Invalid signed metadata, unsafe install/update policy, or risk escalation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RegistryError {
+    /// Required metadata field is empty.
     EmptyField(&'static str),
-    FieldTooLong { field: &'static str, max: usize },
-    TooManyItems { field: &'static str, max: usize },
+    /// A field exceeds its documented character bound.
+    FieldTooLong {
+        /// Name of the field that exceeds its configured limit.
+        field: &'static str,
+        /// Maximum permitted character count.
+        max: usize,
+    },
+    /// A list exceeds the maximum number of accepted entries.
+    TooManyItems {
+        /// Name of the list that exceeds its configured limit.
+        field: &'static str,
+        /// Maximum permitted number of entries.
+        max: usize,
+    },
+    /// A list contains duplicate entries.
     DuplicateItem(&'static str),
+    /// Manifest content hash has invalid syntax or size.
     InvalidHash,
+    /// Signature data is malformed or invalid.
     InvalidSignature,
+    /// Signature does not verify against the embedded trust root.
     UntrustedSigningKey,
+    /// Manifest requests unsupported installation scripts.
     InstallScriptsForbidden,
+    /// Protected path is not a safe workspace-relative path.
     InvalidPath,
+    /// Allowed domain is not normalized.
     InvalidDomain,
+    /// Intent metadata contains prompt-injection text.
     PromptInjection,
+    /// Caller requested a risk class above the manifest ceiling.
     RiskEscalation,
+    /// Registry contains too many manifests.
     TooManyManifests,
+    /// Candidate update violates identity or rollback constraints.
     InvalidUpdate,
 }
 
@@ -173,6 +255,7 @@ impl fmt::Display for RegistryError {
 impl std::error::Error for RegistryError {}
 
 impl CapabilityManifest {
+    /// Validates manifest metadata and verifies its trusted Ed25519 signature.
     pub fn validate(&self) -> Result<(), RegistryError> {
         validate_text("name", &self.name, MAX_NAME_CHARS, true)?;
         validate_text("version", &self.version, MAX_VERSION_CHARS, true)?;
@@ -237,6 +320,7 @@ impl CapabilityManifest {
             .map_err(|_| RegistryError::UntrustedSigningKey)
     }
 
+    /// Intersects manifest permissions with a request and rejects risk escalation.
     pub fn effective_permissions(
         &self,
         requested: &EffectivePermissions,
@@ -254,6 +338,7 @@ impl CapabilityManifest {
     }
 }
 
+/// Validates manifest count and uniqueness of package names.
 pub fn validate_registry(manifests: &[CapabilityManifest]) -> Result<(), RegistryError> {
     if manifests.len() > MAX_MANIFESTS {
         return Err(RegistryError::TooManyManifests);
@@ -262,6 +347,7 @@ pub fn validate_registry(manifests: &[CapabilityManifest]) -> Result<(), Registr
     validate_unique_names("manifests", &names)
 }
 
+/// Ranks compatible manifests by metadata while enforcing requested permissions.
 pub fn match_capabilities(
     manifests: &[CapabilityManifest],
     query: &MatchQuery,
@@ -308,6 +394,7 @@ pub fn match_capabilities(
     Ok(matches)
 }
 
+/// Requires a compatible package identity and rollback-safe update policy.
 pub fn validate_update(
     current: &CapabilityManifest,
     candidate: &CapabilityManifest,

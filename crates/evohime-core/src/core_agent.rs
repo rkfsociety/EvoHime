@@ -3,16 +3,22 @@ use super::*;
 pub(crate) const CODEX_MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const CODEX_MAX_LINE_BUFFER_BYTES: usize = 256 * 1024;
 
+/// Failure reported while running or awaiting an agent operation.
 #[derive(Debug, thiserror::Error)]
 pub enum AgentRunError {
+    /// The model provider returned an error.
     #[error("model request failed: {0}")]
     Provider(#[from] ProviderError),
+    /// Cancellation was requested before the operation completed.
     #[error("agent execution was cancelled")]
     Cancelled,
+    /// The operation exceeded its configured timeout, in seconds.
     #[error("agent execution timed out after {0} seconds")]
     Timeout(u64),
+    /// The runtime encountered an internal failure.
     #[error("agent runtime failed: {0}")]
     Internal(String),
+    /// Approval for changing the model route was denied or expired.
     #[error("routing reroute approval was declined or expired")]
     RoutingApprovalDeclined,
     /// План 01.1: сборка контекста завершилась отказом. Это терминальный
@@ -20,11 +26,17 @@ pub enum AgentRunError {
     /// автоматический retry запрещён на всех уровнях.
     #[error("context assembly refused ({stage}): {required_tokens} tokens required, {available_tokens} available, profile {profile_version}{missing}")]
     BudgetUnavailable {
+        /// Stage of context assembly that could not fit the run budget.
         stage: String,
+        /// Token count required by the refused context assembly.
         required_tokens: u32,
+        /// Token count available to the refused context assembly.
         available_tokens: u32,
+        /// Context budget profile version used for the decision.
         profile_version: String,
+        /// Bounded summary of the context part that did not fit.
         missing: String,
+        /// Digest of the context ledger, without raw prompt contents.
         context_ledger_hash: String,
     },
 }
@@ -48,6 +60,7 @@ impl AgentRunError {
     }
 }
 
+/// Coordinates one-shot user approvals for protected agent actions.
 #[derive(Clone, Default)]
 pub struct ApprovalCoordinator {
     pending: Arc<Mutex<HashMap<uuid::Uuid, oneshot::Sender<bool>>>>,
@@ -55,22 +68,31 @@ pub struct ApprovalCoordinator {
     resolved: Arc<Mutex<HashSet<uuid::Uuid>>>,
 }
 
+/// Holds pending user decisions for model-route changes.
 #[derive(Clone, Default)]
 pub struct RoutingApprovalRegistry {
     pending: Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>>,
 }
 
 pub struct RoutingApprovalWait<'a> {
+    /// Task requesting the route change.
     pub task_id: &'a str,
+    /// Run paused while route approval is pending.
     pub run_id: &'a str,
+    /// Stable trace identifier used to resolve this approval.
     pub trace_id: &'a str,
+    /// Route proposed for the continuation.
     pub route_id: &'a str,
+    /// Maximum wait duration before treating the approval as denied.
     pub timeout_ms: u64,
+    /// Event sink used to publish the pending approval projection.
     pub events: &'a EventSink,
+    /// Cancellation signal for the waiting operation.
     pub cancellation: &'a CancellationToken,
 }
 
 impl RoutingApprovalRegistry {
+    /// Publishes a pending route approval and waits for a decision, timeout, or cancellation.
     pub async fn wait_for_decision(
         &self,
         wait: RoutingApprovalWait<'_>,
@@ -100,6 +122,7 @@ impl RoutingApprovalRegistry {
         outcome
     }
 
+    /// Resolves a pending route approval by trace identifier.
     pub async fn resolve(&self, trace_id: &str, approve: bool) -> Result<bool, String> {
         let sender = self
             .pending
@@ -115,12 +138,14 @@ impl RoutingApprovalRegistry {
 }
 
 impl ApprovalCoordinator {
+    /// Registers an approval identifier and returns the receiver for its decision.
     pub async fn register(&self, approval_id: uuid::Uuid) -> oneshot::Receiver<bool> {
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().await.insert(approval_id, sender);
         receiver
     }
 
+    /// Resolves a pending approval or records an early decision for later consumption.
     pub async fn resolve(&self, approval_id: uuid::Uuid, granted: bool) -> bool {
         if let Some(sender) = self.pending.lock().await.remove(&approval_id) {
             let delivered = sender.send(granted).is_ok();
@@ -136,6 +161,7 @@ impl ApprovalCoordinator {
         true
     }
 
+    /// Consumes and removes a recorded approval decision, returning `false` if none was granted.
     pub async fn consume_approved(&self, approval_id: uuid::Uuid) -> bool {
         self.approved
             .lock()
@@ -145,7 +171,9 @@ impl ApprovalCoordinator {
     }
 }
 
+/// Executes agent tasks with cancellation and event reporting.
 pub trait TaskExecutor: Send + Sync {
+    /// Executes a task using the implementation's default workspace behavior.
     fn execute(
         &self,
         task_id: String,
@@ -154,6 +182,7 @@ pub trait TaskExecutor: Send + Sync {
         events: EventSink,
     ) -> BoxFuture<'static, Result<String, AgentRunError>>;
 
+    /// Executes a task rooted in the supplied workspace directory.
     fn execute_in_workspace(
         &self,
         task_id: String,
@@ -166,6 +195,7 @@ pub trait TaskExecutor: Send + Sync {
         self.execute(task_id, prompt, cancellation, events)
     }
 
+    /// Executes a task in a workspace while supplying an optional preferred-route hint.
     fn execute_in_workspace_with_routing_hint(
         &self,
         task_id: String,
@@ -179,6 +209,7 @@ pub trait TaskExecutor: Send + Sync {
         self.execute_in_workspace(task_id, prompt, workspace_root, cancellation, events)
     }
 
+    /// Evaluates a continuation gate; implementations without gate support report unavailable.
     fn execute_continuation_gate(
         &self,
         gate: crate::continuation::GateV1,
@@ -206,15 +237,18 @@ pub trait TaskExecutor: Send + Sync {
     }
 }
 
+/// Runs a single model request and streams redacted output through Core events.
 pub struct ModelAgent {
     gateway: Arc<ModelGateway>,
 }
 
 impl ModelAgent {
+    /// Creates a model-only agent using the supplied model gateway.
     pub fn new(gateway: Arc<ModelGateway>) -> Self {
         Self { gateway }
     }
 
+    /// Runs one prompt without an external cancellation signal.
     pub async fn run_once(
         &self,
         task_id: impl Into<String>,
@@ -340,12 +374,14 @@ impl TaskExecutor for ModelAgent {
 pub struct SelectedModel(Arc<std::sync::RwLock<Option<Arc<str>>>>);
 
 impl SelectedModel {
+    /// Selects a model for the next request; blank input clears the selection.
     pub fn set(&self, model: &str) {
         if let Ok(mut current) = self.0.write() {
             *current = (!model.trim().is_empty()).then(|| Arc::<str>::from(model.trim()));
         }
     }
 
+    /// Returns the current model selection, if one is set.
     pub fn get(&self) -> Option<Arc<str>> {
         self.0.read().ok().and_then(|value| value.clone())
     }
@@ -711,6 +747,7 @@ impl evohime_local_storage::domains::receipts::ProvenanceBundleSigner for CoreRe
     }
 }
 
+/// Coordinates model calls and tool execution under Core policy and approval controls.
 pub struct ToolAgent {
     gateway: Arc<ModelGateway>,
     tools: Arc<ToolRegistry>,

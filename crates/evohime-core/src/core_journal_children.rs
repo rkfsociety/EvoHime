@@ -69,6 +69,11 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Returns the next sequence number for a parent's child-task events.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error string if the sequence cannot be read.
     pub async fn next_child_parent_sequence(&self, parent_task_id: &str) -> Result<u64, String> {
         let database = self.database.lock().await;
         evohime_local_storage::domains::agents::ChildStoreSql::next_parent_sequence(
@@ -79,6 +84,11 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Persists or updates a coordinator checkpoint for child-task recovery.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error string if the checkpoint cannot be stored.
     pub async fn save_coordinator_checkpoint(
         &self,
         record: &evohime_local_storage::domains::agents::CoordinatorCheckpointRecord,
@@ -91,6 +101,13 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Loads the newest persisted coordinator checkpoint for a child task.
+    ///
+    /// Returns `None` when the child has no checkpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error string if the lookup fails.
     pub async fn get_coordinator_checkpoint(
         &self,
         child_task_id: &str,
@@ -104,6 +121,13 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Lists child-task checkpoints whose retry deadline has expired.
+    ///
+    /// The query is scoped to one parent and evaluated against `now_ms`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage error string if the query fails.
     pub async fn list_child_dead_letters(
         &self,
         parent_task_id: &str,
@@ -121,6 +145,15 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Validates and persists a typed report submitted by a child task.
+    ///
+    /// The child workflow may offload large report content while preserving its
+    /// typed metadata and linkage.
+    ///
+    /// # Errors
+    ///
+    /// Returns a string error if the request/report pairing is invalid or
+    /// persistence fails.
     pub async fn accept_typed_child_report(
         &self,
         request: &crate::child_contracts::TypedChildTaskRequest,
@@ -137,6 +170,13 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Loads the project build policy or persists the supplied default.
+    ///
+    /// Returned policies are hardened through the Core build-policy boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a string error for storage or persisted-policy decoding failures.
     pub async fn get_or_create_build_policy(
         &self,
         project_id: &str,
@@ -158,6 +198,14 @@ impl EventJournal {
         Ok(harden_build_policy(default_policy.clone()))
     }
 
+    /// Loads a project's hardened build policy and its persisted version.
+    ///
+    /// If no record exists, the default is persisted first.
+    ///
+    /// # Errors
+    ///
+    /// Returns a string error for storage, serialization, or policy decoding
+    /// failures.
     pub async fn get_build_policy(
         &self,
         project_id: &str,
@@ -183,6 +231,15 @@ impl EventJournal {
         Ok((policy, record.version))
     }
 
+    /// Stores a project build policy, optionally enforcing optimistic versioning.
+    ///
+    /// When `expected_version` is supplied, the update is rejected if the
+    /// stored record has changed since it was read.
+    ///
+    /// # Errors
+    ///
+    /// Returns a string error for serialization, version conflict, or storage
+    /// failure.
     pub async fn save_build_policy(
         &self,
         project_id: &str,

@@ -1,6 +1,6 @@
 //! Durable-хранилище запусков workflow (план 06.2).
 //!
-//! Схема ставится идемпотентно через [`install_schema`] — тем же способом, что
+//! Схема ставится идемпотентно через [`crate::workflow_store::install_schema`] — тем же способом, что
 //! receipts и model provenance, поэтому существующая база получает таблицы без
 //! отдельной ветки миграции и без потери данных.
 //!
@@ -19,24 +19,50 @@ use serde::{Deserialize, Serialize};
 
 /// Потолки полей. Они совпадают по духу с bounded-лимитами контракта: запись,
 /// которая не помещается, отклоняется, а не обрезается молча.
+/// Maximum encoded byte length of workflow and node identifiers.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum serialized workflow graph size accepted by the store.
 pub const MAX_GRAPH_JSON_BYTES: usize = 512 * 1024;
+/// Maximum stored workflow input JSON size.
 pub const MAX_INPUT_JSON_BYTES: usize = 32 * 1024;
+/// Maximum stored node output JSON size.
 pub const MAX_OUTPUT_JSON_BYTES: usize = 32 * 1024;
+/// Maximum serialized workflow event payload size.
 pub const MAX_EVENT_PAYLOAD_BYTES: usize = 8 * 1024;
+/// Maximum stored error message size.
 pub const MAX_ERROR_BYTES: usize = 2 * 1024;
+/// Maximum number of rows returned by a list operation.
 pub const MAX_LIST_LIMIT: usize = 500;
 
+/// Validation and SQLite errors raised by workflow persistence operations.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkflowStoreError {
+    /// A required workflow field is empty.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Name of the required field.
+        field: &'static str,
+    },
+    /// A value exceeds its storage bound.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: usize },
+    Limit {
+        /// Name of the field that exceeded its bound.
+        field: &'static str,
+        /// Maximum permitted byte length.
+        max: usize,
+    },
+    /// The requested workflow run does not exist.
     #[error("workflow run {0} is not stored")]
     UnknownRun(String),
+    /// The requested node does not exist in the specified workflow run.
     #[error("workflow node {node_id} of run {run_id} is not stored")]
-    UnknownNode { run_id: String, node_id: String },
+    UnknownNode {
+        /// Workflow run containing the requested node.
+        run_id: String,
+        /// Identifier of the missing node.
+        node_id: String,
+    },
+    /// SQLite rejected a persistence or query operation.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -90,20 +116,30 @@ fn bounded(
 /// Состояние запуска. `Interrupted` и `Degraded` — самостоятельные состояния,
 /// а не разновидность успеха: первое означает потерю определённости после
 /// перезапуска Core, второе — завершение с частично недоступными источниками.
+/// Lifecycle state of a persisted workflow run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RunState {
+    /// The run is persisted but has not started execution.
     Pending,
+    /// At least one node is actively executing.
     Running,
+    /// Execution is paused pending human approval.
     WaitingApproval,
+    /// All required workflow work completed successfully.
     Completed,
+    /// The workflow ended with a failure.
     Failed,
+    /// The workflow was cancelled by an explicit request.
     Cancelled,
+    /// The workflow completed with degraded or unavailable sources.
     Degraded,
+    /// Core restart interrupted the run before its outcome was known.
     Interrupted,
 }
 
 impl RunState {
+    /// Returns the stable snake-case database representation.
     pub fn as_str(self) -> &'static str {
         match self {
             RunState::Pending => "pending",
@@ -117,6 +153,13 @@ impl RunState {
         }
     }
 
+    /// Parses a stable database representation, returning `None` if unknown.
+    ///
+    /// ```
+    /// use evohime_local_storage::workflow_store::RunState;
+    /// assert_eq!(RunState::parse("waiting_approval"), Some(RunState::WaitingApproval));
+    /// assert_eq!(RunState::parse("unknown"), None);
+    /// ```
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "pending" => RunState::Pending,
@@ -131,6 +174,7 @@ impl RunState {
         })
     }
 
+    /// Returns whether no further execution is expected for this run.
     pub fn is_terminal(self) -> bool {
         matches!(
             self,
@@ -139,28 +183,43 @@ impl RunState {
     }
 }
 
+/// Lifecycle state of one node within a workflow run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeState {
+    /// The node is persisted but not yet eligible to run.
     Pending,
+    /// Dependencies are satisfied and the node may be dispatched.
     Ready,
+    /// The node's effect is currently executing.
     Running,
+    /// The node is paused pending approval.
     WaitingApproval,
+    /// The node completed successfully.
     Succeeded,
+    /// The node ended with an execution failure.
     Failed,
+    /// The node exceeded its configured execution deadline.
     TimedOut,
+    /// The node was cancelled.
     Cancelled,
+    /// A dependency or policy prevents execution.
     Blocked,
+    /// Approval for the node was denied.
     Denied,
+    /// The node was intentionally not executed.
     Skipped,
+    /// The node completed with a degraded result.
     Degraded,
     /// Core упал после dispatch marker: исход эффекта неизвестен, слепой
     /// повтор запрещён.
     UnknownOutcome,
+    /// Repeatedly failed or uncertain work was parked for operator review.
     DeadLetter,
 }
 
 impl NodeState {
+    /// Returns the stable snake-case database representation.
     pub fn as_str(self) -> &'static str {
         match self {
             NodeState::Pending => "pending",
@@ -180,6 +239,7 @@ impl NodeState {
         }
     }
 
+    /// Parses a stable database representation, returning `None` if unknown.
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "pending" => NodeState::Pending,
@@ -200,6 +260,7 @@ impl NodeState {
         })
     }
 
+    /// Returns whether the node is no longer expected to execute.
     pub fn is_terminal(self) -> bool {
         !matches!(
             self,
@@ -208,65 +269,112 @@ impl NodeState {
     }
 }
 
+/// Immutable graph and lifecycle metadata for one workflow execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowRunRecord {
+    /// Stable identifier of this execution.
     pub run_id: String,
+    /// Task that owns this workflow run.
     pub task_id: String,
+    /// Identifier of the workflow template used to create the run.
     pub template_id: String,
+    /// Version of the workflow template.
     pub template_version: u32,
+    /// Identifier of the persisted workflow graph.
     pub graph_id: String,
+    /// Version of the graph snapshot used by this run.
     pub graph_version: u64,
+    /// Digest of the canonical graph snapshot.
     pub graph_hash: String,
+    /// Canonical JSON representation of the graph snapshot.
     pub graph_json: String,
+    /// Canonical JSON input supplied to the run.
     pub inputs_json: String,
+    /// Serialized policy snapshot used for this run.
     pub policy_json: String,
+    /// Current lifecycle state.
     pub state: RunState,
+    /// Run creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Time of the most recent run state update in Unix milliseconds.
     pub updated_at_ms: i64,
+    /// Explanation recorded when the run reaches a terminal state.
     pub terminal_reason: String,
+    /// Whether cancellation has been requested.
     pub cancel_requested: bool,
+    /// Identity currently holding the run lease.
     pub lease_owner: String,
+    /// Lease expiry time in Unix milliseconds.
     pub lease_expires_at_ms: i64,
 }
 
+/// Current execution state and result metadata for one workflow node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowNodeRecord {
+    /// Workflow run containing this node.
     pub run_id: String,
+    /// Identifier of the node in the workflow graph.
     pub node_id: String,
+    /// Kind of action dispatched for the node.
     pub action_kind: String,
+    /// Current execution state.
     pub state: NodeState,
+    /// Number of dispatch attempts recorded for this node.
     pub attempts: u32,
+    /// Serialized output produced by the node, if any.
     pub output_json: String,
+    /// Stable error category from the latest attempt.
     pub error_code: String,
+    /// Human-readable error detail from the latest attempt.
     pub error_message: String,
+    /// Approval identifier associated with the node, if any.
     pub approval_id: String,
+    /// Time of the latest node update in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Durable record of one dispatch attempt for a workflow node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowAttemptRecord {
+    /// Stable identifier of this attempt.
     pub attempt_id: String,
+    /// Workflow run containing this attempt.
     pub run_id: String,
+    /// Node whose action was dispatched.
     pub node_id: String,
+    /// One-based attempt number for the node.
     pub attempt: u32,
+    /// Graph snapshot digest used for the attempt.
     pub graph_hash: String,
+    /// Digest of the canonical action input.
     pub input_hash: String,
+    /// Time the dispatch marker was persisted in Unix milliseconds.
     pub dispatched_at_ms: i64,
+    /// Time the attempt was closed, or `None` while its outcome is unknown.
     pub completed_at_ms: Option<i64>,
     /// Пусто, пока попытка не закрыта. Именно эта пустота отличает
     /// «неизвестный исход» от «известной ошибки».
     pub outcome: String,
+    /// Stable failure category, if the attempt failed.
     pub error_code: String,
 }
 
+/// Ordered event emitted during one workflow run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowEventRecord {
+    /// Workflow run that owns the event.
     pub run_id: String,
+    /// Monotonic sequence number within the run.
     pub run_sequence: i64,
+    /// Node associated with the event, when applicable.
     pub node_id: String,
+    /// Dispatch attempt associated with the event, when applicable.
     pub attempt_id: String,
+    /// Stable event category.
     pub event_type: String,
+    /// Serialized event-specific payload.
     pub payload_json: String,
+    /// Event creation time in Unix milliseconds.
     pub created_at_ms: i64,
 }
 
@@ -436,6 +544,7 @@ pub fn insert_run(
     Ok(())
 }
 
+/// Loads one workflow run by identifier.
 pub fn get_run(
     connection: &Connection,
     run_id: &str,
@@ -454,6 +563,7 @@ pub fn get_run(
     Ok(record)
 }
 
+/// Lists workflow runs newest first, limiting the result to [`MAX_LIST_LIMIT`].
 pub fn list_runs(
     connection: &Connection,
     limit: usize,
@@ -515,6 +625,7 @@ fn map_node(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkflowNodeRecord> {
     })
 }
 
+/// Lists a run's nodes in stable node-identifier order.
 pub fn list_nodes(
     connection: &Connection,
     run_id: &str,
@@ -532,14 +643,23 @@ pub fn list_nodes(
     Ok(records)
 }
 
+/// Values used to transition a non-terminal node and store its latest result.
 pub struct UpdateNodeStateInput<'a> {
+    /// Workflow run containing the node.
     pub run_id: &'a str,
+    /// Node whose state should change.
     pub node_id: &'a str,
+    /// New lifecycle state.
     pub state: NodeState,
+    /// Number of attempts recorded after this transition.
     pub attempts: u32,
+    /// Serialized output to store with the node.
     pub output_json: &'a str,
+    /// Stable error category, or an empty string on success.
     pub error_code: &'a str,
+    /// Human-readable error detail, or an empty string on success.
     pub error_message: &'a str,
+    /// Transition time in Unix milliseconds.
     pub now_ms: i64,
 }
 
@@ -583,6 +703,7 @@ pub fn update_node_state(
     Ok(())
 }
 
+/// Associates an approval with a node and moves it to `waiting_approval`.
 pub fn set_node_approval(
     connection: &Connection,
     run_id: &str,
@@ -600,6 +721,7 @@ pub fn set_node_approval(
     Ok(())
 }
 
+/// Updates a run that has not yet reached a terminal state.
 pub fn update_run_state(
     connection: &Connection,
     run_id: &str,
@@ -635,6 +757,7 @@ pub fn request_cancel(
     Ok(changed > 0)
 }
 
+/// Claims a run lease if it is unowned, already owned by the caller, or expired.
 pub fn acquire_lease(
     connection: &Connection,
     run_id: &str,
@@ -651,6 +774,7 @@ pub fn acquire_lease(
     Ok(changed > 0)
 }
 
+/// Releases a run lease only when `owner` currently holds it.
 pub fn release_lease(
     connection: &Connection,
     run_id: &str,
@@ -720,6 +844,7 @@ pub fn finish_attempt(
     Ok(())
 }
 
+/// Lists dispatch attempts for one run, grouped by node and attempt number.
 pub fn list_attempts(
     connection: &Connection,
     run_id: &str,
@@ -751,25 +876,43 @@ pub fn list_attempts(
     Ok(records)
 }
 
+/// Input for appending a workflow event with an optional ledger link.
 pub struct AppendEventRowInput<'a> {
+    /// Workflow run receiving the event.
     pub run_id: &'a str,
+    /// Associated node identifier, or empty when run-scoped.
     pub node_id: &'a str,
+    /// Associated dispatch attempt identifier, or empty when not applicable.
     pub attempt_id: &'a str,
+    /// Stable event category.
     pub event_type: &'a str,
+    /// Serialized event data bounded by [`MAX_EVENT_PAYLOAD_BYTES`].
     pub payload_json: &'a str,
+    /// Event creation time in Unix milliseconds.
     pub now_ms: i64,
+    /// Optional global execution-ledger sequence number.
     pub ledger_sequence_id: Option<i64>,
+    /// Optional global execution-ledger event identifier.
     pub ledger_event_id: Option<&'a str>,
 }
 
+/// Input for atomically linking a workflow event to a ledger event.
 pub struct AppendEventLinkedInput<'a> {
+    /// Workflow run receiving the event.
     pub run_id: &'a str,
+    /// Associated node identifier, or empty when run-scoped.
     pub node_id: &'a str,
+    /// Associated dispatch attempt identifier, or empty when not applicable.
     pub attempt_id: &'a str,
+    /// Stable event category.
     pub event_type: &'a str,
+    /// Serialized event data bounded by [`MAX_EVENT_PAYLOAD_BYTES`].
     pub payload_json: &'a str,
+    /// Event creation time in Unix milliseconds.
     pub now_ms: i64,
+    /// Global execution-ledger sequence number.
     pub ledger_sequence_id: i64,
+    /// Global execution-ledger event identifier.
     pub ledger_event_id: &'a str,
 }
 
@@ -876,6 +1019,7 @@ pub(crate) fn append_event_linked(
     )
 }
 
+/// Lists events after a sequence cursor, preserving their monotonic run order.
 pub fn list_events(
     connection: &Connection,
     run_id: &str,

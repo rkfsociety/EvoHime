@@ -26,19 +26,33 @@ use thiserror::Error;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+/// Relative directory containing receipt signing-key state.
 pub const KEY_DIR: &str = "receipts/keys";
+/// Filename for the active protected signing key metadata.
 pub const ACTIVE_KEY_FILE: &str = "active-key-v1.json";
+/// Filename for the append-only public key transition history.
 pub const HISTORY_FILE: &str = "public-history-v1.jsonl";
+/// Filename for pinned trusted signing-key roots.
 pub const TRUST_FILE: &str = "trusted-roots-v1.json";
+/// Filename for the durable in-progress key-rotation journal.
 pub const JOURNAL_FILE: &str = "rotation-state-v1.json";
+/// Filename for public-history integrity metadata.
 pub const HISTORY_MANIFEST_FILE: &str = "public-history-v1.manifest.json";
+/// Filename for forensic details recorded during recovery.
 pub const RECOVERY_FORENSIC_FILE: &str = "recovery-forensic-v1.json";
+/// Filename for the scheduled-rotation check timestamp.
 pub const ROTATION_CHECK_FILE: &str = "rotation-check-v1.json";
+/// Filename for a generated key awaiting activation.
 pub const PENDING_KEY_FILE: &str = "pending-key-v1.json";
+/// Filename for a signed checkpoint of retained key history.
 pub const CHECKPOINT_FILE: &str = "key-history-checkpoint-v1.json";
+/// Filename for locally protected receipt-storage key metadata.
 pub const STORAGE_KEY_FILE: &str = "recovery-storage-key-v1.json";
+/// Filename for receipt-storage key rotation history.
 pub const STORAGE_KEY_HISTORY_FILE: &str = "recovery-storage-key-history-v1.json";
+/// Maximum number of transitions retained in a single rotation chain.
 pub const MAX_TRANSITIONS: usize = 100;
+/// Maximum serialized byte length accepted for public key history.
 pub const MAX_HISTORY_BYTES: usize = 16 * 1024 * 1024;
 const STORAGE_KEY_BYTES: usize = 32;
 const STORAGE_NONCE_BYTES: usize = 12;
@@ -51,70 +65,107 @@ struct StorageKeyMetadata {
     protected_key: String,
 }
 
+/// Failure while loading, protecting, rotating, or verifying receipt keys.
 #[derive(Debug, Error)]
 pub enum KeyError {
+    /// No initialized active signing key is present.
     #[error("key.not_initialized")]
     NotInitialized,
+    /// Windows DPAPI could not protect or unprotect local key material.
     #[error("key.dpapi_failed")]
     DpapiFailed,
+    /// Key storage permissions do not satisfy the required owner-only policy.
     #[error("key.dacl_invalid")]
     DaclInvalid,
+    /// Persisted key lifecycle data failed structural or cryptographic validation.
     #[error("key.corrupt")]
     Corrupt,
+    /// Private signing material does not correspond to its recorded public key.
     #[error("key.public_mismatch")]
     PublicMismatch,
+    /// An earlier rotation remains incomplete and requires recovery.
     #[error("key.rotation_incomplete")]
     RotationIncomplete,
+    /// History contains conflicting transitions from the same chain position.
     #[error("key.rotation_fork")]
     RotationFork,
+    /// Pending rotation artifacts must be reconciled before another operation.
     #[error("key.cleanup_required")]
     CleanupRequired,
+    /// A trusted root must be pinned before the requested action can continue.
     #[error("key.trust_required")]
     TrustRequired,
+    /// The configured transition retention limit has been reached.
     #[error("key.rotation_limit")]
     RotationLimit,
+    /// The exported or retained history does not satisfy completeness metadata.
     #[error("key.history_incomplete")]
     HistoryIncomplete,
+    /// Public transition history could not be exported safely.
     #[error("key.history_export_failed")]
     HistoryExportFailed,
+    /// A transition is malformed, out of order, or has invalid continuity.
     #[error("key.invalid_transition")]
     InvalidTransition,
+    /// This key operation requires platform facilities unavailable here.
     #[error("key.unsupported_platform")]
     UnsupportedPlatform,
+    /// A filesystem operation failed.
     #[error("I/O failed: {0}")]
     Io(#[from] io::Error),
+    /// Key lifecycle JSON could not be parsed or serialized.
     #[error("JSON failed: {0}")]
     Json(#[from] serde_json::Error),
+    /// A signature could not be created or did not verify.
     #[error("signature failed")]
     Signature,
 }
 
+/// Public identity and locally protected signing material for the active key.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ActiveKeyMetadata {
+    /// On-disk metadata schema version.
     pub storage_version: u8,
+    /// Stable identifier derived from the public key.
     pub key_id: String,
+    /// Base64-encoded Ed25519 public key.
     pub public_key: String,
+    /// UTC creation timestamp in RFC 3339 form.
     pub created_at: String,
+    /// Locally protected PKCS#8 private-key bytes; never a plaintext key.
     pub protected_pkcs8: String,
 }
 
+/// Signed public record connecting one receipt signing key to the next.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct KeyTransition {
+    /// Transition-record schema version.
     pub transition_version: u8,
+    /// Unique identifier for this transition.
     pub transition_id: String,
+    /// UTC transition timestamp in RFC 3339 form.
     pub created_at: String,
+    /// Operator-provided rotation reason.
     pub reason: String,
+    /// Actor responsible for the transition.
     pub actor: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Previous key identity, absent only for genesis creation.
     pub previous_key_id: Option<String>,
+    /// Identifier of the newly activated key.
     pub new_key_id: String,
+    /// Base64-encoded public key of the new signer.
     pub new_public_key: String,
+    /// Continuity proof mode recorded for the transition.
     pub continuity: String,
+    /// Key identity that signed this transition.
     pub signed_by_key_id: String,
+    /// Base64-encoded Ed25519 signature over the canonical transition payload.
     pub signature: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Digest linking to the preceding transition when one exists.
     pub previous_transition_hash: Option<String>,
 }
 
@@ -135,69 +186,113 @@ struct UnsignedTransition<'a> {
     previous_transition_hash: &'a Option<String>,
 }
 
+/// Durable progress record for a multi-step key rotation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RotationState {
+    /// Rotation-state schema version.
     pub state_version: u8,
+    /// Identifier shared by all work in this rotation operation.
     pub rotation_id: String,
+    /// Current named phase of the rotation protocol.
     pub phase: String,
+    /// Key identity that was active before rotation began.
     pub old_key_id: String,
+    /// Key identity being activated.
     pub new_key_id: String,
+    /// Hash of the signed transition associated with this rotation.
     pub transition_hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Stable failure code when recovery paused the rotation.
     pub error_code: Option<String>,
+    /// UTC time the rotation journal was created.
     pub created_at: String,
+    /// UTC time the journal was last updated.
     pub updated_at: String,
+    /// Operator-provided reason for rotating the key.
     pub reason: String,
+    /// Actor responsible for the rotation.
     pub actor: String,
+    /// Whether startup observed the new key as active.
     pub active_key_observed: bool,
+    /// Audit event identifier emitted for the rotation.
     pub audit_event_id: String,
 }
 
+/// Locally pinned root key that establishes trust in a key-history lineage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TrustedRoot {
+    /// Trusted-root record schema version.
     pub root_version: u8,
+    /// Stable identifier for this trust pin.
     pub root_id: String,
+    /// Genesis key identity trusted by this root.
     pub genesis_key_id: String,
+    /// UTC time when the root was pinned.
     pub pinned_at: String,
+    /// Provenance describing how the root was trusted.
     pub source: String,
+    /// Current trust status of this root.
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// Replacement root identifier when this root has been superseded.
     pub superseded_by: Option<String>,
 }
 
+/// Versioned collection of locally trusted key-history roots.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct TrustedRootsFile {
+    /// File schema version.
     pub schema_version: u8,
+    /// Pinned root records.
     pub roots: Vec<TrustedRoot>,
 }
 
+/// Summary used to verify the expected completeness of exported key history.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct HistoryManifest {
+    /// Manifest schema version.
     pub manifest_version: u8,
+    /// Identifier of the key-history format.
     pub history_schema: String,
+    /// Completeness status of the history export.
     pub status: String,
+    /// Key identity active when the manifest was written.
     pub active_key_id: String,
+    /// Number of transitions included in the export.
     pub exported_transition_count: usize,
 }
 
+/// Signed checkpoint anchoring an older prefix of a retained transition chain.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct KeyHistoryCheckpoint {
+    /// Checkpoint schema version.
     pub checkpoint_version: u8,
+    /// Unique identifier for this checkpoint.
     pub checkpoint_id: String,
+    /// UTC checkpoint creation time.
     pub created_at: String,
+    /// Genesis key identity for the checkpointed lineage.
     pub genesis_key_id: String,
+    /// Stable identifier for the key-history lineage.
     pub lineage_id: String,
+    /// First transition sequence covered by this checkpoint.
     pub covered_first_sequence: u64,
+    /// Last transition sequence covered by this checkpoint.
     pub covered_last_sequence: u64,
+    /// Digest of the covered transition prefix.
     pub covered_prefix_hash: String,
+    /// Digest of the final transition covered by the checkpoint.
     pub last_transition_hash: String,
+    /// Earliest transition sequence still retained locally.
     pub retained_from_sequence: u64,
+    /// Key identity that signed this checkpoint.
     pub signed_by_key_id: String,
+    /// Base64-encoded checkpoint signature.
     pub signature: String,
 }
 
@@ -232,6 +327,7 @@ fn b64(bytes: &[u8]) -> String {
 fn decode_b64(value: &str) -> Result<Vec<u8>, KeyError> {
     URL_SAFE_NO_PAD.decode(value).map_err(|_| KeyError::Corrupt)
 }
+/// Decodes and validates a base64-encoded Ed25519 public key.
 pub fn public_key_bytes(value: &str) -> Result<Vec<u8>, KeyError> {
     let bytes = decode_b64(value)?;
     if bytes.len() != 32 {
@@ -239,12 +335,15 @@ pub fn public_key_bytes(value: &str) -> Result<Vec<u8>, KeyError> {
     }
     Ok(bytes)
 }
+/// Derives the stable key identifier from raw public-key bytes.
 pub fn key_id(public_key: &[u8]) -> String {
     format!("ed25519:{:x}", Sha256::digest(public_key))
 }
+/// Hashes the canonical serialized representation of a signed transition.
 pub fn transition_hash(transition: &KeyTransition) -> Result<String, KeyError> {
     Ok(sha256_hex(&canonical_json(transition)?))
 }
+/// Returns a lowercase hexadecimal SHA-256 digest.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -362,6 +461,7 @@ fn checkpoint_signed_bytes(checkpoint: &KeyHistoryCheckpoint) -> Result<Vec<u8>,
     })?)
 }
 
+/// Verifies a checkpoint signature and its relationship to the supplied signer key.
 pub fn verify_checkpoint(
     checkpoint: &KeyHistoryCheckpoint,
     history: &[KeyTransition],
@@ -417,6 +517,7 @@ pub fn verify_checkpoint(
     })
 }
 
+/// Ed25519 signing key whose encoded secret bytes are zeroized on drop.
 pub struct SecretSigner(Zeroizing<Vec<u8>>);
 impl SecretSigner {
     fn generate() -> Result<(Self, Vec<u8>), KeyError> {
@@ -440,39 +541,50 @@ impl SecretSigner {
     }
 }
 
+/// Owns receipt signing keys, rotation history, trust roots, and storage-key protection.
 pub struct ReceiptKeyManager {
     root: PathBuf,
 }
 impl ReceiptKeyManager {
+    /// Creates a manager rooted in the supplied application data directory.
     pub fn new(data_dir: impl AsRef<Path>) -> Self {
         Self {
             root: data_dir.as_ref().join(KEY_DIR),
         }
     }
+    /// Returns the directory containing signing-key lifecycle files.
     pub fn key_dir(&self) -> &Path {
         &self.root
     }
+    /// Returns the path to active signing-key metadata.
     pub fn active_path(&self) -> PathBuf {
         self.root.join(ACTIVE_KEY_FILE)
     }
+    /// Returns the path to the append-only public transition history.
     pub fn history_path(&self) -> PathBuf {
         self.root.join(HISTORY_FILE)
     }
+    /// Returns the path to public-history completeness metadata.
     pub fn history_manifest_path(&self) -> PathBuf {
         self.root.join(HISTORY_MANIFEST_FILE)
     }
+    /// Returns the path to the locally pinned trusted roots.
     pub fn trust_path(&self) -> PathBuf {
         self.root.join(TRUST_FILE)
     }
+    /// Returns the path to the durable rotation journal.
     pub fn journal_path(&self) -> PathBuf {
         self.root.join(JOURNAL_FILE)
     }
+    /// Returns the path used for a key awaiting activation.
     pub fn pending_key_path(&self) -> PathBuf {
         self.root.join(PENDING_KEY_FILE)
     }
+    /// Returns the path to the signed key-history checkpoint.
     pub fn checkpoint_path(&self) -> PathBuf {
         self.root.join(CHECKPOINT_FILE)
     }
+    /// Returns the path storing the last scheduled-rotation check.
     pub fn rotation_check_path(&self) -> PathBuf {
         self.root.join(ROTATION_CHECK_FILE)
     }
@@ -484,6 +596,7 @@ impl ReceiptKeyManager {
         self.root.join(STORAGE_KEY_HISTORY_FILE)
     }
 
+    /// Creates the genesis signing key and initial public history if absent.
     pub fn initialize(&self) -> Result<String, KeyError> {
         if self.active_path().exists() {
             return Err(KeyError::Corrupt);
@@ -531,6 +644,7 @@ impl ReceiptKeyManager {
         Ok(id)
     }
 
+    /// Initializes the genesis key and records its audit event transactionally.
     pub fn initialize_with_database(
         &self,
         connection: &mut rusqlite::Connection,
@@ -574,6 +688,7 @@ impl ReceiptKeyManager {
         Ok(id)
     }
 
+    /// Loads and validates active key metadata and returns a zeroizing signer.
     pub fn load_signer(&self) -> Result<(ActiveKeyMetadata, SecretSigner), KeyError> {
         let raw = fs::read(self.active_path()).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
@@ -601,6 +716,7 @@ impl ReceiptKeyManager {
         Ok((metadata, signer))
     }
 
+    /// Signs canonical JSON and returns the key identity and encoded signature.
     pub fn sign_payload(&self, payload: &serde_json::Value) -> Result<(String, String), KeyError> {
         let (metadata, signer) = self.load_signer()?;
         let bytes = crate::payload_bytes(payload).map_err(|_| KeyError::InvalidTransition)?;
@@ -610,6 +726,7 @@ impl ReceiptKeyManager {
     /// Signs the 32-byte SHA-256 payload digest used by Runtime Receipt v1.
     /// This is intentionally separate from the legacy contract helper above:
     /// changing its input would invalidate the already published vectors.
+    /// Signs a validated payload digest and returns signer identity and signature.
     pub fn sign_payload_hash(&self, payload_hash: &str) -> Result<(String, String), KeyError> {
         if payload_hash.len() != 64
             || !payload_hash
@@ -673,12 +790,14 @@ impl ReceiptKeyManager {
         }
     }
 
+    /// Returns the active local storage-key identifier, initializing it when required.
     pub fn storage_key_id(&self) -> Result<String, KeyError> {
         Ok(self.active_storage_key()?.0.key_id)
     }
 
     /// Encrypts bounded recovery material with a versioned per-user storage
     /// key. The key itself is DPAPI-protected and never leaves this manager.
+    /// Authenticates and encrypts storage bytes with the active local key.
     pub fn protect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
         let (_, key) = self.active_storage_key()?;
         let unbound =
@@ -700,6 +819,7 @@ impl ReceiptKeyManager {
         Ok(envelope)
     }
 
+    /// Authenticates and decrypts bytes previously protected by this manager.
     pub fn unprotect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
         if bytes.len() < STORAGE_NONCE_BYTES + aead::AES_256_GCM.tag_len() {
             return Err(KeyError::Corrupt);
@@ -787,6 +907,7 @@ impl ReceiptKeyManager {
         Ok((metadata.clone(), key))
     }
 
+    /// Rotates the local storage key when the caller confirms operator authorization.
     pub fn rotate_storage_key(&self, authenticated_operator: bool) -> Result<String, KeyError> {
         if !authenticated_operator {
             return Err(KeyError::TrustRequired);
@@ -809,6 +930,7 @@ impl ReceiptKeyManager {
         Ok(self.new_storage_metadata()?.0.key_id)
     }
 
+    /// Rotates the receipt signer and appends a signed continuity transition.
     pub fn rotate(&self, reason: &str, actor: &str) -> Result<String, KeyError> {
         if !matches!(reason, "scheduled" | "manual" | "compromise")
             || !matches!(actor, "system" | "user")
@@ -1005,6 +1127,7 @@ impl ReceiptKeyManager {
         Ok(new_id)
     }
 
+    /// Replaces a broken lineage with a new genesis after recording recovery evidence.
     pub fn create_new_genesis_with_database(
         &self,
         connection: &mut rusqlite::Connection,
@@ -1100,6 +1223,7 @@ impl ReceiptKeyManager {
         Ok(())
     }
 
+    /// Loads and parses the bounded public transition history.
     pub fn load_history(&self) -> Result<Vec<KeyTransition>, KeyError> {
         let raw = fs::read(self.history_path()).map_err(|_| KeyError::HistoryIncomplete)?;
         if raw.len() > MAX_HISTORY_BYTES || raw.is_empty() || !raw.ends_with(b"\n") {
@@ -1111,6 +1235,7 @@ impl ReceiptKeyManager {
             .collect()
     }
 
+    /// Exports the verified public history and its completeness manifest.
     pub fn export_history_snapshot(
         &self,
         connection: &rusqlite::Connection,
@@ -1167,11 +1292,13 @@ impl ReceiptKeyManager {
         result
     }
 
+    /// Verifies the transition chain against local trust or an optional supplied root.
     pub fn verify_history(&self, trust_key: Option<&str>) -> Result<VerificationStatus, KeyError> {
         let transitions = self.load_history()?;
         verify_transitions(&transitions, trust_key)
     }
 
+    /// Creates a signed checkpoint covering a validated prefix of key history.
     pub fn create_checkpoint(
         &self,
         retained_from_sequence: u64,
@@ -1230,10 +1357,12 @@ impl ReceiptKeyManager {
     /// Publishes a checkpoint only after it is complete and signed. The
     /// checkpoint is independent from the JSONL snapshot and is replaced
     /// atomically, so a torn write cannot be mistaken for a valid compaction.
+    /// Validates and persists a signed history checkpoint.
     pub fn write_checkpoint(&self, checkpoint: &KeyHistoryCheckpoint) -> Result<(), KeyError> {
         atomic_write_json(&self.checkpoint_path(), checkpoint)
     }
 
+    /// Pins a genesis key as a trusted root with the supplied provenance label.
     pub fn trust_genesis(&self, genesis_key_id: &str, source: &str) -> Result<(), KeyError> {
         let history = self.load_history()?;
         let expected = history
@@ -1268,6 +1397,7 @@ impl ReceiptKeyManager {
         atomic_write_json(&self.trust_path(), &roots)
     }
 
+    /// Loads and validates locally pinned roots, returning `None` when not initialized.
     pub fn load_trusted_roots(&self) -> Result<Option<TrustedRootsFile>, KeyError> {
         if !self.trust_path().exists() {
             return Ok(None);
@@ -1291,6 +1421,7 @@ impl ReceiptKeyManager {
         Ok(Some(roots))
     }
 
+    /// Checks whether a genesis key has an active local trust pin.
     pub fn trusted_genesis(&self, genesis_key_id: &str) -> Result<bool, KeyError> {
         let Some(roots) = self.load_trusted_roots()? else {
             return Ok(false);
@@ -1302,6 +1433,7 @@ impl ReceiptKeyManager {
             .any(|root| root.status == "active" && root.genesis_key_id == key))
     }
 
+    /// Reports whether policy says the next scheduled key rotation is due.
     pub fn scheduled_rotation_due(&self) -> Result<bool, KeyError> {
         let (metadata, _) = self.load_signer()?;
         let created = chrono::DateTime::parse_from_rfc3339(&metadata.created_at)
@@ -1327,6 +1459,7 @@ impl ReceiptKeyManager {
         Ok(true)
     }
 
+    /// Persists the current time as the latest scheduled-rotation check.
     pub fn record_rotation_check(&self) -> Result<(), KeyError> {
         atomic_write_json(
             &self.rotation_check_path(),
@@ -1337,11 +1470,13 @@ impl ReceiptKeyManager {
         )
     }
 
+    /// Validates and atomically persists an in-progress rotation record.
     pub fn write_rotation_state(&self, state: &RotationState) -> Result<(), KeyError> {
         validate_rotation_state(state)?;
         atomic_write_json(&self.journal_path(), state)
     }
 
+    /// Loads and validates the rotation journal, if a rotation is in progress.
     pub fn read_rotation_state(&self) -> Result<Option<RotationState>, KeyError> {
         if !self.journal_path().exists() {
             return Ok(None);
@@ -1351,6 +1486,7 @@ impl ReceiptKeyManager {
         Ok(Some(state))
     }
 
+    /// Recovers interrupted key lifecycle work and validates it against the database.
     pub fn startup_with_database(
         &self,
         connection: &mut rusqlite::Connection,
@@ -1473,6 +1609,7 @@ impl ReceiptKeyManager {
     }
 }
 
+/// Validates rotation journal fields and supported phase relationships.
 pub fn validate_rotation_state(state: &RotationState) -> Result<(), KeyError> {
     if state.state_version != 1
         || !matches!(
@@ -1512,14 +1649,20 @@ pub fn validate_rotation_state(state: &RotationState) -> Result<(), KeyError> {
     Ok(())
 }
 
+/// Result of checking a public key transition chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerificationStatus {
+    /// The chain is valid and anchored to a trusted root.
     Verified,
+    /// The chain is structurally valid but no matching root is trusted.
     Untrusted,
+    /// The chain contains invalid continuity, signatures, or ordering.
     Broken,
+    /// The history uses a schema or verification mode this build cannot check.
     Unsupported,
 }
 
+/// Verifies ordered transition signatures and continuity from the supplied root key.
 pub fn verify_transitions(
     items: &[KeyTransition],
     trust_key: Option<&str>,

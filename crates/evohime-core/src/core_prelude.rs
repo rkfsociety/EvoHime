@@ -1,3 +1,4 @@
+/// Marker type for the Core's stable public version surface.
 pub struct CoreVersion;
 
 /// Надёжный вход событий координатора.
@@ -16,6 +17,14 @@ impl EventSink {
         Self { sender }
     }
 
+    /// Queues an event for a required Core consumer, applying bounded backpressure.
+    ///
+    /// Unlike a lossy broadcast notification, this waits until queue capacity
+    /// is available or the receiver closes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the Core event queue has been closed.
     pub async fn send(&self, event: crate::CoreEvent) -> Result<(), &'static str> {
         let queued_at = std::time::Instant::now();
         let result = self

@@ -1,8 +1,23 @@
 use rusqlite::{params, Connection};
+
 const MAX_PROFILES: i64 = 256;
+
+/// Creates the persistent standing-approval profile table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS standing_approval_profiles (id TEXT PRIMARY KEY, version INTEGER NOT NULL, enabled INTEGER NOT NULL, profile_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts a profile or replaces it only with a strictly newer version.
+///
+/// Profile JSON is limited to 256 KiB. Returns `false` when the stored profile
+/// has an equal or newer version.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized content or failed database writes.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -22,6 +37,11 @@ pub fn put(
     )? == 1)
 }
 
+/// Loads profile JSON ordered by ID, capped at 256 entries.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut s =
         c.prepare("SELECT profile_json FROM standing_approval_profiles ORDER BY id LIMIT ?1")?;

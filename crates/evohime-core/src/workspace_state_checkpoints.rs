@@ -10,53 +10,81 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Version of the serialized workspace checkpoint contract.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum number of files included in one checkpoint.
 pub const MAX_FILES: usize = 4_096;
+/// Maximum aggregate file payload in one checkpoint, in bytes.
 pub const MAX_SNAPSHOT_BYTES: usize = 64 * 1024 * 1024;
+/// Maximum size of an individual captured file, in bytes.
 pub const MAX_FILE_BYTES: usize = 1024 * 1024;
 
+/// Captured bytes and digest for one workspace-relative file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileState {
+    /// Normalized workspace-relative path.
     pub path: String,
+    /// SHA-256 digest of `bytes`.
     pub hash: String,
+    /// File contents captured by the checkpoint.
     pub bytes: Vec<u8>,
 }
 
+/// Bounded, content-checked snapshot of a workspace file set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceStateCheckpoint {
+    /// Serialized contract version.
     pub version: u32,
+    /// Stable identifier for this checkpoint.
     pub checkpoint_id: String,
+    /// Identifier of the workspace represented by the snapshot.
     pub workspace_id: String,
+    /// Optional owning task identifier.
     pub task_id: Option<String>,
+    /// Digest of the canonically ordered file list.
     pub baseline_hash: String,
+    /// Captured files in deterministic path order.
     pub files: Vec<FileState>,
 }
 
+/// A file whose current digest differs from the checkpoint state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Conflict {
+    /// Workspace-relative path that differs.
     pub path: String,
+    /// Expected digest, or `None` if the file did not exist in the checkpoint.
     pub expected: Option<String>,
+    /// Current digest, or `None` if the file does not exist now.
     pub observed: Option<String>,
 }
 
+/// Capture, validation, comparison, or restoration failure.
 #[derive(Debug, thiserror::Error)]
 pub enum CheckpointError {
+    /// The checkpoint uses a contract version this implementation cannot read.
     #[error("unsupported workspace checkpoint version {0}")]
     UnsupportedVersion(u32),
+    /// A path is absolute, escapes the workspace, or is otherwise invalid.
     #[error("workspace checkpoint path is invalid: {0}")]
     InvalidPath(String),
+    /// A captured path traverses a symlink or reparse point.
     #[error("workspace checkpoint contains a symlink or reparse entry: {0}")]
     ReparseEntry(String),
+    /// A file count or byte-size limit was exceeded.
     #[error("workspace checkpoint exceeds a bounded limit: {0}")]
     LimitExceeded(&'static str),
+    /// A stored digest does not match the checkpoint content.
     #[error("workspace checkpoint has a content hash mismatch")]
     HashMismatch,
+    /// Workspace files differ from the preflight state.
     #[error("workspace has external changes")]
     Conflicts(Vec<Conflict>),
+    /// A filesystem operation failed.
     #[error("workspace checkpoint I/O failed: {0}")]
     Io(#[from] std::io::Error),
 }
 
+/// Captures a bounded snapshot of eligible regular files under `root`.
 pub fn capture(
     root: impl AsRef<Path>,
     checkpoint_id: impl Into<String>,
@@ -79,6 +107,7 @@ pub fn capture(
     })
 }
 
+/// Compares the current workspace file digests with a checkpoint.
 pub fn compare(
     root: impl AsRef<Path>,
     checkpoint: &WorkspaceStateCheckpoint,
@@ -157,6 +186,7 @@ pub fn restore(
 /// old task/run ownership and audit records, but applies the plan-58 preflight:
 /// only files captured by the snapshot are compared, and no changed file is
 /// overwritten silently.
+/// Restores a legacy build snapshot after verifying that its files have not changed.
 pub fn restore_build_snapshot_safe(
     root: impl AsRef<Path>,
     snapshot: &crate::build::WorkspaceSnapshot,
@@ -190,6 +220,7 @@ pub fn restore_build_snapshot_safe(
     Ok(())
 }
 
+/// Validates version, bounds, relative paths, per-file hashes, and the baseline digest.
 pub fn validate(checkpoint: &WorkspaceStateCheckpoint) -> Result<(), CheckpointError> {
     if checkpoint.version != CONTRACT_VERSION {
         return Err(CheckpointError::UnsupportedVersion(checkpoint.version));

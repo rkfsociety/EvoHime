@@ -66,6 +66,15 @@ impl EventJournal {
         Ok((acceptance, delivery_sequence))
     }
 
+    /// Reads a bounded page of conversation events newer than a sequence.
+    ///
+    /// The page is ordered by event sequence and uses a dedicated read-database
+    /// lease so history inspection does not hold the write connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if a read lease is unavailable or the query
+    /// fails.
     pub async fn conversation_history_after(
         &self,
         conversation_id: &str,
@@ -84,6 +93,15 @@ impl EventJournal {
         )?)
     }
 
+    /// Persists model-usage projections for the conversation bound to a task.
+    ///
+    /// Usage without a conversation binding is ignored. Bound usage is stored
+    /// in the authoritative conversation log and projected to the renderer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] for serialization, projection, or storage
+    /// failures.
     pub async fn record_conversation_usage(
         &self,
         task_id: &str,
@@ -130,6 +148,14 @@ impl EventJournal {
         Ok(())
     }
 
+    /// Atomically claims dispatch of an accepted client message.
+    ///
+    /// Returns `true` only for the caller that transitions the message into the
+    /// claimed state; retries observe the existing claim.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the claim cannot be stored.
     pub async fn claim_conversation_dispatch(
         &self,
         conversation_id: &str,
@@ -145,6 +171,14 @@ impl EventJournal {
         )
     }
 
+    /// Records whether a claimed conversation message was dispatched.
+    ///
+    /// `dispatched` selects the terminal dispatch outcome persisted for the
+    /// message.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the state transition cannot be stored.
     pub async fn finish_conversation_dispatch(
         &self,
         conversation_id: &str,
@@ -162,6 +196,15 @@ impl EventJournal {
         )
     }
 
+    /// Reads a bounded page of conversation events older than a sequence.
+    ///
+    /// Events are returned in sequence order using a dedicated read-database
+    /// lease.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if a read lease is unavailable or the query
+    /// fails.
     pub async fn conversation_history_before(
         &self,
         conversation_id: &str,

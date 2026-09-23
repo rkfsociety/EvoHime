@@ -3,6 +3,14 @@ use rusqlite::OptionalExtension;
 use crate::{LocalDatabase, SnapshotRecord, StorageError};
 
 impl LocalDatabase {
+    /// Persists a run snapshot and returns the stored record.
+    ///
+    /// `workspace_hash` binds the payload to the workspace state captured by
+    /// the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if insertion or readback fails.
     pub fn save_snapshot(
         &self,
         id: &str,
@@ -18,6 +26,11 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Returns a snapshot by ID, or `None` when it does not exist.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database query fails.
     pub fn get_snapshot(&self, id: &str) -> Result<Option<SnapshotRecord>, StorageError> {
         Ok(self
             .connection
@@ -37,6 +50,13 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Returns the newest snapshot belonging to a task's run, if one exists.
+    ///
+    /// Ties use snapshot ID as a deterministic secondary order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the database query fails.
     pub fn latest_snapshot_for_task(
         &self,
         task_id: &str,

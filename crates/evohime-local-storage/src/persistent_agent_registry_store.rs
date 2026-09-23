@@ -6,10 +6,13 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum serialized agent, binding, assignment, or command-outcome payload size.
 pub const MAX_RECORD_BYTES: usize = 64 * 1024;
 
+/// Revision, optional parent, event type, actor, and creation time for reporting history.
 pub type ReportingHistoryRow = (u64, Option<String>, String, String, i64);
 
+/// Creates persistent-agent revision, reporting, goal-binding, assignment, and command tables.
 pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS persistent_agents (
@@ -75,17 +78,26 @@ pub fn install_schema(connection: &Connection) -> Result<(), rusqlite::Error> {
     )
 }
 
+/// Values for inserting a new persistent-agent revision.
 #[derive(Clone, Copy)]
 pub struct SaveAgentRevisionInput<'a> {
+    /// Stable agent identifier.
     pub id: &'a str,
+    /// Monotonically increasing agent revision.
     pub revision: u64,
+    /// Lifecycle status associated with this revision.
     pub status: &'a str,
+    /// Hash of the serialized agent definition.
     pub content_hash: &'a str,
+    /// Serialized agent definition, capped at [`MAX_RECORD_BYTES`].
     pub agent_json: &'a [u8],
+    /// Actor responsible for creating the revision.
     pub actor: &'a str,
+    /// Revision creation timestamp in milliseconds.
     pub now_ms: i64,
 }
 
+/// Appends an agent revision and updates the current record when it is newer.
 pub fn save_agent_revision(
     connection: &Connection,
     input: SaveAgentRevisionInput<'_>,
@@ -125,6 +137,7 @@ pub fn save_agent_revision(
     Ok(true)
 }
 
+/// Loads the current serialized agent definition by ID.
 pub fn load_agent(connection: &Connection, id: &str) -> Result<Option<Vec<u8>>, rusqlite::Error> {
     connection
         .query_row(
@@ -135,6 +148,7 @@ pub fn load_agent(connection: &Connection, id: &str) -> Result<Option<Vec<u8>>, 
         .optional()
 }
 
+/// Lists serialized agent definitions by ID, capped at 256 rows.
 pub fn load_agents(connection: &Connection, limit: usize) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     let mut statement =
         connection.prepare("SELECT agent_json FROM persistent_agents ORDER BY id LIMIT ?1")?;
@@ -144,6 +158,7 @@ pub fn load_agents(connection: &Connection, limit: usize) -> Result<Vec<Vec<u8>>
     rows
 }
 
+/// Loads one immutable serialized agent revision, if present.
 pub fn load_agent_revision(
     connection: &Connection,
     id: &str,
@@ -158,6 +173,7 @@ pub fn load_agent_revision(
         .optional()
 }
 
+/// Appends reporting history once for an agent revision.
 pub fn save_reporting_history(
     connection: &Connection,
     agent_id: &str,
@@ -184,6 +200,7 @@ pub fn save_reporting_history(
     Ok(())
 }
 
+/// Loads an agent's reporting history newest revision first, capped at 256 rows.
 pub fn load_reporting_history(
     connection: &Connection,
     agent_id: &str,
@@ -208,17 +225,26 @@ pub fn load_reporting_history(
     rows
 }
 
+/// Values for storing an agent's responsibility binding to a goal revision.
 #[derive(Clone, Copy)]
 pub struct SaveGoalBindingInput<'a> {
+    /// Agent receiving the goal responsibility.
     pub agent_id: &'a str,
+    /// Bound goal identifier.
     pub goal_id: &'a str,
+    /// Immutable goal revision.
     pub goal_revision: u64,
+    /// Responsibility assigned to the agent.
     pub responsibility: &'a str,
+    /// Optional serialized scope constraint.
     pub scope_json: Option<&'a [u8]>,
+    /// Serialized binding metadata.
     pub binding_json: &'a [u8],
+    /// Binding creation/update timestamp in milliseconds.
     pub now_ms: i64,
 }
 
+/// Saves a bounded goal binding; an existing key is updated only with identical binding content.
 pub fn save_goal_binding(
     connection: &Connection,
     input: SaveGoalBindingInput<'_>,
@@ -246,6 +272,7 @@ pub fn save_goal_binding(
     )? == 1)
 }
 
+/// Removes one goal binding and reports whether a row was deleted.
 pub fn remove_goal_binding(
     connection: &Connection,
     agent_id: &str,
@@ -260,6 +287,7 @@ pub fn remove_goal_binding(
     )? == 1)
 }
 
+/// Lists an agent's serialized goal bindings in stable goal order, capped at 256 rows.
 pub fn load_goal_bindings(
     connection: &Connection,
     agent_id: &str,
@@ -275,18 +303,28 @@ pub fn load_goal_bindings(
     rows
 }
 
+/// Values for inserting or advancing an agent assignment.
 #[derive(Clone, Copy)]
 pub struct SaveAssignmentInput<'a> {
+    /// Stable assignment identifier.
     pub id: &'a str,
+    /// Assignment revision; only higher revisions replace stored content.
     pub revision: u64,
+    /// Agent responsible for the assignment.
     pub agent_id: &'a str,
+    /// Assignment lifecycle state.
     pub status: &'a str,
+    /// Category of the assignment source.
     pub source_kind: &'a str,
+    /// Identifier of the source object.
     pub source_ref: &'a str,
+    /// Serialized assignment payload, capped at [`MAX_RECORD_BYTES`].
     pub assignment_json: &'a [u8],
+    /// Last update timestamp in milliseconds.
     pub now_ms: i64,
 }
 
+/// Inserts an assignment or replaces it only with a higher revision.
 pub fn save_assignment(
     connection: &Connection,
     input: SaveAssignmentInput<'_>,
@@ -315,6 +353,7 @@ pub fn save_assignment(
     )? == 1)
 }
 
+/// Loads one serialized assignment by ID.
 pub fn load_assignment(
     connection: &Connection,
     id: &str,
@@ -328,6 +367,7 @@ pub fn load_assignment(
         .optional()
 }
 
+/// Lists an agent's assignments newest first, capped at 256 rows.
 pub fn load_assignments_for_agent(
     connection: &Connection,
     agent_id: &str,
@@ -343,6 +383,7 @@ pub fn load_assignments_for_agent(
     rows
 }
 
+/// Lists assignments across all agents newest first, capped at 512 rows.
 pub fn load_assignments(
     connection: &Connection,
     limit: usize,
@@ -356,6 +397,7 @@ pub fn load_assignments(
     rows
 }
 
+/// Loads a previously recorded command hash and outcome by idempotency key.
 pub fn load_command_outcome(
     connection: &Connection,
     idempotency_key: &str,
@@ -369,6 +411,7 @@ pub fn load_command_outcome(
         .optional()
 }
 
+/// Records the first bounded command outcome for a key, or returns the prior outcome on replay.
 pub fn record_command_outcome(
     connection: &Connection,
     idempotency_key: &str,

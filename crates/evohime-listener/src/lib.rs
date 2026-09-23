@@ -20,12 +20,16 @@ use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::watch;
 
+/// Process identity and title observed for the currently focused window.
 #[derive(Clone, Debug)]
 pub struct ForegroundWindow {
+    /// Executable name associated with the foreground window.
     pub process_name: String,
+    /// Window title exposed by the operating system.
     pub title: String,
 }
 
+/// Reads the active process and title on Windows, or returns an empty snapshot elsewhere.
 #[cfg(windows)]
 pub fn foreground_window() -> ForegroundWindow {
     use windows_sys::Win32::Foundation::CloseHandle;
@@ -61,6 +65,7 @@ pub fn foreground_window() -> ForegroundWindow {
     }
 }
 
+/// Returns an empty foreground snapshot on platforms without the Windows API.
 #[cfg(not(windows))]
 pub fn foreground_window() -> ForegroundWindow {
     ForegroundWindow {
@@ -81,6 +86,7 @@ fn glob_matches(pattern: &str, value: &str) -> bool {
     inner(pattern.as_bytes(), value.as_bytes())
 }
 
+/// Reports whether the ambient policy suppresses listening for the focused window.
 pub fn blocked(policy: &AmbientPolicy, window: &ForegroundWindow) -> bool {
     policy
         .process_blocklist
@@ -92,6 +98,7 @@ pub fn blocked(policy: &AmbientPolicy, window: &ForegroundWindow) -> bool {
             .any(|p| glob_matches(p, &window.title))
 }
 
+/// Detects a configured stop phrase in recognized text, case-insensitively.
 pub fn contains_stop_word(text: &str) -> bool {
     text.split(|ch: char| !ch.is_alphanumeric()).any(|word| {
         matches!(
@@ -102,14 +109,22 @@ pub fn contains_stop_word(text: &str) -> bool {
 }
 
 /// Одно принятое высказывание в том виде, в каком оно уходит в Core.
+/// A finalized speech segment emitted by the listener runtime.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Utterance {
+    /// Identifier of the listening episode that produced the segment.
     pub episode_id: String,
+    /// Monotonic segment number within the episode.
     pub sequence: u32,
+    /// Recognized speech text after engine normalization.
     pub text: String,
+    /// Language tag reported by the recognizer.
     pub language: String,
+    /// Audio duration represented by the segment.
     pub duration_ms: u32,
+    /// Timestamp when capture of the segment began.
     pub started_at_ms: u64,
+    /// Whether the segment continues a preceding recognition window.
     pub continued: bool,
 }
 
@@ -117,6 +132,7 @@ pub struct Utterance {
 ///
 /// Копится здесь, а не логируется на месте: у процесса листенера нет своего
 /// канала в UI, публикацией занимается владелец соединения.
+/// Non-fatal lifecycle notice emitted by the speech engine.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EngineNotice {
     /// Лестница шагнула вниз: распознавание не укладывалось в бюджет.
@@ -127,22 +143,28 @@ pub enum EngineNotice {
     Unavailable(EngineUnavailable),
 }
 
+/// Coordinates listening policy, audio framing, recognition, and emitted segments.
 pub struct ListenerRuntime {
+    /// Current ambient listening policy.
     pub policy: AmbientPolicy,
+    /// Current lifecycle state of the listener.
     pub state: ListeningState,
     /// Включено ли слушание вообще. Отличается от `policy.paused`: выключение
     /// — это `Stopped`, пауза — `PausedByUser`, и пользователь видит разные
     /// строки. Процесс поднимается выключенным: микрофон не открывается,
     /// пока Core не попросит явно.
+    /// Whether capture is enabled by configuration.
     pub enabled: bool,
     /// Выбранное устройство захвата; пустая строка — «устройство системы по
     /// умолчанию».
+    /// Selected capture device identifier, when explicitly configured.
     pub device_id: String,
     /// Причина последнего объявленного состояния.
     ///
     /// Хранится рядом с состоянием, потому что при новом соединении Core
     /// обязан узнать не только «что сейчас», но и «почему»: сам переход к
     /// этому моменту уже произошёл и второй раз не случится.
+    /// Reason associated with the latest policy/state transition.
     pub last_reason: ListeningReason,
     engine: Box<dyn SpeechEngine>,
     segmenter: Segmenter,
@@ -156,6 +178,7 @@ pub struct ListenerRuntime {
 }
 
 impl ListenerRuntime {
+    /// Creates a runtime with the supplied policy, engine, and capture settings.
     pub fn new(
         policy: AmbientPolicy,
         engine: Box<dyn SpeechEngine>,
@@ -181,20 +204,24 @@ impl ListenerRuntime {
         }
     }
 
+    /// Returns the active recognition engine version label.
     pub fn engine_version(&self) -> &str {
         self.engine.version()
     }
 
     /// Сколько повторов подавлено за сессию.
+    /// Returns the number of segments suppressed by policy or deduplication.
     pub fn suppressed(&self) -> u64 {
         self.dedup.suppressed()
     }
 
     /// Забирает накопленные уведомления о движке.
+    /// Drains queued non-fatal engine notices.
     pub fn take_notices(&mut self) -> Vec<EngineNotice> {
         std::mem::take(&mut self.notices)
     }
 
+    /// Changes listener state after validating the requested transition.
     pub fn set_state(&mut self, next: ListeningState) -> Result<(), String> {
         self.state = self.state.transition(next).map_err(|e| e.to_string())?;
         let _ = self.state_tx.send(self.state);
@@ -206,6 +233,7 @@ impl ListenerRuntime {
     /// Функция чистая: часы и здоровье движка передаёт вызывающий. Порядок
     /// проверок и есть приоритет причин — сначала то, что делает захват
     /// невозможным, потом то, что его запрещает.
+    /// Computes the state allowed by enablement, policy, device, and foreground context.
     pub fn desired_state(
         &self,
         minute_of_day: u32,
@@ -229,6 +257,7 @@ impl ListenerRuntime {
         (ListeningState::Listening, ListeningReason::UserRequest)
     }
 
+    /// Clears buffered audio and recognition continuity after a context change.
     pub fn reset_buffers(&mut self) {
         self.segmenter.reset();
         self.dedup.reset();
@@ -238,6 +267,7 @@ impl ListenerRuntime {
     ///
     /// Часы передаёт вызывающий: рантайм остаётся детерминированным, а тест
     /// не зависит от системного времени.
+    /// Feeds one normalized audio frame and returns any finalized utterances.
     pub fn process_frame(&mut self, frame: &[f32], now_ms: u64) -> Vec<Utterance> {
         if !self.state.is_capturing()
             || self.policy.paused
@@ -333,6 +363,7 @@ fn samples_to_ms(samples: usize) -> u32 {
     u32::try_from(samples * 1000 / 16_000).unwrap_or(u32::MAX)
 }
 
+/// Resolves the listener's local data directory using the configured environment.
 pub fn data_dir() -> PathBuf {
     std::env::var_os("EVOHIME_DATA_DIR")
         .map(PathBuf::from)
@@ -342,6 +373,7 @@ pub fn data_dir() -> PathBuf {
 
 /// Suppresses the legacy Windows error dialog and automatic WER UI for this
 /// capture process. This does not claim to control pagefile contents.
+/// Applies Windows process mitigations used by the listener companion.
 #[cfg(windows)]
 pub fn harden_process() {
     unsafe {
@@ -352,9 +384,11 @@ pub fn harden_process() {
     }
 }
 
+/// No-op process hardening hook on platforms without Windows mitigations.
 #[cfg(not(windows))]
 pub fn harden_process() {}
 
+/// Returns a capped retry delay for the given zero-based failure attempt.
 pub fn backoff(attempt: u32) -> std::time::Duration {
     std::time::Duration::from_millis(250u64.saturating_mul(2u64.saturating_pow(attempt.min(6))))
 }

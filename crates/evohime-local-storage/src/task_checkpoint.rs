@@ -13,52 +13,109 @@ use sha2::{Digest, Sha256};
 
 use crate::StorageError;
 
+/// Current serialized schema version for task checkpoints.
 pub const TASK_CHECKPOINT_VERSION: u32 = 1;
+/// Maximum canonical checkpoint payload size in bytes.
 pub const TASK_CHECKPOINT_MAX_BYTES: usize = 256 * 1024;
+/// Maximum number of entries in each checkpoint collection.
 pub const TASK_CHECKPOINT_MAX_ITEMS: usize = 128;
+/// Maximum number of references retained per checkpoint collection.
 pub const TASK_CHECKPOINT_MAX_REFS: usize = 64;
+/// Maximum text length for individual checkpoint items.
 pub const TASK_CHECKPOINT_MAX_TEXT_CHARS: usize = 4_096;
+/// Maximum length for the optional narrative summary.
 pub const TASK_CHECKPOINT_MAX_SUMMARY_CHARS: usize = 8_192;
+/// Maximum character length for checkpoint and related identifiers.
 pub const TASK_CHECKPOINT_MAX_ID_CHARS: usize = 128;
+/// Maximum character length for workspace-relative paths.
 pub const TASK_CHECKPOINT_MAX_PATH_CHARS: usize = 512;
+/// Default maximum number of checkpoints returned by one read operation.
 pub const TASK_CHECKPOINT_READ_LIMIT: usize = 128;
 
+/// Validation, lineage, and persistence errors for task checkpoints.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TaskCheckpointError {
+    /// The serialized checkpoint version is not supported.
     #[error("unsupported task checkpoint version {0}")]
     UnsupportedVersion(u32),
+    /// The canonical checkpoint bytes could not be decoded.
     #[error("invalid task checkpoint encoding: {reason}")]
-    InvalidEncoding { reason: String },
+    InvalidEncoding {
+        /// Why the canonical bytes could not be decoded.
+        reason: String,
+    },
+    /// A checkpoint field violates its value or size constraints.
     #[error("invalid task checkpoint field {field}: {reason}")]
-    InvalidField { field: &'static str, reason: String },
+    InvalidField {
+        /// Name of the invalid checkpoint field.
+        field: &'static str,
+        /// Why the field failed validation.
+        reason: String,
+    },
+    /// Persisted indexed metadata does not agree with the canonical payload.
     #[error("invalid stored task checkpoint metadata in {field}: {reason}")]
-    InvalidStoredMetadata { field: &'static str, reason: String },
+    InvalidStoredMetadata {
+        /// Name of the indexed metadata field that disagrees with the payload.
+        field: &'static str,
+        /// Why the stored metadata failed validation.
+        reason: String,
+    },
+    /// A file reference escapes the checkpoint's workspace root.
     #[error("task checkpoint path is outside the workspace: {0}")]
     InvalidPath(String),
+    /// Text in a field failed sensitive-data screening.
     #[error("task checkpoint contains sensitive text in {field}")]
-    SensitiveText { field: &'static str },
+    SensitiveText {
+        /// Checkpoint text field rejected by sensitive-data screening.
+        field: &'static str,
+    },
+    /// Model-proposed evidence was used for a field reserved for Core-derived authority.
     #[error("model-proposed data cannot provide Core authority for {field}")]
-    AuthorityViolation { field: &'static str },
+    AuthorityViolation {
+        /// Field that requires Core-derived rather than model-proposed provenance.
+        field: &'static str,
+    },
+    /// Canonical payload exceeds the configured byte bound.
     #[error("task checkpoint is too large: {0} bytes")]
     TooLarge(usize),
+    /// Stored hash does not match the canonical payload digest.
     #[error("task checkpoint content hash mismatch: expected {expected}, got {actual}")]
-    ContentHashMismatch { expected: String, actual: String },
+    ContentHashMismatch {
+        /// Hash recorded in the checkpoint metadata.
+        expected: String,
+        /// Hash computed from canonical checkpoint content.
+        actual: String,
+    },
+    /// The referenced parent checkpoint does not exist.
     #[error("task checkpoint parent {id} was not found")]
-    ParentNotFound { id: String },
+    ParentNotFound {
+        /// Missing parent checkpoint identifier.
+        id: String,
+    },
+    /// Parent checkpoint belongs to a different workspace.
     #[error("task checkpoint parent belongs to another workspace")]
     ParentWorkspaceMismatch,
+    /// Child checkpoint source sequence is not newer than its parent.
     #[error("task checkpoint event sequence must be newer than its parent")]
     ParentSequenceNotNewer,
+    /// Status transition is not permitted by the checkpoint state machine.
     #[error("task checkpoint transition from {from:?} to {to:?} is not allowed")]
     InvalidStateTransition {
+        /// Parent checkpoint status.
         from: CheckpointStatus,
+        /// Child checkpoint status requested by the new record.
         to: CheckpointStatus,
     },
+    /// Existing checkpoint identifier was reused with different canonical content.
     #[error("immutable task checkpoint id {id} cannot be overwritten")]
-    ImmutableConflict { id: String },
+    ImmutableConflict {
+        /// Checkpoint identifier already stored with different content.
+        id: String,
+    },
 }
 
 impl TaskCheckpointError {
+    /// Returns the stable machine-readable error code.
     pub const fn code(&self) -> &'static str {
         match self {
             Self::UnsupportedVersion(_) => "unsupported_version",
@@ -79,17 +136,27 @@ impl TaskCheckpointError {
     }
 }
 
+/// Lifecycle states supported by the task checkpoint contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointStatus {
+    /// Task is actively running.
     InProgress,
+    /// Task is paused and may later resume.
     Paused,
+    /// Task is waiting for an approval decision.
     WaitingApproval,
+    /// Task can resume from the recorded checkpoint.
     Resumable,
+    /// Task cannot proceed until an external blocker is resolved.
     Blocked,
+    /// Task completed successfully.
     Completed,
+    /// Task ended with a failure.
     Failed,
+    /// Checkpoint is outdated relative to current task state.
     Stale,
+    /// Checkpoint conflicts with another branch of task history.
     Conflicted,
 }
 
@@ -157,20 +224,31 @@ impl CheckpointStatus {
     }
 }
 
+/// Provenance category attached to checkpoint evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Provenance {
-    CoreDerived { source: String },
-    ModelProposed { source: String },
+    /// Value was derived or confirmed by trusted Core execution.
+    CoreDerived {
+        /// Source label identifying the Core evidence origin.
+        source: String,
+    },
+    /// Value was proposed by a model and does not grant Core authority.
+    ModelProposed {
+        /// Source label identifying the model proposal origin.
+        source: String,
+    },
 }
 
 impl Provenance {
+    /// Marks evidence as derived by Core and records its source label.
     pub fn core(source: impl Into<String>) -> Self {
         Self::CoreDerived {
             source: source.into(),
         }
     }
 
+    /// Marks evidence as a model proposal from the supplied source label.
     pub fn model(source: impl Into<String>) -> Self {
         Self::ModelProposed {
             source: source.into(),
@@ -182,14 +260,18 @@ impl Provenance {
     }
 }
 
+/// Bounded checkpoint text together with its authority provenance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckpointItem {
+    /// Bounded, sensitive-data-screened text value.
     pub text: String,
+    /// Origin label controlling whether the value may support authority.
     pub provenance: Provenance,
 }
 
 impl CheckpointItem {
+    /// Creates an item marked as Core-derived evidence.
     pub fn core(text: impl Into<String>, source: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -197,6 +279,7 @@ impl CheckpointItem {
         }
     }
 
+    /// Creates an item marked as a non-authoritative model proposal.
     pub fn model(text: impl Into<String>, source: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -205,14 +288,18 @@ impl CheckpointItem {
     }
 }
 
+/// A checkpoint decision with explicit Core or model provenance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckpointDecision {
+    /// Bounded decision text retained for continuity.
     pub text: String,
+    /// Origin label distinguishing Core decisions from model suggestions.
     pub provenance: Provenance,
 }
 
 impl CheckpointDecision {
+    /// Creates a decision recorded as Core-derived.
     pub fn core(text: impl Into<String>, source: impl Into<String>) -> Self {
         Self {
             text: text.into(),
@@ -221,15 +308,20 @@ impl CheckpointDecision {
     }
 }
 
+/// Reference to a workspace-relative file read by Core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileReadRef {
+    /// Workspace-relative path that was read.
     pub path: String,
+    /// Optional evidence identifier for the read result.
     pub evidence_ref: Option<String>,
+    /// Provenance for the recorded file-read fact.
     pub provenance: Provenance,
 }
 
 impl FileReadRef {
+    /// Creates a Core-derived file-read reference with an evidence identifier.
     pub fn core(path: impl Into<String>, evidence_ref: impl Into<String>) -> Self {
         Self {
             path: path.into(),
@@ -239,45 +331,68 @@ impl FileReadRef {
     }
 }
 
+/// Kind of filesystem change recorded in a checkpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileChangeKind {
+    /// A workspace-relative file appeared in the recorded change set.
     Created,
+    /// An existing workspace-relative file was updated.
     Modified,
+    /// A previously existing workspace-relative file was removed.
     Deleted,
+    /// A file was moved or renamed within the workspace.
     Renamed,
 }
 
+/// File change evidence with before/after hashes and Core provenance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileChange {
+    /// Workspace-relative path affected by the change.
     pub path: String,
+    /// SHA-256 digest before the change, when the file existed.
     pub before_hash: Option<String>,
+    /// SHA-256 digest after the change, when the file remains.
     pub after_hash: Option<String>,
+    /// Kind of filesystem change recorded.
     pub change_kind: FileChangeKind,
+    /// Optional reference to Core evidence for the change.
     pub evidence_ref: Option<String>,
+    /// Core provenance required for authoritative file-change records.
     pub provenance: Provenance,
 }
 
+/// Possible execution outcomes for a recorded test or check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TestStatus {
+    /// The named check completed successfully.
     Passed,
+    /// The named check ran and reported failure.
     Failed,
+    /// The check was intentionally not run.
     Skipped,
+    /// The result could not be determined.
     Unknown,
 }
 
+/// Test result evidence attributed to Core execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TestEvidence {
+    /// Human-readable name of the test or check.
     pub name: String,
+    /// Recorded outcome of the check.
     pub status: TestStatus,
+    /// Optional reference to the Core run evidence.
     pub evidence_ref: Option<String>,
+    /// Core provenance required for test evidence.
     pub provenance: Provenance,
 }
 
 impl TestEvidence {
+    /// Creates evidence attributed to a Core test run.
     pub fn core(
         name: impl Into<String>,
         status: TestStatus,
@@ -292,25 +407,36 @@ impl TestEvidence {
     }
 }
 
+/// Result state of a recorded quality or policy gate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateStatus {
+    /// The gate accepted the recorded state.
     Passed,
+    /// The gate rejected the recorded state.
     Failed,
+    /// The gate cannot proceed until a condition is resolved.
     Blocked,
+    /// The gate was intentionally not evaluated.
     Skipped,
 }
 
+/// Gate result evidence attributed to Core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GateEvidence {
+    /// Stable identifier of the gate.
     pub id: String,
+    /// Recorded gate outcome.
     pub status: GateStatus,
+    /// Optional reference to the evidence used by the gate.
     pub evidence_ref: Option<String>,
+    /// Core provenance required for gate outcomes.
     pub provenance: Provenance,
 }
 
 impl GateEvidence {
+    /// Creates a gate result attributed to Core.
     pub fn core(
         id: impl Into<String>,
         status: GateStatus,
@@ -325,71 +451,119 @@ impl GateEvidence {
     }
 }
 
+/// Lifecycle states for an approval request captured in a checkpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalState {
+    /// The requested approval has not received a decision.
     Pending,
+    /// The approval was granted.
     Approved,
+    /// The approval was rejected.
     Denied,
+    /// The approval expired before a decision was recorded.
     Expired,
 }
 
+/// Pending or resolved approval record with Core provenance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PendingApproval {
+    /// Stable approval request identifier.
     pub id: String,
+    /// Current state of the approval request.
     pub state: ApprovalState,
+    /// Core provenance for the approval record.
     pub provenance: Provenance,
 }
 
+/// Disclosure classification for a referenced checkpoint object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointSensitivity {
+    /// The referenced object is safe to disclose publicly.
     Public,
+    /// The object is for internal use.
     Internal,
+    /// The object contains sensitive information and needs restricted handling.
     Sensitive,
+    /// The object is a secret and cannot be included in checkpoint references.
     Secret,
 }
 
+/// Typed reference to a workflow, child task, or artifact.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CheckpointRef {
+    /// Identifier of the referenced object.
     pub id: String,
+    /// Object category, such as workflow, child task, or artifact.
     pub kind: String,
+    /// Optional SHA-256 digest of the referenced content.
     pub content_hash: Option<String>,
+    /// Disclosure classification; secret references are rejected.
     pub sensitivity: CheckpointSensitivity,
+    /// Core provenance for this reference.
     pub provenance: Provenance,
 }
 
+/// Versioned, canonical continuity snapshot for a task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskCheckpointV1 {
+    /// Stable checkpoint identifier.
     pub id: String,
+    /// Schema version; currently [`TASK_CHECKPOINT_VERSION`].
     pub version: u32,
+    /// Workspace owning this checkpoint.
     pub workspace_id: String,
+    /// Optional conversation associated with the checkpoint.
     pub chat_id: Option<String>,
+    /// Optional persisted goal associated with the checkpoint.
     pub goal_id: Option<String>,
+    /// Optional parent checkpoint identifier for a continuation.
     pub parent_checkpoint_id: Option<String>,
+    /// Short description of the task being checkpointed.
     pub objective: String,
+    /// Lifecycle state of the checkpoint.
     pub status: CheckpointStatus,
+    /// Completed facts; entries must be Core-derived.
     pub completed_items: Vec<CheckpointItem>,
+    /// Remaining work; entries may be model-proposed.
     pub remaining_items: Vec<CheckpointItem>,
+    /// Recorded decisions with explicit provenance.
     pub decisions: Vec<CheckpointDecision>,
+    /// Unresolved blockers; entries must be Core-derived.
     pub blockers: Vec<CheckpointItem>,
+    /// Workspace-relative files read by Core.
     pub files_read: Vec<FileReadRef>,
+    /// Workspace-relative file changes recorded by Core.
     pub files_changed: Vec<FileChange>,
+    /// Tests with a successful outcome.
     pub tests_passed: Vec<TestEvidence>,
+    /// Tests with a failed outcome.
     pub tests_failed: Vec<TestEvidence>,
+    /// Core-evaluated policy or workflow gates.
     pub gates: Vec<GateEvidence>,
+    /// Approval requests and their recorded states.
     pub pending_approvals: Vec<PendingApproval>,
+    /// References to workflows related to this checkpoint.
     pub workflow_refs: Vec<CheckpointRef>,
+    /// References to child checkpoints.
     pub child_refs: Vec<CheckpointRef>,
+    /// References to artifacts associated with the task.
     pub artifact_refs: Vec<CheckpointRef>,
+    /// Questions still requiring resolution.
     pub open_questions: Vec<CheckpointItem>,
+    /// Suggested next action, when one is available.
     pub next_action: Option<CheckpointItem>,
+    /// Optional concise narrative summary with explicit provenance.
     pub narrative_summary: Option<CheckpointItem>,
+    /// Sequence number of the source event that produced this checkpoint.
     pub source_event_seq: i64,
+    /// Creation timestamp in Unix milliseconds.
     pub created_at: i64,
+    /// SHA-256 digest of normalized canonical JSON with this field cleared.
     pub content_hash: String,
 }
 
@@ -474,6 +648,7 @@ impl TaskCheckpointV1 {
         Ok(self)
     }
 
+    /// Checks normalization, field constraints, provenance, and content hash.
     pub fn validate(&self) -> Result<(), TaskCheckpointError> {
         let normalized = self.normalized();
         normalized.validate_body()?;
@@ -500,6 +675,7 @@ impl TaskCheckpointV1 {
         self.serialize_checked()
     }
 
+    /// Computes the SHA-256 digest over normalized checkpoint data.
     pub fn compute_content_hash(&self) -> Result<String, TaskCheckpointError> {
         self.normalized().compute_content_hash_unchecked()
     }
@@ -912,6 +1088,10 @@ fn invalid_field(field: &'static str, reason: impl Into<String>) -> TaskCheckpoi
     }
 }
 
+/// Creates the checkpoint table and lookup indexes if they do not exist.
+///
+/// This function does not migrate or rewrite existing checkpoint data.
+/// Creates the append-only task checkpoint table and lookup indexes.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS task_checkpoints (
@@ -937,12 +1117,16 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Outcome of inserting an immutable checkpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InsertOutcome {
+    /// A new immutable checkpoint was persisted.
     Inserted,
+    /// The same identifier and canonical content were already persisted.
     AlreadyPresent,
 }
 
+/// Append-only access to task checkpoints in a SQLite connection.
 pub struct TaskCheckpointStore<'a> {
     connection: &'a Connection,
 }
@@ -962,10 +1146,15 @@ struct StoredCheckpointRow {
 }
 
 impl<'a> TaskCheckpointStore<'a> {
+    /// Creates a store backed by an existing connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
 
+    /// Validates and appends a sealed checkpoint, rejecting identifier conflicts.
+    ///
+    /// Re-inserting identical canonical content returns [`InsertOutcome::AlreadyPresent`];
+    /// identifiers cannot be used to replace existing records.
     pub fn insert(&self, checkpoint: &TaskCheckpointV1) -> Result<InsertOutcome, StorageError> {
         checkpoint.validate()?;
         let canonical_json = checkpoint.canonical_json()?;
@@ -1031,6 +1220,7 @@ impl<'a> TaskCheckpointStore<'a> {
         Ok(InsertOutcome::Inserted)
     }
 
+    /// Loads and validates the checkpoint with the given identifier.
     pub fn get(&self, id: &str) -> Result<Option<TaskCheckpointV1>, StorageError> {
         let row: Option<StoredCheckpointRow> = self
             .connection
@@ -1046,6 +1236,9 @@ impl<'a> TaskCheckpointStore<'a> {
         row.map(decode_stored_checkpoint).transpose()
     }
 
+    /// Lists checkpoints for a workspace, newest source event first.
+    ///
+    /// The requested limit is capped at [`TASK_CHECKPOINT_READ_LIMIT`].
     pub fn list(
         &self,
         workspace_id: &str,

@@ -3243,3 +3243,14 @@ WorkspaceEdit является proposal; raw JSON-RPC, arbitrary executable,
 automatic command execution и второй diagnostics store запрещены. Schema v171
 хранит только redacted metadata, а authenticated IPC 279/124 и Electron
 projection не расширяют filesystem grants или authority renderer.
+
+### Rust public API documentation
+
+Публичный контракт Rust описывается doc-комментариями `///` непосредственно у
+внешне достижимых элементов library targets. Полноту покрытия workspace
+проверяет `cargo doc --workspace --lib --no-deps --locked` с `-D missing_docs`;
+сборка полной документации также проверяет binary targets, а
+`cargo test --workspace --doc --locked` исполняет compilable-примеры. Rustdoc
+workflow дополнительно запрещает неразрешённые intra-doc links и некорректные
+HTML tags. `#[cfg(doc)]` не нужен для включения rustdoc и может применяться
+только для конкретного doc-only элемента, которому он действительно требуется.

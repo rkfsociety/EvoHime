@@ -1,7 +1,9 @@
 //! Durable message substrate for the Core collaboration bus.
 use rusqlite::{params, Connection};
 use serde::{de::DeserializeOwned, Serialize};
+/// Maximum number of queued or delivered collaboration messages per session.
 pub const MAX_INBOX_PER_SESSION: i64 = 128;
+/// Creates collaboration message, idempotency, and inbox-index tables.
 pub fn install_schema(c: &Connection) -> Result<(), rusqlite::Error> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS collaboration_messages(message_id TEXT PRIMARY KEY NOT NULL,session_id TEXT NOT NULL, sender_json BLOB NOT NULL,receiver_json BLOB NOT NULL,envelope_json BLOB NOT NULL,idempotency_key TEXT NOT NULL,delivery TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1,sequence INTEGER NOT NULL,created_at_ms INTEGER NOT NULL,delivered_at_ms INTEGER); CREATE UNIQUE INDEX IF NOT EXISTS idx_collaboration_idempotency ON collaboration_messages(session_id,idempotency_key); CREATE INDEX IF NOT EXISTS idx_collaboration_inbox ON collaboration_messages(session_id,delivery,sequence);")
 }
@@ -13,17 +15,27 @@ fn parse<T: DeserializeOwned>(v: Vec<u8>) -> Result<T, rusqlite::Error> {
         rusqlite::Error::FromSqlConversionFailure(v.len(), rusqlite::types::Type::Blob, Box::new(e))
     })
 }
+/// Serialized collaboration message values for an [`enqueue`] operation.
 pub struct EnqueueInput<'a, T, U, V> {
+    /// Session whose bounded inbox receives the message.
     pub session: &'a str,
+    /// Idempotency key scoped to the session.
     pub key: &'a str,
+    /// Globally unique message identifier.
     pub message_id: &'a str,
+    /// Serialized sender identity.
     pub sender: &'a T,
+    /// Serialized receiver identity.
     pub receiver: &'a U,
+    /// Serialized message envelope.
     pub envelope: &'a V,
+    /// Ordering sequence within the session.
     pub sequence: u64,
+    /// Creation timestamp in milliseconds.
     pub now: i64,
 }
 
+/// Enqueues a serialized message once, rejecting writes that exceed the per-session inbox bound.
 pub fn enqueue<T: Serialize, U: Serialize, V: Serialize>(
     c: &mut Connection,
     input: EnqueueInput<'_, T, U, V>,
@@ -56,6 +68,7 @@ pub fn enqueue<T: Serialize, U: Serialize, V: Serialize>(
     tx.commit()?;
     Ok(changed == 1)
 }
+/// Advances a message from `from` to `to` only at the expected revision.
 pub fn transition(
     c: &Connection,
     message_id: &str,
@@ -68,6 +81,7 @@ pub fn transition(
     }
     Ok(c.execute("UPDATE collaboration_messages SET delivery=?1,revision=revision+1,delivered_at_ms=CASE WHEN ?1='delivered' THEN COALESCE(delivered_at_ms, strftime('%s','now')*1000) ELSE delivered_at_ms END WHERE message_id=?2 AND delivery=?3 AND revision=?4",params![to,message_id,from,expected as i64])?==1)
 }
+/// Lists and deserializes session envelopes in sequence order, capped at 128 rows.
 pub fn list<T: DeserializeOwned>(
     c: &Connection,
     session: &str,
@@ -79,9 +93,11 @@ pub fn list<T: DeserializeOwned>(
     })?;
     rows.collect()
 }
+/// Marks all delivered messages unknown during recovery and returns the affected row count.
 pub fn reconcile(c: &Connection) -> Result<u32, rusqlite::Error> {
     Ok(c.execute("UPDATE collaboration_messages SET delivery='unknown',revision=revision+1 WHERE delivery='delivered'",[])? as u32)
 }
+/// Returns whether any message has the specified idempotency key.
 pub fn exists(c: &Connection, key: &str) -> Result<bool, rusqlite::Error> {
     c.query_row(
         "SELECT EXISTS(SELECT 1 FROM collaboration_messages WHERE idempotency_key=?1)",

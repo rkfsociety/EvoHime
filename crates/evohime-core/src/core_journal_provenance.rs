@@ -29,6 +29,15 @@ impl EventJournal {
         .map_err(|error| StorageError::Context(error.to_string()))
     }
 
+    /// Signs and durably links a receipt for a dispatched model request.
+    ///
+    /// The record must retain its full request-envelope hash; this method does
+    /// not create a receipt for redacted or incomplete provenance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if signing, receipt validation, or persistence
+    /// fails.
     pub async fn append_model_request_receipt(
         &self,
         keys: &Arc<ReceiptKeyManager>,
@@ -75,6 +84,15 @@ impl EventJournal {
             .map_err(|error| StorageError::Context(error.to_string()))
     }
 
+    /// Exports a signed verification bundle for one model request.
+    ///
+    /// The receipt key manager signs the bundle; provider response bodies stay
+    /// within the Core-owned export path and are not sent over IPC.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the request is absent or bundle creation,
+    /// signing, or file output fails.
     pub async fn export_model_provenance(
         &self,
         request_id: &str,
@@ -109,6 +127,14 @@ impl EventJournal {
             .map_err(|error| StorageError::Context(error.to_string()))
     }
 
+    /// Persists the intended tool action linked to a model request.
+    ///
+    /// This provenance record captures the planned action before the associated
+    /// tool receipt is linked.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the intent cannot be stored.
     pub async fn record_model_tool_intent(
         &self,
         intent: &evohime_local_storage::domains::receipts::ToolIntentRecord,
@@ -121,6 +147,15 @@ impl EventJournal {
         .map_err(|error| StorageError::Context(error.to_string()))
     }
 
+    /// Links a terminal execution receipt to its task and tool action.
+    ///
+    /// The receipt hash is stored as provenance evidence; no receipt payload is
+    /// returned to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the action linkage is invalid or persistence
+    /// fails.
     pub async fn link_tool_receipt(
         &self,
         task_id: &str,
@@ -136,6 +171,15 @@ impl EventJournal {
         .map_err(|error| StorageError::Context(error.to_string()))
     }
 
+    /// Captures workspace-file evidence for an existing model request.
+    ///
+    /// The evidence is associated with the source reference and source version
+    /// so exported provenance can show which workspace input was observed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the request/source linkage or file capture
+    /// fails.
     pub async fn capture_model_workspace_evidence(
         &self,
         request_id: &str,
@@ -151,6 +195,15 @@ impl EventJournal {
         .map_err(|error| StorageError::Context(error.to_string()))
     }
 
+    /// Recovers model requests interrupted while active without blindly retrying.
+    ///
+    /// When records are recovered, a journal event records the count and the
+    /// conservative no-blind-retry policy. Returns the number of recovered
+    /// requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if recovery or its event record fails.
     pub async fn recover_model_requests(&self) -> Result<usize, StorageError> {
         let database = self.database.lock().await;
         let recovered = evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
@@ -169,6 +222,14 @@ impl EventJournal {
         Ok(recovered)
     }
 
+    /// Redacts dispatched model-request provenance older than the cutoff.
+    ///
+    /// Payload bytes are pruned while the retention state remains recorded.
+    /// Returns the number of requests transitioned by the retention pass.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the retention pass fails.
     pub async fn retain_model_provenance(&self, cutoff: i64) -> Result<usize, StorageError> {
         let database = self.database.lock().await;
         evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(

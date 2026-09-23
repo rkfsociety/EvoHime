@@ -1,7 +1,17 @@
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
+
+/// Creates the revisioned minimal-change policy table in the caller's transaction.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS minimal_change_policy (id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(id,revision), UNIQUE(id,idempotency_key));")
 }
+/// Stores a minimal-change policy revision with idempotent replay checks.
+///
+/// The same key/revision/hash tuple is treated as a successful replay; reusing
+/// the key with different metadata is rejected.
+///
+/// # Errors
+///
+/// Returns a SQLite error for conflicting key reuse or database failures.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -26,6 +36,11 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Loads the highest-revision serialized policy for `id`, if present.
+///
+/// # Errors
+///
+/// Returns a SQLite error if the query fails.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT json FROM minimal_change_policy WHERE id=?1 ORDER BY revision DESC LIMIT 1",

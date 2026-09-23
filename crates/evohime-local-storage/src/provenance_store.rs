@@ -3,6 +3,16 @@ use rusqlite::OptionalExtension;
 use crate::{ImportedTask, LocalDatabase, ProvenanceRecord, StorageError, WorkItemRecord};
 
 impl LocalDatabase {
+    /// Imports a PRD provenance record and its derived backlog work items.
+    ///
+    /// The provenance payload retains the source text and version. The record
+    /// and all imported tasks are inserted in one transaction, so a failed task
+    /// insert does not leave a partial import.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] for serialization, database, or post-insert
+    /// lookup failures.
     pub fn import_prd(
         &self,
         provenance_id: &str,
@@ -45,6 +55,11 @@ impl LocalDatabase {
             .collect()
     }
 
+    /// Returns a provenance record by ID, or `None` when it is absent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the SQLite query fails.
     pub fn get_provenance(&self, id: &str) -> Result<Option<ProvenanceRecord>, StorageError> {
         Ok(self
             .connection

@@ -1,10 +1,12 @@
 //! Durable metadata for Workspace Bootstrap Manifest preparation.
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Creates manifest history and single-flight preparation tables when absent.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS workspace_bootstrap_manifests (manifest_id TEXT NOT NULL, workspace_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, manifest_json TEXT NOT NULL, trust_status TEXT NOT NULL, policy_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY (manifest_id, revision)); CREATE TABLE IF NOT EXISTS workspace_bootstrap_preparations (workspace_id TEXT NOT NULL, manifest_id TEXT NOT NULL, manifest_hash TEXT NOT NULL, fingerprint TEXT NOT NULL, status TEXT NOT NULL, lease_id TEXT, version INTEGER NOT NULL, result_json TEXT, updated_at_ms INTEGER NOT NULL, PRIMARY KEY (workspace_id, manifest_id, manifest_hash, fingerprint)); CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_bootstrap_running ON workspace_bootstrap_preparations(workspace_id, manifest_id) WHERE status='running';")
 }
 
+/// Inserts a manifest revision in the pending-review state; duplicate revisions return `false`.
 pub fn put_manifest(
     c: &Connection,
     row: (&str, &str, u64, &str, &str, &str, i64),
@@ -12,6 +14,7 @@ pub fn put_manifest(
     Ok(c.execute("INSERT OR IGNORE INTO workspace_bootstrap_manifests (manifest_id,workspace_id,revision,content_hash,manifest_json,trust_status,policy_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,'pending_review',?6,?7)", params![row.0,row.1,row.2 as i64,row.3,row.4,row.5,row.6])? == 1)
 }
 
+/// Returns the fingerprint, status, and fencing version for a matching preparation.
 pub fn get_preparation(
     c: &Connection,
     workspace_id: &str,
@@ -22,10 +25,12 @@ pub fn get_preparation(
     c.query_row("SELECT fingerprint,status,version FROM workspace_bootstrap_preparations WHERE workspace_id=?1 AND manifest_id=?2 AND manifest_hash=?3 AND fingerprint=?4", params![workspace_id, manifest_id, manifest_hash, fingerprint], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()
 }
 
+/// Marks running preparations older than `cutoff_ms` as unknown and advances their fencing version.
 pub fn fence_expired_preparations(c: &Connection, cutoff_ms: i64) -> rusqlite::Result<usize> {
     c.execute("UPDATE workspace_bootstrap_preparations SET status='unknown_outcome',lease_id=NULL,version=version+1,updated_at_ms=?1 WHERE status='running' AND updated_at_ms<?1", params![cutoff_ms])
 }
 
+/// Reserves a single-flight preparation lease; returns `false` if the reservation conflicts.
 pub fn reserve_preparation(
     c: &Connection,
     workspace_id: &str,
@@ -38,6 +43,7 @@ pub fn reserve_preparation(
     Ok(c.execute("INSERT OR IGNORE INTO workspace_bootstrap_preparations (workspace_id,manifest_id,manifest_hash,fingerprint,status,lease_id,version,updated_at_ms) VALUES (?1,?2,?3,?4,'running',?5,1,?6)", params![workspace_id,manifest_id,manifest_hash,fingerprint,lease_id,now_ms])? == 1)
 }
 
+/// Completes a running preparation only for its current lease and clears that lease.
 pub fn complete_preparation(
     c: &Connection,
     workspace_id: &str,
@@ -50,6 +56,7 @@ pub fn complete_preparation(
     Ok(c.execute("UPDATE workspace_bootstrap_preparations SET status=?1,lease_id=NULL,result_json=?2,version=version+1,updated_at_ms=?3 WHERE workspace_id=?4 AND manifest_id=?5 AND lease_id=?6 AND status='running'", params![status,result_json,now_ms,workspace_id,manifest_id,lease_id])? == 1)
 }
 
+/// Marks a matching pending manifest revision trusted under `policy_hash`.
 pub fn approve_manifest(
     c: &Connection,
     manifest_id: &str,
@@ -60,6 +67,7 @@ pub fn approve_manifest(
     Ok(c.execute("UPDATE workspace_bootstrap_manifests SET trust_status='trusted',policy_hash=?1 WHERE manifest_id=?2 AND revision=?3 AND content_hash=?4 AND trust_status='pending_review'", params![policy_hash,manifest_id,revision as i64,content_hash])? == 1)
 }
 
+/// Returns the trust status and content hash for a stored manifest revision.
 pub fn manifest_trust(
     c: &Connection,
     manifest_id: &str,

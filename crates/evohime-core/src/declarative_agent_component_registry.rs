@@ -4,80 +4,135 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Current schema version for the declarative component registry.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum number of providers in one registry.
 pub const MAX_PROVIDERS: usize = 512;
+/// Maximum number of component instances in one registry.
 pub const MAX_COMPONENTS: usize = 4096;
+/// Maximum length of stable provider and component identifiers.
 pub const MAX_ID: usize = 128;
+/// Maximum serialized size of a component configuration.
 pub const MAX_CONFIG_BYTES: usize = 64 * 1024;
+/// Maximum number of dependency, capability, or credential references.
 pub const MAX_REFS: usize = 256;
+/// Maximum pretty-printed descriptor size returned by `dump`.
 pub const MAX_DUMP_BYTES: usize = 32 * 1024;
 
+/// Runtime component category implemented by a registered provider.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ComponentType {
+    /// Agent role configuration.
     AgentRole,
+    /// Team coordination policy configuration.
     TeamCoordinationPolicy,
+    /// Workflow termination condition configuration.
     TerminationCondition,
+    /// Context selection policy configuration.
     ContextPolicy,
+    /// Model profile configuration.
     ModelProfile,
+    /// User-facing workbench configuration.
     Workbench,
+    /// Output validation contract configuration.
     OutputContract,
 }
+/// Trust state assigned to a component provider.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TrustStatus {
+    /// Provider ships as part of the trusted application.
     BuiltInTrusted,
+    /// Provider was explicitly trusted by an authorized actor.
     ExplicitlyTrusted,
+    /// Provider has no established trust decision.
     Unknown,
 }
+/// Provider identity, component type, supported version, and trust metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ComponentProvider {
+    /// Stable identifier used to resolve this provider.
     pub provider_id: String,
+    /// Component category implemented by this provider.
     pub component_type: ComponentType,
+    /// Highest component version currently supported.
     pub current_version: u32,
+    /// Trust decision required before its descriptors are accepted.
     pub trust: TrustStatus,
+    /// Digest identifying the provider's configuration schema.
     pub schema_hash: String,
 }
+/// Typed reference to another component instance.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ComponentRef {
+    /// Provider that owns the referenced component.
     pub provider_id: String,
+    /// Referenced component schema version.
     pub component_version: u32,
+    /// Stable reference identifying the configured component instance.
     pub instance_config_ref: String,
 }
+/// Declarative component configuration with dependency and authority references.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ComponentDescriptor {
+    /// Provider responsible for interpreting this descriptor.
     pub provider_id: String,
+    /// Component category represented by the descriptor.
     pub component_type: ComponentType,
+    /// Descriptor schema version.
     pub spec_version: u32,
+    /// Provider-specific component version.
     pub component_version: u32,
+    /// Short user-visible component label.
     pub label: String,
+    /// Optional bounded explanation of the component.
     pub description: Option<String>,
+    /// Declarative provider configuration with raw secret keys rejected.
     pub config: Value,
+    /// Other component instances required by this definition.
     pub references: Vec<ComponentRef>,
+    /// Capability references requested by this component.
     pub capability_refs: Vec<String>,
+    /// Opaque credential references; secret values are not stored here.
     pub credential_refs: Vec<String>,
+    /// Digest binding descriptor content.
     pub content_hash: String,
 }
+/// Versioned registry of trusted providers and their component descriptors.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Registry {
+    /// Registry schema version.
     pub schema_version: u32,
+    /// Monotonic registry revision.
     pub revision: u64,
+    /// Providers indexed by their stable identifier.
     pub providers: BTreeMap<String, ComponentProvider>,
+    /// Descriptors indexed by component instance reference.
     pub components: BTreeMap<String, ComponentDescriptor>,
+    /// Digest of the complete registry state.
     pub content_hash: String,
 }
+/// Descriptor, provider trust, schema, dependency, or secret-value failure.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RegistryError {
+    /// A field or registry invariant is invalid.
     #[error("invalid registry value: {0}")]
     Invalid(String),
+    /// Descriptor references a provider absent from the registry.
     #[error("unknown provider")]
     UnknownProvider,
+    /// Provider lacks an explicit trusted status.
     #[error("provider is not trusted")]
     UntrustedProvider,
+    /// Registry or descriptor schema version is unsupported.
     #[error("schema version is unsupported")]
     UnsupportedVersion,
+    /// No migration is registered for the requested version change.
     #[error("migration is unavailable")]
     MissingMigration,
+    /// Component references contain a dependency cycle.
     #[error("dependency cycle")]
     DependencyCycle,
+    /// Configuration contains a raw secret instead of a reference.
     #[error("secret value must use a credential reference")]
     SecretValue,
 }
@@ -88,6 +143,7 @@ fn bounded(v: &str, n: usize) -> Result<(), RegistryError> {
         Ok(())
     }
 }
+/// Serializes a value and returns its namespaced SHA-256 digest.
 pub fn hash<T: Serialize>(v: &T) -> String {
     format!(
         "sha256:{}",
@@ -119,6 +175,7 @@ fn reject_secrets(v: &Value) -> Result<(), RegistryError> {
     }
     Ok(())
 }
+/// Validates provider trust, descriptor bounds, version, and secret references.
 pub fn validate_descriptor(d: &ComponentDescriptor, r: &Registry) -> Result<(), RegistryError> {
     bounded(&d.provider_id, MAX_ID)?;
     bounded(&d.label, MAX_ID)?;
@@ -160,6 +217,7 @@ pub fn validate_descriptor(d: &ComponentDescriptor, r: &Registry) -> Result<(), 
     }
     Ok(())
 }
+/// Validates registry bounds and ensures component dependencies are acyclic.
 pub fn validate_registry(r: &Registry) -> Result<(), RegistryError> {
     if r.schema_version != SCHEMA_VERSION
         || r.providers.len() > MAX_PROVIDERS
@@ -217,6 +275,7 @@ pub fn validate_registry(r: &Registry) -> Result<(), RegistryError> {
     }
     Ok(())
 }
+/// Migrates a descriptor by one additive version or returns it unchanged.
 pub fn migrate(d: &ComponentDescriptor, to: u32) -> Result<ComponentDescriptor, RegistryError> {
     if d.component_version == to {
         return Ok(d.clone());
@@ -229,6 +288,7 @@ pub fn migrate(d: &ComponentDescriptor, to: u32) -> Result<ComponentDescriptor, 
     }
     Err(RegistryError::MissingMigration)
 }
+/// Lists descriptor fields that differ between two component revisions.
 pub fn diff(
     a: &ComponentDescriptor,
     b: &ComponentDescriptor,
@@ -248,6 +308,7 @@ pub fn diff(
     }
     Ok(out)
 }
+/// Produces a bounded pretty-printed descriptor representation.
 pub fn dump(d: &ComponentDescriptor) -> Result<String, RegistryError> {
     let s = serde_json::to_string_pretty(d).map_err(|e| RegistryError::Invalid(e.to_string()))?;
     if s.len() > MAX_DUMP_BYTES {

@@ -1,6 +1,17 @@
 use crate::{LocalDatabase, RunReconciliationRecord, StorageError};
 
 impl LocalDatabase {
+    /// Records the verified outcome of an agent-run side effect.
+    ///
+    /// The first reconciliation is stored transactionally. A successful
+    /// reconciliation advances an `unknown` effect to `completed_success`;
+    /// a blocked outcome leaves it unresolved. Repeating the operation returns
+    /// the existing reconciliation record without replacing its evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] when the database transaction or record lookup
+    /// fails.
     pub fn reconcile_agent_run_effect(
         &self,
         effect_id: &str,
@@ -47,6 +58,17 @@ impl LocalDatabase {
             .map_err(Into::into)
     }
 
+    /// Records the verified outcome of a workflow-run side effect.
+    ///
+    /// The first reconciliation is stored transactionally. A successful
+    /// reconciliation advances an `unknown` effect to `completed_success`;
+    /// a blocked outcome remains unresolved. Existing evidence is preserved
+    /// when the same effect is reconciled again.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] when the database transaction or record lookup
+    /// fails.
     pub fn reconcile_run_effect(
         &self,
         effect_id: &str,

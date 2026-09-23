@@ -1,6 +1,19 @@
 use super::*;
 
 impl IpcBridge {
+    /// Reads and handles one ambient workflow request from an asynchronous
+    /// client stream.
+    ///
+    /// The method consumes a framed request, validates it against the bridge's
+    /// authorization and workflow rules, then writes the corresponding framed
+    /// response. It is intended to be called by the connection loop once per
+    /// request; callers retain ownership of the stream and decide whether to
+    /// continue serving the connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an IPC error if frame I/O, request decoding, authorization, or
+    /// workflow processing fails.
     pub fn process_once<'a, R: AsyncRead + Unpin + 'a, W: AsyncWrite + Unpin + 'a>(
         &'a self,
         reader: &'a mut R,

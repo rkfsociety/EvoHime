@@ -13,50 +13,101 @@ use sha2::{Digest, Sha256};
 
 use crate::StorageError;
 
+/// Version of the durable Goal table schema.
 pub const GOAL_SCHEMA_VERSION: u32 = 1;
+/// Maximum canonical serialized Goal size in bytes.
 pub const GOAL_MAX_BYTES: usize = 256 * 1024;
+/// Maximum identifier length in Unicode scalar values.
 pub const GOAL_MAX_ID_CHARS: usize = 128;
+/// Maximum objective length in Unicode scalar values.
 pub const GOAL_MAX_OBJECTIVE_CHARS: usize = 4_096;
+/// Maximum number of success criteria per Goal.
 pub const GOAL_MAX_CRITERIA: usize = 64;
+/// Maximum number of entries in bounded Goal lists.
 pub const GOAL_MAX_LIST_ITEMS: usize = 128;
+/// Maximum length of summary, blocker, and action text.
 pub const GOAL_MAX_TEXT_CHARS: usize = 4_096;
+/// Maximum number of Goals returned by a read operation.
 pub const GOAL_MAX_READ_LIMIT: usize = 128;
 
+/// Validation, lifecycle, and persistence errors for durable Goals.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GoalError {
+    /// The supplied Goal schema version is not supported.
     #[error("unsupported goal version {0}")]
     UnsupportedVersion(u32),
+    /// A field value violates its format or length constraints.
     #[error("invalid goal field {field}: {reason}")]
-    InvalidField { field: String, reason: String },
+    InvalidField {
+        /// Goal field that failed validation.
+        field: String,
+        /// Reason the field value was rejected.
+        reason: String,
+    },
+    /// A stored row could not be decoded or failed validation.
     #[error("invalid stored goal: {0}")]
     InvalidStored(String),
+    /// Normalized Goal content does not match its stored digest.
     #[error("goal content hash mismatch: expected {expected}, got {actual}")]
-    ContentHashMismatch { expected: String, actual: String },
+    ContentHashMismatch {
+        /// Digest stored in the Goal record.
+        expected: String,
+        /// Digest computed from the normalized Goal content.
+        actual: String,
+    },
+    /// A text field contains a marker associated with sensitive credentials.
     #[error("goal contains sensitive text in {field}")]
-    SensitiveText { field: String },
+    SensitiveText {
+        /// Name of the field containing a sensitive marker.
+        field: String,
+    },
+    /// A model-proposed value was used where Core-derived authority is required.
     #[error("model-proposed data cannot provide Core authority for {field}")]
-    AuthorityViolation { field: String },
+    AuthorityViolation {
+        /// Field that attempted to claim Core authority without Core evidence.
+        field: String,
+    },
+    /// Canonical Goal JSON exceeds [`GOAL_MAX_BYTES`].
     #[error("goal is too large: {0} bytes")]
     TooLarge(usize),
+    /// The requested Goal does not exist.
     #[error("goal {0} was not found")]
     NotFound(String),
+    /// A Goal with the same identifier already exists.
     #[error("goal {0} already exists")]
     AlreadyExists(String),
+    /// A referenced workflow, checkpoint, or related object does not exist.
     #[error("goal reference {kind}:{reference_id} was not found")]
-    ReferenceNotFound { kind: String, reference_id: String },
+    ReferenceNotFound {
+        /// Category of the missing reference.
+        kind: String,
+        /// Identifier of the missing referenced object.
+        reference_id: String,
+    },
+    /// The requested success criterion does not exist.
     #[error("goal criterion {0} was not found")]
     CriterionNotFound(String),
+    /// Success criterion identifiers must be unique within the Goal.
     #[error("goal criterion ids must be unique")]
     DuplicateCriterion,
+    /// The requested status transition violates the lifecycle rules.
     #[error("goal transition from {from:?} to {to:?} is not allowed")]
-    InvalidStateTransition { from: GoalStatus, to: GoalStatus },
+    InvalidStateTransition {
+        /// Current persisted state.
+        from: GoalStatus,
+        /// Requested next state.
+        to: GoalStatus,
+    },
+    /// Completion was requested before every criterion had Core evidence.
     #[error("goal cannot be completed before every criterion has Core evidence")]
     CompletionEvidenceMissing,
+    /// A mutating command omitted its idempotency key.
     #[error("goal command idempotency key is required")]
     MissingIdempotencyKey,
 }
 
 impl GoalError {
+    /// Returns the stable machine-readable error category.
     pub fn code(&self) -> &'static str {
         match self {
             Self::UnsupportedVersion(_) => "unsupported_version",
@@ -78,19 +129,28 @@ impl GoalError {
     }
 }
 
+/// Lifecycle state of a durable Goal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalStatus {
+    /// Goal is active and can receive progress updates.
     Active,
+    /// Goal is intentionally paused.
     Paused,
+    /// Goal is waiting for an external blocker to clear.
     Blocked,
+    /// Goal cannot progress until its budget is replenished or adjusted.
     BudgetLimited,
+    /// Goal completed with verified evidence for every criterion.
     Completed,
+    /// Goal ended unsuccessfully.
     Failed,
+    /// Goal was cancelled.
     Cancelled,
 }
 
 impl GoalStatus {
+    /// Returns the stable snake-case database value.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
@@ -103,6 +163,7 @@ impl GoalStatus {
         }
     }
 
+    /// Checks whether the lifecycle permits moving to `next`.
     pub const fn allows_transition_to(self, next: Self) -> bool {
         use GoalStatus::*;
         match self {
@@ -120,16 +181,22 @@ impl GoalStatus {
     }
 }
 
+/// Evidence category required by a success criterion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalCriterionKind {
+    /// Completion is confirmed manually by an authorized user or Core action.
     Manual,
+    /// Completion is established by a named gate.
     Gate,
+    /// Completion is established by workflow execution evidence.
     WorkflowEvidence,
+    /// Completion is established by an artifact reference.
     Artifact,
 }
 
 impl GoalCriterionKind {
+    /// Returns the stable snake-case database value.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Manual => "manual",
@@ -140,16 +207,22 @@ impl GoalCriterionKind {
     }
 }
 
+/// Verification state of one Goal success criterion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalCriterionStatus {
+    /// No qualifying evidence has been recorded.
     Pending,
+    /// Core verified the criterion using its authoritative evidence path.
     Verified,
+    /// Verification failed.
     Failed,
+    /// Verification cannot proceed until a dependency is resolved.
     Blocked,
 }
 
 impl GoalCriterionStatus {
+    /// Returns the stable snake-case database value.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -165,25 +238,44 @@ impl GoalCriterionStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalProvenance {
+    /// Value supplied by the user or an unverified proposal.
     User,
+    /// Value or verification result established by Core.
     Core,
 }
 
+/// One durable success criterion and its verification evidence.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GoalCriterionV1 {
+    /// Stable identifier unique within the parent Goal.
     pub id: String,
+    /// Evidence category required to satisfy this criterion.
     pub kind: GoalCriterionKind,
+    /// Human-readable condition that must be met.
     pub statement: String,
+    /// Current verification state.
     pub status: GoalCriterionStatus,
+    /// Reference to evidence supporting verification.
     pub evidence_ref: Option<String>,
+    /// Identifier of the verifier that checked the evidence.
     pub verifier_id: Option<String>,
+    /// Version of the verifier used.
     pub verifier_version: Option<String>,
+    /// Verification time in Unix milliseconds.
     pub verified_at_ms: Option<i64>,
+    /// Origin of the criterion and its evidence.
     pub provenance: GoalProvenance,
 }
 
 impl GoalCriterionV1 {
+    /// Creates a pending criterion proposed by the user.
+    ///
+    /// ```
+    /// use evohime_local_storage::goal::{GoalCriterionKind, GoalCriterionV1};
+    /// let criterion = GoalCriterionV1::new("docs", GoalCriterionKind::Manual, "Document the API");
+    /// assert_eq!(criterion.id, "docs");
+    /// ```
     pub fn new(
         id: impl Into<String>,
         kind: GoalCriterionKind,
@@ -203,35 +295,60 @@ impl GoalCriterionV1 {
     }
 }
 
+/// Versioned durable objective, progress projection, and completion criteria.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GoalV1 {
+    /// Stable identifier of this Goal.
     pub id: String,
+    /// Monotonically increasing revision number.
     pub version: u64,
+    /// Workspace that owns the Goal.
     pub workspace_id: String,
+    /// Optional conversation associated with the Goal.
     pub chat_id: Option<String>,
+    /// Objective the Goal is intended to achieve.
     pub objective: String,
+    /// Explicit conditions that must be verified before completion.
     pub success_criteria: Vec<GoalCriterionV1>,
+    /// Current lifecycle state.
     pub status: GoalStatus,
+    /// Bounded human-readable progress projection.
     pub progress_summary: String,
+    /// Criterion identifiers derived from verified criterion states.
     pub completed_criteria: Vec<String>,
+    /// Criterion identifiers not yet verified.
     pub remaining_criteria: Vec<String>,
+    /// Current blockers preventing progress.
     pub blockers: Vec<String>,
+    /// Suggested next action, when one is recorded.
     pub next_action: Option<String>,
+    /// Workflow runs linked to this Goal.
     pub workflow_run_ids: Vec<String>,
+    /// Child workflow runs linked to this Goal.
     pub child_run_ids: Vec<String>,
+    /// Optional associated task checkpoint identifier.
     pub checkpoint_id: Option<String>,
+    /// Optional token budget for Goal execution.
     pub token_budget: Option<u64>,
+    /// Optional cost budget in millionths of the currency unit.
     pub cost_budget_micros: Option<u64>,
+    /// Optional limit on continuation operations.
     pub continuation_budget: Option<u64>,
+    /// Creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Last update time in Unix milliseconds.
     pub updated_at_ms: i64,
+    /// Actor that created the Goal.
     pub created_by: String,
+    /// Actor that last updated the Goal.
     pub updated_by: String,
+    /// SHA-256 digest of the normalized canonical representation.
     pub content_hash: String,
 }
 
 impl GoalV1 {
+    /// Normalizes fields, validates invariants, and computes the content hash.
     pub fn seal(mut self) -> Result<Self, GoalError> {
         self.normalize();
         self.validate_body()?;
@@ -240,6 +357,7 @@ impl GoalV1 {
         Ok(self)
     }
 
+    /// Verifies normalization, field bounds, evidence authority, and content hash.
     pub fn validate(&self) -> Result<(), GoalError> {
         let normalized = self.normalized();
         normalized.validate_body()?;
@@ -260,11 +378,13 @@ impl GoalV1 {
         Ok(())
     }
 
+    /// Returns canonical JSON bytes after validating the sealed Goal.
     pub fn canonical_json(&self) -> Result<Vec<u8>, GoalError> {
         self.validate()?;
         self.serialize_checked()
     }
 
+    /// Computes the digest for the normalized Goal body.
     pub fn compute_content_hash(&self) -> Result<String, GoalError> {
         self.normalized().compute_content_hash_unchecked()
     }
@@ -427,26 +547,37 @@ impl GoalV1 {
     }
 }
 
+/// Result of applying or deduplicating a Goal command.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoalMutationResult {
+    /// Stable command action name.
     pub action: String,
+    /// Goal projection after command processing.
     pub goal: GoalV1,
+    /// Whether this command changed the projection.
     pub applied: bool,
+    /// Whether an earlier idempotent result was returned.
     pub deduplicated: bool,
+    /// Sequence number of the event recorded for the mutation.
     pub event_sequence: i64,
 }
 
 /// Identity and provenance attached to one Core command. Keeping it together
 /// prevents mutation APIs from accidentally dropping idempotency or actor
 /// validation as fields are added to a command.
+/// Actor identity and idempotency data required for a Goal mutation.
 #[derive(Debug, Clone, Copy)]
 pub struct GoalCommand<'a> {
+    /// Authorized actor responsible for the command.
     pub actor: &'a str,
+    /// Stable key used to deduplicate command retries.
     pub idempotency_key: &'a str,
+    /// Digest binding the key to the command contents.
     pub command_hash: &'a str,
 }
 
 impl<'a> GoalCommand<'a> {
+    /// Creates a command identity and idempotency envelope.
     pub const fn new(actor: &'a str, idempotency_key: &'a str, command_hash: &'a str) -> Self {
         Self {
             actor,
@@ -456,15 +587,21 @@ impl<'a> GoalCommand<'a> {
     }
 }
 
+/// Core verifier evidence used to satisfy one Goal criterion.
 #[derive(Debug, Clone, Copy)]
 pub struct GoalCriterionEvidence<'a> {
+    /// Criterion identifier within the Goal.
     pub criterion_id: &'a str,
+    /// Reference to the evidence inspected by Core.
     pub evidence_ref: &'a str,
+    /// Stable identifier of the verifier.
     pub verifier_id: &'a str,
+    /// Verifier implementation version.
     pub verifier_version: &'a str,
 }
 
 impl<'a> GoalCriterionEvidence<'a> {
+    /// Creates an evidence record for Core verification.
     pub const fn new(
         criterion_id: &'a str,
         evidence_ref: &'a str,
@@ -480,13 +617,18 @@ impl<'a> GoalCriterionEvidence<'a> {
     }
 }
 
+/// Read-only warning projection returned during startup recovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoalRecoveryProjection {
+    /// Identifier of the Goal requiring attention.
     pub goal_id: String,
+    /// Persisted status observed during recovery.
     pub status: GoalStatus,
+    /// Human-readable warning; empty when recovery found no warning condition.
     pub warning: String,
 }
 
+/// Creates the Goal, revision, event, and idempotency tables if absent.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS goals (
@@ -558,15 +700,18 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Append-only Goal history and transactional current-state projection.
 pub struct GoalStore<'a> {
     connection: &'a Connection,
 }
 
 impl<'a> GoalStore<'a> {
+    /// Creates a store backed by an existing SQLite connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
 
+    /// Loads and validates the current Goal projection by identifier.
     pub fn get(&self, id: &str) -> Result<Option<GoalV1>, StorageError> {
         let row: Option<StoredGoalRow> = self
             .connection
@@ -585,6 +730,7 @@ impl<'a> GoalStore<'a> {
         row.map(decode_stored).transpose()
     }
 
+    /// Lists validated Goals in a workspace, newest updates first.
     pub fn list(&self, workspace_id: &str, limit: usize) -> Result<Vec<GoalV1>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id, version, workspace_id, chat_id, objective, status,
@@ -604,6 +750,7 @@ impl<'a> GoalStore<'a> {
             .collect()
     }
 
+    /// Creates a Goal, its first revision, and an idempotent change event.
     pub fn create(
         &self,
         goal: &GoalV1,
@@ -652,6 +799,7 @@ impl<'a> GoalStore<'a> {
         Ok(result)
     }
 
+    /// Changes Goal status if its version and lifecycle transition are valid.
     pub fn transition(
         &self,
         id: &str,
@@ -681,6 +829,7 @@ impl<'a> GoalStore<'a> {
         self.save(next, transition_action(next_status), command)
     }
 
+    /// Updates the objective or criteria using optimistic version checking.
     pub fn update(
         &self,
         id: &str,
@@ -709,6 +858,7 @@ impl<'a> GoalStore<'a> {
         self.save(next, "goal.updated", command)
     }
 
+    /// Records Core verifier evidence and completes the Goal when all criteria pass.
     pub fn verify_criterion(
         &self,
         id: &str,
@@ -754,6 +904,7 @@ impl<'a> GoalStore<'a> {
         self.save(next, "goal.criterion_verified", command)
     }
 
+    /// Links a workflow, child run, or checkpoint to the Goal.
     pub fn link_reference(
         &self,
         id: &str,

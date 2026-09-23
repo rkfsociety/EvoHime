@@ -4,70 +4,121 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
+/// Version of the durable automation persistence schema.
 pub const AUTOMATION_STORE_SCHEMA: u32 = 1;
+/// Maximum archived automation runs retained in the archive table.
 pub const MAX_ARCHIVE_RUNS: u32 = 10_000;
+/// Maximum archive retention window in milliseconds.
 pub const MAX_ARCHIVE_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+/// Maximum serialized archive size in bytes.
 pub const MAX_ARCHIVE_BYTES: usize = 16 * 1024 * 1024;
+/// Maximum number of events stored in one archive.
 pub const MAX_ARCHIVE_EVENTS: usize = 256;
+/// Maximum number of snapshots stored in one archive.
 pub const MAX_ARCHIVE_SNAPSHOTS: usize = 64;
 
+/// Persisted schedule definition and its current scheduling cursor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutomationScheduleRecord {
+    /// Stable schedule identifier.
     pub schedule_id: String,
+    /// Definition invoked when the schedule fires.
     pub definition_id: String,
+    /// Monotonically increasing schedule revision.
     pub revision: u64,
+    /// Scope that owns the schedule.
     pub owner_scope: String,
+    /// Scheduled hour in the schedule's local time zone.
     pub hour: u8,
+    /// Scheduled minute in the schedule's local time zone.
     pub minute: u8,
+    /// Time-zone offset in minutes.
     pub timezone_minutes: i32,
+    /// Grace period for processing a missed scheduled occurrence.
     pub missed_grace_ms: i64,
+    /// Whether the scheduler may trigger this schedule.
     pub enabled: bool,
+    /// Last processed recurrence slot, if any.
     pub last_slot: Option<String>,
+    /// Optional invocation preset identifier.
     pub preset_id: Option<String>,
+    /// Revision of the invocation preset captured by this schedule.
     pub preset_revision: Option<u64>,
+    /// Content hash of the captured preset revision.
     pub preset_content_hash: Option<String>,
+    /// Workspace path associated with scheduled runs.
     pub workspace_path: String,
 }
 
+/// Immutable automation definition revision and its canonical serialized content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutomationDefinitionRecord {
+    /// Stable definition identifier.
     pub definition_id: String,
+    /// Definition revision number.
     pub revision: u64,
+    /// Scope that owns the definition.
     pub owner_scope: String,
+    /// Serialized definition payload.
     pub definition_json: String,
+    /// Digest of the definition payload.
     pub definition_hash: String,
 }
 
+/// Durable automation run snapshot including authority snapshots captured at admission.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutomationRunRecord {
+    /// Stable run identifier.
     pub run_id: String,
+    /// Definition that created the run.
     pub definition_id: String,
+    /// Definition revision used by this run.
     pub revision: u64,
+    /// Scope that owns the run.
     pub owner_scope: String,
+    /// Trigger idempotency key within its owner and definition scope.
     pub idempotency_key: String,
+    /// Digest of the triggering payload.
     pub payload_hash: String,
+    /// Current durable run state.
     pub state: String,
+    /// Fencing generation used to reject stale workers.
     pub generation: u64,
+    /// Serialized permission snapshot captured for the run.
     pub permission_snapshot: String,
+    /// Serialized approval snapshot captured for the run.
     pub approval_snapshot: String,
 }
 
+/// Ordered event emitted by an automation run transition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutomationRunEventRecord {
+    /// Monotonic sequence number within the run.
     pub run_sequence: u64,
+    /// Stable event type identifier.
     pub event_type: String,
+    /// Run generation that emitted the event.
     pub generation: u64,
+    /// Serialized event payload.
     pub payload_json: String,
+    /// Event creation time in Unix milliseconds.
     pub created_at_ms: i64,
 }
 
+/// Checksummed, expiring archive containing a run and its bounded event history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutomationArchiveRecord {
+    /// Stable archive identifier.
     pub archive_id: String,
+    /// Identifier of the archived run.
     pub run_id: String,
+    /// Serialized archive payload.
     pub archive_json: String,
+    /// SHA-256 digest of `archive_json`.
     pub checksum_sha256: String,
+    /// Archive creation time in Unix milliseconds.
     pub created_at_ms: i64,
+    /// Time after which the archive is no longer restorable.
     pub expires_at_ms: i64,
 }
 
@@ -83,34 +134,59 @@ struct AutomationSnapshotRecord {
     created_at_ms: i64,
 }
 
+/// Outcome of admitting a run under a scoped idempotency key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AdmitRunResult {
+    /// A new run was inserted.
     Inserted,
+    /// An equivalent run already existed for the idempotency key.
     Existing(AutomationRunRecord),
-    IdempotencyConflict { existing_payload_hash: String },
+    /// The idempotency key was reused with a different payload digest.
+    IdempotencyConflict {
+        /// Digest of the payload stored by the existing run.
+        existing_payload_hash: String,
+    },
 }
 
+/// Compare-and-swap inputs for a durable run state transition and event append.
 pub struct RunTransition<'a> {
+    /// Run whose state is changing.
     pub run_id: &'a str,
+    /// Required current state.
     pub from_state: &'a str,
+    /// State to persist if the compare-and-swap succeeds.
     pub to_state: &'a str,
+    /// Required fencing generation.
     pub generation: u64,
+    /// Event type to append in the same transaction.
     pub event_type: &'a str,
+    /// Serialized event body.
     pub payload_json: &'a str,
+    /// Transition time in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Values required to persist an immutable automation run snapshot.
 pub struct SnapshotInsert<'a> {
+    /// Unique snapshot identifier.
     pub snapshot_id: &'a str,
+    /// Run associated with the snapshot.
     pub run_id: &'a str,
+    /// Definition revision captured by the snapshot.
     pub definition_revision: u64,
+    /// Run fencing generation captured by the snapshot.
     pub generation: u64,
+    /// Last event sequence included in the snapshot.
     pub event_sequence: u64,
+    /// Serialized snapshot body.
     pub snapshot_json: &'a str,
+    /// SHA-256 digest of the snapshot body.
     pub checksum_sha256: &'a str,
+    /// Snapshot creation time in Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Creates the automation definition, run, event, lease, snapshot, schedule, and archive tables.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS automation_definitions (definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, definition_json TEXT NOT NULL, definition_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_runs (run_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, idempotency_key TEXT NOT NULL, payload_hash TEXT NOT NULL, state TEXT NOT NULL, generation INTEGER NOT NULL, permission_snapshot TEXT NOT NULL, approval_snapshot TEXT NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL, UNIQUE(owner_scope, definition_id, revision, idempotency_key)); CREATE INDEX IF NOT EXISTS idx_automation_runs_state ON automation_runs(state, updated_at_ms); CREATE TABLE IF NOT EXISTS automation_run_events (run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, run_sequence INTEGER NOT NULL, event_type TEXT NOT NULL, generation INTEGER NOT NULL, payload_json TEXT NOT NULL, created_at_ms INTEGER NOT NULL, PRIMARY KEY(run_id, run_sequence)); CREATE TABLE IF NOT EXISTS automation_leases (run_id TEXT PRIMARY KEY REFERENCES automation_runs(run_id) ON DELETE CASCADE, owner_id TEXT NOT NULL, generation INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_snapshots (snapshot_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES automation_runs(run_id) ON DELETE CASCADE, definition_revision INTEGER NOT NULL, generation INTEGER NOT NULL, event_sequence INTEGER NOT NULL, snapshot_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS automation_schedules (schedule_id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, revision INTEGER NOT NULL, owner_scope TEXT NOT NULL, hour INTEGER NOT NULL, minute INTEGER NOT NULL, timezone_minutes INTEGER NOT NULL, missed_grace_ms INTEGER NOT NULL, enabled INTEGER NOT NULL, last_slot TEXT, updated_at_ms INTEGER NOT NULL, preset_id TEXT, preset_revision INTEGER, preset_content_hash TEXT, FOREIGN KEY(definition_id, revision, owner_scope) REFERENCES automation_definitions(definition_id, revision, owner_scope)); CREATE TABLE IF NOT EXISTS automation_archives (archive_id TEXT PRIMARY KEY, run_id TEXT NOT NULL UNIQUE, archive_json TEXT NOT NULL, checksum_sha256 TEXT NOT NULL, created_at_ms INTEGER NOT NULL, expires_at_ms INTEGER NOT NULL);")?;
     for (column, definition) in [
@@ -144,6 +220,9 @@ struct ArchivePayload {
     snapshots: Vec<AutomationSnapshotRecord>,
 }
 
+/// Archives a run with bounded events and snapshots, then removes its live rows atomically.
+///
+/// Returns `false` when the run is absent or archive capacity, size, or retention bounds fail.
 pub fn archive_run(
     connection: &mut Connection,
     archive_id: &str,
@@ -232,6 +311,9 @@ pub fn archive_run(
     Ok(true)
 }
 
+/// Restores an unexpired archive after validating its checksum and event/snapshot bounds.
+///
+/// Returns `false` when the archive is expired, corrupt, oversized, or its run already exists.
 pub fn restore_archive(
     connection: &mut Connection,
     archive_id: &str,
@@ -307,6 +389,7 @@ pub fn restore_archive(
     Ok(true)
 }
 
+/// Deletes archives whose expiry time is at or before `now_ms` and returns the number removed.
 pub fn sweep_expired_archives(connection: &Connection, now_ms: i64) -> rusqlite::Result<u32> {
     Ok(connection.execute(
         "DELETE FROM automation_archives WHERE expires_at_ms <= ?1",
@@ -314,6 +397,7 @@ pub fn sweep_expired_archives(connection: &Connection, now_ms: i64) -> rusqlite:
     )? as u32)
 }
 
+/// Inserts a schedule or replaces it only when the supplied revision is newer.
 pub fn upsert_schedule(
     connection: &Connection,
     record: &AutomationScheduleRecord,
@@ -342,6 +426,7 @@ pub fn upsert_schedule(
     Ok(changed == 1)
 }
 
+/// Loads a schedule by identifier, returning `None` when it does not exist.
 pub fn get_schedule(
     connection: &Connection,
     schedule_id: &str,
@@ -372,6 +457,7 @@ pub fn get_schedule(
         .optional()
 }
 
+/// Lists schedules for one owner scope in identifier order, capped at 256 rows.
 pub fn list_schedules(
     connection: &Connection,
     owner_scope: &str,
@@ -401,6 +487,9 @@ pub fn list_schedules(
     rows.collect()
 }
 
+/// Lists enabled schedules handled by the simple hourly scheduler.
+///
+/// Schedules using a background recurrence specification are excluded.
 pub fn list_enabled_schedules(
     connection: &Connection,
 ) -> rusqlite::Result<Vec<AutomationScheduleRecord>> {
@@ -450,6 +539,7 @@ pub fn advance_schedule_slot(
     Ok(changed == 1)
 }
 
+/// Inserts an immutable definition revision, leaving an existing revision unchanged.
 pub fn insert_definition(
     connection: &Connection,
     record: &AutomationDefinitionRecord,
@@ -459,6 +549,7 @@ pub fn insert_definition(
     Ok(())
 }
 
+/// Loads a definition revision within its owner scope, if present.
 pub fn get_definition(
     connection: &Connection,
     definition_id: &str,
@@ -468,6 +559,7 @@ pub fn get_definition(
     connection.query_row("SELECT definition_id, revision, owner_scope, definition_json, definition_hash FROM automation_definitions WHERE definition_id=?1 AND revision=?2 AND owner_scope=?3", params![definition_id, revision as i64, owner_scope], |row| Ok(AutomationDefinitionRecord { definition_id: row.get(0)?, revision: row.get::<_, i64>(1)? as u64, owner_scope: row.get(2)?, definition_json: row.get(3)?, definition_hash: row.get(4)? })).optional()
 }
 
+/// Finds a run by its owner-scoped definition revision and idempotency key.
 pub fn find_run_by_idempotency(
     connection: &Connection,
     owner_scope: &str,
@@ -478,6 +570,7 @@ pub fn find_run_by_idempotency(
     connection.query_row("SELECT run_id, definition_id, revision, owner_scope, idempotency_key, payload_hash, state, generation, permission_snapshot, approval_snapshot FROM automation_runs WHERE owner_scope=?1 AND definition_id=?2 AND revision=?3 AND idempotency_key=?4", params![owner_scope, definition_id, revision as i64, idempotency_key], map_run).optional()
 }
 
+/// Loads a run by identifier, returning `None` when it does not exist.
 pub fn get_run(
     connection: &Connection,
     run_id: &str,
@@ -491,6 +584,7 @@ pub fn get_run(
         .optional()
 }
 
+/// Lists runs for an owner scope, optionally filtered by definition, newest update first.
 pub fn list_runs(
     connection: &Connection,
     owner_scope: &str,
@@ -507,6 +601,7 @@ pub fn list_runs(
     rows.collect()
 }
 
+/// Lists events after `after_sequence`, ordered by sequence and capped at 256 rows.
 pub fn list_run_events(
     connection: &Connection,
     run_id: &str,
@@ -531,6 +626,7 @@ pub fn list_run_events(
     rows.collect()
 }
 
+/// Cancels a run in a cancellable state and appends a cancellation event atomically.
 pub fn cancel_run(
     connection: &mut Connection,
     run_id: &str,
@@ -558,6 +654,7 @@ pub fn cancel_run(
     Ok(true)
 }
 
+/// Enables or disables a schedule and returns whether a matching row was updated.
 pub fn set_schedule_enabled(
     connection: &Connection,
     schedule_id: &str,
@@ -570,6 +667,7 @@ pub fn set_schedule_enabled(
     )? == 1)
 }
 
+/// Inserts a run record with its creation and update timestamps set to `now_ms`.
 pub fn insert_run(
     connection: &Connection,
     record: &AutomationRunRecord,
@@ -627,6 +725,9 @@ pub fn transition_run(
     Ok(true)
 }
 
+/// Acquires a run lease when none exists or the existing lease has expired.
+///
+/// The lease expires at `now_ms + ttl_ms`; an unexpired lease cannot be replaced.
 pub fn acquire_lease(
     connection: &Connection,
     run_id: &str,
@@ -639,6 +740,7 @@ pub fn acquire_lease(
     Ok(changed == 1)
 }
 
+/// Inserts an immutable run snapshot, leaving an existing snapshot identifier unchanged.
 pub fn save_snapshot(
     connection: &Connection,
     snapshot: SnapshotInsert<'_>,

@@ -1,14 +1,20 @@
 use crate::error::ContractError;
 use serde::{Deserialize, Serialize};
 
+/// Maximum quiet-hours windows in one policy.
 pub const MAX_QUIET_HOURS: usize = 16;
+/// Maximum combined process and title blocklist entries.
 pub const MAX_BLOCKLIST_ENTRIES: usize = 64;
+/// Maximum UTF-8 byte length of a blocklist glob.
 pub const MAX_PATTERN_BYTES: usize = 128;
 /// Patterns are globs, not regular expressions; a pattern that is mostly
 /// wildcards matches everything and is a configuration mistake, not a filter.
 pub const MAX_PATTERN_WILDCARDS: usize = 8;
+/// Maximum transcript retention period.
 pub const MAX_RETENTION_DAYS: u32 = 90;
+/// Default transcript retention period.
 pub const DEFAULT_RETENTION_DAYS: u32 = 7;
+/// Number of local-time minutes in one day.
 pub const MINUTES_PER_DAY: u32 = 1440;
 
 /// Half-open quiet window `[start_minute, end_minute)` in local minutes of the
@@ -16,11 +22,14 @@ pub const MINUTES_PER_DAY: u32 = 1440;
 /// user who configured quiet hours meant a non-empty period.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct QuietHours {
+    /// Inclusive start minute in local time, from `0` to `1439`.
     pub start_minute: u32,
+    /// Exclusive end minute in local time, from `0` to `1439`.
     pub end_minute: u32,
 }
 
 impl QuietHours {
+    /// Creates a non-empty quiet window after validating both boundaries.
     pub fn new(start_minute: u32, end_minute: u32) -> Result<Self, ContractError> {
         let window = Self {
             start_minute,
@@ -30,6 +39,7 @@ impl QuietHours {
         Ok(window)
     }
 
+    /// Validates the local-time boundaries and rejects empty windows.
     pub fn validate(&self) -> Result<(), ContractError> {
         if self.start_minute >= MINUTES_PER_DAY
             || self.end_minute >= MINUTES_PER_DAY
@@ -40,6 +50,7 @@ impl QuietHours {
         Ok(())
     }
 
+    /// Returns whether a local-time minute falls in this half-open window.
     pub const fn contains(&self, minute_of_day: u32) -> bool {
         if self.start_minute <= self.end_minute {
             minute_of_day >= self.start_minute && minute_of_day < self.end_minute
@@ -59,6 +70,7 @@ pub struct AmbientPolicy {
     /// User-held pause.  Survives restarts, unlike a transient state.
     #[serde(default)]
     pub paused: bool,
+    /// Quiet windows during which capture must be closed.
     #[serde(default)]
     pub quiet_hours: Vec<QuietHours>,
     /// Glob patterns matched against the foreground process name.
@@ -125,6 +137,7 @@ impl AmbientPolicy {
         Ok(())
     }
 
+    /// Returns whether the supplied local time falls in a quiet-hours window.
     pub fn is_quiet_at(&self, minute_of_day: u32) -> bool {
         self.quiet_hours
             .iter()

@@ -10,9 +10,13 @@ use tokio::process::Command;
 // branch: Create, switch, or delete branches
 // ============================================================================
 
+/// Stable registry identifier for branch operations.
 pub const BRANCH_NAME: &str = "git.branch";
+/// User-facing description of branch operations.
 pub const BRANCH_DESCRIPTION: &str = "Create, switch, list, or delete git branches";
+/// Permission required to change or list branches.
 pub const BRANCH_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a branch operation.
 pub const BRANCH_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Deserialize)]
@@ -24,6 +28,7 @@ struct BranchInput {
     from: Option<String>,
 }
 
+/// Lists, creates, switches, deletes, or renames a local branch.
 pub async fn branch(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: BranchInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: BRANCH_NAME.to_string(),
@@ -153,9 +158,13 @@ pub async fn branch(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // merge: Merge branches
 // ============================================================================
 
+/// Stable registry identifier for branch merges.
 pub const MERGE_NAME: &str = "git.merge";
+/// User-facing description of the merge operation.
 pub const MERGE_DESCRIPTION: &str = "Merge a branch into the current branch";
+/// Permission required to merge repository branches.
 pub const MERGE_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a branch merge.
 pub const MERGE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Deserialize)]
@@ -167,6 +176,7 @@ struct MergeInput {
     no_ff: bool,
 }
 
+/// Merges the requested branch into the current branch.
 pub async fn merge(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: MergeInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: MERGE_NAME.to_string(),
@@ -215,9 +225,13 @@ pub async fn merge(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 // reset: Reset commits
 // ============================================================================
 
+/// Stable registry identifier for resetting repository state.
 pub const RESET_NAME: &str = "git.reset";
+/// User-facing description of the reset operation.
 pub const RESET_DESCRIPTION: &str = "Reset HEAD to a previous commit (soft/mixed/hard)";
+/// Permission required to reset repository state.
 pub const RESET_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a repository reset.
 pub const RESET_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Deserialize)]
@@ -231,6 +245,8 @@ fn default_mode() -> String {
     "mixed".to_string()
 }
 
+/// Moves `HEAD` to the selected reference using the requested reset mode.
+/// A hard reset discards uncommitted changes and requires explicit authorization.
 pub async fn reset(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: ResetInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: RESET_NAME.to_string(),
@@ -278,10 +294,14 @@ pub async fn reset(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 // revert: Create a new commit that undoes changes
 // ============================================================================
 
+/// Stable registry identifier for reverting a commit.
 pub const REVERT_NAME: &str = "git.revert";
+/// User-facing description of the revert operation.
 pub const REVERT_DESCRIPTION: &str =
     "Create a new commit that undoes changes from a previous commit";
+/// Permission required to create a revert commit.
 pub const REVERT_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a revert operation.
 pub const REVERT_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Deserialize)]
@@ -291,6 +311,7 @@ struct RevertInput {
     message: Option<String>,
 }
 
+/// Creates a new commit that reverses the selected commit's changes.
 pub async fn revert(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: RevertInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: REVERT_NAME.to_string(),
@@ -332,9 +353,13 @@ pub async fn revert(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // cherry-pick: Apply a commit from another branch
 // ============================================================================
 
+/// Stable registry identifier for applying another commit.
 pub const CHERRY_PICK_NAME: &str = "git.cherry_pick";
+/// User-facing description of the cherry-pick operation.
 pub const CHERRY_PICK_DESCRIPTION: &str = "Apply a commit from another branch";
+/// Permission required to apply a commit to the current branch.
 pub const CHERRY_PICK_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a cherry-pick operation.
 pub const CHERRY_PICK_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Deserialize)]
@@ -342,6 +367,7 @@ struct CherryPickInput {
     commit: String,
 }
 
+/// Applies the selected commit to the current branch.
 pub async fn cherry_pick(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: CherryPickInput =
         serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
@@ -381,9 +407,13 @@ pub async fn cherry_pick(ctx: &ToolContext, input: Value) -> Result<ToolResult, 
 // rebase: Rebase current branch onto another
 // ============================================================================
 
+/// Stable registry identifier for rebasing the current branch.
 pub const REBASE_NAME: &str = "git.rebase";
+/// User-facing description of the rebase operation.
 pub const REBASE_DESCRIPTION: &str = "Rebase current branch onto another branch";
+/// Permission required to rewrite local branch history.
 pub const REBASE_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a rebase operation.
 pub const REBASE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Deserialize)]
@@ -393,6 +423,7 @@ struct RebaseInput {
     interactive: bool,
 }
 
+/// Rebases the current branch onto the requested base reference.
 pub async fn rebase(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: RebaseInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: REBASE_NAME.to_string(),
@@ -437,9 +468,13 @@ pub async fn rebase(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // tag: Manage tags
 // ============================================================================
 
+/// Stable registry identifier for repository tag operations.
 pub const TAG_NAME: &str = "git.tag";
+/// User-facing description of tag operations.
 pub const TAG_DESCRIPTION: &str = "Create, list, or delete git tags";
+/// Permission required to modify or list repository tags.
 pub const TAG_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a tag operation.
 pub const TAG_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Deserialize)]
@@ -453,6 +488,7 @@ struct TagInput {
     message: Option<String>,
 }
 
+/// Creates, lists, or deletes local repository tags.
 pub async fn tag(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: TagInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: TAG_NAME.to_string(),
@@ -499,9 +535,13 @@ pub async fn tag(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErro
 // stash: Manage the working tree stash
 // ============================================================================
 
+/// Stable registry identifier for stash operations.
 pub const STASH_NAME: &str = "git.stash";
+/// User-facing description of stash operations.
 pub const STASH_DESCRIPTION: &str = "List, save, apply, pop, or drop git stashes";
+/// Permission required to inspect or modify stashes.
 pub const STASH_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a stash operation.
 pub const STASH_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Deserialize)]
@@ -515,6 +555,7 @@ struct StashInput {
     include_untracked: bool,
 }
 
+/// Lists, saves, applies, pops, or drops a repository stash.
 pub async fn stash(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: StashInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: STASH_NAME.to_string(),
@@ -555,9 +596,13 @@ pub async fn stash(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 // remote: Inspect or configure remotes
 // ============================================================================
 
+/// Stable registry identifier for remote configuration operations.
 pub const REMOTE_NAME: &str = "git.remote";
+/// User-facing description of remote operations.
 pub const REMOTE_DESCRIPTION: &str = "List, add, or remove git remotes";
+/// Permission required to inspect or change remote configuration.
 pub const REMOTE_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
+/// Maximum runtime for a remote operation.
 pub const REMOTE_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Deserialize)]
@@ -569,6 +614,7 @@ struct RemoteInput {
     url: Option<String>,
 }
 
+/// Lists, adds, or removes repository remotes.
 pub async fn remote(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: RemoteInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: REMOTE_NAME.to_string(),

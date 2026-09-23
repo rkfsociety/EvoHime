@@ -1,12 +1,15 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum number of inbound messages retained in the bridge queue.
 pub const MAX_QUEUE: i64 = 256;
 const MAX_BRIDGE_JSON_BYTES: usize = 64 * 1024;
 
+/// Creates bridge, thread-binding, bounded inbound, and idempotency tables.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS conversation_bridges (bridge_id TEXT PRIMARY KEY, provider TEXT NOT NULL, conversation_id TEXT NOT NULL, principal_id TEXT NOT NULL, pairing_hash TEXT NOT NULL, state TEXT NOT NULL, revision INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS conversation_thread_bindings (binding_id TEXT PRIMARY KEY, bridge_id TEXT NOT NULL, external_thread_id TEXT NOT NULL, conversation_id TEXT NOT NULL, principal_id TEXT NOT NULL, revision INTEGER NOT NULL, UNIQUE(bridge_id, external_thread_id)); CREATE TABLE IF NOT EXISTS conversation_bridge_inbound (message_id TEXT PRIMARY KEY, binding_id TEXT NOT NULL, message_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS conversation_bridge_idempotency (idempotency_key TEXT PRIMARY KEY, operation TEXT NOT NULL);")
 }
 
+/// Claims an operation key once; duplicate claims return `false`.
 pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite::Result<bool> {
     Ok(c.execute(
         "INSERT OR IGNORE INTO conversation_bridge_idempotency VALUES(?1,?2)",
@@ -14,6 +17,7 @@ pub fn claim_idempotency(c: &Connection, key: &str, operation: &str) -> rusqlite
     )? == 1)
 }
 
+/// Stores a validated bridge definition only when its revision advances.
 pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusqlite::Result<()> {
     if json.len() > MAX_BRIDGE_JSON_BYTES {
         return Err(rusqlite::Error::InvalidParameterName(
@@ -48,6 +52,7 @@ pub fn put_bridge(c: &Connection, id: &str, json: &[u8], revision: u64) -> rusql
     Ok(())
 }
 
+/// Loads a bridge definition as serialized JSON, if present.
 pub fn get_bridge(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT provider,conversation_id,principal_id,pairing_hash,state,revision FROM conversation_bridges WHERE bridge_id=?1",
@@ -70,6 +75,7 @@ pub fn get_bridge(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>>
     .optional()
 }
 
+/// Loads a thread binding as serialized JSON, if present.
 pub fn get_binding(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT bridge_id,external_thread_id,conversation_id,principal_id,revision FROM conversation_thread_bindings WHERE binding_id=?1",
@@ -87,6 +93,7 @@ pub fn get_binding(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>
     .optional()
 }
 
+/// Inserts an external-thread binding after verifying its conversation and principal match the bridge.
 pub fn put_binding(
     c: &Connection,
     json: &[u8],
@@ -128,6 +135,7 @@ pub fn put_binding(
     )? == 1)
 }
 
+/// Adds an inbound message once, while the queue contains fewer than [`MAX_QUEUE`] rows.
 pub fn put_inbound(
     c: &Connection,
     id: &str,
@@ -141,12 +149,14 @@ pub fn put_inbound(
     )? == 1)
 }
 
+/// Lists inbound message payloads in arrival order, capped at [`MAX_QUEUE`].
 pub fn list_inbound(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut statement = c.prepare("SELECT message_json FROM conversation_bridge_inbound ORDER BY created_at_ms,message_id LIMIT 256")?;
     let rows = statement.query_map([], |row| row.get(0))?.collect();
     rows
 }
 
+/// Deletes a bridge and its bound threads and inbound messages.
 pub fn clear_bridge(c: &Connection, bridge_id: &str) -> rusqlite::Result<()> {
     c.execute("DELETE FROM conversation_bridge_inbound WHERE binding_id IN (SELECT binding_id FROM conversation_thread_bindings WHERE bridge_id=?1)", params![bridge_id])?;
     c.execute(
@@ -160,6 +170,7 @@ pub fn clear_bridge(c: &Connection, bridge_id: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Returns the stored bridge revision, if the bridge exists.
 pub fn bridge_revision(c: &Connection, bridge_id: &str) -> rusqlite::Result<Option<u64>> {
     let revision = c
         .query_row(

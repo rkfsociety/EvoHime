@@ -1,6 +1,18 @@
 use super::*;
 
 impl ToolAgent {
+    /// Runs one agent task to completion without an external cancellation signal.
+    ///
+    /// The task uses the configured tools and providers, applies the workspace
+    /// instructions and runtime policies, and returns the final user-facing
+    /// response. `task_id` is retained for event correlation; if it is not a
+    /// UUID, the runtime generates an internal UUID while keeping the supplied
+    /// value for task reporting.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AgentRunError`] when task setup, model interaction, tool
+    /// execution, or final response construction fails.
     pub async fn run_once(
         &self,
         task_id: impl Into<String>,

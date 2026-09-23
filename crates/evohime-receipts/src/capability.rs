@@ -14,27 +14,41 @@ const MAX_ITEMS: usize = 128;
 const MAX_TEXT: usize = 512;
 const MAX_PAYLOAD: usize = 64 * 1024;
 
+/// Stable categories returned by policy evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyOutcome {
+    /// Policy granted the requested operation.
     Allowed,
+    /// An explicit user approval is required before execution.
     ApprovalRequired,
+    /// Policy refused the operation.
     Denied,
+    /// Policy evaluation could not run because a required dependency was unavailable.
     Unavailable,
+    /// The decision or approval has expired.
     Expired,
+    /// The operation was cancelled before execution.
     Cancelled,
+    /// Policy evaluation failed with an internal policy error.
     PolicyError,
+    /// Outcome is unknown to this version of the contract.
     UnknownOutcome,
 }
 
+/// Stable policy result carried into action receipts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyDecision {
+    /// Final outcome of policy evaluation.
     pub outcome: PolicyOutcome,
+    /// Bounded stable reason code safe for persistence and display.
     pub reason_code: String,
+    /// Whether retrying may produce a different outcome.
     pub retryable: bool,
 }
 
 impl PolicyDecision {
+    /// Creates a validated decision and derives retryability from its outcome.
     pub fn new(
         outcome: PolicyOutcome,
         reason_code: impl Into<String>,
@@ -52,53 +66,85 @@ impl PolicyDecision {
     }
 }
 
+/// Immutable, hashed description of authority available to a single run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilitySnapshotV1 {
+    /// Unique identifier of this snapshot.
     pub snapshot_id: String,
+    /// Run identifier that owns the capabilities.
     pub run_id: String,
+    /// Session identifier associated with the run.
     pub session_id: String,
+    /// Task identifier associated with the run.
     pub task_id: String,
+    /// Parent snapshot hash when this snapshot narrows inherited authority.
     pub parent_snapshot_hash: Option<String>,
+    /// Identifier of the policy that produced the snapshot.
     pub policy_id: String,
+    /// Version of the policy definition.
     pub policy_version: u32,
+    /// Hash of the exact policy definition.
     pub policy_hash: String,
+    /// Hash of the tool or capability manifest used for evaluation.
     pub manifest_hash: String,
+    /// Workspace roots the run may access.
     pub workspace_anchors: Vec<String>,
+    /// Normalized operation scopes authorized for the run.
     pub operation_scopes: Vec<String>,
+    /// Named permissions available to the run.
     pub permissions: Vec<String>,
+    /// Tool identities available to the run.
     pub tool_identities: Vec<String>,
+    /// Network routes allowed to the run.
     pub network_routes: Vec<String>,
+    /// Adapter-specific scopes granted to the run.
     pub adapter_scopes: Vec<String>,
+    /// Opaque secret references paired with their declared purposes.
     pub secret_refs: Vec<SecretRefPurpose>,
+    /// Upper bounds applied to execution and resource consumption.
     pub limits: CapabilityLimits,
     #[serde(skip)]
+    /// Hash of the canonical snapshot payload, excluded from its own digest.
     pub snapshot_hash: String,
 }
 
+/// Opaque secret reference and the purpose for which it may be used.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecretRefPurpose {
+    /// Non-secret reference identifying a secret in the secure store.
     pub secret_ref: String,
+    /// Bounded explanation of the authorized use.
     pub purpose: String,
 }
 
+/// Numeric upper bounds copied into a capability snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilityLimits {
+    /// Maximum execution duration in milliseconds.
     pub timeout_ms: u64,
+    /// Maximum input bytes accepted by the action.
     pub input_bytes: u64,
+    /// Maximum output bytes accepted from the action.
     pub output_bytes: u64,
+    /// Maximum number of concurrent operations.
     pub concurrency: u32,
+    /// Maximum tool calls in the run.
     pub tool_calls: u32,
+    /// Maximum model-token budget.
     pub token_budget: u64,
+    /// Maximum estimated cost in micro-units.
     pub cost_micros: u64,
 }
 
 impl CapabilitySnapshotV1 {
+    /// Validates the snapshot and fills its canonical content hash.
     pub fn finalize(mut self) -> Result<Self, ReceiptError> {
         self.validate()?;
         self.snapshot_hash = self.compute_hash()?;
         Ok(self)
     }
 
+    /// Checks identifiers, hashes, bounds, uniqueness, and nonzero required limits.
     pub fn validate(&self) -> Result<(), ReceiptError> {
         for id in [
             &self.snapshot_id,
@@ -169,6 +215,7 @@ impl CapabilitySnapshotV1 {
         Ok(())
     }
 
+    /// Computes the domain-separated hash of canonical snapshot bytes.
     pub fn compute_hash(&self) -> Result<String, ReceiptError> {
         let canonical = self.canonical_bytes()?;
         let mut input = SNAPSHOT_DOMAIN.to_vec();
@@ -176,6 +223,7 @@ impl CapabilitySnapshotV1 {
         Ok(sha256_hex(&input))
     }
 
+    /// Serializes the snapshot canonically without its self-referential hash field.
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, ReceiptError> {
         let mut value = serde_json::to_value(self).map_err(|_| ReceiptError::InvalidJson)?;
         value
@@ -190,6 +238,7 @@ impl CapabilitySnapshotV1 {
         Ok(canonical)
     }
 
+    /// Verifies this snapshot only narrows the parent's scopes and resource limits.
     pub fn is_subset_of(&self, parent: &Self) -> Result<(), ReceiptError> {
         self.validate()?;
         parent.validate()?;
@@ -243,6 +292,7 @@ impl CapabilitySnapshotV1 {
         Ok(())
     }
 
+    /// Returns a display-safe summary that omits opaque secret references.
     pub fn redacted_summary(&self) -> Value {
         serde_json::json!({
             "snapshot_id": self.snapshot_id, "snapshot_hash": self.snapshot_hash,

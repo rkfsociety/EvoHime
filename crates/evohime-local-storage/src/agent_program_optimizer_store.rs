@@ -2,9 +2,14 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 const MAX_JSON_BYTES: usize = 64 * 1024;
 
+/// Creates revisioned optimizer state and run-pinning tables in the transaction.
 pub fn install_schema(tx: &Transaction<'_>) -> rusqlite::Result<()> {
     tx.execute_batch("CREATE TABLE IF NOT EXISTS agent_program_optimizer (program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, json BLOB NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL, PRIMARY KEY(program_id, revision), UNIQUE(program_id, idempotency_key)); CREATE TABLE IF NOT EXISTS agent_program_optimizer_run (run_id TEXT PRIMARY KEY, program_id TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Stores the next optimizer revision with idempotency and content-hash checks.
+///
+/// Repeating the same key, revision, and hash is treated as success. Conflicting
+/// reuse of a key or a revision other than the next sequential revision is rejected.
 pub fn save(
     c: &Connection,
     id: &str,
@@ -47,9 +52,14 @@ pub fn save(
     )?;
     Ok(())
 }
+/// Returns the serialized state at the greatest stored revision for `id`.
 pub fn current(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row("SELECT json FROM agent_program_optimizer WHERE program_id=?1 ORDER BY revision DESC LIMIT 1",params![id],|r|r.get(0)).optional()
 }
+/// Pins a run to one optimizer revision and its content hash.
+///
+/// An identical repeat is idempotent; a run already pinned to different values
+/// returns an error.
 pub fn pin(
     c: &Connection,
     run_id: &str,

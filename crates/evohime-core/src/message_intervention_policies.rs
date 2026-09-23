@@ -2,103 +2,166 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Current schema version for collaboration intervention policies.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum number of hooks in one policy or recipients in one context.
 pub const MAX_HOOKS: usize = 32;
+/// Maximum number of metadata projection patches in one verdict.
 pub const MAX_PATCHES: usize = 8;
+/// Maximum length of bounded policy identifiers and metadata text.
 pub const MAX_TEXT: usize = 128;
 
+/// Delivery phase at which an intervention hook runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookPhase {
+    /// Evaluate before a message is delivered to recipients.
     BeforeDelivery,
+    /// Evaluate before recipient-specific context is constructed.
     BeforeRecipientContext,
 }
 
+/// Behavior used when an intervention hook cannot produce a decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailureMode {
+    /// Deny delivery when the hook fails.
     FailClosed,
+    /// Allow delivery when the hook fails.
     FailOpen,
 }
 
+/// Classification of message data permitted by a hook.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SensitivityClass {
+    /// Data intended for unrestricted disclosure.
     Public,
+    /// Data internal to the workspace or team.
     Internal,
+    /// Data requiring restricted recipients.
     Sensitive,
+    /// Secret data that this metadata-only contract does not accept.
     Secret,
 }
 
+/// Decision a matching intervention hook may return.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InterventionAction {
+    /// Permit delivery under the supplied metadata.
     Allow,
+    /// Deny delivery.
     Block,
+    /// Require a redacted recipient projection.
     Redact,
+    /// Route through an alternate allowed destination.
     Redirect,
+    /// Require human review before delivery.
     Escalate,
 }
 
+/// Ordered rule applied at selected collaboration delivery phases.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageInterventionHook {
+    /// Stable hook identifier.
     pub id: String,
+    /// Monotonic hook revision.
     pub version: u64,
+    /// Lower values run earlier; identifier breaks ties deterministically.
     pub priority: u16,
+    /// Delivery phases where this hook is active.
     pub phases: Vec<HookPhase>,
+    /// Decision returned when the hook matches.
     pub action: InterventionAction,
+    /// Fail-open or fail-closed behavior for evaluator errors.
     pub failure_mode: FailureMode,
+    /// Recipient routes allowed by this hook; empty means unrestricted by route.
     pub allowed_routes: Vec<String>,
+    /// Sensitivity classes permitted by this hook.
     pub allowed_sensitivity: Vec<SensitivityClass>,
+    /// Message kinds matched by this hook; empty means all kinds.
     pub message_kinds: Vec<String>,
 }
 
+/// Integrity-bound collection of collaboration message hooks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageInterventionPolicy {
+    /// Policy schema version.
     pub schema_version: u32,
+    /// Stable policy identifier.
     pub id: String,
+    /// Monotonic policy revision.
     pub version: u64,
+    /// Hooks evaluated in deterministic priority order.
     pub hooks: Vec<MessageInterventionHook>,
+    /// Digest of the policy with this field cleared.
     pub content_hash: String,
 }
 
+/// Metadata available to hooks without exposing raw message content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MessageInterventionContext {
+    /// Team session containing the message.
     pub team_session_id: String,
+    /// Stable sender identity.
     pub sender: String,
+    /// Intended recipients or routes.
     pub recipients: Vec<String>,
+    /// Message category used for hook matching.
     pub message_kind: String,
+    /// Optional message contract reference.
     pub contract_ref: Option<String>,
+    /// Bounded metadata projection of the message payload.
     pub payload_metadata: String,
+    /// Sensitivity classification of the message.
     pub sensitivity: SensitivityClass,
+    /// Current delivery hook phase.
     pub phase: HookPhase,
+    /// Optional identifier of the causing message.
     pub causation_id: Option<String>,
+    /// Digest of the routing state used for this delivery.
     pub routing_snapshot_hash: String,
+    /// Stable key used to detect duplicate intervention evaluation.
     pub idempotency_key: String,
 }
 
+/// Metadata-only intervention decision for a collaboration message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InterventionVerdict {
+    /// Action the delivery pipeline must enforce.
     pub action: InterventionAction,
+    /// Stable machine-readable reason code.
     pub reason_code: String,
+    /// Hook responsible for the decision, if one matched.
     pub hook_id: Option<String>,
+    /// Bounded changes applied to the recipient metadata projection.
     pub projection_patches: Vec<String>,
+    /// Optional reference to a human escalation request.
     pub escalation_ref: Option<String>,
+    /// Redaction handling summary without message content.
     pub redaction_status: String,
 }
 
+/// Invalid policy/context, duplicate delivery, or fail-closed evaluation error.
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum InterventionError {
+    /// Policy uses an unsupported schema version.
     #[error("unsupported intervention schema {0}")]
     UnsupportedVersion(u32),
+    /// A policy or context field is malformed or unsupported.
     #[error("invalid intervention policy or context")]
     Invalid,
+    /// Policy or context exceeds its documented bounds.
     #[error("intervention policy is too large")]
     TooLarge,
+    /// Policy hash does not match its serialized content.
     #[error("intervention policy hash is invalid")]
     InvalidHash,
+    /// The same message delivery was already evaluated.
     #[error("duplicate intervention delivery")]
     Duplicate,
+    /// Hook evaluation failed under fail-closed behavior.
     #[error("intervention failed closed")]
     FailedClosed,
 }
@@ -110,6 +173,7 @@ fn valid(v: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"._-:/".contains(&b))
 }
 
+/// Computes the policy digest after clearing its stored hash field.
 pub fn canonical_hash(policy: &MessageInterventionPolicy) -> Result<String, InterventionError> {
     let mut copy = policy.clone();
     copy.content_hash.clear();
@@ -117,6 +181,7 @@ pub fn canonical_hash(policy: &MessageInterventionPolicy) -> Result<String, Inte
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 
+/// Checks policy identity, hook bounds, and its canonical digest.
 pub fn validate_policy(policy: &MessageInterventionPolicy) -> Result<(), InterventionError> {
     if policy.schema_version != SCHEMA_VERSION {
         return Err(InterventionError::UnsupportedVersion(policy.schema_version));
@@ -146,6 +211,7 @@ pub fn validate_policy(policy: &MessageInterventionPolicy) -> Result<(), Interve
     Ok(())
 }
 
+/// Validates bounded routing metadata and rejects secret-class message context.
 pub fn validate_context(context: &MessageInterventionContext) -> Result<(), InterventionError> {
     if !valid(&context.team_session_id)
         || !valid(&context.sender)
@@ -165,6 +231,7 @@ pub fn validate_context(context: &MessageInterventionContext) -> Result<(), Inte
     Ok(())
 }
 
+/// Selects the first matching hook and returns its metadata-only verdict.
 pub fn evaluate(
     policy: &MessageInterventionPolicy,
     context: &MessageInterventionContext,

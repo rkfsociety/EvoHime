@@ -6,6 +6,7 @@ pub(crate) use database_pool::PreparedDatabaseLease;
 
 pub(crate) const EVENT_JOURNAL_DATABASE_POOL_SIZE: usize = 4;
 
+/// Durable SQLite-backed journal shared by the Core subsystems.
 #[derive(Clone)]
 pub struct EventJournal {
     pub(crate) database: Arc<Mutex<LocalDatabase>>,
@@ -23,11 +24,16 @@ pub(crate) struct JournalWrite(
     pub std::sync::mpsc::Sender<Result<i64, StorageError>>,
 );
 
+/// Bounded replay page with sequence-gap metadata for an event consumer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurableReplayBatch {
+    /// Events available in this replay page.
     pub events: Vec<EventRecord>,
+    /// Whether the requested cursor predates the retained event history.
     pub gap_detected: bool,
+    /// Earliest retained sequence, when the journal contains any events.
     pub first_available_sequence: Option<i64>,
+    /// Latest sequence included in the journal snapshot.
     pub last_sequence: i64,
 }
 
@@ -100,37 +106,59 @@ pub(crate) fn error_category(error: &str) -> &'static str {
 /// Параметры одной метрики инструмента, записываемой в durable journal.
 #[derive(Debug, Clone, Copy)]
 pub struct ToolMetric<'a> {
+    /// Task that owns the tool call.
     pub task_id: &'a str,
+    /// Stable tool identifier.
     pub tool_name: &'a str,
+    /// Agent iteration in which the tool was invoked.
     pub iteration: usize,
+    /// Whether the tool call completed successfully.
     pub ok: bool,
+    /// Normalized failure category, when the call failed.
     pub failure_kind: Option<&'a str>,
+    /// Whether recovery guidance was produced.
     pub recovery_hint: bool,
+    /// Whether repeated failure escalation was activated.
     pub escalated: bool,
 }
 
 /// Параметры перехода durable recovery state machine.
 #[derive(Debug, Clone, Copy)]
 pub struct RecoveryTransition<'a> {
+    /// Run whose recovery state is transitioning.
     pub run_id: &'a str,
+    /// New durable recovery state.
     pub state: RecoveryState,
+    /// Effect whose outcome is being reconciled.
     pub effect_id: &'a str,
+    /// Idempotency key associated with the effect.
     pub idempotency_key: &'a str,
+    /// Verifier used to establish the effect outcome.
     pub verifier: &'a str,
+    /// Serialized evidence used by the recovery decision.
     pub evidence_json: &'a [u8],
+    /// Decision recorded by the recovery transition.
     pub decision: &'a str,
 }
 
 /// Данные session-only заметки, которые никогда не становятся persistent memory.
 #[derive(Debug, Clone, Copy)]
 pub struct SessionMemoryNote<'a> {
+    /// Stable identifier for the note.
     pub id: &'a str,
+    /// Session that owns this ephemeral note.
     pub session_id: &'a str,
+    /// Scope in which the note is visible.
     pub scope: evohime_local_storage::domains::memory::MemoryScope,
+    /// Identifier of the scope owner.
     pub scope_id: &'a str,
+    /// Category assigned to the note.
     pub kind: &'a str,
+    /// Note contents, which are not promoted to persistent memory.
     pub statement: &'a str,
+    /// Creation timestamp.
     pub created_at: &'a str,
+    /// Expiration timestamp after which the note is purged.
     pub expires_at: &'a str,
 }
 

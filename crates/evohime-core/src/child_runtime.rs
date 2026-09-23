@@ -11,69 +11,113 @@ use std::{
     fmt,
 };
 
+/// Maximum character count for child and parent task identifiers.
 pub const MAX_ID_CHARS: usize = 128;
+/// Maximum character count for a child role label.
 pub const MAX_ROLE_CHARS: usize = 64;
+/// Maximum context, finding, or reduced-input item count.
 pub const MAX_CONTEXT_ITEMS: usize = 32;
+/// Maximum character count for one reduced context item.
 pub const MAX_CONTEXT_ITEM_CHARS: usize = 2_048;
+/// Maximum total serialized context bytes passed to one child.
 pub const MAX_CONTEXT_BYTES: usize = 16 * 1024;
+/// Maximum serialized child output size in bytes.
 pub const MAX_OUTPUT_BYTES: usize = 32 * 1024;
+/// Maximum character count for one child report field.
 pub const MAX_REPORT_CHARS: usize = 8_192;
+/// Maximum number of evidence source references in one report.
 pub const MAX_SOURCES: usize = 32;
+/// Maximum character count for one evidence source reference.
 pub const MAX_SOURCE_CHARS: usize = 512;
+/// Maximum lifecycle events retained by one child journal.
 pub const MAX_CHILD_EVENTS: usize = 256;
 
+/// Read-only child task category supported by the runtime contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildTaskKind {
+    /// Search source files and return references.
     CodeSearch,
+    /// Review a threat model and return bounded findings.
     ThreatModelReview,
+    /// Review a test plan without executing it.
     TestPlanReview,
+    /// Draft or review documentation.
     Documentation,
+    /// Summarize project onboarding information.
     Onboarding,
 }
 
+/// Completion quality of a child report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildReportStatus {
+    /// Child completed the requested task.
     Complete,
+    /// Child produced a bounded result but could not finish fully.
     Partial,
+    /// Child rejected the task or could not provide an acceptable result.
     Rejected,
 }
 
 /// Core-owned lifecycle for a logical child job.  The UI may project these
 /// values, but it cannot manufacture a transition.
+/// Core-owned lifecycle state for a delegated child task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildLifecycleState {
+    /// Child request was created.
     Created,
+    /// Request is waiting in the execution queue.
     Queued,
+    /// Child work is in progress.
     Running,
+    /// Returned report is being validated.
     Validating,
+    /// Validated report awaits parent acceptance.
     WaitingParentAcceptance,
+    /// Parent accepted the result.
     Accepted,
+    /// Parent rejected the result.
     Rejected,
+    /// Child execution failed.
     Failed,
+    /// Child was cancelled.
     Cancelled,
+    /// Child exceeded its time limit.
     TimedOut,
+    /// Child was aborted by its owner or runtime.
     Aborted,
 }
 
+/// Replay-safe journal entry for one child lifecycle transition.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildLifecycleEvent {
+    /// Deterministic child-and-sequence event identifier.
     pub event_id: String,
+    /// Child task associated with the transition.
     pub child_task_id: String,
+    /// Parent task that delegated the child.
     pub parent_task_id: String,
+    /// Monotonic sequence within this child's journal.
     pub sequence: u64,
+    /// Lifecycle state reached by this event.
     pub state: ChildLifecycleState,
+    /// Optional bounded transition explanation.
     pub reason: Option<String>,
 }
 
+/// Invalid child lifecycle transition or attempt to advance a terminal state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChildTransitionError {
+    /// Requested transition is not allowed from the current state.
     InvalidTransition {
+        /// Current lifecycle state.
         from: ChildLifecycleState,
+        /// Requested lifecycle state.
         to: ChildLifecycleState,
     },
+    /// Child is already in a terminal state.
     TerminalState,
 }
 
@@ -102,6 +146,7 @@ pub struct ChildLifecycle {
 }
 
 impl ChildLifecycle {
+    /// Validates a request and creates its initial lifecycle event.
     pub fn create(request: ChildTaskRequest) -> Result<Self, ChildRuntimeError> {
         request.validate()?;
         let mut lifecycle = Self {
@@ -114,12 +159,15 @@ impl ChildLifecycle {
         Ok(lifecycle)
     }
 
+    /// Returns the validated request owned by this lifecycle journal.
     pub fn request(&self) -> &ChildTaskRequest {
         &self.request
     }
+    /// Returns the current child lifecycle state.
     pub fn state(&self) -> ChildLifecycleState {
         self.state
     }
+    /// Returns retained events whose sequence is greater than the supplied cursor.
     pub fn events_after(&self, sequence: u64) -> Vec<ChildLifecycleEvent> {
         self.events
             .iter()
@@ -128,6 +176,7 @@ impl ChildLifecycle {
             .collect()
     }
 
+    /// Applies an allowed transition and records its bounded reason.
     pub fn transition(
         &mut self,
         next: ChildLifecycleState,
@@ -208,17 +257,48 @@ fn allowed_transition(from: ChildLifecycleState, to: ChildLifecycleState) -> boo
     )
 }
 
+/// Invalid child request/report, forbidden authority, or exceeded output bound.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChildRuntimeError {
+    /// Required identifier or text value is empty.
     EmptyField(&'static str),
-    FieldTooLong { field: &'static str, max: usize },
-    TooManyItems { field: &'static str, max: usize },
-    ContextTooLarge { actual: usize, max: usize },
-    OutputTooLarge { actual: usize, max: usize },
+    /// A text field exceeds its declared character bound.
+    FieldTooLong {
+        /// Name of the text field that exceeded its character bound.
+        field: &'static str,
+        /// Maximum permitted character count.
+        max: usize,
+    },
+    /// A list exceeds its declared item count.
+    TooManyItems {
+        /// Name of the list that exceeded its item-count bound.
+        field: &'static str,
+        /// Maximum permitted number of items.
+        max: usize,
+    },
+    /// Aggregate reduced context exceeds its byte bound.
+    ContextTooLarge {
+        /// Actual aggregate context size in bytes.
+        actual: usize,
+        /// Maximum accepted context size in bytes.
+        max: usize,
+    },
+    /// Serialized report exceeds its byte bound.
+    OutputTooLarge {
+        /// Actual serialized report size in bytes.
+        actual: usize,
+        /// Maximum accepted report size in bytes.
+        max: usize,
+    },
+    /// Requested capability is not read-only.
     ForbiddenCapability(String),
+    /// Nested child delegation is prohibited.
     NestedChildForbidden,
+    /// Returned report does not belong to the request's child identifier.
     TaskMismatch,
+    /// Report contains duplicate evidence references.
     DuplicateSource,
+    /// Report content appears to contain a secret or credential.
     SecretLikeContent,
 }
 
@@ -250,17 +330,26 @@ impl std::error::Error for ChildRuntimeError {}
 /// The accepted request has only read-oriented capabilities.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildTaskRequest {
+    /// Stable child task identifier.
     pub child_task_id: String,
+    /// Parent task identifier.
     pub parent_task_id: String,
+    /// Bounded role label assigned to the child.
     pub role: String,
+    /// Read-only child task category.
     pub kind: ChildTaskKind,
+    /// Reduced, bounded context supplied to the child.
     pub reduced_context: Vec<String>,
+    /// Maximum serialized output size accepted from the child.
     pub max_output_bytes: usize,
+    /// Read-only capabilities requested for the child.
     pub requested_capabilities: Vec<String>,
+    /// Whether the parent is itself a child; nested delegation is rejected.
     pub parent_is_child: bool,
 }
 
 impl ChildTaskRequest {
+    /// Validates identifiers, context bounds, output bounds, and read-only capabilities.
     pub fn validate(&self) -> Result<(), ChildRuntimeError> {
         validate_text("child_task_id", &self.child_task_id, MAX_ID_CHARS)?;
         validate_text("parent_task_id", &self.parent_task_id, MAX_ID_CHARS)?;
@@ -302,6 +391,7 @@ impl ChildTaskRequest {
         Ok(())
     }
 
+    /// Validates and serializes the request in deterministic field order.
     pub fn deterministic_json(&self) -> Result<String, ChildRuntimeError> {
         self.validate()?;
         serde_json::to_string(self).map_err(|_| ChildRuntimeError::FieldTooLong {
@@ -311,17 +401,25 @@ impl ChildTaskRequest {
     }
 }
 
+/// Bounded read-oriented result returned by a child task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildReport {
+    /// Child task identifier this report answers.
     pub child_task_id: String,
+    /// Completion quality for the task.
     pub status: ChildReportStatus,
+    /// Bounded summary of the result.
     pub summary: String,
+    /// Bounded findings supporting the summary.
     pub findings: Vec<String>,
+    /// Unique references to evidence sources.
     pub sources: Vec<String>,
+    /// Child confidence score from zero to one hundred.
     pub confidence_percent: u8,
 }
 
 impl ChildReport {
+    /// Validates report fields, evidence uniqueness, secret screening, and serialized size.
     pub fn validate(&self) -> Result<(), ChildRuntimeError> {
         validate_text("child_task_id", &self.child_task_id, MAX_ID_CHARS)?;
         validate_text("summary", &self.summary, MAX_REPORT_CHARS)?;
@@ -365,6 +463,7 @@ impl ChildReport {
     }
 }
 
+/// Validates the request and report and rejects a report for a different child task.
 pub fn accept_report(
     request: &ChildTaskRequest,
     report: &ChildReport,

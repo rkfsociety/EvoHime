@@ -7,20 +7,26 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+/// Version of the workflow package import and binding schema.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 const MAX_ID_BYTES: usize = 256;
 const MAX_HASH_BYTES: usize = 128;
 const MAX_METADATA_BYTES: usize = 8 * 1024;
 
+/// Lifecycle phase used to reconcile a package import after interruption.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportPhase {
+    /// Import has been recorded but has not reached a terminal result.
     Pending,
+    /// Imported workflow version was committed successfully.
     Committed,
+    /// Import outcome cannot be confirmed and requires reconciliation.
     Unknown,
 }
 
 impl ImportPhase {
+    /// Returns the stable value stored in SQLite.
     fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -30,29 +36,44 @@ impl ImportPhase {
     }
 }
 
+/// Metadata required to resume or deduplicate one package import.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackageImportRecord {
+    /// Stable identifier for this import operation.
     pub import_id: String,
+    /// Digest of the imported package bytes.
     pub package_hash: String,
+    /// Fingerprint of the package's source identity.
     pub source_fingerprint: String,
+    /// Identifier assigned to the imported local workflow.
     pub local_workflow_id: String,
+    /// Version created in the local workflow store.
     pub local_workflow_version: u64,
+    /// Current import lifecycle phase.
     pub phase: ImportPhase,
+    /// Bounded serialized import provenance.
     pub provenance_json: String,
+    /// Bounded summary of redactions performed during import.
     pub redaction_summary_json: String,
+    /// Last update time in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Validation, SQLite, and JSON errors from workflow package metadata operations.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkflowPackageStoreError {
+    /// Required metadata is empty or exceeds its byte limit.
     #[error("invalid workflow package metadata: {0}")]
     InvalidMetadata(&'static str),
+    /// SQLite query or row conversion failed.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    /// JSON serialization or deserialization failed.
     #[error("JSON operation failed: {0}")]
     Json(#[from] serde_json::Error),
 }
 
+/// Creates package import and local credential binding tables and lookup indexes.
 pub fn install_schema(connection: &Connection) -> Result<(), WorkflowPackageStoreError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS workflow_package_imports (
@@ -127,6 +148,7 @@ fn validate(record: &PackageImportRecord) -> Result<(), WorkflowPackageStoreErro
     Ok(())
 }
 
+/// Persists a validated import record in the pending phase.
 pub fn insert_pending(
     connection: &Connection,
     record: &PackageImportRecord,
@@ -153,6 +175,9 @@ pub fn insert_pending(
     Ok(())
 }
 
+/// Moves a pending import to a terminal or reconciliation phase.
+///
+/// Returns `false` if the import is absent or is no longer pending.
 pub fn finish(
     connection: &Connection,
     import_id: &str,
@@ -168,6 +193,7 @@ pub fn finish(
     Ok(changed == 1)
 }
 
+/// Finds the earliest committed import for a package hash.
 pub fn find_committed_by_hash(
     connection: &Connection,
     package_hash: &str,
@@ -188,6 +214,7 @@ pub fn find_committed_by_hash(
     ).optional().map_err(WorkflowPackageStoreError::from)
 }
 
+/// Lists pending imports oldest first, capped at 128 rows.
 pub fn list_pending(
     connection: &Connection,
     limit: u32,
@@ -215,6 +242,7 @@ pub fn list_pending(
         .map_err(WorkflowPackageStoreError::from)
 }
 
+/// Saves a package credential-slot binding to a local credential reference.
 pub fn save_binding(
     connection: &Connection,
     package_hash: &str,

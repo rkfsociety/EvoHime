@@ -1,9 +1,22 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
+/// Creates the model-purpose routing policy table.
+///
+/// # Errors
+///
+/// Returns the SQLite schema installation error.
 pub fn install_schema(c: &Connection) -> Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS model_purpose_routing (policy_id TEXT PRIMARY KEY, version INTEGER NOT NULL, content_hash TEXT NOT NULL, policy_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
 
+/// Inserts a new version-1 policy or advances an existing policy by one version.
+///
+/// Returns `false` when the initial ID already exists or the update's expected
+/// predecessor version is absent.
+///
+/// # Errors
+///
+/// Returns the SQLite write error.
 pub fn put(
     c: &Connection,
     policy_id: &str,
@@ -18,6 +31,11 @@ pub fn put(
     Ok(c.execute("UPDATE model_purpose_routing SET version=?2,content_hash=?3,policy_json=?4,updated_at_ms=?5 WHERE policy_id=?1 AND version=?2-1", params![policy_id, version, hash, json, now_ms])? == 1)
 }
 
+/// Loads the policy version, content hash, and serialized policy by ID.
+///
+/// # Errors
+///
+/// Returns the SQLite query error.
 pub fn get(c: &Connection, policy_id: &str) -> Result<Option<(u64, String, Vec<u8>)>> {
     c.query_row(
         "SELECT version,content_hash,policy_json FROM model_purpose_routing WHERE policy_id=?1",

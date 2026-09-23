@@ -3,65 +3,106 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
+/// Version of the serialized code intent marker contract.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum number of markers accepted in a single parse operation.
 pub const MAX_MARKERS: usize = 128;
+/// Maximum marker or comment text size in bytes.
 pub const MAX_TEXT: usize = 1024;
+/// Minimum delay between repeated scan deliveries of the same marker.
 pub const DEBOUNCE_MS: u64 = 1_000;
 
+/// Action intent encoded by a recognized source comment marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IntentKind {
+    /// The comment requests a code change.
     EditRequest,
+    /// The comment asks a question about the code.
     Question,
 }
+/// Trust classification of the source that supplied a marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Provenance {
+    /// Explicitly supplied or confirmed by the user.
     UserTrusted,
+    /// Found in existing repository content.
     ExistingRepository,
+    /// Created by an agent.
     AgentGenerated,
+    /// Imported from an untrusted external source.
     ImportedUntrusted,
 }
+/// Processing state of a parsed code intent marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkerStatus {
+    /// Parsed and awaiting stale, trust, and deduplication checks.
     Candidate,
+    /// Source revision no longer matches the current file revision.
     Stale,
+    /// Duplicate delivery was suppressed.
     Deduplicated,
+    /// Marker was rejected by a gate.
     Rejected,
+    /// Marker has been turned into a proposal.
     Proposed,
 }
+/// Source line range and comment text supplied to the marker parser.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CommentRange {
+    /// First one-based source line covered by the comment.
     pub start_line: u32,
+    /// Last one-based source line covered by the comment.
     pub end_line: u32,
+    /// Complete bounded comment text.
     pub text: String,
 }
+/// Parsed marker bound to a source path, revision, and provenance.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodeIntentMarker {
+    /// Serialized contract version.
     pub schema_version: u32,
+    /// Stable digest-derived marker identifier.
     pub marker_id: String,
+    /// Requested action kind.
     pub kind: IntentKind,
+    /// Text following the recognized marker prefix.
     pub text: String,
+    /// Workspace-relative path containing the source comment.
     pub file_path: String,
+    /// Source revision at parse time.
     pub revision: String,
+    /// First one-based line containing the comment.
     pub range_start: u32,
+    /// Last one-based line containing the comment.
     pub range_end: u32,
+    /// Optional symbol associated with this source range.
     pub symbol: Option<String>,
+    /// Trust classification of the marker source.
     pub provenance: Provenance,
+    /// Current gated processing state.
     pub status: MarkerStatus,
+    /// Digest of the source comment range.
     pub content_hash: String,
 }
+/// Invalid, oversized, stale, untrusted, or duplicate marker operation.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum MarkerError {
+    /// Marker fields or source range violate the contract.
     #[error("invalid marker contract")]
     Invalid,
+    /// Text or marker count exceeds its configured bound.
     #[error("marker input exceeds bound")]
     Limit,
+    /// The marker's source revision differs from the current revision.
     #[error("marker is stale")]
     Stale,
+    /// Provenance is not permitted to create a proposal automatically.
     #[error("untrusted marker cannot auto-trigger")]
     Untrusted,
+    /// The marker duplicates another entry.
     #[error("duplicate marker")]
     Duplicate,
 }
@@ -75,6 +116,10 @@ fn valid_path(path: &str) -> bool {
 fn hash<T: Serialize>(v: &T) -> String {
     hex::encode(Sha256::digest(serde_json::to_vec(v).unwrap_or_default()))
 }
+/// Extracts recognized `EVA!` edit requests and `EVA?` questions from bounded comment ranges.
+///
+/// Returned markers remain inert candidates; callers must validate the source
+/// revision and apply provenance policy before proposing an action.
 pub fn parse_comment_ranges(
     path: &str,
     revision: &str,
@@ -128,6 +173,10 @@ pub fn parse_comment_ranges(
     }
     Ok(out)
 }
+/// Checks marker bounds and that its recorded revision matches the current source revision.
+///
+/// This validates the presence of a content digest but does not recompute it
+/// from the original source text, which is not an argument to this function.
 pub fn validate_marker(
     marker: &CodeIntentMarker,
     current_revision: &str,
@@ -147,12 +196,14 @@ pub fn validate_marker(
     }
     Ok(())
 }
+/// Allows automatic proposal only for markers explicitly classified as user trusted.
 pub fn can_auto_propose(marker: &CodeIntentMarker) -> Result<(), MarkerError> {
     match marker.provenance {
         Provenance::UserTrusted => Ok(()),
         _ => Err(MarkerError::Untrusted),
     }
 }
+/// Sorts markers by stable identifier and marks later duplicate entries.
 pub fn deduplicate(markers: &mut [CodeIntentMarker]) {
     markers.sort_by(|a, b| a.marker_id.cmp(&b.marker_id));
     for i in 1..markers.len() {
@@ -171,6 +222,7 @@ pub struct MarkerGate {
 }
 
 impl MarkerGate {
+    /// Debounces repeated repository scans and rejects other provenance classes.
     pub fn admit_scan(&mut self, markers: &mut [CodeIntentMarker], now_ms: u64) {
         for marker in markers {
             if marker.provenance != Provenance::ExistingRepository {

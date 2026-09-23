@@ -11,22 +11,36 @@ pub use crate::memory_inputs::{InsertSessionNoteInput, MemoryRecordInput};
 use crate::memory_mapping::map_record;
 pub use crate::memory_schema::install_schema;
 
+/// Maximum UTF-8 byte length of a memory record identifier.
 pub const MAX_ID_BYTES: usize = 256;
+/// Maximum UTF-8 byte length of a scope identifier.
 pub const MAX_SCOPE_ID_BYTES: usize = 512;
+/// Maximum UTF-8 byte length of a memory title.
 pub const MAX_TITLE_BYTES: usize = 512;
+/// Maximum UTF-8 byte length of memory content.
 pub const MAX_CONTENT_BYTES: usize = 32 * 1024;
+/// Maximum UTF-8 byte length of provenance text.
 pub const MAX_PROVENANCE_BYTES: usize = 2 * 1024;
+/// Maximum UTF-8 byte length of a serialized timestamp.
 pub const MAX_TIMESTAMP_BYTES: usize = 64;
+/// Maximum UTF-8 byte length of a memory search query.
 pub const MAX_QUERY_BYTES: usize = 512;
+/// Maximum TTL accepted for a memory record, in seconds.
 pub const MAX_TTL_SECONDS: u64 = 366 * 24 * 60 * 60;
+/// Maximum number of evidence references stored on one memory record.
 pub const MAX_EVIDENCE_REFS: usize = 64;
+/// Maximum number of auxiliary metadata rows returned by a bounded listing.
 pub const MAX_METADATA_ROWS: usize = 500;
 
+/// Scope that controls where a memory record may be retrieved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryScope {
+    /// Memory associated with one project.
     Project,
+    /// Memory associated with one task.
     Task,
+    /// Memory available throughout one workspace.
     Workspace,
     /// Session-scoped запись: живёт до конца сессии и ещё сутки, не участвует
     /// в long-term retrieval.
@@ -34,6 +48,7 @@ pub enum MemoryScope {
 }
 
 impl MemoryScope {
+    /// Returns the stable serialized scope value.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Project => "project",
@@ -43,6 +58,7 @@ impl MemoryScope {
         }
     }
 
+    /// Parses a stable serialized scope value.
     pub fn parse(value: &str) -> Result<Self, MemoryStoreError> {
         match value {
             "project" => Ok(Self::Project),
@@ -54,11 +70,15 @@ impl MemoryScope {
     }
 }
 
+/// Privacy classification governing memory retention and retrieval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryPrivacy {
+    /// Content may be shared publicly.
     Public,
+    /// Content is restricted to internal use.
     Internal,
+    /// Content is private to its owner scope.
     Private,
 }
 
@@ -84,38 +104,60 @@ impl MemoryPrivacy {
 /// Поля контракта Memory Extraction. Отделены от Memory v1 полей, чтобы было
 /// видно, что именно добавляет extraction и какие legacy-значения получает
 /// мигрированная запись.
+/// Extraction metadata stored alongside the base Memory v1 fields.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemoryExtractionFields {
     #[serde(default = "default_record_version")]
+    /// Version of this extraction metadata schema.
     pub record_version: u32,
     #[serde(default)]
+    /// References to evidence supporting the extracted memory.
     pub evidence_refs: Vec<String>,
     #[serde(default)]
+    /// Event sequence identifiers supporting the extraction.
     pub execution_event_refs: Vec<i64>,
+    /// Semantic kind of the extracted memory.
     pub kind: String,
     /// `None` у legacy rows: точный нормализатор версионируется в Core и
     /// применяется к `title` при чтении.
+    /// Normalized subject used for conflict and supersession checks.
     pub canonical_subject: Option<String>,
+    /// Confirmation lifecycle state.
     pub confirmation_state: String,
+    /// Confidence assigned by the extractor, in the contract's normalized scale.
     pub model_confidence: f64,
+    /// Confidence assigned during verification.
     pub verification_confidence: f64,
+    /// Privacy class of the extracted content.
     pub privacy_class: String,
+    /// Trust class assigned to the source.
     pub source_trust: String,
+    /// Identifier of an older record superseded by this record.
     pub supersedes: Option<String>,
+    /// Identifier of the newer record that superseded this record.
     pub superseded_by: Option<String>,
+    /// Reason recorded for a supersession.
     pub supersession_reason: Option<String>,
+    /// Version of the extraction implementation.
     pub extractor_version: String,
+    /// Version of the extraction policy.
     pub policy_version: String,
+    /// Validation result state.
     pub validation_status: String,
+    /// Timestamp at which validation occurred.
     pub validated_at: Option<String>,
+    /// Identifier of the provenance source.
     pub provenance_source_id: Option<String>,
     /// Core-owned governance classification. Legacy rows default to the
     /// conservative user-confirmed durable profile.
     #[serde(default = "default_authority")]
+    /// Governance authority classification for the memory.
     pub authority: String,
     #[serde(default = "default_durability")]
+    /// Retention durability class for the memory.
     pub durability: String,
     #[serde(default = "default_confidence")]
+    /// Overall memory confidence on the normalized 0–1 scale.
     pub confidence: f64,
 }
 
@@ -163,26 +205,42 @@ fn default_record_version() -> u32 {
     1
 }
 
+/// Validated Memory v1 record and its extraction metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemoryRecord {
+    /// Stable memory identifier.
     pub id: String,
+    /// Retrieval scope of this memory.
     pub scope: MemoryScope,
+    /// Identifier of the selected scope.
     pub scope_id: String,
+    /// Short display title.
     pub title: String,
+    /// Redacted content retained for retrieval.
     pub content: String,
+    /// Human-readable or machine-readable provenance description.
     pub provenance: String,
+    /// Privacy classification.
     pub privacy: MemoryPrivacy,
+    /// Creation timestamp.
     pub created_at: String,
+    /// Optional expiration timestamp.
     pub expires_at: Option<String>,
+    /// Whether the record is hidden from default active-memory views.
     pub archived: bool,
+    /// Whether the record has been logically forgotten.
     pub forgotten: bool,
+    /// Number of confirmations associated with the memory.
     pub confirmations: i64,
+    /// Optional deduplication key for lesson records.
     pub lesson_key: Option<String>,
     #[serde(flatten)]
+    /// Extraction and governance metadata associated with this record.
     pub extraction: MemoryExtractionFields,
 }
 
 impl MemoryRecord {
+    /// Constructs a record from user input, redacts recognized secrets, and validates it.
     pub fn new(input: MemoryRecordInput) -> Result<Self, MemoryStoreError> {
         let record = Self {
             id: input.id,
@@ -204,6 +262,7 @@ impl MemoryRecord {
         Ok(record)
     }
 
+    /// Validates required fields, bounds, and governance metadata.
     pub fn validate(&self) -> Result<(), MemoryStoreError> {
         validate_required("id", &self.id, MAX_ID_BYTES)?;
         validate_required("scope_id", &self.scope_id, MAX_SCOPE_ID_BYTES)?;
@@ -294,32 +353,59 @@ impl MemoryRecord {
     }
 }
 
+/// Validation, governance, and persistence errors returned by the memory store.
 #[derive(Debug, thiserror::Error)]
 pub enum MemoryStoreError {
+    /// A required field is empty or whitespace-only.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Name of the rejected field.
+        field: &'static str,
+    },
+    /// A field exceeded its byte limit.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: usize },
+    Limit {
+        /// Name of the rejected field.
+        field: &'static str,
+        /// Maximum accepted byte length.
+        max: usize,
+    },
+    /// The serialized scope value is unknown.
     #[error("invalid memory scope")]
     InvalidScope,
+    /// The serialized privacy classification is unknown.
     #[error("invalid privacy label")]
     InvalidPrivacy,
+    /// Expiration exceeds the supported retention interval.
     #[error("invalid TTL")]
     InvalidTtl,
+    /// A governance field contains a value outside its supported set.
     #[error("invalid memory governance field: {0}")]
     InvalidField(&'static str),
+    /// The record is classified as secret and cannot be persisted.
     #[error("secret memory is never persisted")]
     SecretNotStorable,
+    /// Confidence is not finite or falls outside the normalized 0–1 interval.
     #[error("confidence must be within 0.0..=1.0")]
     InvalidConfidence,
+    /// Evidence references are malformed or exceed their limit.
     #[error("memory evidence references are invalid or unbounded")]
     InvalidEvidenceRefs,
+    /// An extraction retry reused a key for a different source basis.
     #[error("memory extraction idempotency key was reused for another source basis")]
     ExtractionIdempotencyConflict,
+    /// The requested memory record does not exist.
     #[error("memory record was not found")]
     NotFound,
+    /// The requested memory lifecycle transition is not allowed.
     #[error("state transition from {from} to {to} is not allowed")]
-    InvalidTransition { from: String, to: String },
+    InvalidTransition {
+        /// Current memory state.
+        from: String,
+        /// Requested next state.
+        to: String,
+    },
+    /// An underlying SQLite operation failed.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -360,6 +446,7 @@ fn redact_sensitive(value: &str) -> String {
 pub struct MemoryStoreSql;
 
 impl MemoryStoreSql {
+    /// Parameterized SQL statement used by [`MemoryStoreSql::insert`].
     pub const INSERT: &'static str = "INSERT INTO memory_entries
         (id, scope_kind, scope_id, title, content, provenance, privacy,
          created_at, expires_at, archived, forgotten, confirmations, lesson_key,
@@ -371,6 +458,7 @@ impl MemoryStoreSql {
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                 ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
                  ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)";
+    /// Parameterized SQL statement that archives a non-forgotten record.
     pub const ARCHIVE: &'static str =
         "UPDATE memory_entries SET archived = 1 WHERE id = ?1 AND forgotten = 0";
     /// Forget — logical deletion: statement, заголовок, provenance, canonical
@@ -383,6 +471,7 @@ impl MemoryStoreSql {
             forgotten = 1, confirmation_state = 'forgotten'
         WHERE id = ?1";
 
+    /// Inserts a validated memory record using the canonical parameterized statement.
     pub fn insert(connection: &Connection, record: &MemoryRecord) -> Result<(), MemoryStoreError> {
         record.validate()?;
         connection.execute(
@@ -429,6 +518,7 @@ impl MemoryStoreSql {
         Ok(())
     }
 
+    /// Inserts a lesson or increments confirmations for the matching scoped lesson key.
     pub fn upsert_lesson(
         connection: &Connection,
         record: &MemoryRecord,
@@ -465,6 +555,7 @@ impl MemoryStoreSql {
         Ok(record.clone())
     }
 
+    /// Loads one non-forgotten memory record by ID.
     pub fn get_by_id(
         connection: &Connection,
         id: &str,
@@ -478,6 +569,7 @@ impl MemoryStoreSql {
             .optional()?)
     }
 
+    /// Searches active memory records by text within one exact scope.
     pub fn search(
         connection: &Connection,
         scope: MemoryScope,
@@ -544,6 +636,7 @@ impl MemoryStoreSql {
         Ok(records)
     }
 
+    /// Searches active lesson records by text within one exact scope.
     pub fn search_lessons(
         connection: &Connection,
         scope: MemoryScope,
@@ -577,10 +670,12 @@ impl MemoryStoreSql {
         Ok(records)
     }
 
+    /// Archives a memory without erasing its content; returns whether a row changed.
     pub fn archive(connection: &Connection, id: &str) -> Result<bool, MemoryStoreError> {
         Ok(connection.execute(Self::ARCHIVE, params![id])? == 1)
     }
 
+    /// Logically forgets a memory by erasing user content and retaining its audit metadata.
     pub fn forget(connection: &Connection, id: &str) -> Result<bool, MemoryStoreError> {
         Ok(connection.execute(Self::FORGET, params![id])? == 1)
     }
@@ -949,6 +1044,7 @@ impl MemoryStoreSql {
         Ok(())
     }
 
+    /// Lists the stored aliases for a memory record.
     pub fn list_aliases(
         connection: &Connection,
         scope: MemoryScope,
@@ -999,6 +1095,7 @@ impl MemoryStoreSql {
         Ok(())
     }
 
+    /// Lists session-scoped notes in creation order, bounded by the metadata row limit.
     pub fn list_session_notes(
         connection: &Connection,
         session_id: &str,
@@ -1018,6 +1115,7 @@ impl MemoryStoreSql {
         Ok(notes)
     }
 
+    /// Deletes expired session notes and returns the number of removed rows.
     pub fn purge_expired_session_notes(
         connection: &Connection,
         now: &str,

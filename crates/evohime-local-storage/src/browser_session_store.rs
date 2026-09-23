@@ -1,23 +1,37 @@
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+/// Version of the browser session metadata schema.
 pub const STORE_SCHEMA_VERSION: u32 = 1;
 
+/// Bounded browser-session state used for revision-safe recovery and policy checks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrowserSessionMetadata {
+    /// Stable browser session identifier.
     pub session_id: String,
+    /// Conversation that owns the session.
     pub conversation_id: String,
+    /// Optional active run identifier.
     pub run_id: Option<String>,
+    /// Browser session lifecycle state.
     pub state: String,
+    /// Monotonically increasing metadata revision.
     pub revision: u64,
+    /// Generation of the current browser control lease.
     pub control_generation: u64,
+    /// Owner of browser control for this session.
     pub control_owner: String,
+    /// Profile isolation policy selected for the session.
     pub profile_policy: String,
+    /// Network policy selected for the session.
     pub network_policy: String,
+    /// Digest of the effective session policy.
     pub policy_hash: String,
+    /// Last metadata update time in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Creates the session metadata table and its conversation lookup index.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS browser_session_metadata (session_id TEXT PRIMARY KEY NOT NULL, conversation_id TEXT NOT NULL, run_id TEXT, state TEXT NOT NULL, revision INTEGER NOT NULL, control_generation INTEGER NOT NULL, control_owner TEXT NOT NULL DEFAULT 'agent', profile_policy TEXT NOT NULL, network_policy TEXT NOT NULL, policy_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);")?;
     match connection.execute("ALTER TABLE browser_session_metadata ADD COLUMN control_owner TEXT NOT NULL DEFAULT 'agent'", []) {
@@ -28,11 +42,13 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch("CREATE INDEX IF NOT EXISTS idx_browser_session_conversation ON browser_session_metadata(conversation_id, updated_at_ms);")
 }
 
+/// Inserts session metadata or updates its mutable fields only for a newer revision.
 pub fn upsert(connection: &Connection, record: &BrowserSessionMetadata) -> rusqlite::Result<()> {
     connection.execute("INSERT INTO browser_session_metadata(session_id,conversation_id,run_id,state,revision,control_generation,control_owner,profile_policy,network_policy,policy_hash,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) ON CONFLICT(session_id) DO UPDATE SET state=excluded.state, revision=excluded.revision, control_generation=excluded.control_generation, control_owner=excluded.control_owner, updated_at_ms=excluded.updated_at_ms WHERE excluded.revision > browser_session_metadata.revision", rusqlite::params![record.session_id, record.conversation_id, record.run_id, record.state, record.revision, record.control_generation, record.control_owner, record.profile_policy, record.network_policy, record.policy_hash, record.updated_at_ms])?;
     Ok(())
 }
 
+/// Loads session metadata by identifier, returning `None` when it does not exist.
 pub fn get(
     connection: &Connection,
     session_id: &str,

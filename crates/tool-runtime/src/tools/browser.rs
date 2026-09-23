@@ -6,14 +6,22 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Registry identifier for opening and summarizing a web page.
 pub const OPEN_NAME: &str = "browser.open";
+/// Short catalog description for [`open`].
 pub const OPEN_DESCRIPTION: &str = "Open a web page and summarize its contents";
+/// Permission required to fetch a page for [`open`].
 pub const OPEN_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
+/// Maximum duration for a page-open request.
 pub const OPEN_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// Registry identifier for extracting selected page elements.
 pub const EXTRACT_NAME: &str = "browser.extract";
+/// Short catalog description for [`extract`].
 pub const EXTRACT_DESCRIPTION: &str = "Extract data from a web page using a CSS selector";
+/// Permission required to fetch a page for [`extract`].
 pub const EXTRACT_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
+/// Maximum duration for an extraction request.
 pub const EXTRACT_TIMEOUT: Duration = Duration::from_secs(20);
 
 const DEFAULT_OPEN_LIMIT: usize = 4_000;
@@ -42,6 +50,15 @@ struct ExtractInput {
     timeout_ms: Option<u64>,
 }
 
+/// Fetches an allowed web page and returns bounded text, metadata, and links.
+///
+/// Redirect targets and the connected peer are checked by the SSRF policy.
+/// The preview defaults to 4,000 characters and is capped at 12,000.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid input, denied URLs, unsafe peers,
+/// transport failures, or timeout.
 pub async fn open(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
     let _ = ctx.sandbox()?;
     let input: OpenInput =
@@ -86,6 +103,16 @@ pub async fn open(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolErr
     })
 }
 
+/// Fetches an allowed web page and extracts matching CSS-selected elements.
+///
+/// The selector result count defaults to 12 and is capped at 100. When an
+/// attribute is requested, each result includes that attribute when present.
+/// Redirect targets and the connected peer are checked by the SSRF policy.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid input or selector, denied URLs, unsafe
+/// peers, transport failures, or timeout.
 pub async fn extract(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
     let _ = ctx.sandbox()?;
     let input: ExtractInput =

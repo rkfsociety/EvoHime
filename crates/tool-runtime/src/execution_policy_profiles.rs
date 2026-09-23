@@ -11,57 +11,89 @@ use sha2::{Digest, Sha256};
 use std::{collections::HashMap, io, time::Duration};
 use tokio::process::{Child, Command};
 
+/// Version of the runtime execution-profile contract.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum profile identifier length in bytes.
 pub const MAX_PROFILE_ID: usize = 64;
+/// Hard maximum process timeout in milliseconds.
 pub const MAX_TIMEOUT_MS: u64 = 60_000;
+/// Hard maximum captured output size in bytes.
 pub const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 
+/// Platform process backend selected by an execution profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendRequirement {
+    /// Use the portable child-process backend without Windows job semantics.
     Portable,
+    /// Require Windows Job Object assignment for process-tree cleanup.
     WindowsJobObject,
 }
 
+/// Network access policy for the child process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NetworkPolicy {
+    /// Prevent the child process from inheriting network access.
     Deny,
+    /// Permit the child to inherit the host's network access.
     Inherit,
 }
 
+/// Environment inheritance policy for the child process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EnvironmentPolicy {
+    /// Pass only the runtime's scrubbed environment allowlist.
     ScrubbedAllowlist,
 }
 
+/// Bounded policy contract for a process-based tool invocation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionPolicyProfile {
+    /// Profile contract version; must equal [`CONTRACT_VERSION`].
     pub schema_version: u32,
+    /// Stable identifier for the selected profile.
     pub profile_id: String,
+    /// Version of this specific profile configuration.
     pub version: u64,
+    /// Process backend required to enforce the profile.
     pub backend: BackendRequirement,
+    /// Whether the process must run under the platform sandbox backend.
     pub sandbox_required: bool,
+    /// Network access policy for the child process.
     pub network: NetworkPolicy,
+    /// Environment inheritance policy for the child process.
     pub environment: EnvironmentPolicy,
+    /// Maximum process runtime in milliseconds.
     pub timeout_ms: u64,
+    /// Maximum combined bytes captured from process output.
     pub max_output_bytes: usize,
+    /// Whether terminating the process must also terminate its descendants.
     pub kill_process_tree: bool,
 }
 
+/// Validated profile with its digest and selected backend label.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedExecutionProfile {
+    /// Validated execution constraints.
     pub profile: ExecutionPolicyProfile,
+    /// Digest of the canonical profile representation.
     pub profile_hash: String,
+    /// Stable name of the backend selected for execution.
     pub backend: String,
 }
 
+/// Invalid or unsupported process execution profile configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecutionPolicyError {
+    /// A profile field violates its supported bounds or policy.
     InvalidProfile(&'static str),
+    /// The profile contract version differs from [`CONTRACT_VERSION`].
     UnsupportedVersion(u32),
+    /// The requested execution backend is unavailable on this platform.
     BackendUnavailable,
+    /// The tool name is not an allowed process entrypoint.
     UnsupportedTool,
 }
 
@@ -81,6 +113,13 @@ impl std::fmt::Display for ExecutionPolicyError {
 impl std::error::Error for ExecutionPolicyError {}
 
 impl ExecutionPolicyProfile {
+    /// Builds the current restrictive default profile for a process tool.
+    ///
+    /// ```
+    /// use evohime_tool_runtime::execution_policy_profiles::ExecutionPolicyProfile;
+    /// let profile = ExecutionPolicyProfile::default_for("shell.execute").unwrap();
+    /// assert!(profile.validate().is_ok());
+    /// ```
     pub fn default_for(tool: &str) -> Result<Self, ExecutionPolicyError> {
         if !matches!(tool, "shell.execute" | "process.run") {
             return Err(ExecutionPolicyError::UnsupportedTool);
@@ -103,6 +142,7 @@ impl ExecutionPolicyProfile {
         })
     }
 
+    /// Checks contract version, bounds, and mandatory process-tree cleanup.
     pub fn validate(&self) -> Result<(), ExecutionPolicyError> {
         if self.schema_version != CONTRACT_VERSION {
             return Err(ExecutionPolicyError::UnsupportedVersion(
@@ -134,6 +174,7 @@ impl ExecutionPolicyProfile {
         Ok(())
     }
 
+    /// Resolves and hashes the built-in profile for an approved process tool.
     pub fn resolve(tool: &str) -> Result<ResolvedExecutionProfile, ExecutionPolicyError> {
         let profile = Self::default_for(tool)?;
         profile.validate()?;
@@ -153,6 +194,7 @@ impl ExecutionPolicyProfile {
     }
 }
 
+/// Rejects shell interpreters and path-bearing names; callers must execute a direct program.
 pub fn validate_program_name(program: &str) -> Result<(), ExecutionPolicyError> {
     if program.is_empty()
         || program.contains(['/', '\\'])
@@ -203,6 +245,7 @@ pub fn validate_program_name(program: &str) -> Result<(), ExecutionPolicyError> 
 }
 
 impl ResolvedExecutionProfile {
+    /// Returns the requested timeout capped by the profile maximum.
     pub fn timeout(&self, requested_ms: Option<u64>) -> Duration {
         Duration::from_millis(
             requested_ms
@@ -219,6 +262,7 @@ pub fn apply_environment(command: &mut Command) {
     crate::shell_env::apply_scrubbed_env(command);
 }
 
+/// Rejects caller-supplied environment variables outside the runtime allowlist.
 pub fn reject_user_environment(
     env: Option<&HashMap<String, String>>,
 ) -> Result<(), ExecutionPolicyError> {
@@ -230,6 +274,7 @@ pub fn reject_user_environment(
     Ok(())
 }
 
+/// Keeps platform process-tree cleanup resources alive for a child process.
 #[derive(Debug)]
 pub struct ProcessGuard {
     #[cfg(windows)]
@@ -238,6 +283,7 @@ pub struct ProcessGuard {
 }
 
 impl ProcessGuard {
+    /// Attaches the profile's process-tree guard to an already spawned child.
     pub fn attach(child: &Child, profile: &ResolvedExecutionProfile) -> io::Result<Self> {
         #[cfg(windows)]
         {

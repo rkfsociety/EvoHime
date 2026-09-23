@@ -1,8 +1,23 @@
 use rusqlite::{params, Connection};
+
 const MAX_PROFILES: i64 = 256;
+
+/// Creates the versioned approval-policy profile table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS approval_policy_profiles (id TEXT PRIMARY KEY, version INTEGER NOT NULL, enabled INTEGER NOT NULL, profile_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts or replaces a policy profile only when its version increases.
+///
+/// Serialized profiles are limited to 256 KiB. Returns `false` for an equal or
+/// stale version.
+///
+/// # Errors
+///
+/// Returns a SQLite error for oversized content or failed writes.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -22,6 +37,11 @@ pub fn put(
     )? == 1)
 }
 
+/// Loads profile JSON ordered by ID, capped at 256 rows.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn list(c: &Connection) -> rusqlite::Result<Vec<Vec<u8>>> {
     let mut s =
         c.prepare("SELECT profile_json FROM approval_policy_profiles ORDER BY id LIMIT ?1")?;

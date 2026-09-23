@@ -44,6 +44,10 @@ pub fn lock_private_override(value: Option<bool>) -> PrivateOverrideGuard {
     })
 }
 
+/// Reports whether private or local network targets are allowed.
+///
+/// A per-thread override takes precedence over `EVOHIME_SSRF_ALLOW_PRIVATE`;
+/// without either override, private targets remain disallowed.
 pub fn allow_private_targets() -> bool {
     if let Some(value) = PRIVATE_OVERRIDE.with(|cell| cell.get()) {
         return value;

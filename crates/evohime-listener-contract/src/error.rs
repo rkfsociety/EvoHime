@@ -8,18 +8,28 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AmbientErrorCode {
+    /// Listener process is not available.
     ListenerUnavailable,
+    /// Requested device is already in use by another capture session.
     DeviceConflict,
+    /// Previously selected capture device is no longer connected.
     DeviceDisconnected,
+    /// OS or application permission denied microphone access.
     PermissionDenied,
+    /// Ambient policy failed validation.
     PolicyInvalid,
+    /// Speech engine is unavailable or not initialized.
     EngineNotReady,
+    /// Local persistence rejected an ambient operation.
     StorageFailed,
+    /// Operation requires explicit user confirmation.
     ConfirmationRequired,
+    /// Command arguments violate the contract.
     InvalidArgument,
 }
 
 impl AmbientErrorCode {
+    /// All stable wire codes, in declaration order.
     pub const ALL: [AmbientErrorCode; 9] = [
         AmbientErrorCode::ListenerUnavailable,
         AmbientErrorCode::DeviceConflict,
@@ -66,18 +76,30 @@ impl std::fmt::Display for AmbientErrorCode {
 /// chosen by this crate, so an error message cannot become a content leak.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContractError {
+    /// Requested lifecycle transition is not allowed.
     InvalidTransition {
+        /// State before the rejected transition.
         from: ListeningState,
+        /// Requested state.
         to: ListeningState,
     },
+    /// A required identifier or policy field is empty.
     EmptyField(&'static str),
+    /// A bounded identifier, field, or pattern exceeds its maximum length.
     FieldTooLong(&'static str),
+    /// A field contains an unsupported character.
     InvalidCharacter(&'static str),
+    /// A collection exceeds its maximum entry count.
     TooManyEntries(&'static str),
+    /// A glob pattern exceeds the allowed complexity.
     PatternTooComplex(&'static str),
+    /// Quiet-hours boundaries are invalid or form an empty window.
     InvalidQuietHours,
+    /// Transcript retention is outside the supported range.
     RetentionOutOfBounds,
+    /// A capture limit violates its invariant or hard ceiling.
     LimitsOutOfBounds(&'static str),
+    /// A proposal budget violates its invariant or hard ceiling.
     BudgetOutOfBounds(&'static str),
 }
 

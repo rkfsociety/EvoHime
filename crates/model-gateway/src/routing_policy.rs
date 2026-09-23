@@ -8,18 +8,28 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
+/// Maximum candidates accepted by one route-selection request.
 pub const MAX_CANDIDATES: usize = 64;
+/// Maximum required or advertised capabilities per candidate.
 pub const MAX_CAPABILITIES: usize = 32;
+/// Maximum length of route, model, and capability names.
 pub const MAX_NAME_BYTES: usize = 128;
+/// Maximum length of one stable decision reason code.
 pub const MAX_REASON_BYTES: usize = 96;
+/// Maximum fallback candidates returned in one decision.
 pub const MAX_FALLBACKS: usize = 16;
 
+/// Sensitivity class supported by a route or required by a request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PrivacyClass {
+    /// Data may be sent to public services.
     Public,
+    /// Data is limited to approved internal services.
     Internal,
+    /// Data requires sensitive-data handling controls.
     Sensitive,
+    /// Data may only be processed by routes satisfying restricted policy.
     Restricted,
 }
 
@@ -41,39 +51,57 @@ impl Ord for PrivacyClass {
     }
 }
 
+/// Provider route metadata considered by deterministic selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RouteCandidate {
     /// Stable route identifier; this is not a provider credential or URL.
     pub route_id: String,
+    /// Model identifier exposed by the route.
     pub model: String,
+    /// Capabilities advertised for this model.
     pub capabilities: Vec<String>,
+    /// Estimated price in micro-units per 1,000 tokens.
     pub cost_micros_per_1k_tokens: u64,
+    /// Advertised 95th percentile latency in milliseconds.
     pub p95_latency_ms: u32,
+    /// Highest sensitivity class the route may process.
     pub privacy: PrivacyClass,
+    /// Whether health and policy currently permit the route.
     pub available: bool,
     /// Lower values are preferred when all requested policy dimensions tie.
     pub fallback_rank: u16,
 }
 
+/// Constraints and caller preferences for deterministic route selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoutingRequest {
+    /// Capabilities that every eligible route must provide.
     pub required_capabilities: Vec<String>,
+    /// Optional maximum route cost per 1,000 tokens.
     pub max_cost_micros_per_1k_tokens: Option<u64>,
+    /// Optional maximum advertised P95 latency.
     pub max_latency_ms: Option<u32>,
+    /// Minimum privacy classification required by the request.
     pub required_privacy: PrivacyClass,
+    /// Whether eligible alternatives should be returned as fallbacks.
     pub allow_fallback: bool,
     /// Unprivileged user hint; policy filters always take precedence.
     #[serde(default)]
     pub preferred_route: Option<String>,
     #[serde(default)]
+    /// Task category used by higher-level route policy.
     pub task_class: Option<String>,
     #[serde(default)]
+    /// Whether selection must be restricted to offline-capable routes.
     pub offline: bool,
     #[serde(default)]
+    /// Whether cloud routes are permitted.
     pub allow_cloud: bool,
     #[serde(default)]
+    /// Estimated input size used by cost-aware selection.
     pub estimated_input_tokens: u32,
     #[serde(default = "default_quality_delta")]
+    /// Minimum relative quality difference required before preferring a more expensive route.
     pub quality_delta: f64,
 }
 
@@ -81,33 +109,51 @@ fn default_quality_delta() -> f64 {
     0.05
 }
 
+/// Outcome category for route selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DecisionKind {
+    /// One route was selected without a fallback chain.
     Selected,
+    /// A route was selected and eligible fallbacks were returned.
     Fallback,
+    /// No candidate satisfied the request constraints.
     Denied,
 }
 
+/// Selected route, fallback order, and stable policy reasons.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingDecision {
+    /// Category of the selection outcome.
     pub kind: DecisionKind,
+    /// Selected route identifier, absent when denied.
     pub selected_route: Option<String>,
+    /// Selected model identifier, absent when denied.
     pub selected_model: Option<String>,
+    /// Ordered eligible routes that may replace the selection.
     pub fallback_chain: Vec<String>,
+    /// Stable explanation codes for the selection.
     pub reasons: Vec<String>,
 }
 
+/// Validation failures returned by route policy inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RoutingPolicyError {
+    /// Candidate count exceeds the configured maximum.
     TooManyCandidates,
+    /// Capability count exceeds the configured maximum.
     TooManyCapabilities,
+    /// A route, model, or capability name is invalid.
     InvalidName,
+    /// A candidate or request repeats a capability name.
     DuplicateCapability,
+    /// A name contains a secret-like value or field label.
     SecretLikeField,
+    /// No route candidates were supplied.
     EmptyRouteSet,
 }
 
+/// Validates candidate count, identifiers, and unique bounded capabilities.
 pub fn validate_candidates(candidates: &[RouteCandidate]) -> Result<(), RoutingPolicyError> {
     if candidates.is_empty() {
         return Err(RoutingPolicyError::EmptyRouteSet);
@@ -137,6 +183,7 @@ pub fn validate_candidates(candidates: &[RouteCandidate]) -> Result<(), RoutingP
     Ok(())
 }
 
+/// Validates bounded and unique request capability names.
 pub fn validate_request(request: &RoutingRequest) -> Result<(), RoutingPolicyError> {
     if request.required_capabilities.len() > MAX_CAPABILITIES {
         return Err(RoutingPolicyError::TooManyCapabilities);
@@ -151,6 +198,7 @@ pub fn validate_request(request: &RoutingRequest) -> Result<(), RoutingPolicyErr
     Ok(())
 }
 
+/// Selects a route deterministically after filtering by capability, cost, latency, and privacy.
 pub fn select_route(
     request: &RoutingRequest,
     candidates: &[RouteCandidate],

@@ -20,77 +20,120 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 /// Версия контракта. Совместимость проверяется до любой валидации графа.
 pub const WORKFLOW_CONTRACT_VERSION: &str = "workflow/v1";
 
+/// Maximum nodes allowed in a workflow graph.
 pub const MAX_GRAPH_NODES: usize = 256;
+/// Maximum edges allowed in a workflow graph.
 pub const MAX_GRAPH_EDGES: usize = 512;
+/// Maximum dependency depth allowed during graph validation.
 pub const MAX_GRAPH_DEPTH: usize = 64;
+/// Maximum input or output ports allowed on one node.
 pub const MAX_NODE_PORTS: usize = 64;
+/// Maximum timeout allowed for one node, in milliseconds.
 pub const MAX_TIMEOUT_MS: u64 = 300_000;
+/// Maximum attempts allowed by one node retry policy.
 pub const MAX_RETRY_ATTEMPTS: u32 = 10;
+/// Maximum iterations allowed for one loop node.
 pub const MAX_LOOP_ITERATIONS: u32 = 100;
 
 /// Bounded-лимиты action profiles.
 pub const MAX_IDENTITY_CHARS: usize = 128;
+/// Maximum text field length in Unicode scalar values.
 pub const MAX_TEXT_CHARS: usize = 2_048;
+/// Maximum serialized schema size in characters.
 pub const MAX_SCHEMA_CHARS: usize = 8_192;
+/// Maximum route alternatives declared by one node.
 pub const MAX_ROUTES: usize = 16;
+/// Maximum entries accepted in one permission or context allowlist.
 pub const MAX_ALLOWLIST_ITEMS: usize = 32;
+/// Maximum static tool arguments accepted by a node.
 pub const MAX_ARGUMENTS: usize = 16;
+/// Maximum required evidence count for one node acceptance contract.
 pub const MAX_REQUIRED_EVIDENCE: u32 = 32;
+/// Maximum child workflow revisions allowed for one child action.
 pub const MAX_CHILD_REVISIONS: u32 = 3;
+/// Maximum items emitted by one bounded batch node.
 pub const MAX_BATCH_ITEMS: u32 = 64;
+/// Maximum items returned by one context provider node.
 pub const MAX_PROVIDER_ITEMS: u32 = 64;
+/// Maximum number of nodes that may run concurrently in one workflow.
 pub const MAX_RUN_PARALLELISM: u32 = 8;
 
 /// Максимальная свежесть контекстного провайдера: сутки. Всё, что старше,
 /// не может быть объявлено «свежим» контрактом.
 pub const MAX_FRESHNESS_MS: u64 = 24 * 60 * 60 * 1_000;
 
+/// Value type carried by a workflow port.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PortType {
+    /// UTF-8 textual value.
     Text,
+    /// Signed integer value.
     Integer,
+    /// Floating-point numeric value.
     Number,
+    /// Boolean value.
     Boolean,
+    /// Structured JSON value.
     Json,
+    /// Opaque binary payload.
     Binary,
 }
 
+/// Named input or output port with a declared value type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Port {
+    /// Stable port name within its node.
     pub name: String,
+    /// Type of value accepted or emitted by the port.
     pub value_type: PortType,
     #[serde(default)]
+    /// Whether an input port must have a connected edge.
     pub required: bool,
 }
 
+/// Retry count, delay, and eligible failure classes for node execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetryPolicy {
+    /// Maximum total attempts, including the initial attempt.
     pub max_attempts: u32,
+    /// Delay between attempts in milliseconds.
     pub backoff_ms: u64,
     #[serde(default)]
+    /// Failure classes that may be retried.
     pub retryable_errors: Vec<String>,
 }
 
+/// Cancellation behavior requested for a running node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CancellationPolicy {
+    /// Ask the node to stop and allow it to complete cleanup.
     Cooperative,
+    /// Interrupt the node as soon as the runtime can cancel it.
     Immediate,
 }
 
+/// Whether a node must wait for an explicit user approval.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalPolicy {
+    /// Whether approval is required before executing the node.
     pub required: bool,
     #[serde(default)]
+    /// User-visible reason explaining why approval is requested.
     pub reason: Option<String>,
 }
 
+/// Per-node retry, timeout, cancellation, and approval controls.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExecutionPolicy {
+    /// Retry behavior for eligible failures.
     pub retry: RetryPolicy,
+    /// Maximum execution time in milliseconds.
     pub timeout_ms: u64,
+    /// Cancellation policy applied when the run is cancelled.
     pub cancellation: CancellationPolicy,
+    /// Approval requirement enforced before dispatch.
     pub approval: ApprovalPolicy,
 }
 
@@ -103,7 +146,9 @@ pub struct ExecutionPolicy {
 /// что запуск сохраняет `block_version` в snapshot графа.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockRef {
+    /// Identifier of a registered Core-owned block.
     pub block_id: String,
+    /// Exact block version required by this workflow snapshot.
     pub block_version: u32,
 }
 
@@ -111,9 +156,13 @@ pub struct BlockRef {
 /// графа: runtime заполняет его сам, а контракт лишь фиксирует форму.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeExecutionContext {
+    /// Durable workflow run identifier.
     pub workflow_run_id: String,
+    /// Identifier of the node being executed.
     pub node_id: String,
+    /// Identifier of the current execution attempt.
     pub attempt_id: String,
+    /// Canonical hash of the immutable graph snapshot.
     pub graph_hash: String,
 }
 
@@ -125,10 +174,13 @@ pub struct NodeExecutionContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeBudget {
     #[serde(default)]
+    /// Maximum model tokens charged to this node.
     pub max_tokens: u64,
     #[serde(default)]
+    /// Maximum elapsed seconds for this node.
     pub max_seconds: u64,
     #[serde(default)]
+    /// Maximum tool calls dispatched by this node.
     pub max_tool_calls: u64,
 }
 
@@ -143,6 +195,7 @@ impl Default for NodeBudget {
 }
 
 impl NodeBudget {
+    /// Returns whether each node limit is no greater than its parent limit.
     pub fn is_within(&self, parent: &NodeBudget) -> bool {
         self.max_tokens <= parent.max_tokens
             && self.max_seconds <= parent.max_seconds
@@ -155,8 +208,10 @@ impl NodeBudget {
 /// `$port_name`; произвольный код или URL сюда не помещаются.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolActionProfile {
+    /// Name of a tool already registered in Core.
     pub tool_name: String,
     #[serde(default)]
+    /// Bounded static arguments or `$port_name` input references.
     pub arguments: BTreeMap<String, String>,
 }
 
@@ -165,19 +220,27 @@ pub struct ToolActionProfile {
 /// которым child мог бы объявить собственный child.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildActionProfile {
+    /// Role assigned to the child task.
     pub role: String,
+    /// Child objective text.
     pub goal: String,
     #[serde(default)]
+    /// Optional schema required for the child's output.
     pub output_schema: Option<String>,
     #[serde(default)]
+    /// Context identifiers the child may access.
     pub context_allowlist: Vec<String>,
     #[serde(default)]
+    /// Artifact identifiers the child may access.
     pub artifact_allowlist: Vec<String>,
     #[serde(default)]
+    /// Explicit grants made available to the child.
     pub grants: Vec<String>,
     #[serde(default)]
+    /// Resource limits inherited by the child.
     pub budget: NodeBudget,
     #[serde(default = "default_max_revisions")]
+    /// Maximum child result revisions accepted for the action.
     pub max_revisions: u32,
 }
 
@@ -190,17 +253,25 @@ fn default_max_revisions() -> u32 {
 /// проверка значения.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpActionProfile {
+    /// Identifier of a registered MCP server; this is not a URL.
     pub server_id: String,
+    /// Tool name registered for that server.
     pub tool_name: String,
     #[serde(default)]
+    /// Bounded static arguments or `$port_name` input references.
     pub arguments: BTreeMap<String, String>,
 }
 
+/// Registered integration action and its credential slot reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IntegrationActionProfile {
+    /// Identifier of the registered integration provider.
     pub provider_id: String,
+    /// Identifier of the provider action.
     pub action_id: String,
+    /// Exact registered action version.
     pub action_version: u32,
+    /// Name of a Core-managed credential slot, never the credential itself.
     pub credential_slot: String,
 }
 
@@ -208,14 +279,19 @@ pub struct IntegrationActionProfile {
 /// bounded размер результата.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextProviderProfile {
+    /// Identifier of a registered read-only context provider.
     pub provider_id: String,
     #[serde(default)]
+    /// Query passed to the provider.
     pub query: String,
     #[serde(default = "default_provider_items")]
+    /// Maximum number of provider results accepted.
     pub max_items: u32,
     #[serde(default = "default_freshness_ms")]
+    /// Maximum result age accepted, in milliseconds.
     pub max_age_ms: u64,
     #[serde(default)]
+    /// Optional schema used to validate provider evidence.
     pub evidence_schema: Option<String>,
 }
 
@@ -227,6 +303,7 @@ fn default_freshness_ms() -> u64 {
     60 * 60 * 1_000
 }
 
+/// Boolean condition evaluation mode used by condition nodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConditionMode {
@@ -241,36 +318,54 @@ pub enum ConditionMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum NodeType {
+    /// Read-only research operation resolved by a registered Core capability.
     Research,
+    /// Deterministic transformation of connected input values.
     Transform,
+    /// Executes a registered Core tool with bounded static arguments.
     Tool {
+        /// Registered Core tool and its bounded arguments.
         tool: ToolActionProfile,
     },
+    /// Selects a route using boolean values from connected inputs.
     Condition {
+        /// Rule used to combine the input boolean ports.
         #[serde(default)]
         mode: ConditionMode,
     },
+    /// Waits for explicit approval before continuing along its data edge.
     Approval,
     /// Core-owned статическое разворачивание уже проверенного графа в
     /// пределах того же run policy, budget и approval. Это не nested child
     /// delegation: разворачивание выполняет Core до запуска, вложенные
     /// subgraph-узлы запрещены.
     Subgraph {
+        /// Identifier of the validated graph expanded before the run starts.
         graph_id: String,
     },
+    /// Repeats a bounded sub-operation up to the declared iteration count.
     Loop {
+        /// Maximum number of loop iterations.
         max_iterations: u32,
     },
+    /// Delegates a bounded task to a child agent.
     Child {
+        /// Child task role, scope, grants, and resource limits.
         child: ChildActionProfile,
     },
+    /// Invokes a tool through a registered MCP server.
     McpTool {
+        /// Registered MCP server, tool, and bounded arguments.
         mcp: McpActionProfile,
     },
+    /// Invokes a versioned registered integration action.
     IntegrationAction {
+        /// Versioned registered integration action.
         integration: IntegrationActionProfile,
     },
+    /// Retrieves bounded read-only context from a registered provider.
     ContextProvider {
+        /// Read-only provider and result bounds.
         provider: ContextProviderProfile,
     },
 }
@@ -316,15 +411,20 @@ impl NodeType {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NodeAcceptance {
     #[serde(default)]
+    /// Optional schema required for the node output.
     pub output_schema: Option<String>,
     #[serde(default)]
+    /// Minimum number of evidence records required for acceptance.
     pub required_evidence: u32,
     #[serde(default)]
+    /// Status values accepted as successful node outcomes.
     pub allowed_statuses: Vec<String>,
     #[serde(default)]
+    /// Error classes that the retry policy may retry.
     pub retryable_error_classes: Vec<String>,
 }
 
+/// Failure handling strategy for a workflow node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FailurePolicy {
@@ -335,6 +435,7 @@ pub enum FailurePolicy {
     Branch,
 }
 
+/// Rule for satisfying a node's incoming data dependencies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JoinMode {
@@ -345,6 +446,7 @@ pub enum JoinMode {
     Any,
 }
 
+/// Scheduler concurrency declaration for a node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConcurrencyClass {
@@ -355,16 +457,21 @@ pub enum ConcurrencyClass {
     Parallel,
 }
 
+/// Maximum number of items emitted or processed in one batch operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BatchPolicy {
+    /// Item limit for the batch.
     pub max_items: u32,
 }
 
+/// Kind of control or value flow represented by an edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeChannel {
+    /// Carries a value from a successful node output.
     #[default]
     Data,
+    /// Carries control flow from a node failure branch.
     Failure,
 }
 
@@ -372,33 +479,46 @@ pub enum EdgeChannel {
 // Граф.
 // ---------------------------------------------------------------------------
 
+/// One executable node and its typed inputs, outputs, and policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowNode {
+    /// Stable identifier unique within the graph.
     pub id: String,
+    /// Operation kind and its registered capability profile.
     pub node_type: NodeType,
     #[serde(default)]
+    /// Values accepted by the node.
     pub inputs: Vec<Port>,
     #[serde(default)]
+    /// Values emitted by the node.
     pub outputs: Vec<Port>,
+    /// Node-level retries, timeout, cancellation, and approval controls.
     pub execution: ExecutionPolicy,
     /// Идентичность блока. Отсутствие ссылки означает встроенный
     /// deterministic узел без внешней capability.
     #[serde(default)]
+    /// Optional exact version of a registered Core-owned execution block.
     pub block: Option<BlockRef>,
     /// Allowlist имён исходящих маршрутов. Ребро с маршрутом вне списка
     /// отклоняется валидацией, поэтому модель не может выбрать произвольный
     /// node ID.
     #[serde(default)]
+    /// Names of outgoing routes that this node is allowed to select.
     pub routes: Vec<String>,
     #[serde(default)]
+    /// Requirements used to decide whether the node result is accepted.
     pub acceptance: NodeAcceptance,
     #[serde(default)]
+    /// Behavior when a node fails.
     pub on_failure: FailurePolicy,
     #[serde(default)]
+    /// How multiple incoming data dependencies are joined.
     pub join: JoinMode,
     #[serde(default)]
+    /// Declared concurrency class for scheduler planning.
     pub concurrency: ConcurrencyClass,
     #[serde(default)]
+    /// Optional batch-size bound for nodes that process collections.
     pub batch: Option<BatchPolicy>,
 }
 
@@ -421,6 +541,7 @@ impl WorkflowNode {
         }
     }
 
+    /// Adds an input port to the node definition.
     pub fn with_input(mut self, name: &str, value_type: PortType, required: bool) -> Self {
         self.inputs.push(Port {
             name: name.into(),
@@ -430,6 +551,7 @@ impl WorkflowNode {
         self
     }
 
+    /// Adds an optional output port to the node definition.
     pub fn with_output(mut self, name: &str, value_type: PortType) -> Self {
         self.outputs.push(Port {
             name: name.into(),
@@ -439,6 +561,7 @@ impl WorkflowNode {
         self
     }
 
+    /// Binds the node to an exact registered block version.
     pub fn with_block(mut self, block_id: &str, block_version: u32) -> Self {
         self.block = Some(BlockRef {
             block_id: block_id.into(),
@@ -448,19 +571,27 @@ impl WorkflowNode {
     }
 }
 
+/// Directed connection between node ports or failure branches.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowEdge {
+    /// Identifier of the source node.
     pub from_node: String,
+    /// Output port on the source node.
     pub from_port: String,
+    /// Identifier of the destination node.
     pub to_node: String,
+    /// Input port on the destination node.
     pub to_port: String,
     #[serde(default)]
+    /// Whether the edge carries data or failure control flow.
     pub channel: EdgeChannel,
     #[serde(default)]
+    /// Optional declared route name selected at the source node.
     pub route: Option<String>,
 }
 
 impl WorkflowEdge {
+    /// Creates a data-flow edge between two ports.
     pub fn data(from_node: &str, from_port: &str, to_node: &str, to_port: &str) -> Self {
         Self {
             from_node: from_node.into(),
@@ -472,6 +603,7 @@ impl WorkflowEdge {
         }
     }
 
+    /// Creates a failure-control edge between two ports.
     pub fn failure(from_node: &str, from_port: &str, to_node: &str, to_port: &str) -> Self {
         Self {
             from_node: from_node.into(),
@@ -483,6 +615,7 @@ impl WorkflowEdge {
         }
     }
 
+    /// Associates the edge with a route declared by its source node.
     pub fn with_route(mut self, route: &str) -> Self {
         self.route = Some(route.into());
         self
@@ -493,9 +626,13 @@ impl WorkflowEdge {
 /// меняется вместе с библиотекой шаблонов.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowBudget {
+    /// Maximum number of workflow nodes allowed to execute concurrently.
     pub max_parallel_nodes: u32,
+    /// Maximum aggregate model token usage.
     pub max_tokens: u64,
+    /// Maximum aggregate tool calls.
     pub max_tool_calls: u64,
+    /// Maximum workflow wall-clock duration in milliseconds.
     pub max_wall_clock_ms: u64,
 }
 
@@ -514,152 +651,276 @@ fn default_contract() -> String {
     WORKFLOW_CONTRACT_VERSION.to_string()
 }
 
+/// Immutable versioned workflow graph with entry point, nodes, edges, and run budget.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkflowGraph {
     #[serde(default = "default_contract")]
+    /// Contract identifier used for compatibility validation.
     pub contract: String,
+    /// Stable graph identifier.
     pub graph_id: String,
+    /// Monotonically increasing graph version.
     pub version: u64,
+    /// Node from which execution begins.
     pub entry_node: String,
+    /// Nodes that define graph operations.
     pub nodes: Vec<WorkflowNode>,
     #[serde(default)]
+    /// Data and failure edges between node ports.
     pub edges: Vec<WorkflowEdge>,
     #[serde(default)]
+    /// Run-wide parallelism and resource limits.
     pub budget: WorkflowBudget,
 }
 
+/// Deterministically ordered reasons a workflow graph failed validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
+    /// Graph contract does not match the supported workflow version.
     UnsupportedContract(String),
+    /// Graph identifier is empty.
     EmptyGraphId,
+    /// Graph version must be nonzero.
     InvalidVersion,
+    /// Entry node identifier is empty.
     EmptyEntryNode,
+    /// Graph contains more nodes than the configured bound.
     TooManyNodes {
+        /// Number of nodes found.
         actual: usize,
+        /// Maximum number of nodes permitted.
         maximum: usize,
     },
+    /// Graph contains more edges than the configured bound.
     TooManyEdges {
+        /// Number of edges found.
         actual: usize,
+        /// Maximum number of edges permitted.
         maximum: usize,
     },
+    /// Graph dependency depth exceeds the configured bound.
     TooDeep {
+        /// Depth found by validation.
         actual: usize,
+        /// Maximum allowed depth.
         maximum: usize,
     },
+    /// A node identifier is empty.
     EmptyNodeId,
+    /// Two nodes use the same identifier.
     DuplicateNodeId(String),
+    /// The entry node identifier does not exist in the graph.
     UnknownEntryNode(String),
+    /// An edge refers to a node identifier that does not exist.
     UnknownNode(String),
+    /// One node declares the same port name more than once.
     DuplicatePort {
+        /// Node containing the duplicate port.
         node_id: String,
+        /// Duplicated input or output port name.
         port: String,
     },
+    /// A node declares more input and output ports than allowed.
     TooManyPorts {
+        /// Node exceeding the port bound.
         node_id: String,
+        /// Number of declared ports.
         actual: usize,
+        /// Maximum number of ports permitted.
         maximum: usize,
     },
+    /// A port name is empty.
     EmptyPortName {
+        /// Node containing the unnamed port.
         node_id: String,
     },
+    /// A subgraph node does not name its referenced graph.
     EmptySubgraphId {
+        /// Subgraph node with the invalid reference.
         node_id: String,
     },
+    /// A loop bound is zero or exceeds the implementation maximum.
     InvalidLoopBound {
+        /// Loop node with the invalid bound.
         node_id: String,
+        /// Requested iteration count.
         actual: u32,
+        /// Maximum supported iteration count.
         maximum: u32,
     },
+    /// A retry count is zero or exceeds the implementation maximum.
     InvalidRetryAttempts {
+        /// Node with the invalid retry policy.
         node_id: String,
+        /// Requested maximum attempts.
         actual: u32,
+        /// Maximum supported attempt count.
         maximum: u32,
     },
+    /// Node timeout is zero or exceeds the implementation maximum.
     InvalidTimeout {
+        /// Node with the invalid timeout.
         node_id: String,
+        /// Requested timeout in milliseconds.
         actual: u64,
+        /// Maximum supported timeout in milliseconds.
         maximum: u64,
     },
+    /// Retry backoff exceeds the allowed timeout bound.
     InvalidBackoff {
+        /// Node with the invalid backoff.
         node_id: String,
     },
+    /// One declared retryable error class is empty.
     EmptyRetryableError {
+        /// Node with the empty retryable error class.
         node_id: String,
     },
     /// Идентификатор нарушает строгий charset и потому мог бы нести URL,
     /// путь или команду.
     InvalidIdentity {
+        /// Node declaring the invalid identity.
         node_id: String,
+        /// Field whose value failed the identity rule.
         field: &'static str,
+        /// Rejected identity value.
         value: String,
     },
+    /// A free-text or schema field exceeds its configured bound.
     TextTooLong {
+        /// Node containing the oversized field.
         node_id: String,
+        /// Field name reported by validation.
         field: &'static str,
+        /// Actual field length.
         actual: usize,
+        /// Maximum accepted field length.
         maximum: usize,
     },
+    /// A required textual field is empty.
     EmptyField {
+        /// Node containing the empty field.
         node_id: String,
+        /// Empty field name.
         field: &'static str,
     },
+    /// A bounded collection contains too many entries.
     TooManyItems {
+        /// Node containing the oversized collection.
         node_id: String,
+        /// Collection field name.
         field: &'static str,
+        /// Actual number of entries.
         actual: usize,
+        /// Maximum accepted number of entries.
         maximum: usize,
     },
+    /// A numeric value is zero or exceeds its configured bound.
     InvalidBound {
+        /// Node containing the invalid bound, or empty for a graph-level budget.
         node_id: String,
+        /// Field with the invalid value.
         field: &'static str,
+        /// Requested numeric value.
         actual: u64,
+        /// Maximum allowed numeric value.
         maximum: u64,
     },
+    /// A node references a malformed registered block identity.
     InvalidBlockRef {
+        /// Node containing the invalid block reference.
         node_id: String,
     },
+    /// An edge references a source port not declared by its source node.
     UnknownSourcePort {
+        /// Node owning the source port.
         node_id: String,
+        /// Missing source port name.
         port: String,
     },
+    /// An edge references a destination port not declared by its target node.
     UnknownTargetPort {
+        /// Node owning the destination port.
         node_id: String,
+        /// Missing destination port name.
         port: String,
     },
+    /// Source and destination port types are incompatible.
     TypeMismatch {
+        /// Edge whose connected port types differ.
         edge: WorkflowEdge,
+        /// Declared source port type.
         from: PortType,
+        /// Declared destination port type.
         to: PortType,
     },
+    /// A required input port has no incoming data edge.
     RequiredInputUnconnected {
+        /// Node with the unconnected required port.
         node_id: String,
+        /// Required input port name.
         port: String,
     },
+    /// More than one edge connects to an input that permits one source.
     DuplicateInputConnection {
+        /// Node with the multiply connected input.
         node_id: String,
+        /// Input port receiving multiple edges.
         port: String,
     },
     /// Маршрут ребра не объявлен исходящим узлом.
     UnknownRoute {
+        /// Source node declaring the route.
         node_id: String,
+        /// Route that was not declared by the source node.
         route: String,
     },
     /// Failure-ребро выходит из узла, который не объявил failure-ветвление.
     UnexpectedFailureBranch {
+        /// Node that has a failure edge without branch failure policy.
         node_id: String,
     },
     /// Узел объявил failure-ветвление, но ветви нет: ошибка была бы
     /// проглочена.
     MissingFailureBranch {
+        /// Node configured to branch failures but lacking a failure edge.
         node_id: String,
     },
+    /// An edge connects a node to itself.
     SelfLoop(String),
+    /// Graph contains a dependency cycle.
     Cycle(Vec<String>),
+    /// A node cannot be reached from the graph entry node.
     UnreachableNode(String),
 }
 
 impl WorkflowGraph {
     /// Проверяет полный граф в стабильном порядке и возвращает ошибки в том же порядке.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use evohime_core::workflow::{
+    ///     ApprovalPolicy, CancellationPolicy, ExecutionPolicy, NodeType, RetryPolicy,
+    ///     WorkflowBudget, WorkflowGraph, WorkflowNode, WORKFLOW_CONTRACT_VERSION,
+    /// };
+    ///
+    /// let graph = WorkflowGraph {
+    ///     contract: WORKFLOW_CONTRACT_VERSION.into(),
+    ///     graph_id: "example".into(),
+    ///     version: 1,
+    ///     entry_node: "start".into(),
+    ///     nodes: vec![WorkflowNode::new("start", NodeType::Transform, ExecutionPolicy {
+    ///         retry: RetryPolicy { max_attempts: 1, backoff_ms: 0, retryable_errors: vec![] },
+    ///         timeout_ms: 1_000,
+    ///         cancellation: CancellationPolicy::Cooperative,
+    ///         approval: ApprovalPolicy { required: false, reason: None },
+    ///     })],
+    ///     edges: vec![],
+    ///     budget: WorkflowBudget::default(),
+    /// };
+    /// assert!(graph.validate().is_ok());
+    /// ```
     pub fn validate(&self) -> Result<(), Vec<ValidationError>> {
         let mut errors = Vec::new();
         let mut nodes = BTreeMap::new();
@@ -875,6 +1136,7 @@ impl WorkflowGraph {
         format!("{:x}", hasher.finalize())
     }
 
+    /// Returns the node with the given identifier, if it exists.
     pub fn node(&self, node_id: &str) -> Option<&WorkflowNode> {
         self.nodes.iter().find(|node| node.id == node_id)
     }

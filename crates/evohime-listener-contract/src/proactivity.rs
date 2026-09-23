@@ -1,8 +1,11 @@
 use crate::{error::ContractError, policy::AmbientPolicy};
 use serde::{Deserialize, Serialize};
 
+/// Default maximum number of proposals shown per hour.
 pub const MAX_PROPOSALS_PER_HOUR: u32 = 3;
+/// Default maximum number of proposals shown per day.
 pub const MAX_PROPOSALS_PER_DAY: u32 = 10;
+/// Default minimum elapsed time between shown proposals.
 pub const MIN_PROPOSAL_INTERVAL_MS: u64 = 10 * 60 * 1000;
 
 const HARD_MAX_PER_HOUR: u32 = 12;
@@ -17,15 +20,20 @@ const HARD_MAX_PER_DAY: u32 = 48;
 /// [`ProactivityCounters`], so this type stays a pure bound.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProactivityBudget {
+    /// Maximum proposals allowed in one hour.
     pub max_per_hour: u32,
+    /// Maximum proposals allowed in one day.
     pub max_per_day: u32,
+    /// Minimum interval between proposals, in milliseconds.
     pub min_interval_ms: u64,
 }
 
 /// Counters owned by Core and handed to the budget for a decision.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProactivityCounters {
+    /// Proposals already shown in the current hour window.
     pub hour_count: u32,
+    /// Proposals already shown in the current day window.
     pub day_count: u32,
     /// Unix millis of the last proposal shown, if any.
     pub last_proposed_at_ms: Option<u64>,
@@ -36,20 +44,30 @@ pub struct ProactivityCounters {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProactivityDenial {
+    /// User or policy has paused proactive suggestions.
     Paused,
+    /// Current local time is within a quiet-hours window.
     QuietHours,
+    /// Hourly proposal ceiling has been reached.
     HourlyCapReached,
+    /// Daily proposal ceiling has been reached.
     DailyCapReached,
-    TooSoon { retry_after_ms: u64 },
+    /// Minimum spacing has not elapsed; includes time remaining.
+    TooSoon {
+        /// Milliseconds remaining before another proposal may be shown.
+        retry_after_ms: u64,
+    },
 }
 
 impl ProactivityBudget {
+    /// Default immutable proactivity ceilings.
     pub const DEFAULT: ProactivityBudget = ProactivityBudget {
         max_per_hour: MAX_PROPOSALS_PER_HOUR,
         max_per_day: MAX_PROPOSALS_PER_DAY,
         min_interval_ms: MIN_PROPOSAL_INTERVAL_MS,
     };
 
+    /// Validates budget values against hard limits and cross-field rules.
     pub fn validate(&self) -> Result<(), ContractError> {
         if self.max_per_hour == 0 || self.max_per_hour > HARD_MAX_PER_HOUR {
             return Err(ContractError::BudgetOutOfBounds("max_per_hour"));

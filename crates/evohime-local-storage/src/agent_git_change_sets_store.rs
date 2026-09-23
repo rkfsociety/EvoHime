@@ -1,22 +1,32 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum serialized payload size accepted by this store (one mebibyte).
 pub const MAX_JSON_BYTES: usize = 1024 * 1024;
 
+/// Result of attempting to reserve an idempotency key.
 #[derive(Debug, PartialEq, Eq)]
 pub enum IdempotencyClaim {
+    /// The caller inserted the key and owns the operation.
     Claimed,
+    /// Another caller owns the key and has not stored a response yet.
     Pending,
+    /// The operation already completed with the stored response bytes.
     Completed(Vec<u8>),
 }
 
+/// Creates the change-set, candidate, and idempotency tables and indexes.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_git_change_sets (id TEXT PRIMARY KEY, version INTEGER NOT NULL, revision INTEGER NOT NULL DEFAULT 1, content_hash TEXT NOT NULL, state_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS agent_git_commit_candidates (id TEXT PRIMARY KEY, change_set_id TEXT NOT NULL, diff_hash TEXT NOT NULL, state_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL, FOREIGN KEY(change_set_id) REFERENCES agent_git_change_sets(id)); CREATE INDEX IF NOT EXISTS idx_agent_git_candidates_change_set ON agent_git_commit_candidates(change_set_id, created_at_ms DESC); CREATE TABLE IF NOT EXISTS agent_git_change_set_idempotency (idempotency_key TEXT PRIMARY KEY, response_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL);")
 }
 
+/// Creates only the idempotency table for callers that manage other tables separately.
 pub fn install_idempotency_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch("CREATE TABLE IF NOT EXISTS agent_git_change_set_idempotency (idempotency_key TEXT PRIMARY KEY, response_json BLOB NOT NULL, created_at_ms INTEGER NOT NULL);")
 }
 
+/// Inserts a change set at revision one unless its identifier already exists.
+///
+/// Returns `true` when inserted and `false` when the identifier was already present.
 pub fn put_change_set(
     connection: &Connection,
     id: &str,
@@ -33,6 +43,7 @@ pub fn put_change_set(
     let changed = connection.execute("INSERT INTO agent_git_change_sets(id,version,revision,content_hash,state_json,created_at_ms) VALUES(?1,?2,1,?3,?4,?5) ON CONFLICT(id) DO NOTHING", params![id, version, content_hash, json, created_at_ms])?;
     Ok(changed == 1)
 }
+/// Loads the serialized change set for `id`, if present.
 pub fn get_change_set(connection: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -43,6 +54,10 @@ pub fn get_change_set(connection: &Connection, id: &str) -> rusqlite::Result<Opt
         .optional()
 }
 
+/// Replaces a change set only if its current revision equals `expected_revision`.
+///
+/// A successful update increments the revision and returns `true`; a missing row or
+/// revision conflict returns `false`.
 pub fn update_change_set(
     connection: &Connection,
     id: &str,
@@ -63,6 +78,7 @@ pub fn update_change_set(
     )?;
     Ok(changed == 1)
 }
+/// Inserts or replaces a serialized commit candidate.
 pub fn put_candidate(
     connection: &Connection,
     id: &str,
@@ -83,6 +99,10 @@ pub fn put_candidate(
 // These paired writes are the public transactional boundary for two records;
 // keeping the column-wise arguments explicit makes the CAS and candidate
 // payloads auditable at the call site.
+/// Atomically updates a change set and inserts its commit candidate.
+///
+/// Returns `false` without writing either record when the revision compare-and-swap
+/// fails. Database errors are returned and the transaction is rolled back.
 #[allow(clippy::too_many_arguments)]
 pub fn update_change_set_and_put_candidate(
     connection: &Connection,
@@ -123,6 +143,10 @@ pub fn update_change_set_and_put_candidate(
 
 // See the paired insert above: the update variant intentionally preserves the
 // same explicit transaction contract.
+/// Atomically updates a change set and an existing commit candidate.
+///
+/// Returns `false` without writing either record when the change-set revision does
+/// not match or the candidate does not exist.
 #[allow(clippy::too_many_arguments)]
 pub fn update_change_set_and_update_candidate(
     connection: &Connection,
@@ -162,6 +186,7 @@ pub fn update_change_set_and_update_candidate(
     transaction.commit()?;
     Ok(true)
 }
+/// Loads a serialized candidate by identifier, if present.
 pub fn get_candidate(connection: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -172,6 +197,7 @@ pub fn get_candidate(connection: &Connection, id: &str) -> rusqlite::Result<Opti
         .optional()
 }
 
+/// Loads the most recently created candidate for a change set, if any.
 pub fn get_latest_candidate(
     connection: &Connection,
     change_set_id: &str,
@@ -185,6 +211,9 @@ pub fn get_latest_candidate(
         .optional()
 }
 
+/// Replaces a candidate's diff hash and serialized state.
+///
+/// Returns `true` when a row was updated and `false` when no candidate has `id`.
 pub fn update_candidate(
     connection: &Connection,
     id: &str,
@@ -204,6 +233,9 @@ pub fn update_candidate(
     Ok(changed == 1)
 }
 
+/// Stores a completed idempotency response only when the key is unused.
+///
+/// Returns `false` when a response or pending claim already occupies the key.
 pub fn put_idempotent(
     connection: &Connection,
     key: &str,
@@ -225,6 +257,7 @@ pub fn put_idempotent(
     Ok(changed == 1)
 }
 
+/// Reserves an idempotency key, distinguishing a pending claim from a saved result.
 pub fn claim_idempotent(
     connection: &Connection,
     key: &str,
@@ -245,6 +278,7 @@ pub fn claim_idempotent(
     }
 }
 
+/// Fills a pending claim with a non-empty response, if it is still pending.
 pub fn complete_idempotent(
     connection: &Connection,
     key: &str,
@@ -266,6 +300,7 @@ pub fn complete_idempotent(
     Ok(changed == 1)
 }
 
+/// Removes a pending claim; completed responses are left intact.
 pub fn release_idempotent(connection: &Connection, key: &str) -> rusqlite::Result<bool> {
     let changed = connection.execute(
         "DELETE FROM agent_git_change_set_idempotency WHERE idempotency_key=?1 AND length(response_json)=0",
@@ -274,6 +309,7 @@ pub fn release_idempotent(connection: &Connection, key: &str) -> rusqlite::Resul
     Ok(changed == 1)
 }
 
+/// Loads the stored idempotency response, including an empty pending marker.
 pub fn get_idempotent(connection: &Connection, key: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(

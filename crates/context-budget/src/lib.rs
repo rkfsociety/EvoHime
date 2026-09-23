@@ -2,6 +2,7 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+#![deny(missing_docs)]
 //! Context Budget Manager (план 01).
 //!
 //! Владелец состояния и политики — Rust Core. Этот crate содержит контракты и
@@ -16,6 +17,14 @@
 //! Наружу (в IPC и UI, этап 01.5) уходит только bounded read-only projection:
 //! состав контекста, причины сокращения и `context_ledger_hash`. Сырой prompt,
 //! тело памяти и raw tool output не покидают Core.
+//!
+//! ```
+//! use evohime_context_budget::{content_hash, ContentForm};
+//!
+//! let first = content_hash("note", &ContentForm::Text("hello world"));
+//! let same = content_hash("note", &ContentForm::Text("hello world  "));
+//! assert_eq!(first, same);
+//! ```
 
 pub mod artifact;
 pub mod budget;

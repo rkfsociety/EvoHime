@@ -1,6 +1,22 @@
 //! Durable Workspace Set definitions and version-fenced updates.
+//!
+//! Create a set and advance it with an optimistic version check:
+//!
+//! ```
+//! use evohime_local_storage::workspace_sets_store;
+//! use rusqlite::Connection;
+//!
+//! let connection = Connection::open_in_memory()?;
+//! workspace_sets_store::install_schema(&connection)?;
+//! assert!(workspace_sets_store::create(&connection, "default", b"v1", "hash-v1", 1)?);
+//! assert!(workspace_sets_store::update(
+//!     &connection, "default", 1, 2, b"v2", "hash-v2", 2,
+//! )?);
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Creates the Workspace Set, idempotency, and run-binding tables when absent.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS workspace_sets (
@@ -25,6 +41,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     )
 }
 
+/// Inserts a Workspace Set at version 1; duplicate IDs return `false`.
 pub fn create(
     connection: &Connection,
     set_id: &str,
@@ -38,6 +55,7 @@ pub fn create(
     )? == 1)
 }
 
+/// Returns the serialized Workspace Set definition, if it exists.
 pub fn get(connection: &Connection, set_id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -48,6 +66,8 @@ pub fn get(connection: &Connection, set_id: &str) -> rusqlite::Result<Option<Vec
         .optional()
 }
 
+/// Replaces a set only when its stored version equals `expected_version`.
+/// The caller supplies `next_version`; a stale version returns `false`.
 pub fn update(
     connection: &Connection,
     set_id: &str,
@@ -63,6 +83,7 @@ pub fn update(
     )? == 1)
 }
 
+/// Returns the previously stored result for an idempotency key, if present.
 pub fn get_idempotency(connection: &Connection, key: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
@@ -73,6 +94,7 @@ pub fn get_idempotency(connection: &Connection, key: &str) -> rusqlite::Result<O
         .optional()
 }
 
+/// Stores the first result associated with `key`; later writes leave it unchanged.
 pub fn put_idempotency(
     connection: &Connection,
     key: &str,
@@ -85,6 +107,7 @@ pub fn put_idempotency(
     Ok(())
 }
 
+/// Pins a task to a Workspace Set version and stores its serialized binding.
 pub fn bind_run(
     connection: &Connection,
     task_id: &str,
@@ -100,6 +123,7 @@ pub fn bind_run(
     Ok(())
 }
 
+/// Returns the pinned serialized binding for a task, if one exists.
 pub fn get_run_binding(
     connection: &Connection,
     task_id: &str,

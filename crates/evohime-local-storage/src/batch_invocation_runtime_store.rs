@@ -1,7 +1,21 @@
 use rusqlite::{params, Connection, OptionalExtension};
+
+/// Creates the durable batch-invocation state table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS batch_invocations (id TEXT PRIMARY KEY, version INTEGER NOT NULL, status TEXT NOT NULL, content_hash TEXT NOT NULL, batch_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts version 1 or advances a batch invocation from its prior version.
+///
+/// Returns `false` if the initial ID already exists or the expected previous
+/// version is not current.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite write error.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -19,6 +33,11 @@ pub fn put(
     }
     Ok(c.execute("UPDATE batch_invocations SET version=?1,status=?2,content_hash=?3,batch_json=?4,updated_at_ms=?5 WHERE id=?6 AND version=?7", params![version as i64,status,hash,json,now,id,(version-1) as i64])? == 1)
 }
+/// Loads the current version and serialized batch state by ID.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<(u64, Vec<u8>)>> {
     c.query_row(
         "SELECT version,batch_json FROM batch_invocations WHERE id=?1",

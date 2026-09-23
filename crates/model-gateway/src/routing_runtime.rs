@@ -10,38 +10,61 @@ use thiserror::Error;
 
 use crate::routing_policy::{select_route, RouteCandidate, RoutingDecision, RoutingRequest};
 
+/// Hard upper bound for planned run iterations.
 pub const MAX_ITERATIONS: u32 = 128;
+/// Hard upper bound for tool calls in one run.
 pub const MAX_TOOL_CALLS: u32 = 512;
+/// Hard upper bound for accounted model tokens in one run.
 pub const MAX_TOKENS: u64 = 2_000_000;
+/// Hard upper bound for run wall-clock duration in milliseconds.
 pub const MAX_WALL_CLOCK_MS: u64 = 3_600_000;
+/// Maximum number of extra telemetry fields retained per run.
 pub const MAX_TELEMETRY_FIELDS: usize = 24;
+/// Maximum number of characters retained in a telemetry field value.
 pub const MAX_TELEMETRY_VALUE_BYTES: usize = 512;
 
+/// Route population policy applied when building a run plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RoutingMode {
+    /// Prefer local routes and fall back when none are available.
     LocalFirst,
+    /// Consider all eligible local and cloud routes under policy ranking.
     Balanced,
+    /// Restrict route candidates to cloud research providers.
     CloudResearch,
+    /// Restrict routing to local/offline candidates.
     Offline,
 }
 
+/// Lifecycle states supported by [`RoutingRuntime`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuntimeState {
+    /// A route and limits have been planned but execution has not started.
     Planned,
+    /// The run is currently consuming its route and resource budget.
     Running,
+    /// Execution is temporarily suspended and can be resumed.
     Paused,
+    /// Execution was stopped before completion.
     Stopped,
+    /// Execution completed successfully.
     Completed,
+    /// Execution failed, including when a budget was exceeded.
     Failed,
 }
 
+/// Caller-selected limits that must stay within gateway hard bounds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeLimits {
+    /// Maximum iterations permitted for the run.
     pub max_iterations: u32,
+    /// Maximum tool calls permitted for the run.
     pub max_tool_calls: u32,
+    /// Maximum accounted model tokens.
     pub max_tokens: u64,
+    /// Maximum elapsed time in milliseconds.
     pub wall_clock_ms: u64,
 }
 
@@ -57,6 +80,7 @@ impl Default for RuntimeLimits {
 }
 
 impl RuntimeLimits {
+    /// Rejects zero limits and values above the gateway hard caps.
     pub fn validate(&self) -> Result<(), RuntimeError> {
         if self.max_iterations == 0 || self.max_iterations > MAX_ITERATIONS {
             return Err(RuntimeError::LimitOutOfBounds("max_iterations"));
@@ -74,30 +98,48 @@ impl RuntimeLimits {
     }
 }
 
+/// Accumulated resource usage for a routing run.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeUsage {
+    /// Iterations recorded so far.
     pub iterations: u32,
+    /// Tool calls recorded so far.
     pub tool_calls: u32,
+    /// Model tokens accounted so far.
     pub tokens: u64,
+    /// Elapsed run time in milliseconds.
     pub elapsed_ms: u64,
 }
 
+/// Observable route transition or available fallback.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FallbackNotice {
+    /// Route that was abandoned or preferred before fallback.
     pub from_route: String,
+    /// Route selected as the fallback destination.
     pub to_route: String,
+    /// Stable reason explaining why fallback was used or exposed.
     pub reason: String,
 }
 
+/// Bounded, redacted runtime telemetry for one routed execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoutingTelemetry {
+    /// Mode used to filter and rank routes.
     pub mode: RoutingMode,
+    /// Current lifecycle state.
     pub state: RuntimeState,
+    /// Selected route identifier, when planned.
     pub route: Option<String>,
+    /// Selected model identifier, when planned.
     pub model: Option<String>,
+    /// Stable reason for the current runtime decision.
     pub reason: String,
+    /// Fallback information, if applicable.
     pub fallback: Option<FallbackNotice>,
+    /// Accumulated run resource usage.
     pub usage: RuntimeUsage,
+    /// Additional bounded fields, with secret-like names or values rejected.
     pub fields: BTreeMap<String, String>,
 }
 
@@ -115,10 +157,12 @@ impl RoutingTelemetry {
         }
     }
 
+    /// Serializes telemetry deterministically using its ordered field map.
     pub fn to_deterministic_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
 
+    /// Inserts a bounded redacted field unless the telemetry field cap is reached.
     pub fn insert_field(&mut self, name: impl Into<String>, value: impl Into<String>) {
         if self.fields.len() >= MAX_TELEMETRY_FIELDS {
             return;
@@ -131,20 +175,27 @@ impl RoutingTelemetry {
     }
 }
 
+/// Failure to plan a route, transition state, or remain within runtime bounds.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum RuntimeError {
+    /// A requested resource limit is zero or exceeds a hard cap.
     #[error("runtime limit is out of bounds: {0}")]
     LimitOutOfBounds(&'static str),
+    /// No candidate satisfied the selected routing mode and request policy.
     #[error("no route is eligible for the selected routing mode")]
     NoRoute,
+    /// An operation is not valid in the runtime's current state.
     #[error("invalid state transition from {0:?}")]
     InvalidTransition(RuntimeState),
+    /// A tracked resource exceeded its configured run limit.
     #[error("runtime budget exceeded: {0}")]
     BudgetExceeded(&'static str),
+    /// Telemetry input contained a secret-like name or value.
     #[error("runtime telemetry field is secret-like")]
     SecretLikeTelemetry,
 }
 
+/// Plans a route and enforces lifecycle transitions and per-run resource bounds.
 #[derive(Debug, Clone)]
 pub struct RoutingRuntime {
     mode: RoutingMode,
@@ -156,6 +207,7 @@ pub struct RoutingRuntime {
 }
 
 impl RoutingRuntime {
+    /// Selects an eligible route and constructs a planned runtime with validated limits.
     pub fn plan(
         mode: RoutingMode,
         request: &RoutingRequest,
@@ -195,6 +247,7 @@ impl RoutingRuntime {
         })
     }
 
+    /// Starts a planned run and returns its immutable route decision.
     pub fn start(&mut self) -> Result<&RoutingDecision, RuntimeError> {
         if self.state != RuntimeState::Planned {
             return Err(RuntimeError::InvalidTransition(self.state));
@@ -204,14 +257,17 @@ impl RoutingRuntime {
         Ok(&self.decision)
     }
 
+    /// Pauses a running runtime.
     pub fn pause(&mut self) -> Result<(), RuntimeError> {
         self.transition(RuntimeState::Running, RuntimeState::Paused)
     }
 
+    /// Resumes a paused runtime.
     pub fn resume(&mut self) -> Result<(), RuntimeError> {
         self.transition(RuntimeState::Paused, RuntimeState::Running)
     }
 
+    /// Stops a running or paused runtime.
     pub fn stop(&mut self) -> Result<(), RuntimeError> {
         match self.state {
             RuntimeState::Running | RuntimeState::Paused => {
@@ -223,10 +279,12 @@ impl RoutingRuntime {
         }
     }
 
+    /// Marks a running runtime as successfully completed.
     pub fn complete(&mut self) -> Result<(), RuntimeError> {
         self.transition(RuntimeState::Running, RuntimeState::Completed)
     }
 
+    /// Accounts one iteration and fails the runtime when its iteration budget is exceeded.
     pub fn record_iteration(&mut self) -> Result<(), RuntimeError> {
         self.require_running()?;
         self.usage.iterations = self.usage.iterations.saturating_add(1);
@@ -238,6 +296,7 @@ impl RoutingRuntime {
         }
     }
 
+    /// Accounts one tool call and its token usage against configured limits.
     pub fn record_tool_call(&mut self, tokens: u64) -> Result<(), RuntimeError> {
         self.require_running()?;
         self.usage.tool_calls = self.usage.tool_calls.saturating_add(1);
@@ -252,6 +311,7 @@ impl RoutingRuntime {
         Ok(())
     }
 
+    /// Updates elapsed time and fails the runtime when its wall-clock budget is exceeded.
     pub fn record_elapsed(&mut self, elapsed_ms: u64) -> Result<(), RuntimeError> {
         self.require_running()?;
         self.usage.elapsed_ms = elapsed_ms;
@@ -262,6 +322,7 @@ impl RoutingRuntime {
         Ok(())
     }
 
+    /// Adds a bounded field after rejecting secret-like names and values.
     pub fn add_telemetry_field(
         &mut self,
         name: impl Into<String>,
@@ -276,6 +337,7 @@ impl RoutingRuntime {
         Ok(())
     }
 
+    /// Returns the current lifecycle state.
     pub fn state(&self) -> RuntimeState {
         self.state
     }
@@ -286,10 +348,12 @@ impl RoutingRuntime {
         self.mode
     }
 
+    /// Returns the immutable route decision selected during planning.
     pub fn decision(&self) -> &RoutingDecision {
         &self.decision
     }
 
+    /// Returns the current redacted telemetry snapshot.
     pub fn telemetry(&self) -> &RoutingTelemetry {
         &self.telemetry
     }

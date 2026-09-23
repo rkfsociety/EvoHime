@@ -4,9 +4,13 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Stable registry identifier for workspace file writes.
 pub const NAME: &str = "filesystem.write";
+/// User-facing description of the write operation.
 pub const DESCRIPTION: &str = "Write UTF-8 text inside the workspace";
+/// Permission required to modify workspace files.
 pub const PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Default maximum runtime for a file write.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Deserialize)]
@@ -17,6 +21,11 @@ struct Input {
     expected_hash: Option<String>,
 }
 
+/// Writes complete UTF-8 content and reports the resulting revision metadata.
+///
+/// An optional `expected_hash` enforces that the file has not changed since the
+/// caller last read it. Writes are constrained to the workspace and require
+/// filesystem-write permission.
 pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
     let input: Input = serde_json::from_value(value).map_err(|e| ToolError::InvalidInput {
         tool: NAME.into(),

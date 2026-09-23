@@ -6,31 +6,53 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum serialized provider profile size.
 pub const MAX_PROFILE_JSON_BYTES: usize = 16 * 1024;
+/// Maximum serialized provider catalog size.
 pub const MAX_CATALOG_JSON_BYTES: usize = 512 * 1024;
+/// Maximum number of profile/catalog rows held in the store.
 pub const MAX_PROVIDER_PROFILE_ROWS: u32 = 256;
+/// Maximum entries in one provider catalog snapshot.
 pub const MAX_CATALOG_ENTRIES: usize = 2_048;
+/// Maximum byte length for provider and credential scope identifiers.
 pub const MAX_SCOPE_BYTES: usize = 256;
+/// Maximum byte length for a region identifier.
 pub const MAX_REGION_BYTES: usize = 64;
+/// Maximum accepted lifetime of a catalog snapshot in milliseconds.
 pub const MAX_CATALOG_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 
+/// Atomic provider profile and catalog snapshot scoped by provider, credential binding, and region.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderProfileCatalogRecord {
+    /// Stable provider identifier.
     pub provider_id: String,
+    /// Opaque reference to locally stored credentials; never the secret itself.
     pub credential_binding: String,
+    /// Provider region identifier.
     pub region: String,
+    /// Monotonically increasing snapshot revision.
     pub revision: i64,
+    /// SHA-256 hash of the serialized profile.
     pub profile_content_hash: String,
+    /// Validated serialized profile metadata.
     pub profile_json: Vec<u8>,
+    /// SHA-256 hash of the serialized model catalog.
     pub catalog_content_hash: String,
+    /// Validated serialized catalog entries.
     pub catalog_json: Vec<u8>,
+    /// Last update time in Unix milliseconds.
     pub updated_at_ms: i64,
+    /// Availability state of the profile/catalog pair.
     pub state: String,
+    /// Time the provider data was observed in Unix milliseconds.
     pub observed_at_ms: i64,
+    /// Expiration time in Unix milliseconds.
     pub expires_at_ms: i64,
+    /// Optional bounded failure classification.
     pub failure_code: Option<String>,
 }
 
+/// Creates the profile/catalog snapshot table and lookup indexes.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS provider_profile_catalog_snapshots (
@@ -135,6 +157,7 @@ pub fn put(
     Ok(changed)
 }
 
+/// Loads the atomic snapshot for a provider, credential binding, and region.
 pub fn get(
     connection: &Connection,
     provider_id: &str,
@@ -171,6 +194,7 @@ pub fn get(
         .optional()
 }
 
+/// Returns the number of stored provider profile/catalog pairs.
 pub fn count(connection: &Connection) -> rusqlite::Result<u32> {
     connection.query_row(
         "SELECT COUNT(*) FROM provider_profile_catalog_snapshots",

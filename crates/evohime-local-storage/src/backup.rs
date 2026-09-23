@@ -20,59 +20,92 @@ use std::{
 #[cfg(windows)]
 use std::ptr;
 
+/// Version of the serialized SQLite backup container format.
 pub const BACKUP_FORMAT_VERSION: u32 = 1;
+/// Maximum accepted size of a complete backup container.
 pub const MAX_BACKUP_BYTES: u64 = 512 * 1024 * 1024;
 const MAGIC: &[u8] = b"EVOHIME_SQLITE_BACKUP_V1\n";
 const MAX_MANIFEST_BYTES: u32 = 64 * 1024;
 const COPY_BUFFER_BYTES: usize = 64 * 1024;
 
+/// Phase reported while creating or restoring a database backup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackupProgressPhase {
+    /// Preparing paths and checkpointing the live database.
     Prepare,
+    /// Copying the SQLite database through the online backup API.
     Backup,
+    /// Checking backup format, schema, and checksum.
     Validate,
+    /// Replacing the database from the selected backup.
     Restore,
+    /// Reopening the restored database.
     Reopen,
+    /// Removing temporary backup or restore files.
     Cleanup,
 }
 
+/// Progress snapshot emitted by backup and restore operations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupProgress {
+    /// Current operation phase.
     pub phase: BackupProgressPhase,
+    /// Amount of work completed in the current phase.
     pub completed: u64,
+    /// Total work in the current phase when known.
     pub total: Option<u64>,
+    /// Human-readable status for the current operation.
     pub message: String,
 }
 
+/// Count of one object category represented in a backup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupObjectSummary {
+    /// Stable category name.
     pub object_type: String,
+    /// Number of objects of that category.
     pub count: u64,
 }
 
+/// Public metadata extracted from a backup container without opening its database contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupPreview {
+    /// Container format version.
     pub format_version: u32,
+    /// EvoHime version that created the backup.
     pub app_version: String,
+    /// Database schema version recorded in the backup.
     pub schema_version: u32,
+    /// Creation time as Unix milliseconds.
     pub created_at_unix_ms: u64,
+    /// Full container size in bytes.
     pub container_size_bytes: u64,
+    /// Embedded SQLite database size in bytes.
     pub database_size_bytes: u64,
+    /// SHA-256 checksum of the protected database payload.
     pub checksum_sha256: String,
+    /// Object counts included in the backup.
     pub objects: Vec<BackupObjectSummary>,
+    /// Source database name recorded at creation.
     pub source_name: String,
 }
 
+/// Result of creating a backup container.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackupResult {
+    /// Metadata preview of the created backup.
     pub preview: BackupPreview,
+    /// Destination file name, without exposing a machine-specific full path.
     pub destination_name: String,
 }
 
+/// Result of restoring a backup and retaining a safety copy of the prior database.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RestoreResult {
+    /// Metadata preview of the restored backup.
     pub preview: BackupPreview,
+    /// Name of the safety backup made from the database before restore.
     pub safety_backup_name: String,
 }
 
@@ -135,6 +168,7 @@ impl LocalDatabase {
         self.create_backup_with_cancel(destination, app_version, progress, || false)
     }
 
+    /// Creates an atomic backup and checks `cancelled` between bounded copy steps.
     pub fn create_backup_with_cancel(
         &self,
         destination: impl AsRef<Path>,
@@ -294,6 +328,7 @@ impl LocalDatabase {
         )
     }
 
+    /// Restores a backup with cancellation checks and a safety copy of the current database.
     pub fn restore_backup_with_cancel(
         &mut self,
         backup_path: impl AsRef<Path>,

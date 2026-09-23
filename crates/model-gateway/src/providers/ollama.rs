@@ -9,17 +9,23 @@ use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
+/// Default loopback base URL for the Ollama OpenAI-compatible endpoint.
 pub const DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434/v1";
+/// Maximum model identifier length accepted by the pull API.
 pub const MAX_PULL_MODEL_CHARS: usize = 128;
+/// Maximum size of one streamed model-pull progress event.
 pub const MAX_PULL_EVENT_BYTES: usize = 64 * 1024;
+/// Maximum number of model recommendations returned to callers.
 pub const MAX_RECOMMENDATIONS: usize = 32;
 
+/// Ollama chat adapter constrained to a loopback endpoint.
 #[derive(Debug)]
 pub struct OllamaProvider {
     inner: LiteRouterProvider,
 }
 
 impl OllamaProvider {
+    /// Creates the adapter after verifying that the endpoint is loopback-only.
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
         validate_loopback(&config.base_url)?;
         Ok(Self {
@@ -59,30 +65,48 @@ impl ModelProvider for OllamaProvider {
     }
 }
 
+/// Local hardware resources used to rank Ollama model recommendations.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct OllamaDeviceProfile {
+    /// Number of CPU threads available to the process.
     pub cpu_threads: u16,
+    /// Physical memory available to the device.
     pub ram_bytes: u64,
+    /// Free disk space available for model files.
     pub disk_free_bytes: u64,
+    /// Accelerator memory, when detected.
     pub accelerator_bytes: Option<u64>,
 }
 
+/// Curated model choice with conservative size and device-fit estimates.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct OllamaModelRecommendation {
+    /// Ollama model identifier suitable for pull requests.
     pub id: String,
+    /// Human-readable summary of the model's intended use.
     pub description: String,
+    /// Estimated download/storage size in bytes.
     pub size_bytes: u64,
+    /// Estimated minimum RAM requirement.
     pub required_ram_bytes: u64,
+    /// Estimated accelerator-memory requirement when applicable.
     pub required_vram_bytes: Option<u64>,
+    /// Whether detected hardware meets the recommendation thresholds.
     pub fits_device: bool,
+    /// Whether this model is already present in the local Ollama catalog.
     pub installed: bool,
+    /// Stable explanation for the fit/recommendation status.
     pub reason: String,
 }
 
+/// Installed Ollama models and device-aware recommendations.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct OllamaCatalog {
+    /// Models currently installed in the local Ollama service.
     pub installed: Vec<crate::ModelCatalogEntry>,
+    /// Bounded curated recommendations ranked against the device profile.
     pub recommendations: Vec<OllamaModelRecommendation>,
+    /// Hardware profile used when computing recommendations.
     pub device: OllamaDeviceProfile,
 }
 
@@ -193,13 +217,18 @@ struct PullProgress {
     completed: Option<u64>,
 }
 
+/// Progress event emitted while Ollama downloads a model.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OllamaPullProgress {
+    /// Current provider-reported pull status.
     pub status: String,
+    /// Total download size in bytes, when reported.
     pub total_bytes: Option<u64>,
+    /// Downloaded bytes so far, when reported.
     pub completed_bytes: Option<u64>,
 }
 
+/// Requires an HTTP endpoint on localhost or a loopback IP address.
 pub fn validate_loopback(base_url: &str) -> Result<(), ProviderError> {
     let url = reqwest::Url::parse(base_url)
         .map_err(|_| ProviderError::Config("Ollama URL must be loopback HTTP".into()))?;
@@ -221,6 +250,7 @@ fn native_base_url(base_url: &str) -> Result<String, ProviderError> {
         .to_string())
 }
 
+/// Lists installed model identifiers and their advertised context limits.
 pub async fn fetch_installed_models(
     config: &LiteRouterConfig,
 ) -> Result<Vec<crate::ModelCatalogEntry>, ProviderError> {
@@ -282,6 +312,7 @@ pub async fn fetch_installed_models(
     Ok(models)
 }
 
+/// Ranks bounded curated recommendations against device resources and installed models.
 pub fn recommend_models(
     device: &OllamaDeviceProfile,
     installed: &[crate::ModelCatalogEntry],
@@ -335,6 +366,7 @@ pub fn recommend_models(
         .collect()
 }
 
+/// Fetches installed models and returns their device-aware recommendation catalog.
 pub async fn fetch_catalog(
     config: &LiteRouterConfig,
     device: OllamaDeviceProfile,
@@ -348,10 +380,12 @@ pub async fn fetch_catalog(
     })
 }
 
+/// Pulls a model while discarding progress notifications.
 pub async fn pull_model(base_url: &str, model: &str) -> Result<(), ProviderError> {
     pull_model_with_progress(base_url, model, |_| {}).await
 }
 
+/// Pulls a model and reports bounded progress events through the supplied callback.
 pub async fn pull_model_with_progress<F>(
     base_url: &str,
     model: &str,

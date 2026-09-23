@@ -2,140 +2,240 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Schema version accepted by team resource budget contracts.
 pub const SCHEMA_VERSION: u32 = 1;
+/// Maximum identifier length accepted by this contract.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum allocation entries in one team budget policy.
 pub const MAX_ALLOCATIONS: usize = 64;
+/// Maximum byte length for a request reason or next-work description.
 pub const MAX_REASON_BYTES: usize = 512;
 
+/// Policy for assigning unspent capacity to additional work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReallocationMode {
+    /// Keep allocation amounts fixed for the policy revision.
     Fixed,
+    /// Allow configured allocations to borrow from shared unspent capacity.
     AutoFromUnspentPool,
+    /// Allow automatic movement while preserving hard caps.
     AutoWithinCap,
+    /// Require a human approval before reallocation.
     HumanApproved,
 }
+/// Aggregate state of budget availability and reconciliation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BudgetStatus {
+    /// Within configured soft and hard resource limits.
     Active,
+    /// The charge fits the hard limit but crosses a warning threshold.
     SoftWarning,
+    /// The proposed charge would exceed a hard limit.
     BudgetBlocked,
+    /// Some usage remains unreported or unreconciled.
     Incomplete,
+    /// Budget health cannot currently be determined.
     Unknown,
 }
+/// Elapsed-time accounting policy for budget wall-clock limits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WallClockMode {
+    /// Count only time while work is actively executing.
     ActiveOnly,
+    /// Count execution and time spent waiting on dependencies.
     ActiveAndWaiting,
+    /// Count all elapsed time since the work began.
     AllElapsed,
 }
 
+/// Optional ceilings for cost, token, call, and elapsed-time resources.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ResourceLimits {
+    /// Optional maximum monetary cost in millionths of the configured currency unit.
     pub max_cost_micros: Option<u64>,
+    /// Optional maximum number of input tokens.
     pub max_input_tokens: Option<u64>,
+    /// Optional maximum number of output tokens.
     pub max_output_tokens: Option<u64>,
+    /// Optional maximum number of model requests.
     pub max_model_calls: Option<u64>,
+    /// Optional maximum number of tool invocations.
     pub max_tool_calls: Option<u64>,
+    /// Optional wall-clock duration limit in milliseconds.
     pub max_wall_clock_ms: Option<u64>,
 }
+/// Resource limits and reserve permissions for one team subject.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetAllocation {
+    /// Stable identifier for this budget object.
     pub id: String,
+    /// Category of team member or phase this allocation applies to.
     pub subject_kind: String,
+    /// Identifier of the allocated subject.
     pub subject_ref: String,
+    /// Threshold that triggers a warning for the subject.
     pub soft_limit: ResourceLimits,
+    /// Limit that blocks additional resource use.
     pub hard_limit: ResourceLimits,
+    /// Relative priority used for allocation decisions.
     pub priority: u8,
+    /// Whether unused shared capacity may be borrowed.
     pub borrow_from_unspent_pool: bool,
+    /// Whether this allocation may consume protected reserve capacity.
     pub reserve_access: bool,
 }
+/// Versioned aggregate budget, allocation, and reserve policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamBudgetPolicy {
+    /// Serialized schema version supported by this contract.
     pub schema_version: u32,
+    /// Stable identifier for this budget object.
     pub id: String,
+    /// Monotonic policy or state revision.
     pub version: u64,
+    /// Hard aggregate resource limits for the team session.
     pub total_limits: ResourceLimits,
+    /// Per-subject resource limits and borrowing policy.
     pub allocations: Vec<BudgetAllocation>,
+    /// Capacity held back for explicitly authorized use.
     pub protected_reserve: ResourceLimits,
+    /// Policy for moving unused allocation between subjects.
     pub reallocation_mode: ReallocationMode,
+    /// Which elapsed intervals count against wall-clock limits.
     pub wall_clock_mode: WallClockMode,
+    /// Percent of a soft limit that raises a warning.
     pub warning_threshold_percent: u8,
+    /// Whether work with unpriced resource usage may proceed.
     pub allow_unknown_cost: bool,
+    /// Integrity hash of canonical policy content.
     pub content_hash: String,
 }
+/// Spent and reserved usage associated with one allocation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AllocationState {
+    /// Identifier of the allocation represented by this state.
     pub allocation_id: String,
+    /// Resources charged to this allocation so far.
     pub spent: ResourceLimits,
+    /// Resources reserved for work not yet reconciled.
     pub reserved: ResourceLimits,
 }
+/// Versioned usage and reservation totals for one team session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamBudgetState {
+    /// Serialized schema version supported by this contract.
     pub schema_version: u32,
+    /// Team session that owns this state or usage event.
     pub team_session_id: String,
+    /// Policy revision used to interpret the accumulated usage.
     pub policy_version: u64,
+    /// Aggregate usage charged to the team session.
     pub total_spent: ResourceLimits,
+    /// Aggregate capacity reserved for pending work.
     pub total_reserved: ResourceLimits,
+    /// Usage and reservation totals for each allocation.
     pub allocations_state: Vec<AllocationState>,
+    /// Remaining protected reserve capacity.
     pub reserve_remaining: ResourceLimits,
+    /// Number of estimates awaiting reconciliation.
     pub pending_estimates: u64,
+    /// Current aggregate budget health.
     pub status: BudgetStatus,
+    /// Monotonic policy or state revision.
     pub version: u64,
+    /// Last state update time in Unix epoch milliseconds.
     pub updated_at_ms: i64,
 }
+/// Observed or estimated resource consumption for one operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceUsageEvent {
+    /// Serialized schema version supported by this contract.
     pub schema_version: u32,
+    /// Stable identifier for this budget object.
     pub id: String,
+    /// Team session that owns this state or usage event.
     pub team_session_id: String,
+    /// Optional participant instance that produced the usage.
     pub role_instance_id: Option<String>,
+    /// Optional workflow phase associated with the usage.
     pub phase_id: Option<String>,
+    /// Execution run that incurred the usage.
     pub run_id: String,
+    /// Category of operation that consumed resources.
     pub operation_kind: String,
+    /// Optional provider that reported the usage.
     pub provider: Option<String>,
+    /// Optional model identifier that incurred the usage.
     pub model: Option<String>,
+    /// Optional tool identifier that incurred the usage.
     pub tool_ref: Option<String>,
+    /// Observed or estimated input token usage.
     pub input_tokens: Option<u64>,
+    /// Observed or estimated output token usage.
     pub output_tokens: Option<u64>,
+    /// Observed or estimated monetary cost in millionths.
     pub cost_micros: Option<u64>,
+    /// Elapsed duration charged by this event in milliseconds.
     pub duration_ms: u64,
+    /// Whether the values were estimated before execution.
     pub estimated_before: bool,
+    /// Whether the usage requires reconciliation.
     pub uncertain: bool,
+    /// Observation time as Unix epoch milliseconds.
     pub observed_at_ms: i64,
 }
+/// Bounded request for additional team-session resources.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetRequest {
+    /// Stable identifier for this budget object.
     pub id: String,
+    /// Team session that owns this state or usage event.
     pub team_session_id: String,
+    /// Identity requesting additional budget.
     pub requester: String,
+    /// Additional resource limits requested.
     pub requested: ResourceLimits,
+    /// Stable reason for the requested budget change.
     pub reason_code: String,
+    /// Bounded description of the next planned work.
     pub expected_next_work: String,
 }
 
+/// Preflight outcome for a proposed resource charge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChargeDecision {
+    /// The proposed charge fits the configured budget.
     Allowed,
+    /// The charge fits the hard limit but crosses a warning threshold.
     SoftWarning,
+    /// The proposed charge would exceed a hard limit.
     BudgetBlocked,
+    /// The charge cannot be priced under the active policy.
     UnknownCost,
 }
 
+/// Validation, limit, reserve, or reconciliation failure.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum BudgetError {
+    /// The budget schema version is unsupported.
     #[error("unsupported team budget schema")]
     Version,
+    /// A budget field or invariant is invalid.
     #[error("team budget field is invalid")]
     Invalid,
+    /// A serialized value exceeds its byte bound.
     #[error("team budget field is too large")]
     TooLarge,
+    /// A configured resource limit would be exceeded.
     #[error("team budget limit exceeded")]
     Limit,
+    /// The requester cannot consume protected reserve capacity.
     #[error("protected reserve access denied")]
     ReserveDenied,
+    /// Usage must be reconciled before another charge is accepted.
     #[error("unknown usage requires reconciliation")]
     UsageUncertain,
 }
@@ -143,6 +243,7 @@ pub enum BudgetError {
 fn pair(soft: Option<u64>, hard: Option<u64>) -> bool {
     soft.zip(hard).is_none_or(|(s, h)| s <= h)
 }
+/// Validates the budget policy, allocation bounds, and soft/hard limit ordering.
 pub fn validate_policy(p: &TeamBudgetPolicy) -> Result<(), BudgetError> {
     if p.schema_version != SCHEMA_VERSION {
         return Err(BudgetError::Version);
@@ -180,12 +281,14 @@ pub fn validate_policy(p: &TeamBudgetPolicy) -> Result<(), BudgetError> {
     }
     Ok(())
 }
+/// Returns the SHA-256 hash of the policy with its content hash cleared.
 pub fn canonical_hash(p: &TeamBudgetPolicy) -> Result<String, BudgetError> {
     let mut copy = p.clone();
     copy.content_hash.clear();
     let bytes = serde_json::to_vec(&copy).map_err(|_| BudgetError::Invalid)?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
+/// Validates policy constraints and verifies its canonical integrity hash.
 pub fn validate_hash(p: &TeamBudgetPolicy) -> Result<(), BudgetError> {
     validate_policy(p)?;
     if canonical_hash(p)? != p.content_hash {
@@ -193,6 +296,7 @@ pub fn validate_hash(p: &TeamBudgetPolicy) -> Result<(), BudgetError> {
     }
     Ok(())
 }
+/// Checks identifiers, bounds, and required fields in a budget request.
 pub fn validate_request(r: &BudgetRequest) -> Result<(), BudgetError> {
     if r.id.is_empty()
         || r.id.len() > MAX_ID_BYTES
@@ -221,6 +325,7 @@ fn exceeds(
     })
 }
 
+/// Checks whether an estimated charge is permitted by the current policy and usage state.
 pub fn preflight_charge(
     state: &TeamBudgetState,
     policy: &TeamBudgetPolicy,

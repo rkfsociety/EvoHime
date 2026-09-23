@@ -3,6 +3,7 @@ use rusqlite::OptionalExtension;
 use crate::{LocalDatabase, StorageError, WorkItemRecord};
 
 impl LocalDatabase {
+    /// Inserts a work item and returns the stored record, including its initial version.
     pub fn create_work_item(&self, item: &WorkItemRecord) -> Result<WorkItemRecord, StorageError> {
         self.connection.execute(
             "INSERT INTO work_items(id, project_id, parent_id, title, description, source_ref,
@@ -28,6 +29,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Loads a work item by ID, returning `None` when it does not exist.
     pub fn get_work_item(&self, id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id, project_id, parent_id, title, description, source_ref,
@@ -56,6 +58,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Lists a project's work items by descending priority and then ID.
     pub fn list_work_items(&self, project_id: &str) -> Result<Vec<WorkItemRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id, project_id, parent_id, title, description, source_ref,
@@ -84,6 +87,7 @@ impl LocalDatabase {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Lists dependency edges for work items in a project as `(from, to, kind)` tuples.
     pub fn list_dependencies(
         &self,
         project_id: &str,
@@ -101,6 +105,7 @@ impl LocalDatabase {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Returns the highest-priority ready or backlog item whose dependencies are all done.
     pub fn next_ready(&self, project_id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT w.id, w.project_id, w.parent_id, w.title, w.description, w.source_ref,
@@ -138,6 +143,7 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    /// Updates an item's status only when its current version matches `expected_version`.
     pub fn update_work_item_status(
         &self,
         id: &str,
@@ -165,6 +171,7 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    /// Adds a dependency edge after checking that it would not create a cycle.
     pub fn add_dependency(
         &self,
         from_id: &str,

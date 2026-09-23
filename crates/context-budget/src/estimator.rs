@@ -151,16 +151,24 @@ impl TokenEstimator for FallbackEstimator {
 /// chat-template. Смена любого из компонентов не даёт стухший кэш-хит.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EstimateCacheKey {
+    /// Форма оцениваемых данных (содержимое или схема инструмента).
     pub form: EstimateForm,
+    /// Хэш данных, используемый для поиска оценки.
     pub content_hash: String,
+    /// Версия токенизатора, участвующая в идентичности оценки.
     pub tokenizer_version: String,
+    /// Версия нормализатора, участвующая в идентичности оценки.
     pub normalizer_version: String,
+    /// Версия chat-template, участвующая в идентичности оценки.
     pub chat_template_version: String,
 }
 
+/// Вид данных, для которых хранится оценка токенов.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EstimateForm {
+    /// Текстовое, JSON или двоичное содержимое контекста.
     Content,
+    /// JSON-схема инструмента вместе с её оценкой.
     ToolSchema,
 }
 
@@ -173,10 +181,12 @@ pub struct EstimateCache {
 }
 
 impl EstimateCache {
+    /// Создаёт кэш с ёмкостью по умолчанию (4096 записей).
     pub fn new() -> Self {
         Self::with_capacity(4096)
     }
 
+    /// Создаёт кэш заданной ёмкости; нулевая ёмкость заменяется на одну.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             entries: LruCache::new(NonZeroUsize::new(capacity.max(1)).unwrap_or(NonZeroUsize::MIN)),
@@ -235,18 +245,22 @@ impl EstimateCache {
         estimated
     }
 
+    /// Число обращений, обслуженных из кэша.
     pub fn hits(&self) -> u64 {
         self.hits
     }
 
+    /// Число вычислений, для которых записи в кэше не было.
     pub fn misses(&self) -> u64 {
         self.misses
     }
 
+    /// Число сохранённых оценок.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Проверяет, что кэш пока не содержит оценок.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -261,13 +275,16 @@ impl Default for EstimateCache {
 /// Расхождение оценки с фактическим usage провайдера.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct EstimatorDrift {
+    /// Оценка токенов до вызова провайдера.
     pub estimated_prompt_tokens: u32,
+    /// Фактическое число токенов, сообщённое провайдером.
     pub actual_prompt_tokens: u32,
     /// Относительная погрешность: положительная — over-estimate.
     pub relative: f64,
 }
 
 impl EstimatorDrift {
+    /// Вычисляет относительное расхождение; при нулевом фактическом usage оно равно нулю.
     pub fn measure(estimated_prompt_tokens: u32, actual_prompt_tokens: u32) -> Self {
         let relative = if actual_prompt_tokens == 0 {
             0.0

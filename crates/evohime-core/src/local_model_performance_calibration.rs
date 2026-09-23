@@ -7,15 +7,23 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Stable contract identifier for persisted local calibration data.
 pub const CONTRACT_ID: &str = "local-model-performance-calibration-v1";
+/// Maximum samples accepted in one calibration session.
 pub const MAX_SAMPLES: usize = 256;
+/// Maximum context-size points retained in a performance profile.
 pub const MAX_CONTEXT_POINTS: usize = 32;
+/// Maximum character count for calibration identity metadata.
 pub const MAX_METADATA_CHARS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Result of checking whether a runtime session may be calibrated.
 pub enum CalibrationAdmission {
+    /// Runtime identity and a usable stream adapter permit calibration.
     Approved,
+    /// Runtime is eligible, but no compatible stream adapter can report measurements.
     UnavailableAdapter,
+    /// Runtime session, descriptor, or health state does not match.
     DeniedRuntime,
 }
 
@@ -53,18 +61,28 @@ pub fn admit_calibration(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Hashed model, runtime, hardware, launch, and benchmark-suite identity.
 pub struct CalibrationIdentity {
+    /// SHA-256 hash of the exact model artifact.
     pub model_artifact_hash: String,
+    /// Stable identifier of the inference runtime.
     pub runtime_id: String,
+    /// Runtime version used for the measurements.
     pub runtime_version: String,
+    /// Hash of the normalized local hardware profile.
     pub hardware_profile_hash: String,
+    /// Optional fingerprint of relevant accelerator drivers.
     pub driver_fingerprint: Option<String>,
+    /// Hash of the launch settings used for calibration.
     pub launch_config_hash: String,
+    /// Context-size and runtime profile selected for the workload.
     pub context_profile: String,
+    /// Hash of the benchmark workload suite.
     pub suite_hash: String,
 }
 
 impl CalibrationIdentity {
+    /// Validates this identity, sample, session, or profile against its invariants.
     pub fn validate(&self) -> Result<(), CalibrationError> {
         for (name, value) in [
             ("model_artifact_hash", &self.model_artifact_hash),
@@ -93,49 +111,79 @@ impl CalibrationIdentity {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Representative workload shape used for a calibration sample.
 pub enum PromptProfile {
+    /// Short prompt and response workload for interactive use.
     ShortInteractive,
+    /// Medium-length generation workload.
     MediumGeneration,
+    /// Long input workload emphasizing prompt processing.
     LongContextPrefill,
+    /// Structured response workload with a small output.
     StructuredSmallOutput,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Whether a sample warms the runtime or contributes to measured metrics.
 pub enum SampleKind {
+    /// Sample used to initialize the runtime and excluded from aggregates.
     Warmup,
+    /// Sample included in performance aggregates when valid.
     Measured,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Whether the sample contains usable performance measurements.
 pub enum MetricAvailability {
+    /// One or more requested performance metrics are present.
     Available,
+    /// No trusted evidence is available.
     Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// One validated local inference timing and resource observation.
 pub struct CalibrationSample {
+    /// Stable identifier for this sample.
     pub sample_id: String,
+    /// Warmup or measured sample classification.
     pub kind: SampleKind,
+    /// Workload shape represented by this sample.
     pub prompt_profile: PromptProfile,
+    /// Context size used for the inference call.
     pub context_tokens: u32,
+    /// Number of input tokens processed.
     pub input_tokens: u32,
+    /// Number of output tokens generated.
     pub output_tokens: u32,
+    /// Optional model load duration in milliseconds.
     pub load_ms: Option<u64>,
+    /// Optional time to first generated token in milliseconds.
     pub ttft_ms: Option<u64>,
+    /// Optional prompt-processing throughput.
     pub prefill_tokens_per_second: Option<f64>,
+    /// Optional generation throughput.
     pub decode_tokens_per_second: Option<f64>,
+    /// Optional total inference duration in milliseconds.
     pub end_to_end_ms: Option<u64>,
+    /// Optional peak system memory usage.
     pub peak_ram_bytes: Option<u64>,
+    /// Optional peak accelerator memory usage.
     pub peak_vram_bytes: Option<u64>,
+    /// Whether measured metrics are available for this sample.
     pub availability: MetricAvailability,
+    /// Whether this sample passed calibration validation.
     pub valid: bool,
+    /// Reason the inference request completed or stopped.
     pub termination: String,
+    /// Runtime health state observed for the sample.
     pub health: String,
 }
 
 impl CalibrationSample {
+    /// Validates this identity, sample, session, or profile against its invariants.
     pub fn validate(&self) -> Result<(), CalibrationError> {
         bounded("sample_id", &self.sample_id)?;
         bounded("termination", &self.termination)?;
@@ -159,50 +207,81 @@ impl CalibrationSample {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Robust summary statistics derived from valid measured samples.
 pub struct AggregateMetrics {
+    /// Number of valid measured samples used in the aggregate.
     pub measured_count: u32,
+    /// Fraction of measured samples that failed validation or execution.
     pub failure_rate: f64,
+    /// Median observed time to first token in milliseconds.
     pub median_ttft_ms: Option<f64>,
+    /// Ninetieth percentile time to first token in milliseconds.
     pub p90_ttft_ms: Option<f64>,
+    /// Median generation throughput.
     pub median_decode_tokens_per_second: Option<f64>,
+    /// Variance of generation throughput across samples.
     pub variance_decode_tokens_per_second: Option<f64>,
+    /// Whether any aggregate performance metric was available.
     pub metric_availability: MetricAvailability,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Provenance category for calibration evidence.
 pub enum EvidenceClass {
+    /// Measured on the exact local model and runtime identity.
     MeasuredLocal,
+    /// Previously measured locally but runtime or model identity has drifted.
     MeasuredLocalStale,
+    /// Estimated from compatible hardware evidence.
     EstimatedFromHardware,
+    /// Estimated from a catalog entry.
     CatalogEstimate,
+    /// No trusted evidence is available.
     Unknown,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+/// Lifecycle state of one calibration session.
 pub enum CalibrationState {
+    /// Session is waiting for an execution slot.
     Queued,
+    /// Runtime is performing warmup requests.
     WarmingUp,
+    /// Measured inference requests are in progress.
     Running,
+    /// Validated samples are being summarized.
     Aggregating,
+    /// Session has valid measured samples and no cancellation request.
     Completed,
+    /// Session was cancelled.
     Cancelled,
+    /// Session failed before valid aggregation.
     Failed,
+    /// Required measurement adapter is unavailable.
     Unavailable,
+    /// Session stopped before producing a complete result.
     Interrupted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Validated identity, samples, and cancellation state for a calibration run.
 pub struct LocalModelCalibrationSession {
+    /// Stable calibration session identifier.
     pub session_id: String,
+    /// Exact model, runtime, hardware, and benchmark identity.
     pub identity: CalibrationIdentity,
+    /// Current calibration lifecycle state.
     pub state: CalibrationState,
+    /// Warmup and measured samples retained by the session.
     pub samples: Vec<CalibrationSample>,
+    /// Whether the session has a cancellation request.
     pub cancellation_requested: bool,
 }
 
 impl LocalModelCalibrationSession {
+    /// Validates this identity, sample, session, or profile against its invariants.
     pub fn validate(&self) -> Result<(), CalibrationError> {
         bounded("session_id", &self.session_id)?;
         self.identity.validate()?;
@@ -226,20 +305,32 @@ impl LocalModelCalibrationSession {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Versioned aggregate performance data for one exact runtime identity.
 pub struct LocalModelPerformanceProfile {
+    /// Stable performance profile identifier.
     pub profile_id: String,
+    /// Positive profile revision.
     pub revision: u64,
+    /// Exact model, runtime, hardware, and benchmark identity.
     pub identity: CalibrationIdentity,
+    /// Aggregate metrics calculated from valid samples.
     pub aggregate: AggregateMetrics,
+    /// Provenance class for the aggregate evidence.
     pub evidence: EvidenceClass,
+    /// Measured throughput observations indexed by context size.
     pub context_points: Vec<(u32, Option<f64>)>,
+    /// Largest context size recommended for comfortable use.
     pub comfortable_context: Option<u32>,
+    /// Recommended context size for interactive latency.
     pub interactive_context: Option<u32>,
+    /// Largest context size with a valid local measurement.
     pub maximum_measured_context: Option<u32>,
+    /// Bounded confidence label for the profile.
     pub confidence: String,
 }
 
 impl LocalModelPerformanceProfile {
+    /// Validates this identity, sample, session, or profile against its invariants.
     pub fn validate(&self) -> Result<(), CalibrationError> {
         bounded("profile_id", &self.profile_id)?;
         bounded("confidence", &self.confidence)?;
@@ -254,6 +345,7 @@ impl LocalModelPerformanceProfile {
     }
 }
 
+/// Computes failure rate and robust latency/throughput summaries from measured samples.
 pub fn aggregate_samples(
     samples: &[CalibrationSample],
 ) -> Result<AggregateMetrics, CalibrationError> {
@@ -322,12 +414,19 @@ fn variance(values: &[f64]) -> Option<f64> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Invalid identity, metric, session state, or exceeded bound.
 pub enum CalibrationError {
+    /// A required metadata field is empty.
     EmptyField(&'static str),
+    /// A metadata field exceeds its character bound.
     FieldTooLong(&'static str),
+    /// Model, runtime, hardware, or suite identity is invalid.
     InvalidIdentity,
+    /// A sample metric is negative, non-finite, or missing a required count.
     InvalidMetric,
+    /// Session or profile state violates its lifecycle invariant.
     InvalidState,
+    /// A sample or context-point bound was exceeded.
     LimitExceeded(&'static str),
 }
 

@@ -7,8 +7,11 @@ use std::collections::{HashMap, HashSet};
 use std::io::{self, Read};
 use std::path::Path;
 
+/// Required schema identifier for component manifests.
 pub const SCHEMA: &str = "evohime.component-manifest.v1";
+/// Maximum number of components accepted in a manifest.
 pub const MAX_COMPONENTS: usize = 32;
+/// Maximum accepted artifact size in bytes.
 pub const MAX_ARTIFACT_BYTES: u64 = 512 * 1024 * 1024;
 
 fn default_product() -> String {
@@ -42,45 +45,68 @@ where
     }
 }
 
+/// Immutable inventory of components included in a product release.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Manifest {
+    /// Schema identifier; must equal [`SCHEMA`].
     pub schema: String,
     #[serde(default = "default_product")]
+    /// Product name identified by the manifest.
     pub product: String,
     #[serde(default = "default_release_id")]
+    /// Stable identifier of this release.
     pub release_id: String,
+    /// Target operating system identifier.
     pub os: String,
+    /// Target CPU architecture identifier.
     pub architecture: String,
     #[serde(default = "default_release_commit")]
+    /// Source commit associated with the release.
     pub release_commit: String,
+    /// Components included in the release.
     pub components: Vec<Component>,
 }
 
+/// Artifact metadata and compatibility requirements for one component.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Component {
+    /// Stable component identifier.
     pub id: String,
+    /// Component version.
     pub version: String,
+    /// Artifact filename in the release package.
     pub artifact: String,
+    /// Relative destination path within the installation.
     pub path: String,
+    /// Expected artifact size in bytes.
     pub size: u64,
+    /// Expected SHA-256 digest in hexadecimal form.
     pub sha256: String,
     #[serde(default, deserialize_with = "deserialize_nullable_vec")]
+    /// Component identifiers required by this component.
     pub dependencies: Vec<String>,
+    /// Whether this component must be present in the installation.
     pub required: bool,
     #[serde(default = "default_protocol")]
+    /// IPC or data protocol required by this component.
     pub protocol: String,
+    /// Restart behavior required after replacing this component.
     pub restart: String,
 }
 
+/// Failure to parse or validate a component manifest.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ManifestError {
+    /// Input bytes are not a valid manifest JSON document.
     #[error("invalid manifest JSON: {0}")]
     Json(String),
+    /// Manifest fields or dependency relationships violate the contract.
     #[error("invalid manifest: {0}")]
     Invalid(String),
 }
 
 impl Manifest {
+    /// Parses JSON bytes and validates the resulting manifest.
     pub fn parse(bytes: &[u8]) -> Result<Self, ManifestError> {
         let manifest: Self =
             serde_json::from_slice(bytes).map_err(|e| ManifestError::Json(e.to_string()))?;
@@ -88,6 +114,7 @@ impl Manifest {
         Ok(manifest)
     }
 
+    /// Checks platform, size, path, digest, and dependency invariants.
     pub fn validate(&self) -> Result<(), ManifestError> {
         if self.schema != SCHEMA
             || self.product != "EvoHime"
@@ -204,6 +231,7 @@ impl Manifest {
         serde_json::to_vec(self).map_err(|error| ManifestError::Json(error.to_string()))
     }
 
+    /// Returns the component with the given stable identifier.
     pub fn component(&self, id: &str) -> Result<&Component, ManifestError> {
         self.components
             .iter()
@@ -211,6 +239,7 @@ impl Manifest {
             .ok_or_else(|| ManifestError::Invalid(format!("unknown component: {id}")))
     }
 
+    /// Checks an in-memory artifact against its declared size and digest.
     pub fn artifact_matches(&self, component: &Component, bytes: &[u8]) -> bool {
         if bytes.len() as u64 != component.size {
             return false;

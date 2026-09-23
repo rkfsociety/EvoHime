@@ -3,81 +3,139 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Current wire-contract version for agent handoffs.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum byte length for handoff identifiers and text fields.
 pub const MAX_TEXT: usize = 512;
+/// Maximum number of references, questions, or blockers in a packet.
 pub const MAX_REFS: usize = 32;
+/// Maximum context volume requested by one handoff, in bytes.
 pub const MAX_CONTEXT_BYTES: u32 = 256 * 1024;
 
+/// Bounded selection of context categories to include in a handoff.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextTransferSpec {
+    /// Maximum context size in bytes.
     pub max_bytes: u32,
+    /// Whether to include a checkpoint reference.
     pub include_checkpoint: bool,
+    /// Whether to include artifact references.
     pub include_artifacts: bool,
+    /// Whether to include evidence references.
     pub include_evidence: bool,
+    /// Whether to include bounded message context.
     pub include_messages: bool,
 }
 
+/// Typed request to transfer task ownership and bounded context to another agent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandoffPacket {
+    /// Wire-contract version.
     pub version: u32,
+    /// Stable handoff identifier.
     pub handoff_id: String,
+    /// Agent or role relinquishing ownership.
     pub from: String,
+    /// Intended receiving agent or role.
     pub target: String,
+    /// Objective the receiving agent is expected to continue.
     pub objective: String,
+    /// Stable reason code explaining the transfer.
     pub reason_code: String,
+    /// Bounded summary of current progress and state.
     pub summary: String,
+    /// Optional reference to the latest checkpoint.
     pub checkpoint_ref: Option<String>,
+    /// Artifact references relevant to the handoff.
     pub artifact_refs: Vec<String>,
+    /// Verification or other evidence references.
     pub evidence_refs: Vec<String>,
+    /// Questions the receiving agent should resolve.
     pub open_questions: Vec<String>,
+    /// Known blockers the receiving agent should consider.
     pub blockers: Vec<String>,
+    /// Optional parent goal identifier.
     pub goal_id: Option<String>,
+    /// Workflow run created or continued by the handoff.
     pub workflow_run_id: String,
+    /// Optional parent workflow run identifier.
     pub parent_run_id: Option<String>,
+    /// Categories and size bound for transferred context.
     pub requested_context: ContextTransferSpec,
+    /// Unix timestamp in milliseconds when the packet was created.
     pub created_at_ms: i64,
+    /// Optional deadline after which the handoff cannot be accepted.
     pub expires_at_ms: Option<i64>,
 }
 
+/// Lifecycle state of an ownership transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HandoffState {
+    /// Proposed but not yet acknowledged by the receiver.
     Proposed,
+    /// Receiver accepted the handoff.
     Accepted,
+    /// Receiver began active work.
     Active,
+    /// Work was completed by the receiver.
     Completed,
+    /// Receiver declined the handoff.
     Rejected,
+    /// Handoff deadline elapsed before completion.
     Expired,
+    /// Transfer failed after acceptance.
     Failed,
+    /// Receiver returned ownership to the sender.
     Returned,
 }
 
+/// One versioned actor action in the handoff lifecycle history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandoffTransition {
+    /// State reached by this transition.
     pub state: HandoffState,
+    /// Actor responsible for the transition.
     pub actor: String,
+    /// Bounded reason for the state change.
     pub reason: String,
+    /// Record version produced by this transition.
     pub version: u64,
+    /// Unix timestamp in milliseconds for the transition.
     pub at_ms: i64,
 }
 
+/// Handoff packet, current state, transition history, and provenance references.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandoffRecord {
+    /// Immutable ownership-transfer request.
     pub packet: HandoffPacket,
+    /// Current lifecycle state.
     pub state: HandoffState,
+    /// Current optimistic-concurrency revision.
     pub version: u64,
+    /// Ordered lifecycle history.
     pub transitions: Vec<HandoffTransition>,
+    /// Stable provenance keys and source references.
     pub provenance: BTreeMap<String, String>,
 }
 
+/// Invalid handoff, stale revision, expiry, or target conflict.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HandoffError {
+    /// A packet or provenance field violates the contract.
     Invalid(&'static str),
+    /// Packet uses an unsupported wire version.
     UnsupportedVersion(u32),
+    /// Requested lifecycle transition is not permitted.
     InvalidTransition,
+    /// Handoff expired before the requested transition.
     Expired,
+    /// Expected record version does not match.
     Stale,
+    /// Another handoff already uses this identifier.
     Duplicate,
+    /// Receiving target does not exist.
     UnknownTarget,
 }
 impl std::fmt::Display for HandoffError {
@@ -101,6 +159,7 @@ fn bounded(v: &str) -> bool {
 fn refs(values: &[String]) -> bool {
     values.len() <= MAX_REFS && values.iter().all(|v| bounded(v))
 }
+/// Validates packet identity, bounded references, and context limits.
 pub fn validate_packet(packet: &HandoffPacket) -> Result<(), HandoffError> {
     if packet.version != CONTRACT_VERSION {
         return Err(HandoffError::UnsupportedVersion(packet.version));
@@ -135,6 +194,7 @@ pub fn validate_packet(packet: &HandoffPacket) -> Result<(), HandoffError> {
     Ok(())
 }
 
+/// Creates a proposed handoff record and binds its initial provenance event.
 pub fn propose(
     packet: HandoffPacket,
     source_event_id: &str,
@@ -161,6 +221,7 @@ pub fn propose(
     })
 }
 
+/// Applies an optimistic-concurrency-checked handoff lifecycle transition.
 pub fn transition(
     record: &mut HandoffRecord,
     next: HandoffState,

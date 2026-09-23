@@ -7,23 +7,38 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt};
 
+/// Maximum length of handoff and task identifiers.
 pub const MAX_ID_CHARS: usize = 128;
+/// Maximum length of a custom child-role name.
 pub const MAX_ROLE_NAME_CHARS: usize = 64;
+/// Maximum length of a handoff purpose description.
 pub const MAX_PURPOSE_CHARS: usize = 512;
+/// Maximum number of fields retained in a handoff payload.
 pub const MAX_PAYLOAD_FIELDS: usize = 32;
+/// Maximum length of one payload field name.
 pub const MAX_FIELD_NAME_CHARS: usize = 64;
+/// Maximum length of one payload field value.
 pub const MAX_FIELD_VALUE_CHARS: usize = 2_048;
+/// Maximum serialized handoff envelope size in bytes.
 pub const MAX_HANDOFF_BYTES: usize = 32 * 1024;
 
+/// Built-in or custom role assigned to a child task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildRole {
+    /// Coordinates child work without directly implementing it.
     Coordinator,
+    /// Gathers and summarizes bounded evidence.
     Researcher,
+    /// Produces a plan without applying changes.
     Planner,
+    /// Implements an authorized change.
     Implementer,
+    /// Reviews a result against requirements.
     Reviewer,
+    /// Runs authorized verification steps.
     Tester,
+    /// Role with a bounded custom display name.
     Custom,
 }
 
@@ -62,36 +77,69 @@ pub fn allowed_capabilities(role: ChildRole) -> &'static [&'static str] {
     }
 }
 
+/// Returns whether the advisory role matrix includes the requested capability.
 pub fn can_request_capability(role: ChildRole, capability: &str) -> bool {
     allowed_capabilities(role).contains(&capability)
 }
 
+/// Purpose of a transfer between child roles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HandoffKind {
+    /// Delegate ownership of work to another role.
     Delegate,
+    /// Return a result to the requesting role.
     ReturnResult,
+    /// Ask another role to review an artifact.
     RequestReview,
+    /// Ask another role to retry a bounded operation.
     RequestRetry,
 }
 
+/// Lifecycle state of a child-role handoff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HandoffStatus {
+    /// Handoff was created and awaits a response.
     Pending,
+    /// Recipient accepted the handoff.
     Accepted,
+    /// Recipient rejected the handoff.
     Rejected,
+    /// Handoff work was completed.
     Completed,
 }
 
+/// Validation or size failure while constructing a child-role handoff.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContractError {
+    /// Required text field is empty.
     EmptyField(&'static str),
-    FieldTooLong { field: &'static str, max: usize },
+    /// Text exceeds the field's declared character limit.
+    FieldTooLong {
+        /// Name of the field that exceeded its limit.
+        field: &'static str,
+        /// Maximum permitted character count.
+        max: usize,
+    },
+    /// Deterministic envelope serialization failed.
     Serialization(String),
-    TooManyFields { actual: usize, maximum: usize },
+    /// Payload has more fields than allowed.
+    TooManyFields {
+        /// Number of fields supplied by the caller.
+        actual: usize,
+        /// Maximum number of accepted payload fields.
+        maximum: usize,
+    },
+    /// Custom role label contains disallowed characters.
     InvalidRoleName,
-    HandoffTooLarge { actual: usize, maximum: usize },
+    /// Serialized handoff exceeds the envelope byte limit.
+    HandoffTooLarge {
+        /// Serialized byte length of the handoff.
+        actual: usize,
+        /// Maximum serialized byte length.
+        maximum: usize,
+    },
 }
 
 impl fmt::Display for ContractError {
@@ -116,16 +164,20 @@ impl std::error::Error for ContractError {}
 /// A role identity may use a built-in role or a bounded custom label.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoleIdentity {
+    /// Built-in role category.
     pub role: ChildRole,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Optional bounded name required for a custom role.
     pub name: Option<String>,
 }
 
 impl RoleIdentity {
+    /// Creates an identity using a built-in role.
     pub fn builtin(role: ChildRole) -> Self {
         Self { role, name: None }
     }
 
+    /// Creates a custom role identity after validating its display name.
     pub fn custom(name: impl Into<String>) -> Result<Self, ContractError> {
         let name = name.into();
         validate_text("role_name", &name, MAX_ROLE_NAME_CHARS, true)?;
@@ -167,10 +219,12 @@ impl RoleIdentity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct HandoffPayload {
     #[serde(flatten)]
+    /// Sorted, redacted payload fields.
     pub fields: BTreeMap<String, String>,
 }
 
 impl HandoffPayload {
+    /// Validates and redacts fields before constructing a deterministic payload.
     pub fn new(fields: impl IntoIterator<Item = (String, String)>) -> Result<Self, ContractError> {
         let mut redacted = BTreeMap::new();
         for (name, value) in fields {
@@ -188,20 +242,31 @@ impl HandoffPayload {
     }
 }
 
+/// Bounded ownership-transfer envelope between child roles.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandoffEnvelope {
+    /// Stable handoff identifier.
     pub handoff_id: String,
+    /// Parent task identifier.
     pub task_id: String,
+    /// Transfer purpose, such as delegation or review.
     pub kind: HandoffKind,
+    /// Current handoff lifecycle state.
     pub status: HandoffStatus,
+    /// Sending role identity.
     pub from: RoleIdentity,
+    /// Receiving role identity.
     pub to: RoleIdentity,
+    /// Human-readable reason for the transfer.
     pub purpose: String,
+    /// Bounded and redacted handoff data.
     pub payload: HandoffPayload,
+    /// Monotonic sequence within the parent task.
     pub sequence: u64,
 }
 
 impl HandoffEnvelope {
+    /// Validates and creates an envelope from its complete input object.
     pub fn new(input: HandoffEnvelopeInput) -> Result<Self, ContractError> {
         let envelope = Self {
             handoff_id: input.handoff_id,
@@ -226,6 +291,7 @@ impl HandoffEnvelope {
         Ok(envelope)
     }
 
+    /// Checks envelope identifiers, purpose, and both role identities.
     pub fn validate(&self) -> Result<(), ContractError> {
         validate_text("handoff_id", &self.handoff_id, MAX_ID_CHARS, true)?;
         validate_text("task_id", &self.task_id, MAX_ID_CHARS, true)?;
@@ -235,6 +301,7 @@ impl HandoffEnvelope {
         Ok(())
     }
 
+    /// Serializes the envelope with deterministic field ordering.
     pub fn to_deterministic_json(&self) -> Result<String, ContractError> {
         serde_json::to_string(self).map_err(|error| ContractError::Serialization(error.to_string()))
     }
@@ -243,13 +310,21 @@ impl HandoffEnvelope {
 /// Полный набор полей передачи между дочерними ролями. Единый объект не даёт
 /// перепутать идентичность отправителя, получателя и полезную нагрузку.
 pub struct HandoffEnvelopeInput {
+    /// Stable handoff identifier.
     pub handoff_id: String,
+    /// Parent task identifier.
     pub task_id: String,
+    /// Purpose of the ownership transfer.
     pub kind: HandoffKind,
+    /// Sending role identity.
     pub from: RoleIdentity,
+    /// Receiving role identity.
     pub to: RoleIdentity,
+    /// Human-readable transfer objective.
     pub purpose: String,
+    /// Redacted payload transferred to the receiver.
     pub payload: HandoffPayload,
+    /// Monotonic sequence within the parent task.
     pub sequence: u64,
 }
 

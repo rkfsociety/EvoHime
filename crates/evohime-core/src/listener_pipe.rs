@@ -117,6 +117,19 @@ async fn publish_voice_command(
         .await;
 }
 
+/// Serves the authenticated listener role over the Windows named pipe.
+///
+/// The pipe name is derived from the supervisor launch context and validated
+/// before creation. Each connection is restricted to the current user, must
+/// complete the desktop IPC nonce/proof handshake, and is then handled as a
+/// listener client. The function runs the accept loop until an I/O or
+/// authentication setup error occurs.
+///
+/// # Errors
+///
+/// Returns errors from pipe security setup, frame I/O, handshake validation,
+/// or listener command handling. A malformed handshake is rejected and the
+/// accept loop proceeds to the next connection.
 pub async fn run_windows_listener_pipe(
     context: evohime_desktop_ipc::session::LaunchContext,
     bridge: Arc<IpcBridge>,

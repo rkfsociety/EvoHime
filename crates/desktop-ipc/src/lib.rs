@@ -2,37 +2,71 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+//! Versioned Core-to-desktop IPC contracts and bounded transport helpers.
+//!
+//! The protobuf messages in [`generated`] define the wire format; this crate
+//! applies frame, replay, capability, and runtime limit checks around it.
+//!
+//! ```
+//! use evohime_desktop_ipc::{decode_frame, encode_frame};
+//!
+//! let frame = encode_frame(b"hello").unwrap();
+//! assert_eq!(decode_frame(&frame).unwrap(), b"hello");
+//! ```
+
+/// Protocol messages generated from the canonical desktop IPC schema.
+#[allow(missing_docs)] // Protobuf output is generated; document the schema at source.
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/evohime.desktop.v1.rs"));
 }
+/// Session authentication and replay state for connected IPC clients.
 pub mod session;
+/// Bounded frame encoding, decoding, and transport behavior.
 pub mod transport;
+/// Windows-specific IPC security and named-pipe helpers.
 #[cfg(windows)]
 pub mod windows_security;
 
+/// Maximum IPC payload size accepted by the frame codec.
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+/// Maximum number of events requested by a default resynchronization call.
 pub const DEFAULT_RESYNC_MAX_EVENTS: u32 = 512;
+/// Maximum serialized full-snapshot size in bytes.
 pub const MAX_RESYNC_SNAPSHOT_BYTES: usize = MAX_FRAME_BYTES - 1024;
+/// Maximum number of capabilities or feature flags accepted from Core.
 pub const MAX_CAPABILITIES: usize = 64;
+/// Maximum byte length of one capability or feature-flag name.
 pub const MAX_CAPABILITY_NAME_BYTES: usize = 64;
+/// Maximum byte length of a Core version or revision string.
 pub const MAX_CORE_INFO_STRING_BYTES: usize = MAX_CAPABILITY_NAME_BYTES;
+/// Maximum number of events retained in a replay log.
 pub const MAX_REPLAY_EVENTS: usize = 512;
+/// Maximum payload size of one replay event in bytes.
 pub const MAX_REPLAY_EVENT_BYTES: usize = MAX_FRAME_BYTES - 1024;
+/// Maximum total payload bytes held by a replay log.
 pub const MAX_REPLAY_LOG_BYTES: usize = 16 * 1024 * 1024;
 
+/// Negotiated upper bounds used by a connected IPC peer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EffectiveLimits {
+    /// Maximum payload bytes accepted in a frame.
     pub max_frame_bytes: usize,
+    /// Maximum events retained or requested for replay.
     pub max_replay_events: usize,
+    /// Maximum serialized snapshot bytes accepted during resynchronization.
     pub max_snapshot_bytes: usize,
 }
 
+/// Invalid Core metadata or negotiated resource limits.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CoreInfoError {
+    /// A version or revision string is empty, overlong, or contains controls.
     #[error("CoreInfo string is empty, oversized, or contains control characters")]
     InvalidString,
+    /// Capability names or feature flags violate size or format constraints.
     #[error("CoreInfo capability or feature list is invalid")]
     InvalidCapabilities,
+    /// A Core-advertised limit is zero or exceeds this client build's bound.
     #[error("CoreInfo limits are zero or exceed local hard limits")]
     InvalidLimits,
 }
@@ -43,6 +77,7 @@ fn valid_bounded_string(value: &str) -> bool {
         && !value.bytes().any(|byte| byte.is_ascii_control())
 }
 
+/// Validates the Core handshake metadata and clamps no limits silently.
 pub fn validate_core_info(info: &generated::CoreInfo) -> Result<EffectiveLimits, CoreInfoError> {
     for value in [
         &info.core_version,
@@ -82,14 +117,18 @@ pub fn validate_core_info(info: &generated::CoreInfo) -> Result<EffectiveLimits,
     })
 }
 
+/// Errors raised while validating replay and snapshot resynchronization data.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ResyncError {
+    /// The peer requested more replay events than the protocol permits.
     #[error("resync batch exceeds the {DEFAULT_RESYNC_MAX_EVENTS} event limit")]
     TooManyEvents,
+    /// The serialized snapshot exceeds the bounded snapshot size.
     #[error("full snapshot exceeds the bounded IPC snapshot limit")]
     SnapshotTooLarge,
 }
 
+/// Checks the requested replay event count against the protocol ceiling.
 pub fn validate_resync_request(request: &generated::ResyncRequest) -> Result<(), ResyncError> {
     if request.max_events > DEFAULT_RESYNC_MAX_EVENTS {
         return Err(ResyncError::TooManyEvents);
@@ -97,6 +136,7 @@ pub fn validate_resync_request(request: &generated::ResyncRequest) -> Result<(),
     Ok(())
 }
 
+/// Checks a full snapshot's serialized payload size.
 pub fn validate_full_snapshot(snapshot: &generated::FullSnapshot) -> Result<(), ResyncError> {
     if snapshot.snapshot_json.len() > MAX_RESYNC_SNAPSHOT_BYTES {
         return Err(ResyncError::SnapshotTooLarge);
@@ -104,42 +144,61 @@ pub fn validate_full_snapshot(snapshot: &generated::FullSnapshot) -> Result<(), 
     Ok(())
 }
 
+/// Converts a protobuf enum value, mapping unknown integers to `Unknown`.
 pub fn normalize_task_status(value: i32) -> generated::TaskStatus {
     generated::TaskStatus::try_from(value).unwrap_or(generated::TaskStatus::Unknown)
 }
 
+/// Major/minor version pair for the desktop IPC protocol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProtocolVersion {
+    /// Compatibility version; peers must agree on this value.
     pub major: u32,
+    /// Additive version; the lower peer value is selected during negotiation.
     pub minor: u32,
 }
 
 impl ProtocolVersion {
+    /// Constructs a protocol version pair.
     pub const fn new(major: u32, minor: u32) -> Self {
         Self { major, minor }
     }
 
+    /// Returns whether the peer shares this version's major number.
     pub const fn is_compatible(self, peer: Self) -> bool {
         self.major == peer.major
     }
 }
 
+/// Errors that prevent two IPC peers from negotiating a protocol.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum NegotiationError {
+    /// Peers have different major protocol versions.
     #[error("protocol major versions are incompatible: local={local}, peer={peer}")]
-    MajorMismatch { local: u32, peer: u32 },
+    MajorMismatch {
+        /// Local protocol major version.
+        local: u32,
+        /// Peer protocol major version.
+        peer: u32,
+    },
+    /// Capability lists exceed the protocol bound.
     #[error("capability list exceeds the {MAX_CAPABILITIES} item limit")]
     TooManyCapabilities,
+    /// A capability name is empty, overlong, or contains control characters.
     #[error("capability name is empty or exceeds the {MAX_CAPABILITY_NAME_BYTES} byte limit")]
     InvalidCapability,
 }
 
+/// Shared protocol version and capability set selected for two peers.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NegotiatedProtocol {
+    /// Compatible version selected for the connection.
     pub version: ProtocolVersion,
+    /// Sorted intersection of capabilities advertised by both peers.
     pub capabilities: Vec<String>,
 }
 
+/// Selects a compatible protocol and intersects the peers' capability sets.
 pub fn negotiate_protocol(
     local: ProtocolVersion,
     peer: ProtocolVersion,
@@ -184,36 +243,52 @@ fn normalize_capabilities(values: &[String]) -> Result<Vec<String>, NegotiationE
     Ok(normalized)
 }
 
+/// One bounded event retained in a replay log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayEvent {
+    /// Monotonic sequence number assigned by the event owner.
     pub sequence_id: u64,
+    /// Encoded event payload.
     pub payload: Vec<u8>,
 }
 
+/// Events available for replay or a gap requiring a full resynchronization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplayResult {
+    /// Requested events are available in contiguous sequence order.
     Events(Vec<ReplayEvent>),
+    /// The requested cursor predates the retained replay window.
     Gap {
+        /// Sequence cursor supplied by the requesting peer.
         requested_after_sequence: u64,
+        /// Earliest retained event sequence number.
         earliest_available_sequence: u64,
+        /// Latest retained event sequence number.
         latest_available_sequence: u64,
     },
 }
 
+/// Capacity, size, and sequence errors from the bounded replay log.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ReplayError {
+    /// Capacity is zero or exceeds [`MAX_REPLAY_EVENTS`].
     #[error("replay log capacity must be between 1 and {MAX_REPLAY_EVENTS} events")]
     InvalidCapacity,
+    /// A single payload exceeds [`MAX_REPLAY_EVENT_BYTES`].
     #[error("replay event payload exceeds the bounded IPC event limit")]
     EventTooLarge,
+    /// Retained event payloads exceed [`MAX_REPLAY_LOG_BYTES`].
     #[error("replay log exceeds the bounded {MAX_REPLAY_LOG_BYTES} byte limit")]
     LogTooLarge,
+    /// Appended events do not have strictly contiguous sequence numbers.
     #[error("replay sequence must be strictly contiguous")]
     NonContiguous,
+    /// A replay request exceeds [`MAX_REPLAY_EVENTS`].
     #[error("replay request exceeds the {MAX_REPLAY_EVENTS} event limit")]
     RequestTooLarge,
 }
 
+/// Size-bounded replay window that retains the most recent contiguous events.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundedReplayLog {
     max_events: usize,
@@ -222,6 +297,7 @@ pub struct BoundedReplayLog {
 }
 
 impl BoundedReplayLog {
+    /// Creates an empty replay log with capacity from 1 through [`MAX_REPLAY_EVENTS`].
     pub fn new(max_events: usize) -> Result<Self, ReplayError> {
         if !(1..=MAX_REPLAY_EVENTS).contains(&max_events) {
             return Err(ReplayError::InvalidCapacity);
@@ -233,6 +309,7 @@ impl BoundedReplayLog {
         })
     }
 
+    /// Creates a bounded replay log from a contiguous initial event sequence.
     pub fn from_events(
         max_events: usize,
         events: impl IntoIterator<Item = ReplayEvent>,
@@ -244,6 +321,7 @@ impl BoundedReplayLog {
         Ok(log)
     }
 
+    /// Appends an event, evicting the oldest entries when count capacity is reached.
     pub fn append(&mut self, event: ReplayEvent) -> Result<(), ReplayError> {
         if event.payload.len() > MAX_REPLAY_EVENT_BYTES {
             return Err(ReplayError::EventTooLarge);
@@ -266,6 +344,7 @@ impl BoundedReplayLog {
         Ok(())
     }
 
+    /// Returns events after a cursor, or a gap when the cursor was evicted.
     pub fn replay_after(
         &self,
         after_sequence: u64,
@@ -300,23 +379,30 @@ impl BoundedReplayLog {
         ))
     }
 
+    /// Returns the currently retained events in sequence order.
     pub fn events(&self) -> &[ReplayEvent] {
         &self.events
     }
 }
 
+/// Errors decoding, encoding, or transmitting a framed IPC payload.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum FrameError {
+    /// The length prefix or payload ended before the frame was complete.
     #[error("frame is truncated")]
     Truncated,
+    /// The payload exceeds [`MAX_FRAME_BYTES`].
     #[error("frame exceeds the {MAX_FRAME_BYTES} byte limit")]
     TooLarge,
+    /// The frame contains bytes beyond the declared payload.
     #[error("frame length prefix does not match payload")]
     LengthMismatch,
+    /// The underlying asynchronous stream operation failed.
     #[error("IPC I/O error: {0}")]
     Io(String),
 }
 
+/// Prefixes a payload with its four-byte little-endian length.
 pub fn encode_frame(payload: &[u8]) -> Result<Vec<u8>, FrameError> {
     if payload.len() > MAX_FRAME_BYTES {
         return Err(FrameError::TooLarge);
@@ -329,6 +415,7 @@ pub fn encode_frame(payload: &[u8]) -> Result<Vec<u8>, FrameError> {
     Ok(frame)
 }
 
+/// Validates a complete frame and returns a borrowed view of its payload.
 pub fn decode_frame(frame: &[u8]) -> Result<&[u8], FrameError> {
     if frame.len() < 4 {
         return Err(FrameError::Truncated);

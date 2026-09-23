@@ -6,49 +6,74 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Maximum byte length accepted for a snapshot identifier.
 pub const MAX_SNAPSHOT_ID_BYTES: usize = 256;
+/// Maximum byte length accepted for expected and observed hashes.
 pub const MAX_HASH_BYTES: usize = 128;
+/// Maximum byte length accepted for a verification reason code.
 pub const MAX_REASON_BYTES: usize = 256;
 
+/// Type of external state represented by a reconciliation snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotKind {
+    /// A file identified by a content hash.
     File,
+    /// A database identified by schema version and content hash.
     Database,
+    /// A process identified by its generation and liveness.
     Process,
 }
 
+/// Expected and observed facts used to verify a file snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileSnapshotOutcome {
+    /// Hash the file is expected to have.
     pub expected_hash: String,
+    /// Observed file hash, or `None` when unavailable.
     pub observed_hash: Option<String>,
+    /// Whether the file currently exists.
     pub exists: bool,
 }
 
+/// Expected and observed schema/hash facts for a database snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatabaseSnapshotOutcome {
+    /// Schema version expected by the caller.
     pub expected_schema_version: u32,
+    /// Observed schema version, or `None` when unavailable.
     pub observed_schema_version: Option<u32>,
+    /// Content hash expected by the caller.
     pub expected_content_hash: String,
+    /// Observed database content hash, or `None` when unavailable.
     pub observed_content_hash: Option<String>,
 }
 
+/// Expected and observed process-generation facts for a process snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessSnapshotOutcome {
+    /// Process generation expected by the caller.
     pub expected_generation: u64,
+    /// Observed generation, or `None` when it could not be read.
     pub observed_generation: Option<u64>,
+    /// Whether the process is currently alive.
     pub alive: bool,
 }
 
+/// Type-tagged outcome for one file, database, or process snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "outcome", rename_all = "snake_case")]
 pub enum SnapshotOutcome {
+    /// Verification evidence for a file.
     File(FileSnapshotOutcome),
+    /// Verification evidence for a database.
     Database(DatabaseSnapshotOutcome),
+    /// Verification evidence for a process.
     Process(ProcessSnapshotOutcome),
 }
 
 impl SnapshotOutcome {
+    /// Returns the snapshot kind represented by this outcome.
     pub fn kind(&self) -> SnapshotKind {
         match self {
             Self::File(_) => SnapshotKind::File,
@@ -58,28 +83,43 @@ impl SnapshotOutcome {
     }
 }
 
+/// Result classification returned by [`verify_snapshot`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationStatus {
+    /// Available evidence matches the expected snapshot.
     Confirmed,
+    /// Evidence is available but contradicts the expected snapshot.
     Unconfirmed,
+    /// Required evidence is missing, so verification cannot conclude.
     Blocked,
 }
 
+/// Auditable result for a snapshot verification attempt.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SnapshotVerification {
+    /// Identifier supplied for the snapshot.
     pub snapshot_id: String,
+    /// Kind of snapshot that was checked.
     pub kind: SnapshotKind,
+    /// Verification classification.
     pub status: VerificationStatus,
+    /// Stable machine-readable explanation of the result.
     pub reason_code: String,
 }
 
+/// Validation failures for snapshot identifiers, hashes, and reason codes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VerificationError {
+    /// The snapshot identifier was empty.
     EmptySnapshotId,
+    /// The snapshot identifier exceeded [`MAX_SNAPSHOT_ID_BYTES`].
     SnapshotIdTooLong,
+    /// A hash was empty or exceeded [`MAX_HASH_BYTES`].
     HashTooLong,
+    /// A hash contained a non-hexadecimal character.
     InvalidHash,
+    /// The reason code exceeded [`MAX_REASON_BYTES`].
     ReasonTooLong,
 }
 

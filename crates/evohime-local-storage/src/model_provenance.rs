@@ -19,131 +19,217 @@ use std::{
 use thiserror::Error;
 use uuid::Uuid;
 
+/// Current SQLite schema version for model request provenance.
 pub const MODEL_PROVENANCE_SCHEMA_VERSION: u32 = 3;
+/// Retention interval for provenance records, in milliseconds.
 pub const PROVENANCE_RETENTION_MS: i64 = PROVENANCE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
+/// Errors returned by model provenance persistence and bundle operations.
 #[derive(Debug, Error)]
 pub enum ModelProvenanceError {
+    /// A model provenance contract validation failed.
     #[error("{0}")]
     Contract(#[from] ProvenanceError),
+    /// An SQLite query or transaction failed.
     #[error("sqlite: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    /// JSON serialization or deserialization failed.
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
+    /// A filesystem read or write failed.
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
+    /// A request identifier was found with conflicting canonical content.
     #[error("REQUEST_HASH_COLLISION")]
     HashCollision,
+    /// The provenance transaction could not be committed consistently.
     #[error("REQUEST_PROVENANCE_COMMIT_FAILED: {0}")]
     CommitFailed(String),
 }
 
+/// Result type used by model provenance storage operations.
 pub type Result<T> = std::result::Result<T, ModelProvenanceError>;
 
+/// Payload handling policy selected when committing a model request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitMode {
+    /// Store the complete validated request envelope for dispatch and audit.
     FullForDispatch,
+    /// Persist hashes and metadata while omitting request payload bytes.
     HashOnlyStorage,
 }
 
+/// Persisted identity, envelope, routing snapshots, and lifecycle of a model request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelRequestRecord {
+    /// Unique request attempt identifier.
     pub request_id: String,
+    /// Logical identifier shared by retries of the same request.
     pub logical_request_id: String,
+    /// Attempt number within the logical request.
     pub attempt: u32,
+    /// Previous attempt request ID, if this is a retry.
     pub parent_request_id: Option<String>,
+    /// Hash of the previous attempt's canonical request.
     pub previous_request_hash: Option<String>,
+    /// Semantic category of the request.
     pub request_kind: String,
+    /// Context ledger entry associated with this request.
     pub ledger_id: String,
+    /// Provider selected for the request.
     pub provider: String,
+    /// Model selected for the request.
     pub model: String,
+    /// Model request envelope schema version.
     pub envelope_version: u32,
+    /// Whether the envelope is persisted in full or hash-only.
     pub payload_mode: String,
+    /// Envelope content hash when the payload is stored in full.
     pub envelope_hash: Option<String>,
+    /// Serialized envelope, empty in hash-only mode.
     pub envelope_blob: Vec<u8>,
+    /// Hash of the projected model context.
     pub context_projection_hash: String,
+    /// Hash of the route snapshot used for this request.
     pub route_snapshot_hash: String,
+    /// Hash of the policy snapshot used for this request.
     pub policy_snapshot_hash: String,
+    /// Whether the route and policy hashes refer to the same snapshot.
     pub route_policy_hash_shared: bool,
+    /// Request lifecycle state.
     pub status: String,
+    /// Dispatch timestamp, if the request was sent.
     pub dispatch_at: Option<i64>,
+    /// Completion timestamp, if a response or terminal outcome was recorded.
     pub completed_at: Option<i64>,
 }
 
+/// Persisted response metadata and optional model output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelResponseRecord {
+    /// Unique response identifier.
     pub response_id: String,
+    /// Request that produced this response.
     pub request_id: String,
+    /// Response lifecycle state.
     pub status: String,
+    /// Response text, when retained.
     pub output: Option<String>,
+    /// Hash of the response text when available.
     pub output_hash: Option<String>,
+    /// Provider-supplied reason the generation finished.
     pub finish_reason: Option<String>,
+    /// Response start timestamp.
     pub started_at: i64,
+    /// Response completion timestamp, if complete.
     pub completed_at: Option<i64>,
 }
 
+/// Model-generated or system-originated tool intent linked to its source request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolIntentRecord {
+    /// Unique tool intent identifier.
     pub intent_id: String,
+    /// Request that originated the intent.
     pub origin_request_id: String,
+    /// Hash of the originating request envelope.
     pub origin_request_envelope_hash: String,
+    /// Response containing the intent, if one exists.
     pub response_id: Option<String>,
+    /// Position of the intent within the response.
     pub ordinal: u32,
+    /// Origin category for the tool intent.
     pub origin_kind: String,
+    /// Requested tool name.
     pub tool_name: String,
+    /// Hash of the canonical tool arguments.
     pub tool_args_hash: String,
+    /// Lifecycle state of the intent.
     pub state: String,
 }
 
+/// Metadata for context that was summarized or pruned from a model request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShadowOriginalRecord {
+    /// Unique shadow record identifier.
     pub shadow_id: String,
+    /// Context ledger that owned the original content.
     pub ledger_id: String,
+    /// Request from which content was summarized or pruned.
     pub request_id: String,
+    /// Category of the original context item.
     pub original_kind: String,
+    /// Identifier of the original context item.
     pub original_id: String,
+    /// Operation applied to the original content.
     pub operation: String,
+    /// Parent shadow record when shadows form a chain.
     pub parent_shadow_id: Option<String>,
+    /// Hash of the content block used by the shadow.
     pub content_block_hash: Option<String>,
+    /// Retention state of the original source.
     pub source_state: String,
+    /// Hash of the original content when retained.
     pub original_content_hash: Option<String>,
+    /// Original content byte length.
     pub byte_len: u64,
+    /// Shadow creation timestamp.
     pub created_at: i64,
 }
 
+/// Signing interface used to authenticate exported provenance manifests.
 pub trait ProvenanceBundleSigner {
+    /// Returns the stable identifier of the signing key.
     fn key_id(&self) -> String;
+    /// Signs a manifest digest and returns the signature bytes.
     fn sign_manifest_digest(&self, digest: &[u8]) -> Result<Vec<u8>>;
+    /// Returns the public signing key as hexadecimal when exportable.
     fn public_key_hex(&self) -> Option<String> {
         None
     }
+    /// Returns JSONL key history to include in the export, if supported.
     fn key_history_jsonl(&self) -> Result<Vec<u8>> {
         Ok(Vec::new())
     }
+    /// Returns JSONL key checkpoints to include in the export, if supported.
     fn checkpoints_jsonl(&self) -> Result<Vec<u8>> {
         Ok(Vec::new())
     }
 }
 
+/// Result of verifying an exported provenance bundle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BundleVerification {
+    /// Whether all required signatures, hashes, and records verified.
     pub valid: bool,
+    /// Request whose provenance was verified.
     pub request_id: String,
+    /// Stable verification lifecycle state.
     pub verification_state: String,
+    /// Verification errors found in the bundle.
     pub errors: Vec<String>,
 }
 
+/// Persisted receipt that binds a request envelope to an audit-chain digest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestReceiptRecord {
+    /// Unique receipt identifier.
     pub receipt_id: String,
+    /// Request authenticated by the receipt.
     pub request_id: String,
+    /// Canonical hash of this receipt.
     pub receipt_hash: String,
+    /// Hash of the request envelope authenticated by the receipt.
     pub request_envelope_hash: String,
+    /// Previous receipt hash, if part of a chain.
     pub previous_receipt_hash: Option<String>,
+    /// Identifier of the signing key.
     pub key_id: String,
+    /// Receipt creation timestamp.
     pub created_at: i64,
 }
 
+/// Creates provenance request, response, intent, shadow, and receipt tables.
 pub fn install_schema(connection: &Connection) -> Result<()> {
     connection.execute_batch(
         "PRAGMA foreign_keys=ON;
@@ -326,15 +412,18 @@ pub fn install_schema(connection: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Core-owned repository for durable model request provenance and audit export.
 pub struct ModelProvenanceRepository<'a> {
     connection: &'a Connection,
 }
 
 impl<'a> ModelProvenanceRepository<'a> {
+    /// Creates a repository using an existing SQLite connection.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
     }
 
+    /// Validates, canonicalizes, and commits a model request envelope according to `mode`.
     pub fn commit_envelope(
         &self,
         envelope: &ModelRequestEnvelopeV1,
@@ -370,10 +459,12 @@ impl<'a> ModelProvenanceRepository<'a> {
         }
     }
 
+    /// Loads the persisted model request by request ID.
     pub fn get(&self, request_id: &str) -> Result<Option<ModelRequestRecord>> {
         Ok(self.connection.query_row("SELECT request_id,logical_request_id,attempt,parent_request_id,previous_request_hash,request_kind,ledger_id,provider,model,envelope_version,payload_mode,envelope_hash,envelope_blob,context_projection_hash,route_snapshot_hash,policy_snapshot_hash,route_policy_hash_shared,status,dispatch_at,completed_at FROM model_requests WHERE request_id=?1", [request_id], row_record).optional()?)
     }
 
+    /// Marks a request dispatched at the supplied timestamp.
     pub fn mark_dispatch(&self, request_id: &str, at: i64) -> Result<()> {
         let changed = self.connection.execute("UPDATE model_requests SET dispatch_at=?2 WHERE request_id=?1 AND status='active' AND dispatch_at IS NULL", params![request_id, at])?;
         if changed != 1 {
@@ -387,6 +478,7 @@ impl<'a> ModelProvenanceRepository<'a> {
     /// Регистрирует уже подписанный request receipt в одной транзакции с
     /// linkage на ledger. Подпись создаётся существующим Core receipt signer;
     /// repository не принимает prompt или credentials как часть receipt.
+    /// Persists a signed receipt linked to a model request.
     pub fn link_request_receipt(
         &self,
         receipt: &RequestReceiptRecord,
@@ -415,6 +507,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(())
     }
 
+    /// Updates the request lifecycle state and optional completion timestamp.
     pub fn set_status(
         &self,
         request_id: &str,
@@ -429,6 +522,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(())
     }
 
+    /// Inserts response metadata for a request.
     pub fn insert_response(&self, response: &ModelResponseRecord) -> Result<()> {
         let output_hash = response.output.as_deref().map(hash_bytes);
         self.connection.execute("INSERT INTO model_responses(response_id,request_id,status,output,output_hash,finish_reason,started_at,completed_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(request_id) DO NOTHING", params![response.response_id, response.request_id, response.status, response.output, output_hash, response.finish_reason, response.started_at, response.completed_at])?;
@@ -438,6 +532,7 @@ impl<'a> ModelProvenanceRepository<'a> {
     /// Согласованный workspace snapshot: bytes и metadata читаются из одного
     /// stable наблюдения; при гонке выполняется bounded повтор, а текущий
     /// файл после commit больше не используется для реконструкции.
+    /// Captures workspace content evidence associated with a request.
     pub fn capture_workspace_evidence(
         &self,
         request_id: &str,
@@ -469,6 +564,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Err(ProvenanceError::SourceChanged.into())
     }
 
+    /// Inserts a tool intent associated with the originating request.
     pub fn insert_tool_intent(&self, intent: &ToolIntentRecord) -> Result<()> {
         let request_hash: String = self.connection.query_row(
             "SELECT envelope_hash FROM model_requests WHERE request_id=?1",
@@ -496,6 +592,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(())
     }
 
+    /// Links a tool intent to its terminal action receipt.
     pub fn link_tool_receipt(
         &self,
         task_id: &str,
@@ -522,6 +619,7 @@ impl<'a> ModelProvenanceRepository<'a> {
 
     /// Сохраняет вытесненный original append-only. Повторный prune той же
     /// ledger item идемпотентен; содержимое не смешивается с prompt blocks.
+    /// Records metadata for context content shadowed by summarization or pruning.
     pub fn append_shadow_original(
         &self,
         record: &ShadowOriginalRecord,
@@ -548,6 +646,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(())
     }
 
+    /// Lists shadow records for the specified request.
     pub fn list_shadow_originals(
         &self,
         request_id: &str,
@@ -577,6 +676,7 @@ impl<'a> ModelProvenanceRepository<'a> {
 
     /// До этапа 05.8 действует bounded cap 8 MiB. Старые shadow blocks
     /// переводятся в явный `metadata_hash_only`, никогда не исчезают молча.
+    /// Compacts retained shadow payloads associated with a task and returns the affected count.
     pub fn compact_shadow_for_task(&self, task_id: &str) -> Result<usize> {
         let total: i64 = self.connection.query_row("SELECT COALESCE(SUM(DISTINCT b.byte_len),0) FROM context_shadow_blocks b JOIN context_shadowed_originals s ON s.original_content_hash=b.content_hash JOIN context_ledger l ON l.id=s.ledger_id WHERE l.task_id=?1 AND s.source_state='full'", [task_id], |row| row.get(0))?;
         if total <= evohime_model_provenance::MAX_SHADOW_BYTES_PER_TASK as i64 {
@@ -617,6 +717,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(changed)
     }
 
+    /// Marks interrupted active requests with an unknown outcome during recovery.
     pub fn recover_active(&self) -> Result<usize> {
         let ids: Vec<String> = {
             let mut statement = self.connection.prepare("SELECT request_id FROM model_requests WHERE status='active' AND completed_at IS NULL AND payload_mode='full'")?;
@@ -663,6 +764,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(count)
     }
 
+    /// Redacts retained payloads for a request and records the requested terminal state.
     pub fn redact_request(&self, request_id: &str, state: &str) -> Result<()> {
         let tx = self.connection.unchecked_transaction()?;
         let disposition = if state == "redacted" {
@@ -695,6 +797,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(())
     }
 
+    /// Prunes provenance records older than `cutoff` while retaining required tombstones.
     pub fn retention_pass(&self, cutoff: i64) -> Result<usize> {
         let ids: Vec<String> = {
             let mut statement = self.connection.prepare("SELECT request_id FROM model_requests WHERE status NOT IN ('redacted','retention_pruned') AND dispatch_at IS NOT NULL AND dispatch_at < ?1")?;
@@ -711,6 +814,7 @@ impl<'a> ModelProvenanceRepository<'a> {
 
     /// Создаёт замкнутый bounded bundle в staging-каталоге и публикует его
     /// одной rename-операцией. Файлы JSONL всегда имеют завершающий LF.
+    /// Exports a signed, self-contained provenance bundle for a request.
     pub fn export_bundle(
         &self,
         request_id: &str,
@@ -945,6 +1049,7 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(destination.to_path_buf())
     }
 
+    /// Verifies bundle integrity and signature metadata without modifying the bundle.
     pub fn verify_bundle(bundle: &Path) -> Result<BundleVerification> {
         let manifest_path = bundle.join("manifest.json");
         let manifest_bytes = fs::read(&manifest_path)?;

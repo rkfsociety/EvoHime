@@ -2,9 +2,11 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 
 type StoredRecord = (String, u64, String, Vec<u8>);
 
+/// Creates the versioned model-manager state and record tables.
 pub fn install_schema(c: &Connection) -> Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS local_model_manager_state (state_id TEXT PRIMARY KEY, version INTEGER NOT NULL, content_hash TEXT NOT NULL, state_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS local_model_manager_records (record_id TEXT PRIMARY KEY, record_kind TEXT NOT NULL, revision INTEGER NOT NULL, content_hash TEXT NOT NULL, record_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
+/// Inserts version 1 or advances an existing state by one version using a compare-and-set.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -18,6 +20,7 @@ pub fn put(
     }
     Ok(c.execute("UPDATE local_model_manager_state SET version=?2,content_hash=?3,state_json=?4,updated_at_ms=?5 WHERE state_id=?1 AND version=?2-1", params![id,version,hash,json,now_ms])? == 1)
 }
+/// Loads a state version, content hash, and serialized state by ID.
 pub fn get(c: &Connection, id: &str) -> Result<Option<(u64, String, Vec<u8>)>> {
     c.query_row(
         "SELECT version,content_hash,state_json FROM local_model_manager_state WHERE state_id=?1",
@@ -27,6 +30,7 @@ pub fn get(c: &Connection, id: &str) -> Result<Option<(u64, String, Vec<u8>)>> {
     .optional()
 }
 
+/// Inserts revision 1 or advances a record by one revision using a compare-and-set.
 pub fn put_record(
     c: &Connection,
     record_id: &str,
@@ -42,6 +46,7 @@ pub fn put_record(
     Ok(c.execute("UPDATE local_model_manager_records SET record_kind=?2,revision=?3,content_hash=?4,record_json=?5,updated_at_ms=?6 WHERE record_id=?1 AND revision=?3-1", params![record_id, record_kind, revision, hash, json, now_ms])? == 1)
 }
 
+/// Loads a record kind, revision, content hash, and serialized payload by ID.
 pub fn get_record(c: &Connection, record_id: &str) -> Result<Option<StoredRecord>> {
     c.query_row(
         "SELECT record_kind,revision,content_hash,record_json FROM local_model_manager_records WHERE record_id=?1",
@@ -50,6 +55,7 @@ pub fn get_record(c: &Connection, record_id: &str) -> Result<Option<StoredRecord
     ).optional()
 }
 
+/// Lists records of one kind in ID order, capped at 256 entries.
 pub fn list_records(c: &Connection, record_kind: &str, limit: u32) -> Result<Vec<StoredRecord>> {
     let mut statement = c.prepare("SELECT record_id,revision,content_hash,record_json FROM local_model_manager_records WHERE record_kind=?1 ORDER BY record_id LIMIT ?2")?;
     let rows = statement.query_map(params![record_kind, i64::from(limit.min(256))], |row| {

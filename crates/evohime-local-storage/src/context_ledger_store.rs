@@ -34,26 +34,37 @@ pub const MAX_CONCURRENT_MODEL_CALLS: usize = 4;
 
 /// Базовые лимиты bounded-вывода из 01.1.
 pub const BOUNDED_ID_LIMIT: usize = 100;
+/// Maximum character count for projected drop and fallback reason text.
 pub const BOUNDED_REASON_CHARS: usize = 200;
 
 /// Диагностика неудачной записи ledger. Model call при этом не выполняется.
 pub const LEDGER_WRITE_FAILED: &str = "ledger_write_failed";
 
+/// Maximum byte length of a compaction idempotency key.
 pub const COMPACTION_OPERATION_KEY_BYTES: usize = 128;
 
+/// Durable progress and result metadata for one context compaction operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompactionOperation {
+    /// Stable idempotency key for the operation.
     pub operation_key: String,
+    /// Context scope being compacted.
     pub scope_id: String,
+    /// Source context snapshot revision.
     pub snapshot_revision: i64,
+    /// Current compaction lifecycle state.
     pub state: String,
+    /// Identifier of the committed summary, when available.
     pub summary_id: Option<String>,
+    /// Whether the compaction used its fallback path.
     pub fallback: bool,
+    /// Bounded explanation for using the fallback path.
     pub fallback_reason: Option<String>,
 }
 
 /// Идемпотентный durable state compaction. Уникальность operation key
 /// обеспечивается SQLite, а не только проверкой в памяти вызывающего кода.
+/// Creates operation, provenance, and projection tables for durable compaction.
 pub fn install_compaction_schema(connection: &Connection) -> Result<(), StorageError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS context_compaction_operations (
@@ -91,20 +102,35 @@ pub fn install_compaction_schema(connection: &Connection) -> Result<(), StorageE
 /// Bounded read-only projection записи ledger для IPC и UI (этап 01.5).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ContextLedgerProjection {
+    /// Ledger entry identifier.
     pub id: String,
+    /// Schema version of the source ledger entry.
     pub schema_version: u32,
+    /// Task associated with the model call.
     pub task_id: String,
+    /// Model call represented by the entry.
     pub model_call_id: String,
+    /// Entry creation timestamp.
     pub created_at: i64,
+    /// Model provider identifier.
     pub provider: String,
+    /// Model identifier.
     pub model: String,
+    /// Prompt profile version.
     pub profile_version: String,
+    /// Tokenizer version used for estimation.
     pub tokenizer_version: String,
+    /// Hash of the immutable context ledger entry.
     pub context_ledger_hash: String,
+    /// Recorded send or budget-unavailable outcome.
     pub outcome: String,
+    /// Tokens reserved for mandatory context.
     pub mandatory_tokens: u32,
+    /// Tokens assigned to selected optional context.
     pub selected_optional_tokens: u32,
+    /// Tokens reserved for output and other fixed budgets.
     pub reserves_tokens: u32,
+    /// Estimated total prompt token count.
     pub estimated_prompt_tokens: u32,
     /// Не более [`BOUNDED_ID_LIMIT`] элементов.
     pub selected_item_ids: Vec<String>,
@@ -112,27 +138,39 @@ pub struct ContextLedgerProjection {
     pub dropped_items: Vec<DroppedProjection>,
     /// Факт усечения любого из списков.
     pub truncated: bool,
+    /// Context reduction levels applied before the model call.
     pub ladder_levels_applied: Vec<String>,
+    /// Bounded metadata for summaries produced during context compression.
     pub compression: Vec<CompressionProjection>,
+    /// Optional selected context loadout.
     pub loadout: Option<LoadoutRecord>,
+    /// Whether fallback token estimation was used.
     pub fallback_estimator: bool,
+    /// Optional reason the provider budget could not be determined.
     pub budget_unavailable: Option<BudgetUnavailable>,
 }
 
 /// Отброшенный item в projection: только id и причина.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DroppedProjection {
+    /// Identifier of the omitted context item.
     pub id: String,
+    /// Stable reason the item was dropped.
     pub drop_reason: String,
 }
 
 /// Compression-решение в projection: без текста summary.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompressionProjection {
+    /// Identifier of the generated summary.
     pub summary_id: String,
+    /// Number of source items represented by the summary.
     pub source_count: usize,
+    /// Ratio of compressed tokens to original tokens.
     pub compression_ratio: f64,
+    /// Version of the summarizer used.
     pub summarizer_version: String,
+    /// Whether a fallback summarization path was used.
     pub fallback: bool,
     /// Bounded причина fallback, не более [`BOUNDED_REASON_CHARS`] символов.
     pub fallback_reason: Option<String>,
@@ -148,6 +186,7 @@ pub struct ContextLedgerStore<'a> {
 }
 
 impl<'a> ContextLedgerStore<'a> {
+    /// Configures WAL and the bounded busy timeout before creating the store.
     pub fn new(connection: &'a Connection) -> Result<Self, StorageError> {
         // WAL и busy_timeout: чтения диагностики идут из WAL-снимка и не
         // блокируют писателей.
@@ -156,6 +195,7 @@ impl<'a> ContextLedgerStore<'a> {
         Ok(Self { connection })
     }
 
+    /// Creates or resumes a compaction operation and moves a planned operation to `running`.
     pub fn begin_compaction(
         &self,
         operation_key: &str,
@@ -181,6 +221,7 @@ impl<'a> ContextLedgerStore<'a> {
         self.compaction_operation(operation_key)
     }
 
+    /// Marks a running compaction committed with its summary and fallback metadata.
     pub fn finish_compaction(
         &self,
         operation_key: &str,
@@ -202,6 +243,7 @@ impl<'a> ContextLedgerStore<'a> {
         self.compaction_operation(operation_key)
     }
 
+    /// Marks a planned or running compaction cancelled and returns its durable state.
     pub fn cancel_compaction(
         &self,
         operation_key: &str,
@@ -214,6 +256,7 @@ impl<'a> ContextLedgerStore<'a> {
         self.compaction_operation(operation_key)
     }
 
+    /// Loads compaction operation metadata by idempotency key.
     pub fn compaction_operation(
         &self,
         operation_key: &str,
@@ -241,6 +284,7 @@ impl<'a> ContextLedgerStore<'a> {
     /// запись с hash, либо не появляется ничего. При `SQLITE_BUSY` запись
     /// повторяется до трёх раз с экспоненциальной задержкой; повтор записи в БД
     /// не является запрещённым retry model call.
+    /// Stores the immutable ledger entry, retrying only SQLite busy/locked errors.
     pub fn append(&self, entry: &ContextLedgerEntry) -> Result<(), StorageError> {
         let mut attempt = 0_usize;
         loop {
@@ -322,6 +366,7 @@ impl<'a> ContextLedgerStore<'a> {
     }
 
     /// Фактический usage провайдера. Пишется append-only и не меняет запись ledger.
+    /// Appends actual provider usage without modifying the immutable ledger entry.
     pub fn record_usage(&self, usage: &ContextLedgerUsage) -> Result<(), StorageError> {
         self.connection.execute(
             "INSERT INTO context_ledger_usage (

@@ -1,22 +1,29 @@
 use crate::{pattern::glob_match, Permission, PermissionMode};
 use serde::{Deserialize, Serialize};
 
+/// Rule mapping one permission and glob subject to a decision mode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyRule {
+    /// Capability to which the rule applies.
     pub permission: Permission,
+    /// Case-insensitive glob matched against a canonical subject.
     pub pattern: String,
+    /// Mode to apply when the rule matches.
     pub mode: PermissionMode,
 }
 
+/// Ordered rules; the last rule matching both permission and subject wins.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct PolicyRuleSet(Vec<PolicyRule>);
 
 impl PolicyRuleSet {
+    /// Creates a rule set in evaluation order.
     pub fn new(rules: Vec<PolicyRule>) -> Self {
         Self(rules)
     }
 
+    /// Creates the built-in rules protecting `.env` files from reads.
     pub fn defaults() -> Self {
         Self::new(vec![
             PolicyRule {
@@ -32,13 +39,16 @@ impl PolicyRuleSet {
         ])
     }
 
+    /// Returns rules in the order they are evaluated.
     pub fn rules(&self) -> &[PolicyRule] {
         &self.0
     }
+    /// Returns whether no rules are configured.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// Returns the mode from the last rule matching the permission and subject.
     pub fn resolve(&self, permission: Permission, subject: &str) -> Option<PermissionMode> {
         self.0
             .iter()

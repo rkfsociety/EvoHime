@@ -3,6 +3,20 @@
     not(test),
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
+//! Rust Core agent runtime, task orchestration, persistence, and tool execution.
+//!
+//! The Core owns runtime state and communicates with the desktop shell through
+//! the versioned IPC contract. The crate root re-exports both runtime entry
+//! points and internal command types; external desktop clients must use the
+//! versioned IPC contract rather than depend on internal channel messages.
+//!
+//! Read the package version through [`CoreVersion`]:
+//!
+//! ```
+//! use evohime_core::CoreVersion;
+//!
+//! assert!(!CoreVersion::current().is_empty());
+//! ```
 
 mod core_prelude;
 pub(crate) use core_prelude::*;
@@ -11,8 +25,10 @@ pub use core_prelude::{
 };
 
 pub(crate) mod adaptive_tool_catalog;
+/// Validates and evaluates content-addressed agent programs.
 pub mod agent_program_optimizer;
 pub(crate) mod approval_policy_profiles;
+/// Models authorization state for security assessments.
 pub mod authorized_security_assessment;
 pub mod autonomous_metric_experiment_runtime;
 pub mod capability_workbenches;
@@ -28,12 +44,14 @@ pub(crate) mod customization_inventory;
 pub mod declarative_agent_component_registry;
 pub mod declarative_runtime_components;
 pub(crate) mod dependency_aware_task_graph;
+/// Defines deterministic, evidence-referenced review plans.
 pub mod deterministic_review_execution_plan;
 pub mod domain_workflow_recipes;
 pub mod durable_remote_task_bridge;
 pub(crate) mod event_visualizer_registry;
 pub mod experience_replay_library;
 pub mod external_source_acquisition_runtime;
+/// Models guarded publication operations for Git remotes.
 pub mod git_remote_publication_protocol;
 pub mod headless_core_cli;
 pub mod ide_companion_bridge;
@@ -44,15 +62,18 @@ pub mod local_model_compatibility_gateway;
 pub mod minimal_change_policy;
 pub mod mobile_device_automation_runtime;
 pub mod native_computer_use_runtime;
+/// Describes bounded metadata for offline experience consolidation.
 pub mod offline_experience_consolidation;
 pub mod optional_voice_output_adapter;
 pub(crate) mod output_guardrail_pipeline;
 pub(crate) mod privacy_and_telemetry_governance;
 pub mod project_execution_board;
 pub mod project_instruction_stack;
+/// Provides project-scoped knowledge notebook contracts.
 pub mod project_knowledge_notebook;
 pub(crate) mod reasoning_operator_library;
 pub mod remote_client_control_plane;
+/// Describes Core runtime services and their dependency graph.
 pub mod runtime_service_graph;
 pub(crate) mod safe_ui_extension_framework;
 pub mod schema_driven_agent_configuration;
@@ -67,6 +88,7 @@ pub mod temporal_signal_intelligence;
 pub(crate) mod typed_context_references;
 pub mod verified_git_checkpoints;
 pub mod verified_technical_diagram_artifacts;
+/// Defines listener-backed voice input dictation profiles.
 pub mod voice_input_dictation;
 pub mod workflow_optimization_lab;
 pub mod workspace_bootstrap_manifest;
@@ -100,6 +122,7 @@ pub use listener_pipe::run_windows_listener_pipe;
 #[cfg(windows)]
 pub use pipe_server::{run_windows_pipe, PipeServerConfig};
 impl CoreVersion {
+    /// Returns the package version embedded at compile time.
     pub const fn current() -> &'static str {
         env!("CARGO_PKG_VERSION")
     }
@@ -162,6 +185,7 @@ pub mod code_anchored_intent_markers;
 pub mod code_review_lane;
 pub mod content_aware_context_compression;
 pub(crate) mod context_budget;
+/// Defines named context configurations for agent runs.
 pub mod context_loadouts;
 pub mod context_namespace;
 pub(crate) mod continuation;
@@ -187,6 +211,7 @@ pub(crate) mod incremental_change_protocol;
 pub(crate) mod integration_provider_runtime;
 pub(crate) mod integration_provider_sdk;
 pub(crate) mod invocation_presets;
+/// Exposes the kernel's capability registry facade.
 pub mod kernel_capability_facade;
 pub mod language_intelligence_runtime;
 #[cfg(windows)]
@@ -205,8 +230,10 @@ pub mod model_purpose_routing;
 pub mod model_resilience_policy;
 pub mod multi_reviewer_ensemble;
 pub(crate) mod observability;
+/// Defines rules that constrain tool and capability permissions.
 pub mod permission_rules;
 pub(crate) mod persistent_agent_registry;
+/// Models plans and their lifecycle within the Core.
 pub mod plan;
 pub mod plan_artifact;
 pub mod policy_aware_tool_result_cache;
@@ -217,6 +244,7 @@ pub mod prompt_cache_planner;
 pub(crate) mod provider_resilience;
 pub mod remote_conversation_channels;
 pub(crate) mod retained_child;
+/// Models trust and lifecycle for skill sources.
 pub mod skill_source_lifecycle;
 pub mod static_analysis_packs;
 pub(crate) mod structured_response_contract;
@@ -241,6 +269,7 @@ pub(crate) mod research_search;
 pub(crate) mod scope;
 pub mod skill_registry;
 pub mod skill_trust_pipeline;
+/// Provides task-scoped memory identifiers and operations.
 pub mod task_memory;
 pub(crate) mod task_worktree_isolation;
 pub mod team_coordination_policies;
@@ -268,6 +297,7 @@ pub(crate) mod workflow_registry;
 pub(crate) mod workflow_runner;
 pub(crate) mod workflow_runtime;
 pub(crate) mod workflow_templates;
+/// Models workspace operations available to the Core.
 pub mod workspace;
 pub(crate) mod workspace_rag;
 pub use core_protocol::*;

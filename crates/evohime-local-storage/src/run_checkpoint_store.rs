@@ -2,6 +2,15 @@ use crate::{LocalDatabase, RunCheckpointRecord, StorageError};
 use rusqlite::OptionalExtension;
 
 impl LocalDatabase {
+    /// Persists a checkpoint snapshot for a workflow run.
+    ///
+    /// Checkpoints retain the run stage, attempt, input hash, serialized state,
+    /// pending effects, and commit time so recovery can resume from a known
+    /// boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the checkpoint cannot be inserted.
     pub fn create_checkpoint(
         &self,
         checkpoint: &RunCheckpointRecord,
@@ -24,6 +33,11 @@ impl LocalDatabase {
         Ok(checkpoint.clone())
     }
 
+    /// Returns the most recently inserted checkpoint for `run_id`, if present.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError`] if the checkpoint query fails.
     pub fn latest_checkpoint(
         &self,
         run_id: &str,

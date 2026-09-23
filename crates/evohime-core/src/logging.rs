@@ -10,11 +10,24 @@ use serde_json::{json, Value};
 
 use crate::{observability, sensitive_data_guardrails};
 
+/// Appends structured JSON records to a newline-delimited log file.
+///
+/// Writes are serialized through an internal mutex and flushed before
+/// [`write`](Self::write) returns. The logger creates the parent directory when
+/// opened; callers remain responsible for choosing an appropriate log path.
 pub struct StructuredLogger {
     file: Mutex<BufWriter<File>>,
 }
 
 impl StructuredLogger {
+    /// Opens or creates an append-only structured log at `path`.
+    ///
+    /// Missing parent directories are created. Existing files are preserved
+    /// and new records are appended.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if the directory or file cannot be opened.
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
         if let Some(parent) = path.as_ref().parent() {
             fs::create_dir_all(parent)?;
@@ -25,6 +38,15 @@ impl StructuredLogger {
         })
     }
 
+    /// Appends one JSON object containing timestamp, level, event, and fields.
+    ///
+    /// The record is serialized as a single JSONL line and flushed before this
+    /// method returns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an I/O error if serialization, locking, writing, or flushing
+    /// fails.
     pub fn write(&self, level: &str, event: &str, fields: Value) -> io::Result<()> {
         let timestamp_ms = match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(duration) => duration.as_millis(),

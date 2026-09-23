@@ -1,52 +1,81 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Current serialized schema version for agent programs.
 pub const SCHEMA_VERSION: u32 = 1;
 const MAX_ID: usize = 128;
 const MAX_STEPS: usize = 64;
 const MAX_TEXT: usize = 512;
 
+/// Lifecycle state of an agent program revision.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Lifecycle {
+    /// Program is being assembled and cannot be optimized.
     Draft,
+    /// Program is valid and available for deterministic optimization review.
     Active,
+    /// Program revision has been replaced by a newer one.
     Superseded,
+    /// Program revision is invalid and cannot be used.
     Invalid,
 }
 
+/// One bounded operation in an agent program.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProgramStep {
+    /// Stable step identifier, unique within the program.
     pub id: String,
+    /// Operation kind declared for this step.
     pub kind: String,
+    /// Digest of the step's canonical input.
     pub input_hash: String,
+    /// Capability required to execute the step.
     pub capability: String,
 }
 
+/// Content-addressed sequence of bounded agent operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentProgram {
+    /// Serialized schema version.
     pub schema_version: u32,
+    /// Stable program identifier.
     pub id: String,
+    /// Monotonically increasing revision.
     pub revision: u64,
+    /// Lifecycle state controlling whether optimization may inspect the program.
     pub lifecycle: Lifecycle,
+    /// Scope in which the program may be used.
     pub scope: String,
+    /// Digest of the objective used to derive this program.
     pub objective_hash: String,
+    /// Ordered steps in the program.
     pub steps: Vec<ProgramStep>,
+    /// SHA-256 digest of the canonical program with this field cleared.
     pub content_hash: String,
 }
 
+/// Deterministic metadata-only assessment of an agent program.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OptimizationVerdict {
+    /// Identifier of the assessed program.
     pub program_id: String,
+    /// Revision of the assessed program.
     pub revision: u64,
+    /// Digest of the assessed program content.
     pub content_hash: String,
+    /// Whether the metadata-only assessment accepted the program.
     pub accepted: bool,
+    /// Deterministic score derived from the number of steps.
     pub score: u32,
+    /// Stable explanation code for the assessment result.
     pub reason: String,
 }
 
+/// Validation or optimization failure for an agent program.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum OptimizerError {
+    /// The program violated schema, bounds, uniqueness, lifecycle, or digest requirements.
     #[error("invalid agent program: {0}")]
     Invalid(String),
 }
@@ -58,6 +87,7 @@ fn bounded(value: &str, limit: usize, name: &str) -> Result<(), OptimizerError> 
     Ok(())
 }
 
+/// Computes the canonical SHA-256 digest with `content_hash` cleared.
 pub fn canonical_hash(program: &AgentProgram) -> Result<String, OptimizerError> {
     let mut normalized = program.clone();
     normalized.content_hash.clear();
@@ -66,6 +96,7 @@ pub fn canonical_hash(program: &AgentProgram) -> Result<String, OptimizerError> 
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
+/// Validates schema, field bounds, unique steps, and the canonical digest.
 pub fn validate(program: &AgentProgram) -> Result<(), OptimizerError> {
     if program.schema_version != SCHEMA_VERSION {
         return Err(OptimizerError::Invalid("unsupported_schema_version".into()));
@@ -94,6 +125,35 @@ pub fn validate(program: &AgentProgram) -> Result<(), OptimizerError> {
     Ok(())
 }
 
+/// Produces a deterministic metadata-only verdict for a valid active program.
+///
+/// # Example
+///
+/// ```
+/// use evohime_core::agent_program_optimizer::{
+///     canonical_hash, optimize, AgentProgram, Lifecycle, ProgramStep, SCHEMA_VERSION,
+/// };
+///
+/// let mut program = AgentProgram {
+///     schema_version: SCHEMA_VERSION,
+///     id: "summarize".into(),
+///     revision: 1,
+///     lifecycle: Lifecycle::Active,
+///     scope: "workspace".into(),
+///     objective_hash: "objective-digest".into(),
+///     steps: vec![ProgramStep {
+///         id: "inspect".into(),
+///         kind: "observe".into(),
+///         input_hash: "input-digest".into(),
+///         capability: "workspace.read".into(),
+///     }],
+///     content_hash: String::new(),
+/// };
+/// program.content_hash = canonical_hash(&program)?;
+/// let verdict = optimize(&program)?;
+/// assert!(verdict.accepted);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn optimize(program: &AgentProgram) -> Result<OptimizationVerdict, OptimizerError> {
     validate(program)?;
     if program.lifecycle != Lifecycle::Active {

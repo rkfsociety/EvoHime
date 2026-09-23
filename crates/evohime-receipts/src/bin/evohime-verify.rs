@@ -1,3 +1,9 @@
+//! Read-only verifier for receipt JSONL exports and model-provenance bundles.
+//!
+//! The command checks signatures, key-history continuity, receipt-chain links,
+//! and optional signed checkpoints. It reports stable status codes and never
+//! modifies the input files.
+
 use evohime_receipts::chain::{verify_chain, ChainRow, ChainStatus, ExportedCheckpoint};
 use evohime_receipts::key_lifecycle::{
     public_key_bytes, verify_checkpoint as verify_key_history_checkpoint, HistoryManifest,

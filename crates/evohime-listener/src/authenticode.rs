@@ -21,7 +21,10 @@ use crate::tools_dir::FileRole;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignatureStatus {
     /// Подпись есть и цепочка доверена системой.
-    Trusted { microsoft: bool },
+    Trusted {
+        /// Whether Microsoft signed the file.
+        microsoft: bool,
+    },
     /// Подписи нет вовсе.
     Unsigned,
     /// Подпись есть, но цепочка не проходит проверку.

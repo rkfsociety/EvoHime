@@ -2,23 +2,35 @@ use evohime_tool_runtime::{ToolError, ToolResult};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
+/// Source that denied a tool call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DenialSource {
+    /// The core tool policy denied the call.
     Policy,
+    /// The user explicitly denied approval.
     User,
+    /// The runtime escalation guard denied the call.
     Escalation,
 }
 
+/// Normalized failure category used to choose recovery guidance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolFailureKind {
+    /// The requested file, path, or tool could not be found.
     NotFound,
+    /// The tool rejected its input or arguments.
     InvalidInput,
+    /// The call was denied by the indicated authority.
     Denied(DenialSource),
+    /// The call exceeded its execution deadline.
     Timeout,
+    /// A command returned a non-zero process exit code.
     NonZeroExit,
+    /// The tool failed for another execution reason.
     Execution,
 }
 
+/// Returns the stable serialized label for a normalized tool failure.
 pub fn failure_kind_name(kind: ToolFailureKind) -> &'static str {
     match kind {
         ToolFailureKind::NotFound => "not_found",
@@ -32,14 +44,20 @@ pub fn failure_kind_name(kind: ToolFailureKind) -> &'static str {
     }
 }
 
+/// Normalized outcome of a tool call, including its structured result when present.
 #[derive(Debug, Clone)]
 pub struct ToolOutcome {
+    /// Whether the call succeeded.
     pub ok: bool,
+    /// Failure category, or `None` on success.
     pub kind: Option<ToolFailureKind>,
+    /// Human-readable tool output or error message.
     pub output: String,
+    /// Structured output returned by the tool.
     pub structured: Value,
 }
 
+/// Builds recovery guidance from tool identity, failure category, result schema, and description.
 pub fn recovery_hint(
     tool_name: &str,
     kind: ToolFailureKind,
@@ -88,6 +106,7 @@ pub fn recovery_hint(
     }
 }
 
+/// Produces a stable tool-call signature by sorting JSON object keys recursively.
 pub fn canonical_call_signature(name: &str, arguments: &str) -> String {
     let value = match serde_json::from_str::<Value>(arguments) {
         Ok(value) => value,
@@ -112,6 +131,7 @@ fn canonical_json(value: &Value) -> String {
     }
 }
 
+/// Bounded set of recent tool-call signatures used to suppress duplicate work.
 pub struct RecentToolCalls {
     capacity: usize,
     order: VecDeque<String>,
@@ -119,6 +139,7 @@ pub struct RecentToolCalls {
 }
 
 impl RecentToolCalls {
+    /// Creates a recent-call window with the given maximum capacity.
     pub fn new(capacity: usize) -> Self {
         Self {
             capacity,
@@ -127,6 +148,7 @@ impl RecentToolCalls {
         }
     }
 
+    /// Remembers a signature unless it is already present in the current window.
     pub fn remember(&mut self, signature: String) -> bool {
         if self.present.contains_key(&signature) {
             return false;
@@ -141,6 +163,7 @@ impl RecentToolCalls {
         true
     }
 
+    /// Removes filesystem read/list/search signatures so fresh reads can rework changed state.
     pub fn forget_reads(&mut self) {
         self.order.retain(|signature| {
             let keep = !(signature.starts_with("filesystem.read:")
@@ -178,6 +201,7 @@ mod recent_tests {
 }
 
 impl ToolOutcome {
+    /// Normalizes a successful tool result and detects semantic failures in its structured output.
     pub fn success(result: ToolResult) -> Self {
         let kind = semantic_failure(&result.structured);
         Self {
@@ -188,6 +212,7 @@ impl ToolOutcome {
         }
     }
 
+    /// Converts a tool result or error into a normalized outcome.
     pub fn from_result(result: Result<ToolResult, ToolError>) -> Self {
         match result {
             Ok(result) => Self::success(result),
@@ -195,6 +220,7 @@ impl ToolOutcome {
         }
     }
 
+    /// Converts a runtime tool error into a normalized failure outcome.
     pub fn from_error(error: ToolError) -> Self {
         let kind = match &error {
             ToolError::NotFound { .. } => ToolFailureKind::NotFound,
@@ -214,6 +240,7 @@ impl ToolOutcome {
         }
     }
 
+    /// Creates a denial outcome attributed to an explicit user decision.
     pub fn denied_by_user(output: impl Into<String>) -> Self {
         Self {
             ok: false,

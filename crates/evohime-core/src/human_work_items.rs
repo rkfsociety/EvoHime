@@ -5,64 +5,108 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+/// Current wire-contract version for durable human work items.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Maximum byte length accepted for human-visible text and responses.
 pub const MAX_TEXT_BYTES: usize = 8 * 1024;
+/// Maximum number of work items retained by one in-memory registry.
 pub const MAX_ITEMS: usize = 256;
 
+/// Lifecycle state of a human-authored work item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HumanWorkItemState {
+    /// Item is being prepared and has not been offered to a person.
     Draft,
+    /// Item is waiting for a human response.
     WaitingForHuman,
+    /// A person has started working on the item.
     InProgress,
+    /// A response was submitted and awaits review.
     Submitted,
+    /// Submitted response was accepted.
     Accepted,
+    /// Response was returned for revision.
     NeedsRevision,
+    /// Item was cancelled.
     Cancelled,
+    /// Item passed its expiry deadline before completion.
     Expired,
 }
 
+/// Input shape accepted for a human response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ResponseSchema {
+    /// Any non-empty bounded text response.
     Text,
-    Choice { choices: Vec<String> },
+    /// Exactly one of the listed values.
+    Choice {
+        /// Non-empty set of accepted response values.
+        choices: Vec<String>,
+    },
 }
 
+/// Reference to a team-session slot associated with a work item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamSlotRef {
+    /// Team session identifier.
     pub session_id: String,
+    /// Slot identifier within the session.
     pub slot_id: String,
+    /// Digest binding the reference to the team protocol revision.
     pub protocol_hash: String,
 }
 
+/// Durable human task and its current response lifecycle state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HumanWorkItem {
+    /// Wire-contract schema version.
     pub schema_version: u32,
+    /// Stable work-item identifier.
     pub id: String,
+    /// Monotonic revision used for optimistic concurrency.
     pub revision: u64,
+    /// Short user-visible title.
     pub title: String,
     /// Bounded user-visible instruction, explicitly not a raw model prompt.
     pub instructions: String,
+    /// Shape that constrains a submitted response.
     pub response_schema: ResponseSchema,
+    /// Current workflow state.
     pub state: HumanWorkItemState,
+    /// Optional team session slot that originated the item.
     pub team_slot: Option<TeamSlotRef>,
+    /// Submitted human response, if one exists.
     pub response: Option<String>,
+    /// Identifier of the person who submitted the response.
     pub submitted_by: Option<String>,
+    /// Optional absolute expiry time in Unix milliseconds.
     pub expires_at_ms: Option<i64>,
 }
 
+/// Validation, lifecycle, expiry, idempotency, or capacity failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HumanWorkItemError {
+    /// A field or operation value violates the item contract.
     Invalid(&'static str),
+    /// Item uses an unsupported wire-contract version.
     UnsupportedVersion(u32),
+    /// An item with the same identifier already exists.
     Duplicate,
+    /// Requested item does not exist.
     NotFound,
+    /// Expected revision does not match the current item revision.
     Stale,
+    /// An idempotency key was reused for different input.
     IdempotencyConflict,
+    /// Requested lifecycle transition is not permitted.
     InvalidTransition,
+    /// Item expired before the requested operation.
     Expired,
+    /// Associated team slot does not permit the operation.
     SlotDenied,
+    /// Text or item-count limit was exceeded.
     Limit,
 }
 impl std::fmt::Display for HumanWorkItemError {
@@ -94,6 +138,7 @@ fn text(value: &str) -> bool {
     !value.is_empty() && value.len() <= MAX_TEXT_BYTES
 }
 
+/// Validates identifiers, text bounds, response schema, and optional team slot.
 pub fn validate_item(item: &HumanWorkItem) -> Result<(), HumanWorkItemError> {
     if item.schema_version != CONTRACT_VERSION {
         return Err(HumanWorkItemError::UnsupportedVersion(item.schema_version));
@@ -122,6 +167,7 @@ pub fn validate_item(item: &HumanWorkItem) -> Result<(), HumanWorkItemError> {
     }
     Ok(())
 }
+/// Checks a submitted value against the work item's response schema.
 pub fn validate_response(schema: &ResponseSchema, value: &str) -> Result<(), HumanWorkItemError> {
     if !text(value) {
         return Err(HumanWorkItemError::Limit);
@@ -134,6 +180,7 @@ pub fn validate_response(schema: &ResponseSchema, value: &str) -> Result<(), Hum
         ResponseSchema::Choice { .. } => Err(HumanWorkItemError::Invalid("response_schema")),
     }
 }
+/// Validates an item and computes its deterministic serialized digest.
 pub fn canonical_hash(item: &HumanWorkItem) -> Result<String, HumanWorkItemError> {
     validate_item(item)?;
     Ok(hex::encode(Sha256::digest(
@@ -141,15 +188,19 @@ pub fn canonical_hash(item: &HumanWorkItem) -> Result<String, HumanWorkItemError
     )))
 }
 
+/// In-memory registry enforcing revisions, idempotency, and lifecycle rules.
 #[derive(Debug, Default)]
 pub struct HumanWorkItemsRegistry {
+    /// Items indexed by stable identifier.
     pub items: BTreeMap<String, HumanWorkItem>,
     idempotency: BTreeMap<String, String>,
 }
 impl HumanWorkItemsRegistry {
+    /// Returns a stable identifier-ordered snapshot of registered items.
     pub fn list(&self) -> Vec<HumanWorkItem> {
         self.items.values().cloned().collect()
     }
+    /// Validates and stores an item, replaying identical requests by idempotency key.
     pub fn create(
         &mut self,
         item: HumanWorkItem,
@@ -174,6 +225,7 @@ impl HumanWorkItemsRegistry {
         self.items.insert(item.id.clone(), item.clone());
         Ok(item)
     }
+    /// Applies a revision-checked lifecycle operation and optional human response.
     pub fn transition(
         &mut self,
         id: &str,
@@ -237,6 +289,7 @@ impl HumanWorkItemsRegistry {
         item.revision += 1;
         Ok(item.clone())
     }
+    /// Applies a transition once, returning the prior result for an identical key.
     pub fn transition_idempotent(
         &mut self,
         input: TransitionIdempotentInput,
@@ -266,6 +319,7 @@ impl HumanWorkItemsRegistry {
         self.idempotency.insert(input.key, fingerprint);
         Ok(result)
     }
+    /// Marks all overdue nonterminal items expired and returns their updated records.
     pub fn expire_due(&mut self, now_ms: i64) -> Vec<HumanWorkItem> {
         self.items
             .values_mut()
@@ -291,12 +345,19 @@ impl HumanWorkItemsRegistry {
 
 /// Данные идемпотентного перехода, сохранённые вместе с wire-контрактом.
 pub struct TransitionIdempotentInput {
+    /// Work-item identifier.
     pub id: String,
+    /// Revision expected by the caller.
     pub expected: u64,
+    /// Lifecycle operation name.
     pub operation: String,
+    /// Optional response payload for submission.
     pub response: Option<String>,
+    /// Actor identifier associated with the operation.
     pub actor: String,
+    /// Current Unix time in milliseconds.
     pub now_ms: i64,
+    /// Idempotency key for safe request replay.
     pub key: String,
 }
 

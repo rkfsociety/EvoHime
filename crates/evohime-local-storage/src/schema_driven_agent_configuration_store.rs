@@ -1,12 +1,15 @@
 //! Durable metadata-only configuration snapshots (schema v65).
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Schema bytes, configuration snapshot bytes, and monotonically managed revision.
 pub type ConfigurationStorageRow = (Vec<u8>, Vec<u8>, u64);
 
+/// Creates the metadata-only schema and snapshot table.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS schema_agent_configurations (scope TEXT PRIMARY KEY NOT NULL, schema_json BLOB NOT NULL, snapshot_json BLOB NOT NULL, revision INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
 
+/// Saves a configuration snapshot only if the stored revision equals `expected`.
 pub fn save(
     c: &Connection,
     scope: &str,
@@ -19,6 +22,7 @@ pub fn save(
     Ok(c.execute("INSERT INTO schema_agent_configurations(scope,schema_json,snapshot_json,revision,updated_at_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(scope) DO UPDATE SET schema_json=excluded.schema_json,snapshot_json=excluded.snapshot_json,revision=excluded.revision,updated_at_ms=excluded.updated_at_ms WHERE revision=?6", params![scope, schema, snapshot, revision as i64, now, expected as i64])? == 1)
 }
 
+/// Loads the schema bytes, snapshot bytes, and revision for a scope.
 pub fn load(c: &Connection, scope: &str) -> rusqlite::Result<Option<ConfigurationStorageRow>> {
     c.query_row(
         "SELECT schema_json,snapshot_json,revision FROM schema_agent_configurations WHERE scope=?1",

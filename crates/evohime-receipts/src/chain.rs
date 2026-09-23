@@ -20,17 +20,29 @@ use std::collections::{HashMap, HashSet};
 /// human/UI use only and are never trusted over the decoded bytes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportedCheckpoint {
+    /// Stable identifier for the checkpoint.
     pub checkpoint_id: String,
+    /// Key identity associated with the checkpointed chain.
     pub key_id: String,
+    /// Last covered receipt sequence encoded as decimal text.
     pub cutoff_sequence: String,
+    /// Hash of the first receipt retained after pruning.
     pub first_retained_hash: String,
+    /// Hash of the checkpointed receipt prefix boundary.
     pub prefix_last_hash: String,
+    /// Hash of the final receipt removed by pruning.
     pub last_deleted_receipt_hash: String,
+    /// Hash of the receipt-chain head at checkpoint creation.
     pub head_receipt_hash: String,
+    /// Checkpoint creation timestamp.
     pub created_at: String,
+    /// Exact unpadded base64url canonical signed checkpoint bytes.
     pub canonical_checkpoint: String,
+    /// Identity of the key that signed the checkpoint.
     pub signed_by_key_id: String,
+    /// Base64url Ed25519 signature over the canonical-byte digest.
     pub signature: String,
+    /// Exported checkpoint status label.
     pub status: String,
 }
 
@@ -56,15 +68,22 @@ pub fn verify_checkpoint_signature(
         .is_ok()
 }
 
+/// Ordered aggregate outcomes for receipt-chain verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChainStatus {
     // Ordered worst-to-best so overall status can be taken as `max`.
+    /// At least one row or link is invalid.
     Broken,
+    /// A key boundary is stale or compromised.
     StaleKey,
+    /// The chain is structurally sound but cannot be anchored to trusted history.
     Unverified,
+    /// Verification is incomplete because required predecessor/action data is pending.
     Pending,
+    /// The retained suffix is verified against a trusted signed checkpoint.
     VerifiedPruned,
+    /// The complete presented chain is verified against trusted key history.
     Verified,
 }
 
@@ -75,37 +94,63 @@ pub enum ChainStatus {
 /// so this module stays free of the 01.1 payload shape.
 #[derive(Debug, Clone)]
 pub struct ChainRow {
+    /// Durable receipt sequence used to validate ordering.
     pub sequence: i64,
+    /// Stable receipt identifier.
     pub receipt_id: String,
+    /// Action identifier covered by the receipt.
     pub action_id: String,
+    /// Receipt category such as pre-execution or terminal.
     pub receipt_kind: String,
+    /// Recorded action status.
     pub action_status: String,
+    /// Signing key identity recorded on the receipt.
     pub key_id: String,
+    /// Digest of the canonical envelope.
     pub receipt_hash: String,
+    /// Digest of the preceding receipt, if present.
     pub previous_receipt_hash: Option<String>,
+    /// Approval identifier copied from the signed payload when applicable.
     pub approval_id: Option<String>,
+    /// Approval-call digest copied from the signed payload when applicable.
     pub approval_call_hash: Option<String>,
+    /// Parsed envelope whose payload and signature are verified.
     pub envelope: Envelope,
 }
 
+/// Verification outcome and identifiers for one receipt row.
 #[derive(Debug, Clone, Serialize)]
 pub struct ReceiptVerification {
+    /// Stable receipt identifier.
     pub receipt_id: String,
+    /// Durable sequence position.
     pub sequence: i64,
+    /// Verification result for this row.
     pub status: ChainStatus,
+    /// Stable machine-readable reason code for non-verified outcomes.
     pub code: Option<&'static str>,
+    /// Computed or recorded receipt digest.
     pub receipt_hash: String,
+    /// Signing key identity used for verification.
     pub key_id: String,
 }
 
+/// Aggregate chain outcome and per-row verification evidence.
 #[derive(Debug, Clone, Serialize)]
 pub struct ChainVerification {
+    /// Aggregate chain status, using the worst row result.
     pub status: ChainStatus,
+    /// Stable machine-readable reason code for the aggregate result.
     pub code: Option<&'static str>,
+    /// Number of receipt rows directly requested by the caller.
     pub requested_count: usize,
+    /// Number of rows actually verified after chain closure.
     pub actual_verified_count: usize,
+    /// Digest at the start of the verified chain range.
     pub chain_start_hash: Option<String>,
+    /// Digest at the end of the verified chain range.
     pub chain_end_hash: Option<String>,
+    /// Per-receipt verification results in sequence order.
     pub rows: Vec<ReceiptVerification>,
 }
 

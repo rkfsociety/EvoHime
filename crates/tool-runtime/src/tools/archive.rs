@@ -13,10 +13,14 @@ use tokio::process::Command;
 // archive.create: Create tar/zip archive
 // ============================================================================
 
+/// Registry identifier for archive creation.
 pub const CREATE_NAME: &str = "archive.create";
+/// Catalog summary for archive creation.
 pub const CREATE_DESCRIPTION: &str = "Create a tar.gz or zip archive";
+/// Permissions needed to read source entries and write the archive.
 pub const CREATE_PERMISSIONS: &[Permission] =
     &[Permission::FilesystemRead, Permission::FilesystemWrite];
+/// Maximum runtime for archive creation.
 pub const CREATE_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Deserialize)]
@@ -31,6 +35,14 @@ fn default_format() -> String {
     "tar.gz".to_string()
 }
 
+/// Creates a tar, gzip-compressed tar, or ZIP archive from a workspace path.
+///
+/// Both source and destination are resolved through the workspace sandbox.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid formats or paths, unavailable archive
+/// utilities, process failure, timeout, or I/O errors.
 pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: CreateInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: CREATE_NAME.to_string(),
@@ -136,9 +148,13 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // archive.extract: Extract archive
 // ============================================================================
 
+/// Registry identifier for archive extraction.
 pub const EXTRACT_NAME: &str = "archive.extract";
+/// Catalog summary for archive extraction.
 pub const EXTRACT_DESCRIPTION: &str = "Extract a tar.gz or zip archive";
+/// Permission required to create extracted files in the workspace.
 pub const EXTRACT_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
+/// Maximum runtime for archive extraction.
 pub const EXTRACT_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_EXTRACTED_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 4_096;
@@ -150,6 +166,15 @@ struct ExtractInput {
     destination: Option<String>,
 }
 
+/// Extracts a ZIP or tar archive into a sandboxed workspace destination.
+///
+/// Archive paths are checked against traversal, and extraction is bounded by
+/// entry-count and uncompressed-size limits.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid paths, unsafe archive entries, extraction
+/// limits, worker failure, or I/O errors.
 pub async fn extract(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: ExtractInput =
         serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
@@ -364,9 +389,13 @@ fn reserve_extraction(total: &mut u64, bytes: u64) -> io::Result<()> {
 // archive.list: List archive contents
 // ============================================================================
 
+/// Registry identifier for archive entry listing.
 pub const LIST_NAME: &str = "archive.list";
+/// Catalog summary for archive entry listing.
 pub const LIST_DESCRIPTION: &str = "List contents of an archive";
+/// Permission required to read the archive from the workspace.
 pub const LIST_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
+/// Maximum runtime for archive listing.
 pub const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_LIST_STDOUT_BYTES: usize = 1024 * 1024;
 const MAX_LIST_STDERR_BYTES: usize = 64 * 1024;
@@ -376,6 +405,12 @@ struct ListInput {
     archive: String,
 }
 
+/// Lists bounded metadata for entries in a workspace archive.
+///
+/// # Errors
+///
+/// Returns [`ToolError`] for invalid paths or formats, unsupported archives,
+/// extraction-tool failure, or I/O errors.
 pub async fn list(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let opts: ListInput = serde_json::from_value(input).map_err(|e| ToolError::InvalidInput {
         tool: LIST_NAME.to_string(),

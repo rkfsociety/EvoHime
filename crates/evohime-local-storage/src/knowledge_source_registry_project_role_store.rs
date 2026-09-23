@@ -1,12 +1,27 @@
-//! Durable Knowledge Source Registry metadata.
+//! Durable Knowledge Source Registry metadata and bounded chunk listings.
+//!
+//! ```
+//! use evohime_local_storage::knowledge_source_registry_project_role_store::{
+//!     get_source, install_schema, put_source,
+//! };
+//! let connection = rusqlite::Connection::open_in_memory()?;
+//! install_schema(&connection)?;
+//! assert!(put_source(&connection, "source-1", 1, "digest", br#"{}"#, 100)?);
+//! assert_eq!(get_source(&connection, "source-1")?, Some(br#"{}"#.to_vec()));
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 use rusqlite::{params, Connection, OptionalExtension};
 
 const MAX_LIST_ROWS: usize = 256;
 
+/// Creates tables for sources, bindings, manifests, chunks, and collections.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS knowledge_sources (source_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, source_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_bindings (binding_id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL, binding_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_manifests (source_id TEXT PRIMARY KEY NOT NULL, manifest_json BLOB NOT NULL, content_hash TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_chunks (chunk_id TEXT PRIMARY KEY NOT NULL, source_id TEXT NOT NULL, source_revision INTEGER NOT NULL, ordinal INTEGER NOT NULL, locator TEXT NOT NULL, chunk_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS knowledge_collections (collection_id TEXT PRIMARY KEY NOT NULL, version INTEGER NOT NULL, content_hash TEXT NOT NULL, collection_json BLOB NOT NULL, updated_at_ms INTEGER NOT NULL);")
 }
 
+/// Inserts or advances a collection snapshot when `version` is newer.
+///
+/// Returns `false` when an equal or newer version is already stored.
 pub fn put_collection(
     c: &Connection,
     id: &str,
@@ -18,6 +33,7 @@ pub fn put_collection(
     Ok(c.execute("INSERT INTO knowledge_collections(collection_id,version,content_hash,collection_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(collection_id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,collection_json=excluded.collection_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > knowledge_collections.version", params![id, version as i64, hash, json, now])? > 0)
 }
 
+/// Returns the serialized collection snapshot, if present.
 pub fn get_collection(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT collection_json FROM knowledge_collections WHERE collection_id=?1",
@@ -26,6 +42,9 @@ pub fn get_collection(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u
     )
     .optional()
 }
+/// Inserts or advances a source snapshot when `version` is newer.
+///
+/// Returns `false` when an equal or newer version is already stored.
 pub fn put_source(
     c: &Connection,
     id: &str,
@@ -36,6 +55,7 @@ pub fn put_source(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("INSERT INTO knowledge_sources(source_id,version,content_hash,source_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(source_id) DO UPDATE SET version=excluded.version,content_hash=excluded.content_hash,source_json=excluded.source_json,updated_at_ms=excluded.updated_at_ms WHERE excluded.version > knowledge_sources.version", params![id, version as i64, hash, json, now])? > 0)
 }
+/// Returns the serialized source snapshot, if present.
 pub fn get_source(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT source_json FROM knowledge_sources WHERE source_id=?1",
@@ -44,6 +64,7 @@ pub fn get_source(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>>
     )
     .optional()
 }
+/// Inserts or replaces a serialized binding for a source.
 pub fn put_binding(
     c: &Connection,
     id: &str,
@@ -54,6 +75,7 @@ pub fn put_binding(
     c.execute("INSERT INTO knowledge_bindings(binding_id,source_id,binding_json,updated_at_ms) VALUES (?1,?2,?3,?4) ON CONFLICT(binding_id) DO UPDATE SET source_id=excluded.source_id,binding_json=excluded.binding_json,updated_at_ms=excluded.updated_at_ms", params![id, source_id, json, now])?;
     Ok(())
 }
+/// Inserts or replaces a source manifest and its content hash.
 pub fn put_manifest(
     c: &Connection,
     source_id: &str,
@@ -65,22 +87,32 @@ pub fn put_manifest(
     Ok(())
 }
 
+/// Fields used to insert or replace one source chunk.
 #[derive(Clone, Copy)]
 pub struct PutChunkInput<'a> {
+    /// Stable chunk identifier.
     pub id: &'a str,
+    /// Identifier of the source that owns the chunk.
     pub source_id: &'a str,
+    /// Source revision from which this chunk was produced.
     pub revision: u64,
+    /// Stable ordering position among chunks of this source.
     pub ordinal: u32,
+    /// Locator for the chunk within its source.
     pub locator: &'a str,
+    /// Serialized chunk payload.
     pub json: &'a [u8],
+    /// Update time as Unix milliseconds.
     pub now_ms: i64,
 }
 
+/// Inserts or replaces a chunk identified by `input.id`.
 pub fn put_chunk(c: &Connection, input: PutChunkInput<'_>) -> rusqlite::Result<()> {
     c.execute("INSERT INTO knowledge_chunks(chunk_id,source_id,source_revision,ordinal,locator,chunk_json,updated_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(chunk_id) DO UPDATE SET source_id=excluded.source_id,source_revision=excluded.source_revision,ordinal=excluded.ordinal,locator=excluded.locator,chunk_json=excluded.chunk_json,updated_at_ms=excluded.updated_at_ms", params![input.id, input.source_id, input.revision as i64, input.ordinal as i64, input.locator, input.json, input.now_ms])?;
     Ok(())
 }
 
+/// Lists a source's chunks by ordinal, capped at 256 rows regardless of `limit`.
 pub fn list_chunks(
     c: &Connection,
     source_id: &str,
@@ -97,6 +129,7 @@ pub fn list_chunks(
     rows
 }
 
+/// Lists a source's bindings by identifier, capped at 256 rows regardless of `limit`.
 pub fn list_bindings(
     c: &Connection,
     source_id: &str,

@@ -18,11 +18,13 @@ use crate::StorageError;
 
 /// Максимальный размер bounded summary, остающегося в контексте.
 pub const ARTIFACT_SUMMARY_CHARS: usize = 512;
+/// Maximum number of lines retained in an artifact's bounded context summary.
 pub const ARTIFACT_SUMMARY_LINES: usize = 8;
 
 /// Результат выгрузки.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffloadResult {
+    /// Persisted reference through which the artifact may be accessed.
     pub reference: ArtifactRef,
     /// Было ли содержимое переиспользовано по `content_hash`.
     pub deduplicated: bool,
@@ -35,6 +37,7 @@ pub struct ArtifactStore<'a> {
 }
 
 impl<'a> ArtifactStore<'a> {
+    /// Creates a store using the default artifact quota.
     pub fn new(connection: &'a Connection) -> Self {
         Self {
             connection,
@@ -42,10 +45,12 @@ impl<'a> ArtifactStore<'a> {
         }
     }
 
+    /// Creates a store with an explicit quota policy.
     pub fn with_quota(connection: &'a Connection, quota: ArtifactQuota) -> Self {
         Self { connection, quota }
     }
 
+    /// Returns the quota policy applied by this store.
     pub fn quota(&self) -> ArtifactQuota {
         self.quota
     }
@@ -296,6 +301,7 @@ impl<'a> ArtifactStore<'a> {
         Ok(content)
     }
 
+    /// Returns the persisted reference for a locator, if it exists.
     pub fn get_ref(&self, locator: &str) -> Result<Option<ArtifactRef>, StorageError> {
         Ok(self
             .connection
@@ -310,6 +316,7 @@ impl<'a> ArtifactStore<'a> {
     }
 
     /// Все ссылки задачи.
+    /// Returns all artifact references owned by `task_id`, oldest first.
     pub fn list_refs(&self, task_id: &str) -> Result<Vec<ArtifactRef>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT locator, content_hash, task_id, owner_task_id, bytes, privacy,
@@ -369,6 +376,8 @@ impl<'a> ArtifactStore<'a> {
     }
 
     /// Вытеснение по TTL и последнему обращению до освобождения `needed_bytes`.
+    /// Removes enough eligible references and contents to free `needed_bytes` when possible.
+    /// Returns the number of bytes actually freed.
     pub fn evict(&self, needed_bytes: u64, now: i64) -> Result<u64, StorageError> {
         let candidates = self.eviction_candidates(now)?;
         let plan = plan_eviction(&candidates, needed_bytes);
@@ -429,6 +438,7 @@ impl<'a> ArtifactStore<'a> {
     }
 
     /// Суммарный размер содержимого, занятого задачей.
+    /// Returns the bytes charged to references belonging to one task.
     pub fn task_bytes(&self, task_id: &str) -> Result<u64, StorageError> {
         let bytes: i64 = self.connection.query_row(
             "SELECT COALESCE(SUM(bytes), 0) FROM task_artifact_refs
@@ -440,6 +450,7 @@ impl<'a> ArtifactStore<'a> {
     }
 
     /// Суммарный размер содержимого на диске.
+    /// Returns the total bytes currently stored for all task artifacts.
     pub fn total_bytes(&self) -> Result<u64, StorageError> {
         let bytes: i64 = self.connection.query_row(
             "SELECT COALESCE(SUM(bytes), 0) FROM task_artifacts",
@@ -449,6 +460,7 @@ impl<'a> ArtifactStore<'a> {
         Ok(bytes.max(0) as u64)
     }
 
+    /// Returns the removal tombstone for a content hash, if one exists.
     pub fn tombstone(&self, content_hash: &str) -> Result<Option<ArtifactTombstone>, StorageError> {
         Ok(self
             .connection

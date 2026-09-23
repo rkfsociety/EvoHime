@@ -14,6 +14,7 @@ fn snapshot_matches_profile(
 }
 
 impl IpcBridge {
+    /// Returns a clone of the journal bound to this IPC bridge.
     pub fn journal(&self) -> EventJournal {
         self.journal.clone()
     }
@@ -635,6 +636,10 @@ impl IpcBridge {
         recovered
     }
 
+    /// Reuses a provider-catalog cache populated by another Core component.
+    ///
+    /// Sharing the cache keeps provider observations consistent across the
+    /// coordinator and IPC projections.
     pub fn with_provider_catalog_cache(
         mut self,
         cache: crate::free_provider_reliability_routing::ProviderCatalogCache,
@@ -752,6 +757,10 @@ impl IpcBridge {
         })
     }
 
+    /// Creates an IPC bridge backed by a journal and default Core registries.
+    ///
+    /// The bridge receives a process identity and initializes empty approval,
+    /// tool, routing, and ambient state for later builder configuration.
     pub fn new(journal: EventJournal) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
         let receipt_keys = Self::manager_for(&journal);
@@ -796,6 +805,10 @@ impl IpcBridge {
         }
     }
 
+    /// Creates a bridge connected to the shared task coordinator.
+    ///
+    /// Coordinator events and journal sequence notifications then share the
+    /// same Core-owned task state.
     pub fn with_coordinator(journal: EventJournal, coordinator: TaskCoordinator) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
         let receipt_keys = Self::manager_for(&journal);
@@ -840,6 +853,10 @@ impl IpcBridge {
         }
     }
 
+    /// Creates a bridge with shared coordination, approval, and tool services.
+    ///
+    /// Optional model and gateway snapshots are used for redacted model
+    /// catalog projections.
     pub fn with_coordinator_and_approvals(
         journal: EventJournal,
         coordinator: TaskCoordinator,
@@ -896,6 +913,7 @@ impl IpcBridge {
         self.ambient.clone()
     }
 
+    /// Returns the shared registry used to track voice-command state.
     pub fn voice_commands(&self) -> Arc<crate::voice_command::VoiceCommandRegistry> {
         self.voice_commands.clone()
     }

@@ -1,29 +1,47 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+/// Schema version for Git remote publication protocol metadata.
 pub const SCHEMA_VERSION: u32 = 1;
 const MAX: usize = 256;
+/// Lifecycle of a proposed Git remote publication record.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Lifecycle {
+    /// Protocol metadata is being prepared.
     Draft,
+    /// Protocol metadata is eligible for inspection.
     Active,
+    /// Protocol metadata has been replaced by a newer revision.
     Superseded,
+    /// Protocol metadata is invalid and cannot be used.
     Invalid,
 }
+/// Content-addressed metadata for a proposed publication to a Git remote.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PublicationProtocol {
+    /// Version of the serialized protocol schema.
     pub schema_version: u32,
+    /// Stable identifier for this protocol record.
     pub id: String,
+    /// Monotonically increasing revision of the record.
     pub revision: u64,
+    /// Current lifecycle state.
     pub lifecycle: Lifecycle,
+    /// Workspace or project scope that owns this record.
     pub scope: String,
+    /// Configured remote reference identifier.
     pub remote_ref: String,
+    /// Branch associated with the proposed publication.
     pub branch: String,
+    /// Commit hash associated with the proposed publication.
     pub commit_hash: String,
+    /// SHA-256 digest of the canonical record with this field cleared.
     pub content_hash: String,
 }
+/// Validation failures for Git remote publication metadata.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ProtocolError {
+    /// The protocol record failed schema, bounds, revision, or hash validation.
     #[error("invalid git remote publication protocol: {0}")]
     Invalid(String),
 }
@@ -34,6 +52,7 @@ fn b(v: &str, n: &str) -> Result<(), ProtocolError> {
         Ok(())
     }
 }
+/// Computes the canonical SHA-256 digest with `content_hash` cleared.
 pub fn canonical_hash(p: &PublicationProtocol) -> Result<String, ProtocolError> {
     let mut n = p.clone();
     n.content_hash.clear();
@@ -41,6 +60,7 @@ pub fn canonical_hash(p: &PublicationProtocol) -> Result<String, ProtocolError> 
         serde_json::to_vec(&n).map_err(|_| ProtocolError::Invalid("not_serializable".into()))?;
     Ok(format!("{:x}", Sha256::digest(bytes)))
 }
+/// Validates schema version, bounded identifiers, revision, and content hash.
 pub fn validate(p: &PublicationProtocol) -> Result<(), ProtocolError> {
     if p.schema_version != SCHEMA_VERSION {
         return Err(ProtocolError::Invalid("unsupported_schema_version".into()));
@@ -58,6 +78,9 @@ pub fn validate(p: &PublicationProtocol) -> Result<(), ProtocolError> {
     }
     Ok(())
 }
+/// Returns a metadata-only publication status after validating the record.
+///
+/// This function does not contact a remote or publish a commit.
 pub fn inspect(p: &PublicationProtocol) -> Result<serde_json::Value, ProtocolError> {
     validate(p)?;
     Ok(

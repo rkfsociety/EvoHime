@@ -5,6 +5,13 @@
 //! Canonical Receipt v1 contract.  This crate deliberately exposes only typed
 //! construction and bounded verification; runtime orchestration belongs to
 //! later receipt stages.
+//!
+//! ```
+//! use evohime_receipts::canonicalize_json;
+//!
+//! let canonical = canonicalize_json(br#"{"z":1,"a":2}"#).unwrap();
+//! assert_eq!(canonical, br#"{"a":2,"z":1}"#);
+//! ```
 
 use ring::signature;
 use serde::{Deserialize, Serialize};
@@ -29,50 +36,73 @@ mod runtime_schema;
 mod runtime_signing;
 mod runtime_transaction;
 
+/// Schema version accepted by the canonical receipt payload validator.
 pub const RECEIPT_VERSION: u64 = 1;
 include!(concat!(env!("OUT_DIR"), "/receipt_limits.rs"));
+/// Domain separator prepended when hashing a canonical result projection.
 pub const RESULT_DOMAIN: &[u8] = b"evohime-result-v1\0";
 
+/// Failure returned when receipt data violates its encoding or verification contract.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ReceiptError {
+    /// An envelope or canonical representation exceeds its configured byte limit.
     #[error("receipt.too_large")]
     TooLarge,
+    /// The canonical payload exceeds the payload-specific byte limit.
     #[error("receipt.payload_too_large")]
     PayloadTooLarge,
+    /// Input bytes are not valid UTF-8.
     #[error("receipt.invalid_utf8")]
     InvalidUtf8,
+    /// Input is not valid JSON or cannot be serialized as JSON.
     #[error("receipt.invalid_json")]
     InvalidJson,
+    /// An object contains a duplicate JSON member name.
     #[error("receipt.duplicate_key")]
     DuplicateKey,
+    /// The payload declares a receipt version this crate does not support.
     #[error("receipt.unsupported_version")]
     UnsupportedVersion,
+    /// The payload or envelope does not satisfy the receipt schema.
     #[error("receipt.schema_violation")]
     SchemaViolation,
+    /// A forbidden secret-bearing field was found in the public receipt.
     #[error("receipt.secret_field")]
     SecretField,
+    /// The signed or hashed bytes are not in canonical JSON form.
     #[error("receipt.non_canonical")]
     NonCanonical,
+    /// No trusted public key is available for the envelope key identifier.
     #[error("receipt.key_unknown")]
     KeyUnknown,
+    /// The signature is malformed or does not verify against the supplied key.
     #[error("receipt.signature_invalid")]
     SignatureInvalid,
+    /// A computed digest does not match the recorded digest.
     #[error("receipt.hash_mismatch")]
     HashMismatch,
+    /// Required receipt-chain context is missing.
     #[error("receipt.chain_incomplete")]
     ChainIncomplete,
+    /// Receipt timestamp is outside the accepted clock-skew window.
     #[error("receipt.timestamp_skew")]
     TimestampSkew,
 }
 
+/// Canonical receipt payload and its detached signer metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Envelope {
+    /// Typed receipt payload covered by the signature.
     pub payload: Value,
+    /// Identifier of the public key used to sign the payload.
     pub key_id: String,
+    /// Signature algorithm identifier; currently `Ed25519`.
     pub signature_algorithm: String,
+    /// URL-safe base64 encoded detached signature.
     pub signature: String,
 }
 
+/// Parses and canonicalizes a receipt envelope using the crate's strict limits.
 pub fn canonicalize_json(input: &[u8]) -> Result<Vec<u8>, ReceiptError> {
     canonicalize_json_with_limits(input, MAX_ENVELOPE_BYTES, MAX_DEPTH)
 }
@@ -271,14 +301,17 @@ fn has_duplicate_keys(input: &str) -> bool {
     false
 }
 
+/// Computes the lowercase hexadecimal SHA-256 digest of arbitrary bytes.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+/// Computes the raw 32-byte SHA-256 digest of arbitrary bytes.
 pub fn sha256_digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
+/// Hashes an envelope after canonical JSON serialization and receipt-size checks.
 pub fn receipt_hash(envelope: &Envelope) -> Result<String, ReceiptError> {
     let bytes = serde_json::to_vec(envelope).map_err(|_| ReceiptError::InvalidJson)?;
     let canonical = canonicalize_json(&bytes)?;
@@ -288,6 +321,7 @@ pub fn receipt_hash(envelope: &Envelope) -> Result<String, ReceiptError> {
     Ok(sha256_hex(&canonical))
 }
 
+/// Returns canonical payload bytes after enforcing payload-specific limits.
 pub fn payload_bytes(payload: &Value) -> Result<Vec<u8>, ReceiptError> {
     let raw = serde_json::to_vec(payload).map_err(|_| ReceiptError::InvalidJson)?;
     let canonical = canonicalize_json(&raw)?;
@@ -297,6 +331,7 @@ pub fn payload_bytes(payload: &Value) -> Result<Vec<u8>, ReceiptError> {
     Ok(canonical)
 }
 
+/// Validates a v1 payload and verifies its detached Ed25519 signature.
 pub fn verify_ed25519(envelope: &Envelope, public_key: &[u8]) -> Result<(), ReceiptError> {
     if envelope.signature_algorithm != "Ed25519" {
         return Err(ReceiptError::SchemaViolation);
@@ -375,6 +410,7 @@ pub(crate) fn decode_base64url(value: &str) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+/// Hashes a canonical result projection under the receipt result domain separator.
 pub fn result_hash(projection: &Value) -> Result<String, ReceiptError> {
     let canonical =
         canonicalize_json(&serde_json::to_vec(projection).map_err(|_| ReceiptError::InvalidJson)?)?;
@@ -383,6 +419,7 @@ pub fn result_hash(projection: &Value) -> Result<String, ReceiptError> {
     Ok(sha256_hex(&bytes))
 }
 
+/// Checks the bounded ASCII identifier grammar used by receipt fields.
 pub fn validate_typed_identifier(value: &str) -> bool {
     let bytes = value.as_bytes();
     !bytes.is_empty()
@@ -393,6 +430,7 @@ pub fn validate_typed_identifier(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
 }
 
+/// Validates the required fields and value constraints of a v1 receipt payload.
 pub fn validate_payload_v1(payload: &Value) -> Result<(), ReceiptError> {
     let object = payload.as_object().ok_or(ReceiptError::SchemaViolation)?;
     if object.get("receipt_version") != Some(&Value::from(1)) {

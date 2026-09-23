@@ -89,6 +89,7 @@ pub fn cutoff_at(now_ms: u64, days: u32) -> String {
     timestamp_ms(now_ms.saturating_sub(u64::from(days) * DAY_MS))
 }
 
+/// Returns the persistent ambient-policy file under the application data directory.
 pub fn policy_path(data_dir: &Path) -> PathBuf {
     data_dir.join(POLICY_FILE_NAME)
 }
@@ -213,6 +214,7 @@ pub struct AmbientControl {
     pub device_id: String,
 }
 
+/// Returns the persistent listening-control file under the application data directory.
 pub fn control_path(data_dir: &Path) -> PathBuf {
     data_dir.join(CONTROL_FILE_NAME)
 }
@@ -320,9 +322,13 @@ pub fn event_task_id(event: &AmbientLogEvent) -> String {
 /// Одно устройство захвата в снимке состояния.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AmbientDeviceInfo {
+    /// Stable identifier reported by the audio backend.
     pub device_id: String,
+    /// User-facing device name.
     pub display_name: String,
+    /// Whether the backend identifies this as its default device.
     pub is_default: bool,
+    /// Whether this device is currently selected for capture.
     pub is_active: bool,
 }
 
@@ -332,11 +338,17 @@ pub struct AmbientDeviceInfo {
 /// и ту же команду и ждут события, а не рисуют себе состояние сами.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AmbientStatusSnapshot {
+    /// Current listening state reported by Core and the listener.
     pub state: ListeningState,
+    /// Reason associated with the current listening state.
     pub reason: ListeningReason,
+    /// Selected device identifier, or an empty string for the system default.
     pub active_device_id: String,
+    /// Version of the active recognition engine, if known.
     pub engine_version: String,
+    /// Whether the listener confirms that the engine is ready.
     pub engine_ready: bool,
+    /// Devices known to the listener at snapshot time.
     pub devices: Vec<AmbientDeviceInfo>,
     /// Живёт ли подписка на смену устройств. `false` означает, что список —
     /// снимок, который сам не обновится, и панель обязана это сказать.
@@ -367,9 +379,13 @@ impl Default for AmbientStatusSnapshot {
 /// панели своего канала к листенеру нет.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ListenerControl {
+    /// Enable or disable continuous listening.
     Enabled(bool),
+    /// Pause or resume capture temporarily.
     Paused(bool),
+    /// Select a capture device by backend identifier.
     SelectDevice(String),
+    /// Clear buffered audio without changing listening policy.
     ResetBuffers,
     /// Полная политика целиком: тихие часы и чёрные списки меняются вместе, а
     /// не по одному полю, поэтому listener получает новый снимок, а не патч.
@@ -411,6 +427,7 @@ impl AmbientListeningRegistry {
         guard.status.reason = ListeningReason::EngineUnavailable;
     }
 
+    /// Returns the latest Core-owned listening status snapshot.
     pub async fn snapshot(&self) -> AmbientStatusSnapshot {
         self.inner.lock().await.status.clone()
     }
@@ -451,6 +468,7 @@ impl AmbientListeningRegistry {
         true
     }
 
+    /// Replaces the device list and updates each entry's active marker.
     pub async fn set_devices(
         &self,
         devices: Vec<AmbientDeviceInfo>,
@@ -471,6 +489,7 @@ impl AmbientListeningRegistry {
         }
     }
 
+    /// Updates the reported engine version and readiness state.
     pub async fn set_engine(&self, version: String, ready: bool) {
         let mut guard = self.inner.lock().await;
         if !version.is_empty() {
@@ -479,6 +498,7 @@ impl AmbientListeningRegistry {
         guard.status.engine_ready = ready;
     }
 
+    /// Returns whether the listener currently reports a ready engine.
     pub async fn engine_ready(&self) -> bool {
         self.inner.lock().await.status.engine_ready
     }
@@ -543,6 +563,7 @@ impl AmbientProactivityRegistry {
         self.inner.lock().await.coordinator = Some(coordinator);
     }
 
+    /// Returns the immutable proactivity budget enforced by the contract.
     pub async fn budget(&self) -> ProactivityBudget {
         self.inner.lock().await.budget
     }
@@ -646,6 +667,7 @@ impl AmbientProactivityRegistry {
         Ok(())
     }
 
+    /// Checks a mute key, loading persisted mute state before answering.
     pub async fn is_muted(&self, journal: &crate::EventJournal, mute_key: &str) -> bool {
         self.ensure_loaded(journal).await;
         self.inner.lock().await.muted.contains(mute_key)
@@ -669,17 +691,27 @@ impl AmbientProactivityRegistry {
 ///
 /// Срок жизни считает Core: 24 часа молчания — это ответ «нет».
 pub struct ProposalRecordInput<'a> {
+    /// Stable identifier assigned to the proposal.
     pub proposal_id: &'a str,
+    /// Deduplication key for equivalent proposals.
     pub proposal_key: &'a str,
+    /// Key used to mute this subject after a user choice.
     pub mute_key: &'a str,
+    /// Kind of action being proposed.
     pub kind: ProposalKind,
+    /// Typed identity of the proposal subject.
     pub subject_key: &'a SubjectKey,
+    /// Stable subject reference used by storage and policy.
     pub subject: &'a str,
+    /// Short user-facing proposal title.
     pub title: &'a str,
+    /// Optional source episode that motivated the proposal.
     pub source_episode_id: Option<&'a str>,
+    /// Current Unix time in milliseconds for persistence timestamps.
     pub now_ms: u64,
 }
 
+/// Builds a persisted proposal row with Core-owned timestamps and expiry.
 pub fn proposal_record(input: ProposalRecordInput<'_>) -> AmbientProposalRecord {
     AmbientProposalRecord {
         proposal_id: input.proposal_id.to_owned(),
@@ -709,14 +741,23 @@ pub fn proposal_record(input: ProposalRecordInput<'_>) -> AmbientProposalRecord 
 /// перебирают по хешу за секунды, поэтому хеш приравнивается к содержимому.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AmbientUtteranceInput {
+    /// Stable identifier assigned to this recognition result.
     pub utterance_id: String,
+    /// Parent listening episode identifier.
     pub episode_id: String,
+    /// Monotonic order of this utterance within the episode.
     pub sequence: i64,
+    /// Recognition start time in Unix milliseconds.
     pub started_at_ms: u64,
+    /// Audio duration represented by the utterance.
     pub duration_ms: i64,
+    /// Recognized text after any listener-side redaction.
     pub text: String,
+    /// Language tag reported by the recognition engine.
     pub language: String,
+    /// Average model log probability for the recognition result.
     pub avg_logprob: f64,
+    /// Whether the text has passed through redaction.
     pub redacted: bool,
 }
 
@@ -767,6 +808,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Closes an episode and records its end time; returns false if it was absent.
     pub async fn close_ambient_episode(
         &self,
         episode_id: &str,
@@ -777,6 +819,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Updates the persisted extraction workflow state for an episode.
     pub async fn set_ambient_extraction_state(
         &self,
         episode_id: &str,
@@ -842,6 +885,7 @@ impl crate::EventJournal {
         outcome
     }
 
+    /// Lists recent episode metadata, bounded by `limit`.
     pub async fn list_ambient_episodes(
         &self,
         limit: usize,
@@ -851,6 +895,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Lists utterances for one episode, bounded by `limit`.
     pub async fn list_ambient_utterances(
         &self,
         episode_id: &str,
@@ -861,6 +906,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Lists retained deletion records, bounded by `limit`.
     pub async fn list_ambient_tombstones(
         &self,
         limit: usize,
@@ -941,6 +987,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Loads a proposal by its stable identifier.
     pub async fn get_ambient_proposal(
         &self,
         proposal_id: &str,
@@ -950,6 +997,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Finds the proposal associated with an idempotency key, if one exists.
     pub async fn find_ambient_proposal_by_idempotency(
         &self,
         idempotency_key: &str,
@@ -959,6 +1007,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Lists unresolved proposals, bounded by `limit`.
     pub async fn list_open_ambient_proposals(
         &self,
         limit: usize,
@@ -990,6 +1039,7 @@ impl crate::EventJournal {
         .map_err(|error| store_error_code(&error))
     }
 
+    /// Mutes a proposal subject from producing future ambient suggestions.
     pub async fn mute_ambient_subject(
         &self,
         mute_key: &str,
@@ -1008,12 +1058,14 @@ impl crate::EventJournal {
         .map_err(|error| store_error_code(&error))
     }
 
+    /// Returns persisted mute keys used to suppress proposals.
     pub async fn list_ambient_mute_keys(&self) -> Result<Vec<String>, AmbientErrorCode> {
         let database = self.database.lock().await;
         AmbientStoreSql::list_mute_keys(database.connection())
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Expires unresolved proposals whose Core-owned deadline has passed.
     pub async fn expire_stale_ambient_proposals(
         &self,
         now_ms: u64,
@@ -1023,6 +1075,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Loads persisted rolling proactivity counters, if initialized.
     pub async fn load_ambient_counters(
         &self,
     ) -> Result<Option<ProactivityCountersRow>, AmbientErrorCode> {
@@ -1031,6 +1084,7 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Persists rolling proactivity counters for restart recovery.
     pub async fn save_ambient_counters(
         &self,
         row: ProactivityCountersRow,

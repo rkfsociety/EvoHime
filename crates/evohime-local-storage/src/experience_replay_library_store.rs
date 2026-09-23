@@ -1,8 +1,21 @@
 //! Durable metadata-only ExperienceRecord storage (schema v66).
 use rusqlite::{params, Connection, OptionalExtension};
+
+/// Creates the metadata-only durable experience-record table.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite schema error.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("CREATE TABLE IF NOT EXISTS experience_replay_records (id TEXT PRIMARY KEY NOT NULL, scope TEXT NOT NULL, scope_id TEXT NOT NULL, record_json BLOB NOT NULL, content_hash TEXT NOT NULL, revision INTEGER NOT NULL, created_at_ms INTEGER NOT NULL, pinned INTEGER NOT NULL DEFAULT 0);")
 }
+/// Inserts one experience record; duplicate IDs leave the first record intact.
+///
+/// Returns `false` when the record ID already exists.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite write error.
 pub fn put(
     c: &Connection,
     id: &str,
@@ -14,6 +27,11 @@ pub fn put(
 ) -> rusqlite::Result<bool> {
     Ok(c.execute("INSERT OR IGNORE INTO experience_replay_records(id,scope,scope_id,record_json,content_hash,revision,created_at_ms) VALUES(?1,?2,?3,?4,?5,1,?6)",params![id,scope,scope_id,json,hash,now])?==1)
 }
+/// Loads a serialized experience record by ID, if present.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     c.query_row(
         "SELECT record_json FROM experience_replay_records WHERE id=?1",
@@ -22,6 +40,11 @@ pub fn get(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
     )
     .optional()
 }
+/// Lists records for one scope, newest first, with a hard maximum of 64 rows.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
 pub fn list(
     c: &Connection,
     scope: &str,

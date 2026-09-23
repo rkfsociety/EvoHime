@@ -34,10 +34,12 @@ impl LiteRouterProvider {
     const PAID_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
     const FREE_REQUEST_INTERVAL: Duration = Duration::from_millis(18_948);
 
+    /// Creates a LiteRouter adapter using retry defaults from the environment.
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
         Self::with_retry(config, RetryPolicy::from_env())
     }
 
+    /// Creates a LiteRouter adapter with an explicit retry policy.
     pub fn with_retry(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
         if config.api_key.is_empty() {
             return Err(ProviderError::Config(
@@ -70,14 +72,17 @@ impl LiteRouterProvider {
         })
     }
 
+    /// Returns the provider configuration held by this adapter.
     pub fn config(&self) -> &LiteRouterConfig {
         &self.config
     }
 
+    /// Returns the configured retry policy.
     pub fn retry_policy(&self) -> &RetryPolicy {
         &self.retry
     }
 
+    /// Returns the chat-completions endpoint derived from the configured base URL.
     pub fn chat_completions_url(&self) -> String {
         self.config.chat_completions_url()
     }

@@ -3,19 +3,35 @@ use evohime_permissions::Permission;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Registry identifier for structured memory search.
 pub const NAME: &str = "memory.search";
+/// Input and output summary exposed in tool catalogs.
 pub const DESCRIPTION: &str =
     "Search structured agent memory (facts, constraints, experience, playbooks) by query. Input: { query, limit? }.";
+/// Permission required before memory search may be requested.
 pub const PERMISSIONS: &[Permission] = &[Permission::MemorySearch];
+/// Maximum duration advertised to the tool registry.
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Registry stub — real search runs in agent-runtime with DB access.
+/// Registry placeholder; actual search is performed by the agent memory backend.
+///
+/// This function intentionally returns an execution error because the tool
+/// runtime does not own the memory database.
 pub async fn execute(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, ToolError> {
     Err(ToolError::Execution(
         "memory.search is executed by the agent memory backend".into(),
     ))
 }
 
+/// Validates memory-search input and returns its normalized query and limit.
+///
+/// The query is trimmed and must be nonempty. Limits default to 10 and are
+/// clamped to the inclusive range `1..=50`.
+///
+/// # Errors
+///
+/// Returns [`ToolError::InvalidInput`] when the query is absent or blank.
 pub fn parse_input(input: &Value) -> Result<(String, usize), ToolError> {
     let query = input
         .get("query")
@@ -34,6 +50,10 @@ pub fn parse_input(input: &Value) -> Result<(String, usize), ToolError> {
     Ok((query.to_string(), limit))
 }
 
+/// Formats memory matches as readable text and structured JSON.
+///
+/// Each entry contains its scope, kind, content, and relevance score; an empty
+/// slice produces an explicit no-matches result.
 pub fn format_results(query: &str, entries: &[(String, String, String, f64)]) -> ToolResult {
     if entries.is_empty() {
         return ToolResult {

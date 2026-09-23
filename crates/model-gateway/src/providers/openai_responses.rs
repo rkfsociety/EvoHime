@@ -16,6 +16,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use std::time::Duration;
 
+/// Provider adapter for the OpenAI Responses API.
 #[derive(Debug)]
 pub struct OpenAIResponsesProvider {
     config: LiteRouterConfig,
@@ -24,10 +25,12 @@ pub struct OpenAIResponsesProvider {
 }
 
 impl OpenAIResponsesProvider {
+    /// Creates the adapter with retry defaults loaded from the environment.
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
         Self::with_retry(config, RetryPolicy::from_env())
     }
 
+    /// Creates the adapter with an explicit retry policy.
     pub fn with_retry(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
         if config.api_key.trim().is_empty() {
             return Err(ProviderError::Config(

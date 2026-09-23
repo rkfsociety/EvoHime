@@ -5,27 +5,43 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Maximum serialized size of one source snapshot, locator, or bounded metadata value.
 pub const MAX_METADATA_BYTES: usize = 32 * 1024;
 
+/// Evidence row: revision identifier, serialized locator, content hash, and trust label.
 pub type EvidenceRow = (String, Vec<u8>, String, String);
+/// Artifact row: serialized claims, serialized citations, content hash, and coverage label.
 pub type ArtifactRow = (Vec<u8>, Vec<u8>, String, String);
 
+/// Immutable metadata for one indexed source revision.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResearchRevisionRecord {
+    /// Stable revision identifier.
     pub revision_id: String,
+    /// Workspace containing the source.
     pub workspace_id: String,
+    /// Stable source identifier.
     pub source_id: String,
+    /// Monotonically increasing source revision.
     pub revision: i64,
+    /// Digest of the source content.
     pub content_hash: String,
+    /// Serialized origin snapshot, bounded by [`MAX_METADATA_BYTES`].
     pub origin_snapshot: String,
+    /// Parser version used to produce the revision.
     pub parser_version: String,
+    /// Indexing profile used for the revision.
     pub index_profile: String,
+    /// Processing lifecycle state.
     pub status: String,
+    /// Trust classification of the source.
     pub trust: String,
+    /// Root locator for source content in the owning storage system.
     pub locator_root: String,
 }
 
 impl ResearchRevisionRecord {
+    /// Checks required metadata, revision bounds, snapshot size, state, and trust label.
     pub fn validate(&self) -> Result<(), &'static str> {
         for (name, value) in [
             ("revision_id", &self.revision_id),
@@ -69,9 +85,11 @@ impl ResearchRevisionRecord {
     }
 }
 
+/// Persistence operations for grounded research metadata and immutable lineage.
 pub struct GroundedResearchStore;
 
 impl GroundedResearchStore {
+    /// Creates the source, evidence, session, claim, citation, conflict, artifact, and delta tables.
     pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS research_source_revisions (
@@ -167,6 +185,7 @@ impl GroundedResearchStore {
         )
     }
 
+    /// Inserts an immutable source revision or detects an identical existing revision.
     pub fn insert_revision(
         connection: &Connection,
         record: &ResearchRevisionRecord,
@@ -233,6 +252,7 @@ impl GroundedResearchStore {
         Ok(inserted == 1)
     }
 
+    /// Loads source revision metadata by its stable revision identifier.
     pub fn get_revision(
         connection: &Connection,
         revision_id: &str,
@@ -262,6 +282,7 @@ impl GroundedResearchStore {
             .optional()
     }
 
+    /// Adds a bounded evidence locator for a source revision, without replacing an existing ID.
     pub fn insert_evidence_item(
         connection: &Connection,
         evidence_id: &str,
@@ -288,6 +309,7 @@ impl GroundedResearchStore {
             .map_err(|_| "sqlite")
     }
 
+    /// Loads the revision, locator, digest, and trust metadata for one evidence identifier.
     pub fn get_evidence(
         connection: &Connection,
         evidence_id: &str,
@@ -303,6 +325,7 @@ impl GroundedResearchStore {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Inserts a research session with its policy, budget, and pinned revision snapshots.
     pub fn insert_session(
         connection: &Connection,
         session_id: &str,
@@ -392,6 +415,7 @@ impl GroundedResearchStore {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Inserts an immutable research artifact revision and its bounded claims and citations.
     pub fn insert_artifact(
         connection: &Connection,
         artifact_id: &str,
@@ -447,6 +471,7 @@ impl GroundedResearchStore {
             .map_err(|_| "sqlite")
     }
 
+    /// Loads serialized artifact claims, citations, content hash, and coverage by revision.
     pub fn get_artifact(
         connection: &Connection,
         artifact_id: &str,
@@ -463,6 +488,7 @@ impl GroundedResearchStore {
             .optional()
     }
 
+    /// Persists a delta between two immutable artifact revisions.
     pub fn insert_delta(
         connection: &Connection,
         delta_id: &str,
@@ -504,6 +530,7 @@ impl GroundedResearchStore {
             .map_err(|_| "sqlite")
     }
 
+    /// Advances a research session to a new lifecycle state.
     pub fn transition_session(
         connection: &Connection,
         session_id: &str,
@@ -532,6 +559,7 @@ impl GroundedResearchStore {
     /// Converts sessions that were active when Core stopped into an explicit
     /// restart-recoverable state. No session is silently resumed or marked
     /// successful; a later caller must use the normal CAS transition.
+    /// Marks active research sessions interrupted during startup recovery.
     pub fn mark_active_sessions_interrupted(connection: &Connection) -> rusqlite::Result<usize> {
         connection.execute(
             "UPDATE research_sessions

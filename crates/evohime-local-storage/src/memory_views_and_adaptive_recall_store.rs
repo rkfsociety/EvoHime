@@ -2,50 +2,80 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Input for creating or compare-and-set updating a memory view.
 pub struct ViewInput<'a> {
+    /// Stable view identifier.
     pub view_id: &'a str,
+    /// Owner scope whose memory the view represents.
     pub owner_scope: &'a str,
+    /// Semantic revision of the serialized view.
     pub revision: u64,
+    /// Serialized view definition.
     pub view_json: &'a [u8],
+    /// Hash of the serialized view definition.
     pub content_hash: &'a str,
+    /// Current storage version expected by the caller; zero means create.
     pub expected_version: u64,
+    /// Idempotency key for this write.
     pub idempotency_key: &'a str,
+    /// Update timestamp in milliseconds.
     pub now_ms: i64,
 }
 
+/// Input for persisting an adaptive-recall decision and read barrier.
 pub struct RecallInput<'a> {
+    /// View to which the recall decision applies.
     pub view_id: &'a str,
+    /// View revision evaluated by the decision.
     pub view_revision: u64,
+    /// Monotonic read-barrier generation.
     pub barrier_generation: u64,
+    /// Serialized recall decision.
     pub decision_json: &'a [u8],
+    /// Current barrier version expected by the caller; zero means create.
     pub expected_version: u64,
+    /// Idempotency key for the decision write.
     pub idempotency_key: &'a str,
+    /// Update timestamp in milliseconds.
     pub now_ms: i64,
 }
 
+/// Stored memory view together with its storage version.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewRecord {
+    /// Owner scope of the view.
     pub owner_scope: String,
+    /// Semantic view revision.
     pub revision: u64,
+    /// Serialized view definition.
     pub view_json: Vec<u8>,
+    /// Hash of the serialized view definition.
     pub content_hash: String,
+    /// Optimistic-lock storage version.
     pub version: u64,
 }
 
+/// Stored adaptive-recall decision and the barrier generation it established.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecallRecord {
+    /// View revision used to produce the decision.
     pub view_revision: u64,
+    /// Monotonic barrier generation.
     pub barrier_generation: u64,
+    /// Serialized decision.
     pub decision_json: Vec<u8>,
+    /// Optimistic-lock storage version.
     pub version: u64,
 }
 
+/// Creates the memory-view and adaptive-recall barrier tables.
 pub fn install_schema(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch(
         "CREATE TABLE IF NOT EXISTS memory_views_and_adaptive_recall_views (view_id TEXT PRIMARY KEY NOT NULL, owner_scope TEXT NOT NULL, revision INTEGER NOT NULL, view_json BLOB NOT NULL, content_hash TEXT NOT NULL, version INTEGER NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS memory_views_and_adaptive_recall_barriers (view_id TEXT PRIMARY KEY NOT NULL, view_revision INTEGER NOT NULL, barrier_generation INTEGER NOT NULL, decision_json BLOB NOT NULL, version INTEGER NOT NULL, idempotency_key TEXT NOT NULL, updated_at_ms INTEGER NOT NULL);",
     )
 }
 
+/// Creates or updates a view when its expected storage version matches.
 pub fn save_view(c: &Connection, input: ViewInput<'_>) -> rusqlite::Result<bool> {
     let current: Option<(u64, Vec<u8>, String)> = c
         .query_row(
@@ -75,6 +105,7 @@ pub fn save_view(c: &Connection, input: ViewInput<'_>) -> rusqlite::Result<bool>
     )? == 1)
 }
 
+/// Loads a memory view and its version by ID, if present.
 pub fn load_view(c: &Connection, view_id: &str) -> rusqlite::Result<Option<ViewRecord>> {
     c.query_row(
         "SELECT owner_scope,revision,view_json,content_hash,version FROM memory_views_and_adaptive_recall_views WHERE view_id=?1",
@@ -84,6 +115,7 @@ pub fn load_view(c: &Connection, view_id: &str) -> rusqlite::Result<Option<ViewR
     .optional()
 }
 
+/// Creates or updates a recall barrier when its version matches and its generation does not rewind.
 pub fn save_recall(c: &Connection, input: RecallInput<'_>) -> rusqlite::Result<bool> {
     let current: Option<(u64, u64, String, Vec<u8>)> = c
         .query_row(

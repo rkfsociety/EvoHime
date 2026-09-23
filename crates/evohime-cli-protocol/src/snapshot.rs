@@ -8,6 +8,7 @@ impl<S> CoreClient<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    /// Requests a bounded snapshot for the specified task.
     pub async fn snapshot(&mut self, task_id: String) -> Result<generated::EventEnvelope, String> {
         let expected_task_id = task_id.clone();
         self.write(

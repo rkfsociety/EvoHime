@@ -2,6 +2,7 @@
 
 use rusqlite::{Connection, OptionalExtension};
 
+/// Creates tables for visual workflow drafts, published versions, and one-time handoffs.
 pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS visual_workflow_drafts (
@@ -34,18 +35,32 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Inputs for a revision-checked visual workflow draft save.
 pub struct SaveDraft<'a> {
+    /// Stable draft identifier.
     pub draft_id: &'a str,
+    /// Owner scope that isolates the draft.
     pub owner_scope: &'a str,
+    /// Current revision expected by the caller; zero creates a new draft.
     pub expected_revision: u64,
+    /// Serialized workflow definition.
     pub definition_json: &'a [u8],
+    /// Serialized visual layout metadata.
     pub layout_json: &'a [u8],
+    /// Digest of execution-relevant workflow content.
     pub execution_hash: &'a str,
+    /// Digest of layout metadata.
     pub layout_hash: &'a str,
+    /// Optional serialized provenance for the composer that produced the draft.
     pub composer_provenance_json: Option<&'a [u8]>,
+    /// Save timestamp in Unix milliseconds.
     pub updated_at_ms: i64,
 }
 
+/// Saves a draft only when its current revision matches the supplied precondition.
+///
+/// Returns a nested `Err("stale_revision")` for a revision conflict; SQLite errors remain the
+/// outer error result.
 pub fn save_draft(
     connection: &Connection,
     input: SaveDraft<'_>,
@@ -70,21 +85,31 @@ pub fn save_draft(
     Ok(Ok(revision))
 }
 
+/// Single-use authorization to publish one exact revision and hash of a draft.
 pub struct Handoff<'a> {
+    /// Opaque handoff handle.
     pub handle: &'a str,
+    /// Draft authorized for publication.
     pub draft_id: &'a str,
+    /// Owner scope that owns both draft and handoff.
     pub owner_scope: &'a str,
+    /// Draft revision captured by this handoff.
     pub revision: u64,
+    /// Execution hash captured by this handoff.
     pub draft_hash: &'a str,
+    /// Save precondition captured when issuing the handoff.
     pub precondition: &'a str,
+    /// Handoff creation time in Unix milliseconds.
     pub created_at_ms: i64,
 }
 
+/// Issues or reactivates a handle bound to one draft revision and execution hash.
 pub fn issue_handoff(connection: &Connection, input: Handoff<'_>) -> rusqlite::Result<()> {
     connection.execute("INSERT INTO visual_workflow_handoffs(handle,draft_id,owner_scope,draft_revision,draft_hash,save_precondition,status,created_at_ms) VALUES(?1,?2,?3,?4,?5,?6,'active',?7) ON CONFLICT(handle) DO UPDATE SET draft_id=excluded.draft_id,owner_scope=excluded.owner_scope,draft_revision=excluded.draft_revision,draft_hash=excluded.draft_hash,save_precondition=excluded.save_precondition,status='active',created_at_ms=excluded.created_at_ms", rusqlite::params![input.handle,input.draft_id,input.owner_scope,input.revision,input.draft_hash,input.precondition,input.created_at_ms])?;
     Ok(())
 }
 
+/// Consumes an active handle for its owner scope, returning whether it was active.
 pub fn consume_handoff(
     connection: &Connection,
     handle: &str,
@@ -94,6 +119,7 @@ pub fn consume_handoff(
     Ok(changed == 1)
 }
 
+/// Inserts an immutable published workflow version if the scoped version is not already present.
 pub fn publish_version(
     connection: &Connection,
     graph_id: &str,
@@ -107,6 +133,10 @@ pub fn publish_version(
     Ok(())
 }
 
+/// Publishes a draft only when its active handoff still matches the draft revision and hash.
+///
+/// Returns `invalid_handoff` for a missing or already consumed handle and `stale_handoff` when the
+/// draft changed after the handle was issued.
 pub fn publish_from_handoff(
     connection: &Connection,
     handle: &str,
@@ -149,9 +179,12 @@ pub fn publish_from_handoff(
     Ok(Ok(row))
 }
 
+/// Selected draft fields: revision, definition JSON, execution hash, and layout hash.
 pub type DraftRow = (u64, Vec<u8>, String, String);
+/// Nested publication outcome returned by [`publish_from_handoff`].
 pub type PublishResult = Result<DraftRow, &'static str>;
 
+/// Reads the current draft fields for an owner-scoped identifier.
 pub fn read_draft(
     connection: &Connection,
     draft_id: &str,

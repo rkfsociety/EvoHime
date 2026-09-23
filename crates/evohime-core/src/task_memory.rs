@@ -8,6 +8,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const LESSON_TTL_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 
+/// Derives a stable memory scope ID from a workspace path.
+///
+/// Path separators and letter case are normalized before hashing so equivalent
+/// Windows path spellings share one scope.
+///
+/// ```
+/// use std::path::Path;
+/// use evohime_core::task_memory::workspace_scope_id;
+/// assert_eq!(
+///     workspace_scope_id(Path::new("C:\\work\\Repo")),
+///     workspace_scope_id(Path::new("c:/work/repo/")),
+/// );
+/// ```
 pub fn workspace_scope_id(workspace_root: &Path) -> String {
     let normalized = workspace_root
         .to_string_lossy()
@@ -21,7 +34,7 @@ pub fn workspace_scope_id(workspace_root: &Path) -> String {
 /// Used to isolate memory entries between different projects.
 /// Handles case-insensitivity and path separator normalization.
 ///
-/// Returns a hex string of 32 characters (SHA-256 of first 16 bytes).
+/// Returns the 64-character lowercase hexadecimal SHA-256 digest.
 pub fn project_scope_id(workspace_root: &str) -> String {
     // 1. Нормализировать путь: привести к lowercase, заменить \\ на /
     let normalized = workspace_root.to_lowercase().replace('\\', "/");
@@ -30,6 +43,10 @@ pub fn project_scope_id(workspace_root: &str) -> String {
     sha256_hex(normalized.as_bytes())
 }
 
+/// Builds a private memory lesson from tool failures in a completed task.
+///
+/// Returns `None` when no metric contains a failure class. The lesson groups
+/// unique tool names and failure kinds, and is scoped to the supplied workspace.
 pub fn build_lesson(
     task_id: &str,
     workspace_root: &Path,
@@ -75,6 +92,7 @@ pub fn build_lesson(
     Some(record)
 }
 
+/// Returns the current Unix time in milliseconds, saturating to `u64::MAX`.
 pub fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

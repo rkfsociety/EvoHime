@@ -30,12 +30,24 @@ const MAX_REQUEST_JSON_BYTES: usize = 64 * 1024;
 const MAX_REPORT_JSON_BYTES: usize = 64 * 1024;
 const MAX_CHECKPOINT_JSON_BYTES: usize = 128 * 1024;
 
+/// Validation and database errors for child handoff and delegation records.
 #[derive(Debug, thiserror::Error)]
 pub enum ChildStoreError {
+    /// A required text field is empty.
     #[error("{field} must not be empty")]
-    Empty { field: &'static str },
+    Empty {
+        /// Field name rejected by validation.
+        field: &'static str,
+    },
+    /// A text field exceeds its configured byte limit.
     #[error("{field} exceeds {max} bytes")]
-    Limit { field: &'static str, max: usize },
+    Limit {
+        /// Field name rejected by validation.
+        field: &'static str,
+        /// Maximum accepted size in bytes.
+        max: usize,
+    },
+    /// An SQLite query or write failed.
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -83,17 +95,26 @@ fn validate_text(
 /// listing/filtering.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandoffRecord {
+    /// Stable identifier of the handoff.
     pub handoff_id: String,
+    /// Task to which the handoff belongs.
     pub task_id: String,
+    /// Handoff category.
     pub kind: String,
+    /// Handoff lifecycle state.
     pub status: String,
+    /// Role sending the handoff.
     pub from_role: String,
+    /// Role receiving the handoff.
     pub to_role: String,
+    /// Parent-scoped ordering sequence.
     pub sequence: u64,
+    /// Canonical serialized handoff envelope.
     pub envelope_json: String,
 }
 
 impl HandoffRecord {
+    /// Checks required fields and storage byte limits before persistence.
     pub fn validate(&self) -> Result<(), ChildStoreError> {
         validate_text("handoff_id", &self.handoff_id, MAX_ID_BYTES)?;
         validate_text("task_id", &self.task_id, MAX_ID_BYTES)?;
@@ -116,14 +137,20 @@ impl HandoffRecord {
 /// store is ever reached).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildTaskRequestRecord {
+    /// Identifier assigned to the child task.
     pub child_task_id: String,
+    /// Parent task that created the child request.
     pub parent_task_id: String,
+    /// Role assigned to the child.
     pub role: String,
+    /// Request category.
     pub kind: String,
+    /// Serialized validated child request.
     pub request_json: String,
 }
 
 impl ChildTaskRequestRecord {
+    /// Checks required identifiers and request size before persistence.
     pub fn validate(&self) -> Result<(), ChildStoreError> {
         validate_text("child_task_id", &self.child_task_id, MAX_ID_BYTES)?;
         validate_text("parent_task_id", &self.parent_task_id, MAX_ID_BYTES)?;
@@ -138,10 +165,15 @@ impl ChildTaskRequestRecord {
 /// `child_runtime::accept_report` against its matching request).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChildReportRecord {
+    /// Child task that produced the report.
     pub child_task_id: String,
+    /// Parent task receiving the report.
     pub parent_task_id: String,
+    /// Accepted report status.
     pub status: String,
+    /// Report confidence in the inclusive 0–100 range.
     pub confidence_percent: u8,
+    /// Serialized accepted child report.
     pub report_json: String,
 }
 
@@ -149,27 +181,46 @@ pub struct ChildReportRecord {
 /// only typed/redacted projections; raw transcripts are never persisted here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoordinatorCheckpointRecord {
+    /// Coordinator checkpoint schema version.
     pub schema_version: i64,
+    /// Child task whose coordinator state is stored.
     pub child_task_id: String,
+    /// Parent task coordinating the child.
     pub parent_task_id: String,
+    /// Monotonic child-state revision.
     pub revision: i64,
+    /// Coordinator lifecycle state.
     pub state: String,
+    /// Failure classification or reason, when present.
     pub failure_reason: Option<String>,
+    /// Whether this terminal outcome is in the dead-letter set.
     pub dead_letter: bool,
+    /// Optional serialized report projection.
     pub report_json: Option<String>,
+    /// Optional serialized artifact/evidence locators.
     pub evidence_locators_json: Option<String>,
+    /// Optional serialized provenance hashes.
     pub provenance_hashes_json: Option<String>,
+    /// Parent event sequence associated with the checkpoint.
     pub parent_sequence: i64,
+    /// Monotonic lease deadline, if a child lease is active.
     pub lease_deadline_monotonic_ms: Option<i64>,
+    /// Monotonic time at which the lease was created.
     pub lease_created_monotonic_ms: Option<i64>,
+    /// Boot identity used to interpret monotonic lease values.
     pub lease_clock_boot_id: Option<String>,
+    /// Process currently holding the child lease.
     pub lease_holder_process_id: Option<String>,
+    /// Event name for the most recent state transition.
     pub last_transition_event: String,
+    /// Timestamp of the most recent state transition in milliseconds.
     pub last_transition_at_ms: i64,
+    /// Checkpoint creation timestamp in milliseconds.
     pub created_at_ms: i64,
 }
 
 impl CoordinatorCheckpointRecord {
+    /// Validates identifiers, state metadata, JSON bounds, and non-negative counters.
     pub fn validate(&self) -> Result<(), ChildStoreError> {
         validate_text("child_task_id", &self.child_task_id, MAX_ID_BYTES)?;
         validate_text("parent_task_id", &self.parent_task_id, MAX_ID_BYTES)?;
@@ -206,6 +257,7 @@ impl CoordinatorCheckpointRecord {
 }
 
 impl ChildReportRecord {
+    /// Checks required identifiers and report size before persistence.
     pub fn validate(&self) -> Result<(), ChildStoreError> {
         validate_text("child_task_id", &self.child_task_id, MAX_ID_BYTES)?;
         validate_text("parent_task_id", &self.parent_task_id, MAX_ID_BYTES)?;
@@ -251,12 +303,14 @@ impl ChildStoreSql {
         }
     }
 
+    /// SQL that inserts one validated child handoff record.
     pub const INSERT_HANDOFF: &'static str = r#"
         INSERT INTO child_handoffs
             (handoff_id, task_id, kind, status, from_role, to_role, sequence, envelope_json)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
     "#;
 
+    /// SQL that lists handoffs for a task in sequence order.
     pub const SELECT_HANDOFFS_BY_TASK: &'static str = r#"
         SELECT handoff_id, task_id, kind, status, from_role, to_role, sequence, envelope_json
         FROM child_handoffs
@@ -265,6 +319,7 @@ impl ChildStoreSql {
         LIMIT ?2
     "#;
 
+    /// SQL that inserts or replaces a child's request record.
     pub const INSERT_CHILD_TASK_REQUEST: &'static str = r#"
         INSERT INTO child_task_requests
             (child_task_id, parent_task_id, role, kind, request_json)
@@ -276,12 +331,14 @@ impl ChildStoreSql {
             request_json = excluded.request_json
     "#;
 
+    /// SQL that loads a child request by its child task ID.
     pub const SELECT_CHILD_TASK_REQUEST_BY_ID: &'static str = r#"
         SELECT child_task_id, parent_task_id, role, kind, request_json
         FROM child_task_requests
         WHERE child_task_id = ?1
     "#;
 
+    /// SQL that inserts or replaces an accepted child report.
     pub const INSERT_CHILD_REPORT: &'static str = r#"
         INSERT INTO child_reports
             (child_task_id, parent_task_id, status, confidence_percent, report_json)
@@ -293,12 +350,14 @@ impl ChildStoreSql {
             report_json = excluded.report_json
     "#;
 
+    /// SQL that loads a child report by child task ID.
     pub const SELECT_CHILD_REPORT_BY_ID: &'static str = r#"
         SELECT child_task_id, parent_task_id, status, confidence_percent, report_json
         FROM child_reports
         WHERE child_task_id = ?1
     "#;
 
+    /// SQL that upserts one coordinator checkpoint revision.
     pub const UPSERT_COORDINATOR_CHECKPOINT: &'static str = r#"
         INSERT INTO coordinator_child_checkpoint
             (schema_version, child_task_id, parent_task_id, revision, state,
@@ -323,6 +382,7 @@ impl ChildStoreSql {
             created_at_ms=excluded.created_at_ms
     "#;
 
+    /// SQL that loads the latest coordinator checkpoint for a child.
     pub const SELECT_LATEST_COORDINATOR_CHECKPOINT: &'static str = r#"
         SELECT schema_version, child_task_id, parent_task_id, revision, state,
                failure_reason, dead_letter, report_json, evidence_locators_json,
@@ -333,6 +393,7 @@ impl ChildStoreSql {
         ORDER BY revision DESC, last_transition_at_ms DESC LIMIT 1
     "#;
 
+    /// Validates and inserts one handoff envelope and its indexed metadata.
     pub fn insert_handoff(
         connection: &Connection,
         record: &HandoffRecord,
@@ -393,6 +454,7 @@ impl ChildStoreSql {
         Ok(())
     }
 
+    /// Loads a child task request by child task ID, if present.
     pub fn get_child_task_request(
         connection: &Connection,
         child_task_id: &str,
@@ -407,6 +469,7 @@ impl ChildStoreSql {
         Ok(record)
     }
 
+    /// Validates and inserts or replaces a child report.
     pub fn insert_child_report(
         connection: &Connection,
         record: &ChildReportRecord,
@@ -425,6 +488,7 @@ impl ChildStoreSql {
         Ok(())
     }
 
+    /// Loads an accepted child report by child task ID, if present.
     pub fn get_child_report(
         connection: &Connection,
         child_task_id: &str,
@@ -439,6 +503,7 @@ impl ChildStoreSql {
         Ok(record)
     }
 
+    /// Validates and upserts coordinator state for one child revision.
     pub fn upsert_coordinator_checkpoint(
         connection: &Connection,
         record: &CoordinatorCheckpointRecord,
@@ -470,6 +535,7 @@ impl ChildStoreSql {
         Ok(())
     }
 
+    /// Loads the most recent coordinator checkpoint for a child, if present.
     pub fn latest_coordinator_checkpoint(
         connection: &Connection,
         child_task_id: &str,
@@ -484,6 +550,7 @@ impl ChildStoreSql {
             .map_err(Into::into)
     }
 
+    /// Lists recent dead-letter checkpoints for a parent, capped at 500 rows.
     pub fn list_dead_letter_checkpoints(
         connection: &Connection,
         parent_task_id: &str,

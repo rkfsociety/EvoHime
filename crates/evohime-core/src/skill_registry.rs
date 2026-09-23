@@ -10,27 +10,43 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+/// Metadata schema version supported by the local skill registry.
 pub const SKILL_SCHEMA_VERSION: u32 = 1;
+/// Maximum skill packages included in one catalog.
 pub const MAX_SKILLS: usize = 128;
+/// Maximum size of a skill manifest and body in bytes.
 pub const MAX_SKILL_BYTES: usize = 256 * 1024;
+/// Maximum size of a referenced skill file in bytes.
 pub const MAX_REFERENCE_BYTES: usize = 64 * 1024;
+/// Maximum name length in characters.
 pub const MAX_NAME_CHARS: usize = 128;
+/// Maximum description length in characters.
 pub const MAX_DESCRIPTION_CHARS: usize = 2_048;
+/// Maximum entries in a manifest list field.
 pub const MAX_LIST_ITEMS: usize = 64;
+/// Maximum length of one manifest list value.
 pub const MAX_LIST_ITEM_CHARS: usize = 128;
+/// Maximum diagnostics retained in one catalog.
 pub const MAX_DIAGNOSTICS: usize = 128;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Origin category used to resolve duplicate skill identifiers.
 pub enum SkillSourceKind {
+    /// Skill directly selected for the current task.
     Explicit,
+    /// Skill provided by the project agent-skill directory.
     ProjectNative,
+    /// Skill provided by the user-level registry.
     Global,
+    /// Skill discovered through a compatible third-party layout.
     Compatibility,
+    /// Skill shipped with the application.
     Bundled,
 }
 
 impl SkillSourceKind {
+    /// Returns the stable source priority used to select duplicate skill identifiers.
     pub const fn precedence(self) -> u8 {
         match self {
             Self::Explicit => 0,
@@ -40,6 +56,7 @@ impl SkillSourceKind {
             Self::Bundled => 4,
         }
     }
+    /// Returns the source kind serialized as its stable snake-case name.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Explicit => "explicit",
@@ -53,90 +70,146 @@ impl SkillSourceKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+/// Frontmatter validation result for a discovered skill.
 pub enum SkillValidationStatus {
+    /// Skill manifest passed validation.
     Valid,
+    /// Skill manifest failed validation.
     Invalid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// Bounded, trust-aware metadata exposed for one discovered skill.
 pub struct SkillMetadataV1 {
+    /// Serialized metadata schema version.
     pub schema_version: u32,
+    /// Skill identifier associated with this diagnostic.
     pub skill_id: String,
+    /// Human-readable skill name.
     pub name: String,
+    /// Bounded summary used for catalog selection.
     pub description: String,
+    /// Version captured in the loaded package provenance.
     pub version: String,
+    /// Owner scope where the skill is available.
     pub scope: String,
+    /// Origin category used for precedence and provenance.
     pub source_kind: SkillSourceKind,
+    /// Source reference where the diagnostic was found.
     pub source_ref: String,
+    /// Hash of the manifest and content used to detect changes.
     pub content_hash: String,
+    /// Tools retained after intersection with parent permissions.
     pub allowed_tools: Vec<String>,
+    /// Capabilities that must already be granted by the parent.
     pub required_capabilities: Vec<String>,
+    /// Whether automatic model selection must exclude this skill.
     pub disable_model_invocation: bool,
+    /// Number of auxiliary reference files discovered.
     pub reference_count: usize,
+    /// Whether the manifest passed schema and bound checks.
     pub validation_status: SkillValidationStatus,
+    /// Stable validation error code, if invalid.
     pub validation_error_code: Option<String>,
+    /// Non-fatal metadata concerns found during validation.
     pub warnings: Vec<String>,
+    /// Trust pipeline decision for this package revision.
     pub trust_decision: String,
+    /// Risk category assigned by package inspection.
     pub risk_class: String,
+    /// Number of trust or safety findings for this package.
     pub findings_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+/// Actionable issue found while scanning a skill source.
 pub struct SkillDiagnostic {
+    /// Stable diagnostic code.
     pub code: String,
+    /// Skill identifier associated with this diagnostic.
     pub skill_id: String,
+    /// Origin category used for precedence and provenance.
     pub source_kind: SkillSourceKind,
+    /// Source reference where the diagnostic was found.
     pub source_ref: String,
+    /// Human-readable explanation of the diagnostic.
     pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Ordered skill metadata and discovery diagnostics.
 pub struct SkillCatalogV1 {
+    /// Serialized metadata schema version.
     pub schema_version: u32,
+    /// Discovered skills after source precedence is applied.
     pub skills: Vec<SkillMetadataV1>,
+    /// Discovery or validation issues collected during scanning.
     pub diagnostics: Vec<SkillDiagnostic>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Source and content identity attached to loaded skill material.
 pub struct SkillProvenance {
+    /// Origin category used for precedence and provenance.
     pub source_kind: SkillSourceKind,
+    /// Source reference where the diagnostic was found.
     pub source_ref: String,
+    /// Version captured in the loaded package provenance.
     pub version: String,
+    /// Hash of the manifest and content used to detect changes.
     pub content_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Validated skill body with metadata, provenance, and cache state.
 pub struct LoadedSkill {
+    /// Validated metadata discovered for this skill package.
     pub metadata: SkillMetadataV1,
+    /// Validated skill body or reference content.
     pub content: String,
+    /// Source and hash metadata for the loaded content.
     pub provenance: SkillProvenance,
+    /// Whether the body came from the validated content cache.
     pub cache_hit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Validated skill body with metadata, provenance, and cache state.
 pub struct LoadedSkillReference {
+    /// Human-readable skill name.
     pub name: String,
+    /// Validated skill body or reference content.
     pub content: String,
+    /// Hash of the manifest and content used to detect changes.
     pub content_hash: String,
+    /// Source and hash metadata for the loaded content.
     pub provenance: SkillProvenance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Skill tools and capabilities intersected with parent authority.
 pub struct SkillPermissions {
+    /// Tools retained after intersection with parent permissions.
     pub allowed_tools: Vec<String>,
+    /// Capabilities that must already be granted by the parent.
     pub required_capabilities: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Filesystem root searched for skills of one source category.
 pub struct SkillRoot {
+    /// Source category used to resolve and prioritize this root.
     pub kind: SkillSourceKind,
+    /// Stable human-readable label for diagnostics.
     pub label: String,
+    /// Filesystem path scanned for skill packages.
     pub path: PathBuf,
 }
 
 impl SkillRoot {
+    /// Creates a filesystem root for one skill source.
     pub fn new(kind: SkillSourceKind, label: impl Into<String>, path: impl Into<PathBuf>) -> Self {
         Self {
             kind,
@@ -147,36 +220,56 @@ impl SkillRoot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Discovery, validation, trust, path-safety, or I/O failure.
 pub enum SkillRegistryError {
+    /// The requested skill package was not discovered.
     #[error("skill package was not found: {0}")]
     NotFound(String),
+    /// The skill manifest frontmatter is malformed.
     #[error("skill has invalid frontmatter: {0}")]
     InvalidFrontmatter(String),
+    /// A named metadata field is invalid.
     #[error("skill field {field} is invalid: {reason}")]
-    InvalidField { field: String, reason: String },
+    InvalidField {
+        /// Name of the invalid metadata field.
+        field: String,
+        /// Reason the field did not satisfy its contract.
+        reason: String,
+    },
+    /// The metadata schema version is unsupported.
     #[error("skill schema version {0} is unsupported")]
     UnsupportedVersion(u32),
+    /// A package path escapes its trusted root or follows an unsafe link.
     #[error("skill path is unsafe: {0}")]
     UnsafePath(String),
+    /// The requested skill file exceeds its size bound.
     #[error("skill file exceeds its bound: {0} bytes")]
     TooLarge(usize),
+    /// Skill content is not valid UTF-8.
     #[error("skill content is not valid UTF-8")]
     InvalidEncoding,
+    /// Loaded content contains a secret-shaped value.
     #[error("skill content contains a secret-shaped value")]
     SensitiveContent,
+    /// The package failed its trust gate.
     #[error("skill trust gate rejected package: {0}")]
     TrustRejected(String),
+    /// Content changed after catalog discovery.
     #[error("skill changed during load")]
     StaleContent,
+    /// The requested auxiliary skill file was not found.
     #[error("skill reference was not found: {0}")]
     ReferenceNotFound(String),
+    /// Required skill capabilities exceed the parent grant.
     #[error("skill requires capabilities outside the parent grant: {0}")]
     CapabilityEscalation(String),
+    /// Filesystem access failed.
     #[error("skill I/O failed: {0}")]
     Io(String),
 }
 
 impl SkillRegistryError {
+    /// Returns a stable machine-readable code for this registry error.
     pub const fn code(&self) -> &'static str {
         match self {
             Self::NotFound(_) => "not_found",
@@ -209,12 +302,14 @@ struct CachedSkill {
     content: String,
 }
 
+/// Bounded skill discovery, validation, trust checking, and cache.
 pub struct SkillRegistry {
     roots: Vec<SkillRoot>,
     cache: BTreeMap<String, CachedSkill>,
 }
 
 impl SkillRegistry {
+    /// Creates a registry using the supplied ordered skill roots.
     pub fn from_roots(roots: Vec<SkillRoot>) -> Self {
         Self {
             roots,
@@ -222,6 +317,7 @@ impl SkillRegistry {
         }
     }
 
+    /// Builds a registry for project, global, compatibility, and bundled skill roots.
     pub fn for_workspace(workspace: &Path) -> Self {
         let mut roots = vec![
             SkillRoot::new(
@@ -262,6 +358,7 @@ impl SkillRegistry {
         Self::from_roots(roots)
     }
 
+    /// Scans configured roots and returns the selected metadata catalog.
     pub fn catalog(&mut self) -> SkillCatalogV1 {
         let mut candidates = BTreeMap::<String, SkillPackage>::new();
         let mut diagnostics = Vec::new();
@@ -301,6 +398,7 @@ impl SkillRegistry {
         }
     }
 
+    /// Loads and trust-checks a skill body, using a hash-validated cache when available.
     pub fn load(&mut self, skill_id: &str) -> Result<LoadedSkill, SkillRegistryError> {
         let package = self.selected_package(skill_id)?;
         if package.metadata.validation_status != SkillValidationStatus::Valid {
@@ -352,6 +450,7 @@ impl SkillRegistry {
         Ok(self.loaded(package.metadata, parsed.body, false))
     }
 
+    /// Loads a bounded auxiliary file from the skill references directory.
     pub fn load_reference(
         &mut self,
         skill_id: &str,
@@ -391,6 +490,7 @@ impl SkillRegistry {
         })
     }
 
+    /// Intersects requested skill permissions with parent grants.
     pub fn effective_permissions(
         &mut self,
         skill_id: &str,

@@ -69,6 +69,11 @@ $pwsh = Join-Path $PSHOME 'pwsh.exe'
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 cargo check -p evohime-supervisor
 
+# Rust public API documentation gates (also run by rustdoc CI)
+cargo doc --workspace --no-deps --locked
+$env:RUSTDOCFLAGS='-D missing_docs -D rustdoc::broken_intra_doc_links -D rustdoc::invalid_html_tags'; cargo doc --workspace --lib --no-deps --locked
+cargo test --workspace --doc --locked
+
 # Electron shell (desktop\evohime-electron)
 cd desktop\evohime-electron
 npm run bootstrap        # npm ci без lifecycle-скриптов + allow-list installers
@@ -122,7 +127,10 @@ Test-NetConnection index.crates.io -Port 443
    `clippy::unwrap_used`, `clippy::expect_used` и `clippy::panic` на уровне
    crate root через `cfg_attr(not(test), deny(...))`; тестовый код сохраняет
    возможность использовать эти вызовы. Build scripts должны возвращать
-   диагностируемые ошибки через `Result`.
+   диагностируемые ошибки через `Result`. Все внешне достижимые элементы
+   library API должны иметь предметные `///`-описания; полноту проверяй
+   `cargo doc --workspace --lib --no-deps --locked` с `-D missing_docs`.
+   Проверяй ссылки и примеры командами Rust documentation gates выше.
 4. Локальное тестирование разрешено. Выбирай объём проверки по риску и области
    изменения: для быстрых итераций используй узкие проверки затронутых
    crates/модулей, а перед заявлением о готовности запускай подходящий полный
