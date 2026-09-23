@@ -1,10 +1,16 @@
 use super::*;
 
 impl EventJournal {
+    pub(crate) fn checkout_read_database(
+        &self,
+    ) -> Result<crate::core_journal::PreparedDatabaseLease, StorageError> {
+        self.database_pool.checkout()
+    }
+
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         let path = path.as_ref().to_path_buf();
         let database = Arc::new(Mutex::new(LocalDatabase::open_with_migrations(&path)?));
-        let workspace_database_pool = PreparedDatabasePool::new(&path)?;
+        let database_pool = PreparedDatabasePool::new(&path)?;
         let worker_database = database.clone();
         let (sender, receiver) = std::sync::mpsc::sync_channel::<JournalWrite>(256);
         std::thread::Builder::new()
@@ -21,7 +27,7 @@ impl EventJournal {
         Ok(Self {
             database,
             database_path: Arc::new(path),
-            workspace_database_pool,
+            database_pool,
             writer: Arc::new(sender),
             #[cfg(test)]
             test_fail_after_primary: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -167,11 +173,11 @@ impl EventJournal {
         cancellation: &CancellationToken,
         progress: impl FnMut(crate::workspace_rag::IndexProgress) + Send + 'static,
     ) -> Result<crate::workspace_rag::IndexSummary, crate::workspace_rag::RagError> {
-        let workspace_database_pool = Arc::clone(&self.workspace_database_pool);
+        let database_pool = Arc::clone(&self.database_pool);
         let workspace_root = workspace_root.to_path_buf();
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
-            let mut database = workspace_database_pool.checkout().map_err(|error| {
+            let mut database = database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
             let Some(database) = database.database_mut() else {
@@ -196,7 +202,12 @@ impl EventJournal {
         &self,
         workspace_root: &std::path::Path,
     ) -> Result<crate::workspace_rag::IndexStatus, crate::workspace_rag::RagError> {
-        let database = self.database.lock().await;
+        let lease = self
+            .checkout_read_database()
+            .map_err(|error| crate::workspace_rag::RagError::InvalidConfig(error.to_string()))?;
+        let database = lease.database().ok_or_else(|| {
+            crate::workspace_rag::RagError::InvalidConfig("journal read lease is empty".into())
+        })?;
         crate::workspace_rag::get_index_status(database.connection(), workspace_root)
     }
 
@@ -225,11 +236,11 @@ impl EventJournal {
         hybrid: bool,
         progress: impl FnMut(crate::workspace_rag::RetrievalProgress) + Send + 'static,
     ) -> Result<crate::workspace_rag::SearchResult, crate::workspace_rag::RagError> {
-        let workspace_database_pool = Arc::clone(&self.workspace_database_pool);
+        let database_pool = Arc::clone(&self.database_pool);
         let workspace_root = workspace_root.to_path_buf();
         let query = query.to_owned();
         tokio::task::spawn_blocking(move || {
-            let mut database = workspace_database_pool.checkout().map_err(|error| {
+            let mut database = database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
             let Some(database) = database.database_mut() else {
@@ -299,11 +310,11 @@ impl EventJournal {
         workspace_root: &std::path::Path,
         cancellation: &CancellationToken,
     ) -> Result<Option<String>, crate::workspace_rag::RagError> {
-        let workspace_database_pool = Arc::clone(&self.workspace_database_pool);
+        let database_pool = Arc::clone(&self.database_pool);
         let workspace_root = workspace_root.to_path_buf();
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
-            let mut database = workspace_database_pool.checkout().map_err(|error| {
+            let mut database = database_pool.checkout().map_err(|error| {
                 crate::workspace_rag::RagError::InvalidConfig(error.to_string())
             })?;
             let Some(database) = database.database_mut() else {
@@ -331,7 +342,12 @@ impl EventJournal {
         relative_path: &str,
         chunk_hash: &str,
     ) -> Result<bool, crate::workspace_rag::RagError> {
-        let database = self.database.lock().await;
+        let lease = self
+            .checkout_read_database()
+            .map_err(|error| crate::workspace_rag::RagError::InvalidConfig(error.to_string()))?;
+        let database = lease.database().ok_or_else(|| {
+            crate::workspace_rag::RagError::InvalidConfig("journal read lease is empty".into())
+        })?;
         crate::workspace_rag::verify_document_provenance(
             database.connection(),
             workspace_root,

@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-21.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-23.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -22,10 +22,13 @@ evohime-transaction.exe   transactional update worker
 Renderer не имеет node integration, не выполняет shell-команды и не открывает базу. Electron main ограничен окном, lifecycle, локальным состоянием оболочки и IPC adapter. Core владеет workspace, инструментами, моделью, секретами и локальным состоянием. Supervisor запускает core в Job Object и завершает дочернее дерево при остановке.
 
 SQLite schema migration и idempotent installers выполняются на startup при
-открытии `EventJournal`. Workspace RAG index/search/vector workers используют
-ограниченный pool уже подготовленных connections; обычный search path не
-запускает миграции и installers. После database restore pool сбрасывается,
-чтобы новые workers подключались к заменённому файлу.
+открытии `EventJournal`. Workspace RAG index/search/vector workers и выбранные
+read-only запросы EventJournal используют общий ограниченный pool
+уже подготовленных connections; обычные reads не запускают миграции и
+installers. Pool ограничен четырьмя connections и сбрасывается после database
+restore, чтобы новые операции подключались к заменённому файлу. Записи и
+транзакционные операции остаются на основной journal connection и сохраняют
+единственный порядок writer; pool не обещает параллельную запись SQLite.
 
 Ревью планов — отдельный read-only pipeline Core. Electron main выбирает и
 ограниченно читает Markdown-файл через native dialog, затем передаёт его Core.

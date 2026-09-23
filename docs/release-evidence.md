@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-22.
+Обновлено: 2026-09-23.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -11,7 +11,9 @@ output, transcripts, absolute paths и PII запрещены.
 синхронизированный с `origin/main` на 2026-09-21. Текущий task-local checkout
 дополнительно подключает действия композера renderer: выбор файлов текущего
 workspace, существующий режим доступа Core и флаг веб-поиска для следующего
-запроса; новых IPC-контрактов, Core-owned state и runtime authority не добавлено.
+запроса; выбранные EventJournal и Workspace RAG read-only запросы также
+используют существующий bounded prepared-connection pool. Новых IPC-контрактов,
+Core-owned state и runtime authority не добавлено.
 Также удалён legacy full-window `UpdateGate`: blocking progress UI остаётся
 только в отдельном updater, а shell больше не рисует экран обновления при
 запуске. Для этой задачи локально проверены `typecheck`, полный renderer test
@@ -19,7 +21,7 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 стартовал из свежей сборки, но native screenshot не снят: доступный CUA-сеанс
 не умеет привязать окно Electron; GitHub module-router и публикация `ui-bundle`
 ещё не запускались, потому что push не выполнялся.
-Актуальные release markers хранятся в `release-versions/`: `core=0.0.000366`,
+Актуальные release markers хранятся в `release-versions/`: `core=0.0.000369`,
 `updater=0.0.000128`, `transaction=0.0.000067`,
 `ui-bundle=0.0.000110`, `shell-host=0.0.000103` и
 `cli=0.0.000084`. Исторические разделы ниже сохраняют прежнее evidence.
@@ -46,6 +48,20 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 - Локальный `pwsh -NoProfile -File scripts/documentation.tests.ps1` также
   завершился `PASS` для 110 tracked text files; это документационный gate и не
   заменяет platform-specific package acceptance.
+
+### EventJournal pooled read paths (2026-09-23)
+
+- В checkout добавлен bounded pool lease для journal replay/latest/review,
+  conversation history paging и выбранных Workspace RAG status/provenance
+  reads. RAG evidence/citation ledger mutations остаются на основной connection.
+  Основная connection сохраняет единственный write
+  ordering; pool имеет предел четыре и инвалидируется после restore.
+- Добавлен regression test на replay без ожидания основной connection mutex.
+  Локальные tests/builds/linters не запускались в рамках plan workflow;
+  `git diff --check` и статический review фиксируются после завершения изменений.
+- Exact-commit GitHub CI и публикация Core module — `UNAVAILABLE` до push.
+  `release-versions/core.txt` повышен только на patch, `0.0.000368` →
+  `0.0.000369`; после push module router должен dispatch-ить `core.yml`.
 
 ### Historical CLI modularization batch and live gates (2026-09-21)
 

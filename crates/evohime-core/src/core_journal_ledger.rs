@@ -404,14 +404,22 @@ impl EventJournal {
         after_sequence: i64,
         limit: usize,
     ) -> Result<Vec<EventRecord>, StorageError> {
-        let database = self.database.lock().await;
+        let lease = self.checkout_read_database()?;
+        let database = lease.database().ok_or_else(|| {
+            StorageError::InvalidInput("journal read lease is empty".into())
+        })?;
         database.read_events_after(after_sequence, limit)
     }
 
     /// Highest recorded sequence; zero when nothing has been journalled yet.
     pub async fn latest_sequence(&self) -> i64 {
-        let database = self.database.lock().await;
-        database.latest_event_sequence().unwrap_or(0)
+        let Ok(lease) = self.checkout_read_database() else {
+            return 0;
+        };
+        lease
+            .database()
+            .and_then(|database| database.latest_event_sequence().ok())
+            .unwrap_or(0)
     }
 
     pub async fn replay_bounded(
@@ -421,7 +429,10 @@ impl EventJournal {
     ) -> Result<DurableReplayBatch, StorageError> {
         const MAX_DURABLE_REPLAY_EVENTS: usize = 512;
         let records = {
-            let database = self.database.lock().await;
+            let lease = self.checkout_read_database()?;
+            let database = lease.database().ok_or_else(|| {
+                StorageError::InvalidInput("journal read lease is empty".into())
+            })?;
             database.read_events_after(after_sequence, limit.min(MAX_DURABLE_REPLAY_EVENTS))?
         };
         let first_available_sequence = records.first().map(|record| record.sequence_id);
@@ -440,7 +451,10 @@ impl EventJournal {
     }
 
     pub async fn review_history(&self, limit: usize) -> Result<Vec<EventRecord>, StorageError> {
-        let database = self.database.lock().await;
+        let lease = self.checkout_read_database()?;
+        let database = lease.database().ok_or_else(|| {
+            StorageError::InvalidInput("journal read lease is empty".into())
+        })?;
         database.read_review_events(limit)
     }
 
@@ -503,7 +517,7 @@ impl EventJournal {
         })
         .await
         .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?;
-        self.workspace_database_pool.invalidate();
+        self.database_pool.invalidate();
         result
     }
 
@@ -530,7 +544,7 @@ impl EventJournal {
         })
         .await
         .map_err(|error| StorageError::InvalidInput(format!("restore worker failed: {error}")))?;
-        self.workspace_database_pool.invalidate();
+        self.database_pool.invalidate();
         result
     }
 

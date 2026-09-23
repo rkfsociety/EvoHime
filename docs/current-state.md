@@ -26,13 +26,20 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 
 Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local подключение действий композера shell: выбор файлов текущего workspace, существующий выбор режима доступа через Core и флаг веб-поиска для следующего запроса. Новых IPC-контрактов и Core-owned state не добавлено.
 
-Актуальные release markers берутся из `release-versions/`: `core 0.0.000362`, `cli 0.0.000084`, `ui-bundle 0.0.000109`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
+Актуальные release markers берутся из `release-versions/`: `core 0.0.000369`, `cli 0.0.000084`, `ui-bundle 0.0.000109`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
 
 Startup `EventJournal::open` выполняет миграции и idempotent schema installers
 один раз. Длительные workspace RAG index/search/vector операции используют
 bounded pool из подготовленных SQLite connections через `LocalDatabase::open_prepared`;
 поисковый запрос больше не устанавливает схему. Pool инвалидируется после
 database restore, чтобы следующие операции открыли заменённый файл.
+
+Replay/latest-sequence/review history, conversation history paging и выбранные
+Workspace RAG status/provenance reads используют тот же pool
+с пределом в четыре prepared connections. Эти read-only операции больше не
+держат основную `EventJournal` mutex connection; writes и atomic
+read-modify-write остаются на ней и сериализованы. Pool сохраняет restore
+generation fence. SQLite schema и IPC не изменялись.
 
 Путь typed execution ledger не выполняет отдельный `BEGIN`/`COMMIT` для каждой
 строки: `LocalDatabase::append_ledger_events` валидирует bounded batch, переиспользует
