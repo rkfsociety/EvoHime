@@ -72,7 +72,7 @@ pub(crate) fn build_payload(
     previous: Option<&str>,
     result: Option<&str>,
     refusal: Option<&str>,
-) -> Value {
+) -> Result<Value, crate::ReceiptError> {
     let mut payload = json!({
         "receipt_version": 1, "receipt_id": Uuid::now_v7().to_string(),
         "action_id": request.action_id.to_string(), "receipt_kind": kind,
@@ -81,7 +81,9 @@ pub(crate) fn build_payload(
         "tool_args_hash": args_hash, "policy_id": request.policy_id.clone(),
         "policy_decision": request.policy_decision.as_str()
     });
-    let object = payload.as_object_mut().expect("receipt payload is object");
+    let object = payload
+        .as_object_mut()
+        .ok_or(crate::ReceiptError::InvalidJson)?;
     if let Some(value) = previous {
         object.insert("previous_receipt_hash".into(), Value::String(value.into()));
     }
@@ -99,7 +101,7 @@ pub(crate) fn build_payload(
             object.insert("parent_approval_ref".into(), Value::String(parent.into()));
         }
     }
-    payload
+    Ok(payload)
 }
 
 /// Child handoffs carry only the two authenticated parent identifiers. A raw

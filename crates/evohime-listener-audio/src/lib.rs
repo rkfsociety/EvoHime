@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Детерминированный аудио-контур листенера.
 //!
 //! Этот крейт намеренно не содержит файлового API. PCM живёт только в памяти;
@@ -451,7 +455,10 @@ impl Segmenter {
             let end = active.silent_frames * frame_ms >= self.limits.hangover_ms
                 || duration >= self.limits.max_utterance_ms;
             if end {
-                let finished = self.active.take().unwrap();
+                let finished = match self.active.take() {
+                    Some(finished) => finished,
+                    None => return completed,
+                };
                 let episode_id = finished.id.clone();
                 if self
                     .limits

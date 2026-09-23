@@ -104,7 +104,7 @@ fn verifier_accepts_reordered_chain_and_rejects_fork() {
     };
     first.signature = b64(genesis_signer.sign(&signed_bytes(&first).unwrap()).as_ref());
     let (second_signer, _) = SecretSigner::generate().unwrap();
-    let second_public = second_signer.public();
+    let second_public = second_signer.public().unwrap();
     let mut second = KeyTransition {
         transition_version: 1,
         transition_id: Uuid::now_v7().to_string(),

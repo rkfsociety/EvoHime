@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 use evohime_update_agent::{
@@ -47,10 +51,13 @@ fn main() -> ExitCode {
         Err(error) => return fail(error),
     };
     match select_outdated(&installed, &available) {
-        Ok(plan) => {
-            println!("{}", serde_json::to_string(&plan).expect("plan serializes"));
-            ExitCode::SUCCESS
-        }
+        Ok(plan) => match serde_json::to_string(&plan) {
+            Ok(serialized) => {
+                println!("{serialized}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => fail(format!("could not serialize update plan: {error}")),
+        },
         Err(error) => fail(error),
     }
 }
@@ -330,8 +337,10 @@ fn ensure_fallback(install_dir: &Path, data_dir: &Path) -> Result<(), String> {
     if !install_dir.is_absolute() {
         return Err("install directory must be absolute".into());
     }
-    fs::create_dir_all(fallback.parent().expect("fallback has parent"))
-        .map_err(|e| e.to_string())?;
+    let fallback_parent = fallback
+        .parent()
+        .ok_or_else(|| "updater fallback path has no parent".to_owned())?;
+    fs::create_dir_all(fallback_parent).map_err(|e| e.to_string())?;
     let temporary = fallback.with_extension("exe.part");
     fs::copy(&current, &temporary).map_err(|e| e.to_string())?;
     fs::rename(&temporary, &fallback).map_err(|e| e.to_string())
@@ -652,7 +661,7 @@ fn remote_updates(data_dir: &Path, install_dir: &Path) -> Result<Vec<UpdateCandi
         .components
         .iter()
         .find(|component| component.id == "updater")
-        .expect("validated compatible manifest");
+        .ok_or_else(|| "updater: compatible manifest has no updater component".to_owned())?;
     if compare_semver(installed_updater, &compatibility.updater.minimum_version).is_lt()
         && compare_semver(installed_updater, &compatible_updater.version).is_ge()
     {
@@ -766,11 +775,12 @@ struct UpdaterHttpClient {
 impl UpdaterHttpClient {
     fn get(&self, url: &str) -> reqwest::blocking::RequestBuilder {
         let request = self.client.get(url);
-        if self.github_token.is_some() && is_github_api_url(url) {
-            request.bearer_auth(self.github_token.as_deref().expect("token is present"))
-        } else {
-            request
+        if is_github_api_url(url) {
+            if let Some(token) = self.github_token.as_deref() {
+                return request.bearer_auth(token);
+            }
         }
+        request
     }
 }
 

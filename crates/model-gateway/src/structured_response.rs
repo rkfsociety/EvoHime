@@ -75,15 +75,15 @@ impl ResponseContract {
             contract_hash: String::new(),
         };
         value.validate_schema()?;
-        value.contract_hash = value.compute_hash();
+        value.contract_hash = value.compute_hash()?;
         Ok(value)
     }
-    pub fn compute_hash(&self) -> String {
+    pub fn compute_hash(&self) -> Result<String, ResponseError> {
         let mut copy = self.clone();
         copy.contract_hash.clear();
-        hex::encode(Sha256::digest(
-            serde_json::to_vec(&copy).expect("contract serializes"),
-        ))
+        let bytes =
+            serde_json::to_vec(&copy).map_err(|_| ResponseError::Schema("contract_json".into()))?;
+        Ok(hex::encode(Sha256::digest(bytes)))
     }
     pub fn validate_schema(&self) -> Result<(), ResponseError> {
         if self.schema_version != STRUCTURED_RESPONSE_SCHEMA_VERSION {
@@ -103,7 +103,7 @@ impl ResponseContract {
                     .contract_hash
                     .bytes()
                     .all(|byte| byte.is_ascii_hexdigit())
-                || self.contract_hash != self.compute_hash())
+                || self.contract_hash != self.compute_hash()?)
         {
             return Err(ResponseError::Schema("contract_hash".into()));
         }
@@ -246,7 +246,7 @@ mod tests {
             ResponseStrategy::Auto,
         )
         .unwrap();
-        assert_eq!(c.compute_hash(), c.contract_hash);
+        assert_eq!(c.compute_hash().unwrap(), c.contract_hash);
         assert!(c.validate_value(&json!({"ok":true})).is_ok());
         assert!(matches!(
             c.validate_value(&json!({})),

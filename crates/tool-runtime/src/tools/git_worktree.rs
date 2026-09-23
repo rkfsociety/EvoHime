@@ -57,7 +57,11 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
             "worktree destination already exists".into(),
         ));
     }
-    tokio::fs::create_dir_all(root.parent().expect("worktree parent"))
+    let parent = root.parent().ok_or_else(|| ToolError::InvalidInput {
+        tool: "git_worktree".into(),
+        message: "worktree path has no parent".into(),
+    })?;
+    tokio::fs::create_dir_all(parent)
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     let mut command = Command::new("git");

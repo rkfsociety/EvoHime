@@ -384,17 +384,12 @@ async fn run_supervisor_command_channel(
         let nonce = verifier
             .issue_nonce(now_ms())
             .map_err(|error| io::Error::other(error.to_string()))?;
-        channel
-            .get_mut()
-            .write_all(
-                serde_json::to_string(&json!({
-                    "nonce": nonce.value,
-                    "expires_at_ms": nonce.expires_at_ms
-                }))
-                .unwrap()
-                .as_bytes(),
-            )
-            .await?;
+        let nonce_message = serde_json::to_vec(&json!({
+            "nonce": nonce.value,
+            "expires_at_ms": nonce.expires_at_ms
+        }))
+        .map_err(|error| io::Error::other(format!("serialize supervisor nonce: {error}")))?;
+        channel.get_mut().write_all(&nonce_message).await?;
         channel.get_mut().write_all(b"\n").await?;
         let mut line = Vec::new();
         if channel.read_until(b'\n', &mut line).await? > 16 * 1024 {
@@ -657,10 +652,9 @@ async fn run_supervisor_command_channel(
             }
             _ => json!({"accepted": false, "reason": "unsupported_command"}),
         };
-        channel
-            .get_mut()
-            .write_all(serde_json::to_string(&response).unwrap().as_bytes())
-            .await?;
+        let response = serde_json::to_vec(&response)
+            .map_err(|error| io::Error::other(format!("serialize supervisor response: {error}")))?;
+        channel.get_mut().write_all(&response).await?;
         channel.get_mut().write_all(b"\n").await?;
     }
 }

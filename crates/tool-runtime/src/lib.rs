@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 pub mod action;
 pub mod app_catalog;
 pub mod developer_utilities;

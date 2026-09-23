@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 mod pulse;
 // Keep the contract-driven runtime loop available to non-Windows unit tests;
 // the production supervisor entry point is Windows-only, so these items are

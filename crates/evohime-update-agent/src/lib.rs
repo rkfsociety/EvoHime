@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 use serde::{
     de::{Deserializer, Error as DeError},
     Deserialize, Serialize,
@@ -163,11 +167,10 @@ fn validate_pe_headers(file: &mut std::fs::File, file_len: u64) -> Result<(), St
     if dos_header[..2] != *b"MZ" {
         return Err("artifact is not a PE executable".into());
     }
-    let pe_offset = u32::from_le_bytes(
-        dos_header[0x3c..0x40]
-            .try_into()
-            .expect("DOS header slice has fixed size"),
-    ) as u64;
+    let pe_offset_bytes: [u8; 4] = dos_header[0x3c..0x40]
+        .try_into()
+        .map_err(|_| "artifact DOS header is truncated".to_owned())?;
+    let pe_offset = u32::from_le_bytes(pe_offset_bytes) as u64;
     let pe_end = pe_offset
         .checked_add(COFF_HEADER_SIZE)
         .ok_or_else(|| "artifact PE header offset overflowed".to_owned())?;
@@ -557,9 +560,10 @@ pub fn select_outdated(
 }
 
 pub fn compare_semver(left: &str, right: &str) -> Ordering {
-    let a = parse_semver(left).expect("validated semver");
-    let b = parse_semver(right).expect("validated semver");
-    a.cmp(&b)
+    match (parse_semver(left), parse_semver(right)) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        _ => left.cmp(right),
+    }
 }
 
 pub fn is_valid_semver(value: &str) -> bool {

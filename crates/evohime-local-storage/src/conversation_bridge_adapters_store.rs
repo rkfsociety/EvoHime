@@ -54,7 +54,7 @@ pub fn get_bridge(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>>
         params![id],
         |row| {
             let state: String = row.get(4)?;
-            Ok(serde_json::to_vec(&serde_json::json!({
+            serde_json::to_vec(&serde_json::json!({
                 "schema_version": 1,
                 "bridge_id": id,
                 "provider": row.get::<_, String>(0)?,
@@ -64,7 +64,7 @@ pub fn get_bridge(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>>
                 "state": state,
                 "revision": revision_u64(row.get(5)?)?
             }))
-            .expect("bridge metadata serializes"))
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
         },
     )
     .optional()
@@ -74,7 +74,7 @@ pub fn get_binding(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>
     c.query_row(
         "SELECT bridge_id,external_thread_id,conversation_id,principal_id,revision FROM conversation_thread_bindings WHERE binding_id=?1",
         params![id],
-        |row| Ok(serde_json::to_vec(&serde_json::json!({
+        |row| serde_json::to_vec(&serde_json::json!({
             "schema_version": 1,
             "binding_id": id,
             "bridge_id": row.get::<_, String>(0)?,
@@ -82,7 +82,7 @@ pub fn get_binding(c: &Connection, id: &str) -> rusqlite::Result<Option<Vec<u8>>
             "conversation_id": row.get::<_, String>(2)?,
             "principal_id": row.get::<_, String>(3)?,
             "revision": revision_u64(row.get(4)?)?
-        })).expect("binding metadata serializes")),
+        })).map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error))),
     )
     .optional()
 }

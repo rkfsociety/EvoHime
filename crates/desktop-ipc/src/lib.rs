@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/evohime.desktop.v1.rs"));
 }
@@ -278,7 +282,7 @@ impl BoundedReplayLog {
         let Some(first) = self.events.first() else {
             return Ok(ReplayResult::Events(Vec::new()));
         };
-        let latest = self.events.last().expect("first implies last");
+        let latest = self.events.last().unwrap_or(first);
         if after_sequence.saturating_add(1) < first.sequence_id {
             return Ok(ReplayResult::Gap {
                 requested_after_sequence: after_sequence,

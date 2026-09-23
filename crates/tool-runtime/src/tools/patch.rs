@@ -83,7 +83,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
             .trim_start_matches('-')
             .split(',')
             .next()
-            .unwrap()
+            .unwrap_or("")
             .parse()
             .map_err(|_| invalid_input("malformed hunk range"))?;
         let hunk_begin = start.saturating_sub(1) as isize + offset;
@@ -93,7 +93,9 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
             if next.starts_with("@@") || next.starts_with("---") || next.starts_with("+++") {
                 break;
             }
-            let item = hunk_lines.next().unwrap();
+            let Some(item) = hunk_lines.next() else {
+                break;
+            };
             if item.starts_with(' ') {
                 if lines
                     .get(old_index as usize)

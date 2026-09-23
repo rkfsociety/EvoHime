@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Bounded ambient-listening contract shared by Core, the listener process and
 //! the shell.
 //!

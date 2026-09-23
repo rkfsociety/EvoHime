@@ -58,7 +58,7 @@ impl EvaluationCatalog {
                     return Err(CatalogError::Signature);
                 }
             }
-            if record.signature != Self::canonical_signature(&record) {
+            if record.signature != Self::canonical_signature(&record)? {
                 return Err(CatalogError::Signature);
             }
             records.push(record);
@@ -111,13 +111,13 @@ impl EvaluationCatalog {
             && record.small_score >= record.large_score - quality_delta
     }
 
-    pub fn canonical_signature(record: &EvaluationRecord) -> String {
-        let mut value = serde_json::to_value(record).expect("evaluation record serializes");
+    pub fn canonical_signature(record: &EvaluationRecord) -> Result<String, CatalogError> {
+        let mut value = serde_json::to_value(record).map_err(|_| CatalogError::Malformed)?;
         if let Some(object) = value.as_object_mut() {
             object.insert("signature".into(), serde_json::Value::String(String::new()));
         }
-        let bytes = serde_json::to_vec(&value).expect("evaluation record serializes");
-        hex::encode(Sha256::digest(bytes))
+        let bytes = serde_json::to_vec(&value).map_err(|_| CatalogError::Malformed)?;
+        Ok(hex::encode(Sha256::digest(bytes)))
     }
 
     /// Validates a complete signed catalog before replacing the runtime file.
@@ -231,11 +231,12 @@ mod tests {
     fn signature_excludes_signature_field() {
         let value = record();
         assert_eq!(
-            EvaluationCatalog::canonical_signature(&value),
+            EvaluationCatalog::canonical_signature(&value).unwrap(),
             EvaluationCatalog::canonical_signature(&EvaluationRecord {
                 signature: "other".into(),
                 ..value
             })
+            .unwrap()
         );
     }
     #[test]
@@ -244,7 +245,7 @@ mod tests {
         let path = dir.join("routing.jsonl");
         let value = record();
         let content = serde_json::to_string(&EvaluationRecord {
-            signature: EvaluationCatalog::canonical_signature(&value),
+            signature: EvaluationCatalog::canonical_signature(&value).unwrap(),
             ..value
         })
         .unwrap();

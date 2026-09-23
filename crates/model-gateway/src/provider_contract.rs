@@ -727,7 +727,7 @@ static ROUTE_CACHE: OnceLock<Mutex<lru::LruCache<String, SnapshotRouteDecision>>
 fn route_cache() -> &'static Mutex<lru::LruCache<String, SnapshotRouteDecision>> {
     ROUTE_CACHE.get_or_init(|| {
         Mutex::new(lru::LruCache::new(
-            NonZeroUsize::new(ROUTE_CACHE_CAPACITY).expect("non-zero route cache capacity"),
+            NonZeroUsize::new(ROUTE_CACHE_CAPACITY).unwrap_or(NonZeroUsize::MIN),
         ))
     })
 }
@@ -762,17 +762,18 @@ pub fn select_route_snapshot_cached(
 ) -> Result<SnapshotRouteDecision, SnapshotError> {
     let key = route_cache_key(request, snapshot, overlay, catalog, attempt_id, now_ms);
     if let Some(key) = key.as_ref() {
-        if let Some(decision) = route_cache().lock().expect("route cache poisoned").get(key) {
-            return Ok(decision.clone());
+        if let Ok(mut cache) = route_cache().lock() {
+            if let Some(decision) = cache.get(key) {
+                return Ok(decision.clone());
+            }
         }
     }
 
     let decision = select_route_snapshot(request, snapshot, overlay, catalog, attempt_id, now_ms)?;
     if let Some(key) = key {
-        route_cache()
-            .lock()
-            .expect("route cache poisoned")
-            .put(key, decision.clone());
+        if let Ok(mut cache) = route_cache().lock() {
+            cache.put(key, decision.clone());
+        }
     }
     Ok(decision)
 }
@@ -1148,8 +1149,8 @@ impl RunTrace {
     }
 
     /// Serializes to deterministic JSON.
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).expect("RunTrace is serializable")
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 }
 
@@ -1419,7 +1420,7 @@ mod tests {
         trace.add_field("api_key", "secret123");
         trace.add_field("another_token", "tok_abc");
 
-        let json = trace.to_json();
+        let json = trace.to_json().expect("trace serializes");
         assert!(json.contains("safe_field"));
         assert!(!json.contains("api_key"));
         assert!(!json.contains("another_token"));

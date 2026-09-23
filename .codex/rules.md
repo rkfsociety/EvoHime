@@ -14,7 +14,7 @@
   затем обновляй устаревшую запись памяти.
 - Перед изменениями сохраняй пользовательские dirty-изменения и соблюдай
   правила task-only commit из `AGENTS.md`.
-- Production-код `evohime-core` не должен использовать `unwrap`, `expect` или
-  `panic`; это закреплено crate-level Clippy policy в
-  `crates/evohime-core/src/lib.rs`. Тестовые fixtures могут использовать эти
-  вызовы для проверки невозможных входов.
+- Production Rust targets во всём workspace не должны использовать `unwrap`,
+  `expect` или `panic`; crate roots закрепляют это через
+  `cfg_attr(not(test), deny(...))`. Build scripts возвращают ошибки через
+  `Result`. Внутренние и интеграционные тесты могут использовать эти вызовы.

@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Context Budget Manager (план 01).
 //!
 //! Владелец состояния и политики — Rust Core. Этот crate содержит контракты и

@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 pub mod config;
 pub mod provider_contract;
 pub mod providers;
@@ -108,6 +112,7 @@ fn classify_failure(error: &ProviderError) -> FailureCategory {
 /// Entry point for chat completions.
 pub struct ModelGateway {
     default_route: String,
+    default_provider: Arc<dyn ModelProvider>,
     routes: HashMap<String, Arc<dyn ModelProvider>>,
     route_preflight: Option<Arc<dyn RoutePreflight>>,
 }
@@ -316,13 +321,24 @@ pub async fn fetch_available_models(
 
 impl ModelGateway {
     pub fn from_config(config: &ModelGatewayConfig) -> Result<Self, ProviderError> {
+        if !config.routes.contains_key(&config.default_route) {
+            return Err(ProviderError::Config(format!(
+                "default model route '{}' not configured",
+                config.default_route
+            )));
+        }
         let mut routes = HashMap::new();
         for (name, route_config) in &config.routes {
             routes.insert(name.clone(), build_provider(route_config)?);
         }
 
+        let default_provider = routes
+            .get(&config.default_route)
+            .cloned()
+            .ok_or_else(|| ProviderError::Config("default model route unavailable".into()))?;
         Ok(Self {
             default_route: config.default_route.clone(),
+            default_provider,
             routes,
             route_preflight: None,
         })
@@ -331,6 +347,7 @@ impl ModelGateway {
     pub fn from_provider(provider: Arc<dyn ModelProvider>) -> Self {
         Self {
             default_route: "default".to_string(),
+            default_provider: provider.clone(),
             routes: HashMap::from([("default".to_string(), provider)]),
             route_preflight: None,
         }
@@ -339,12 +356,17 @@ impl ModelGateway {
     pub fn from_routes(
         default_route: impl Into<String>,
         routes: HashMap<String, Arc<dyn ModelProvider>>,
-    ) -> Self {
-        Self {
-            default_route: default_route.into(),
+    ) -> Result<Self, ProviderError> {
+        let default_route = default_route.into();
+        let default_provider = routes.get(&default_route).cloned().ok_or_else(|| {
+            ProviderError::Config(format!("unknown default route: {default_route}"))
+        })?;
+        Ok(Self {
+            default_route,
+            default_provider,
             routes,
             route_preflight: None,
-        }
+        })
     }
 
     pub fn with_route_preflight(mut self, preflight: Arc<dyn RoutePreflight>) -> Self {
@@ -356,20 +378,22 @@ impl ModelGateway {
         Self::from_config(&ModelGatewayConfig::from_env()?)
     }
 
-    pub fn config_response(config: &ModelGatewayConfig) -> ModelConfigResponse {
+    pub fn config_response(
+        config: &ModelGatewayConfig,
+    ) -> Result<ModelConfigResponse, ProviderError> {
         Self::config_response_with_models(config, &HashMap::new())
     }
 
     pub fn config_response_with_models(
         config: &ModelGatewayConfig,
         available_models: &HashMap<String, Vec<String>>,
-    ) -> ModelConfigResponse {
-        let default_route = config.routes.get(&config.default_route).unwrap_or_else(|| {
-            panic!(
+    ) -> Result<ModelConfigResponse, ProviderError> {
+        let default_route = config.routes.get(&config.default_route).ok_or_else(|| {
+            ProviderError::Config(format!(
                 "default model route '{}' not configured",
                 config.default_route
-            )
-        });
+            ))
+        })?;
         let mut routes: Vec<ModelRouteResponse> = config
             .routes
             .iter()
@@ -392,7 +416,7 @@ impl ModelGateway {
             .collect();
         routes.sort_by(|left, right| left.name.cmp(&right.name));
 
-        ModelConfigResponse {
+        Ok(ModelConfigResponse {
             provider: default_route.provider.as_str().to_string(),
             model: default_route.literouter.model.clone(),
             base_url: default_route.literouter.base_url.clone(),
@@ -403,11 +427,11 @@ impl ModelGateway {
                 .unwrap_or_default(),
             default_route: config.default_route.clone(),
             routes,
-        }
+        })
     }
 
     pub fn provider_kind(&self) -> ProviderKind {
-        self.default_provider().kind()
+        self.default_provider.kind()
     }
 
     pub fn route_provider_kind(&self, route: &str) -> Result<ProviderKind, ProviderError> {
@@ -419,7 +443,7 @@ impl ModelGateway {
     }
 
     pub fn model_name(&self) -> &str {
-        self.default_provider().model_name()
+        self.default_provider.model_name()
     }
 
     pub fn resolve_model_name(
@@ -436,7 +460,7 @@ impl ModelGateway {
     }
 
     pub fn base_url(&self) -> &str {
-        self.default_provider().base_url()
+        self.default_provider.base_url()
     }
 
     pub fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream {
@@ -884,15 +908,6 @@ impl ModelGateway {
             .get(route)
             .ok_or_else(|| ProviderError::Config(format!("unknown model route: {route}")))
     }
-
-    fn default_provider(&self) -> &Arc<dyn ModelProvider> {
-        self.routes.get(&self.default_route).unwrap_or_else(|| {
-            panic!(
-                "default model route '{}' not configured",
-                self.default_route
-            )
-        })
-    }
 }
 
 /// Test helper — builds a gateway backed by `MockProvider`.
@@ -976,7 +991,7 @@ mod tests {
                 )
             })
             .collect();
-        ModelGateway::from_routes("local", routes)
+        ModelGateway::from_routes("local", routes).expect("default route exists")
     }
 
     struct RejectingPreflight;

@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Canonical Receipt v1 contract.  This crate deliberately exposes only typed
 //! construction and bounded verification; runtime orchestration belongs to
 //! later receipt stages.

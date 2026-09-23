@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Platform-neutral Core protocol client used by the Windows transport.
 //!
 //! Keeping framing, authentication and command envelopes independent from the

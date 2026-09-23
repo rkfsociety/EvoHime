@@ -73,12 +73,17 @@ impl ModelProvider for MockProvider {
         _messages: &[ChatMessage],
         _tools: &[ToolSpec],
     ) -> ChatFuture {
-        if let Some(result) = self
-            .tool_call_sequence
-            .lock()
-            .expect("tool call sequence")
-            .pop_front()
-        {
+        let sequence_result = match self.tool_call_sequence.lock() {
+            Ok(mut sequence) => sequence.pop_front(),
+            Err(_) => {
+                return Box::pin(async {
+                    Err(crate::providers::ProviderError::Stream(
+                        "mock tool call sequence lock is poisoned".into(),
+                    ))
+                });
+            }
+        };
+        if let Some(result) = sequence_result {
             return Box::pin(async move { Ok(result) });
         }
         let content = self.chunks.join("");

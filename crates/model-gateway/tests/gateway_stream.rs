@@ -48,7 +48,8 @@ async fn gateway_streams_tokens_from_named_route() {
                 )) as Arc<dyn evohime_model_gateway::providers::ModelProvider>,
             ),
         ]),
-    );
+    )
+    .expect("default route exists");
 
     let mut stream = gateway
         .stream_chat_for_route("planner", &[ChatMessage::text(ChatRole::User, "ping")])
@@ -87,7 +88,7 @@ fn config_response_lists_routes() {
         ]),
     };
 
-    let response = ModelGateway::config_response(&config);
+    let response = ModelGateway::config_response(&config).unwrap();
 
     assert_eq!(response.default_route, "default");
     assert_eq!(response.routes.len(), 2);
@@ -116,7 +117,7 @@ fn config_response_uses_provider_model_catalog() {
         ],
     )]);
 
-    let response = ModelGateway::config_response_with_models(&config, &available_models);
+    let response = ModelGateway::config_response_with_models(&config, &available_models).unwrap();
 
     assert_eq!(response.available_models, available_models["default"]);
     assert_eq!(

@@ -78,16 +78,15 @@ fn result(name: &str, value: Value, output: String, kind: &str) -> Result<ToolRe
         "implementation_revision": "developer-utilities-v1",
         "execution_kind": kind,
     });
+    let Some(object) = structured.as_object_mut() else {
+        return Err(ToolError::Execution(
+            "utility metadata is not an object".into(),
+        ));
+    };
     if let Value::Object(fields) = value {
-        structured
-            .as_object_mut()
-            .expect("utility metadata is an object")
-            .extend(fields);
+        object.extend(fields);
     } else {
-        structured
-            .as_object_mut()
-            .expect("utility metadata is an object")
-            .insert("value".into(), value);
+        object.insert("value".into(), value);
     }
     Ok(ToolResult { output, structured })
 }

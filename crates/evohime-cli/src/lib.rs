@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Stable, redaction-aware contract shared by the `eva` headless client.
 
 pub use evohime_cli_protocol as protocol;

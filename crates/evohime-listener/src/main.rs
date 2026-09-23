@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 #[cfg(windows)]
 use evohime_listener::{
     backoff, data_dir, engine::EngineUnavailable, tools_dir, EngineNotice, ListenerRuntime,
@@ -588,7 +592,9 @@ fn now_ms() -> u64 {
 #[cfg(windows)]
 fn log_error(error: &str) {
     let path = data_dir().join("logs").join("listener.jsonl");
-    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let line = serde_json::json!({"event":"listener.connection_failed","code":"core_unavailable","error":error});
     let _ = std::fs::OpenOptions::new()
         .create(true)

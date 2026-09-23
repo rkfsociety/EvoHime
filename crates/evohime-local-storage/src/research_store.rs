@@ -149,7 +149,10 @@ impl ResearchEvidenceSql {
                 record.redacted_excerpt,
                 record.source_hash,
                 record.fetched_at,
-                i64::try_from(record.ttl_seconds).expect("bounded TTL fits SQLite integer"),
+                i64::try_from(record.ttl_seconds).map_err(|_| ResearchEvidenceError::Limit {
+                    field: "ttl_seconds",
+                    max: MAX_TTL_SECONDS,
+                })?,
                 record.provenance_link,
             ],
         )?;

@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 use std::path::PathBuf;

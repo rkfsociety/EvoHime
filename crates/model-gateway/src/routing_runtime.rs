@@ -115,8 +115,8 @@ impl RoutingTelemetry {
         }
     }
 
-    pub fn to_deterministic_json(&self) -> String {
-        serde_json::to_string(self).expect("RoutingTelemetry is serializable")
+    pub fn to_deterministic_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 
     pub fn insert_field(&mut self, name: impl Into<String>, value: impl Into<String>) {
@@ -436,6 +436,7 @@ mod tests {
         assert!(!runtime
             .telemetry()
             .to_deterministic_json()
+            .expect("telemetry serializes")
             .contains("api_key"));
     }
 
@@ -523,7 +524,10 @@ mod tests {
         runtime
             .add_telemetry_field("alpha", "first")
             .expect("field");
-        let json = runtime.telemetry().to_deterministic_json();
+        let json = runtime
+            .telemetry()
+            .to_deterministic_json()
+            .expect("telemetry serializes");
         assert!(json.find("alpha").unwrap() < json.find("zeta").unwrap());
         assert!(json.len() < 32 * 1024);
     }

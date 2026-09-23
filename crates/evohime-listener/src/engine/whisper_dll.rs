@@ -273,7 +273,7 @@ impl WhisperDllEngine {
             version: version_token(&runtime.manifest.version, rung),
             rung,
             models: runtime.models.clone(),
-            language: CString::new("auto").expect("literal has no interior nul"),
+            language: CString::new("auto").map_err(|_| EngineUnavailable::LoadFailed)?,
             _library: library,
         };
         engine.context = engine.open_context(&model)?;

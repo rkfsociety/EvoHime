@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Процесс листенера. Состояние и сырые PCM остаются в этом процессе; Core
 //! получает только bounded распознанные высказывания и typed state events.
 

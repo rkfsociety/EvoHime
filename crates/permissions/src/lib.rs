@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Permission checks, scoped overrides, and approval audit (roadmap P2).
 //!
 //! Global modes persist via `app_settings.permissions`.

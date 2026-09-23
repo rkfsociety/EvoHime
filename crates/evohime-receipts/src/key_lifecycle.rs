@@ -429,16 +429,14 @@ impl SecretSigner {
         Ed25519KeyPair::from_pkcs8(bytes).map_err(|_| KeyError::Corrupt)?;
         Ok(Self(Zeroizing::new(bytes.to_vec())))
     }
-    fn sign(&self, bytes: &[u8]) -> String {
-        let key = Ed25519KeyPair::from_pkcs8(&self.0).expect("validated PKCS#8 signer");
-        b64(key.sign(bytes).as_ref())
+    fn sign(&self, bytes: &[u8]) -> Result<String, KeyError> {
+        let key = Ed25519KeyPair::from_pkcs8(&self.0).map_err(|_| KeyError::Corrupt)?;
+        Ok(b64(key.sign(bytes).as_ref()))
     }
-    fn public(&self) -> Vec<u8> {
+    fn public(&self) -> Result<Vec<u8>, KeyError> {
         Ed25519KeyPair::from_pkcs8(&self.0)
-            .expect("validated PKCS#8 signer")
-            .public_key()
-            .as_ref()
-            .to_vec()
+            .map_err(|_| KeyError::Corrupt)
+            .map(|key| key.public_key().as_ref().to_vec())
     }
 }
 
@@ -493,7 +491,7 @@ impl ReceiptKeyManager {
         fs::create_dir_all(&self.root)?;
         harden_path(&self.root)?;
         let (signer, pkcs8) = SecretSigner::generate()?;
-        let public = signer.public();
+        let public = signer.public()?;
         let id = key_id(&public);
         let metadata = ActiveKeyMetadata {
             storage_version: 1,
@@ -518,7 +516,7 @@ impl ReceiptKeyManager {
             previous_transition_hash: None,
         };
         let mut genesis = genesis;
-        genesis.signature = signer.sign(&signed_bytes(&genesis)?);
+        genesis.signature = signer.sign(&signed_bytes(&genesis)?)?;
         atomic_write_lines(&self.history_path(), &[canonical_json(&genesis)?])?;
         atomic_write_json(
             &self.history_manifest_path(),
@@ -543,7 +541,7 @@ impl ReceiptKeyManager {
         fs::create_dir_all(&self.root)?;
         harden_path(&self.root)?;
         let (signer, pkcs8) = SecretSigner::generate()?;
-        let public = signer.public();
+        let public = signer.public()?;
         let id = key_id(&public);
         let metadata = ActiveKeyMetadata {
             storage_version: 1,
@@ -566,7 +564,7 @@ impl ReceiptKeyManager {
             signature: String::new(),
             previous_transition_hash: None,
         };
-        genesis.signature = signer.sign(&signed_bytes(&genesis)?);
+        genesis.signature = signer.sign(&signed_bytes(&genesis)?)?;
         let event_id = format!("key-{}", genesis.transition_id);
         commit_transition_and_audit(
             connection, &genesis, &event_id, "initial", "system", "ok", None,
@@ -597,7 +595,7 @@ impl ReceiptKeyManager {
             .map_err(|_| KeyError::Corrupt)?;
         let plain = Zeroizing::new(unprotect(&protected)?);
         let signer = SecretSigner::from_pkcs8(&plain)?;
-        if signer.public() != public {
+        if signer.public()? != public {
             return Err(KeyError::PublicMismatch);
         }
         Ok((metadata, signer))
@@ -606,7 +604,7 @@ impl ReceiptKeyManager {
     pub fn sign_payload(&self, payload: &serde_json::Value) -> Result<(String, String), KeyError> {
         let (metadata, signer) = self.load_signer()?;
         let bytes = crate::payload_bytes(payload).map_err(|_| KeyError::InvalidTransition)?;
-        Ok((metadata.key_id, signer.sign(&bytes)))
+        Ok((metadata.key_id, signer.sign(&bytes)?))
     }
 
     /// Signs the 32-byte SHA-256 payload digest used by Runtime Receipt v1.
@@ -622,7 +620,7 @@ impl ReceiptKeyManager {
         }
         let (metadata, signer) = self.load_signer()?;
         let bytes = hex::decode(payload_hash).map_err(|_| KeyError::InvalidTransition)?;
-        Ok((metadata.key_id, signer.sign(&bytes)))
+        Ok((metadata.key_id, signer.sign(&bytes)?))
     }
 
     fn new_storage_metadata(
@@ -827,7 +825,7 @@ impl ReceiptKeyManager {
             return Err(KeyError::RotationLimit);
         }
         let (new_signer, pkcs8) = SecretSigner::generate()?;
-        let new_public = new_signer.public();
+        let new_public = new_signer.public()?;
         let new_id = key_id(&new_public);
         let continuity = if reason == "compromise" {
             "compromised"
@@ -848,7 +846,7 @@ impl ReceiptKeyManager {
             signature: String::new(),
             previous_transition_hash: Some(transition_hash(previous)?),
         };
-        transition.signature = old_signer.sign(&signed_bytes(&transition)?);
+        transition.signature = old_signer.sign(&signed_bytes(&transition)?)?;
         let hash = transition_hash(&transition)?;
         let metadata = ActiveKeyMetadata {
             storage_version: 1,
@@ -925,7 +923,7 @@ impl ReceiptKeyManager {
             return Err(KeyError::RotationLimit);
         }
         let (new_signer, pkcs8) = SecretSigner::generate()?;
-        let new_public = new_signer.public();
+        let new_public = new_signer.public()?;
         let new_id = key_id(&new_public);
         let continuity = if reason == "compromise" {
             "compromised"
@@ -946,7 +944,7 @@ impl ReceiptKeyManager {
             signature: String::new(),
             previous_transition_hash: Some(transition_hash(previous)?),
         };
-        transition.signature = old_signer.sign(&signed_bytes(&transition)?);
+        transition.signature = old_signer.sign(&signed_bytes(&transition)?)?;
         let transition_hash_value = transition_hash(&transition)?;
         let protected = protect(&pkcs8)?;
         let metadata = ActiveKeyMetadata {
@@ -1029,7 +1027,7 @@ impl ReceiptKeyManager {
         });
         atomic_write_json(&self.root.join(RECOVERY_FORENSIC_FILE), &forensic)?;
         let (signer, pkcs8) = SecretSigner::generate()?;
-        let public = signer.public();
+        let public = signer.public()?;
         let new_id = key_id(&public);
         let mut transition = KeyTransition {
             transition_version: 1,
@@ -1045,7 +1043,7 @@ impl ReceiptKeyManager {
             signature: String::new(),
             previous_transition_hash: Some(transition_hash(previous)?),
         };
-        transition.signature = signer.sign(&signed_bytes(&transition)?);
+        transition.signature = signer.sign(&signed_bytes(&transition)?)?;
         let protected = protect(&pkcs8)?;
         let metadata = ActiveKeyMetadata {
             storage_version: 1,
@@ -1222,7 +1220,7 @@ impl ReceiptKeyManager {
             signed_by_key_id: active.key_id,
             signature: String::new(),
         };
-        checkpoint.signature = signer.sign(&checkpoint_signed_bytes(&checkpoint)?);
+        checkpoint.signature = signer.sign(&checkpoint_signed_bytes(&checkpoint)?)?;
         if canonical_json(&checkpoint)?.len() > 4096 {
             return Err(KeyError::RotationLimit);
         }
@@ -1461,7 +1459,7 @@ impl ReceiptKeyManager {
                     .map_err(|_| KeyError::RotationIncomplete)?;
                 let plain = Zeroizing::new(unprotect(&protected)?);
                 let signer = SecretSigner::from_pkcs8(&plain)?;
-                if signer.public() != public {
+                if signer.public()? != public {
                     return Err(KeyError::PublicMismatch);
                 }
                 atomic_write_json(&self.active_path(), &pending)?;

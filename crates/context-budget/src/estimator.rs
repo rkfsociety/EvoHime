@@ -179,7 +179,7 @@ impl EstimateCache {
 
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            entries: LruCache::new(NonZeroUsize::new(capacity.max(1)).expect("non-zero cache")),
+            entries: LruCache::new(NonZeroUsize::new(capacity.max(1)).unwrap_or(NonZeroUsize::MIN)),
             hits: 0,
             misses: 0,
         }

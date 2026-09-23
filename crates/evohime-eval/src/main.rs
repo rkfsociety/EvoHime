@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -30,6 +34,8 @@ enum EvalError {
     Args(String),
     #[error("ошибка чтения {0}: {1}")]
     Io(String, String),
+    #[error("ошибка сериализации evaluation данных: {0}")]
+    Serialize(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,24 +178,28 @@ fn run(args: Vec<String>) -> Result<(), EvalError> {
             .to_string();
         let start = Instant::now();
         let result = execute(&fixture, &mode);
-        let verdict = result.unwrap_or_else(|reason| {
-            failed = true;
-            Verdict {
-                fixture_id: fixture.id.clone(),
-                category: category.clone(),
-                verdict: "fail",
-                reason: Some(reason),
-                fingerprint: fingerprint(&fixture, &mode),
-                duration_ms: start.elapsed().as_millis(),
-                redacted_trace: redacted_trace(&fixture),
+        let verdict = match result {
+            Ok(verdict) => verdict,
+            Err(reason) => {
+                failed = true;
+                Verdict {
+                    fixture_id: fixture.id.clone(),
+                    category: category.clone(),
+                    verdict: "fail",
+                    reason: Some(reason),
+                    fingerprint: fingerprint(&fixture, &mode)?,
+                    duration_ms: start.elapsed().as_millis(),
+                    redacted_trace: redacted_trace(&fixture)?,
+                }
             }
-        });
+        };
         if verbose {
             println!("{}: {}", verdict.fixture_id, verdict.verdict);
         }
         println!(
             "{}",
-            serde_json::to_string(&verdict).expect("verdict serializes")
+            serde_json::to_string(&verdict)
+                .map_err(|error| { EvalError::Serialize(error.to_string()) })?
         );
     }
     if failed {
@@ -409,7 +419,7 @@ fn execute(fixture: &Fixture, mode: &str) -> Result<Verdict, String> {
     {
         return Err("tool call name не может быть пустым".into());
     }
-    let trace = redacted_trace(fixture);
+    let trace = redacted_trace(fixture).map_err(|error| error.to_string())?;
     let bytes = serde_json::to_vec(&trace).map_err(|e| e.to_string())?;
     if bytes.len() as u64 > fixture.limits.max_trace_bytes {
         return Err("redacted trace превышает case limit".into());
@@ -419,20 +429,20 @@ fn execute(fixture: &Fixture, mode: &str) -> Result<Verdict, String> {
         category: "fixture".into(),
         verdict: "pass",
         reason: None,
-        fingerprint: fingerprint(fixture, mode),
+        fingerprint: fingerprint(fixture, mode).map_err(|error| error.to_string())?,
         duration_ms: 0,
         redacted_trace: trace,
     })
 }
 
-fn fingerprint(fixture: &Fixture, mode: &str) -> String {
+fn fingerprint(fixture: &Fixture, mode: &str) -> Result<String, EvalError> {
     let payload = serde_json::json!({"commit": option_env!("GITHUB_SHA").unwrap_or("local"), "fixture_version": fixture.fixture_version, "schema_version": fixture.schema_version, "tool_registry_version": "1", "model_provider_version": fixture.model_profile, "model_route": mode, "seed": 0, "temperature": 0, "prompt_version": "1", "runner_version": env!("CARGO_PKG_VERSION")});
-    hex::encode(Sha256::digest(
-        serde_json::to_vec(&payload).expect("fingerprint serializes"),
-    ))
+    let bytes =
+        serde_json::to_vec(&payload).map_err(|error| EvalError::Serialize(error.to_string()))?;
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
-fn redacted_trace(fixture: &Fixture) -> Value {
+fn redacted_trace(fixture: &Fixture) -> Result<Value, EvalError> {
     let mut map = Map::new();
     map.insert("fixture_id".into(), Value::String(fixture.id.clone()));
     map.insert(
@@ -456,10 +466,11 @@ fn redacted_trace(fixture: &Fixture) -> Value {
                 .required_tool_calls
                 .iter()
                 .map(|call| {
-                    let bytes = serde_json::to_vec(&call.args).expect("tool args serialize");
-                    Value::String(hex::encode(Sha256::digest(bytes)))
+                    serde_json::to_vec(&call.args)
+                        .map(|bytes| Value::String(hex::encode(Sha256::digest(bytes))))
+                        .map_err(|error| EvalError::Serialize(error.to_string()))
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
         ),
     );
     map.insert(
@@ -470,7 +481,7 @@ fn redacted_trace(fixture: &Fixture) -> Value {
         map.insert("source".into(), Value::String(source.clone()));
     }
     map.insert("prompt".into(), Value::String("[REDACTED]".into()));
-    Value::Object(map)
+    Ok(Value::Object(map))
 }
 
 mod hex {

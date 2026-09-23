@@ -47,7 +47,7 @@ pub(crate) fn signed_receipt(
         previous.as_deref(),
         result,
         refusal,
-    );
+    )?;
     crate::validate_payload_v1(&payload)?;
     let payload_bytes = crate::payload_bytes(&payload)?;
     let payload_hash = crate::sha256_hex(&payload_bytes);
@@ -61,8 +61,12 @@ pub(crate) fn signed_receipt(
     let envelope_bytes =
         canonicalize_json(&serde_json::to_vec(&envelope).map_err(|_| ReceiptError::InvalidJson)?)?;
     let hash = receipt_hash(&envelope)?;
-    let object = payload.as_object().unwrap();
-    tx.execute("INSERT INTO receipt_records(schema_version,receipt_id,action_id,receipt_kind,action_status,task_id,run_id,key_id,canonical_payload,canonical_envelope,receipt_hash,previous_receipt_hash,created_at_ms) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![object["receipt_id"].as_str(), request.action_id.to_string(), kind, status, request.task_id, request.run_id, key_id, payload_bytes, envelope_bytes, hash, previous, now_ms()])?;
+    let object = payload.as_object().ok_or(ReceiptError::InvalidJson)?;
+    let receipt_id = object
+        .get("receipt_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ReceiptError::InvalidJson)?;
+    tx.execute("INSERT INTO receipt_records(schema_version,receipt_id,action_id,receipt_kind,action_status,task_id,run_id,key_id,canonical_payload,canonical_envelope,receipt_hash,previous_receipt_hash,created_at_ms) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![receipt_id, request.action_id.to_string(), kind, status, request.task_id, request.run_id, key_id, payload_bytes, envelope_bytes, hash, previous, now_ms()])?;
     tx.execute("INSERT INTO receipt_chain_heads(key_id,receipt_hash,updated_at_ms) VALUES(?1,?2,?3) ON CONFLICT(key_id) DO UPDATE SET receipt_hash=excluded.receipt_hash,updated_at_ms=excluded.updated_at_ms", params![key_id, hash, now_ms()])?;
     increment_metric_tx(tx, "receipt_append_count", 1)?;
     let elapsed = append_started.elapsed().as_millis().min(i64::MAX as u128) as i64;

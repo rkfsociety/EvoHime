@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 use evohime_cli::{parse_args, ExitCode};
 
 #[cfg(windows)]

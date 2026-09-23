@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Канонический контракт model-request provenance (план 05).
 //!
 //! Этот crate намеренно не знает о SQLite, renderer или provider. Он содержит

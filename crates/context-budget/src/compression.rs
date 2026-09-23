@@ -510,12 +510,10 @@ impl<M: SummaryModel> Summarizer for BoundedSummarizer<M> {
             return Ok(self.fallback_summary(items, "summarizer model is unavailable"));
         }
         self.model_attempted = true;
-        let raw = match self
-            .model
-            .as_mut()
-            .expect("model present")
-            .summarize(items, &config)
-        {
+        let Some(model) = self.model.as_mut() else {
+            return Ok(self.fallback_summary(items, "summarizer model became unavailable"));
+        };
+        let raw = match model.summarize(items, &config) {
             Ok(raw) => raw,
             Err(error) => return Ok(self.fallback_summary(items, &error)),
         };

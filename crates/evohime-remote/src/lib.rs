@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Платформенно-независимый контракт удалённого control plane.
 //!
 //! Crate не открывает sockets и не владеет SQLite. Relay, Android и PC

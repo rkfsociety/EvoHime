@@ -265,11 +265,12 @@ impl ScheduleRecord {
             .base_backoff_ms
             .saturating_mul(multiplier)
             .min(MAX_BACKOFF_MS);
-        self.next_run_at_ms = Some(now_ms.saturating_add(delay));
+        let next_run_at_ms = now_ms.saturating_add(delay);
+        self.next_run_at_ms = Some(next_run_at_ms);
         self.monitor = MonitorState::Waiting;
         Ok(FailureDecision::Retry {
             attempt: self.attempts,
-            next_run_at_ms: self.next_run_at_ms.expect("set above"),
+            next_run_at_ms,
         })
     }
 

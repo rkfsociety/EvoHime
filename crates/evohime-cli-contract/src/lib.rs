@@ -1,3 +1,7 @@
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
+)]
 //! Versioned, dependency-light contract shared by the official `eva` client
 //! and the Core runtime.
 

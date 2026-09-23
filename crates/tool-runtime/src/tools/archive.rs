@@ -55,7 +55,14 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 
             // tar получает имя записи одинаково для файла и каталога:
             // рабочий каталог уже переставлен на родителя источника.
-            let source_name = source.file_name().unwrap().to_string_lossy().into_owned();
+            let source_name = source
+                .file_name()
+                .ok_or_else(|| ToolError::InvalidInput {
+                    tool: "archive".into(),
+                    message: "source path has no file name".into(),
+                })?
+                .to_string_lossy()
+                .into_owned();
             args.push(&source_name);
 
             let mut command = Command::new("tar");
