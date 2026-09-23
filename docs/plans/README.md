@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-09-21. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-09-23. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -38,13 +38,14 @@
 | 179 | [Core-owned Prompt Strategy Resolver](179-0-core-prompt-strategy-resolver.md) | active; исторический источник issue #157 |
 | 180 | [Core-owned A2A Bridge](180-0-core-a2a-bridge.md) | active; исторический источник issue #158 |
 | 181 | [Core-owned Sensitive Egress Guardrails](181-0-core-sensitive-egress-guardrails.md) | active; исторический источник issue #159 |
+| 183 | [Rust public API documentation](183-0-rust-public-api-documentation.md) | active; documentation coverage, examples and rustdoc gates |
 
-Незавершённые numbered plans: 173–181.
+Незавершённые numbered plans: 173–181, 183.
 
 Номера `149–172` и `182` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая работа
 получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `183`, текущий active catalog — `173–181`.
+зависимостей; следующий номер — `184`, текущий active catalog — `173–181, 183`.
 Номера issues в активных планах — исторические идентификаторы постановок и не
 являются текущим источником статуса или критерием закрытия.
 
