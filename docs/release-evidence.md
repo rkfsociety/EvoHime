@@ -36,6 +36,11 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 
 ### Rust public API documentation (2026-09-24)
 
+- На commit `36e0b31989ba025ef066da1653271a894d941cd3` Rust documentation
+  workflow [run 35929337091](https://github.com/rkfsociety/EvoHime/actions/runs/35929337091)
+  завершился `success`: прошли link/stale-reference gate, `cargo doc --workspace
+  --no-deps --locked`, strict library API gate с `-D missing_docs` и workspace
+  doc-tests.
 - Локально пройдены `cargo doc --workspace --no-deps --locked`,
   `cargo doc --workspace --lib --no-deps --locked` с `-D missing_docs`,
   `-D rustdoc::broken_intra_doc_links` и `-D rustdoc::invalid_html_tags`, а
@@ -43,8 +48,11 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
   всех workspace crates успешно (один существующий environment-dependent
   пример помечен ignored).
 - `pwsh -NoProfile -File scripts/documentation.tests.ps1` завершился `PASS`.
-  Изменения ещё не опубликованы, поэтому exact-commit GitHub CI — `UNAVAILABLE`
-  до push; после публикации результат будет проверен отдельно.
+- Изменение Rust doc-комментариев также активировало module router
+  [run 35929337023](https://github.com/rkfsociety/EvoHime/actions/runs/35929337023).
+  Router и запущенные им module workflows завершились `failure` на workspace
+  `cargo fmt --all -- --check`, до тестов, сборок и публикаций. Module releases
+  не выполнялись; этот formatter result не отменяет успешный rustdoc workflow.
 
 ### Current code baseline and live gates (2026-09-21)
 
