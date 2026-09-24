@@ -1,8 +1,8 @@
 use super::*;
 
 mod database_pool;
-use database_pool::PreparedDatabasePool;
 pub(crate) use database_pool::PreparedDatabaseLease;
+use database_pool::PreparedDatabasePool;
 
 pub(crate) const EVENT_JOURNAL_DATABASE_POOL_SIZE: usize = 4;
 

@@ -199,13 +199,10 @@ mod tests {
         }
 
         let primary = journal.database.lock().await;
-        let replay = tokio::time::timeout(
-            std::time::Duration::from_secs(1),
-            journal.replay(0, 10),
-        )
-        .await
-        .expect("pooled read does not wait for the primary mutex")
-        .expect("replay succeeds");
+        let replay = tokio::time::timeout(std::time::Duration::from_secs(1), journal.replay(0, 10))
+            .await
+            .expect("pooled read does not wait for the primary mutex")
+            .expect("replay succeeds");
         assert_eq!(replay.len(), 1);
         assert_eq!(replay[0].event_type, "task.started");
         drop(primary);

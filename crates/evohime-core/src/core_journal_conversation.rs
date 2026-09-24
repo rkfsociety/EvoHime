@@ -82,9 +82,9 @@ impl EventJournal {
         limit: usize,
     ) -> Result<evohime_local_storage::domains::audit::ConversationEventPage, StorageError> {
         let lease = self.checkout_read_database()?;
-        let database = lease.database().ok_or_else(|| {
-            StorageError::InvalidInput("journal read lease is empty".into())
-        })?;
+        let database = lease
+            .database()
+            .ok_or_else(|| StorageError::InvalidInput("journal read lease is empty".into()))?;
         Ok(evohime_local_storage::domains::audit::history_after(
             database.connection(),
             conversation_id,
@@ -212,9 +212,9 @@ impl EventJournal {
         limit: usize,
     ) -> Result<evohime_local_storage::domains::audit::ConversationEventPage, StorageError> {
         let lease = self.checkout_read_database()?;
-        let database = lease.database().ok_or_else(|| {
-            StorageError::InvalidInput("journal read lease is empty".into())
-        })?;
+        let database = lease
+            .database()
+            .ok_or_else(|| StorageError::InvalidInput("journal read lease is empty".into()))?;
         Ok(evohime_local_storage::domains::audit::history_before(
             database.connection(),
             conversation_id,

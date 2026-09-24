@@ -449,9 +449,9 @@ impl EventJournal {
         limit: usize,
     ) -> Result<Vec<EventRecord>, StorageError> {
         let lease = self.checkout_read_database()?;
-        let database = lease.database().ok_or_else(|| {
-            StorageError::InvalidInput("journal read lease is empty".into())
-        })?;
+        let database = lease
+            .database()
+            .ok_or_else(|| StorageError::InvalidInput("journal read lease is empty".into()))?;
         database.read_events_after(after_sequence, limit)
     }
 
@@ -482,9 +482,9 @@ impl EventJournal {
         const MAX_DURABLE_REPLAY_EVENTS: usize = 512;
         let records = {
             let lease = self.checkout_read_database()?;
-            let database = lease.database().ok_or_else(|| {
-                StorageError::InvalidInput("journal read lease is empty".into())
-            })?;
+            let database = lease
+                .database()
+                .ok_or_else(|| StorageError::InvalidInput("journal read lease is empty".into()))?;
             database.read_events_after(after_sequence, limit.min(MAX_DURABLE_REPLAY_EVENTS))?
         };
         let first_available_sequence = records.first().map(|record| record.sequence_id);
@@ -509,9 +509,9 @@ impl EventJournal {
     /// Returns [`StorageError`] if a read lease or query fails.
     pub async fn review_history(&self, limit: usize) -> Result<Vec<EventRecord>, StorageError> {
         let lease = self.checkout_read_database()?;
-        let database = lease.database().ok_or_else(|| {
-            StorageError::InvalidInput("journal read lease is empty".into())
-        })?;
+        let database = lease
+            .database()
+            .ok_or_else(|| StorageError::InvalidInput("journal read lease is empty".into()))?;
         database.read_review_events(limit)
     }
 

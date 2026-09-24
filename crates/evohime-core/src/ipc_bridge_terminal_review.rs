@@ -1280,29 +1280,33 @@ impl IpcBridge {
                 return analysis_kernel_result_error(&request.request_id, "duplicate_request");
             }
         }
-        let operation = match serde_json::from_value(serde_json::Value::String(
-            request.operation.clone(),
-        )) {
-            Ok(crate::analysis_kernel::KernelOperation::JsonParse) => {
-                crate::analysis_kernel::KernelOperation::JsonParse
-            }
-            Ok(crate::analysis_kernel::KernelOperation::JsonSelect) => {
-                crate::analysis_kernel::KernelOperation::JsonSelect
-            }
-            Ok(crate::analysis_kernel::KernelOperation::CsvSummary) => {
-                crate::analysis_kernel::KernelOperation::CsvSummary
-            }
-            Ok(crate::analysis_kernel::KernelOperation::ObjectPut) => {
-                crate::analysis_kernel::KernelOperation::ObjectPut
-            }
-            Ok(crate::analysis_kernel::KernelOperation::ArtifactRead) => {
-                crate::analysis_kernel::KernelOperation::ArtifactRead
-            }
-            Ok(crate::analysis_kernel::KernelOperation::ToolRequest) => {
-                crate::analysis_kernel::KernelOperation::ToolRequest
-            }
-            _ => return analysis_kernel_result_error(&request.request_id, "unsupported_operation"),
-        };
+        let operation =
+            match serde_json::from_value(serde_json::Value::String(request.operation.clone())) {
+                Ok(crate::analysis_kernel::KernelOperation::JsonParse) => {
+                    crate::analysis_kernel::KernelOperation::JsonParse
+                }
+                Ok(crate::analysis_kernel::KernelOperation::JsonSelect) => {
+                    crate::analysis_kernel::KernelOperation::JsonSelect
+                }
+                Ok(crate::analysis_kernel::KernelOperation::CsvSummary) => {
+                    crate::analysis_kernel::KernelOperation::CsvSummary
+                }
+                Ok(crate::analysis_kernel::KernelOperation::ObjectPut) => {
+                    crate::analysis_kernel::KernelOperation::ObjectPut
+                }
+                Ok(crate::analysis_kernel::KernelOperation::ArtifactRead) => {
+                    crate::analysis_kernel::KernelOperation::ArtifactRead
+                }
+                Ok(crate::analysis_kernel::KernelOperation::ToolRequest) => {
+                    crate::analysis_kernel::KernelOperation::ToolRequest
+                }
+                _ => {
+                    return analysis_kernel_result_error(
+                        &request.request_id,
+                        "unsupported_operation",
+                    )
+                }
+            };
         let host_request = crate::analysis_kernel::KernelHostRequestV1 {
             version: crate::analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
             request_id: request.request_id,

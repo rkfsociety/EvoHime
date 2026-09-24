@@ -28,7 +28,7 @@ pub enum EnvironmentScope {
     ConversationDefault,
 }
 impl EnvironmentScope {
-/// Returns the relative precedence of this scope.
+    /// Returns the relative precedence of this scope.
     pub fn precedence(self) -> u8 {
         match self {
             Self::Application => 0,
@@ -252,7 +252,7 @@ pub struct SqliteEnvironmentResolver<'a> {
     connection: &'a Connection,
 }
 impl<'a> SqliteEnvironmentResolver<'a> {
-/// Creates a profile and computes its canonical content hash.
+    /// Creates a profile and computes its canonical content hash.
     /// Creates a resolver over existing owner metadata.
     pub fn new(connection: &'a Connection) -> Self {
         Self { connection }
@@ -333,7 +333,7 @@ fn validate_profile(profile: &ExecutionEnvironmentProfile) -> Result<(), Environ
 }
 
 impl ExecutionEnvironmentProfile {
-/// Creates a profile and computes its canonical content hash.
+    /// Creates a profile and computes its canonical content hash.
     pub fn new(
         id_value: String,
         revision: u64,
@@ -494,7 +494,7 @@ pub fn effective_snapshot(
 }
 
 impl crate::EventJournal {
-/// Routes an idempotent profile command to the authoritative storage owner.
+    /// Routes an idempotent profile command to the authoritative storage owner.
     pub async fn execution_environment_profile_command(
         &self,
         command: EnvironmentProfileCommand,
