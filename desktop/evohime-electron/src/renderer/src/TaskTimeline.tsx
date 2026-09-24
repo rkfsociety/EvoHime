@@ -815,89 +815,6 @@ export function TaskTimeline({
 
       <div className="composer">
         <div className="composer__inner">
-          <div className="composer__box">
-            <div className="composer__prompt-row">
-              <ComposerIcon name="link" className="composer__prompt-icon" />
-              <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
-              <textarea
-                id="task-prompt"
-                ref={promptRef}
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    if (canStart) void start()
-                  }
-                }}
-                placeholder="Опиши задачу для агента…"
-                disabled={!connected || busy}
-                rows={1}
-              />
-              <button
-                type="button"
-                className={`composer__send${running ? ' composer__send--stop' : ''}`}
-                aria-label={running ? (stopRequested ? 'Остановка задачи' : 'Остановить задачу') : 'Запустить задачу'}
-                onClick={() => {
-                  if (running) void stop()
-                  else if (canStart) void start()
-                }}
-                disabled={running ? stopRequested || !connected : !canStart}
-              >
-                {running ? <span aria-hidden="true">■</span> : <ComposerIcon name="send" />}
-              </button>
-            </div>
-            <div className="composer__input-actions">
-              <input
-                ref={fileInputRef}
-                className="visually-hidden"
-                type="file"
-                multiple
-                tabIndex={-1}
-                aria-hidden="true"
-                onChange={(event) => {
-                  selectFiles(event.target.files)
-                  event.target.value = ''
-                }}
-              />
-              <button
-                type="button"
-                className="composer__action"
-                disabled={!connected || busy || !workspace}
-                title={!workspace ? 'Сначала выбери проект' : 'Прикрепить файлы из проекта'}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <ComposerIcon name="paperclip" />
-                <span>Файлы</span>
-              </button>
-              <button
-                type="button"
-                className={`composer__action${toolsMenuOpen ? ' composer__action--active' : ''}`}
-                disabled={!connected || busy}
-                aria-expanded={toolsMenuOpen}
-                title="Открыть режим доступа к инструментам"
-                onClick={() => setToolsMenuOpen((value) => !value)}
-              >
-                <ComposerIcon name="layers" />
-                <span>Инструменты</span>
-              </button>
-              <button
-                type="button"
-                className={`composer__action${webSearchEnabled ? ' composer__action--active' : ''}`}
-                disabled={!connected || busy}
-                aria-pressed={webSearchEnabled}
-                title="Попросить Core использовать веб-поиск для этого запроса"
-                onClick={() => setWebSearchEnabled((value) => !value)}
-              >
-                <ComposerIcon name="globe" />
-                <span>Веб-поиск</span>
-              </button>
-              <span className="composer__shortcut">
-                <kbd>Enter</kbd> — отправить · <kbd>Shift + Enter</kbd> — новая строка
-              </span>
-            </div>
-          </div>
-
           <div className="composer__controls" aria-label="Параметры задачи">
             <div className="composer__control-group composer__control-group--project" aria-label="Проект чата">
               <button
@@ -925,6 +842,11 @@ export function TaskTimeline({
                 ))}
               </select>
             </div>
+            {workspace !== null ? (
+              <div className="composer__repository">
+                <RepositoryBar workspace={workspace} refreshKey={finished ? entries.length : 0} />
+              </div>
+            ) : null}
             <span className="composer__divider" aria-hidden="true" />
             <div className="composer__control-group">
               <ComposerIcon name="lock" className="composer__control-icon" />
@@ -957,12 +879,71 @@ export function TaskTimeline({
               <ContextUsage events={taskEvents} />
             </div>
           </div>
-
-          {workspace !== null ? (
-            <div className="composer__repository">
-              <RepositoryBar workspace={workspace} refreshKey={finished ? entries.length : 0} />
+          <div className="composer__box">
+            <div className="composer__prompt-row">
+              <input
+                ref={fileInputRef}
+                className="visually-hidden"
+                type="file"
+                multiple
+                tabIndex={-1}
+                aria-hidden="true"
+                onChange={(event) => {
+                  selectFiles(event.target.files)
+                  event.target.value = ''
+                }}
+              />
+              <button
+                type="button"
+                className="composer__action composer__action--icon"
+                aria-label="Прикрепить файлы"
+                disabled={!connected || busy || !workspace}
+                title={!workspace ? 'Сначала выбери проект' : 'Прикрепить файлы из проекта'}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <ComposerIcon name="plus" />
+              </button>
+              <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
+              <textarea
+                id="task-prompt"
+                ref={promptRef}
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault()
+                    if (canStart) void start()
+                  }
+                }}
+                placeholder="Опиши задачу для агента…"
+                disabled={!connected || busy}
+                rows={1}
+              />
+              <button
+                type="button"
+                className={`composer__action composer__action--icon${webSearchEnabled ? ' composer__action--active' : ''}`}
+                disabled={!connected || busy}
+                aria-label="Веб-поиск"
+                aria-pressed={webSearchEnabled}
+                title="Попросить Core использовать веб-поиск для этого запроса"
+                onClick={() => setWebSearchEnabled((value) => !value)}
+              >
+                <ComposerIcon name="globe" />
+              </button>
+              <button
+                type="button"
+                className={`composer__send${running ? ' composer__send--stop' : ''}`}
+                aria-label={running ? (stopRequested ? 'Остановка задачи' : 'Остановить задачу') : 'Запустить задачу'}
+                onClick={() => {
+                  if (running) void stop()
+                  else if (canStart) void start()
+                }}
+                disabled={running ? stopRequested || !connected : !canStart}
+              >
+                {running ? <span aria-hidden="true">■</span> : <ComposerIcon name="send" />}
+              </button>
             </div>
-          ) : null}
+          </div>
 
           {attachments.length > 0 ? (
             <div className="composer__attachments" aria-label="Прикреплённые файлы">
@@ -984,9 +965,10 @@ export function TaskTimeline({
           {composerNotice ? <p className="composer__mode-hint" role="status">{composerNotice}</p> : null}
 
 
-          {!connected ? (
-            <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p>
-          ) : null}
+          <div className="composer__footer">
+            {!connected ? <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p> : <span />}
+            <span className="composer__shortcut"><kbd>Enter</kbd> — отправить · <kbd>Shift + Enter</kbd> — новая строка</span>
+          </div>
 
           {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}
         </div>
@@ -1016,7 +998,7 @@ function relativeWorkspacePath(workspace: string, filePath: string): string | nu
   return relative.length > 0 && !relative.split('/').includes('..') ? relative : null
 }
 
-type ComposerIconName = 'box' | 'folder' | 'globe' | 'layers' | 'link' | 'lock' | 'paperclip' | 'send'
+type ComposerIconName = 'box' | 'folder' | 'globe' | 'link' | 'lock' | 'plus' | 'send'
 
 function ComposerIcon({ name, className = '' }: { readonly name: ComposerIconName; readonly className?: string }): React.JSX.Element {
   const common = {
@@ -1037,14 +1019,12 @@ function ComposerIcon({ name, className = '' }: { readonly name: ComposerIconNam
       return <svg {...common}><path d="M3.5 6.5h6l2 2h9v9a2 2 0 0 1-2 2h-15v-13Z" /><path d="M3.5 10.5h17" /></svg>
     case 'globe':
       return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M3.7 12h16.6M12 3.5c2.2 2.3 3.2 5.1 3.2 8.5s-1 6.2-3.2 8.5c-2.2-2.3-3.2-5.1-3.2-8.5s1-6.2 3.2-8.5Z" /></svg>
-    case 'layers':
-      return <svg {...common}><path d="m12 3 8.5 4.5L12 12 3.5 7.5 12 3Z" /><path d="m4.5 12 7.5 4 7.5-4M4.5 16.5l7.5 4 7.5-4" /></svg>
     case 'link':
       return <svg {...common}><path d="M9 17H7a5 5 0 0 1 0-10h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8" /></svg>
     case 'lock':
       return <svg {...common}><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2" /></svg>
-    case 'paperclip':
-      return <svg {...common}><path d="m20.5 11.5-7.2 7.2a5 5 0 0 1-7.1-7.1l7.6-7.6a3.5 3.5 0 0 1 5 5l-7.6 7.6a2 2 0 1 1-2.8-2.8l7-7" /></svg>
+    case 'plus':
+      return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>
     case 'send':
       return <svg {...common}><path d="m21 3-7.2 18-3.1-7.7L3 10.2 21 3Z" /><path d="m21 3-10.3 10.3" /></svg>
   }

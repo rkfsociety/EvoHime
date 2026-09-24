@@ -453,7 +453,7 @@ describe('task timeline', () => {
       />
     )
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
-    expect(screen.getByRole('button', { name: 'Файлы' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Прикрепить файлы' }).hasAttribute('disabled')).toBe(true)
 
     view.rerender(
       <TaskTimeline
@@ -469,7 +469,7 @@ describe('task timeline', () => {
     )
 
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
-    expect(screen.getByRole('button', { name: 'Файлы' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Прикрепить файлы' }).hasAttribute('disabled')).toBe(false)
   })
 
   it('starts a standalone dialogue with an empty workspace path', async () => {
@@ -756,7 +756,7 @@ describe('task timeline', () => {
     selectedFilePath = 'C:\\work\\repo\\docs\\brief.md'
     const view = render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Инструменты' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Режим доступа' }))
     expect(screen.getByRole('menu', { name: 'Режим доступа агента' })).toBeTruthy()
     await userEvent.click(screen.getByRole('menuitemradio', { name: /Только чтение/ }))
     await waitFor(() => expect(calls.some((call) => call.command === 'core.setPermissionMode')).toBe(true))
