@@ -515,6 +515,7 @@ impl PermissionEngine {
     /// 3. session permission mode
     /// 4. matching policy `Allow`/`Ask`
     /// 5. global mode
+    ///
     /// Resolves a capability check using the path and command in `check`.
     pub async fn check_scoped(
         &self,
