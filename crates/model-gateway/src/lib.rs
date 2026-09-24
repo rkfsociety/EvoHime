@@ -1061,6 +1061,12 @@ mod tests {
     }
 
     fn gateway_with_routes(routes: Vec<(&str, &str)>) -> ModelGateway {
+        let default_route = routes
+            .iter()
+            .find(|(route_id, _)| *route_id == "local")
+            .or_else(|| routes.first())
+            .map(|(route_id, _)| *route_id)
+            .expect("at least one route exists");
         let routes = routes
             .into_iter()
             .map(|(route_id, model)| {
@@ -1071,7 +1077,7 @@ mod tests {
                 )
             })
             .collect();
-        ModelGateway::from_routes("local", routes).expect("default route exists")
+        ModelGateway::from_routes(default_route, routes).expect("default route exists")
     }
 
     struct RejectingPreflight;
