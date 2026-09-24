@@ -1,5 +1,15 @@
 use super::*;
 
+/// Core-owned identity and cursor for a task submitted in an existing chat.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationTaskContext {
+    /// Conversation whose completed messages may inform this task.
+    pub conversation_id: String,
+    /// Sequence of the current accepted user message; earlier messages only
+    /// are loaded into model context.
+    pub before_sequence: u64,
+}
+
 /// Запросы, которыми внутренние компоненты Core вызывают операции runtime и
 /// передают результат через одноразовый канал ответа. Этот тип не является
 /// транспортным IPC-сообщением: внешние клиенты используют версии протокола
@@ -16,6 +26,8 @@ pub enum CoreCommand {
         workspace_root: Option<PathBuf>,
         /// Подсказка для выбора модели/маршрута; runtime проверяет её сам.
         preferred_route_hint: Option<String>,
+        /// Conversation history scope for chat-submitted tasks.
+        conversation: Option<ConversationTaskContext>,
     },
     /// Останавливает выполняемую задачу по её идентификатору.
     StopTask {

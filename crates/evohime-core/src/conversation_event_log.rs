@@ -703,6 +703,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn model_history_contains_prior_user_and_assistant_messages_but_not_current_prompt() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = crate::EventJournal::open(directory.path().join("model-history.db")).unwrap();
+        let (first, _) = journal
+            .accept_conversation_message(
+                "conversation-model-history",
+                "workspace-1",
+                "task-1",
+                "client-1",
+                "earlier question",
+            )
+            .await
+            .unwrap();
+        journal
+            .record(&crate::CoreEvent::TaskCompleted {
+                task_id: first.task_id,
+                final_message: "earlier answer".into(),
+            })
+            .await
+            .unwrap();
+        let (current, _) = journal
+            .accept_conversation_message(
+                "conversation-model-history",
+                "workspace-1",
+                "task-2",
+                "client-2",
+                "current request",
+            )
+            .await
+            .unwrap();
+
+        let history = journal
+            .model_conversation_history_before("conversation-model-history", current.event.sequence)
+            .await
+            .unwrap();
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            history[0].role,
+            evohime_model_gateway::providers::ChatRole::User
+        );
+        assert_eq!(history[0].content, "earlier question");
+        assert_eq!(
+            history[1].role,
+            evohime_model_gateway::providers::ChatRole::Assistant
+        );
+        assert_eq!(history[1].content, "earlier answer");
+    }
+
+    #[tokio::test]
     async fn event_projection_bundle_rolls_back_and_recovers_after_injected_failure() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("conversation-atomic.db");

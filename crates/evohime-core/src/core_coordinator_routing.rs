@@ -7,6 +7,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             prompt,
             workspace_root,
             preferred_route_hint,
+            conversation,
         } => {
             let cancellation = CancellationToken::new();
             let run_id = format!("agent-{}", uuid::Uuid::new_v4());
@@ -73,6 +74,36 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
             }
             drop(state_guard);
+            let conversation_history = if let Some(conversation) = conversation {
+                let history = match journal.as_ref() {
+                    Some(journal) => {
+                        journal
+                            .model_conversation_history_before(
+                                &conversation.conversation_id,
+                                conversation.before_sequence,
+                            )
+                            .await
+                    }
+                    None => Err(StorageError::InvalidInput(
+                        "conversation journal is unavailable".into(),
+                    )),
+                };
+                match history {
+                    Ok(messages) => messages,
+                    Err(_) => {
+                        state.lock().await.tasks.remove(&task_id);
+                        let _ = events
+                            .send(CoreEvent::TaskFailed {
+                                task_id,
+                                error: "conversation history could not be loaded".into(),
+                            })
+                            .await;
+                        return;
+                    }
+                }
+            } else {
+                Vec::new()
+            };
             let _ = events
                 .send(CoreEvent::TaskStarted {
                     task_id: task_id.clone(),
@@ -298,11 +329,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     result = match executor.as_ref() {
                         Some(executor) => match timeout(
                             Duration::from_secs(task_timeout_secs),
-                            executor.execute_in_workspace_with_routing_hint(
+                            executor.execute_in_conversation(
                                 task_id.clone(),
                                 prompt.clone(),
                                 workspace_root.clone(),
-                                preferred_route_hint.clone(),
+                                ConversationExecutionContext {
+                                    preferred_route_hint: preferred_route_hint.clone(),
+                                    history: conversation_history.clone(),
+                                },
                                 cancellation.clone(),
                                 events.clone(),
                             ),

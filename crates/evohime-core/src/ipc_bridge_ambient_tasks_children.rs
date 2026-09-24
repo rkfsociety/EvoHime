@@ -201,6 +201,7 @@ impl IpcBridge {
                     return Ok(());
                 }
                 let mut should_dispatch = true;
+                let mut conversation_context = None;
                 if has_conversation {
                     let workspace_id = crate::task_memory::project_scope_id(&start.workspace_path);
                     let accepted = self
@@ -242,6 +243,10 @@ impl IpcBridge {
                                 return Ok(());
                             }
                         };
+                    conversation_context = Some(crate::ConversationTaskContext {
+                        conversation_id: start.conversation_id.clone(),
+                        before_sequence: acceptance.event.sequence,
+                    });
                     if let Some(coordinator) = &self.coordinator {
                         coordinator.notify_journalled(sequence.max(0) as u64);
                     }
@@ -281,6 +286,7 @@ impl IpcBridge {
                                     }
                                     _ => None,
                                 },
+                                conversation: conversation_context,
                             })
                             .await;
                         if has_conversation {

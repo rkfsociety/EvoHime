@@ -1832,6 +1832,16 @@ Authenticated IPC использует commands 197–198 и event 49 без и�
 Subscribe сначала возвращает catch-up page после `after_sequence`; дальнейшие
 typed live events идут существующим journal tail и дедуплицируются по event id.
 
+Для нового задания из существующего чата Core читает сообщения строго до
+sequence текущего принятого запроса: последние 40 durable `user_message_accepted`
+и `assistant_message_finalized`, суммарно не более 64 KiB. Текущий запрос
+добавляется отдельно последним user-сообщением; предыдущие реплики сохраняют
+свои роли и проходят через обычный context budget/compression. Tool/status/
+usage events и streaming deltas в историю модели не включаются. Ошибка чтения
+истории завершает задачу с ошибкой, а не запускает модель без запрошенного
+контекста. Codex CLI получает ту же ограниченную историю как сериализованный
+JSON conversation transcript перед текущим запросом.
+
 Electron main/preload только валидирует и маршрутизирует contract. Чистая
 `conversation-projection` обнаруживает gap/conflict, игнорирует exact duplicate,
 reconciliate-ит optimistic bubble только по `client_message_id`, агрегирует

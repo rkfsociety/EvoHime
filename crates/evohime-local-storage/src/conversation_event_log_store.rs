@@ -566,6 +566,50 @@ pub fn history_before(
     })
 }
 
+/// Reads only durable user and assistant messages before a conversation cursor.
+///
+/// The newest matching messages are returned in chronological order. This is
+/// intended for bounded model context assembly and deliberately excludes tool,
+/// usage, status, and streaming events.
+pub fn model_history_before(
+    connection: &Connection,
+    conversation_id: &str,
+    before_sequence: u64,
+    limit: usize,
+) -> Result<Vec<StoredConversationEvent>, ConversationStoreError> {
+    validate_id(conversation_id)?;
+    if before_sequence == 0 || limit == 0 || limit > MAX_PAGE_EVENTS {
+        return Err(ConversationStoreError::InvalidInput);
+    }
+    let (oldest_available, _) = conversation_range(connection, conversation_id)?;
+    if before_sequence <= oldest_available {
+        return Ok(Vec::new());
+    }
+    let mut statement = connection.prepare(
+        "SELECT conversation_id,event_id,sequence,timestamp_ms,kind,category,
+                authoritative_payload,renderer_payload,correlation_id,causation_id,task_id,run_id,turn_id,
+                client_message_id,persistence_class,sensitivity,schema_version
+         FROM conversation_log_events
+         WHERE conversation_id=?1 AND sequence<?2 AND sequence>=?3
+           AND persistence_class='durable'
+           AND kind IN ('user_message_accepted','assistant_message_finalized')
+         ORDER BY sequence DESC LIMIT ?4",
+    )?;
+    let mut events = statement
+        .query_map(
+            params![
+                conversation_id,
+                before_sequence as i64,
+                oldest_available as i64,
+                limit as i64
+            ],
+            map_event,
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    events.reverse();
+    Ok(events)
+}
+
 /// Advances the logical retention boundary after a durable compacted snapshot
 /// has been stored. Old rows remain as local audit material, but history APIs
 /// can no longer use them as replay state and report a typed expired cursor.

@@ -241,6 +241,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 prompt,
                 workspace_root: Some(workspace_root),
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
         {

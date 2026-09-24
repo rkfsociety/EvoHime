@@ -68,6 +68,7 @@ impl IpcBridge {
                                         prompt,
                                         workspace_root: Some(workspace_path.into()),
                                         preferred_route_hint: None,
+                                        conversation: None,
                                     })
                                     .await;
                             }

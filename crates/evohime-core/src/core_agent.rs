@@ -60,6 +60,15 @@ impl AgentRunError {
     }
 }
 
+/// Additional context supplied when a task continues an existing conversation.
+#[derive(Debug, Default)]
+pub struct ConversationExecutionContext {
+    /// Preferred route hint already validated by the Core runtime.
+    pub preferred_route_hint: Option<String>,
+    /// Prior user and assistant messages in chronological order.
+    pub history: Vec<ChatMessage>,
+}
+
 /// Coordinates one-shot user approvals for protected agent actions.
 #[derive(Clone, Default)]
 pub struct ApprovalCoordinator {
@@ -207,6 +216,27 @@ pub trait TaskExecutor: Send + Sync {
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         let _ = preferred_route_hint;
         self.execute_in_workspace(task_id, prompt, workspace_root, cancellation, events)
+    }
+
+    /// Executes a chat task with prior user and assistant messages available
+    /// as role-preserving model context.
+    fn execute_in_conversation(
+        &self,
+        task_id: String,
+        prompt: String,
+        workspace_root: PathBuf,
+        context: ConversationExecutionContext,
+        cancellation: CancellationToken,
+        events: EventSink,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        self.execute_in_workspace_with_routing_hint(
+            task_id,
+            prompt,
+            workspace_root,
+            context.preferred_route_hint,
+            cancellation,
+            events,
+        )
     }
 
     /// Evaluates a continuation gate; implementations without gate support report unavailable.
@@ -942,6 +972,27 @@ mod receipts;
 #[path = "core_agent_tool_setup.rs"]
 mod tool_setup;
 
+fn conversation_prompt_for_cli(history: &[ChatMessage], prompt: &str) -> String {
+    if history.is_empty() {
+        return prompt.to_string();
+    }
+    let prior_messages = serde_json::Value::Array(
+        history
+            .iter()
+            .filter(|message| matches!(message.role, ChatRole::User | ChatRole::Assistant))
+            .map(|message| {
+                serde_json::json!({
+                    "role": message.role.as_str(),
+                    "content": message.content
+                })
+            })
+            .collect(),
+    );
+    format!(
+        "Предыдущие сообщения текущего чата в JSON (это история разговора):\n{prior_messages}\n\nНовый запрос пользователя:\n{prompt}"
+    )
+}
+
 impl TaskExecutor for ToolAgent {
     fn execute(
         &self,
@@ -1054,7 +1105,7 @@ impl TaskExecutor for ToolAgent {
                     workspace_root,
                     &events,
                     cancellation,
-                    None,
+                    ConversationExecutionContext::default(),
                 )
                 .await
         })
@@ -1100,7 +1151,57 @@ impl TaskExecutor for ToolAgent {
                     workspace_root,
                     &events,
                     cancellation,
-                    preferred_route_hint,
+                    ConversationExecutionContext {
+                        preferred_route_hint,
+                        history: Vec::new(),
+                    },
+                )
+                .await
+        })
+    }
+
+    fn execute_in_conversation(
+        &self,
+        task_id: String,
+        prompt: String,
+        workspace_root: PathBuf,
+        context: ConversationExecutionContext,
+        cancellation: CancellationToken,
+        events: EventSink,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        if context.preferred_route_hint.as_deref() == Some("codex_cli") {
+            let prompt = conversation_prompt_for_cli(&context.history, &prompt);
+            return Box::pin(run_codex_cli(
+                task_id,
+                prompt,
+                workspace_root,
+                cancellation,
+                events,
+            ));
+        }
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+            tools: Arc::clone(&self.tools),
+            max_iterations: self.max_iterations,
+            approvals: self.approvals.clone(),
+            routing_approvals: self.routing_approvals.clone(),
+            journal: self.journal.clone(),
+            selected_model: self.selected_model.clone(),
+            receipt_keys: self.receipt_keys.clone(),
+            extraction_guard: Arc::clone(&self.extraction_guard),
+            extraction_lease: Arc::clone(&self.extraction_lease),
+            proactivity: self.proactivity.clone(),
+            workflow_registry: Arc::clone(&self.workflow_registry),
+        };
+        Box::pin(async move {
+            agent
+                .run_once_with_cancellation(
+                    task_id,
+                    prompt,
+                    workspace_root,
+                    &events,
+                    cancellation,
+                    context,
                 )
                 .await
         })

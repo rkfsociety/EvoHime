@@ -26,7 +26,7 @@ impl ToolAgent {
             workspace_root,
             events,
             CancellationToken::new(),
-            None,
+            ConversationExecutionContext::default(),
         )
         .await
     }
@@ -38,8 +38,12 @@ impl ToolAgent {
         workspace_root: impl Into<std::path::PathBuf>,
         events: &EventSink,
         cancellation: CancellationToken,
-        preferred_route: Option<String>,
+        execution_context: ConversationExecutionContext,
     ) -> Result<String, AgentRunError> {
+        let ConversationExecutionContext {
+            preferred_route_hint: preferred_route,
+            history: conversation_history,
+        } = execution_context;
         let task_id = task_id.into();
         let prompt = prompt.into();
         let task_uuid = match uuid::Uuid::parse_str(&task_id) {
@@ -144,12 +148,9 @@ impl ToolAgent {
             project_instruction_context,
             project_instruction_snapshot_hash
         );
-        let mut messages = vec![
-            ChatMessage::text(ChatRole::System, system_prompt.clone()),
-            ChatMessage::text(ChatRole::User, prompt),
-        ];
-
-        let user_prompt = messages[1].content.clone();
+        let user_prompt = prompt.clone();
+        let mut messages =
+            initial_agent_messages(system_prompt.clone(), prompt, conversation_history);
         let task_class = classify_routing_task(&user_prompt, &specs);
         let mut rag_validation: Option<(
             crate::workspace_rag::SearchResult,
@@ -1544,5 +1545,51 @@ impl ToolAgent {
             })
             .await;
         Ok(message)
+    }
+}
+
+fn initial_agent_messages(
+    system_prompt: String,
+    prompt: String,
+    conversation_history: Vec<ChatMessage>,
+) -> Vec<ChatMessage> {
+    let mut messages = Vec::with_capacity(conversation_history.len().saturating_add(2));
+    messages.push(ChatMessage::text(ChatRole::System, system_prompt));
+    messages.extend(conversation_history.into_iter().filter(|message| {
+        matches!(message.role, ChatRole::User | ChatRole::Assistant)
+            && !message.content.trim().is_empty()
+    }));
+    messages.push(ChatMessage::text(ChatRole::User, prompt));
+    messages
+}
+
+#[cfg(test)]
+mod conversation_history_tests {
+    use super::*;
+
+    #[test]
+    fn initial_messages_keep_history_roles_and_current_prompt_last() {
+        let messages = initial_agent_messages(
+            "system".into(),
+            "new question".into(),
+            vec![
+                ChatMessage::text(ChatRole::User, "old question"),
+                ChatMessage::text(ChatRole::Assistant, "old answer"),
+                ChatMessage::text(ChatRole::Tool, "must not be imported"),
+                ChatMessage::text(ChatRole::User, "  "),
+            ],
+        );
+        assert_eq!(
+            messages
+                .iter()
+                .map(|message| (message.role, message.content.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (ChatRole::System, "system"),
+                (ChatRole::User, "old question"),
+                (ChatRole::Assistant, "old answer"),
+                (ChatRole::User, "new question"),
+            ]
+        );
     }
 }

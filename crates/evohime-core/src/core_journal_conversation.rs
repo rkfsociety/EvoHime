@@ -1,5 +1,8 @@
 use super::*;
 
+const MAX_MODEL_HISTORY_MESSAGES: usize = 40;
+const MAX_MODEL_HISTORY_BYTES: usize = 64 * 1024;
+
 impl EventJournal {
     /// Очистка task-scoped scratchpad вместе с закреплениями задачи.
     pub async fn clear_task_scratchpad(&self, task_id: &str) -> Result<usize, StorageError> {
@@ -91,6 +94,57 @@ impl EventJournal {
             after_sequence,
             limit,
         )?)
+    }
+
+    /// Reads bounded prior user and assistant messages for a new model task.
+    ///
+    /// The current user message is excluded by the sequence cursor. Only
+    /// durable finalized messages are returned; transient deltas and internal
+    /// conversation events never enter model context.
+    pub async fn model_conversation_history_before(
+        &self,
+        conversation_id: &str,
+        before_sequence: u64,
+    ) -> Result<Vec<evohime_model_gateway::providers::ChatMessage>, StorageError> {
+        let lease = self.checkout_read_database()?;
+        let database = lease
+            .database()
+            .ok_or_else(|| StorageError::InvalidInput("journal read lease is empty".into()))?;
+        let events = evohime_local_storage::domains::audit::model_history_before(
+            database.connection(),
+            conversation_id,
+            before_sequence,
+            MAX_MODEL_HISTORY_MESSAGES,
+        )?;
+        let mut selected = Vec::new();
+        let mut total_bytes = 0usize;
+        for event in events.into_iter().rev() {
+            let role = match event.kind.as_str() {
+                "user_message_accepted" => evohime_model_gateway::providers::ChatRole::User,
+                "assistant_message_finalized" => {
+                    evohime_model_gateway::providers::ChatRole::Assistant
+                }
+                _ => continue,
+            };
+            let payload: serde_json::Value =
+                serde_json::from_slice(&event.authoritative_payload)
+                    .map_err(|error| StorageError::InvalidInput(error.to_string()))?;
+            let Some(content) = payload.get("content").and_then(serde_json::Value::as_str) else {
+                return Err(StorageError::InvalidInput(
+                    "conversation message content is missing".into(),
+                ));
+            };
+            let next_bytes = total_bytes.saturating_add(content.len());
+            if next_bytes > MAX_MODEL_HISTORY_BYTES {
+                break;
+            }
+            selected.push(evohime_model_gateway::providers::ChatMessage::text(
+                role, content,
+            ));
+            total_bytes = next_bytes;
+        }
+        selected.reverse();
+        Ok(selected)
     }
 
     /// Persists model-usage projections for the conversation bound to a task.

@@ -7,7 +7,8 @@ mod tests {
         DEFAULT_TASK_TIMEOUT_SECONDS,
     };
     use evohime_model_gateway::{
-        providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
+        providers::{mock::MockProvider, ChatMessage, ChatRole},
+        ChatResult, ModelGateway, NativeToolCall,
     };
     use evohime_tool_runtime::ToolRegistry;
     use futures_util::future::BoxFuture;
@@ -459,6 +460,7 @@ mod tests {
                 prompt: "list files".into(),
                 workspace_root: None,
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
             .expect("start dispatches");
@@ -522,6 +524,7 @@ mod tests {
                 prompt: "fail please".into(),
                 workspace_root: None,
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
             .expect("start dispatches");
@@ -580,6 +583,7 @@ mod tests {
                 prompt: "hello".into(),
                 workspace_root: None,
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
             .expect("start dispatches");
@@ -783,6 +787,7 @@ mod tests {
                 prompt: "wait".into(),
                 workspace_root: None,
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
             .expect("start dispatches");
@@ -948,6 +953,7 @@ mod tests {
                 prompt: "persist me".into(),
                 workspace_root: None,
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
             .expect("command dispatches");
@@ -967,6 +973,99 @@ mod tests {
             "event must be readable when its sequence is announced"
         );
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn coordinator_passes_prior_chat_history_to_task_executor() {
+        struct HistoryExecutor(tokio::sync::mpsc::UnboundedSender<Vec<ChatMessage>>);
+
+        impl TaskExecutor for HistoryExecutor {
+            fn execute(
+                &self,
+                _task_id: String,
+                _prompt: String,
+                _cancellation: CancellationToken,
+                _events: EventSink,
+            ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+                Box::pin(async { Ok("done".into()) })
+            }
+
+            fn execute_in_conversation(
+                &self,
+                _task_id: String,
+                _prompt: String,
+                _workspace_root: std::path::PathBuf,
+                context: crate::ConversationExecutionContext,
+                _cancellation: CancellationToken,
+                _events: EventSink,
+            ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+                let _ = self.0.send(context.history);
+                Box::pin(async { Ok("done".into()) })
+            }
+        }
+
+        let path = std::env::temp_dir().join(format!(
+            "evohime-core-chat-history-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (prior, _) = journal
+            .accept_conversation_message(
+                "conversation-history",
+                "workspace-1",
+                "task-prior",
+                "client-prior",
+                "earlier question",
+            )
+            .await
+            .expect("prior message is accepted");
+        journal
+            .record(&CoreEvent::TaskCompleted {
+                task_id: prior.task_id,
+                final_message: "earlier answer".into(),
+            })
+            .await
+            .expect("prior answer is persisted");
+        let (current, _) = journal
+            .accept_conversation_message(
+                "conversation-history",
+                "workspace-1",
+                "task-current",
+                "client-current",
+                "current request",
+            )
+            .await
+            .expect("current message is accepted");
+        let (history_tx, mut history_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(
+            8,
+            Some(Arc::new(HistoryExecutor(history_tx))),
+            journal,
+        );
+
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-current".into(),
+                prompt: "current request".into(),
+                workspace_root: None,
+                preferred_route_hint: None,
+                conversation: Some(crate::ConversationTaskContext {
+                    conversation_id: "conversation-history".into(),
+                    before_sequence: current.event.sequence,
+                }),
+            })
+            .await
+            .expect("task dispatches");
+
+        let history = tokio::time::timeout(std::time::Duration::from_secs(2), history_rx.recv())
+            .await
+            .expect("executor receives history")
+            .expect("history channel stays open");
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].role, ChatRole::User);
+        assert_eq!(history[0].content, "earlier question");
+        assert_eq!(history[1].role, ChatRole::Assistant);
+        assert_eq!(history[1].content, "earlier answer");
     }
 
     /// Regression: the workspace index status command must reach the
@@ -1153,6 +1252,7 @@ mod tests {
                 prompt: "persist lifecycle".into(),
                 workspace_root: None,
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
             .expect("start dispatches");
@@ -1259,6 +1359,7 @@ mod tests {
                 prompt: "flood".into(),
                 workspace_root: None,
                 preferred_route_hint: None,
+                conversation: None,
             })
             .await
             .expect("task dispatches");

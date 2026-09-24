@@ -32,6 +32,96 @@ fn message_payload(text: &str) -> Vec<u8> {
 }
 
 #[test]
+fn model_history_reads_only_durable_messages_before_the_current_cursor() {
+    let connection = Connection::open_in_memory().unwrap();
+    install_schema(&connection).unwrap();
+    let first_payload = message_payload("earlier question");
+    accept_message(
+        &connection,
+        "conversation-history",
+        "workspace-1",
+        "task-1",
+        "client-1",
+        &first_payload,
+        &first_payload,
+        &"1".repeat(64),
+        10,
+    )
+    .unwrap();
+    let answer = message_payload("earlier answer");
+    append_event(
+        &connection,
+        NewConversationEvent {
+            conversation_id: "conversation-history",
+            workspace_id: "workspace-1",
+            kind: "assistant_message_finalized",
+            category: "message",
+            authoritative_payload: &answer,
+            renderer_payload: &answer,
+            correlation_id: None,
+            causation_id: None,
+            task_id: Some("task-1"),
+            run_id: None,
+            turn_id: Some("task-1"),
+            client_message_id: None,
+            persistence_class: "durable",
+            sensitivity: "user_content",
+            timestamp_ms: 11,
+        },
+    )
+    .unwrap();
+    let usage = serde_json::to_vec(&serde_json::json!({"tokens": 5})).unwrap();
+    append_event(
+        &connection,
+        NewConversationEvent {
+            conversation_id: "conversation-history",
+            workspace_id: "workspace-1",
+            kind: "usage_snapshot",
+            category: "usage",
+            authoritative_payload: &usage,
+            renderer_payload: &usage,
+            correlation_id: None,
+            causation_id: None,
+            task_id: Some("task-1"),
+            run_id: None,
+            turn_id: Some("task-1"),
+            client_message_id: None,
+            persistence_class: "compactable",
+            sensitivity: "internal",
+            timestamp_ms: 12,
+        },
+    )
+    .unwrap();
+    let current = message_payload("current request");
+    let accepted = accept_message(
+        &connection,
+        "conversation-history",
+        "workspace-1",
+        "task-2",
+        "client-2",
+        &current,
+        &current,
+        &"2".repeat(64),
+        13,
+    )
+    .unwrap();
+
+    let history = model_history_before(
+        &connection,
+        "conversation-history",
+        accepted.event.sequence,
+        40,
+    )
+    .unwrap();
+
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].kind, "user_message_accepted");
+    assert_eq!(history[0].sequence, 1);
+    assert_eq!(history[1].kind, "assistant_message_finalized");
+    assert_eq!(history[1].sequence, 2);
+}
+
+#[test]
 fn accepts_messages_once_and_keeps_per_conversation_sequence() {
     let connection = Connection::open_in_memory().unwrap();
     install_schema(&connection).unwrap();

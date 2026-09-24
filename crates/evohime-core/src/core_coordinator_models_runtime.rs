@@ -79,7 +79,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         let prompt = format!("Code intent at {}:{}-{}: {}", marker.file_path, marker.range_start, marker.range_end, marker.text);
                         marker.status = crate::code_anchored_intent_markers::MarkerStatus::Proposed;
                         let command_tx = state.lock().await.command_tx.clone();
-                        command_tx.send(CoreCommand::StartTask { task_id: task_id.clone(), prompt, workspace_root: None, preferred_route_hint: None }).await.map_err(|_| "task_queue_closed".to_string())?;
+                        command_tx.send(CoreCommand::StartTask { task_id: task_id.clone(), prompt, workspace_root: None, preferred_route_hint: None, conversation: None }).await.map_err(|_| "task_queue_closed".to_string())?;
                         return serde_json::to_vec(&serde_json::json!({"status":"task_started","task_id":task_id,"marker_id":marker.marker_id,"redacted":true})).map_err(|_| "serialization_failed".to_string());
                     }
                     serde_json::to_vec(&serde_json::json!({"status":"candidates","count":markers.len(),"markers":markers.iter().map(|m|serde_json::json!({"marker_id":m.marker_id,"kind":m.kind,"range_start":m.range_start,"range_end":m.range_end,"revision":m.revision,"provenance":m.provenance})).collect::<Vec<_>>(),"redacted":true})).map_err(|_| "serialization_failed".to_string())
