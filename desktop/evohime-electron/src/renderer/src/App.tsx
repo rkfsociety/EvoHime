@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   ConnectionState,
@@ -96,6 +96,7 @@ export function App(): React.JSX.Element {
   const [view, setView] = useState<ViewId>('chat')
   const [workspace, setWorkspace] = useState<string | null>(null)
   const [chatId, setChatId] = useState<string | null>(null)
+  const workspaceRef = useRef(workspace)
   // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
   const [chatRevision, setChatRevision] = useState(0)
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
@@ -113,6 +114,16 @@ export function App(): React.JSX.Element {
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
 
   const api = useShellApi()
+
+  useEffect(() => {
+    workspaceRef.current = workspace
+  }, [workspace])
+
+  const changeWorkspace = useCallback((nextWorkspace: string | null) => {
+    if (!sameWorkspacePath(workspaceRef.current, nextWorkspace)) setChatId(null)
+    workspaceRef.current = nextWorkspace
+    setWorkspace(nextWorkspace)
+  }, [])
 
   useEffect(() => {
     if (!api) {
@@ -220,7 +231,7 @@ export function App(): React.JSX.Element {
             connection={connection}
             workspace={workspace}
             chatId={chatId}
-            onWorkspaceChange={setWorkspace}
+            onWorkspaceChange={changeWorkspace}
             onChatChange={(id) => {
               setChatId(id)
               // Starting or picking a chat means going back to the conversation.
@@ -333,7 +344,7 @@ export function App(): React.JSX.Element {
                 connection={connection}
                 events={events}
                 workspace={workspace}
-                onWorkspaceChange={setWorkspace}
+                onWorkspaceChange={changeWorkspace}
                 chatId={chatId}
                 onChatTouched={() => setChatRevision((value) => value + 1)}
                 onChatOpened={(id) => {
@@ -498,4 +509,8 @@ function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
       {view.label}
     </button>
   )
+}
+
+function sameWorkspacePath(left: string | null, right: string | null): boolean {
+  return left === right || (left !== null && right !== null && left.toLowerCase() === right.toLowerCase())
 }
