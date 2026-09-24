@@ -146,13 +146,15 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn database_path() -> PathBuf {
-        std::env::temp_dir().join(format!("evohime-prepared-pool-{}.db", std::process::id()))
+    fn database_path() -> (tempfile::TempDir, PathBuf) {
+        let directory = tempfile::tempdir().expect("unique temporary directory");
+        let path = directory.path().join("prepared-pool.db");
+        (directory, path)
     }
 
     #[test]
     fn reuses_connections_and_stays_bounded() {
-        let path = database_path();
+        let (_directory, path) = database_path();
         let _ = fs::remove_file(&path);
         let _database = LocalDatabase::open(&path).expect("database opens");
         let pool = PreparedDatabasePool::new(&path).expect("pool opens");
@@ -188,7 +190,7 @@ mod tests {
 
     #[tokio::test]
     async fn journal_replay_uses_a_pooled_connection_while_primary_connection_is_locked() {
-        let path = database_path();
+        let (_directory, path) = database_path();
         let _ = fs::remove_file(&path);
         let journal = crate::EventJournal::open(&path).expect("journal opens");
         {
