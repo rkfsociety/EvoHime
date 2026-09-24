@@ -38,13 +38,19 @@
 | 179 | [Core-owned Prompt Strategy Resolver](179-0-core-prompt-strategy-resolver.md) | active; исторический источник issue #157 |
 | 180 | [Core-owned A2A Bridge](180-0-core-a2a-bridge.md) | active; исторический источник issue #158 |
 | 181 | [Core-owned Sensitive Egress Guardrails](181-0-core-sensitive-egress-guardrails.md) | active; исторический источник issue #159 |
+| 184 | [Core-owned Execution-Trace Evaluation](184-0-core-execution-trace-evaluation.md) | active; исторический источник issue #160 |
+| 185 | [Core-owned Behavioral Simulation Harness](185-0-core-behavioral-simulation-harness.md) | active; исторический источник issue #161; blocking dependency 184 |
+| 186 | [Core-owned Local Typed-Decision Fast Path](186-0-core-local-typed-decision-fast-path.md) | active; исторический источник issue #162 |
+| 187 | [Core-owned Windows Native Computer Use](187-0-core-windows-native-computer-use.md) | active; исторический источник issue #163; blocking dependencies 184–185 |
+| 188 | [Core-owned Research Experiment Tree](188-0-core-research-experiment-tree.md) | active; исторический источник issue #164 |
 
-Незавершённые numbered plans: 173–181.
+Незавершённые numbered plans: 173–181 и 184–188.
 
-Номера `149–172` и `182` являются закрытыми идентификаторами очереди.
+Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая работа
 получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `184`, текущий active catalog — `173–181`.
+зависимостей; следующий номер — `189`, текущий active catalog — `173–181` и
+`184–188`.
 Номера issues в активных планах — исторические идентификаторы постановок и не
 являются текущим источником статуса или критерием закрытия.
 
