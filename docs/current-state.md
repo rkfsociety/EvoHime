@@ -31,9 +31,9 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 `.github/workflows/rustdoc.yml`; точный post-push результат фиксируется в
 `release-evidence.md`.
 
-Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local подключение действий композера shell: выбор файлов текущего workspace, существующий выбор режима доступа через Core и флаг веб-поиска для следующего запроса. Композер собран в компактную тёмную панель с общей строкой проекта, состояния Git и параметров задачи. Новых IPC-контрактов и Core-owned state не добавлено.
+Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local подключение действий композера shell: выбор файлов текущего workspace, существующий выбор режима доступа через Core и флаг веб-поиска для следующего запроса. Композер собран в компактную тёмную панель с общей строкой проекта, состояния Git и параметров задачи; на узкой ширине строка переносится, индикатор контекста остаётся виден, а статус ветки нельзя случайно скрыть. Новых IPC-контрактов и Core-owned state не добавлено.
 
-Актуальные release markers берутся из `release-versions/`: `core 0.0.000369`, `cli 0.0.000084`, `ui-bundle 0.0.000113`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
+Актуальные release markers берутся из `release-versions/`: `core 0.0.000369`, `cli 0.0.000084`, `ui-bundle 0.0.000114`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
 
 Startup `EventJournal::open` выполняет миграции и idempotent schema installers
 один раз. Длительные workspace RAG index/search/vector операции используют

@@ -9,7 +9,8 @@ import { useShellApi } from './shell-api'
  *
  * It answers the question a user has right before sending a task: where am I
  * about to change things, and how much is already changed. Nothing here can be
- * acted on by mistake — it is read-only, and the row can be dismissed.
+ * acted on by mistake — it is read-only and remains visible while a workspace
+ * is selected so the target branch cannot be accidentally hidden.
  */
 
 export interface RepositoryBarProps {
@@ -24,7 +25,6 @@ export function RepositoryBar({
 }: RepositoryBarProps): React.JSX.Element | null {
   const api = useShellApi()
   const [repository, setRepository] = useState<RepositorySummary | null>(null)
-  const [hidden, setHidden] = useState(false)
 
   const load = useCallback(async () => {
     if (!api) return
@@ -37,7 +37,7 @@ export function RepositoryBar({
   }, [load, refreshKey])
 
   // A folder outside git has no branch to show, so the row stays out of the way.
-  if (hidden || repository === null) {
+  if (repository === null) {
     return null
   }
 
@@ -56,14 +56,6 @@ export function RepositoryBar({
       ) : (
         <span className="repobar__clean">без изменений</span>
       )}
-      <button
-        type="button"
-        className="repobar__close"
-        aria-label="Скрыть строку проекта"
-        onClick={() => setHidden(true)}
-      >
-        ✕
-      </button>
     </div>
   )
 }
