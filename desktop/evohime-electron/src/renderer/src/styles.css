@@ -1614,8 +1614,7 @@ body {
 .composer__control-group .permission-picker__button--read_only { color: var(--success); }
 .composer__control-group .model-picker__button:hover:not(:disabled),
 .composer__control-group .permission-picker__button:hover,
-.composer__control-group select:focus,
-.composer__project-action:hover:not(:disabled) {
+.composer__control-group select:focus {
   border-color: var(--accent, #9b8cff);
   box-shadow: 0 0 0 2px rgb(155 140 255 / 12%);
 }
@@ -1625,20 +1624,6 @@ body {
   color: var(--fg-faint);
   opacity: 0.62;
 }
-.composer__project-action {
-  display: grid;
-  place-items: center;
-  width: 29px;
-  height: 29px;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--accent, #9b8cff);
-  cursor: pointer;
-}
-.composer__project-action .composer__icon { width: 17px; height: 17px; }
-.composer__project-action:disabled { cursor: not-allowed; opacity: 0.55; }
 .composer__divider {
   width: 1px;
   height: 22px;

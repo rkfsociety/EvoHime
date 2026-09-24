@@ -34,6 +34,7 @@ const TIMELINE_WINDOW_OVERSCAN = 16
 const TIMELINE_ITEM_HEIGHT_ESTIMATE_PX = 72
 const TIMELINE_BOTTOM_THRESHOLD_PX = 48
 const MAX_COMPOSER_HEIGHT_PX = 200
+const NEW_PROJECT_OPTION_VALUE = 'evohime:new-project'
 const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
   hour: '2-digit',
   minute: '2-digit'
@@ -817,21 +818,19 @@ export function TaskTimeline({
         <div className="composer__inner">
           <div className="composer__controls" aria-label="Параметры задачи">
             <div className="composer__control-group composer__control-group--project" aria-label="Проект чата">
-              <button
-                type="button"
-                className="composer__project-action"
-                onClick={() => void pickWorkspace()}
-                disabled={busy || !onWorkspaceChange}
-                aria-label="Выбрать / создать проект"
-                title="Выбрать / создать проект"
-              >
-                <ComposerIcon name="folder" />
-              </button>
+              <ComposerIcon name="folder" className="composer__control-icon" />
               <span className="composer__control-label">Проект</span>
               <select
                 aria-label="Проект"
                 value={workspace ?? ''}
-                onChange={(event) => void changeWorkspace(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value
+                  if (value === NEW_PROJECT_OPTION_VALUE) {
+                    void pickWorkspace()
+                    return
+                  }
+                  void changeWorkspace(value)
+                }}
                 disabled={busy}
               >
                 <option value="">Без проекта</option>
@@ -840,6 +839,7 @@ export function TaskTimeline({
                     {basename(project.path)}{project.available ? '' : ' · недоступен'}
                   </option>
                 ))}
+                <option value={NEW_PROJECT_OPTION_VALUE} disabled={!onWorkspaceChange}>+ Новый проект…</option>
               </select>
             </div>
             {workspace !== null ? (
@@ -850,7 +850,6 @@ export function TaskTimeline({
             <span className="composer__divider" aria-hidden="true" />
             <div className="composer__control-group">
               <ComposerIcon name="lock" className="composer__control-icon" />
-              <span className="composer__control-label">Режим доступа</span>
               <PermissionModePicker
                 connection={connection}
                 workspace={workspace}
@@ -861,7 +860,6 @@ export function TaskTimeline({
             <span className="composer__divider" aria-hidden="true" />
             <div className="composer__control-group">
               <ComposerIcon name="link" className="composer__control-icon" />
-              <span className="composer__control-label">Провайдер</span>
               <ChatProviderPicker
                 connection={connection}
                 value={providerMode}
@@ -872,7 +870,6 @@ export function TaskTimeline({
             <span className="composer__divider" aria-hidden="true" />
             <div className="composer__control-group composer__control-group--model">
               <ComposerIcon name="box" className="composer__control-icon" />
-              <span className="composer__control-label">Модель</span>
               <ModelPicker connection={connection} events={events} provider={providerMode} use="agent" />
             </div>
             <div className="composer__usage">
