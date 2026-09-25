@@ -3250,3 +3250,23 @@ fingerprint/canonical-hash contracts сохранены. Core marker повыш�
 `0.0.000331 -> 0.0.000332`; 50 permissions tests, strict clippy,
 format/diff-check и Core+permissions check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
+
+Cloud provider profiles добавлены для OpenAI-compatible transports и
+Cloudflare Workers AI: discovery сохраняет границы размера/пагинации, профиль
+и модель выбираются явно, а routing preflight использует только подтверждённые
+capabilities. Core, shell-host и ui-bundle markers повышены соответственно
+`0.0.000373 -> 0.0.000374`, `0.0.000105 -> 0.0.000106` и
+`0.0.000116 -> 0.0.000117`. Локально прошли Core+model-gateway tests (965 и
+81 тест), strict clippy, fmt, Rustdoc gates, Electron protocol/typecheck/tests/
+bundle gates и security, license, release-evidence, documentation и module
+router gates. Для commit
+[`9c49ff6b4ce47cee7be8253da87d703726e931c6`](https://github.com/rkfsociety/EvoHime/commit/9c49ff6b4ce47cee7be8253da87d703726e931c6)
+успешно завершились полный [Windows package acceptance](https://github.com/rkfsociety/EvoHime/actions/runs/36086090323),
+[Rust documentation](https://github.com/rkfsociety/EvoHime/actions/runs/36086047609),
+[module router](https://github.com/rkfsociety/EvoHime/actions/runs/36086047603),
+[Core](https://github.com/rkfsociety/EvoHime/actions/runs/36086097413),
+[shell-host](https://github.com/rkfsociety/EvoHime/actions/runs/36086095706),
+[UI bundle](https://github.com/rkfsociety/EvoHime/actions/runs/36086094098) и
+[compatible release manifest](https://github.com/rkfsociety/EvoHime/actions/runs/36088178539)
+workflows. Опубликованы `module-core-v0.0.000374`,
+`module-shell-host-v0.0.000106` и `module-ui-bundle-v0.0.000117`.
