@@ -182,6 +182,13 @@ impl ApprovalCoordinator {
 
 /// Executes agent tasks with cancellation and event reporting.
 pub trait TaskExecutor: Send + Sync {
+    /// Reconciles durable auxiliary memory extraction work at process startup.
+    /// Executors without that subsystem have nothing to recover.
+    fn recover_memory_extractions(&self, events: EventSink) -> BoxFuture<'static, ()> {
+        let _ = events;
+        Box::pin(async {})
+    }
+
     /// Executes a task using the implementation's default workspace behavior.
     fn execute(
         &self,
@@ -261,8 +268,12 @@ pub trait TaskExecutor: Send + Sync {
     /// ни отменяемого хода, и притворяться, будто есть, значило бы сломать
     /// смысл `user_asserted` в policy. Исполнитель без модели ничего не
     /// делает — это не ошибка, а отсутствие извлекателя.
-    fn extract_ambient_memory(&self, episode_id: String) -> BoxFuture<'static, ()> {
-        let _ = episode_id;
+    fn extract_ambient_memory(
+        &self,
+        episode_id: String,
+        events: EventSink,
+    ) -> BoxFuture<'static, ()> {
+        let _ = (episode_id, events);
         Box::pin(async {})
     }
 }
@@ -877,6 +888,7 @@ pub(crate) struct ModelRequestEnvelopeInput<'a> {
     specs: &'a [ToolSpec],
     source_refs: &'a [evohime_model_provenance::SourceRef],
     route_snapshot_hash: &'a str,
+    request_kind: evohime_model_provenance::RequestKind,
 }
 
 pub(crate) fn model_request_envelope(
@@ -940,7 +952,7 @@ pub(crate) fn model_request_envelope(
         attempt: input.attempt,
         parent_request_id: input.parent_request_id,
         ledger_id: input.ledger.id.clone(),
-        request_kind: evohime_model_provenance::RequestKind::Agent,
+        request_kind: input.request_kind,
         provider: input.ledger.provider.clone(),
         model: input.ledger.model.clone(),
         route_snapshot_hash: input.route_snapshot_hash.to_owned(),
@@ -994,6 +1006,26 @@ fn conversation_prompt_for_cli(history: &[ChatMessage], prompt: &str) -> String 
 }
 
 impl TaskExecutor for ToolAgent {
+    fn recover_memory_extractions(&self, events: EventSink) -> BoxFuture<'static, ()> {
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+            tools: Arc::clone(&self.tools),
+            max_iterations: self.max_iterations,
+            approvals: self.approvals.clone(),
+            routing_approvals: self.routing_approvals.clone(),
+            journal: self.journal.clone(),
+            selected_model: self.selected_model.clone(),
+            receipt_keys: self.receipt_keys.clone(),
+            extraction_guard: Arc::clone(&self.extraction_guard),
+            extraction_lease: Arc::clone(&self.extraction_lease),
+            proactivity: self.proactivity.clone(),
+            workflow_registry: Arc::clone(&self.workflow_registry),
+        };
+        Box::pin(async move {
+            agent.recover_pending_memory_extractions(&events).await;
+        })
+    }
+
     fn execute(
         &self,
         task_id: String,
@@ -1207,7 +1239,11 @@ impl TaskExecutor for ToolAgent {
         })
     }
 
-    fn extract_ambient_memory(&self, episode_id: String) -> BoxFuture<'static, ()> {
+    fn extract_ambient_memory(
+        &self,
+        episode_id: String,
+        events: EventSink,
+    ) -> BoxFuture<'static, ()> {
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
             tools: Arc::clone(&self.tools),
@@ -1225,7 +1261,9 @@ impl TaskExecutor for ToolAgent {
             workflow_registry: Arc::clone(&self.workflow_registry),
         };
         Box::pin(async move {
-            agent.run_ambient_memory_extraction(&episode_id).await;
+            agent
+                .run_ambient_memory_extraction(&episode_id, &events)
+                .await;
         })
     }
 }

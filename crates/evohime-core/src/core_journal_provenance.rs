@@ -1,6 +1,48 @@
 use super::*;
 
 impl EventJournal {
+    /// Loads one persisted model request for bounded recovery decisions.
+    pub async fn model_request_record(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<evohime_local_storage::domains::receipts::ModelRequestRecord>, StorageError>
+    {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .get(request_id)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    /// Loads the latest request in a logical retry lineage.
+    pub async fn latest_model_request_for_logical_id(
+        &self,
+        logical_request_id: &str,
+    ) -> Result<Option<evohime_local_storage::domains::receipts::ModelRequestRecord>, StorageError>
+    {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .latest_for_logical_request(logical_request_id)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
+    /// Loads a retained response by its unique request link.
+    pub async fn model_response_for_request(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<evohime_local_storage::domains::receipts::ModelResponseRecord>, StorageError>
+    {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .get_response_for_request(request_id)
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
     /// Единая Core-owned граница provenance: envelope валидируется и
     /// сохраняется до разрешения provider dispatch. Renderer этот API не
     /// видит; он вызывается только из Core model-call orchestration.

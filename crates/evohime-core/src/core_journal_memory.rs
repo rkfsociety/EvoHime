@@ -1,6 +1,139 @@
 use super::*;
 
+async fn read_memory_extraction_dialog_field(
+    journal: &EventJournal,
+    task_id: &str,
+    event_type: &str,
+    variant: &str,
+    field: &str,
+) -> Result<Option<(i64, String)>, String> {
+    const MAX_SOURCE_BYTES: usize = 1024 * 1024;
+    const MAX_EVENT_BYTES: usize = MAX_SOURCE_BYTES + 4096;
+    let database = journal.database.lock().await;
+    let mut statement = database
+        .connection()
+        .prepare(
+            "SELECT sequence_id,
+                    CASE WHEN length(payload) <= ?3 THEN payload ELSE NULL END,
+                    length(payload)
+             FROM events
+             WHERE task_id = ?1 AND event_type = ?2
+             ORDER BY sequence_id ASC
+             LIMIT 2",
+        )
+        .map_err(|_| "task_source_unavailable".to_owned())?;
+    let mut rows = statement
+        .query_map((task_id, event_type, MAX_EVENT_BYTES as i64), |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<Vec<u8>>>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })
+        .map_err(|_| "task_source_unavailable".to_owned())?;
+    let Some(row) = rows.next() else {
+        return Ok(None);
+    };
+    let (sequence, payload, payload_len) = row.map_err(|_| "task_source_unavailable".to_owned())?;
+    if rows.next().is_some() {
+        return Err("task_source_ambiguous".to_owned());
+    }
+    if payload_len < 0 || payload_len as usize > MAX_EVENT_BYTES {
+        return Err("task_source_too_large".to_owned());
+    }
+    let Some(payload) = payload else {
+        return Err("task_source_too_large".to_owned());
+    };
+    let payload = serde_json::from_slice::<serde_json::Value>(&payload)
+        .map_err(|_| "task_source_incomplete".to_owned())?;
+    let value = payload
+        .get(variant)
+        .ok_or_else(|| "task_source_incomplete".to_owned())?;
+    if value.get("task_id").and_then(serde_json::Value::as_str) != Some(task_id) {
+        return Err("task_source_mismatch".to_owned());
+    }
+    let value = value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "task_source_incomplete".to_owned())?;
+    if value.len() > MAX_SOURCE_BYTES {
+        return Err("task_source_too_large".to_owned());
+    }
+    Ok(Some((sequence, value.to_owned())))
+}
+
 impl EventJournal {
+    /// Reconstructs one completed dialog source from its existing durable task
+    /// events. Source text is returned transiently and never copied into the
+    /// extraction lifecycle tables.
+    pub async fn memory_extraction_dialog_context(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<(String, String)>, String> {
+        let Some((started_at, prompt)) = read_memory_extraction_dialog_field(
+            self,
+            task_id,
+            "task.started",
+            "TaskStarted",
+            "prompt",
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let Some((completed_at, reply)) = read_memory_extraction_dialog_field(
+            self,
+            task_id,
+            "task.completed",
+            "TaskCompleted",
+            "final_message",
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        if started_at >= completed_at {
+            return Err("task_source_mismatch".to_owned());
+        }
+        Ok(Some((prompt, reply)))
+    }
+
+    /// Loads only the bounded prompt field, so recovery can apply eligibility
+    /// and budget gates before reading the assistant reply.
+    pub(crate) async fn memory_extraction_dialog_prompt(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<(i64, String)>, String> {
+        read_memory_extraction_dialog_field(self, task_id, "task.started", "TaskStarted", "prompt")
+            .await
+    }
+
+    /// Loads only the bounded final response after recovery eligibility passes.
+    pub(crate) async fn memory_extraction_dialog_reply(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<(i64, String)>, String> {
+        read_memory_extraction_dialog_field(
+            self,
+            task_id,
+            "task.completed",
+            "TaskCompleted",
+            "final_message",
+        )
+        .await
+    }
+
+    /// Reads one metadata-only extraction source record by its opaque id.
+    pub async fn get_memory_extraction_source(
+        &self,
+        source_id: &str,
+    ) -> Result<Option<evohime_local_storage::domains::memory::MemoryExtractionSourceRecord>, String>
+    {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::get_source(database.connection(), source_id)
+            .map_err(|error| error.to_string())
+    }
+
     /// Stores validated verification evidence for the supplied target and fingerprint.
     pub async fn save_verification_evidence(
         &self,
@@ -322,6 +455,134 @@ impl EventJournal {
             source_basis,
             idempotency_key,
             crate::task_memory::now_millis() as i64,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Captures a metadata-only source basis before extraction or reply completion.
+    pub async fn capture_memory_extraction_source(
+        &self,
+        input: &evohime_local_storage::domains::memory::CaptureSourceInput,
+    ) -> Result<evohime_local_storage::domains::memory::CaptureSourceOutcome, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::capture_source(database.connection(), input)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Acquires the persisted fencing generation for one extraction source.
+    pub async fn acquire_memory_extraction_source_lease(
+        &self,
+        source_id: &str,
+        owner: &str,
+        now_ms: i64,
+        lease_ms: i64,
+    ) -> Result<evohime_local_storage::domains::memory::SourceLeaseOutcome, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::acquire_source_lease(
+            database.connection(),
+            source_id,
+            owner,
+            now_ms,
+            lease_ms,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Links a durably recorded extractor request before provider dispatch.
+    pub async fn link_memory_extractor_request(
+        &self,
+        source_id: &str,
+        generation: i64,
+        logical_request_id: &str,
+        request_id: &str,
+        now_ms: i64,
+    ) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::link_extractor_request(
+            database.connection(),
+            source_id,
+            generation,
+            logical_request_id,
+            request_id,
+            now_ms,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Links a response only after its full provenance record was committed.
+    pub async fn link_memory_extractor_response(
+        &self,
+        source_id: &str,
+        generation: i64,
+        request_id: &str,
+        response_id: &str,
+        now_ms: i64,
+    ) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::link_extractor_response(
+            database.connection(),
+            source_id,
+            generation,
+            request_id,
+            response_id,
+            now_ms,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Atomically captures a governed candidate under the current source lease.
+    pub async fn capture_memory_extraction_candidate(
+        &self,
+        input: &evohime_local_storage::domains::memory::CaptureCandidateInput<'_>,
+    ) -> Result<evohime_local_storage::domains::memory::CaptureCandidateOutcome, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::capture_candidate(database.connection(), input)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Finalizes one candidate under the source and candidate-slot CAS rules.
+    pub async fn finalize_memory_extraction_candidate(
+        &self,
+        input: evohime_local_storage::domains::memory::FinalizeCandidateInput<'_>,
+    ) -> Result<evohime_local_storage::domains::memory::PublishOutcome, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::finalize_candidate(database.connection(), input)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Closes the source's current generation with a durable bounded outcome.
+    pub async fn finish_memory_extraction_source(
+        &self,
+        source_id: &str,
+        generation: i64,
+        target: evohime_local_storage::domains::memory::MemoryExtractionSourceState,
+        error_code: Option<&str>,
+        now_ms: i64,
+    ) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::finish_source(
+            database.connection(),
+            source_id,
+            generation,
+            target,
+            error_code,
+            now_ms,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Reads at most one bounded page of unfinished extraction sources.
+    pub async fn list_recoverable_memory_extraction_sources(
+        &self,
+        now_ms: i64,
+        limit: usize,
+    ) -> Result<Vec<evohime_local_storage::domains::memory::MemoryExtractionSourceRecord>, String>
+    {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::memory::list_recoverable_sources(
+            database.connection(),
+            now_ms,
+            limit,
         )
         .map_err(|error| error.to_string())
     }

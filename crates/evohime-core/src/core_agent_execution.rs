@@ -393,6 +393,8 @@ impl ToolAgent {
         let mut observability_sequence = 0_u64;
         let mut reroutes_used = 0_u32;
         let mut last_pre_compaction_checkpoint_iteration = None;
+        let mut primary_request_id: Option<String> = None;
+        let mut primary_response_id: Option<String> = None;
         let max_reroutes = 1_u32;
         let mut provenance_source_refs = project_instruction_refs;
         provenance_source_refs.extend(
@@ -529,6 +531,14 @@ impl ToolAgent {
                     estimated_input_tokens: assembled.ledger().estimated_prompt_tokens,
                 }) => result?,
             };
+            let _previous_request_id = std::mem::replace(
+                &mut primary_request_id,
+                provenance_result.request_id.clone(),
+            );
+            let _previous_response_id = std::mem::replace(
+                &mut primary_response_id,
+                provenance_result.response_id.clone(),
+            );
             if let Some(attempt_trace) = provenance_result.result.attempt_trace.as_ref() {
                 write_model_trace(
                     "routing.attempt_trace",
@@ -903,6 +913,18 @@ impl ToolAgent {
                     }
                 }
                 self.persist_lesson(&task_id, &context.workspace_root).await;
+                let extraction_source = self
+                    .capture_dialog_memory_source(
+                        &task_id,
+                        &context.workspace_root,
+                        &extraction_user_prompt,
+                        &final_message,
+                        primary_request_id
+                            .as_deref()
+                            .zip(primary_response_id.as_deref()),
+                        events,
+                    )
+                    .await;
                 let _ = events
                     .send(CoreEvent::TaskCompleted {
                         task_id: task_id.clone(),
@@ -913,9 +935,11 @@ impl ToolAgent {
                 // it adds nothing to the turn's latency and cannot fail it.
                 self.run_memory_extraction(
                     &task_id,
-                    &context.workspace_root,
+                    Some(&context.workspace_root),
                     &extraction_user_prompt,
                     &final_message,
+                    extraction_source,
+                    events,
                 )
                 .await;
                 return Ok(final_message);

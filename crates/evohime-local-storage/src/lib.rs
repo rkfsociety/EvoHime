@@ -294,7 +294,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 175;
+pub const SCHEMA_VERSION: u32 = 176;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,

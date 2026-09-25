@@ -646,7 +646,10 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             }
         }
         CoreCommand::ExtractAmbientMemory { episode_id } => {
-            let executor = state.lock().await.executor.clone();
+            let (executor, events) = {
+                let state = state.lock().await;
+                (state.executor.clone(), state.events.clone())
+            };
             let Some(executor) = executor else {
                 return;
             };
@@ -657,7 +660,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             };
             tokio::spawn(async move {
                 let _background_permit = background_permit;
-                executor.extract_ambient_memory(episode_id).await;
+                executor.extract_ambient_memory(episode_id, events).await;
             });
         }
         CoreCommand::StopTask { task_id } => {

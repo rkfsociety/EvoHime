@@ -113,7 +113,7 @@ impl LocalDatabase {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         memory_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-        memory_extraction_store::install_schema(&connection)?;
+        memory_extraction_store::install_current_schema(&connection)?;
         context_ledger_store::install_compaction_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         task_checkpoint::install_schema(&connection)?;

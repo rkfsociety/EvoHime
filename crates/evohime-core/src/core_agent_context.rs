@@ -470,6 +470,7 @@ impl ToolAgent {
                     specs,
                     source_refs,
                     route_snapshot_hash: &route_snapshot_hash,
+                    request_kind: evohime_model_provenance::RequestKind::Agent,
                 })
                 .map_err(AgentRunError::Internal)?;
                 let record = journal

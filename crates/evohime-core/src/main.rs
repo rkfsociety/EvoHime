@@ -352,6 +352,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .attach_routing_approvals(routing_approvals)
         .await;
     proactivity.attach_coordinator(coordinator.clone()).await;
+    if !coordinator.recover_memory_extractions().await {
+        tracing::warn!("memory extraction recovery could not acquire a background slot");
+    }
     let background_journal = journal.clone();
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
@@ -902,6 +905,18 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::TaskStopped { .. } => console_line!("\n\n■ Задача остановлена"),
         evohime_core::CoreEvent::EventPersistenceFailed { source, error } => console_line!(
             "\n⚠ Ошибка обязательной записи событий ({source}): {error}"
+        ),
+        evohime_core::CoreEvent::MemoryExtractionDiagnostic {
+            stage,
+            status,
+            reason_code,
+            ..
+        } => console_line!(
+            "memory.extraction {stage}: {status}{}",
+            reason_code
+                .as_deref()
+                .map(|code| format!(" ({code})"))
+                .unwrap_or_default()
         ),
         evohime_core::CoreEvent::ReviewProgress {
             review_id,

@@ -16,7 +16,7 @@
 ## Закрытые направления
 
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–174` и `183`
+и evidence в канонические документы. К закрытым относятся планы `01–175` и `183`
 (включая `144`); планы `127–130` закрыты как MVP-контуры с явно сохранёнными
 `unavailable` deployment/adapter gates. Их отсутствие из каталога не означает
 отсутствие контракта: он находится в `architecture.md` и `current-state.md`.
@@ -29,7 +29,6 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| 175 | [Memory Ingestion Integrity](175-0-memory-ingestion-integrity.md) | active; исторический источник issue #153 |
 | 176 | [Guided Capability Recipes](176-0-guided-capability-recipes.md) | active; guided layer over closed recipe/workflow contracts; исторический источник issue #154 |
 | 177 | [Core-owned Image Generation and Editing](177-0-core-image-generation-editing.md) | active; исторический источник issue #155 |
 | 178 | [Core-owned Local Model Adaptation](178-0-core-local-model-adaptation.md) | active; исторический источник issue #156 |
@@ -42,12 +41,12 @@
 | 187 | [Core-owned Windows Native Computer Use](187-0-core-windows-native-computer-use.md) | active; исторический источник issue #163; blocking dependencies 184–185 |
 | 188 | [Core-owned Research Experiment Tree](188-0-core-research-experiment-tree.md) | active; исторический источник issue #164 |
 
-Незавершённые numbered plans: 175–181 и 184–188.
+Незавершённые numbered plans: 176–181 и 184–188.
 
 Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая работа
 получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `189`, текущий active catalog — `175–181` и
+зависимостей; следующий номер — `189`, текущий active catalog — `176–181` и
 `184–188`.
 Номера issues в активных планах — исторические идентификаторы постановок и не
 являются текущим источником статуса или критерием закрытия.

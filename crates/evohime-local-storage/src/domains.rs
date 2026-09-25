@@ -9,7 +9,15 @@
 
 pub mod memory {
     //! Facade for durable memory records, candidate publication, and recall views.
-    pub use crate::memory_extraction_store::{publish_candidate, PublishOutcome};
+    pub use crate::memory_extraction_store::{
+        acquire_source_lease, candidate_basis_for, candidate_slot_for, capture_candidate,
+        capture_source, defer_expired_source_lease, finalize_candidate, finish_source, get_source,
+        link_extractor_request, link_extractor_response, list_recoverable_sources,
+        publish_candidate, CaptureCandidateInput, CaptureCandidateOutcome, CaptureSourceInput,
+        CaptureSourceOutcome, FinalizeCandidateInput, MemoryExtractionOrigin,
+        MemoryExtractionSourceRecord, MemoryExtractionSourceState, PublishOutcome,
+        SourceLeaseOutcome, MAX_EXTRACTION_DEPTH, MAX_RECOVERABLE_SOURCES,
+    };
     pub use crate::memory_store::{
         install_schema, InsertSessionNoteInput, MemoryExtractionFields, MemoryPrivacy,
         MemoryRecord, MemoryRecordInput, MemoryScope, MemoryStoreError, MemoryStoreSql,

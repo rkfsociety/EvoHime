@@ -2945,4 +2945,27 @@ pub enum CoreEvent {
         /// Durable marker separating future review history from older entries.
         marker_id: String,
     },
+    /// Publishes metadata-only progress for Core-owned memory extraction.
+    /// Source text, transcript content, prompts, credentials, and model output
+    /// are never part of this event.
+    MemoryExtractionDiagnostic {
+        /// Task or ambient episode associated with the source.
+        task_id: String,
+        /// Opaque identifier for a persisted extraction source, if captured.
+        source_id: Option<String>,
+        /// Bounded source class, such as `dialog` or `ambient`.
+        origin: String,
+        /// Bounded lifecycle phase.
+        stage: String,
+        /// Bounded lifecycle outcome.
+        status: String,
+        /// Stable reason code, when the phase needs explanation.
+        reason_code: Option<String>,
+        /// Number of sources left for bounded startup recovery.
+        backlog: u32,
+        /// Number of conflicts observed in the current extraction run.
+        conflict_count: u32,
+        /// One when this event records a suppressed reentrant attempt.
+        suppressed_reentry_count: u32,
+    },
 }

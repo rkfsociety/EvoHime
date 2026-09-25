@@ -27,6 +27,7 @@ impl EventJournal {
             | CoreEvent::TaskCompleted { task_id, .. }
             | CoreEvent::TaskFailed { task_id, .. }
             | CoreEvent::TaskStopped { task_id } => task_id,
+            CoreEvent::MemoryExtractionDiagnostic { task_id, .. } => task_id,
             CoreEvent::EventPersistenceFailed { .. } => "event-persistence",
             CoreEvent::ReviewProgress { review_id, .. } => review_id,
             CoreEvent::RevisionProgress { revision_id, .. } => revision_id,
@@ -116,6 +117,7 @@ impl EventJournal {
             CoreEvent::TaskCompleted { .. } => "task.completed",
             CoreEvent::TaskFailed { .. } => "task.failed",
             CoreEvent::TaskStopped { .. } => "task.stopped",
+            CoreEvent::MemoryExtractionDiagnostic { .. } => "memory.extraction",
             CoreEvent::EventPersistenceFailed { .. } => "event.persistence_failed",
             CoreEvent::ReviewProgress { .. } => "review.progress",
             CoreEvent::RevisionProgress { .. } => "revision.progress",
@@ -222,6 +224,7 @@ impl EventJournal {
             CoreEvent::WorkspaceBootstrapManifest { .. } => serialize_payload(event)?,
             CoreEvent::TeamCoordinationPolicies { .. } => serialize_payload(event)?,
             CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => serialize_payload(event)?,
+            CoreEvent::MemoryExtractionDiagnostic { .. } => serialize_payload(event)?,
             CoreEvent::ModelEditProtocolRegistry { .. } => serialize_payload(event)?,
             CoreEvent::RemoteConversationChannels { .. } => serialize_payload(event)?,
             CoreEvent::PromptCachePlanner { .. } => serialize_payload(event)?,

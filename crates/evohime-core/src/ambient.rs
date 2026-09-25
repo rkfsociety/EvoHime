@@ -895,6 +895,16 @@ impl crate::EventJournal {
             .map_err(|error| store_error_code(&error))
     }
 
+    /// Loads one retained ambient episode by its stable identifier.
+    pub async fn get_ambient_episode(
+        &self,
+        episode_id: &str,
+    ) -> Result<Option<AmbientEpisodeRecord>, AmbientErrorCode> {
+        let database = self.database.lock().await;
+        AmbientStoreSql::get_episode(database.connection(), episode_id)
+            .map_err(|error| store_error_code(&error))
+    }
+
     /// Lists utterances for one episode, bounded by `limit`.
     pub async fn list_ambient_utterances(
         &self,

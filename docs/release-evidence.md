@@ -3289,3 +3289,28 @@ The exact-commit [Windows acceptance](https://github.com/rkfsociety/EvoHime/acti
 workflows all succeeded. Published release tags point to that same commit:
 `module-core-v0.0.000375`, `module-shell-host-v0.0.000107`, and
 `module-ui-bundle-v0.0.000118`.
+
+## Memory Ingestion Integrity (plan 175)
+
+Memory extraction recovery and freshness were extended in additive schema v176.
+Core persists eligible source metadata before `TaskCompleted`, enforces typed
+origin/root/depth during capture and recovery, and routes restart reconciliation
+through the existing bounded coordinator hook. Candidate publication uses a
+stable slot plus source-order/head-revision CAS. Every auxiliary extractor
+provider dispatch now requires its durable Model Request Provenance v1 envelope,
+receipt and dispatch marker. `memory.extraction` projects bounded lifecycle
+metadata to the read-only OperationsPanel without memory body or prompt.
+
+Local checks on the implementation checkout: `cargo check --locked -p
+evohime-core --all-targets -j 1`; `cargo clippy --locked -p evohime-core
+--all-targets -j 1 -- -D warnings`; 3 Core memory runtime tests, 4 recovery
+integration tests, 2 Core projection tests, and the full local-storage suite
+(421 unit and 13 doc tests) passed. Electron OperationsPanel tests passed 18/18
+and renderer TypeScript check passed. Workspace `cargo doc --workspace
+--no-deps --locked` completed. Security evaluation, module-router, module-release
+and license-inventory gates passed. `cargo fmt --all -- --check` passed.
+
+Published module markers are `core 0.0.000376` and `ui-bundle 0.0.000119`; only
+those two source modules changed. The exact source commit, module publication
+and full Windows acceptance evidence will be recorded after the post-push
+workflows complete. No GitHub result is claimed here before those runs finish.

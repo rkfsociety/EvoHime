@@ -284,6 +284,25 @@ impl TaskCoordinator {
         self.state.lock().await.persistence_error.clone()
     }
 
+    /// Schedules the executor's bounded startup reconciliation through the
+    /// coordinator's existing background task capacity.
+    pub async fn recover_memory_extractions(&self) -> bool {
+        let (executor, background_tasks, events) = {
+            let state = self.state.lock().await;
+            (
+                state.executor.clone(),
+                Arc::clone(&state.background_tasks),
+                state.events.clone(),
+            )
+        };
+        let Some(executor) = executor else {
+            return false;
+        };
+        background_tasks
+            .try_spawn(async move { executor.recover_memory_extractions(events).await })
+            .await
+    }
+
     #[cfg(test)]
     pub(crate) async fn record_test_audit_failure(&self) {
         Self::record_audit(

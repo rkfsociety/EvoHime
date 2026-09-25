@@ -90,6 +90,59 @@ fn commit_is_idempotent_and_deduplicates_blocks() {
 }
 
 #[test]
+fn latest_logical_attempt_and_response_can_resume_memory_extraction() {
+    let db = db();
+    db.execute(
+        "INSERT INTO context_ledger VALUES('l',?1)",
+        ["a".repeat(64)],
+    )
+    .unwrap();
+    let repo = ModelProvenanceRepository::new(&db);
+    let first_envelope = envelope();
+    let first = repo
+        .commit_envelope(&first_envelope, CommitMode::FullForDispatch)
+        .unwrap();
+    let mut retry_envelope = first_envelope;
+    retry_envelope.request_id = Uuid::now_v7().to_string();
+    retry_envelope.attempt = 2;
+    retry_envelope.parent_request_id = Some(first.request_id.clone());
+    retry_envelope.previous_request_hash = first.envelope_hash.clone();
+    let retry = repo
+        .commit_envelope(&retry_envelope, CommitMode::FullForDispatch)
+        .unwrap();
+    repo.insert_response(&ModelResponseRecord {
+        response_id: "memory-extraction-response".into(),
+        request_id: retry.request_id.clone(),
+        status: "complete".into(),
+        output: Some("bounded extractor output".into()),
+        output_hash: None,
+        finish_reason: Some("stop".into()),
+        started_at: 1,
+        completed_at: Some(2),
+    })
+    .unwrap();
+
+    let latest = repo
+        .latest_for_logical_request(&retry.logical_request_id)
+        .unwrap()
+        .expect("latest request exists");
+    let response = repo
+        .get_response_for_request(&retry.request_id)
+        .unwrap()
+        .expect("durable response exists");
+
+    assert_eq!(latest.request_id, retry.request_id);
+    assert_eq!(latest.attempt, 2);
+    assert_eq!(latest.parent_request_id, Some(first.request_id));
+    assert_eq!(response.response_id, "memory-extraction-response");
+    assert_eq!(response.output.as_deref(), Some("bounded extractor output"));
+    assert!(repo
+        .get_response_for_request("missing-request")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
 fn full_commit_accepts_nested_provenance_source_refs() {
     let db = db();
     db.execute(

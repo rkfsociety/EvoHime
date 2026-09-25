@@ -34,9 +34,9 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000086`, `core 0.0.000375`, `installer 0.0.000065`,
+0.0.000043`, `cli 0.0.000086`, `core 0.0.000376`, `installer 0.0.000065`,
 `listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000107`,
-`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000118`,
+`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000119`,
 `updater 0.0.000130` и `verifier 0.0.000056`.
 
 Новые задания чата получают из Core conversation log последние 40 durable
@@ -195,14 +195,20 @@ Core startup. OpenRouter exact-zero pricing plus semantic completion — пок�
 [`7fa1af30ff2071da390828c1137a7df59308a864`](https://github.com/rkfsociety/EvoHime/commit/7fa1af30ff2071da390828c1137a7df59308a864);
 детальные workflow и module release evidence записаны в
 [`release-evidence.md`](release-evidence.md).
-План 175 получил runtime/storage-срез: общий cancellation-safe RAII lease
-сериализует dialog/ambient memory extraction и не даёт конкурентному второму
-извлечению обойти бюджеты и circuit breaker. Повторный запуск получает только
-bounded `reentrant` reason в `memory.extraction.skipped` или
-`memory.ambient.skipped`; SQLite schema v175 добавляет metadata-only lifecycle
-с source-basis/idempotency hashes и атомарным `finalizing → committed` publish,
-не сохраняя statement, transcript, prompt или secrets. Recovery, deferred
-finalization и IPC projection остаются активными этапами 175.2–175.4.
+План 175 реализован в текущем checkout; полный post-push acceptance CI и публикация модулей ожидают push.
+SQLite schema v176 добавляет metadata-only extraction source, provenance links,
+fenced lease и candidate freshness/head CAS поверх неизменённой v175 истории.
+Core durable-записывает eligible source до `TaskCompleted`, сохраняет typed
+origin/root/depth, сериализует dialog/ambient извлечение cancellation-safe
+RAII lease и восстанавливает bounded source через существующую background
+reconciliation точку. Auxiliary extractor dispatch требует durable Model
+Request Provenance v1 envelope, receipt и dispatch marker; failure блокирует
+provider вызов и записывается как typed lifecycle outcome. Event
+`memory.extraction` и read-only `OperationsPanel` показывают только bounded
+metadata. Основное тело памяти остаётся в единственном Memory storage owner.
+Затронутые module markers повышены только для `core` и `ui-bundle`; подтверждение
+их публикации и полных GitHub gates будет добавлено в
+[`release-evidence.md`](release-evidence.md).
 План 173 Cloud Provider Profiles закрыт: явная profile identity и отдельный
 Cloudflare account ID проходят через encrypted provider store и supervisor
 environment; Core хранит bounded profile/catalog snapshots в SQLite schema
@@ -446,7 +452,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `175–181` и `184–188`; планы `149–167` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `176–181` и `184–188`; план 175 и планы `149–167` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

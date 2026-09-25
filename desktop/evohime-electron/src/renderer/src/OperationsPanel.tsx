@@ -136,6 +136,32 @@ interface MemoryConflict {
   readonly supersession_chain: readonly string[]
 }
 
+interface MemoryExtractionDiagnostic {
+  readonly stage: 'source' | 'extractor' | 'candidate' | 'finalization' | 'recovery'
+  readonly status: 'attempted' | 'skipped' | 'captured' | 'rejected' | 'duplicate' | 'conflict' | 'superseded' | 'deferred' | 'recovered' | 'committed' | 'stale' | 'failed'
+  readonly origin: 'dialog' | 'ambient' | 'recovery'
+  readonly reason_code: string | null
+  readonly source_id: string | null
+  readonly backlog: number
+  readonly conflict_count: number
+  readonly suppressed_reentry_count: number
+}
+
+const MEMORY_EXTRACTION_STATUS_LABELS: Record<MemoryExtractionDiagnostic['status'], string> = {
+  attempted: 'выполняется',
+  skipped: 'пропущено',
+  captured: 'источник сохранён',
+  rejected: 'кандидат отклонён',
+  duplicate: 'дубликат',
+  conflict: 'конфликт',
+  superseded: 'заменено новой версией',
+  deferred: 'отложено',
+  recovered: 'восстановлено',
+  committed: 'зафиксировано',
+  stale: 'источник устарел',
+  failed: 'ошибка'
+}
+
 interface WorkspaceIndexStatus {
   readonly workspace_key: string
   readonly generation: number | null
@@ -222,6 +248,51 @@ function parsePayload<T>(event: CoreEvent | undefined, key: string): T | null {
     return (parsed[key] as T) ?? null
   } catch {
     return null
+  }
+}
+
+function parseMemoryExtractionDiagnostic(event: CoreEvent): MemoryExtractionDiagnostic | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(event.payload)
+  } catch {
+    return null
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const payload = (parsed as Record<string, unknown>)['MemoryExtractionDiagnostic']
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null
+  const value = payload as Record<string, unknown>
+  const stages: readonly string[] = ['source', 'extractor', 'candidate', 'finalization', 'recovery']
+  const statuses: readonly string[] = ['attempted', 'skipped', 'captured', 'rejected', 'duplicate', 'conflict', 'superseded', 'deferred', 'recovered', 'committed', 'stale', 'failed']
+  const origins: readonly string[] = ['dialog', 'ambient', 'recovery']
+  const counter = (key: string): number | null => {
+    const count = value[key]
+    return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 && count <= 1_000_000
+      ? count
+      : null
+  }
+  const backlog = counter('backlog')
+  const conflictCount = counter('conflict_count')
+  const suppressedReentryCount = counter('suppressed_reentry_count')
+  if (
+    typeof value['stage'] !== 'string' || !stages.includes(value['stage']) ||
+    typeof value['status'] !== 'string' || !statuses.includes(value['status']) ||
+    typeof value['origin'] !== 'string' || !origins.includes(value['origin']) ||
+    backlog === null || conflictCount === null || suppressedReentryCount === null
+  ) return null
+  const reason = value['reason_code']
+  const sourceId = value['source_id']
+  if (reason !== null && (typeof reason !== 'string' || reason.length > 64 || !/^[a-z0-9_]+$/.test(reason))) return null
+  if (sourceId !== null && (typeof sourceId !== 'string' || sourceId.length > 128 || !/^[a-zA-Z0-9:_-]+$/.test(sourceId))) return null
+  return {
+    stage: value['stage'] as MemoryExtractionDiagnostic['stage'],
+    status: value['status'] as MemoryExtractionDiagnostic['status'],
+    origin: value['origin'] as MemoryExtractionDiagnostic['origin'],
+    reason_code: reason as string | null,
+    source_id: sourceId as string | null,
+    backlog,
+    conflict_count: conflictCount,
+    suppressed_reentry_count: suppressedReentryCount
   }
 }
 
@@ -317,6 +388,19 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
     () => parsePayload<readonly MemoryConflict[]>(latest(events, 'memory.conflicts'), 'conflicts') ?? [],
     [events]
   )
+  const extractionDiagnostics = useMemo(
+    () => events
+      .filter((event) => event.eventType === 'memory.extraction')
+      .map(parseMemoryExtractionDiagnostic)
+      .filter((value): value is MemoryExtractionDiagnostic => value !== null),
+    [events]
+  )
+  const latestExtraction = extractionDiagnostics[0] ?? null
+  const observedReentries = extractionDiagnostics.reduce(
+    (total, item) => total + item.suppressed_reentry_count,
+    0
+  )
+  const lastExtractionFailure = extractionDiagnostics.find((item) => item.status === 'failed') ?? null
   const indexStatus = useMemo(
     () => parsePayload<WorkspaceIndexStatus>(latest(events, 'workspace.index_status'), 'status'),
     [events]
@@ -563,6 +647,13 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           <strong>{projectionReady ? conflicts.length : '—'}</strong>
           <span>{projectionReady ? 'неразрешённых' : 'состояние не подтверждено'}</span>
           <small>{projectionReady ? 'Старая запись остаётся активной, пока выбор не сделан' : 'Core недоступен — ожидается актуальная проекция'}</small>
+        </article>
+        <article className={`operations-card ${latestExtraction && ['failed', 'deferred', 'conflict', 'stale'].includes(latestExtraction.status) ? 'operations-card--warning' : ''}`}>
+          <h3>Извлечение памяти</h3>
+          <strong>{projectionReady ? (latestExtraction ? MEMORY_EXTRACTION_STATUS_LABELS[latestExtraction.status] : '—') : '—'}</strong>
+          <span>{projectionReady ? (latestExtraction ? `${latestExtraction.stage} · ${latestExtraction.origin}` : 'состояние ещё не получено') : 'состояние не подтверждено'}</span>
+          <small>{projectionReady && latestExtraction ? `${latestExtraction.backlog} в очереди восстановления · ${latestExtraction.conflict_count} конфликтов в последнем проходе · ${observedReentries} подавлено как повторный запуск` : 'Core недоступен — ожидается актуальная проекция'}</small>
+          {projectionReady && lastExtractionFailure ? <small>Последний сбой: {lastExtractionFailure.reason_code ?? 'unknown'} · {lastExtractionFailure.stage}</small> : null}
         </article>
         <article className="operations-card">
           <h3>Child jobs</h3>

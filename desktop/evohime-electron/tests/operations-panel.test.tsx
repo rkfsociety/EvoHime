@@ -214,6 +214,84 @@ describe('operations panel', () => {
     expect(screen.getByText(/9 активных · 1 истекло/)).toBeTruthy()
   })
 
+  it('показывает bounded extraction lifecycle diagnostics без текста памяти', () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('memory.extraction', {
+            MemoryExtractionDiagnostic: {
+              task_id: 'task-1',
+              source_id: 'sha256:abcd',
+              origin: 'dialog',
+              stage: 'finalization',
+              status: 'deferred',
+              reason_code: 'lease_busy',
+              backlog: 2,
+              conflict_count: 1,
+              suppressed_reentry_count: 0,
+              prompt: 'private prompt',
+              statement: 'private memory body'
+            }
+          }),
+          event('memory.extraction', {
+            MemoryExtractionDiagnostic: {
+              task_id: 'task-old',
+              source_id: 'sha256:old',
+              origin: 'dialog',
+              stage: 'extractor',
+              status: 'skipped',
+              reason_code: 'memory_extraction_reentrant',
+              backlog: 0,
+              conflict_count: 0,
+              suppressed_reentry_count: 1
+            }
+          }),
+          event('memory.extraction', {
+            MemoryExtractionDiagnostic: {
+              task_id: 'task-failed',
+              source_id: 'sha256:failed',
+              origin: 'ambient',
+              stage: 'extractor',
+              status: 'failed',
+              reason_code: 'extractor_unavailable',
+              backlog: 0,
+              conflict_count: 0,
+              suppressed_reentry_count: 0
+            }
+          })
+        ]}
+      />
+    )
+
+    expect(screen.getByText('отложено')).toBeTruthy()
+    expect(screen.getByText('2 в очереди восстановления · 1 конфликтов в последнем проходе · 1 подавлено как повторный запуск')).toBeTruthy()
+    expect(screen.getByText('Последний сбой: extractor_unavailable · extractor')).toBeTruthy()
+    expect(screen.queryByText('private prompt')).toBeNull()
+    expect(screen.queryByText('private memory body')).toBeNull()
+  })
+
+  it('fails closed when a memory extraction event has an unknown major payload', () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[event('memory.extraction', {
+          MemoryExtractionDiagnostic: {
+            origin: 'dialog',
+            stage: 'future_stage',
+            status: 'committed',
+            backlog: 0,
+            conflict_count: 0,
+            suppressed_reentry_count: 0
+          }
+        })]}
+      />
+    )
+
+    expect(screen.getByText('состояние ещё не получено')).toBeTruthy()
+    expect(screen.queryByText('зафиксировано')).toBeNull()
+  })
+
   it('не объявляет Pulse исправным во время переподключения Core', () => {
     render(
       <OperationsPanel
