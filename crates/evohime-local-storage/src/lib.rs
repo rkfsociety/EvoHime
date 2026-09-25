@@ -93,6 +93,8 @@ pub mod declarative_runtime_components_store;
 pub mod dependency_aware_task_graph_store;
 /// Persistence for deterministic review execution plans.
 pub mod deterministic_review_execution_plan_store;
+/// Persistence for metadata-only guided recipe run links.
+pub mod capability_recipe_store;
 mod diagnostics;
 /// Persistence for domain-specific workflow recipes.
 pub mod domain_workflow_recipes_store;

@@ -403,6 +403,46 @@ impl EventJournal {
         store::insert_run(database.connection(), run, nodes)
     }
 
+    /// Persists a guided workflow run, its initial nodes, and recipe link in one
+    /// transaction before execution begins.
+    pub async fn insert_guided_workflow_run(
+        &self,
+        run: &WorkflowRunRecord,
+        nodes: &[WorkflowNodeRecord],
+        recipe_link: &evohime_local_storage::capability_recipe_store::RecipeRunLink,
+    ) -> Result<(), store::WorkflowStoreError> {
+        let database = self.database.lock().await;
+        store::insert_run_with_recipe(database.connection(), run, nodes, recipe_link)
+    }
+
+    /// Looks up an immutable recipe attribution by workflow run id.
+    pub async fn capability_recipe_run_by_workflow(
+        &self,
+        run_id: &str,
+    ) -> rusqlite::Result<Option<evohime_local_storage::capability_recipe_store::RecipeRunLink>> {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_recipe_store::get_by_run(
+            database.connection(),
+            run_id,
+        )
+    }
+
+    /// Looks up a recipe run by its recipe-scoped idempotency key.
+    pub async fn capability_recipe_run_by_idempotency_key(
+        &self,
+        recipe_id: &str,
+        recipe_version: u32,
+        idempotency_key: &str,
+    ) -> rusqlite::Result<Option<evohime_local_storage::capability_recipe_store::RecipeRunLink>> {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_recipe_store::get_by_idempotency_key(
+            database.connection(),
+            recipe_id,
+            recipe_version,
+            idempotency_key,
+        )
+    }
+
     /// Рабочий каталог запуска из снимка политики. Возврат пустой строки
     /// означает «каталог не был записан», а не «текущий каталог оболочки».
     pub async fn workflow_run_workspace(&self, run_id: &str) -> String {
@@ -600,9 +640,27 @@ impl WorkflowRuntime {
         self.metrics.snapshot()
     }
 
+    /// Registers and persists an existing workflow snapshot.
+    pub async fn start(&self, request: StartWorkflowRequest) -> Result<String, RuntimeError> {
+        self.start_inner(request, None).await
+    }
+
+    /// Registers a workflow and its guided recipe link atomically before drive.
+    pub async fn start_guided(
+        &self,
+        request: StartWorkflowRequest,
+        recipe_link: evohime_local_storage::capability_recipe_store::RecipeRunLink,
+    ) -> Result<String, RuntimeError> {
+        self.start_inner(request, Some(recipe_link)).await
+    }
+
     /// Регистрирует запуск: проверяет контракт, реестр и родительские
     /// возможности, затем сохраняет immutable snapshot.
-    pub async fn start(&self, request: StartWorkflowRequest) -> Result<String, RuntimeError> {
+    async fn start_inner(
+        &self,
+        request: StartWorkflowRequest,
+        recipe_link: Option<evohime_local_storage::capability_recipe_store::RecipeRunLink>,
+    ) -> Result<String, RuntimeError> {
         request
             .graph
             .validate()
@@ -687,7 +745,13 @@ impl WorkflowRuntime {
                 updated_at_ms: now_ms,
             })
             .collect();
-        self.journal.insert_workflow_run(&record, &nodes).await?;
+        if let Some(recipe_link) = recipe_link {
+            self.journal
+                .insert_guided_workflow_run(&record, &nodes, &recipe_link)
+                .await?;
+        } else {
+            self.journal.insert_workflow_run(&record, &nodes).await?;
+        }
         self.emit(
             &request.run_id,
             "",

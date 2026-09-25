@@ -1440,6 +1440,36 @@ publish, owner-scoped single-use handoff, recovery и read-only live inspection
 обслуживаются Core; renderer не получает полномочий, credentials или raw
 runtime payload.
 
+### Guided Capability Recipes v1
+
+Guided recipe catalog — фиксированный Core-owned индекс над существующими
+workflow templates, а не второй граф, runner или provider/evaluation owner.
+`CapabilityRecipeDescriptor` имеет стабильный id/version и canonical hash;
+catalog содержит восемь категорий из плана 176. Запуск доступен только при
+exact binding на прошедший registry validation workflow template. Recipe без
+такого binding получает typed `Unsupported`; текущие model-comparison,
+prompt-variants, tool-use и local-model-fit не симулируют отсутствующий runner.
+
+Core preflight сверяет bounded inputs, выбранный workspace, граф, capability
+grants, budgets, approval nodes и known revisions. Внешние model/context/tool
+owners, которые не сохраняют exact revision, отмечаются как `NotPinned`; exact
+replay и compatible rerun для них возвращают typed `unavailable`, а не
+подставляют `latest`. `StartCapabilityRecipe` заново выполняет preflight и
+создаёт существующий workflow run вместе с immutable
+`capability_recipe_run_links` sidecar одной SQLite-транзакцией до запуска
+effects. Sidecar хранит recipe/template/graph/input/workspace hashes и
+idempotency key; lifecycle, cancellation и run recovery остаются за
+`workflow_store`/`WorkflowRuntime`.
+
+Authenticated additive IPC commands 280–284 обслуживают catalog, preflight,
+start, run lookup и fork. Shell отображает только bounded Core projections в
+существующей workflow builder surface и использует существующие workflow
+status/cancel commands. Fork разрешён только для завершённого run и строит
+новый user-owned draft из exact исходного template с placeholders; он не
+копирует run inputs, outputs, grants, secrets или allowlists и не запускает
+draft автоматически. Перед IPC startup Core вызывает recovery существующих
+workflow runs; ошибка recovery не позволяет Core принять команды.
+
 ## Plan Artifact v1 (план 57)
 
 `evohime-local-storage::plan_artifact` — единственный mutable authority для

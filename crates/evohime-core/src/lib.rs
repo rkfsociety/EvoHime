@@ -31,6 +31,8 @@ pub(crate) mod approval_policy_profiles;
 /// Models authorization state for security assessments.
 pub mod authorized_security_assessment;
 pub mod autonomous_metric_experiment_runtime;
+/// Provides a safe Core-owned catalog of guided capability recipes.
+pub mod capability_recipes;
 pub mod capability_workbenches;
 pub(crate) mod checkpoint_forking_and_replay;
 pub mod code_diagnostics_feedback_loop;

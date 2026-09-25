@@ -1,6 +1,21 @@
 use super::*;
 
 impl IpcBridge {
+    /// Recovers durable workflow runs before the Core starts accepting IPC.
+    ///
+    /// The existing workflow store owns interrupted-run semantics; this method
+    /// only wires that recovery into the Core process startup path.
+    pub async fn recover_workflow_runs_on_startup(
+        &self,
+    ) -> Result<
+        evohime_local_storage::workflow_store::RecoveryOutcome,
+        evohime_local_storage::workflow_store::WorkflowStoreError,
+    > {
+        self.journal
+            .recover_workflow_runs(crate::task_memory::now_millis() as i64)
+            .await
+    }
+
     // ------------------------------------------------------------------
     // Workflow orchestration (план 06.3).
     //
@@ -263,6 +278,508 @@ impl IpcBridge {
         }
     }
 
+    /// Returns the fixed Core-owned guided recipe catalog without runtime data.
+    pub(crate) fn dispatch_list_capability_recipes(&self) -> serde_json::Value {
+        match crate::capability_recipes::catalog() {
+            Ok(recipes) => serde_json::json!({
+                "catalog_version": crate::capability_recipes::CATALOG_VERSION,
+                "recipes": recipes,
+                "error_code": "",
+            }),
+            Err(error) => serde_json::json!({
+                "catalog_version": crate::capability_recipes::CATALOG_VERSION,
+                "recipes": [],
+                "error_code": error.code(),
+            }),
+        }
+    }
+
+    /// Validates one recipe against the exact current workflow owner and policy.
+    pub(crate) fn dispatch_preflight_capability_recipe(
+        &self,
+        request: generated::PreflightCapabilityRecipe,
+    ) -> serde_json::Value {
+        let inputs = match capability_recipe_inputs(&request.inputs) {
+            Ok(inputs) => inputs,
+            Err(code) => return capability_recipe_preflight_failure(code),
+        };
+        let parent = workflow_parent_capabilities();
+        let preflight = crate::capability_recipes::preflight(
+            &request.recipe_id,
+            request.recipe_version,
+            &request.recipe_hash,
+            &inputs,
+            &request.workspace_path,
+            &self.workflow_registry,
+            &parent,
+        );
+        match serde_json::to_value(&preflight) {
+            Ok(mut value) => {
+                let error_code = if matches!(
+                    preflight.state,
+                    crate::capability_recipes::CapabilityRecipePreflightState::Ready
+                        | crate::capability_recipes::CapabilityRecipePreflightState::ReadyWithWarnings
+                ) {
+                    String::new()
+                } else {
+                    preflight.reason_codes.first().cloned().unwrap_or_default()
+                };
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("error_code".into(), serde_json::json!(error_code));
+                }
+                value
+            }
+            Err(_) => capability_recipe_preflight_failure("serialization_failed"),
+        }
+    }
+
+    /// Revalidates a confirmed preflight and atomically starts its existing workflow.
+    pub(crate) async fn dispatch_start_capability_recipe(
+        &self,
+        request: generated::StartCapabilityRecipe,
+    ) -> serde_json::Value {
+        if !valid_bounded_recipe_text(&request.idempotency_key, 256)
+            || request.idempotency_key.trim().is_empty()
+        {
+            return capability_recipe_start_failure("invalid_idempotency_key");
+        }
+        let inputs = match capability_recipe_inputs(&request.inputs) {
+            Ok(inputs) => inputs,
+            Err(code) => return capability_recipe_start_failure(code),
+        };
+        let parent = workflow_parent_capabilities();
+        let preflight = crate::capability_recipes::preflight(
+            &request.recipe_id,
+            request.recipe_version,
+            &request.recipe_hash,
+            &inputs,
+            &request.workspace_path,
+            &self.workflow_registry,
+            &parent,
+        );
+        if !matches!(
+            preflight.state,
+            crate::capability_recipes::CapabilityRecipePreflightState::Ready
+                | crate::capability_recipes::CapabilityRecipePreflightState::ReadyWithWarnings
+        ) {
+            return capability_recipe_start_failure(
+                preflight
+                    .reason_codes
+                    .first()
+                    .map(String::as_str)
+                    .unwrap_or("preflight_not_ready"),
+            );
+        }
+        if request.preflight_hash != preflight.preflight_hash {
+            return capability_recipe_start_failure("stale_preflight");
+        }
+        let Some(binding) = preflight.workflow_binding.as_ref() else {
+            return capability_recipe_start_failure("workflow_binding_missing");
+        };
+        let Some(template) = crate::workflow_templates::template(&binding.template_id) else {
+            return capability_recipe_start_failure("workflow_template_unavailable");
+        };
+        if template.version != binding.template_version
+            || template.graph().canonical_hash() != binding.template_graph_hash
+        {
+            return capability_recipe_start_failure("workflow_revision_mismatch");
+        }
+        let graph = match template.instantiate(&inputs) {
+            Ok(graph) => graph,
+            Err(error) => return capability_recipe_start_failure(error.code()),
+        };
+        let graph_hash = match self.workflow_registry.expand_subgraphs(&graph) {
+            Ok(expanded) => expanded.canonical_hash(),
+            Err(_) => return capability_recipe_start_failure("workflow_binding_changed"),
+        };
+        if graph_hash != preflight.run_graph_hash {
+            return capability_recipe_start_failure("stale_preflight");
+        }
+
+        let mut run_digest = sha2::Sha256::new();
+        run_digest.update(request.recipe_id.as_bytes());
+        run_digest.update([0]);
+        run_digest.update(request.recipe_version.to_le_bytes());
+        run_digest.update([0]);
+        run_digest.update(request.idempotency_key.as_bytes());
+        let run_id = format!("recipe-{}", hex::encode(&run_digest.finalize()[..16]));
+        let expected_link = evohime_local_storage::capability_recipe_store::RecipeRunLink {
+            run_id: run_id.clone(),
+            recipe_id: request.recipe_id.clone(),
+            recipe_version: request.recipe_version,
+            recipe_hash: preflight.recipe_hash.clone(),
+            template_id: binding.template_id.clone(),
+            template_version: binding.template_version,
+            template_graph_hash: binding.template_graph_hash.clone(),
+            run_graph_hash: preflight.run_graph_hash.clone(),
+            input_hash: preflight.input_hash.clone(),
+            workspace_hash: preflight.workspace_hash.clone(),
+            idempotency_key: request.idempotency_key.clone(),
+            created_at_ms: 0,
+        };
+        match self
+            .journal
+            .capability_recipe_run_by_idempotency_key(
+                &request.recipe_id,
+                request.recipe_version,
+                &request.idempotency_key,
+            )
+            .await
+        {
+            Ok(Some(existing)) => {
+                return if capability_recipe_link_matches(&existing, &expected_link) {
+                    capability_recipe_start_success(
+                        &existing.run_id,
+                        &existing.run_graph_hash,
+                        true,
+                    )
+                } else {
+                    capability_recipe_start_failure("idempotency_conflict")
+                };
+            }
+            Ok(None) => {}
+            Err(_) => return capability_recipe_start_failure("storage_error"),
+        }
+
+        let start = crate::workflow_runtime::StartWorkflowRequest {
+            run_id: run_id.clone(),
+            task_id: run_id.clone(),
+            workspace_path: request.workspace_path.clone(),
+            template_id: binding.template_id.clone(),
+            template_version: binding.template_version,
+            inputs,
+            graph,
+            parent,
+        };
+        let Some(permit) = self.background_tasks.try_acquire() else {
+            return capability_recipe_start_failure("background_task_capacity_exhausted");
+        };
+        let driver_runtime = self.workflow_runtime(&request.workspace_path);
+        let driver_run_id = run_id.clone();
+        let (drive_tx, drive_rx) = tokio::sync::oneshot::channel::<()>();
+        self.background_tasks
+            .spawn_reserved(permit, async move {
+                if drive_rx.await.is_ok() {
+                    let _ = driver_runtime.drive(&driver_run_id).await;
+                }
+            })
+            .await;
+        let mut recipe_link = expected_link;
+        recipe_link.created_at_ms = crate::task_memory::now_millis() as i64;
+        let runtime = self.workflow_runtime(&request.workspace_path);
+        match runtime.start_guided(start, recipe_link.clone()).await {
+            Ok(started_run_id) => {
+                let _ = drive_tx.send(());
+                capability_recipe_start_success(
+                    &started_run_id,
+                    &recipe_link.run_graph_hash,
+                    false,
+                )
+            }
+            Err(error) => {
+                drop(drive_tx);
+                if let Ok(Some(existing)) = self
+                    .journal
+                    .capability_recipe_run_by_idempotency_key(
+                        &recipe_link.recipe_id,
+                        recipe_link.recipe_version,
+                        &recipe_link.idempotency_key,
+                    )
+                    .await
+                {
+                    if capability_recipe_link_matches(&existing, &recipe_link) {
+                        return capability_recipe_start_success(
+                            &existing.run_id,
+                            &existing.run_graph_hash,
+                            true,
+                        );
+                    }
+                }
+                capability_recipe_start_failure(error.code())
+            }
+        }
+    }
+
+    /// Returns safe recipe attribution plus the existing bounded workflow projection.
+    pub(crate) async fn dispatch_capability_recipe_run(
+        &self,
+        request: generated::GetCapabilityRecipeRun,
+    ) -> serde_json::Value {
+        let link = match self
+            .journal
+            .capability_recipe_run_by_workflow(&request.run_id)
+            .await
+        {
+            Ok(Some(link)) => link,
+            Ok(None) => return capability_recipe_run_failure(&request.run_id, "not_recipe_run"),
+            Err(_) => return capability_recipe_run_failure(&request.run_id, "storage_error"),
+        };
+        let workspace = self.journal.workflow_run_workspace(&request.run_id).await;
+        let runtime = self.workflow_runtime(&workspace);
+        match runtime.projection(&request.run_id).await {
+            Ok(Some(projection)) => serde_json::json!({
+                "recipe_run": {
+                    "run_id": link.run_id,
+                    "recipe_id": link.recipe_id,
+                    "recipe_version": link.recipe_version,
+                    "recipe_hash": link.recipe_hash,
+                    "template_id": link.template_id,
+                    "template_version": link.template_version,
+                    "template_graph_hash": link.template_graph_hash,
+                    "run_graph_hash": link.run_graph_hash,
+                    "input_hash": link.input_hash,
+                    "workspace_hash": link.workspace_hash,
+                    "created_at_ms": link.created_at_ms,
+                },
+                "run": projection,
+                "replay_options": capability_recipe_replay_options(),
+                "error_code": "",
+            }),
+            Ok(None) => capability_recipe_run_failure(&request.run_id, "unknown_run"),
+            Err(error) => capability_recipe_run_failure(&request.run_id, error.code()),
+        }
+    }
+
+    /// Forks a completed recipe run's pinned base template into a new scoped Builder draft.
+    pub(crate) async fn dispatch_fork_capability_recipe_run(
+        &self,
+        request: generated::ForkCapabilityRecipeRun,
+    ) -> serde_json::Value {
+        let source_run_id = if valid_bounded_recipe_text(&request.run_id, 128) {
+            request.run_id.as_str()
+        } else {
+            ""
+        };
+        if !valid_bounded_recipe_text(&request.run_id, 128)
+            || request.run_id.trim().is_empty()
+            || !valid_bounded_recipe_text(&request.idempotency_key, 256)
+            || request.idempotency_key.trim().is_empty()
+        {
+            return capability_recipe_fork_failure(source_run_id, "invalid_request");
+        }
+        let link = match self
+            .journal
+            .capability_recipe_run_by_workflow(&request.run_id)
+            .await
+        {
+            Ok(Some(link)) => link,
+            Ok(None) => return capability_recipe_fork_failure(source_run_id, "not_recipe_run"),
+            Err(_) => return capability_recipe_fork_failure(source_run_id, "storage_error"),
+        };
+        let run = match self.journal.workflow_run(&request.run_id).await {
+            Ok(Some(run)) if run.state == evohime_local_storage::workflow_store::RunState::Completed => run,
+            Ok(Some(_)) => return capability_recipe_fork_failure(source_run_id, "run_not_successful"),
+            Ok(None) => return capability_recipe_fork_failure(source_run_id, "unknown_run"),
+            Err(_) => return capability_recipe_fork_failure(source_run_id, "storage_error"),
+        };
+        let Some(recipe) = crate::capability_recipes::descriptor(&link.recipe_id)
+            .ok()
+            .flatten()
+        else {
+            return capability_recipe_fork_failure(source_run_id, "recipe_revision_unavailable");
+        };
+        let Some(binding) = recipe.workflow_binding.as_ref() else {
+            return capability_recipe_fork_failure(source_run_id, "workflow_binding_unavailable");
+        };
+        if recipe.version != link.recipe_version
+            || recipe.content_hash != link.recipe_hash
+            || binding.template_id != link.template_id
+            || binding.template_version != link.template_version
+            || binding.template_graph_hash != link.template_graph_hash
+            || run.graph_hash != link.run_graph_hash
+        {
+            return capability_recipe_fork_failure(source_run_id, "recipe_revision_unavailable");
+        }
+        let Some(template) = crate::workflow_templates::template(&link.template_id) else {
+            return capability_recipe_fork_failure(source_run_id, "workflow_template_unavailable");
+        };
+        if template.version != link.template_version
+            || template.graph().canonical_hash() != link.template_graph_hash
+        {
+            return capability_recipe_fork_failure(source_run_id, "workflow_revision_unavailable");
+        }
+        let workspace = self.journal.workflow_run_workspace(&request.run_id).await;
+        if workspace.trim().is_empty() || workspace.len() > 32 * 1024 {
+            return capability_recipe_fork_failure(source_run_id, "workspace_unavailable");
+        }
+        let actual_workspace_hash = hex::encode(sha2::Sha256::digest(workspace.as_bytes()));
+        if actual_workspace_hash != link.workspace_hash {
+            return capability_recipe_fork_failure(source_run_id, "workspace_revision_mismatch");
+        }
+
+        let mut graph = template.graph().clone();
+        for node in &mut graph.nodes {
+            match &mut node.node_type {
+                crate::workflow::NodeType::Child { child } => {
+                    child.grants.clear();
+                    child.context_allowlist.clear();
+                    child.artifact_allowlist.clear();
+                }
+                crate::workflow::NodeType::Tool { .. }
+                | crate::workflow::NodeType::McpTool { .. }
+                | crate::workflow::NodeType::IntegrationAction { .. }
+                | crate::workflow::NodeType::Subgraph { .. } => {
+                    return capability_recipe_fork_failure(source_run_id, "fork_requires_owner_rebinding");
+                }
+                _ => {}
+            }
+        }
+        let layout = crate::visual_workflow_builder::WorkflowLayout {
+            nodes: graph
+                .nodes
+                .iter()
+                .enumerate()
+                .map(|(index, node)| crate::visual_workflow_builder::LayoutNode {
+                    node_id: node.id.clone(),
+                    x: ((index % 4) as i32) * 240,
+                    y: ((index / 4) as i32) * 160,
+                })
+                .collect(),
+        };
+        let definition = crate::visual_workflow_builder::VisualWorkflowBuilderDefinition {
+            contract_version: crate::visual_workflow_builder::BUILDER_CONTRACT_VERSION.into(),
+            graph,
+            layout,
+        };
+        if definition.validate().is_err() {
+            return capability_recipe_fork_failure(source_run_id, "invalid_fork_definition");
+        }
+        let definition_json = match serde_json::to_vec(&definition) {
+            Ok(json) if json.len() <= crate::visual_workflow_builder::MAX_DRAFT_BYTES => json,
+            Ok(_) => return capability_recipe_fork_failure(source_run_id, "fork_definition_too_large"),
+            Err(_) => return capability_recipe_fork_failure(source_run_id, "serialization_failed"),
+        };
+        let layout_json = match serde_json::to_vec(&definition.layout) {
+            Ok(json) => json,
+            Err(_) => return capability_recipe_fork_failure(source_run_id, "serialization_failed"),
+        };
+        let idempotency_hash = hex::encode(sha2::Sha256::digest(
+            request.idempotency_key.as_bytes(),
+        ));
+        let mut draft_digest = sha2::Sha256::new();
+        draft_digest.update(request.run_id.as_bytes());
+        draft_digest.update([0]);
+        draft_digest.update(request.idempotency_key.as_bytes());
+        let draft_id = format!("recipe-fork-{}", hex::encode(&draft_digest.finalize()[..16]));
+        let provenance_json = match serde_json::to_vec(&serde_json::json!({
+            "source": "capability_recipe",
+            "recipe_id": link.recipe_id,
+            "recipe_version": link.recipe_version,
+            "recipe_hash": link.recipe_hash,
+            "source_run_id": link.run_id,
+            "template_id": link.template_id,
+            "template_version": link.template_version,
+            "template_graph_hash": link.template_graph_hash,
+            "idempotency_key_hash": idempotency_hash,
+        })) {
+            Ok(json) => json,
+            Err(_) => return capability_recipe_fork_failure(source_run_id, "serialization_failed"),
+        };
+        let execution_hash = definition.execution_hash();
+        let layout_hash = definition.layout_hash();
+        {
+            let database = self.journal.database().lock().await;
+            match evohime_local_storage::visual_workflow_builder_store::read_draft(
+                database.connection(),
+                &draft_id,
+                &workspace,
+            ) {
+                Ok(Some((revision, existing_json, existing_hash, existing_layout_hash))) => {
+                    let existing_provenance =
+                        evohime_local_storage::visual_workflow_builder_store::read_draft_provenance(
+                            database.connection(),
+                            &draft_id,
+                            &workspace,
+                        );
+                    if existing_json == definition_json
+                        && existing_hash == execution_hash
+                        && existing_layout_hash == layout_hash
+                        && existing_provenance
+                            .ok()
+                            .flatten()
+                            .as_deref()
+                            == Some(provenance_json.as_slice())
+                    {
+                        return capability_recipe_fork_success(
+                            source_run_id,
+                            &draft_id,
+                            revision,
+                            &execution_hash,
+                            &layout_hash,
+                            true,
+                        );
+                    }
+                    return capability_recipe_fork_failure(source_run_id, "idempotency_conflict");
+                }
+                Ok(None) => {}
+                Err(_) => return capability_recipe_fork_failure(source_run_id, "storage_error"),
+            }
+            match evohime_local_storage::visual_workflow_builder_store::save_draft(
+                database.connection(),
+                evohime_local_storage::visual_workflow_builder_store::SaveDraft {
+                    draft_id: &draft_id,
+                    owner_scope: &workspace,
+                    expected_revision: 0,
+                    definition_json: &definition_json,
+                    layout_json: &layout_json,
+                    execution_hash: &execution_hash,
+                    layout_hash: &layout_hash,
+                    composer_provenance_json: Some(&provenance_json),
+                    updated_at_ms: crate::task_memory::now_millis() as i64,
+                },
+            ) {
+                Ok(Ok(revision)) => {
+                    return capability_recipe_fork_success(
+                        source_run_id,
+                        &draft_id,
+                        revision,
+                        &execution_hash,
+                        &layout_hash,
+                        false,
+                    );
+                }
+                Ok(Err("stale_revision")) => {
+                    if let Ok(Some((revision, existing_json, existing_hash, existing_layout_hash))) =
+                        evohime_local_storage::visual_workflow_builder_store::read_draft(
+                            database.connection(),
+                            &draft_id,
+                            &workspace,
+                        )
+                    {
+                        let existing_provenance =
+                            evohime_local_storage::visual_workflow_builder_store::read_draft_provenance(
+                                database.connection(),
+                                &draft_id,
+                                &workspace,
+                            );
+                        if existing_json == definition_json
+                            && existing_hash == execution_hash
+                            && existing_layout_hash == layout_hash
+                            && existing_provenance
+                                .ok()
+                                .flatten()
+                                .as_deref()
+                                == Some(provenance_json.as_slice())
+                        {
+                            return capability_recipe_fork_success(
+                                source_run_id,
+                                &draft_id,
+                                revision,
+                                &execution_hash,
+                                &layout_hash,
+                                true,
+                            );
+                        }
+                        return capability_recipe_fork_failure(source_run_id, "idempotency_conflict");
+                    }
+                    return capability_recipe_fork_failure(source_run_id, "storage_error");
+                }
+                Ok(Err(code)) => return capability_recipe_fork_failure(source_run_id, code),
+                Err(_) => return capability_recipe_fork_failure(source_run_id, "storage_error"),
+            }
+        }
+    }
+
     pub(crate) async fn dispatch_visual_workflow_builder(
         &self,
         request: generated::VisualWorkflowBuilderCommand,
@@ -278,14 +795,35 @@ impl IpcBridge {
                 &request.draft_id,
                 &request.owner_scope,
             ) {
-                Ok(Some((revision, _definition, execution_hash, layout_hash))) => {
-                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"recovered","draft_id":request.draft_id,"revision":revision,"execution_hash":execution_hash,"layout_hash":layout_hash,"handoff_handle":"","error_code":"","truncated":false})
+                Ok(Some((revision, definition_json, execution_hash, layout_hash)))
+                    if definition_json.len()
+                        <= crate::visual_workflow_builder::MAX_DRAFT_BYTES =>
+                {
+                    match String::from_utf8(definition_json) {
+                        Ok(draft_json) => serde_json::json!({
+                            "schema_version": 1,
+                            "request_id": request.request_id,
+                            "status": "recovered",
+                            "draft_id": request.draft_id,
+                            "revision": revision,
+                            "execution_hash": execution_hash,
+                            "layout_hash": layout_hash,
+                            "draft_json": draft_json,
+                            "handoff_handle": "",
+                            "error_code": "",
+                            "truncated": false,
+                        }),
+                        Err(_) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"corrupt","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","draft_json":"","handoff_handle":"","error_code":"corrupt_draft","truncated":false}),
+                    }
+                }
+                Ok(Some(_)) => {
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"corrupt","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","draft_json":"","handoff_handle":"","error_code":"draft_too_large","truncated":false})
                 }
                 Ok(None) => {
-                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"missing","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"unknown_draft","truncated":false})
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"missing","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","draft_json":"","handoff_handle":"","error_code":"unknown_draft","truncated":false})
                 }
                 Err(_) => {
-                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"corrupt","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","handoff_handle":"","error_code":"storage_error","truncated":false})
+                    serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"corrupt","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","draft_json":"","handoff_handle":"","error_code":"storage_error","truncated":false})
                 }
             };
         }
@@ -818,4 +1356,150 @@ impl IpcBridge {
             )
             .map_err(|_| crate::visual_workflow_builder::BuilderError::RegistryRejected)
     }
+}
+
+fn capability_recipe_inputs(
+    values: &[generated::WorkflowInput],
+) -> Result<std::collections::BTreeMap<String, String>, &'static str> {
+    if values.len() > crate::capability_recipes::MAX_RECIPE_INPUTS {
+        return Err("too_many_inputs");
+    }
+    let mut inputs = std::collections::BTreeMap::new();
+    for input in values {
+        if input.name.len() > 128 || input.value.len() > crate::capability_recipes::MAX_RECIPE_INPUT_CHARS * 4 {
+            return Err("input_too_large");
+        }
+        if inputs.insert(input.name.clone(), input.value.clone()).is_some() {
+            return Err("duplicate_input");
+        }
+    }
+    Ok(inputs)
+}
+
+fn valid_bounded_recipe_text(value: &str, maximum: usize) -> bool {
+    value.len() <= maximum && !value.chars().any(char::is_control)
+}
+
+fn capability_recipe_preflight_failure(code: &str) -> serde_json::Value {
+    serde_json::json!({
+        "catalog_version": crate::capability_recipes::CATALOG_VERSION,
+        "recipe_id": "",
+        "recipe_version": 0,
+        "recipe_hash": "",
+        "state": "invalid_definition",
+        "reason_codes": [code],
+        "workflow_binding": null,
+        "input_hash": "",
+        "workspace_hash": "",
+        "run_graph_hash": "",
+        "preview": [],
+        "required_capabilities": [],
+        "optional_capabilities": [],
+        "revisions": [],
+        "workflow_budget": null,
+        "approval_points": [],
+        "degraded_paths": [],
+        "preflight_hash": "",
+        "error_code": code,
+    })
+}
+
+fn capability_recipe_start_failure(code: &str) -> serde_json::Value {
+    serde_json::json!({
+        "run_id": "",
+        "state": "unknown_state",
+        "graph_hash": "",
+        "deduplicated": false,
+        "error_code": code,
+    })
+}
+
+fn capability_recipe_start_success(
+    run_id: &str,
+    graph_hash: &str,
+    deduplicated: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "run_id": run_id,
+        "state": "pending",
+        "graph_hash": graph_hash,
+        "deduplicated": deduplicated,
+        "error_code": "",
+    })
+}
+
+fn capability_recipe_link_matches(
+    actual: &evohime_local_storage::capability_recipe_store::RecipeRunLink,
+    expected: &evohime_local_storage::capability_recipe_store::RecipeRunLink,
+) -> bool {
+    actual.run_id == expected.run_id
+        && actual.recipe_id == expected.recipe_id
+        && actual.recipe_version == expected.recipe_version
+        && actual.recipe_hash == expected.recipe_hash
+        && actual.template_id == expected.template_id
+        && actual.template_version == expected.template_version
+        && actual.template_graph_hash == expected.template_graph_hash
+        && actual.run_graph_hash == expected.run_graph_hash
+        && actual.input_hash == expected.input_hash
+        && actual.workspace_hash == expected.workspace_hash
+        && actual.idempotency_key == expected.idempotency_key
+}
+
+fn capability_recipe_run_failure(run_id: &str, code: &str) -> serde_json::Value {
+    serde_json::json!({
+        "recipe_run": null,
+        "run": {
+            "run_id": run_id,
+            "state": "unknown_state",
+            "nodes": [],
+            "error_code": code,
+        },
+        "error_code": code,
+    })
+}
+
+fn capability_recipe_replay_options() -> serde_json::Value {
+    serde_json::json!({
+        "reproduce_exact": {
+            "availability": "unavailable",
+            "reason_code": "external_revision_pins_not_persisted",
+        },
+        "rerun_current_compatible": {
+            "availability": "unavailable",
+            "reason_code": "compatible_revision_delta_not_persisted",
+        },
+    })
+}
+
+fn capability_recipe_fork_failure(source_run_id: &str, code: &str) -> serde_json::Value {
+    serde_json::json!({
+        "status": "refused",
+        "source_run_id": source_run_id,
+        "draft_id": "",
+        "revision": 0,
+        "execution_hash": "",
+        "layout_hash": "",
+        "deduplicated": false,
+        "error_code": code,
+    })
+}
+
+fn capability_recipe_fork_success(
+    source_run_id: &str,
+    draft_id: &str,
+    revision: u64,
+    execution_hash: &str,
+    layout_hash: &str,
+    deduplicated: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "status": "draft_created",
+        "source_run_id": source_run_id,
+        "draft_id": draft_id,
+        "revision": revision,
+        "execution_hash": execution_hash,
+        "layout_hash": layout_hash,
+        "deduplicated": deduplicated,
+        "error_code": "",
+    })
 }

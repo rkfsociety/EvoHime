@@ -1185,6 +1185,117 @@ export interface WorkflowCancelResult {
   readonly error_code: string
 }
 
+/** Fixed Core-owned recipe entry; it never contains instantiated input values. */
+export interface CapabilityRecipeDescriptor {
+  readonly id: string
+  readonly version: number
+  readonly category: 'model_comparison' | 'prompt_variants' | 'structured_output' | 'tool_use' | 'knowledge_grounding' | 'multi_agent_review' | 'local_model_fit' | 'trust_boundaries'
+  readonly difficulty: 'introductory' | 'intermediate' | 'advanced'
+  readonly title: string
+  readonly description: string
+  readonly inputs: readonly WorkflowTemplateInput[]
+  readonly required_capabilities: readonly string[]
+  readonly optional_capabilities: readonly string[]
+  readonly workflow_binding: {
+    readonly template_id: string
+    readonly template_version: number
+    readonly template_graph_hash: string
+  } | null
+  readonly preview: readonly string[]
+  readonly availability:
+    | { readonly status: 'ready' }
+    | { readonly status: 'unsupported'; readonly reason_code: string }
+  readonly content_hash: string
+}
+
+export interface CapabilityRecipeCatalog {
+  readonly catalog_version: number
+  readonly recipes: readonly CapabilityRecipeDescriptor[]
+  readonly error_code: string
+}
+
+export interface CapabilityRecipePreflight {
+  readonly catalog_version: number
+  readonly recipe_id: string
+  readonly recipe_version: number
+  readonly recipe_hash: string
+  readonly state: 'ready' | 'ready_with_warnings' | 'blocked' | 'unsupported' | 'invalid_definition'
+  readonly reason_codes: readonly string[]
+  readonly workflow_binding: CapabilityRecipeDescriptor['workflow_binding']
+  readonly input_hash: string
+  readonly workspace_hash: string
+  readonly run_graph_hash: string
+  readonly preview: readonly string[]
+  readonly required_capabilities: readonly string[]
+  readonly optional_capabilities: readonly string[]
+  readonly revisions: readonly CapabilityRecipeRevision[]
+  readonly workflow_budget: {
+    readonly max_parallel_nodes: number
+    readonly max_tokens: number
+    readonly max_tool_calls: number
+    readonly max_wall_clock_ms: number
+  } | null
+  readonly approval_points: readonly string[]
+  readonly degraded_paths: readonly string[]
+  readonly preflight_hash: string
+  readonly error_code: string
+}
+
+export interface CapabilityRecipeRevision {
+  readonly owner_kind: string
+  readonly owner_id: string
+  readonly revision: string | null
+  readonly content_hash: string | null
+  readonly state: 'pinned' | 'not_pinned'
+  readonly reason_code: string
+}
+
+export interface CapabilityRecipeReplayOption {
+  readonly availability: 'available' | 'unavailable'
+  readonly reason_code: string
+}
+
+export interface CapabilityRecipeStartResult {
+  readonly run_id: string
+  readonly state: string
+  readonly graph_hash: string
+  readonly deduplicated: boolean
+  readonly error_code: string
+}
+
+export interface CapabilityRecipeRunResult {
+  readonly recipe_run: {
+    readonly run_id: string
+    readonly recipe_id: string
+    readonly recipe_version: number
+    readonly recipe_hash: string
+    readonly template_id: string
+    readonly template_version: number
+    readonly template_graph_hash: string
+    readonly run_graph_hash: string
+    readonly input_hash: string
+    readonly workspace_hash: string
+    readonly created_at_ms: number
+  } | null
+  readonly run: WorkflowRunProjection
+  readonly replay_options?: {
+    readonly reproduce_exact: CapabilityRecipeReplayOption
+    readonly rerun_current_compatible: CapabilityRecipeReplayOption
+  }
+  readonly error_code: string
+}
+
+export interface CapabilityRecipeForkResult {
+  readonly status: 'draft_created' | 'refused'
+  readonly source_run_id: string
+  readonly draft_id: string
+  readonly revision: number
+  readonly execution_hash: string
+  readonly layout_hash: string
+  readonly deduplicated: boolean
+  readonly error_code: string
+}
+
 export type PermissionMode = 'ask' | 'read_only' | 'full'
 
 /**
@@ -1424,6 +1535,11 @@ export const RENDERER_COMMANDS = [
   'workflow.getRun',
   'workflow.cancel',
   'workflow.listEvents',
+  'capabilityRecipe.list',
+  'capabilityRecipe.preflight',
+  'capabilityRecipe.start',
+  'capabilityRecipe.getRun',
+  'capabilityRecipe.forkRun',
   'workflowPackage.preview',
   'workflowPackage.export',
   'workflowPackage.commit',
@@ -1944,6 +2060,25 @@ export interface CommandPayloads {
   'workflow.getRun': { runId: string }
   'workflow.cancel': { runId: string }
   'workflow.listEvents': { runId: string; afterSequence?: number; limit?: number }
+  'capabilityRecipe.list': Record<string, never>
+  'capabilityRecipe.preflight': {
+    recipeId: string
+    recipeVersion: number
+    recipeHash: string
+    workspacePath: string
+    inputs: Record<string, string>
+  }
+  'capabilityRecipe.start': {
+    recipeId: string
+    recipeVersion: number
+    recipeHash: string
+    workspacePath: string
+    inputs: Record<string, string>
+    idempotencyKey: string
+    preflightHash: string
+  }
+  'capabilityRecipe.getRun': { runId: string }
+  'capabilityRecipe.forkRun': { runId: string; idempotencyKey: string }
   'workflowPackage.preview': {
     graphJson: string
     name: string
@@ -2362,6 +2497,11 @@ export interface CommandResults {
   'workflow.getRun': { accepted: boolean }
   'workflow.cancel': { accepted: boolean }
   'workflow.listEvents': { accepted: boolean }
+  'capabilityRecipe.list': { accepted: boolean }
+  'capabilityRecipe.preflight': { accepted: boolean }
+  'capabilityRecipe.start': { accepted: boolean }
+  'capabilityRecipe.getRun': { accepted: boolean }
+  'capabilityRecipe.forkRun': { accepted: boolean }
   'workflowPackage.preview': { accepted: boolean }
   'workflowPackage.export': { accepted: boolean }
   'workflowPackage.commit': { accepted: boolean }

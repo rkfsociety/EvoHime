@@ -120,6 +120,56 @@ fn draft_revision_and_handoff_publish_are_atomic() {
 }
 
 #[test]
+fn creating_a_draft_cannot_take_over_an_identifier_owned_by_another_scope() {
+    let connection = Connection::open_in_memory().unwrap();
+    install_schema(&connection).unwrap();
+    save_draft(
+        &connection,
+        SaveDraft {
+            draft_id: "shared-id",
+            owner_scope: "workspace:one",
+            expected_revision: 0,
+            definition_json: b"{}",
+            layout_json: b"{}",
+            execution_hash: "execution-hash",
+            layout_hash: "layout-hash",
+            composer_provenance_json: None,
+            updated_at_ms: 1,
+        },
+    )
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(
+        save_draft(
+            &connection,
+            SaveDraft {
+                draft_id: "shared-id",
+                owner_scope: "workspace:two",
+                expected_revision: 0,
+                definition_json: b"{\"other\":true}",
+                layout_json: b"{}",
+                execution_hash: "other-execution-hash",
+                layout_hash: "other-layout-hash",
+                composer_provenance_json: None,
+                updated_at_ms: 2,
+            },
+        )
+        .unwrap(),
+        Err("owner_conflict")
+    );
+    assert_eq!(
+        read_draft(&connection, "shared-id", "workspace:one")
+            .unwrap()
+            .map(|draft| draft.0),
+        Some(1)
+    );
+    assert!(read_draft(&connection, "shared-id", "workspace:two")
+        .unwrap()
+        .is_none());
+}
+
+#[test]
 fn reissuing_handoff_updates_without_replacing_row() {
     let connection = Connection::open_in_memory().unwrap();
     install_schema(&connection).unwrap();

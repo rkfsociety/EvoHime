@@ -16,6 +16,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
 /// Потолки полей. Они совпадают по духу с bounded-лимитами контракта: запись,
 /// которая не помещается, отклоняется, а не обрезается молча.
@@ -468,6 +469,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), WorkflowStoreError>
         "CREATE INDEX IF NOT EXISTS idx_workflow_run_events_ledger
              ON workflow_run_events(ledger_event_id) WHERE ledger_event_id IS NOT NULL;",
     )?;
+    crate::capability_recipe_store::install_schema(connection)?;
     Ok(())
 }
 
@@ -477,6 +479,51 @@ pub fn insert_run(
     connection: &Connection,
     run: &WorkflowRunRecord,
     nodes: &[WorkflowNodeRecord],
+) -> Result<(), WorkflowStoreError> {
+    insert_run_inner(connection, run, nodes, None)
+}
+
+/// Inserts a workflow run, its node records, and a recipe link in one
+/// transaction before any workflow effects can start.
+///
+/// # Errors
+///
+/// Returns a storage error when the workflow snapshot and recipe link disagree,
+/// either record exceeds its bounds, or SQLite rejects the transaction.
+pub fn insert_run_with_recipe(
+    connection: &Connection,
+    run: &WorkflowRunRecord,
+    nodes: &[WorkflowNodeRecord],
+    recipe_link: &crate::capability_recipe_store::RecipeRunLink,
+) -> Result<(), WorkflowStoreError> {
+    let workspace_hash = serde_json::from_str::<serde_json::Value>(&run.policy_json)
+        .ok()
+        .and_then(|policy| {
+            policy
+                .get("workspace_path")
+                .and_then(serde_json::Value::as_str)
+                .map(|path| hex::encode(sha2::Sha256::digest(path.as_bytes())))
+        })
+        .unwrap_or_default();
+    if recipe_link.run_id != run.run_id
+        || recipe_link.template_id != run.template_id
+        || recipe_link.template_version != run.template_version
+        || recipe_link.run_graph_hash != run.graph_hash
+        || recipe_link.input_hash != hex::encode(sha2::Sha256::digest(run.inputs_json.as_bytes()))
+        || recipe_link.workspace_hash != workspace_hash
+    {
+        return Err(WorkflowStoreError::Sqlite(
+            rusqlite::Error::InvalidParameterName("recipe_workflow_mismatch".into()),
+        ));
+    }
+    insert_run_inner(connection, run, nodes, Some(recipe_link))
+}
+
+fn insert_run_inner(
+    connection: &Connection,
+    run: &WorkflowRunRecord,
+    nodes: &[WorkflowNodeRecord],
+    recipe_link: Option<&crate::capability_recipe_store::RecipeRunLink>,
 ) -> Result<(), WorkflowStoreError> {
     bounded("run_id", &run.run_id, MAX_ID_BYTES, true)?;
     bounded("task_id", &run.task_id, MAX_ID_BYTES, true)?;
@@ -540,6 +587,9 @@ pub fn insert_run(
         ])?;
     }
     drop(insert_node);
+    if let Some(recipe_link) = recipe_link {
+        crate::capability_recipe_store::insert_link(&transaction, recipe_link)?;
+    }
     transaction.commit()?;
     Ok(())
 }

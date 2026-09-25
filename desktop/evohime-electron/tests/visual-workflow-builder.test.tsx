@@ -19,15 +19,30 @@ function event(payload: Record<string, unknown>): CoreEvent { return { sequenceI
 
 describe('VisualWorkflowBuilderPanel', () => {
   it('отправляет bounded validate через typed bridge', async () => {
-    render(<VisualWorkflowBuilderPanel connection="connected" events={[]} workspace="C:\\work" />)
+    render(<VisualWorkflowBuilderPanel connection="connected" events={[]} workspace="C:\\work" draftId="builder-draft" ownerScope={null} />)
     fireEvent.change(screen.getByLabelText('Workflow draft JSON'), { target: { value: '{"contract_version":"visual-workflow-builder/v1"}' } })
     fireEvent.click(screen.getByRole('button', { name: 'Проверить draft' }))
     await waitFor(() => expect(calls[0].command).toBe('workflowBuilder.command'))
     expect((calls[0].payload as { operation: string }).operation).toBe('validate')
   })
 
+  it('восстанавливает явно выбранный recipe draft при открытии Builder', async () => {
+    render(
+      <VisualWorkflowBuilderPanel
+        connection="connected"
+        events={[]}
+        workspace="C:\\work"
+        draftId="recipe-fork-1"
+        ownerScope="C:\\work"
+      />,
+    )
+    await waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0].command).toBe('workflowBuilder.command')
+    expect(calls[0].payload).toMatchObject({ operation: 'recover', draftId: 'recipe-fork-1' })
+  })
+
   it('не публикует без Core-issued handoff', () => {
-    render(<VisualWorkflowBuilderPanel connection="connected" events={[event({ status: 'valid' })]} workspace="C:\\work" />)
+    render(<VisualWorkflowBuilderPanel connection="connected" events={[event({ status: 'valid' })]} workspace="C:\\work" draftId="builder-draft" ownerScope={null} />)
     expect(screen.getByRole('button', { name: 'Опубликовать' }).hasAttribute('disabled')).toBe(true)
   })
 })

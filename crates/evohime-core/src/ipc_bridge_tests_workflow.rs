@@ -43,6 +43,368 @@ async fn the_template_catalog_is_bounded_and_versioned() {
     assert_eq!(approval_bearing["schedule_eligibility"], "unavailable");
 }
 
+#[tokio::test]
+async fn capability_recipe_catalog_is_fixed_and_marks_missing_adapters_unsupported() {
+    let (bridge, _directory) = workflow_bridge("capability-recipe-catalog");
+    let (event_type, payload) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::ListCapabilityRecipes(
+            generated::ListCapabilityRecipes {},
+        ),
+    )
+    .await;
+    assert_eq!(event_type, "capability_recipe.catalog");
+    assert_eq!(payload["error_code"], "");
+    assert_eq!(
+        payload["catalog_version"],
+        crate::capability_recipes::CATALOG_VERSION
+    );
+    let recipes = payload["recipes"].as_array().expect("recipes");
+    assert_eq!(recipes.len(), crate::capability_recipes::BUILTIN_RECIPE_COUNT);
+    let model_comparison = recipes
+        .iter()
+        .find(|recipe| recipe["id"] == "model-comparison")
+        .expect("model comparison descriptor");
+    assert_eq!(model_comparison["availability"]["status"], "unsupported");
+    assert_eq!(
+        model_comparison["availability"]["reason_code"],
+        "model_run_adapter_unavailable"
+    );
+    assert!(model_comparison.get("graph").is_none());
+}
+
+#[tokio::test]
+async fn recipe_preflight_binds_input_and_workspace_hashes_without_echoing_values() {
+    let (bridge, directory) = workflow_bridge("capability-recipe-preflight");
+    let recipe = crate::capability_recipes::descriptor("knowledge-grounding")
+        .expect("catalog")
+        .expect("recipe");
+    let workspace_path = directory.path().to_string_lossy().to_string();
+    let secret_question = "private recipe input that must not return";
+    let (event_type, payload) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::PreflightCapabilityRecipe(
+            generated::PreflightCapabilityRecipe {
+                recipe_id: recipe.id,
+                recipe_version: recipe.version,
+                recipe_hash: recipe.content_hash,
+                inputs: vec![generated::WorkflowInput {
+                    name: "question".into(),
+                    value: secret_question.into(),
+                }],
+                workspace_path: workspace_path.clone(),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(event_type, "capability_recipe.preflight");
+    assert_eq!(payload["state"], "ready_with_warnings");
+    assert_eq!(payload["input_hash"].as_str().unwrap_or_default().len(), 64);
+    assert_eq!(payload["workspace_hash"].as_str().unwrap_or_default().len(), 64);
+    assert!(!payload.to_string().contains(secret_question));
+    assert!(!payload.to_string().contains(&workspace_path));
+}
+
+#[tokio::test]
+async fn guided_recipe_start_is_idempotent_and_stores_only_safe_attribution() {
+    let (bridge, directory) = workflow_bridge("capability-recipe-start");
+    let recipe = crate::capability_recipes::descriptor("knowledge-grounding")
+        .expect("catalog")
+        .expect("recipe");
+    let workspace_path = directory.path().to_string_lossy().to_string();
+    let inputs = vec![generated::WorkflowInput {
+        name: "question".into(),
+        value: "question not copied into recipe sidecar".into(),
+    }];
+    let (_, preflight) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::PreflightCapabilityRecipe(
+            generated::PreflightCapabilityRecipe {
+                recipe_id: recipe.id.clone(),
+                recipe_version: recipe.version,
+                recipe_hash: recipe.content_hash.clone(),
+                inputs: inputs.clone(),
+                workspace_path: workspace_path.clone(),
+            },
+        ),
+    )
+    .await;
+    let request = || {
+        generated::command_envelope::Command::StartCapabilityRecipe(
+            generated::StartCapabilityRecipe {
+                recipe_id: recipe.id.clone(),
+                recipe_version: recipe.version,
+                recipe_hash: recipe.content_hash.clone(),
+                workspace_path: workspace_path.clone(),
+                inputs: inputs.clone(),
+                idempotency_key: "guided-recipe-start-key".into(),
+                preflight_hash: preflight["preflight_hash"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            },
+        )
+    };
+    let (event_type, first) = ambient_call(&bridge, request()).await;
+    assert_eq!(event_type, "capability_recipe.started");
+    assert_eq!(first["error_code"], "");
+    assert_eq!(first["deduplicated"], false);
+    let run_id = first["run_id"].as_str().expect("run id").to_string();
+
+    let (_, second) = ambient_call(&bridge, request()).await;
+    assert_eq!(second["run_id"], run_id);
+    assert_eq!(second["deduplicated"], true);
+    let (run_event, run_projection) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::GetCapabilityRecipeRun(
+            generated::GetCapabilityRecipeRun {
+                run_id: run_id.clone(),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(run_event, "capability_recipe.run");
+    assert_eq!(
+        run_projection["replay_options"]["reproduce_exact"]["availability"],
+        "unavailable"
+    );
+    assert_eq!(
+        run_projection["replay_options"]["reproduce_exact"]["reason_code"],
+        "external_revision_pins_not_persisted"
+    );
+    assert_eq!(
+        run_projection["replay_options"]["rerun_current_compatible"]["availability"],
+        "unavailable"
+    );
+    let link = bridge
+        .journal()
+        .capability_recipe_run_by_workflow(&run_id)
+        .await
+        .expect("link query")
+        .expect("recipe link");
+    assert_eq!(link.recipe_id, "knowledge-grounding");
+    assert_eq!(
+        link.input_hash,
+        preflight["input_hash"].as_str().unwrap_or_default()
+    );
+    assert!(!serde_json::to_string(&link)
+        .expect("safe attribution serializes")
+        .contains("question not copied into recipe sidecar"));
+    assert_eq!(
+        bridge
+            .journal()
+            .list_workflow_runs(10)
+            .await
+            .expect("workflow rows")
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn core_startup_recovers_interrupted_workflow_runs_before_ipc() {
+    let (bridge, directory) = workflow_bridge("workflow-startup-recovery");
+    let workspace_path = directory.path().to_string_lossy().to_string();
+    let template = crate::workflow_templates::template("repository-research")
+        .expect("research workflow template");
+    let inputs = std::collections::BTreeMap::from([(
+        "question".to_string(),
+        "inspect startup recovery".to_string(),
+    )]);
+    let graph = template.instantiate(&inputs).expect("template inputs");
+    let run_id = "startup-recovery-run";
+    let runtime = bridge.workflow_runtime(&workspace_path);
+    runtime
+        .start(crate::workflow_runtime::StartWorkflowRequest {
+            run_id: run_id.into(),
+            task_id: run_id.into(),
+            workspace_path,
+            template_id: template.template_id,
+            template_version: template.version,
+            inputs,
+            graph: graph.clone(),
+            parent: crate::ipc_bridge::workflow_parent_capabilities(),
+        })
+        .await
+        .expect("durable run");
+    let stored_run = bridge
+        .journal()
+        .workflow_run(run_id)
+        .await
+        .expect("load stored run")
+        .expect("stored workflow");
+    let stored_graph: crate::workflow::WorkflowGraph =
+        serde_json::from_str(&stored_run.graph_json).expect("stored graph");
+    let first_node = stored_graph.nodes.first().expect("workflow node");
+    {
+        let database = bridge.journal().database().lock().await;
+        evohime_local_storage::workflow_store::begin_attempt(
+            database.connection(),
+            &evohime_local_storage::workflow_store::WorkflowAttemptRecord {
+                attempt_id: format!("{run_id}:{}:1", first_node.id),
+                run_id: run_id.into(),
+                node_id: first_node.id.clone(),
+                attempt: 1,
+                graph_hash: stored_run.graph_hash,
+                input_hash: String::new(),
+                dispatched_at_ms: 1,
+                completed_at_ms: None,
+                outcome: String::new(),
+                error_code: String::new(),
+            },
+        )
+        .expect("persist open attempt");
+    }
+
+    let recovery = bridge
+        .recover_workflow_runs_on_startup()
+        .await
+        .expect("startup recovery");
+    assert_eq!(recovery.interrupted_runs, vec![run_id.to_string()]);
+    assert_eq!(recovery.unknown_attempts.len(), 1);
+    assert_eq!(
+        bridge
+            .journal()
+            .workflow_run(run_id)
+            .await
+            .expect("load recovered run")
+            .expect("recovered workflow")
+            .state,
+        evohime_local_storage::workflow_store::RunState::Interrupted
+    );
+}
+
+#[tokio::test]
+async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_grants() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let workspace_path = directory.path().to_string_lossy().to_string();
+    let journal = EventJournal::open(directory.path().join("recipe-fork.db")).expect("journal");
+    let bridge = IpcBridge::new(journal);
+    let recipe = crate::capability_recipes::descriptor("knowledge-grounding")
+        .expect("catalog")
+        .expect("recipe");
+    let binding = recipe.workflow_binding.as_ref().expect("binding");
+    let template = crate::workflow_templates::template(&binding.template_id).expect("template");
+    let inputs = std::collections::BTreeMap::from([(
+        "question".to_string(),
+        "private run input must not be forked".to_string(),
+    )]);
+    let inputs_json = serde_json::to_string(&inputs).expect("inputs");
+    let graph = template
+        .instantiate(&inputs)
+        .expect("instantiated run graph");
+    let expanded = crate::workflow_registry::WorkflowRegistry::bootstrap()
+        .expand_subgraphs(&graph)
+        .expect("expanded graph");
+    let graph_json = serde_json::to_string(&expanded).expect("graph");
+    let run_id = "completed-recipe-run";
+    let created_at_ms = 1;
+    let run = evohime_local_storage::workflow_store::WorkflowRunRecord {
+        run_id: run_id.into(),
+        task_id: run_id.into(),
+        template_id: template.template_id.clone(),
+        template_version: template.version,
+        graph_id: expanded.graph_id.clone(),
+        graph_version: expanded.version,
+        graph_hash: expanded.canonical_hash(),
+        graph_json,
+        inputs_json: inputs_json.clone(),
+        policy_json: serde_json::json!({"workspace_path": &workspace_path})
+            .to_string(),
+        state: evohime_local_storage::workflow_store::RunState::Completed,
+        created_at_ms,
+        updated_at_ms: created_at_ms,
+        terminal_reason: String::new(),
+        cancel_requested: false,
+        lease_owner: String::new(),
+        lease_expires_at_ms: 0,
+    };
+    let nodes = expanded
+        .nodes
+        .iter()
+        .map(|node| evohime_local_storage::workflow_store::WorkflowNodeRecord {
+            run_id: run_id.into(),
+            node_id: node.id.clone(),
+            action_kind: node.node_type.action_kind().into(),
+            state: evohime_local_storage::workflow_store::NodeState::Pending,
+            attempts: 0,
+            output_json: String::new(),
+            error_code: String::new(),
+            error_message: String::new(),
+            approval_id: String::new(),
+            updated_at_ms: created_at_ms,
+        })
+        .collect::<Vec<_>>();
+    let link = evohime_local_storage::capability_recipe_store::RecipeRunLink {
+        run_id: run_id.into(),
+        recipe_id: recipe.id.clone(),
+        recipe_version: recipe.version,
+        recipe_hash: recipe.content_hash.clone(),
+        template_id: binding.template_id.clone(),
+        template_version: binding.template_version,
+        template_graph_hash: binding.template_graph_hash.clone(),
+        run_graph_hash: expanded.canonical_hash(),
+        input_hash: hex::encode(<sha2::Sha256 as sha2::Digest>::digest(inputs_json.as_bytes())),
+        workspace_hash: hex::encode(<sha2::Sha256 as sha2::Digest>::digest(workspace_path.as_bytes())),
+        idempotency_key: "recipe-fork-source-run".into(),
+        created_at_ms,
+    };
+    bridge
+        .journal()
+        .insert_guided_workflow_run(&run, &nodes, &link)
+        .await
+        .expect("completed recipe run");
+
+    let (event_type, forked) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::ForkCapabilityRecipeRun(
+            generated::ForkCapabilityRecipeRun {
+                run_id: run_id.into(),
+                idempotency_key: "fork-attempt-1".into(),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(event_type, "capability_recipe.forked");
+    assert_eq!(forked["status"], "draft_created");
+    assert_eq!(forked["source_run_id"], run_id);
+    assert_eq!(forked["error_code"], "");
+
+    let (event_type, recovered) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::VisualWorkflowBuilder(
+            generated::VisualWorkflowBuilderCommand {
+                schema_version: 1,
+                request_id: "recover-forked-draft".into(),
+                owner_scope: workspace_path,
+                draft_id: forked["draft_id"].as_str().unwrap_or_default().into(),
+                operation: "recover".into(),
+                payload: Vec::new(),
+                expected_revision: 0,
+                idempotency_key: "recover-forked-draft".into(),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(event_type, "workflow_builder.result");
+    assert_eq!(recovered["status"], "recovered");
+    let draft_json = recovered["draft_json"].as_str().expect("draft definition");
+    assert!(!draft_json.contains("private run input must not be forked"));
+    let definition: crate::visual_workflow_builder::VisualWorkflowBuilderDefinition =
+        serde_json::from_str(draft_json).expect("builder definition");
+    for node in &definition.graph.nodes {
+        if let crate::workflow::NodeType::Child { child } = &node.node_type {
+            assert!(child.grants.is_empty());
+            assert!(child.context_allowlist.is_empty());
+            assert!(child.artifact_allowlist.is_empty());
+        }
+    }
+    let template_base = template.graph();
+    for (base, forked_node) in template_base.nodes.iter().zip(&definition.graph.nodes) {
+        assert_eq!(base.execution, forked_node.execution);
+    }
+}
+
 /// Неизвестный шаблон получает typed-код, а не пустой успешный ответ.
 #[tokio::test]
 async fn an_unknown_template_definition_is_named_not_faked() {

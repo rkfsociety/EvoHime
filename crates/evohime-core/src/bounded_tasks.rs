@@ -34,16 +34,27 @@ impl BoundedTaskGroup {
     where
         F: Future<Output = ()> + Send + 'static,
     {
-        let Ok(permit) = self.permits.clone().try_acquire_owned() else {
+        let Some(permit) = self.try_acquire() else {
             return false;
         };
+        self.spawn_reserved(permit, task).await;
+        true
+    }
+
+    /// Spawns a task using capacity reserved before its durable work is created.
+    pub(crate) async fn spawn_reserved<F>(
+        &self,
+        permit: tokio::sync::OwnedSemaphorePermit,
+        task: F,
+    ) where
+        F: Future<Output = ()> + Send + 'static,
+    {
         let mut tasks = self.tasks.lock().await;
         while tasks.try_join_next().is_some() {}
         tasks.spawn(async move {
             let _permit = permit;
             task.await;
         });
-        true
     }
 
     #[cfg(test)]
@@ -77,6 +88,25 @@ mod tests {
         notifier.notify_waiters();
         tokio::time::sleep(Duration::from_millis(10)).await;
         assert_eq!(group.active_tasks().await, 0);
+        assert!(group.try_spawn(async {}).await);
+    }
+
+    #[tokio::test]
+    async fn a_reserved_slot_stays_bounded_until_the_task_is_released() {
+        let group = BoundedTaskGroup::new(1);
+        let permit = group.try_acquire().expect("reserved capacity");
+        let (start_tx, start_rx) = tokio::sync::oneshot::channel::<()>();
+        group
+            .spawn_reserved(permit, async move {
+                if start_rx.await.is_ok() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await;
+
+        assert!(!group.try_spawn(async {}).await);
+        let _ = start_tx.send(());
+        let _ = group.tasks.lock().await.join_next().await;
         assert!(group.try_spawn(async {}).await);
     }
 }

@@ -23,6 +23,7 @@ import { ScheduledPanel } from './ScheduledPanel'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
 import { WorkflowPanel } from './WorkflowPanel'
+import { CapabilityRecipePanel } from './CapabilityRecipePanel'
 import { OverviewPanel } from './OverviewPanel'
 import { ListeningPanel, REASON_TEXTS, STATE_TITLES } from './ListeningPanel'
 import { TracePanel } from './TracePanel'
@@ -95,6 +96,8 @@ export function App(): React.JSX.Element {
   const [apiMissing, setApiMissing] = useState(false)
   const [view, setView] = useState<ViewId>('chat')
   const [workspace, setWorkspace] = useState<string | null>(null)
+  const [builderDraftId, setBuilderDraftId] = useState('builder-draft')
+  const [builderDraftOwnerScope, setBuilderDraftOwnerScope] = useState<string | null>(null)
   const [chatId, setChatId] = useState<string | null>(null)
   const workspaceRef = useRef(workspace)
   // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
@@ -112,11 +115,21 @@ export function App(): React.JSX.Element {
   const [workbenchVisible, setWorkbenchVisible] = useState(false)
   const [browserVisible, setBrowserVisible] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
+  const openRecipeDraft = useCallback((draftId: string, ownerScope: string) => {
+    if (!sameWorkspacePath(workspaceRef.current, ownerScope)) return
+    setBuilderDraftId(draftId)
+    setBuilderDraftOwnerScope(ownerScope)
+  }, [])
 
   const api = useShellApi()
 
   useEffect(() => {
     workspaceRef.current = workspace
+  }, [workspace])
+
+  useEffect(() => {
+    setBuilderDraftId('builder-draft')
+    setBuilderDraftOwnerScope(null)
   }, [workspace])
 
   const changeWorkspace = useCallback((nextWorkspace: string | null) => {
@@ -378,8 +391,9 @@ export function App(): React.JSX.Element {
               {view === 'workflows' ? (
                 <>
                   <WorkflowPanel connection={connection} events={events} workspace={workspace} />
+                  <CapabilityRecipePanel connection={connection} events={events} workspace={workspace} onOpenDraft={openRecipeDraft} />
                   <ConversationalWorkflowComposerPanel connection={connection} events={events} workspace={workspace} />
-                  <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} />
+                  <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} draftId={builderDraftId} ownerScope={builderDraftOwnerScope} />
                 </>
               ) : null}
               {view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null}

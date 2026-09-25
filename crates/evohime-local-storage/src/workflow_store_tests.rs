@@ -1,4 +1,5 @@
 use super::*;
+use sha2::Digest;
 
 #[allow(clippy::too_many_arguments)]
 fn update_node_state(
@@ -48,7 +49,7 @@ fn run(run_id: &str) -> WorkflowRunRecord {
         graph_hash: "a".repeat(64),
         graph_json: "{}".into(),
         inputs_json: "{}".into(),
-        policy_json: "{}".into(),
+        policy_json: r#"{"workspace_path":"C:\\repo"}"#.into(),
         state: RunState::Pending,
         created_at_ms: 1_000,
         updated_at_ms: 1_000,
@@ -74,6 +75,23 @@ fn node(run_id: &str, node_id: &str) -> WorkflowNodeRecord {
     }
 }
 
+fn recipe_link(run_id: &str, idempotency_key: &str) -> crate::capability_recipe_store::RecipeRunLink {
+    crate::capability_recipe_store::RecipeRunLink {
+        run_id: run_id.into(),
+        recipe_id: "knowledge-grounding".into(),
+        recipe_version: 1,
+        recipe_hash: format!("sha256:{}", "b".repeat(64)),
+        template_id: "repository-research".into(),
+        template_version: 1,
+        template_graph_hash: "c".repeat(64),
+        run_graph_hash: "a".repeat(64),
+        input_hash: hex::encode(sha2::Sha256::digest(b"{}")),
+        workspace_hash: hex::encode(sha2::Sha256::digest(b"C:\\repo")),
+        idempotency_key: idempotency_key.into(),
+        created_at_ms: 1_000,
+    }
+}
+
 #[test]
 fn a_run_is_stored_with_its_nodes_and_read_back_unchanged() {
     let connection = connection();
@@ -88,6 +106,59 @@ fn a_run_is_stored_with_its_nodes_and_read_back_unchanged() {
     let nodes = list_nodes(&connection, "run-1").expect("nodes");
     assert_eq!(nodes.len(), 2);
     assert_eq!(nodes[0].node_id, "a");
+}
+
+#[test]
+fn guided_run_and_recipe_link_are_committed_together() {
+    let connection = connection();
+    let record = run("guided-run-1");
+    let link = recipe_link(&record.run_id, "recipe-request-1");
+
+    insert_run_with_recipe(&connection, &record, &[node(&record.run_id, "a")], &link)
+        .expect("workflow and recipe link commit");
+
+    assert_eq!(get_run(&connection, &record.run_id).expect("run"), Some(record));
+    assert_eq!(
+        crate::capability_recipe_store::get_by_run(&connection, &link.run_id)
+            .expect("recipe link"),
+        Some(link.clone())
+    );
+    assert_eq!(
+        crate::capability_recipe_store::get_by_idempotency_key(
+            &connection,
+            &link.recipe_id,
+            link.recipe_version,
+            &link.idempotency_key,
+        )
+        .expect("idempotency lookup"),
+        Some(link)
+    );
+}
+
+#[test]
+fn conflicting_recipe_idempotency_rolls_back_the_new_workflow_run() {
+    let connection = connection();
+    let first = run("guided-run-1");
+    let first_link = recipe_link(&first.run_id, "same-request");
+    insert_run_with_recipe(&connection, &first, &[node(&first.run_id, "a")], &first_link)
+        .expect("first guided run");
+
+    let second = run("guided-run-2");
+    let mut conflicting_link = recipe_link(&second.run_id, "same-request");
+    conflicting_link.recipe_hash = format!("sha256:{}", "f".repeat(64));
+    assert!(insert_run_with_recipe(
+        &connection,
+        &second,
+        &[node(&second.run_id, "a")],
+        &conflicting_link,
+    )
+    .is_err());
+    assert_eq!(get_run(&connection, &second.run_id).expect("run lookup"), None);
+    assert_eq!(
+        crate::capability_recipe_store::get_by_run(&connection, &first.run_id)
+            .expect("first link"),
+        Some(first_link)
+    );
 }
 
 #[test]

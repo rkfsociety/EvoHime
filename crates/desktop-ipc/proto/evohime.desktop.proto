@@ -1351,6 +1351,37 @@ message ListWorkflowEvents {
   int32 limit = 3;
 }
 
+// Guided capability recipes add safe Core projections over existing workflow
+// owners. They do not carry workflow graphs or runtime state in the renderer.
+message ListCapabilityRecipes {}
+
+message PreflightCapabilityRecipe {
+  string recipe_id = 1;
+  uint32 recipe_version = 2;
+  string recipe_hash = 3;
+  repeated WorkflowInput inputs = 4;
+  string workspace_path = 5;
+}
+
+message StartCapabilityRecipe {
+  string recipe_id = 1;
+  uint32 recipe_version = 2;
+  string recipe_hash = 3;
+  string workspace_path = 4;
+  repeated WorkflowInput inputs = 5;
+  string idempotency_key = 6;
+  string preflight_hash = 7;
+}
+
+message GetCapabilityRecipeRun {
+  string run_id = 1;
+}
+
+message ForkCapabilityRecipeRun {
+  string run_id = 1;
+  string idempotency_key = 2;
+}
+
 // --- Automation scheduler (plan 18.1) -------------------------------------
 // Additive commands. Core owns schedule validation, persistence and trigger
 // idempotency; the renderer receives only bounded projections.
@@ -1934,6 +1965,11 @@ message CommandEnvelope {
     AgentClientProtocolBridgeCommand agent_client_protocol_bridge = 277;
     MultiReviewerEnsembleCommand multi_reviewer_ensemble = 278;
     LanguageIntelligenceCommand language_intelligence = 279;
+    ListCapabilityRecipes list_capability_recipes = 280;
+    PreflightCapabilityRecipe preflight_capability_recipe = 281;
+    StartCapabilityRecipe start_capability_recipe = 282;
+    GetCapabilityRecipeRun get_capability_recipe_run = 283;
+    ForkCapabilityRecipeRun fork_capability_recipe_run = 284;
   }
 }
 

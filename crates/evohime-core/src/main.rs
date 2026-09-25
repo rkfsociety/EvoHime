@@ -371,6 +371,15 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_free_access_probe_guard(free_access_probe_guard)
     .with_free_access_probe_cancellation(free_access_probe_cancellation.clone())
     .with_ambient_data_dir(data_dir.clone());
+    let workflow_recovery = bridge
+        .recover_workflow_runs_on_startup()
+        .await
+        .map_err(|error| format!("workflow run recovery failed: {error}"))?;
+    tracing::info!(
+        interrupted_runs = workflow_recovery.interrupted_runs.len(),
+        unknown_attempts = workflow_recovery.unknown_attempts.len(),
+        "workflow recovery completed before IPC startup"
+    );
     let recovered_provider_catalogs = bridge.hydrate_provider_catalog_snapshots().await;
     let recovered_free_access_evidence = bridge.hydrate_free_access_evidence().await;
     tracing::info!(

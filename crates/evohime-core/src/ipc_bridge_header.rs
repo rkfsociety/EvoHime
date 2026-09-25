@@ -759,7 +759,7 @@ fn continuation_public_json(
 /// Оболочка не назначает права: набор фиксирован Core и совпадает с тем, что
 /// уже разрешено обычной задаче чтения репозитория. Child-узел может получить
 /// только подмножество.
-fn workflow_parent_capabilities() -> crate::workflow_registry::ParentCapabilities {
+pub(crate) fn workflow_parent_capabilities() -> crate::workflow_registry::ParentCapabilities {
     crate::workflow_registry::ParentCapabilities {
         grants: std::collections::BTreeSet::from([
             "fs.read".to_string(),

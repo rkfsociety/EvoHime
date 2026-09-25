@@ -2085,6 +2085,56 @@ function dispatch(
     case 'workflow.listTemplates':
       return accepted(client.send({ listWorkflowTemplates: {} }))
 
+    case 'capabilityRecipe.list':
+      return accepted(client.send({ listCapabilityRecipes: {} }))
+
+    case 'capabilityRecipe.preflight': {
+      const value = asRecord(payload)
+      const recipeId = asBoundedString(value['recipeId'])
+      const recipeVersion = asBoundedNumber(value['recipeVersion'], Number.MAX_SAFE_INTEGER)
+      const recipeHash = asBoundedString(value['recipeHash'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const inputs = asWorkflowInputs(value['inputs'])
+      if (recipeId === null || recipeVersion === null || recipeVersion < 1 || recipeHash === null || workspacePath === null) {
+        return failure('invalid-payload', 'Некорректный запрос preflight recipe.')
+      }
+      if (inputs === null) return failure('invalid-payload', 'Некорректные входы recipe.')
+      return accepted(client.send({ preflightCapabilityRecipe: { recipeId, recipeVersion, recipeHash, inputs, workspacePath } }))
+    }
+
+    case 'capabilityRecipe.start': {
+      const value = asRecord(payload)
+      const recipeId = asBoundedString(value['recipeId'])
+      const recipeVersion = asBoundedNumber(value['recipeVersion'], Number.MAX_SAFE_INTEGER)
+      const recipeHash = asBoundedString(value['recipeHash'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const inputs = asWorkflowInputs(value['inputs'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const preflightHash = asBoundedString(value['preflightHash'])
+      if (recipeId === null || recipeVersion === null || recipeVersion < 1 || recipeHash === null || workspacePath === null || idempotencyKey === null || idempotencyKey.length > 256 || preflightHash === null) {
+        return failure('invalid-payload', 'Некорректный запрос запуска recipe.')
+      }
+      if (inputs === null) return failure('invalid-payload', 'Некорректные входы recipe.')
+      return accepted(client.send({ startCapabilityRecipe: { recipeId, recipeVersion, recipeHash, workspacePath, inputs, idempotencyKey, preflightHash } }))
+    }
+
+    case 'capabilityRecipe.getRun': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      if (runId === null) return failure('invalid-payload', 'Некорректный идентификатор запуска recipe.')
+      return accepted(client.send({ getCapabilityRecipeRun: { runId } }))
+    }
+
+    case 'capabilityRecipe.forkRun': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (runId === null || idempotencyKey === null || idempotencyKey.length > 256) {
+        return failure('invalid-payload', 'Некорректный запрос fork recipe run.')
+      }
+      return accepted(client.send({ forkCapabilityRecipeRun: { runId, idempotencyKey } }))
+    }
+
     case 'workflow.getDefinition': {
       const value = asRecord(payload)
       const templateId = asBoundedString(value['templateId'])

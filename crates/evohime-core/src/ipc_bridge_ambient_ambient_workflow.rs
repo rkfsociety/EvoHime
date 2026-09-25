@@ -115,6 +115,51 @@ impl IpcBridge {
                 self.write_response(writer, "workflow.events", serde_json::to_vec(&result)?)
                     .await?;
             }
+            Some(generated::command_envelope::Command::ListCapabilityRecipes(_)) => {
+                let result = self.dispatch_list_capability_recipes();
+                self.write_response(
+                    writer,
+                    "capability_recipe.catalog",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::PreflightCapabilityRecipe(request)) => {
+                let result = self.dispatch_preflight_capability_recipe(request);
+                self.write_response(
+                    writer,
+                    "capability_recipe.preflight",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::StartCapabilityRecipe(request)) => {
+                let result = self.dispatch_start_capability_recipe(request).await;
+                self.write_response(
+                    writer,
+                    "capability_recipe.started",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::GetCapabilityRecipeRun(request)) => {
+                let result = self.dispatch_capability_recipe_run(request).await;
+                self.write_response(
+                    writer,
+                    "capability_recipe.run",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::ForkCapabilityRecipeRun(request)) => {
+                let result = self.dispatch_fork_capability_recipe_run(request).await;
+                self.write_response(
+                    writer,
+                    "capability_recipe.forked",
+                    serde_json::to_vec(&result)?,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::VisualWorkflowBuilder(request)) => {
                 let result = self.dispatch_visual_workflow_builder(request).await;
                 self.write_response(
