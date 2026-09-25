@@ -20,7 +20,8 @@
 ### Блокирующие
 
 - Existing context/loadout, output/tool contract, provenance and local-storage
-  conventions; plan 176 recipe refs must remain additive.
+  conventions; recipe refs in the canonical Guided Capability Recipes
+  contract must remain additive.
 
 ### Опциональные
 

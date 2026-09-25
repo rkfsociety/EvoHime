@@ -3331,3 +3331,19 @@ The full native package acceptance run was cancelled before completion after
 the validation scope was narrowed to affected modules. Its partial output is
 not treated as evidence; validation followed the affected module workflows and
 directly relevant Rust documentation workflow.
+
+## Guided Capability Recipes (plan 176)
+
+Implementation commit
+[`39bf340d38f56a3bf8d2abf09ec7cbb4f2987bdf`](https://github.com/rkfsociety/EvoHime/commit/39bf340d38f56a3bf8d2abf09ec7cbb4f2987bdf)
+passed the exact-commit [Core module workflow](https://github.com/rkfsociety/EvoHime/actions/runs/36191335248)
+(format, all Core tests, lint, release build and stable publication),
+[Rust documentation and doc-tests](https://github.com/rkfsociety/EvoHime/actions/runs/36191281975),
+and [module router](https://github.com/rkfsociety/EvoHime/actions/runs/36191282074).
+Core release `module-core-v0.0.000377` points to the implementation commit.
+The affected Electron [shell-host](https://github.com/rkfsociety/EvoHime/actions/runs/36188048592)
+and [UI bundle](https://github.com/rkfsociety/EvoHime/actions/runs/36188044890)
+module workflows passed on the immediately preceding implementation commit
+`58bdd0df675d2cc9656780e74411fae432af4663`; the intervening changes were
+Core-only Rust fixes. No full native package acceptance run was required by the
+plan's narrowed verification scope.

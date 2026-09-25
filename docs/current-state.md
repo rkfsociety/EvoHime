@@ -456,11 +456,25 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `176–181` и `184–188`; план 175 и планы `149–167` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `177–181` и `184–188`; планы `01–176` и `183` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
 не по старому линейному списку.
+
+## Plan 176 — Guided Capability Recipes v1 (закрыт 2026-09-25)
+
+Core предоставляет фиксированный каталог восьми typed recipes поверх
+существующих workflow templates. Запуск требует точного registry-validated
+binding; неподдержанные категории остаются `Unsupported`. Preflight проверяет
+bounded inputs, workspace, workflow graph, grants, budgets, approvals и
+revisions. Запуск создаёт обычный workflow run и immutable recipe attribution
+одной SQLite-транзакцией; recovery, status и cancellation принадлежат
+существующему workflow runtime. IPC commands 280–284 дают Electron bounded
+catalog/preflight/run/fork projections. Fork завершённого run создаёт draft
+из точного template с placeholders и без inputs, outputs, grants, secrets или
+allowlists. Канонический контракт находится в
+[`architecture.md`](architecture.md#guided-capability-recipes-v1).
 
 ## Plan 132 — Durable Background Execution Plane (закрыт 2026-09-09)
 

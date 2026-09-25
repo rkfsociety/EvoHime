@@ -15,7 +15,8 @@ evaluation evidence. Resolver соединяет существующие owners
 
 В checkout уже зарегистрированы `workflow_optimization_lab.rs`,
 `agent_benchmark_matrix.rs`, `context_budget.rs`, `context_loadouts.rs`,
-model routing и guided recipe plan 176. Нужно вынести strategy identity,
+model routing и guided recipes, контракт которых зафиксирован в
+[`../architecture.md`](../architecture.md#guided-capability-recipes-v1). Нужно вынести strategy identity,
 compatibility и selection snapshot из hardcoded workflow strings, сохранив
 workflow orchestration, gateway, context and evaluation ownership.
 
@@ -46,7 +47,9 @@ structured-output и bounded multi-sample strategies без hidden chain-of-thou
   budget/loadouts and structured output/tool contracts.
 - Existing Agent Benchmark Matrix and Workflow Optimization Lab; they remain
   the only evaluation/candidate-search owners.
-- Plan 176 Guided Capability Recipes for strategy references in guided recipes.
+- Guided Capability Recipes contract в
+  [`../architecture.md`](../architecture.md#guided-capability-recipes-v1) для
+  strategy references в recipes.
 - Existing SQLite/domain facade, provenance and authenticated IPC.
 
 ### Опциональные
