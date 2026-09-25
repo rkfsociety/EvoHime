@@ -734,16 +734,14 @@ impl IpcBridge {
                     updated_at_ms: crate::task_memory::now_millis() as i64,
                 },
             ) {
-                Ok(Ok(revision)) => {
-                    capability_recipe_fork_success(
-                        source_run_id,
-                        &draft_id,
-                        revision,
-                        &execution_hash,
-                        &layout_hash,
-                        false,
-                    );
-                }
+                Ok(Ok(revision)) => capability_recipe_fork_success(
+                    source_run_id,
+                    &draft_id,
+                    revision,
+                    &execution_hash,
+                    &layout_hash,
+                    false,
+                ),
                 Ok(Err("stale_revision")) => {
                     if let Ok(Some((
                         revision,
