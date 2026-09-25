@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 
 import {
   PROVIDER_KINDS,
+  PROVIDER_PROFILE_ENDPOINTS,
+  PROVIDER_PROFILE_IDS,
   OLLAMA_DEFAULT_BASE_URL,
   type ModelTier,
   type ProviderKind,
+  type ProviderProfileId,
   type ProviderSummary
 } from '@shared/api'
 
@@ -27,6 +30,19 @@ const PROVIDER_LABELS: Record<ProviderKind, string> = {
   openai_compatible: 'OpenAI API (Chat Completions)',
   openai_responses: 'OpenAI Responses API',
   ollama: 'Ollama (локально)'
+}
+
+const PROFILE_LABELS: Record<ProviderProfileId, string> = {
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+  groq: 'Groq',
+  gemini: 'Google Gemini',
+  mistral: 'Mistral',
+  cloudflare_workers_ai: 'Cloudflare Workers AI',
+  nvidia_nim: 'NVIDIA NIM',
+  cerebras: 'Cerebras',
+  hugging_face: 'Hugging Face Inference Providers',
+  custom: 'Другой OpenAI-compatible API'
 }
 
 const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly hint: string }[] = [
@@ -53,6 +69,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [model, setModel] = useState('')
   const [tier, setTier] = useState<ModelTier>('free')
   const [baseUrl, setBaseUrl] = useState('')
+  const [profileId, setProfileId] = useState<ProviderProfileId>('openai')
+  const [accountId, setAccountId] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [catalogStatus, setCatalogStatus] = useState<string | null>(null)
 
@@ -62,6 +80,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setModel(value.model ?? '')
     setTier(value.tier === 'paid' ? 'paid' : 'free')
     setBaseUrl(value.baseUrl ?? (value.provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
+    setProfileId(value.provider === 'openai_compatible' ? (value.profileId ?? 'openai') : 'custom')
+    setAccountId(value.accountId ?? '')
   }, [])
 
   useEffect(() => {
@@ -96,6 +116,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setModel(profile?.model ?? '')
     setTier(profile?.tier ?? 'free')
     setBaseUrl(profile?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
+    setProfileId(nextProvider === 'openai_compatible' ? (profile?.profileId ?? 'openai') : 'custom')
+    setAccountId(profile?.accountId ?? '')
     setStatus({ kind: 'saving' })
 
     const outcome = await api.invoke('provider.select', { provider: nextProvider })
@@ -109,6 +131,17 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
   }, [api, apply, applySummary, provider, summary])
 
+  const selectProfile = useCallback((nextProfile: ProviderProfileId) => {
+    setProfileId(nextProfile)
+    if (nextProfile === 'cloudflare_workers_ai') {
+      setAccountId('')
+      setBaseUrl('')
+      return
+    }
+    setAccountId('')
+    setBaseUrl(PROVIDER_PROFILE_ENDPOINTS[nextProfile] ?? '')
+  }, [])
+
   const save = useCallback(async () => {
     if (!api) return
     setStatus({ kind: 'saving' })
@@ -118,7 +151,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       // The model is chosen per task in the composer, so it is not edited here.
       model,
       baseUrl,
-      tier
+      tier,
+      ...(provider === 'openai_compatible' ? { profileId } : {}),
+      ...(provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? { accountId } : {})
     })
     if (!outcome.ok) {
       setStatus({ kind: 'failed', message: outcome.message })
@@ -128,7 +163,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
-  }, [api, apiKey, apply, applySummary, baseUrl, model, provider, tier])
+  }, [accountId, api, apiKey, apply, applySummary, baseUrl, model, profileId, provider, tier])
 
   const clearKey = useCallback(async () => {
     if (!api) return
@@ -147,7 +182,13 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const busy = status.kind === 'saving'
   const selectedProfile = summary?.profiles?.[provider]
   const configured = selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured)
-  const canSave = !busy && (provider === 'ollama' || apiKey.trim().length > 0 || configured)
+  const cloudflareAccountValid = /^[a-fA-F0-9]{32}$/.test(accountId.trim())
+  const canSave = !busy
+    && (provider === 'ollama' || apiKey.trim().length > 0 || configured)
+    && (provider !== 'openai_compatible' || profileId !== 'cloudflare_workers_ai' || cloudflareAccountValid)
+  const displayBaseUrl = profileId === 'cloudflare_workers_ai' && cloudflareAccountValid
+    ? `https://api.cloudflare.com/client/v4/accounts/${accountId.trim()}/ai/v1`
+    : baseUrl
 
   return (
     <section className="shell__panel provider-form" aria-label="Ключ провайдера">
@@ -200,19 +241,54 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           </label>
         ) : null}
 
+        {provider === 'openai_compatible' ? (
+          <label htmlFor="provider-profile">
+            Профиль провайдера
+            <select
+              id="provider-profile"
+              value={profileId}
+              onChange={(event) => selectProfile(event.target.value as ProviderProfileId)}
+              disabled={busy}
+            >
+              {PROVIDER_PROFILE_IDS.map((id) => (
+                <option key={id} value={id}>{PROFILE_LABELS[id]}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? (
+          <label htmlFor="provider-account-id">
+            Cloudflare Account ID
+            <input
+              id="provider-account-id"
+              value={accountId}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setAccountId(event.target.value)}
+              placeholder="32 шестнадцатеричных символа"
+              disabled={busy}
+            />
+          </label>
+        ) : null}
+
         <label htmlFor="provider-url">
           Адрес API
           <input
             id="provider-url"
-            value={baseUrl}
+            value={displayBaseUrl}
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => setBaseUrl(event.target.value)}
             placeholder="по умолчанию провайдера"
-            disabled={busy}
+            disabled={busy || (provider === 'openai_compatible' && profileId !== 'custom')}
           />
         </label>
       </div>
+
+      {provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? (
+        <p className="shell__empty">Нужен API token Cloudflare с разрешениями Workers AI Read и Workers AI Edit. Host и API path задаются профилем.</p>
+      ) : null}
 
       {provider === 'ollama' ? (
         <OllamaModelDownloadPanel connection={connection} events={events} baseUrl={baseUrl} />

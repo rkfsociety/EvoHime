@@ -41,7 +41,7 @@ pub mod structured_response;
 /// Tool call and chat response types exposed by the gateway.
 pub mod tools;
 
-pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
+pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderProfileId};
 pub use crate::provider_contract::{
     select_route_snapshot, select_route_snapshot_cached, AttemptTrace, CandidateEntry,
     CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory, HealthStatus, PolicyHashes,
@@ -154,6 +154,21 @@ pub struct ModelGateway {
 pub trait RoutePreflight: Send + Sync {
     /// Checks that the selected route/model is still eligible immediately before dispatch.
     fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError>;
+
+    /// Checks request-specific requirements before dispatch.
+    ///
+    /// Implementations that do not use capability evidence remain compatible
+    /// through the default delegation to [`Self::check`].
+    fn check_for_request(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        requires_tool_calls: bool,
+        now_ms: u64,
+    ) -> Result<(), ProviderError> {
+        let _ = requires_tool_calls;
+        self.check(route, model, now_ms)
+    }
 }
 
 /// Provider and route configuration exposed to the local desktop client.
@@ -288,8 +303,20 @@ pub struct ModelCatalogEntry {
 pub async fn fetch_model_catalog(
     route: &ModelRouteConfig,
 ) -> Result<Vec<ModelCatalogEntry>, ProviderError> {
+    route.validate_provider_profile()?;
     if route.provider == ProviderKind::Ollama {
         return providers::ollama::fetch_installed_models(&route.literouter).await;
+    }
+    if route.provider_profile_id == Some(ProviderProfileId::CloudflareWorkersAi) {
+        let account_id = route
+            .provider_account_id
+            .as_deref()
+            .ok_or_else(|| ProviderError::Config("provider profile account is required".into()))?;
+        return providers::cloudflare_workers_ai::fetch_model_catalog(
+            &route.literouter,
+            account_id,
+        )
+        .await;
     }
     if route.provider == ProviderKind::Mock {
         return Ok(if route.literouter.model.is_empty() {
@@ -386,6 +413,9 @@ impl ModelGateway {
                 "default model route '{}' not configured",
                 config.default_route
             )));
+        }
+        for route in config.routes.values() {
+            route.validate_provider_profile()?;
         }
         let mut routes = HashMap::new();
         for (name, route_config) in &config.routes {
@@ -709,7 +739,12 @@ impl ModelGateway {
                         tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
                     }
                     if let Some(preflight) = &self.route_preflight {
-                        if let Err(error) = preflight.check(&route, model, current_time_ms()) {
+                        if let Err(error) = preflight.check_for_request(
+                            &route,
+                            model,
+                            !tools.is_empty(),
+                            current_time_ms(),
+                        ) {
                             if let Some(attempt) = trace.attempts.last_mut() {
                                 attempt.failure_category = Some(FailureCategory::InvalidRequest);
                             }
@@ -776,7 +811,7 @@ impl ModelGateway {
             .as_deref()
             .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
         if let Some(preflight) = &self.route_preflight {
-            preflight.check(route, model, current_time_ms())?;
+            preflight.check_for_request(route, model, !tools.is_empty(), current_time_ms())?;
         }
         let result = self
             .chat_with_tools_for_route(route, model, messages, tools)
@@ -822,53 +857,52 @@ impl ModelGateway {
         model_override: Option<&str>,
         now_ms: u64,
     ) -> Result<RoutePolicySnapshot, SnapshotError> {
-        let candidates = self
-            .route_candidates()
-            .into_iter()
-            .map(|candidate| {
-                let model = if candidate.route_id == self.default_route {
-                    model_override
-                        .map(str::trim)
-                        .filter(|model| !model.is_empty())
-                        .unwrap_or(&candidate.model)
-                        .to_owned()
-                } else {
-                    candidate.model
-                };
-                let execution_class = if self
-                    .routes
-                    .get(&candidate.route_id)
-                    .is_some_and(|provider| provider.kind() == ProviderKind::Local)
-                {
-                    ExecutionClass::Local
-                } else {
-                    ExecutionClass::Cloud
-                };
-                CandidateEntry {
-                    route_id: candidate.route_id,
-                    model,
-                    capabilities: CapabilityMetadata {
-                        schema_version: "capability-metadata-v1".into(),
-                        provider_version: "gateway".into(),
-                        capability_epoch: 1,
-                        tool_calling: true,
-                        structured_output: true,
-                        context_limit: None,
-                        streaming: true,
-                        vision: false,
-                        execution_class,
-                        privacy_boundary: crate::provider_contract::PrivacyClass::Internal,
-                    },
-                    initial_health: crate::provider_contract::CandidateHealthSnapshot::ready_at(
-                        30_000, now_ms,
-                    ),
-                    cost_micros_per_1k_tokens: candidate.cost_micros_per_1k_tokens,
-                    p95_latency_ms: candidate.p95_latency_ms,
-                    privacy: crate::provider_contract::PrivacyClass::Internal,
-                    fallback_rank: candidate.fallback_rank,
-                }
-            })
-            .collect();
+        let candidates =
+            self.route_candidates()
+                .into_iter()
+                .map(|candidate| {
+                    let model = if candidate.route_id == self.default_route {
+                        model_override
+                            .map(str::trim)
+                            .filter(|model| !model.is_empty())
+                            .unwrap_or(&candidate.model)
+                            .to_owned()
+                    } else {
+                        candidate.model
+                    };
+                    let execution_class = if self
+                        .routes
+                        .get(&candidate.route_id)
+                        .is_some_and(|provider| provider.kind() == ProviderKind::Local)
+                    {
+                        ExecutionClass::Local
+                    } else {
+                        ExecutionClass::Cloud
+                    };
+                    CandidateEntry {
+                        route_id: candidate.route_id,
+                        model,
+                        capabilities: CapabilityMetadata {
+                            schema_version: "capability-metadata-v1".into(),
+                            provider_version: "gateway".into(),
+                            capability_epoch: 1,
+                            tool_calling: true,
+                            structured_output: true,
+                            context_limit: None,
+                            streaming: true,
+                            vision: false,
+                            execution_class,
+                            privacy_boundary: crate::provider_contract::PrivacyClass::Internal,
+                        },
+                        initial_health:
+                            crate::provider_contract::CandidateHealthSnapshot::unknown_at(now_ms),
+                        cost_micros_per_1k_tokens: candidate.cost_micros_per_1k_tokens,
+                        p95_latency_ms: candidate.p95_latency_ms,
+                        privacy: crate::provider_contract::PrivacyClass::Internal,
+                        fallback_rank: candidate.fallback_rank,
+                    }
+                })
+                .collect();
         let preference = crate::provider_contract::UserPreference {
             preferred_order: request.preferred_route.clone().into_iter().collect(),
             avoid: Vec::new(),
@@ -1110,6 +1144,59 @@ mod tests {
         assert!(matches!(error, ProviderError::Config(code) if code == "preflight_rejected"));
     }
 
+    struct ToolCallAwarePreflight;
+
+    impl RoutePreflight for ToolCallAwarePreflight {
+        fn check(
+            &self,
+            _route: &str,
+            _model: Option<&str>,
+            _now_ms: u64,
+        ) -> Result<(), ProviderError> {
+            Err(ProviderError::Config(
+                "request_requirements_not_forwarded".into(),
+            ))
+        }
+
+        fn check_for_request(
+            &self,
+            _route: &str,
+            _model: Option<&str>,
+            requires_tool_calls: bool,
+            _now_ms: u64,
+        ) -> Result<(), ProviderError> {
+            if requires_tool_calls {
+                Ok(())
+            } else {
+                Err(ProviderError::Config(
+                    "tool_call_requirement_missing".into(),
+                ))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn gateway_forwards_tool_call_requirement_to_route_preflight() {
+        let gateway = gateway_with_routes(vec![("local", "local-model")])
+            .with_route_preflight(Arc::new(ToolCallAwarePreflight));
+        let tools = [ToolSpec::function(
+            "example",
+            "example tool",
+            serde_json::json!({"type":"object","properties":{}}),
+        )];
+        let result = gateway
+            .chat_with_tools_with_policy_and_route(
+                RoutingMode::Balanced,
+                &policy_request(),
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "hello")],
+                &tools,
+            )
+            .await
+            .expect("tool requirement should reach preflight");
+        assert_eq!(result.selected_route, "local");
+    }
+
     #[test]
     fn policy_snapshot_uses_selected_model_for_default_route() {
         let gateway = gateway_with_routes(vec![("local", "")]);
@@ -1119,6 +1206,10 @@ mod tests {
             .expect("selected model should make the snapshot valid");
 
         assert_eq!(snapshot.candidates[0].model, "provider-model");
+        assert_eq!(
+            snapshot.candidates[0].initial_health.status,
+            HealthStatus::Unknown
+        );
     }
 
     #[test]

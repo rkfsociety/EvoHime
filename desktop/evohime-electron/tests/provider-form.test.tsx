@@ -159,6 +159,44 @@ describe('provider form', () => {
     expect(screen.getByText('Локальный провайдер')).toBeTruthy()
   })
 
+  it('selects a vendor profile and requests a Cloudflare account ID separately from its token', async () => {
+    selectOutcome = ok({
+      summary: {
+        provider: 'openai_compatible',
+        model: '',
+        baseUrl: 'https://api.openai.com/v1',
+        tier: 'free',
+        configured: false,
+        profileId: 'openai',
+        profiles: {
+          openai_compatible: {
+            model: '', baseUrl: 'https://api.openai.com/v1', tier: 'free', configured: false, profileId: 'openai'
+          }
+        }
+      },
+      restarted: true
+    })
+    renderProviderForm()
+
+    await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'openai_compatible')
+    const profile = await screen.findByLabelText('Профиль провайдера')
+    await userEvent.selectOptions(profile, 'cloudflare_workers_ai')
+    await userEvent.type(await screen.findByLabelText('Cloudflare Account ID'), '0123456789abcdef0123456789abcdef')
+    expect((screen.getByLabelText('Адрес API') as HTMLInputElement).disabled).toBe(true)
+    await userEvent.type(screen.getByLabelText('Ключ API'), 'cf-token')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
+
+    await waitFor(() => expect(calls).toContainEqual({
+      command: 'provider.save',
+      payload: expect.objectContaining({
+        provider: 'openai_compatible',
+        profileId: 'cloudflare_workers_ai',
+        accountId: '0123456789abcdef0123456789abcdef',
+        baseUrl: ''
+      })
+    }))
+  })
+
   it('surfaces a rejected write instead of reporting success', async () => {
     saveOutcome = { ok: false, code: 'invalid-payload', message: 'Адрес должен быть https.' }
     renderProviderForm()

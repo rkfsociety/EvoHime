@@ -3,6 +3,8 @@ use futures_util::Stream;
 use std::future::Future;
 use std::pin::Pin;
 
+/// Cloudflare Workers AI catalog discovery for its OpenAI-compatible transport.
+pub mod cloudflare_workers_ai;
 /// LiteRouter provider adapter.
 pub mod literouter;
 /// Supervisor-authenticated local model adapter.

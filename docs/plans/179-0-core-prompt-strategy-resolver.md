@@ -51,8 +51,9 @@ structured-output и bounded multi-sample strategies без hidden chain-of-thou
 
 ### Опциональные
 
-- Plan 173 provider profile freshness improves compatibility evidence but is not
-  a second strategy registry dependency.
+- Completed provider-profile freshness in
+  [`../architecture.md`](../architecture.md) can improve compatibility evidence
+  but does not create a second strategy-registry dependency.
 
 ## Критерии готовности
 

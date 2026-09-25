@@ -1,6 +1,6 @@
 # EvoHime — реестр решений
 
-Обновлено: 2026-09-21.
+Обновлено: 2026-09-25.
 
 Канонический реестр решений текущего desktop-цикла. Здесь нет секретов,
 provider credentials или обещаний, не подтверждённых кодом. `accepted` означает,
@@ -27,6 +27,7 @@ provider credentials или обещаний, не подтверждённых 
 | D-RELEASE-02 | Обновления разрешаются только через fixed `compatibility` manifest, который связывает точные module releases, hashes, зависимости и minimum updater; старый installer сначала получает совместимый updater | Release | `architecture.md`, `release-evidence.md`, `evohime-update-agent` |
 | D-UPDATE-02 | Recovery updater использует bounded atomic journal, verified last-known-good fallback, PE/size/SHA/self-test gates и ограничение UI crash-loop; при потере recovery-копии остаётся manual recovery | Repair/update | `architecture.md`, `release-evidence.md`, updater recovery tests |
 | D-REL-21 | Electron diagnostics — bounded redacted projection; recovery, approvals, backup/restore и effects остаются Core-owned | Reliability | `diagnostic-bundle.ts`, recovery projection tests |
+| D-PROVIDER-01 | Vendor profile identity задаётся явно отдельно от OpenAI-compatible transport; unknown capability и provider health не считаются подтверждёнными | Model Gateway | `docs/architecture.md`, profile/preflight/routing-trace tests |
 
 ## Закрытые acceptance records
 
@@ -39,7 +40,7 @@ provider credentials или обещаний, не подтверждённых 
 
 ## Dependency graph
 
-Закрытые планы `01–172` не являются текущей очередью и представлены
+Закрытые планы `01–173` не являются текущей очередью и представлены
 только перенесёнными контрактами. Незавершённый каталог закрыт;
 порядок выбирается по blocking dependencies в их overview, а не по
 простому числовому списку.

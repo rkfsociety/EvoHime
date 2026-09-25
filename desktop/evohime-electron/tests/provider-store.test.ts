@@ -77,7 +77,9 @@ describe('provider store', () => {
     expect(store.environment()).toEqual({
       MODEL_PROVIDER: 'openai_compatible',
       OPENAI_API_KEY: 'sk-openai',
-      OPENAI_MODEL: 'gpt-4o-mini'
+      OPENAI_MODEL: 'gpt-4o-mini',
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
+      MODEL_PROVIDER_PROFILE_ID: 'openai'
     })
     expect(store.environment()['LITEROUTER_API_KEY']).toBeUndefined()
   })
@@ -116,7 +118,13 @@ describe('provider store', () => {
     store.save({ provider: 'literouter', apiKey: 'sk-literouter', model: 'router-model', baseUrl: '', tier: 'free' })
     store.save({ provider: 'openai_compatible', apiKey: 'sk-openai', model: 'gpt-model', baseUrl: '', tier: 'paid' })
 
-    expect(store.environment()).toEqual({ MODEL_PROVIDER: 'openai_compatible', OPENAI_API_KEY: 'sk-openai', OPENAI_MODEL: 'gpt-model' })
+    expect(store.environment()).toEqual({
+      MODEL_PROVIDER: 'openai_compatible',
+      OPENAI_API_KEY: 'sk-openai',
+      OPENAI_MODEL: 'gpt-model',
+      OPENAI_BASE_URL: 'https://api.openai.com/v1',
+      MODEL_PROVIDER_PROFILE_ID: 'openai'
+    })
     expect(store.summary().profiles.literouter.configured).toBe(true)
 
     store.save({ provider: 'literouter', apiKey: '', model: 'router-next', baseUrl: '', tier: 'free' })
@@ -142,6 +150,35 @@ describe('provider store', () => {
       OPENAI_API_KEY: 'sk-responses',
       OPENAI_MODEL: 'gpt-5-codex'
     })
+  })
+
+  it('stores a selected Cloudflare profile with a bounded account ID and trusted endpoint', () => {
+    const path = storePath()
+    const store = new ProviderStore(path, reversibleCipher())
+    const summary = store.save({
+      provider: 'openai_compatible',
+      apiKey: 'cf-token',
+      model: '@cf/meta/llama-3.1-8b-instruct',
+      baseUrl: '',
+      tier: 'free',
+      profileId: 'cloudflare_workers_ai',
+      accountId: '0123456789abcdef0123456789abcdef'
+    })
+
+    expect(summary).toMatchObject({
+      profileId: 'cloudflare_workers_ai',
+      accountId: '0123456789abcdef0123456789abcdef',
+      baseUrl: 'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/v1'
+    })
+    expect(store.environment()).toEqual({
+      MODEL_PROVIDER: 'openai_compatible',
+      OPENAI_API_KEY: 'cf-token',
+      OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/v1',
+      OPENAI_MODEL: '@cf/meta/llama-3.1-8b-instruct',
+      MODEL_PROVIDER_PROFILE_ID: 'cloudflare_workers_ai',
+      MODEL_PROVIDER_ACCOUNT_ID: '0123456789abcdef0123456789abcdef'
+    })
+    expect(readFileSync(path, 'utf8')).not.toContain('cf-token')
   })
 
   it('refuses to store a key when the OS cannot encrypt it', () => {
@@ -216,7 +253,7 @@ describe('provider store', () => {
     expect(store.clearKey()).toMatchObject({
       provider: 'openai_compatible',
       model: 'm',
-      baseUrl: '',
+      baseUrl: 'https://api.openai.com/v1',
       tier: 'paid',
       configured: false
     })

@@ -2825,68 +2825,61 @@ reliability snapshot; Model Gateway остаётся transport/retry authority.
 не становятся Healthy, а credentials и raw provider payloads не сохраняются.
 SQLite schema v100 добавляет только reliability metadata.
 
-## Cloud Provider Profiles contract v1 (план 173.1, partial)
+## Cloud Provider Profiles contract v1 (план 173, закрыт 2026-09-25)
 
-`ProviderProfile` теперь versioned и сохраняет provider family отдельно от
-transport kind, opaque credential binding, trusted endpoint metadata, region,
-revision и content hash. Старый metadata-only JSON остаётся совместимым через
-defaults; неизвестные family/transport не становятся разрешением на runtime
-маршрутизацию.
+`ProviderProfileId` является явной стабильной identity для `openai`, восьми
+built-in OpenAI-compatible профилей и `custom`; она независима от
+`ProviderKind` транспорта. Новые настройки оболочки сохраняют ID профиля
+отдельно от base URL. Маршруты старого формата без ID остаются совместимыми;
+только точные ранее известные endpoint могут восстановить legacy identity,
+произвольный endpoint остаётся generic OpenAI-compatible. Фиксированные
+профили строят URL из trusted defaults. Для Cloudflare account ID принимается
+отдельно, проверяется как 32 шестнадцатеричных символа и используется только
+для построения account-scoped URL; host/path не редактируются. Токен остаётся в
+зашифрованном provider store и передаётся Core через окружение supervisor.
 
-`ProviderModelDescriptor` является immutable adapter над каноническим
-`evohime-model-gateway::ModelCatalogEntry`: он добавляет profile/catalog
-revision и hash provenance, typed limits, capability flags с provenance,
-privacy, usage и lifecycle. Отсутствующие capability/privacy/usage остаются
-`Unknown`, а raw catalog response, arbitrary endpoint и credential material в
-descriptor не попадают. Восемь bounded built-in profile identities описывают
-OpenRouter, Groq, Gemini, Mistral, Cloudflare Workers AI, NVIDIA NIM, Cerebras
-и Hugging Face; trusted exact OpenAI-compatible endpoints сохраняют эту identity
-при адаптации route, а произвольный endpoint остаётся generic OpenAI. SQLite
-schema v174 атомарно хранит bounded profile/catalog
-snapshot с provider/credential-binding/region scope, revision fence и
-idempotent publication через существующий local-storage owner. В той же строке
-сохраняются lifecycle state, observation/expiry timestamps и typed failure code;
-additive migration v174 переносит старые v173 таблицы без потери metadata, а
-validated read-back отбрасывает несовместимые profile/catalog identity.
-При запуске Core настроенные routes читают свои snapshots из существующего
-SQLite store в bounded process-local cache до открытия IPC; profile scope/hash
-проверяются повторно, несовместимые строки игнорируются fail-closed. Поэтому
-первый неудачный catalog refresh после перезапуска может показать validated
-stale entries, но не может сделать stale snapshot route-eligible. Route
-preflight теперь вызывается ModelGateway непосредственно перед transport
-dispatch. Существующий authenticated `model.catalog` event дополнительно
-несёт bounded `provider_catalog` projection с lifecycle, credential status,
-safe profile identity, limits и capability/privacy/usage/lifecycle metadata;
-новый независимый catalog event не создаётся. Renderer отображает эту
-проекцию, но не выбирает route compatibility и не читает SQLite.
+Core `ProviderProfile` и `ProviderModelDescriptor` сохраняют версию,
+profile/catalog revisions и content hashes, typed limits, capability
+provenance, privacy, usage и lifecycle. Они адаптируют канонический gateway
+`ModelCatalogEntry`; неподтверждённые capability/privacy/usage остаются
+`Unknown`. Raw provider response, credential material, произвольный endpoint
+из catalog и headers в descriptor не включаются. SQLite schema v174
+транзакционно хранит bounded snapshots со scope provider/credential-binding/
+region, monotonic revision fence, content hash, lifecycle и typed failure;
+validated recovery гидратирует только согласованные записи в ограниченный
+process-local cache.
 
-`ProviderCatalogSnapshot` задаёт lifecycle `Fresh`, `Stale`, `Unavailable`,
-`CredentialRejected` и `DiscoveryUnsupported`, а `CatalogFailureCode` скрывает
-raw `ProviderError`. Gateway entries сортируются и deduplicate-ятся до создания
-immutable descriptors; expired/stale/failed snapshots не проходят
-`route_eligible_at`. При временной ошибке refresh уже сохраняет прежние bounded
-entries как `Stale` с typed failure для отображения, но не для маршрутизации;
-credential rejection и unsupported discovery fail closed без stale fallback.
-Явный `model not found` получает отдельный bounded `model_not_found` outcome.
-HTTP 404 при чтении `/models` означает `discovery_unsupported`, поскольку этот
-запрос не содержит выбранную модель; эти исходы не маскируются под generic
-protocol mismatch.
-SQLite boundary принимает только этот bounded код из allow-list и сохраняет его
-при восстановлении снапшота.
-Capability filtering по provider-declared/observed metadata ещё расширяется.
-Route preflight
-проверяет configured credential, известное lifecycle-состояние snapshot,
-свежесть и присутствие выбранной модели; неизвестный snapshot означает
-`unobserved`, оставляет `configured_model_eligible=null` и сохраняет
-совместимость первого запуска, а известный stale или failed snapshot даёт
-bounded `false` и fail-closed до provider dispatch. Missing model остаётся
-отдельным `provider_model_not_found`, а истёкший snapshot —
-`provider_catalog_expired`, а не generic catalog outage.
-Authenticated `model.catalog` projects an already-expired fresh snapshot as
-`expired`, so ModelPicker does not display an expired catalog as current.
-ModelPicker keeps provider-returned models visible and renders capability,
-limits and privacy hints only from the bounded Core descriptor; it has no
-provider-name or model-name compatibility table.
+Model Gateway остаётся единственным владельцем provider transport и запроса.
+Совместимые профили используют общий OpenAI-compatible transport и bounded
+`/models` discovery; Cloudflare использует тот же account ID и отдельный
+bounded Model Search запрос с pagination, page/entry/body/time caps. Каталоги
+нормализуются детерминированно. Состояния `Fresh`, `Stale`, `Unavailable`,
+`CredentialRejected` и `DiscoveryUnsupported` имеют отдельные typed outcomes;
+404 запроса списка моделей означает отсутствие discovery endpoint, а не
+отсутствие выбранной модели. `DiscoveryUnsupported` остаётся видимым и не
+блокирует вручную выбранный model ID после проверки настроенного route и
+credential. Известный stale/expired/failed catalog и подтверждённое отсутствие
+модели блокируют dispatch по существующей route policy.
+
+Core-owned route preflight проверяет модель непосредственно перед dispatch.
+Только capability `Unsupported` с provenance `ProviderDeclared` или `Observed`
+блокирует chat или требуемые запросом tool calls; `Unknown` не выдаётся за
+поддержку и не блокирует запрос без policy-требования доказательства. Renderer
+получает только bounded redacted `provider_catalog` в существующем
+authenticated `model.catalog` событии, показывает профиль, lifecycle,
+capability и model selection, но не читает storage/API, не определяет vendor и
+не принимает routing/privacy решения. Скрытые credentials и raw provider
+ошибки не попадают в UI.
+
+Начальное provider health в route snapshot — `Unknown`, пока нет probe или
+наблюдения. Существующие `RunHealthOverlay`, circuit breaker, route ranking и
+redacted `routing.trace` остаются владельцами наблюдённых runtime-сбоев;
+unknown-route health отображается как «состояние не проверено». Свежий каталог
+сам по себе не доказывает доступность провайдера. План не добавляет постоянный
+health store, обязательные live probes, billing/payment или автоматическую
+активацию провайдера.
+`routing.trace` schema v2 кодирует `Unknown` отдельно от `Healthy`; Electron
+читает ранее сохранённые v1 traces и отвергает неизвестные enum values в v1.
 
 ## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
 

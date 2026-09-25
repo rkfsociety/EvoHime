@@ -3,8 +3,11 @@ import { dirname, join } from 'node:path'
 
 import {
   PROVIDER_KINDS,
+  PROVIDER_PROFILE_ENDPOINTS,
+  PROVIDER_PROFILE_IDS,
   type ModelTier,
   type ProviderKind,
+  type ProviderProfileId,
   type ProviderProfileSummary,
   type ProviderSummary,
   OLLAMA_DEFAULT_BASE_URL
@@ -23,7 +26,7 @@ import {
 export const MAX_KEY_CHARS = 512
 export const MAX_MODEL_CHARS = 128
 export const MAX_URL_CHARS = 512
-const STORE_VERSION = 1
+const STORE_VERSION = 2
 const MAX_STORED_SECRET_CHARS = 8_192
 
 export interface ProviderUpdate {
@@ -33,6 +36,8 @@ export interface ProviderUpdate {
   readonly model: string
   readonly baseUrl: string
   readonly tier: ModelTier
+  readonly profileId?: ProviderProfileId
+  readonly accountId?: string
 }
 
 /** OS-backed encryption, injected so the store stays testable. */
@@ -47,6 +52,8 @@ interface StoredProfile {
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly secret: string
+  readonly profileId: ProviderProfileId
+  readonly accountId: string
 }
 
 interface StoredDocument {
@@ -63,6 +70,16 @@ const EMPTY: StoredDocument = {
 
 export function isProviderKind(value: unknown): value is ProviderKind {
   return typeof value === 'string' && (PROVIDER_KINDS as readonly string[]).includes(value)
+}
+
+export function isProviderProfileId(value: unknown): value is ProviderProfileId {
+  return typeof value === 'string' && (PROVIDER_PROFILE_IDS as readonly string[]).includes(value)
+}
+
+export function normalizeCloudflareAccountId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const accountId = value.trim()
+  return /^[a-fA-F0-9]{32}$/.test(accountId) ? accountId : null
 }
 
 /**
@@ -141,13 +158,17 @@ export class ProviderStore {
       baseUrl: active.baseUrl,
       tier: active.tier,
       configured: configuredProfile(document.provider, active),
+      profileId: active.profileId,
+      ...(active.accountId ? { accountId: active.accountId } : {}),
       profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => {
         const profile = profileFor(document, kind)
         return [kind, {
           model: profile.model,
           baseUrl: profile.baseUrl,
           tier: profile.tier,
-          configured: configuredProfile(kind, profile)
+          configured: configuredProfile(kind, profile),
+          profileId: profile.profileId,
+          ...(profile.accountId ? { accountId: profile.accountId } : {})
         } satisfies ProviderProfileSummary]
       })) as Readonly<Record<ProviderKind, ProviderProfileSummary>>
     }
@@ -169,11 +190,30 @@ export class ProviderStore {
       }
       secret = this.cipher.encrypt(requestedKey).toString('base64')
     }
+    const profileId = update.provider === 'openai_compatible'
+      ? update.profileId ?? inferProviderProfileId(update.baseUrl)
+      : 'custom'
+    const accountId = profileId === 'cloudflare_workers_ai'
+      ? normalizeCloudflareAccountId(update.accountId) ?? cloudflareAccountFromBaseUrl(update.baseUrl) ?? ''
+      : ''
+    const baseUrl = update.provider === 'openai_compatible'
+      ? providerProfileBaseUrl(profileId, accountId, update.baseUrl)
+      : normalizeBaseUrl(update.baseUrl)
+    if (baseUrl === null || (profileId === 'cloudflare_workers_ai' && accountId.length === 0)) {
+      return null
+    }
     const next: StoredDocument = {
       provider: update.provider,
       profiles: {
         ...current.profiles,
-        [update.provider]: { model: update.model, baseUrl: update.baseUrl, tier: update.tier, secret }
+        [update.provider]: {
+          model: update.model,
+          baseUrl,
+          tier: update.tier,
+          secret,
+          profileId,
+          accountId
+        }
       },
       codexModel: current.codexModel
     }
@@ -228,6 +268,12 @@ export class ProviderStore {
       if (key) environment['OPENAI_API_KEY'] = key
       if (profile.baseUrl) environment['OPENAI_BASE_URL'] = profile.baseUrl
       if (profile.model) environment['OPENAI_MODEL'] = profile.model
+      if (document.provider === 'openai_compatible') {
+        environment['MODEL_PROVIDER_PROFILE_ID'] = profile.profileId
+        if (profile.profileId === 'cloudflare_workers_ai' && profile.accountId) {
+          environment['MODEL_PROVIDER_ACCOUNT_ID'] = profile.accountId
+        }
+      }
       return environment
     }
     if (key) environment['LITEROUTER_API_KEY'] = key
@@ -272,11 +318,20 @@ export class ProviderStore {
       for (const kind of PROVIDER_KINDS) {
         const value = record['profiles'][kind]
         if (!isRecord(value)) continue
+        const baseUrl = normalizeBaseUrl(value['baseUrl']) ?? ''
+        const profileId = kind === 'openai_compatible'
+          ? (isProviderProfileId(value['profileId']) ? value['profileId'] : inferProviderProfileId(baseUrl))
+          : 'custom'
+        const accountId = profileId === 'cloudflare_workers_ai'
+          ? normalizeCloudflareAccountId(value['accountId']) ?? cloudflareAccountFromBaseUrl(baseUrl) ?? ''
+          : ''
         profiles[kind] = {
           model: normalizeModel(value['model']) ?? '',
-          baseUrl: normalizeBaseUrl(value['baseUrl']) ?? '',
+          baseUrl: providerProfileBaseUrl(profileId, accountId, baseUrl) ?? '',
           tier: value['tier'] === 'paid' ? 'paid' : 'free',
-          secret: normalizeStoredSecret(value['secret'])
+          secret: normalizeStoredSecret(value['secret']),
+          profileId,
+          accountId
         }
       }
     } else {
@@ -285,7 +340,20 @@ export class ProviderStore {
         model: normalizeModel(record['model']) ?? '',
         baseUrl: normalizeBaseUrl(record['baseUrl']) ?? '',
         tier: record['tier'] === 'paid' ? 'paid' : 'free',
-        secret: normalizeStoredSecret(record['secret'])
+        secret: normalizeStoredSecret(record['secret']),
+        profileId: provider === 'openai_compatible'
+          ? inferProviderProfileId(normalizeBaseUrl(record['baseUrl']) ?? '')
+          : 'custom',
+        accountId: cloudflareAccountFromBaseUrl(normalizeBaseUrl(record['baseUrl']) ?? '') ?? ''
+      }
+      if (provider === 'openai_compatible') {
+        const migrated = profiles[provider]
+        if (migrated) {
+          profiles[provider] = {
+            ...migrated,
+            baseUrl: providerProfileBaseUrl(migrated.profileId, migrated.accountId, migrated.baseUrl) ?? ''
+          }
+        }
       }
     }
     const codexModel = normalizeModel(record['codexModel']) ?? ''
@@ -314,9 +382,45 @@ export class ProviderStore {
 
 function profileFor(document: StoredDocument, provider: ProviderKind): StoredProfile {
   if (provider === 'ollama') {
-    return document.profiles[provider] ?? { model: '', baseUrl: OLLAMA_DEFAULT_BASE_URL, tier: 'free', secret: '' }
+    return document.profiles[provider] ?? {
+      model: '', baseUrl: OLLAMA_DEFAULT_BASE_URL, tier: 'free', secret: '', profileId: 'custom', accountId: ''
+    }
   }
-  return document.profiles[provider] ?? { model: '', baseUrl: '', tier: 'free', secret: '' }
+  return document.profiles[provider] ?? {
+    model: '',
+    baseUrl: provider === 'openai_compatible' ? PROVIDER_PROFILE_ENDPOINTS.openai ?? '' : '',
+    tier: 'free',
+    secret: '',
+    profileId: provider === 'openai_compatible' ? 'openai' : 'custom',
+    accountId: ''
+  }
+}
+
+function inferProviderProfileId(baseUrl: string): ProviderProfileId {
+  if (baseUrl.trim().length === 0) return 'openai'
+  const accountId = cloudflareAccountFromBaseUrl(baseUrl)
+  if (accountId !== null) return 'cloudflare_workers_ai'
+  for (const [profileId, endpoint] of Object.entries(PROVIDER_PROFILE_ENDPOINTS)) {
+    if (endpoint === baseUrl) return profileId as ProviderProfileId
+  }
+  return 'custom'
+}
+
+function cloudflareAccountFromBaseUrl(baseUrl: string): string | null {
+  const match = /^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/([a-fA-F0-9]{32})\/ai\/v1\/?$/.exec(baseUrl)
+  return match?.[1] ?? null
+}
+
+function providerProfileBaseUrl(profileId: ProviderProfileId, accountId: string, baseUrl: string): string | null {
+  if (profileId === 'cloudflare_workers_ai') {
+    return normalizeCloudflareAccountId(accountId) === null
+      ? null
+      : `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`
+  }
+  if (profileId !== 'custom') {
+    return PROVIDER_PROFILE_ENDPOINTS[profileId] ?? null
+  }
+  return normalizeBaseUrl(baseUrl)
 }
 
 function configuredProfile(provider: ProviderKind, profile: StoredProfile): boolean {

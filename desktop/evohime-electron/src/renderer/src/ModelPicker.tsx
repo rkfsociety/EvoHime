@@ -42,6 +42,8 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [current, setCurrent] = useState('')
   const [codexModels, setCodexModels] = useState<readonly CodexModel[]>([])
   const [codexRateLimits, setCodexRateLimits] = useState<readonly CodexRateLimit[]>([])
+  const [hideConfirmedUnsupported, setHideConfirmedUnsupported] = useState(false)
+  const [manualModel, setManualModel] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null)
 
@@ -52,6 +54,8 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setCurrent('')
     setCodexModels([])
     setCodexRateLimits([])
+    setHideConfirmedUnsupported(false)
+    setManualModel('')
     setError(null)
     setCatalogStatus(null)
     onModelChange?.('')
@@ -122,10 +126,15 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     const credentialStatus = typeof providerProjection?.['credential_status'] === 'string'
       ? providerProjection['credential_status']
       : null
+    const providerIdentity = typeof providerProjection?.['profile_id'] === 'string'
+      ? providerProjection['profile_id']
+      : typeof providerProjection?.['id'] === 'string'
+        ? providerProjection['id']
+        : null
     const configuredModelEligible = typeof catalogProjection?.['configured_model_eligible'] === 'boolean'
       ? catalogProjection['configured_model_eligible']
       : null
-    setCatalogStatus(state ? { state, credentialStatus, failureCode, configuredModelEligible } : null)
+    setCatalogStatus(state ? { state, credentialStatus, failureCode, configuredModelEligible, providerIdentity } : null)
   }, [catalog, provider, use])
 
   useEffect(() => {
@@ -142,6 +151,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     async (model: string) => {
       if (!api) return
       setCurrent(model)
+      setError(null)
       const outcome = provider === 'codex_cli'
         ? await api.invoke('codex.selectModel', { model })
         : await api.invoke('core.selectModel', { model })
@@ -151,22 +161,36 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     [api, onModelChange, provider]
   )
 
+  const requiredCapability = use === 'agent' ? 'tool_calls' : 'chat'
+  const catalogModels = useMemo(() => provider === 'codex_cli'
+    ? codexModels.map((model) => ({ value: model.id, label: model.displayName || model.id }))
+    : models.map((model) => ({ value: model, label: model })), [codexModels, models, provider])
+  const visibleModels = useMemo(() => {
+    if (provider === 'codex_cli' || !hideConfirmedUnsupported) return catalogModels
+    return catalogModels.filter((model) => {
+      const descriptor = modelDescriptors.find((item) => item.id === model.value)
+      const capability = descriptor?.capabilities.find((item) => item.capability === requiredCapability)
+      return capability?.state !== 'unsupported' || capability.provenance === 'unknown'
+    })
+  }, [catalogModels, hideConfirmedUnsupported, modelDescriptors, provider, requiredCapability])
+
   // A dropdown whose value is not in its own list still renders the first
   // option, which would show one model while Core used another — the route
   // default, which need not even exist in this tier. Commit to what is shown.
   useEffect(() => {
-    const available = provider === 'codex_cli' ? codexModels.map((model) => model.id) : models
+    const available = visibleModels.map((model) => model.value)
     if (disabled || available.length === 0) return
-    if (current !== '' && available.includes(current)) return
+    if (current !== '' && catalogModels.some((model) => model.value === current)) return
     const first = available[0]
     if (first !== undefined) void select(first)
-  }, [codexModels, current, disabled, models, provider, select])
+  }, [catalogModels, current, disabled, select, visibleModels])
 
   if (!connected) {
     return null
   }
 
-  if (error !== null) {
+  const discoveryUnsupported = catalogStatus?.state === 'discovery_unsupported'
+  if (error !== null && !discoveryUnsupported) {
     // A catalogue failure is almost always a missing or rejected key; say so
     // where the user is, instead of leaving an empty dropdown.
     return (
@@ -180,19 +204,29 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     )
   }
 
-  const visibleModels = provider === 'codex_cli'
-    ? codexModels.map((model) => ({ value: model.id, label: model.displayName || model.id }))
-    : models.map((model) => ({ value: model, label: model }))
-  const known = visibleModels.some((model) => model.value === current)
+  const known = catalogModels.some((model) => model.value === current)
   const selectedDescriptor = modelDescriptors.find((model) => model.id === current)
+  const manualModelId = manualModel.trim()
+  const canSelectManualModel = manualModelId.length > 0
+    && manualModelId.length <= 256
+    && !Array.from(manualModelId).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
 
   return (
     <>
       <ModelDropdown
         models={visibleModels}
-        current={known ? current : ''}
+        current={known || (discoveryUnsupported && current) ? current : ''}
         onSelect={(model) => void select(model)}
         disabled={disabled}
+        {...(provider !== 'codex_cli' && models.length > 0
+          ? {
+              capabilityFilter: {
+                checked: hideConfirmedUnsupported,
+                label: `Скрыть модели, для которых Core подтвердил отсутствие ${requiredCapability}`,
+                onChange: setHideConfirmedUnsupported
+              }
+            }
+          : {})}
       />
       {provider !== 'codex_cli' && models.length > 0 ? (
         <span className="model-picker__hint" title={modelMetadataHint(selectedDescriptor, use)}>
@@ -201,6 +235,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       ) : null}
       {provider !== 'codex_cli' && catalogStatus !== null ? (
         <>
+          {catalogStatus.providerIdentity !== null ? (
+            <span className="model-picker__catalog-status" role="status">
+              Профиль Core: {catalogStatus.providerIdentity}
+            </span>
+          ) : null}
           <span className={`model-picker__catalog-status model-picker__catalog-status--${catalogStatus.state}`} role="status">
             {catalogStatusLabel(catalogStatus)}
           </span>
@@ -210,6 +249,27 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
             </span>
           ) : null}
         </>
+      ) : null}
+      {discoveryUnsupported && provider !== 'codex_cli' ? (
+        <div className="model-picker__manual-model">
+          <span className="model-picker__catalog-status" role="status">
+            Каталог не поддерживается; можно указать model ID вручную. Core отправит его выбранному провайдеру без подтверждения capabilities.
+          </span>
+          <label>
+            Model ID
+            <input
+              value={manualModel}
+              maxLength={256}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setManualModel(event.target.value)}
+              disabled={disabled}
+            />
+          </label>
+          <button type="button" onClick={() => void select(manualModelId)} disabled={disabled || !canSelectManualModel}>
+            Использовать эту модель
+          </button>
+        </div>
       ) : null}
       {provider === 'codex_cli' ? <CodexRateLimits rateLimits={codexRateLimits} compact /> : null}
     </>
@@ -221,6 +281,11 @@ interface ModelDropdownProps {
   readonly current: string
   readonly onSelect: (model: string) => void
   readonly disabled?: boolean
+  readonly capabilityFilter?: {
+    readonly checked: boolean
+    readonly label: string
+    readonly onChange: (checked: boolean) => void
+  }
 }
 
 interface ModelOption {
@@ -233,6 +298,7 @@ interface CatalogStatus {
   readonly credentialStatus: string | null
   readonly failureCode: string | null
   readonly configuredModelEligible: boolean | null
+  readonly providerIdentity: string | null
 }
 
 function catalogStatusLabel(status: CatalogStatus): string {
@@ -258,7 +324,7 @@ function catalogStatusLabel(status: CatalogStatus): string {
  * grey text on white inside the dark composer. This one is styled by the app,
  * and a catalogue of dozens of models needs a filter anyway.
  */
-function ModelDropdown({ models, current, onSelect, disabled = false }: ModelDropdownProps): React.JSX.Element {
+function ModelDropdown({ models, current, onSelect, disabled = false, capabilityFilter }: ModelDropdownProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const root = useRef<HTMLDivElement | null>(null)
@@ -313,6 +379,17 @@ function ModelDropdown({ models, current, onSelect, disabled = false }: ModelDro
             aria-label="Поиск модели"
             onChange={(event) => setQuery(event.target.value)}
           />
+          {capabilityFilter ? (
+            <label className="model-picker__capability-filter">
+              <input
+                type="checkbox"
+                checked={capabilityFilter.checked}
+                onChange={(event) => capabilityFilter.onChange(event.target.checked)}
+                disabled={disabled}
+              />
+              {capabilityFilter.label}
+            </label>
+          ) : null}
           <ul>
             {visible.length === 0 ? (
               <li className="model-picker__none">Ничего не найдено</li>

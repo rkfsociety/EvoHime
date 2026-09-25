@@ -10,6 +10,7 @@ import {
   type CommandFailure,
   type PermissionMode,
   type ProviderKind,
+  type ProviderProfileId,
   type RendererCommand,
   type ShellEvent
 } from '@shared/api'
@@ -30,6 +31,8 @@ import { resolveIdentity, resolveRepository } from './identity'
 import {
   normalizeApiKey,
   normalizeBaseUrl,
+  isProviderProfileId,
+  normalizeCloudflareAccountId,
   normalizeModel,
   type ProviderStore
 } from './provider-store'
@@ -1662,16 +1665,32 @@ function dispatch(
       const model = normalizeModel(value['model'])
       const baseUrl = normalizeBaseUrl(value['baseUrl'])
       const tier = asModelCatalogMode(value['tier'])
+      const profileIdValue = value['profileId']
+      const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
+      const accountIdValue = value['accountId']
+      const accountId = accountIdValue === undefined
+        ? undefined
+        : normalizeCloudflareAccountId(accountIdValue)
       if (
         provider === null ||
         apiKey === null ||
         model === null ||
         baseUrl === null ||
-        tier === null
+        tier === null ||
+        (profileIdValue !== undefined && profileId === null) ||
+        (accountIdValue !== undefined && accountId === null)
       ) {
-        return failure('invalid-payload', 'Проверь ключ, модель и адрес: адрес должен быть https.')
+        return failure('invalid-payload', 'Проверь ключ, модель и профиль провайдера.')
       }
-      const summary = providers.save({ provider, apiKey, model, baseUrl, tier })
+      const summary = providers.save({
+        provider,
+        apiKey,
+        model,
+        baseUrl,
+        tier,
+        ...(profileId ? { profileId } : {}),
+        ...(accountId ? { accountId } : {})
+      })
       if (summary === null) {
         log('error', 'shell.provider_encryption_unavailable', {})
         return failure('protocol-error', 'Windows не даёт зашифровать ключ — он не сохранён.')
@@ -2963,6 +2982,10 @@ function asProviderKind(value: unknown): ProviderKind | null {
   return typeof value === 'string' && (PROVIDER_KINDS as readonly string[]).includes(value)
     ? (value as ProviderKind)
     : null
+}
+
+function asProviderProfileId(value: unknown): ProviderProfileId | null {
+  return isProviderProfileId(value) ? value : null
 }
 
 function asArguments(value: unknown): string[] | null {

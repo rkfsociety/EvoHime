@@ -18,6 +18,99 @@ pub const LOCAL_DEFAULT_BASE_URL: &str = "http://127.0.0.1:49152/v1";
 /// Default loopback endpoint for Ollama's OpenAI-compatible API.
 pub const OLLAMA_DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434/v1";
 
+/// Stable provider identity selected independently from the wire transport.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderProfileId {
+    /// Custom OpenAI-compatible endpoint without a known vendor profile.
+    #[default]
+    Custom,
+    /// OpenAI hosted API profile.
+    OpenAi,
+    /// OpenRouter hosted API profile.
+    OpenRouter,
+    /// Groq hosted API profile.
+    Groq,
+    /// Google Gemini OpenAI-compatible API profile.
+    Gemini,
+    /// Mistral hosted API profile.
+    Mistral,
+    /// Cloudflare Workers AI account-scoped API profile.
+    CloudflareWorkersAi,
+    /// NVIDIA NIM hosted API profile.
+    NvidiaNim,
+    /// Cerebras hosted API profile.
+    Cerebras,
+    /// Hugging Face Inference Providers profile.
+    HuggingFace,
+}
+
+impl ProviderProfileId {
+    /// Returns the stable serialized identifier.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Custom => "custom",
+            Self::OpenAi => "openai",
+            Self::OpenRouter => "openrouter",
+            Self::Groq => "groq",
+            Self::Gemini => "gemini",
+            Self::Mistral => "mistral",
+            Self::CloudflareWorkersAi => "cloudflare_workers_ai",
+            Self::NvidiaNim => "nvidia_nim",
+            Self::Cerebras => "cerebras",
+            Self::HuggingFace => "hugging_face",
+        }
+    }
+
+    /// Parses a stable serialized identifier without accepting aliases.
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "custom" => Self::Custom,
+            "openai" => Self::OpenAi,
+            "openrouter" => Self::OpenRouter,
+            "groq" => Self::Groq,
+            "gemini" => Self::Gemini,
+            "mistral" => Self::Mistral,
+            "cloudflare_workers_ai" => Self::CloudflareWorkersAi,
+            "nvidia_nim" => Self::NvidiaNim,
+            "cerebras" => Self::Cerebras,
+            "hugging_face" => Self::HuggingFace,
+            _ => return None,
+        })
+    }
+
+    /// Returns the trusted base URL for a profile with a fixed endpoint.
+    pub fn default_base_url(self) -> Option<&'static str> {
+        match self {
+            Self::Custom => None,
+            Self::OpenAi => Some(OPENAI_DEFAULT_BASE_URL),
+            Self::OpenRouter => Some("https://openrouter.ai/api/v1"),
+            Self::Groq => Some("https://api.groq.com/openai/v1"),
+            Self::Gemini => Some("https://generativelanguage.googleapis.com/v1beta/openai"),
+            Self::Mistral => Some("https://api.mistral.ai/v1"),
+            Self::CloudflareWorkersAi => None,
+            Self::NvidiaNim => Some("https://integrate.api.nvidia.com/v1"),
+            Self::Cerebras => Some("https://api.cerebras.ai/v1"),
+            Self::HuggingFace => Some("https://router.huggingface.co/v1"),
+        }
+    }
+
+    /// Builds the trusted Workers AI base URL for a bounded account ID.
+    pub fn cloudflare_base_url(account_id: &str) -> Option<String> {
+        if !Self::valid_cloudflare_account_id(account_id) {
+            return None;
+        }
+        Some(format!(
+            "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
+        ))
+    }
+
+    /// Checks the documented fixed-width hexadecimal Cloudflare account ID.
+    pub fn valid_cloudflare_account_id(account_id: &str) -> bool {
+        account_id.len() == 32 && account_id.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }
+}
+
 /// Endpoint, model, and credential configuration shared by compatible providers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteRouterConfig {
@@ -86,6 +179,12 @@ pub struct ModelRouteConfig {
     pub provider: ProviderKind,
     /// Endpoint, model, and credential values consumed by the provider adapter.
     pub literouter: LiteRouterConfig,
+    /// Explicit vendor identity, independent from `provider` transport.
+    #[serde(default)]
+    pub provider_profile_id: Option<ProviderProfileId>,
+    /// Account identifier required by account-scoped provider profiles.
+    #[serde(default)]
+    pub provider_account_id: Option<String>,
     /// Wave 3B: Provider supports extended thinking
     #[serde(default = "default_thinking_support")]
     pub supports_thinking: bool,
@@ -114,6 +213,8 @@ impl ModelRouteConfig {
                 base_url: normalize_base_url(&base_url.into()),
                 model: model.into(),
             },
+            provider_profile_id: None,
+            provider_account_id: None,
             supports_thinking,
         }
     }
@@ -134,6 +235,72 @@ impl ModelRouteConfig {
         model: impl Into<String>,
     ) -> Self {
         Self::with_provider(ProviderKind::OpenAICompatible, api_key, base_url, model)
+    }
+
+    /// Selects an explicit vendor identity for an OpenAI-compatible route.
+    ///
+    /// The optional account ID is used only by account-scoped profiles; endpoint
+    /// validation is performed before the route is created or dispatched.
+    pub fn with_provider_profile(
+        mut self,
+        profile_id: ProviderProfileId,
+        account_id: Option<String>,
+    ) -> Self {
+        self.provider_profile_id = Some(profile_id);
+        self.provider_account_id = account_id;
+        self
+    }
+
+    /// Validates that an explicit profile uses its trusted transport endpoint.
+    pub fn validate_provider_profile(&self) -> Result<(), ProviderError> {
+        let Some(profile_id) = self.provider_profile_id else {
+            if self.provider_account_id.is_some() {
+                return Err(ProviderError::Config(
+                    "provider profile account is not configured".into(),
+                ));
+            }
+            return Ok(());
+        };
+        if self.provider != ProviderKind::OpenAICompatible {
+            return Err(ProviderError::Config(
+                "provider profile requires OpenAI-compatible transport".into(),
+            ));
+        }
+        let expected_base_url = match profile_id {
+            ProviderProfileId::Custom => {
+                if self.provider_account_id.is_some() {
+                    return Err(ProviderError::Config(
+                        "provider profile account is not configured".into(),
+                    ));
+                }
+                return Ok(());
+            }
+            ProviderProfileId::CloudflareWorkersAi => {
+                let account_id = self.provider_account_id.as_deref().ok_or_else(|| {
+                    ProviderError::Config("provider profile account is required".into())
+                })?;
+                ProviderProfileId::cloudflare_base_url(account_id).ok_or_else(|| {
+                    ProviderError::Config("provider profile account is invalid".into())
+                })?
+            }
+            fixed => {
+                if self.provider_account_id.is_some() {
+                    return Err(ProviderError::Config(
+                        "provider profile account is not configured".into(),
+                    ));
+                }
+                fixed
+                    .default_base_url()
+                    .ok_or_else(|| ProviderError::Config("provider profile is invalid".into()))?
+                    .to_owned()
+            }
+        };
+        if self.literouter.base_url.trim_end_matches('/') != expected_base_url {
+            return Err(ProviderError::Config(
+                "provider profile endpoint does not match".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// Builds a route using the OpenAI Responses transport.
@@ -169,6 +336,8 @@ impl ModelRouteConfig {
                 base_url: "mock://local".to_string(),
                 model: model.into(),
             },
+            provider_profile_id: None,
+            provider_account_id: None,
             supports_thinking: true, // Mock supports all features
         }
     }
@@ -209,10 +378,12 @@ impl ModelGatewayConfig {
             .and_then(|value| ProviderKind::parse(&value))
             .unwrap_or(ProviderKind::LiteRouter);
         let literouter = LiteRouterConfig::from_env();
-        let route = match provider {
+        let mut route = match provider {
             ProviderKind::LiteRouter => ModelRouteConfig {
                 provider,
                 literouter,
+                provider_profile_id: None,
+                provider_account_id: None,
                 supports_thinking: true,
             },
             ProviderKind::OpenAICompatible => {
@@ -239,6 +410,20 @@ impl ModelGatewayConfig {
                 env::var("LOCAL_PROVIDER_MODEL").unwrap_or_else(|_| "local-slm".to_string()),
             ),
         };
+        if provider == ProviderKind::OpenAICompatible {
+            let profile_id =
+                match env::var("MODEL_PROVIDER_PROFILE_ID") {
+                    Ok(value) => Some(ProviderProfileId::parse(&value).ok_or_else(|| {
+                        ProviderError::Config("provider profile is invalid".into())
+                    })?),
+                    Err(_) => None,
+                };
+            let account_id = env::var("MODEL_PROVIDER_ACCOUNT_ID").ok();
+            if profile_id.is_some() || account_id.is_some() {
+                route = route.with_provider_profile(profile_id.unwrap_or_default(), account_id);
+            }
+        }
+        route.validate_provider_profile()?;
 
         Ok(Self {
             default_route: default_route.clone(),
@@ -261,6 +446,10 @@ struct EnvRouteConfig {
     base_url: Option<String>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    provider_profile_id: Option<ProviderProfileId>,
+    #[serde(default)]
+    provider_account_id: Option<String>,
 }
 
 fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, ProviderError> {
@@ -288,7 +477,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             ProviderKind::Ollama => OLLAMA_DEFAULT_BASE_URL,
             _ => LITEROUTER_DEFAULT_BASE_URL,
         };
-        let route_config = match provider {
+        let mut route_config = match provider {
             ProviderKind::LiteRouter => ModelRouteConfig::literouter(
                 route.api_key.unwrap_or_default(),
                 route
@@ -329,6 +518,14 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
                 ))
             }
         };
+        if route.provider_profile_id.is_some() || route.provider_account_id.is_some() {
+            let profile_id = route.provider_profile_id.ok_or_else(|| {
+                ProviderError::Config("provider profile identity is not configured".into())
+            })?;
+            route_config =
+                route_config.with_provider_profile(profile_id, route.provider_account_id);
+        }
+        route_config.validate_provider_profile()?;
         parsed_routes.insert(name, route_config);
     }
 
@@ -360,5 +557,65 @@ mod tests {
             config.chat_completions_url(),
             "https://api.literouter.com/v1/chat/completions"
         );
+    }
+
+    #[test]
+    fn explicit_provider_profiles_require_their_trusted_route() {
+        let route = ModelRouteConfig::openai_compatible(
+            "test-token",
+            "https://api.groq.com/openai/v1",
+            "llama-3.3-70b-versatile",
+        )
+        .with_provider_profile(ProviderProfileId::Groq, None);
+        assert!(route.validate_provider_profile().is_ok());
+
+        let mismatched =
+            ModelRouteConfig::openai_compatible("test-token", "https://custom.example/v1", "model")
+                .with_provider_profile(ProviderProfileId::Groq, None);
+        assert!(mismatched.validate_provider_profile().is_err());
+    }
+
+    #[test]
+    fn cloudflare_profile_bounds_account_and_builds_openai_compatible_url() {
+        let account_id = "0123456789abcdef0123456789abcdef";
+        let base_url = ProviderProfileId::cloudflare_base_url(account_id).expect("valid account");
+        assert_eq!(
+            base_url,
+            "https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/v1"
+        );
+        let route = ModelRouteConfig::openai_compatible("token", base_url, "@cf/model")
+            .with_provider_profile(
+                ProviderProfileId::CloudflareWorkersAi,
+                Some(account_id.into()),
+            );
+        assert!(route.validate_provider_profile().is_ok());
+
+        for invalid in ["", "../", "0123456789abcdef0123456789abcdeg"] {
+            assert!(ProviderProfileId::cloudflare_base_url(invalid).is_none());
+        }
+    }
+
+    #[test]
+    fn routes_json_preserves_an_explicit_cloudflare_profile() {
+        let account_id = "0123456789abcdef0123456789abcdef";
+        let raw = serde_json::json!({
+            "default": {
+                "provider": "openai_compatible",
+                "api_key": "test-token",
+                "base_url": ProviderProfileId::cloudflare_base_url(account_id),
+                "model": "@cf/meta/llama-3.1-8b-instruct",
+                "provider_profile_id": "cloudflare_workers_ai",
+                "provider_account_id": account_id
+            }
+        });
+
+        let parsed = parse_routes_from_json(&raw.to_string()).expect("routes parse");
+        let route = parsed.routes.get("default").expect("route exists");
+        assert_eq!(
+            route.provider_profile_id,
+            Some(ProviderProfileId::CloudflareWorkersAi)
+        );
+        assert_eq!(route.provider_account_id.as_deref(), Some(account_id));
+        assert!(route.validate_provider_profile().is_ok());
     }
 }

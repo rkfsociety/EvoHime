@@ -86,6 +86,8 @@ pub enum ExecutionClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
+    /// No health probe or provider observation is available.
+    Unknown,
     /// The provider passed probing and is currently eligible.
     Ready,
     /// The provider cannot currently serve requests.
@@ -101,7 +103,7 @@ pub enum HealthStatus {
 pub struct CandidateHealthSnapshot {
     /// Health classification observed for this candidate.
     pub status: HealthStatus,
-    /// Wall-clock timestamp when observed.
+    /// Snapshot timestamp; an unknown status does not imply a provider observation.
     pub observed_at: u64,
     /// TTL in milliseconds; health is stale after this.
     pub ttl_ms: u64,
@@ -112,6 +114,17 @@ pub struct CandidateHealthSnapshot {
 }
 
 impl CandidateHealthSnapshot {
+    /// Creates an unknown health snapshot at the supplied routing time.
+    pub fn unknown_at(now: u64) -> Self {
+        Self {
+            status: HealthStatus::Unknown,
+            observed_at: now,
+            ttl_ms: 0,
+            circuit_state: CircuitState::Closed,
+            last_failure_category: None,
+        }
+    }
+
     /// Creates a ready health snapshot with current timestamp.
     pub fn ready(ttl_ms: u64) -> Self {
         let now = current_time_ms();
@@ -136,7 +149,7 @@ impl CandidateHealthSnapshot {
 
     /// Checks freshness against a caller-supplied clock value.
     pub fn is_fresh_at(&self, now: u64) -> bool {
-        now < self.observed_at + self.ttl_ms
+        self.status == HealthStatus::Unknown || now < self.observed_at.saturating_add(self.ttl_ms)
     }
 }
 
@@ -836,7 +849,7 @@ pub fn select_route_snapshot(
         let health = &candidate.initial_health;
         let mut status = health.status;
         let circuit = overlay.get_circuit_state(&candidate.route_id);
-        if !health.is_fresh_at(now_ms) {
+        if health.status != HealthStatus::Unknown && !health.is_fresh_at(now_ms) {
             status = HealthStatus::Stale;
         }
         if candidate.privacy < request.required_privacy {
@@ -965,14 +978,17 @@ fn candidate_supports_capability(candidate: &CandidateEntry, capability: &str) -
 }
 
 fn health_rank(candidate: &CandidateEntry, now_ms: u64) -> u8 {
-    if !candidate.initial_health.is_fresh_at(now_ms) {
+    if candidate.initial_health.status != HealthStatus::Unknown
+        && !candidate.initial_health.is_fresh_at(now_ms)
+    {
         return 3;
     }
     match candidate.initial_health.status {
         HealthStatus::Ready => 0,
         HealthStatus::Degraded => 1,
-        HealthStatus::Stale => 2,
-        HealthStatus::Unavailable => 3,
+        HealthStatus::Unknown => 2,
+        HealthStatus::Stale => 3,
+        HealthStatus::Unavailable => 4,
     }
 }
 
@@ -1418,6 +1434,73 @@ mod tests {
                 .find(|c| c.route_id == "cloud-1")
                 .and_then(|c| c.reject_reason.as_deref()),
             Some("offline_mode")
+        );
+    }
+
+    #[test]
+    fn unknown_health_remains_eligible_and_ranks_after_confirmed_ready() {
+        let mut unknown = make_candidate("local-1", 1);
+        let mut ready = make_candidate("cloud-1", 1);
+        unknown.initial_health = CandidateHealthSnapshot::unknown_at(1_000);
+        ready.capabilities.execution_class = ExecutionClass::Cloud;
+        ready.initial_health = CandidateHealthSnapshot::ready_at(1_000, 1_000);
+        let hashes = PolicyHashes::from_canonical_json(b"p", b"a", b"t", b"s", b"r");
+        let snapshot = RoutePolicySnapshot::new_at(
+            "run-unknown-health".into(),
+            vec![unknown.clone(), ready],
+            hashes.clone(),
+            UserPreference::default(),
+            None,
+            1_000,
+        )
+        .expect("snapshot");
+        let overlay = RunHealthOverlay::new("run-unknown-health");
+        let request = RoutingRequest {
+            required_capabilities: vec!["chat".into()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+            preferred_route: None,
+            task_class: Some("complex".into()),
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 10,
+            quality_delta: 0.05,
+        };
+
+        let decision =
+            select_route_snapshot(&request, &snapshot, &overlay, None, 0, 1_000).expect("decision");
+        assert_eq!(decision.selected_route.as_deref(), Some("cloud-1"));
+        let unknown_decision = decision
+            .candidates
+            .iter()
+            .find(|candidate| candidate.route_id == "local-1")
+            .expect("unknown candidate");
+        assert_eq!(unknown_decision.health_status, HealthStatus::Unknown);
+        assert_eq!(unknown_decision.reject_reason, None);
+
+        let only_unknown = RoutePolicySnapshot::new_at(
+            "run-only-unknown".into(),
+            vec![unknown],
+            hashes,
+            UserPreference::default(),
+            None,
+            1_000,
+        )
+        .expect("snapshot");
+        let only_unknown_decision = select_route_snapshot(
+            &request,
+            &only_unknown,
+            &RunHealthOverlay::new("run-only-unknown"),
+            None,
+            0,
+            1_000,
+        )
+        .expect("decision");
+        assert_eq!(
+            only_unknown_decision.selected_route.as_deref(),
+            Some("local-1")
         );
     }
 

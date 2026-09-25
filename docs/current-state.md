@@ -31,9 +31,13 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 `.github/workflows/rustdoc.yml`; точный post-push результат фиксируется в
 `release-evidence.md`.
 
-Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local подключение действий композера shell: выбор файлов текущего workspace, существующий выбор режима доступа через Core и флаг веб-поиска для следующего запроса. Композер собран в компактную тёмную панель с общей строкой проекта, состояния Git и параметров задачи; на узкой ширине строка переносится, индикатор контекста остаётся виден, а статус ветки нельзя случайно скрыть. Новых IPC-контрактов и Core-owned state не добавлено.
-
-Актуальные release markers берутся из `release-versions/`: `core 0.0.000373`, `cli 0.0.000084`, `ui-bundle 0.0.000114`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
+Текущий опубликованный commit и результаты CI для закрытых направлений
+фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
+Актуальные release markers берутся из `release-versions/`: `analysis-worker
+0.0.000043`, `cli 0.0.000086`, `core 0.0.000374`, `installer 0.0.000065`,
+`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000106`,
+`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000117`,
+`updater 0.0.000130` и `verifier 0.0.000056`.
 
 Новые задания чата получают из Core conversation log последние 40 durable
 реплик пользователя и ассистента (до 64 KiB), сохранённые до текущего запроса.
@@ -193,54 +197,24 @@ bounded `reentrant` reason в `memory.extraction.skipped` или
 с source-basis/idempotency hashes и атомарным `finalizing → committed` publish,
 не сохраняя statement, transcript, prompt или secrets. Recovery, deferred
 finalization и IPC projection остаются активными этапами 175.2–175.4.
-План 173.1 получил совместимый Core-контракт: versioned `ProviderProfile`
-разделяет provider family и transport, а `ProviderModelDescriptor` адаптирует
-существующий gateway `ModelCatalogEntry` с profile/catalog revision/hash,
-typed limits и fail-closed capability/privacy/usage metadata. Восемь
-built-in identities добавлены как bounded metadata. SQLite schema v174
-атомарно хранит profile/catalog snapshot в provider/credential-binding/region
-scope с monotonic revision fence, bounded JSON, lifecycle state, observation/
-expiry timestamps и typed failure code; v174 additive migration совместима со
-старыми v173 таблицами. Core имеет validated read-back adapter и при старте
-гидратирует snapshots настроенных routes в bounded process-local cache до
-открытия IPC. При временной ошибке первый refresh после перезапуска использует
-этот cache для stale UI fallback, сохраняя fail-closed `route_eligible_at`.
-Route preflight подключён к реальному ModelGateway dispatch. Существующий
-authenticated `model.catalog` event теперь несёт bounded `provider_catalog`
-projection, а ModelPicker и ProviderForm отображают Core-owned lifecycle и
-credential status; IPC/UI остаются активными этапами 173.3–173.4 для
-дальнейшего capability filtering.
-`ProviderCatalogSnapshot` теперь задаёт bounded lifecycle
+План 173 Cloud Provider Profiles закрыт: явная profile identity и отдельный
+Cloudflare account ID проходят через encrypted provider store и supervisor
+environment; Core хранит bounded profile/catalog snapshots в SQLite schema
+v174, выполняет discovery и capability preflight, а при старте восстанавливает
+только валидированные snapshots. Каталог имеет lifecycle
 `Fresh/Stale/Unavailable/CredentialRejected/DiscoveryUnsupported`, typed
-failure codes, deterministic gateway-catalog deduplication и fail-closed
-`route_eligible_at`; raw `ProviderError` text не переносится в snapshot.
-`model.catalog` IPC refresh строит redacted profile из route config и
-публикует success/failure snapshot в schema v174; startup recovery-read для
-настроенных routes повторно проверяет profile/catalog identity, lifecycle и
-typed failure перед использованием. Перед provider dispatch Gateway вызывает
-Core-owned route preflight: известные stale/expired/failed snapshots и
-неподтверждённые модели отклоняются без отправки prompt, а fallback-policy
-может перейти к следующему route. В тот же authenticated `model.catalog`
-payload добавлена bounded `provider_catalog` projection без URL, prompt,
-credential binding или raw provider errors; renderer только отображает её.
-При network/timeout/rate-limit ошибке имеющийся bounded catalog сохраняется как
-`Stale` с typed failure и может быть показан UI; `route_eligible_at` остаётся
-false. Credential rejection и unsupported discovery не используют stale cache.
-Явный `model not found` получает отдельный bounded `model_not_found` outcome;
-HTTP 404 при чтении catalog endpoint означает `discovery_unsupported`, а не
-пропажу выбранной модели, и оба случая не смешиваются с `protocol_mismatch`; storage
-boundary принимает и восстанавливает этот код.
-Renderer показывает этот код как «модель не найдена у провайдера» и не выводит
-сырой ответ каталога.
-Route preflight сохраняет этот исход как `provider_model_not_found`, включая
-случай, когда fresh catalog больше не содержит выбранную модель.
-Истёкший snapshot получает отдельный `provider_catalog_expired`, а UI получает
-согласованное состояние `expired` вместо misleading `fresh`. ModelPicker больше
-не фильтрует модели по renderer-именам: capability, limits и privacy берутся
-только из bounded Core descriptor, unknown остаётся unknown.
-Если Core помечает `configured_model_eligible=false`, ModelPicker отдельно
-показывает, что выбранная модель не подтверждена для текущего маршрута;
-для `unobserved` projection оставляет это поле `null`.
+failure codes и deterministic deduplication; provider errors не раскрываются в
+projection. Stale/expired/failed snapshots и подтверждённое отсутствие модели
+не проходят route preflight; `DiscoveryUnsupported` не блокирует явно
+выбранный model ID. Только подтверждённое `Unsupported` для chat или
+запрошенных tool calls блокирует dispatch. Неизвестные capability и исходное
+provider health остаются `Unknown`. Bounded redacted `provider_catalog`
+передаётся через существующий authenticated `model.catalog`; ProviderForm и
+ModelPicker отображают Core-owned profile, lifecycle и capability state.
+Полный контракт находится в [`architecture.md`](architecture.md), проверки —
+в [`release-evidence.md`](release-evidence.md).
+Новое состояние трассы выпускается как `routing.trace` schema v2; renderer
+сохраняет чтение ранее сохранённых v1 событий.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и
@@ -314,8 +288,10 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 
 ## Провайдеры и модели
 
-Поддерживаются профили LiteRouter, OpenAI-compatible, OpenAI Responses API и
-Ollama; `mock` используется только в тестах. Ollama не требует ключа и
+Поддерживаются LiteRouter, OpenAI Responses API, Ollama и OpenAI-compatible
+транспорт с явными профилями OpenAI, OpenRouter, Groq, Gemini, Mistral,
+Cloudflare Workers AI, NVIDIA NIM, Cerebras, Hugging Face и generic custom;
+`mock` используется только в тестах. Ollama не требует ключа и
 ограничен loopback endpoint.
 Профили и зашифрованные ключи хранятся в
 `%LOCALAPPDATA%\EvoHime\shell\provider.json`; ключ доступен Core только через
@@ -464,7 +440,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `173–181`; планы `149–167` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `174–181` и `184–188`; планы `149–167` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

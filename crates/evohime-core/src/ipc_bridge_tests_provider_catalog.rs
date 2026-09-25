@@ -102,10 +102,42 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
     assert_eq!(projection["catalog"]["failure_code"], "network");
     assert_eq!(projection["catalog"]["configured_model_eligible"], false);
     assert_eq!(projection["provider"]["credential_status"], "configured");
+    assert_eq!(projection["provider"]["id"], "custom_openai_compatible");
+    assert_eq!(
+        projection["provider"]["profile_id"],
+        serde_json::Value::Null
+    );
     assert_eq!(projection["models"][0]["id"], "model-a");
     let projection_text = serde_json::to_string(&projection).expect("projection serializes");
     assert!(!projection_text.contains("provider.example"));
     assert!(!projection_text.contains("test-key"));
+
+    let account_id = "0123456789abcdef0123456789abcdef";
+    let cloudflare_route = ModelRouteConfig::openai_compatible(
+        "cloudflare-token",
+        evohime_model_gateway::ProviderProfileId::cloudflare_base_url(account_id)
+            .expect("Cloudflare account URL"),
+        "@cf/meta/llama-3.1-8b-instruct",
+    )
+    .with_provider_profile(
+        evohime_model_gateway::ProviderProfileId::CloudflareWorkersAi,
+        Some(account_id.into()),
+    );
+    let cloudflare_projection = bridge
+        .provider_catalog_projection(&cloudflare_route, Some("@cf/meta/llama-3.1-8b-instruct"))
+        .await;
+    assert_eq!(
+        cloudflare_projection["provider"]["id"],
+        "cloudflare_workers_ai"
+    );
+    assert_eq!(
+        cloudflare_projection["provider"]["profile_id"],
+        "cloudflare_workers_ai"
+    );
+    let cloudflare_projection_text =
+        serde_json::to_string(&cloudflare_projection).expect("projection serializes");
+    assert!(!cloudflare_projection_text.contains(account_id));
+    assert!(!cloudflare_projection_text.contains("cloudflare-token"));
 
     let now_ms = crate::task_memory::now_millis();
     let expired = ProviderCatalogSnapshot::fresh_from_catalog(

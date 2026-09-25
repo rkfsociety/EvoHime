@@ -1,6 +1,9 @@
 //! Bounded provider access/reliability metadata; gateway remains transport owner.
+use evohime_model_gateway::config::OPENAI_DEFAULT_BASE_URL;
 use evohime_model_gateway::providers::ProviderError;
-use evohime_model_gateway::{ModelCatalogEntry, ModelRouteConfig, RoutePreflight};
+use evohime_model_gateway::{
+    ModelCatalogEntry, ModelRouteConfig, ProviderProfileId, RoutePreflight,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::Arc};
@@ -916,9 +919,12 @@ pub struct RouteSelectionExplanation {
 impl ProviderProfile {
     /// Adapts a configured gateway route into validated provider metadata.
     ///
-    /// Provider IDs are normalized from the route's transport and endpoint;
-    /// the result stores only an opaque credential binding, not a secret.
+    /// Explicit profile identity is authoritative; exact endpoint matching is
+    /// retained only for routes serialized before profile IDs were introduced.
     pub fn from_route_config(route: &ModelRouteConfig) -> Result<Self, &'static str> {
+        route
+            .validate_provider_profile()
+            .map_err(|_| "invalid provider profile")?;
         let (provider_id, provider_family, transport_kind) = match route.provider {
             evohime_model_gateway::providers::ProviderKind::LiteRouter => (
                 "literouter",
@@ -926,8 +932,8 @@ impl ProviderProfile {
                 TransportKind::OpenAiCompatible,
             ),
             evohime_model_gateway::providers::ProviderKind::OpenAICompatible => (
-                "openai",
-                ProviderFamily::OpenAi,
+                "custom_openai_compatible",
+                ProviderFamily::Unknown,
                 TransportKind::OpenAiCompatible,
             ),
             evohime_model_gateway::providers::ProviderKind::OpenAIResponses => (
@@ -947,11 +953,34 @@ impl ProviderProfile {
         };
         let (provider_id, provider_family) =
             if route.provider == evohime_model_gateway::providers::ProviderKind::OpenAICompatible {
-                builtin_provider_profiles()
-                    .into_iter()
-                    .find(|profile| profile.endpoint == route.literouter.base_url)
-                    .map(|profile| (profile.provider_id, profile.provider_family))
-                    .unwrap_or_else(|| (provider_id.to_owned(), provider_family))
+                if let Some(profile_id) = route.provider_profile_id {
+                    if profile_id == ProviderProfileId::Custom {
+                        (
+                            "custom_openai_compatible".to_owned(),
+                            ProviderFamily::Unknown,
+                        )
+                    } else if profile_id == ProviderProfileId::OpenAi {
+                        ("openai".to_owned(), ProviderFamily::OpenAi)
+                    } else {
+                        let profile_id = profile_id.as_str();
+                        builtin_provider_profiles()
+                            .into_iter()
+                            .find(|profile| profile.provider_id == profile_id)
+                            .map(|profile| (profile.provider_id, profile.provider_family))
+                            .ok_or("invalid provider profile")?
+                    }
+                } else {
+                    let endpoint = route.literouter.base_url.trim_end_matches('/');
+                    builtin_provider_profiles()
+                        .into_iter()
+                        .find(|profile| profile.endpoint.trim_end_matches('/') == endpoint)
+                        .map(|profile| (profile.provider_id, profile.provider_family))
+                        .or_else(|| {
+                            (endpoint == OPENAI_DEFAULT_BASE_URL)
+                                .then(|| ("openai".to_owned(), ProviderFamily::OpenAi))
+                        })
+                        .unwrap_or_else(|| (provider_id.to_owned(), provider_family))
+                }
             } else {
                 (provider_id.to_owned(), provider_family)
             };
@@ -963,7 +992,18 @@ impl ProviderProfile {
         } else {
             route.literouter.base_url.clone()
         };
-        let credential_binding = format!("credential:{provider_id}");
+        let credential_binding =
+            if route.provider_profile_id == Some(ProviderProfileId::CloudflareWorkersAi) {
+                format!(
+                    "credential:{provider_id}:{}",
+                    route
+                        .provider_account_id
+                        .as_deref()
+                        .ok_or("invalid provider profile")?
+                )
+            } else {
+                format!("credential:{provider_id}")
+            };
         let mut profile = Self {
             schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
             provider_id,
@@ -1519,6 +1559,28 @@ impl ProviderCatalogRoutePreflight {
 
 impl RoutePreflight for ProviderCatalogRoutePreflight {
     fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError> {
+        self.check_with_requirements(route, model, false, now_ms)
+    }
+
+    fn check_for_request(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        requires_tool_calls: bool,
+        now_ms: u64,
+    ) -> Result<(), ProviderError> {
+        self.check_with_requirements(route, model, requires_tool_calls, now_ms)
+    }
+}
+
+impl ProviderCatalogRoutePreflight {
+    fn check_with_requirements(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        requires_tool_calls: bool,
+        now_ms: u64,
+    ) -> Result<(), ProviderError> {
         let route_config = self
             .config
             .routes
@@ -1550,7 +1612,26 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
             return Ok(());
         };
         match snapshot.state {
-            ProviderCatalogState::Fresh if snapshot.route_eligible_at(model_id, now_ms) => Ok(()),
+            ProviderCatalogState::Fresh if snapshot.route_eligible_at(model_id, now_ms) => {
+                let descriptor = snapshot
+                    .models
+                    .iter()
+                    .find(|candidate| candidate.model_id == model_id);
+                if descriptor.is_some_and(|descriptor| {
+                    has_confirmed_unsupported_capability(descriptor, ModelCapability::Chat)
+                        || (requires_tool_calls
+                            && has_confirmed_unsupported_capability(
+                                descriptor,
+                                ModelCapability::ToolCalls,
+                            ))
+                }) {
+                    Err(ProviderError::Config(
+                        "provider_model_capability_unsupported".into(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
             ProviderCatalogState::Fresh if now_ms >= snapshot.expires_at_ms => {
                 Err(ProviderError::Config("provider_catalog_expired".into()))
             }
@@ -1571,11 +1652,26 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
             ProviderCatalogState::Unavailable => {
                 Err(ProviderError::Config("provider_catalog_unavailable".into()))
             }
-            ProviderCatalogState::DiscoveryUnsupported => Err(ProviderError::Config(
-                "provider_catalog_discovery_unsupported".into(),
-            )),
+            // Catalog discovery is advisory. If the user supplied an explicit
+            // model ID, a missing discovery endpoint does not prove that the
+            // completion endpoint cannot serve it.
+            ProviderCatalogState::DiscoveryUnsupported => Ok(()),
         }
     }
+}
+
+fn has_confirmed_unsupported_capability(
+    descriptor: &ProviderModelDescriptor,
+    capability: ModelCapability,
+) -> bool {
+    descriptor.capabilities.iter().any(|flag| {
+        flag.capability == capability
+            && flag.state == CapabilityState::Unsupported
+            && matches!(
+                flag.provenance,
+                CapabilityProvenance::ProviderDeclared | CapabilityProvenance::Observed
+            )
+    })
 }
 
 /// Sorts catalog entries deterministically and keeps one entry per model ID.
@@ -1682,7 +1778,7 @@ pub fn builtin_provider_profiles() -> Vec<ProviderProfile> {
         (
             "cloudflare_workers_ai",
             ProviderFamily::CloudflareWorkersAi,
-            "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run",
+            "https://api.cloudflare.com/client/v4/accounts/00000000000000000000000000000000/ai/v1",
         ),
         (
             "nvidia_nim",

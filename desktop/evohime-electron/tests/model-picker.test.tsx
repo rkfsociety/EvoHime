@@ -257,6 +257,68 @@ describe('model picker', () => {
     expect(await screen.findByText(/tool_calls подтверждён Core.*контекст 128k/i)).toBeTruthy()
   })
 
+  it('filters only explicitly unsupported capabilities and keeps unknown models visible', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', {
+          mode: 'free',
+          models: ['supported-model', 'unsupported-model', 'unknown-model'],
+          provider_catalog: {
+            models: [
+              { id: 'supported-model', capabilities: [{ capability: 'tool_calls', state: 'supported', provenance: 'observed' }] },
+              { id: 'unsupported-model', capabilities: [{ capability: 'tool_calls', state: 'unsupported', provenance: 'provider_declared' }] },
+              { id: 'unknown-model', capabilities: [{ capability: 'tool_calls', state: 'unknown', provenance: 'unknown' }] }
+            ]
+          }
+        })]}
+        use="agent"
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
+    expect(screen.getAllByRole('option')).toHaveLength(3)
+    await userEvent.click(screen.getByRole('option', { name: 'unsupported-model' }))
+    const selectCallsBeforeFilter = calls.filter((call) => call.command === 'core.selectModel').length
+    expect(screen.getByRole('button', { name: /Модель/ }).textContent).toContain('unsupported-model')
+    await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
+    await userEvent.click(screen.getByLabelText(/Скрыть модели, для которых Core подтвердил отсутствие tool_calls/))
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'supported-model',
+      'unknown-model'
+    ])
+    expect(screen.getByRole('button', { name: /Модель/ }).textContent).toContain('unsupported-model')
+    expect(calls.filter((call) => call.command === 'core.selectModel')).toHaveLength(selectCallsBeforeFilter)
+    await userEvent.click(screen.getByRole('option', { name: 'unknown-model' }))
+    expect(screen.getByText(/tool_calls не подтверждён Core/i)).toBeTruthy()
+  })
+
+  it('allows a manual model ID when provider discovery is unsupported', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', {
+          mode: 'free',
+          models: [],
+          error: 'catalog discovery unavailable',
+          provider_catalog: {
+            provider: { id: 'groq', profile_id: 'groq' },
+            catalog: { state: 'discovery_unsupported', failure_code: 'discovery_unsupported' }
+          }
+        })]}
+        use="text"
+      />
+    )
+
+    expect(await screen.findByText('Профиль Core: groq')).toBeTruthy()
+    await userEvent.type(await screen.findByLabelText('Model ID'), 'manual/model-id')
+    await userEvent.click(screen.getByRole('button', { name: 'Использовать эту модель' }))
+    await waitFor(() => expect(calls).toContainEqual({
+      command: 'core.selectModel',
+      payload: { model: 'manual/model-id' }
+    }))
+  })
+
   it('points at the key when the catalogue could not be read', async () => {
     render(
       <ModelPicker

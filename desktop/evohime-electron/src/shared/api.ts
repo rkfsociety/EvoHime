@@ -649,7 +649,26 @@ export interface RepairStatus {
 export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'openai_responses', 'ollama'] as const
 export const OLLAMA_DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1'
 
+/** Vendor identities available through the OpenAI-compatible transport. */
+export const PROVIDER_PROFILE_IDS = [
+  'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'cloudflare_workers_ai',
+  'nvidia_nim', 'cerebras', 'hugging_face', 'custom'
+] as const
+
+/** Default base URLs for fixed-endpoint vendor profiles. */
+export const PROVIDER_PROFILE_ENDPOINTS: Readonly<Partial<Record<ProviderProfileId, string>>> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  mistral: 'https://api.mistral.ai/v1',
+  nvidia_nim: 'https://integrate.api.nvidia.com/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
+  hugging_face: 'https://router.huggingface.co/v1'
+}
+
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
+export type ProviderProfileId = (typeof PROVIDER_PROFILE_IDS)[number]
 
 /** Единственный источник модели для одной задачи в чате. */
 export type ChatProviderMode = ProviderKind | 'codex_cli'
@@ -662,6 +681,8 @@ export interface ProviderProfileSummary {
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly configured: boolean
+  readonly profileId?: ProviderProfileId
+  readonly accountId?: string
 }
 
 
@@ -675,6 +696,8 @@ export interface ProviderSummary {
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly configured: boolean
+  readonly profileId?: ProviderProfileId
+  readonly accountId?: string
   readonly profiles: Readonly<Record<ProviderKind, ProviderProfileSummary>>
 }
 
@@ -1814,7 +1837,15 @@ export interface CommandPayloads {
   /** Пустой `destinationPath` означает «спроси путь диалогом сохранения». */
   'review.saveRevision': { revisionId: string; destinationPath: string; fileName?: string }
   'provider.get': Record<string, never>
-  'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
+  'provider.save': {
+    provider: ProviderKind
+    apiKey: string
+    model: string
+    baseUrl: string
+    tier: ModelTier
+    profileId?: ProviderProfileId
+    accountId?: string
+  }
   'provider.select': { provider: ProviderKind }
   'provider.clearKey': { provider?: ProviderKind }
   'codex.getStatus': Record<string, never>

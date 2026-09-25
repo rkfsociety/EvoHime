@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ConnectionState, CoreEvent } from '@shared/api'
-import { parsePendingRoutingApproval, parseRoutingTrace, routingText, routingViewState, safeActionText, type RouteId } from '@shared/routing-trace'
+import { healthStateText, parsePendingRoutingApproval, parseRoutingTrace, routingText, routingViewState, safeActionText, type RouteId } from '@shared/routing-trace'
 import { useShellApi } from './shell-api'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -63,7 +63,7 @@ export function RoutingStatus({ events, connection }: { readonly events: readonl
     {trace.selected_route ? <span className="routing-status__route">Маршрут: {trace.selected_route}</span> : null}
     {state === 'degraded' ? <span>⚠ Резервный локальный режим</span> : null}
     {state === 'partial_fallback' && trace.fallback_count > 0 ? <span>Использован резервный маршрут</span> : null}
-    {trace.candidates.filter((candidate) => candidate.reject_reason).map((candidate) => <span key={candidate.route_id}>Маршрут {candidate.route_id}: {candidate.reject_reason}</span>)}
+    {trace.candidates.map((candidate) => <span key={candidate.route_id}>Маршрут {candidate.route_id}: {healthStateText(candidate.health_state)}{candidate.reject_reason ? ` (${candidate.reject_reason})` : ''}</span>)}
     {safeActionText(trace.safe_next_action) ? <span>{safeActionText(trace.safe_next_action)}</span> : null}
     {state === 'degraded' ? <button type="button" onClick={() => setDismissedTrace(trace.trace_id)}>Скрыть предупреждение</button> : null}
   </div>

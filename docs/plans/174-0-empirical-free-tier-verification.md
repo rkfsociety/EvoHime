@@ -38,8 +38,9 @@ dashboard activation автоматически не выполняются.
 
 ### Блокирующие
 
-- [План 173 Cloud Provider Profiles](./173-0-cloud-provider-profiles.md),
-  credential boundary, Model Gateway и #125 reliability/circuit/fallback.
+- Завершённый provider-profile contract в
+  [`../architecture.md`](../architecture.md), credential boundary, Model
+  Gateway и #125 reliability/circuit/fallback.
 - Existing Core policy, network capability, redaction, SQLite migration/backup
   и authenticated IPC/replay primitives.
 

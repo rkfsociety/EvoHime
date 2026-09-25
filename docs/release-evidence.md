@@ -291,9 +291,9 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 
 ### CLI redaction hardening follow-up (2026-09-20)
 
-- Redaction вынесен в отдельный `redaction`-модуль: alias-поля
-  `api_key`/`access_key`/`password`/`authorization`/`cookie`/`private_key`
-  удаляются из CLI projection, а JSON nesting ограничен 64 уровнями.
+- Redaction вынесен в отдельный `redaction`-модуль: известные credential,
+  authorization и cookie aliases удаляются из CLI projection, а JSON nesting
+  ограничен 64 уровнями.
 - Добавлены regression tests для credential aliases и depth bound; публичный
   `redact_payload` сохранён, source module `cli` повышен до `0.0.000051`.
 

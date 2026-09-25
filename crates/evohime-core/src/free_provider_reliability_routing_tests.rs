@@ -82,6 +82,127 @@ fn route_preflight_rejects_known_stale_catalog_before_provider_dispatch() {
     assert!(matches!(error, ProviderError::Config(code) if code == "provider_catalog_expired"));
 }
 
+#[test]
+fn discovery_unsupported_keeps_explicit_manual_model_eligible() {
+    let route = ModelRouteConfig::openai_compatible(
+        "test-key",
+        "https://provider.example/v1",
+        "manual-model-id",
+    );
+    let profile = ProviderProfile::from_route_config(&route).expect("profile");
+    let unsupported = ProviderCatalogSnapshot::failure(
+        &profile,
+        1,
+        "a".repeat(64),
+        ProviderCatalogState::DiscoveryUnsupported,
+        CatalogFailureCode::DiscoveryUnsupported,
+        1_000,
+        2_000,
+    )
+    .expect("unsupported discovery snapshot");
+    let cache = new_provider_catalog_cache();
+    cache
+        .write()
+        .expect("cache write")
+        .insert(provider_catalog_scope_key(&profile), unsupported);
+    let config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "default".into(),
+        routes: std::collections::HashMap::from([("default".into(), route)]),
+    };
+    let preflight = ProviderCatalogRoutePreflight::new(config, cache);
+
+    assert!(preflight
+        .check("default", Some("manual-model-id"), 1_500)
+        .is_ok());
+}
+
+#[test]
+fn capability_preflight_blocks_only_confirmed_unsupported_requirements() {
+    let route =
+        ModelRouteConfig::openai_compatible("test-key", "https://provider.example/v1", "model-a");
+    let profile = ProviderProfile::from_route_config(&route).expect("profile");
+    let mut fresh = ProviderCatalogSnapshot::fresh_from_catalog(
+        &profile,
+        &[ModelCatalogEntry {
+            id: "model-a".into(),
+            context_tokens: None,
+            max_output_tokens: None,
+        }],
+        1,
+        "a".repeat(64),
+        1_000,
+        2_000,
+    )
+    .expect("fresh catalog");
+    fresh.models[0].capabilities.push(CapabilityFlag {
+        capability: ModelCapability::ToolCalls,
+        state: CapabilityState::Unsupported,
+        provenance: CapabilityProvenance::ProviderDeclared,
+    });
+    fresh.validate().expect("bounded capability evidence");
+
+    let cache = new_provider_catalog_cache();
+    cache
+        .write()
+        .expect("cache write")
+        .insert(provider_catalog_scope_key(&profile), fresh);
+    let config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "default".into(),
+        routes: std::collections::HashMap::from([("default".into(), route)]),
+    };
+    let preflight = ProviderCatalogRoutePreflight::new(config, cache);
+
+    assert!(preflight
+        .check_for_request("default", Some("model-a"), false, 1_500)
+        .is_ok());
+    let error = preflight
+        .check_for_request("default", Some("model-a"), true, 1_500)
+        .expect_err("confirmed unsupported tool calls must be blocked before dispatch");
+    assert!(
+        matches!(error, ProviderError::Config(code) if code == "provider_model_capability_unsupported")
+    );
+}
+
+#[test]
+fn unknown_capability_does_not_block_manual_model_execution() {
+    let route =
+        ModelRouteConfig::openai_compatible("test-key", "https://provider.example/v1", "model-a");
+    let profile = ProviderProfile::from_route_config(&route).expect("profile");
+    let mut fresh = ProviderCatalogSnapshot::fresh_from_catalog(
+        &profile,
+        &[ModelCatalogEntry {
+            id: "model-a".into(),
+            context_tokens: None,
+            max_output_tokens: None,
+        }],
+        1,
+        "a".repeat(64),
+        1_000,
+        2_000,
+    )
+    .expect("fresh catalog");
+    fresh.models[0].capabilities.push(CapabilityFlag {
+        capability: ModelCapability::ToolCalls,
+        state: CapabilityState::Unknown,
+        provenance: CapabilityProvenance::Unknown,
+    });
+
+    let cache = new_provider_catalog_cache();
+    cache
+        .write()
+        .expect("cache write")
+        .insert(provider_catalog_scope_key(&profile), fresh);
+    let config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "default".into(),
+        routes: std::collections::HashMap::from([("default".into(), route)]),
+    };
+    let preflight = ProviderCatalogRoutePreflight::new(config, cache);
+
+    assert!(preflight
+        .check_for_request("default", Some("model-a"), true, 1_500)
+        .is_ok());
+}
+
 fn profile() -> ProviderProfile {
     ProviderProfile {
         schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
@@ -194,11 +315,60 @@ fn route_config_adapter_keeps_credentials_out_of_profile_metadata() {
     );
     let profile = ProviderProfile::from_route_config(&route).expect("profile");
     assert!(profile.validate().is_ok());
-    assert_eq!(profile.provider_family, ProviderFamily::OpenAi);
+    assert_eq!(profile.provider_id, "custom_openai_compatible");
+    assert_eq!(profile.provider_family, ProviderFamily::Unknown);
     assert_eq!(profile.transport_kind, TransportKind::OpenAiCompatible);
     assert!(!serde_json::to_string(&profile)
         .expect("profile json")
         .contains("sk-live-provider-key"));
+}
+
+#[test]
+fn legacy_openai_endpoint_maps_to_openai_without_sniffing_custom_hosts() {
+    let route = ModelRouteConfig::openai_compatible(
+        "test-key",
+        "https://api.openai.com/v1/",
+        "gpt-4.1-mini",
+    );
+    let profile = ProviderProfile::from_route_config(&route).expect("profile");
+    assert_eq!(profile.provider_id, "openai");
+    assert_eq!(profile.provider_family, ProviderFamily::OpenAi);
+}
+
+#[test]
+fn cloudflare_catalog_scope_isolated_by_account_id() {
+    let first_account = "0123456789abcdef0123456789abcdef";
+    let second_account = "fedcba9876543210fedcba9876543210";
+    let first = ModelRouteConfig::openai_compatible(
+        "test-token",
+        ProviderProfileId::cloudflare_base_url(first_account).expect("first account URL"),
+        "@cf/model",
+    )
+    .with_provider_profile(
+        ProviderProfileId::CloudflareWorkersAi,
+        Some(first_account.into()),
+    );
+    let second = ModelRouteConfig::openai_compatible(
+        "test-token",
+        ProviderProfileId::cloudflare_base_url(second_account).expect("second account URL"),
+        "@cf/model",
+    )
+    .with_provider_profile(
+        ProviderProfileId::CloudflareWorkersAi,
+        Some(second_account.into()),
+    );
+    let first_profile = ProviderProfile::from_route_config(&first).expect("first profile");
+    let second_profile = ProviderProfile::from_route_config(&second).expect("second profile");
+
+    assert_eq!(first_profile.provider_id, second_profile.provider_id);
+    assert_ne!(
+        first_profile.credential_binding,
+        second_profile.credential_binding
+    );
+    assert_ne!(
+        provider_catalog_scope_key(&first_profile),
+        provider_catalog_scope_key(&second_profile)
+    );
 }
 
 #[test]

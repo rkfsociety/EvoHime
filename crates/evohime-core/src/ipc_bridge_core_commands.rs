@@ -732,6 +732,7 @@ impl IpcBridge {
             "schema_version": 1,
             "provider": profile.as_ref().map(|profile| serde_json::json!({
                 "id": profile.provider_id,
+                "profile_id": route.provider_profile_id.map(|profile_id| profile_id.as_str()),
                 "family": profile.provider_family,
                 "transport": profile.transport_kind,
                 "region": profile.region,

@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-09-24. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-09-25. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -16,7 +16,7 @@
 ## Закрытые направления
 
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
-и evidence в канонические документы. К закрытым относятся планы `01–172` и `183`
+и evidence в канонические документы. К закрытым относятся планы `01–173` и `183`
 (включая `144`); планы `127–130` закрыты как MVP-контуры с явно сохранёнными
 `unavailable` deployment/adapter gates. Их отсутствие из каталога не означает
 отсутствие контракта: он находится в `architecture.md` и `current-state.md`.
@@ -29,8 +29,7 @@
 
 | План | Тема | Состояние |
 | --- | --- | --- |
-| 173 | [Cloud Provider Profiles](173-0-cloud-provider-profiles.md) | active; исторический источник issue #105 |
-| 174 | [Empirical Free-Tier Verification](174-0-empirical-free-tier-verification.md) | active; blocking dependency 173; исторический источник issue #152 |
+| 174 | [Empirical Free-Tier Verification](174-0-empirical-free-tier-verification.md) | active; builds on the completed provider-profile contract; исторический источник issue #152 |
 | 175 | [Memory Ingestion Integrity](175-0-memory-ingestion-integrity.md) | active; исторический источник issue #153 |
 | 176 | [Guided Capability Recipes](176-0-guided-capability-recipes.md) | active; guided layer over closed recipe/workflow contracts; исторический источник issue #154 |
 | 177 | [Core-owned Image Generation and Editing](177-0-core-image-generation-editing.md) | active; исторический источник issue #155 |
@@ -44,12 +43,12 @@
 | 187 | [Core-owned Windows Native Computer Use](187-0-core-windows-native-computer-use.md) | active; исторический источник issue #163; blocking dependencies 184–185 |
 | 188 | [Core-owned Research Experiment Tree](188-0-core-research-experiment-tree.md) | active; исторический источник issue #164 |
 
-Незавершённые numbered plans: 173–181 и 184–188.
+Незавершённые numbered plans: 174–181 и 184–188.
 
 Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая работа
 получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `189`, текущий active catalog — `173–181` и
+зависимостей; следующий номер — `189`, текущий active catalog — `174–181` и
 `184–188`.
 Номера issues в активных планах — исторические идентификаторы постановок и не
 являются текущим источником статуса или критерием закрытия.

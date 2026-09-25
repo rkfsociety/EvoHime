@@ -8,7 +8,7 @@
 [`plans/README.md`](plans/README.md).
 
 Текущая активная очередь содержит незавершённые implementation contracts
-`173–181`; планы `01–172` перенесены в canonical docs.
+`174–181` и `184–188`; планы `01–173` перенесены в canonical docs.
 
 ## Текущий продукт
 

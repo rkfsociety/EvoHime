@@ -1935,6 +1935,23 @@ body {
   font-size: 12px;
 }
 
+.model-picker__capability-filter {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 2px 7px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.model-picker__capability-filter input {
+  flex: 0 0 auto;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+
 .model-picker__menu ul {
   overflow-y: auto;
   margin: 0;
@@ -1990,6 +2007,35 @@ body {
 .model-picker__catalog-status--credential_rejected,
 .model-picker__catalog-status--discovery_unsupported {
   color: var(--warning);
+}
+
+.model-picker__manual-model {
+  display: grid;
+  gap: 8px;
+  max-width: 360px;
+  margin: 6px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.model-picker__manual-model .model-picker__catalog-status {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.model-picker__manual-model label {
+  display: grid;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.model-picker__manual-model input {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .composer__hint kbd {

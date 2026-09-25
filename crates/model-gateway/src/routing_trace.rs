@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Schema version serialized by [`RoutingTrace`].
-pub const ROUTING_TRACE_SCHEMA_VERSION: u32 = 1;
+pub const ROUTING_TRACE_SCHEMA_VERSION: u32 = 2;
 
 /// Stable terminal outcomes emitted by the routing runtime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +55,8 @@ pub enum SafeNextAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthState {
+    /// No probe or provider observation is available.
+    Unknown,
     /// Route health permits normal use.
     Healthy,
     /// Route remains usable with reduced confidence or capability.
@@ -197,7 +199,7 @@ mod tests {
     #[test]
     fn trace_requires_explicit_budget_absence() {
         let trace = RoutingTrace {
-            schema_version: 1,
+            schema_version: ROUTING_TRACE_SCHEMA_VERSION,
             trace_id: "t".into(),
             run_id: "r".into(),
             sequence: 1,
@@ -228,7 +230,7 @@ mod tests {
     #[test]
     fn refusal_requires_a_safe_next_action() {
         let mut trace = RoutingTrace {
-            schema_version: 1,
+            schema_version: ROUTING_TRACE_SCHEMA_VERSION,
             trace_id: "t".into(),
             run_id: "r".into(),
             sequence: 1,
