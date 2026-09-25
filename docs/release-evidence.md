@@ -3311,6 +3311,21 @@ and renderer TypeScript check passed. Workspace `cargo doc --workspace
 and license-inventory gates passed. `cargo fmt --all -- --check` passed.
 
 Published module markers are `core 0.0.000376` and `ui-bundle 0.0.000119`; only
-those two source modules changed. The exact source commit, module publication
-and full Windows acceptance evidence will be recorded after the post-push
-workflows complete. No GitHub result is claimed here before those runs finish.
+those two source modules changed. Implementation commit
+[`927a7dcefa54bec49f09714a8d08658f6b77fec8`](https://github.com/rkfsociety/EvoHime/commit/927a7dcefa54bec49f09714a8d08658f6b77fec8)
+passed [Rust documentation](https://github.com/rkfsociety/EvoHime/actions/runs/36156741701)
+and the [UI bundle module workflow](https://github.com/rkfsociety/EvoHime/actions/runs/36156813850).
+The UI release `module-ui-bundle-v0.0.000119` was published from that commit.
+
+The first Core module run reached the 30-minute job timeout during the release
+build after Core tests and lint succeeded; the module router consequently
+reported that Core run as cancelled. CI-only commit
+[`267acd275b797d7a5c7694e595779bf91c9664c7`](https://github.com/rkfsociety/EvoHime/commit/267acd275b797d7a5c7694e595779bf91c9664c7)
+raised the Core job timeout to 45 minutes without changing module versions.
+The follow-up [Core module workflow](https://github.com/rkfsociety/EvoHime/actions/runs/36160575907)
+passed format, all five Core crate test suites, lint, release build and stable
+module publication; the [module router](https://github.com/rkfsociety/EvoHime/actions/runs/36160480489)
+also passed. Core release `module-core-v0.0.000376` was published.
+
+Full native package acceptance was not run; validation followed the affected
+module workflows and directly relevant Rust documentation workflow.
