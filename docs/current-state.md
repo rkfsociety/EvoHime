@@ -9,7 +9,7 @@ release-gates и результаты отдельных завершённых 
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v175, а также
+v042–v116 и v149–v176, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -195,7 +195,11 @@ Core startup. OpenRouter exact-zero pricing plus semantic completion — пок�
 [`7fa1af30ff2071da390828c1137a7df59308a864`](https://github.com/rkfsociety/EvoHime/commit/7fa1af30ff2071da390828c1137a7df59308a864);
 детальные workflow и module release evidence записаны в
 [`release-evidence.md`](release-evidence.md).
-План 175 реализован в текущем checkout; полный post-push acceptance CI и публикация модулей ожидают push.
+План 175 реализован и опубликован: затронутые Core и UI bundle module
+workflows, module router и Rust documentation gates завершились успешно.
+Полный native package acceptance был отменён до завершения после уточнения
+модульного scope; его частичный вывод не считается evidence. Точные module tags
+и CI evidence приведены в [`release-evidence.md`](release-evidence.md).
 SQLite schema v176 добавляет metadata-only extraction source, provenance links,
 fenced lease и candidate freshness/head CAS поверх неизменённой v175 истории.
 Core durable-записывает eligible source до `TaskCompleted`, сохраняет typed

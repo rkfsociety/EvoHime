@@ -3327,5 +3327,7 @@ passed format, all five Core crate test suites, lint, release build and stable
 module publication; the [module router](https://github.com/rkfsociety/EvoHime/actions/runs/36160480489)
 also passed. Core release `module-core-v0.0.000376` was published.
 
-Full native package acceptance was not run; validation followed the affected
-module workflows and directly relevant Rust documentation workflow.
+The full native package acceptance run was cancelled before completion after
+the validation scope was narrowed to affected modules. Its partial output is
+not treated as evidence; validation followed the affected module workflows and
+directly relevant Rust documentation workflow.
