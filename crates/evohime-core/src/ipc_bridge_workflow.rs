@@ -735,7 +735,7 @@ impl IpcBridge {
                 },
             ) {
                 Ok(Ok(revision)) => {
-                    return capability_recipe_fork_success(
+                    capability_recipe_fork_success(
                         source_run_id,
                         &draft_id,
                         revision,
@@ -767,24 +767,23 @@ impl IpcBridge {
                             && existing_provenance.ok().flatten().as_deref()
                                 == Some(provenance_json.as_slice())
                         {
-                            return capability_recipe_fork_success(
+                            capability_recipe_fork_success(
                                 source_run_id,
                                 &draft_id,
                                 revision,
                                 &execution_hash,
                                 &layout_hash,
                                 true,
-                            );
+                            )
+                        } else {
+                            capability_recipe_fork_failure(source_run_id, "idempotency_conflict")
                         }
-                        return capability_recipe_fork_failure(
-                            source_run_id,
-                            "idempotency_conflict",
-                        );
+                    } else {
+                        capability_recipe_fork_failure(source_run_id, "storage_error")
                     }
-                    return capability_recipe_fork_failure(source_run_id, "storage_error");
                 }
-                Ok(Err(code)) => return capability_recipe_fork_failure(source_run_id, code),
-                Err(_) => return capability_recipe_fork_failure(source_run_id, "storage_error"),
+                Ok(Err(code)) => capability_recipe_fork_failure(source_run_id, code),
+                Err(_) => capability_recipe_fork_failure(source_run_id, "storage_error"),
             }
         }
     }
