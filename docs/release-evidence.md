@@ -3270,3 +3270,22 @@ router gates. Для commit
 [compatible release manifest](https://github.com/rkfsociety/EvoHime/actions/runs/36088178539)
 workflows. Опубликованы `module-core-v0.0.000374`,
 `module-shell-host-v0.0.000106` и `module-ui-bundle-v0.0.000117`.
+
+Empirical free-access verification (plan 174) is complete. Local Core (974),
+local-storage (409 unit and 13 doc), model-gateway, and Electron suites passed;
+strict clippy, formatting, Rust documentation, protocol/typecheck, production
+bundle, release, security, license, documentation, and module-router gates
+passed. The Electron suite reported 682 passed and 4 skipped. Full Windows
+native-package acceptance, including Rust/security gates, real-Core IPC E2E,
+Electron package build, and package smoke matrix, passed for commit
+[`7fa1af30ff2071da390828c1137a7df59308a864`](https://github.com/rkfsociety/EvoHime/commit/7fa1af30ff2071da390828c1137a7df59308a864).
+The exact-commit [Windows acceptance](https://github.com/rkfsociety/EvoHime/actions/runs/36112034614),
+[Rust documentation](https://github.com/rkfsociety/EvoHime/actions/runs/36111981735),
+[module router](https://github.com/rkfsociety/EvoHime/actions/runs/36111981759),
+[Core module](https://github.com/rkfsociety/EvoHime/actions/runs/36112046062),
+[shell-host module](https://github.com/rkfsociety/EvoHime/actions/runs/36112043741),
+[UI bundle](https://github.com/rkfsociety/EvoHime/actions/runs/36112041270), and
+[compatible release manifest](https://github.com/rkfsociety/EvoHime/actions/runs/36114759101)
+workflows all succeeded. Published release tags point to that same commit:
+`module-core-v0.0.000375`, `module-shell-host-v0.0.000107`, and
+`module-ui-bundle-v0.0.000118`.

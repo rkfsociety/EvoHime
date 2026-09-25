@@ -190,8 +190,10 @@ Core startup. OpenRouter exact-zero pricing plus semantic completion — пок�
 сохраняются только как typed `ActivationRequired`/`QuotaRejected`; успешная
 проверка Cloudflare без pricing authority остаётся `Unknown`. `FreeOnly`
 останавливает stale/unknown/activation/quota evidence, а `PreferFree` требует
-явного paid-fallback option. Реализация и локальные gates выполнены; полный
-post-push GitHub CI для release commit ожидается и будет зафиксирован в
+явного paid-fallback option. Реализация, локальные gates и полный GitHub CI
+успешны для commit
+[`7fa1af30ff2071da390828c1137a7df59308a864`](https://github.com/rkfsociety/EvoHime/commit/7fa1af30ff2071da390828c1137a7df59308a864);
+детальные workflow и module release evidence записаны в
 [`release-evidence.md`](release-evidence.md).
 План 175 получил runtime/storage-срез: общий cancellation-safe RAII lease
 сериализует dialog/ambient memory extraction и не даёт конкурентному второму
