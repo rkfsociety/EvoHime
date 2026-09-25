@@ -65,10 +65,7 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
 ///
 /// Returns a SQLite error for invalid bounds, conflicting idempotency reuse,
 /// or database failures.
-pub fn insert_link(
-    transaction: &Transaction<'_>,
-    link: &RecipeRunLink,
-) -> rusqlite::Result<()> {
+pub fn insert_link(transaction: &Transaction<'_>, link: &RecipeRunLink) -> rusqlite::Result<()> {
     validate(link)?;
     let existing = transaction
         .query_row(
@@ -205,14 +202,14 @@ fn validate(link: &RecipeRunLink) -> rusqlite::Result<()> {
         ("idempotency_key", link.idempotency_key.as_str(), 256),
     ] {
         if value.trim().is_empty() {
-            return Err(rusqlite::Error::InvalidParameterName(
-                format!("{field}_empty"),
-            ));
+            return Err(rusqlite::Error::InvalidParameterName(format!(
+                "{field}_empty"
+            )));
         }
         if value.len() > maximum {
-            return Err(rusqlite::Error::InvalidParameterName(
-                format!("{field}_too_long"),
-            ));
+            return Err(rusqlite::Error::InvalidParameterName(format!(
+                "{field}_too_long"
+            )));
         }
     }
     if link.recipe_version == 0 || link.template_version == 0 || link.created_at_ms < 0 {

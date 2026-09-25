@@ -112,7 +112,7 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
     if (!selected && recipes.length > 0) {
       setSelectedId((current) => recipes.some((recipe) => recipe.id === current)
         ? current
-        : recipes.find((recipe) => recipe.availability.status === 'ready')?.id || recipes[0].id)
+        : recipes.find((recipe) => recipe.availability.status === 'ready')?.id ?? recipes[0]?.id ?? '')
     }
   }, [recipes, selected])
 

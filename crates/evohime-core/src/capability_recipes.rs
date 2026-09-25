@@ -485,10 +485,15 @@ pub fn validate_descriptor(
                 && binding.template_graph_hash.len() == 64 => {}
         (None, CapabilityRecipeAvailability::Unsupported { reason_code })
             if !reason_code.trim().is_empty() && reason_code.len() <= 128 => {}
-        _ => return Err(CapabilityRecipeError::Invalid("availability_binding_mismatch")),
+        _ => {
+            return Err(CapabilityRecipeError::Invalid(
+                "availability_binding_mismatch",
+            ))
+        }
     }
 
-    if descriptor.content_hash.is_empty() || canonical_hash(descriptor)? != descriptor.content_hash {
+    if descriptor.content_hash.is_empty() || canonical_hash(descriptor)? != descriptor.content_hash
+    {
         return Err(CapabilityRecipeError::Invalid("content_hash"));
     }
     Ok(())
@@ -643,14 +648,18 @@ pub fn preflight(
         return result;
     };
     let Some(template) = crate::workflow_templates::template(&binding.template_id) else {
-        result.reason_codes.push("workflow_template_unavailable".into());
+        result
+            .reason_codes
+            .push("workflow_template_unavailable".into());
         seal_preflight(&mut result, parent);
         return result;
     };
     if template.version != binding.template_version
         || template.graph().canonical_hash() != binding.template_graph_hash
     {
-        result.reason_codes.push("workflow_revision_mismatch".into());
+        result
+            .reason_codes
+            .push("workflow_revision_mismatch".into());
         seal_preflight(&mut result, parent);
         return result;
     }
@@ -718,7 +727,9 @@ pub fn preflight(
     result.degraded_paths = degraded_paths;
     if !result.degraded_paths.is_empty() {
         result.state = CapabilityRecipePreflightState::ReadyWithWarnings;
-        result.reason_codes.extend(result.degraded_paths.iter().cloned());
+        result
+            .reason_codes
+            .extend(result.degraded_paths.iter().cloned());
     } else {
         result.state = CapabilityRecipePreflightState::Ready;
     }
@@ -899,7 +910,10 @@ mod tests {
     #[test]
     fn catalog_has_eight_stable_descriptors_and_valid_hashes() {
         let recipes = catalog().expect("built-in catalog validates");
-        let ids = recipes.iter().map(|recipe| recipe.id.as_str()).collect::<Vec<_>>();
+        let ids = recipes
+            .iter()
+            .map(|recipe| recipe.id.as_str())
+            .collect::<Vec<_>>();
         assert_eq!(recipes.len(), BUILTIN_RECIPE_COUNT);
         assert_eq!(
             ids,
@@ -985,7 +999,10 @@ mod tests {
             &registry,
             &parent,
         );
-        assert_eq!(ready.state, CapabilityRecipePreflightState::ReadyWithWarnings);
+        assert_eq!(
+            ready.state,
+            CapabilityRecipePreflightState::ReadyWithWarnings
+        );
         assert!(ready.workflow_budget.is_some());
         assert!(ready
             .revisions

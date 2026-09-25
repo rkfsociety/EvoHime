@@ -75,7 +75,10 @@ fn node(run_id: &str, node_id: &str) -> WorkflowNodeRecord {
     }
 }
 
-fn recipe_link(run_id: &str, idempotency_key: &str) -> crate::capability_recipe_store::RecipeRunLink {
+fn recipe_link(
+    run_id: &str,
+    idempotency_key: &str,
+) -> crate::capability_recipe_store::RecipeRunLink {
     crate::capability_recipe_store::RecipeRunLink {
         run_id: run_id.into(),
         recipe_id: "knowledge-grounding".into(),
@@ -117,10 +120,12 @@ fn guided_run_and_recipe_link_are_committed_together() {
     insert_run_with_recipe(&connection, &record, &[node(&record.run_id, "a")], &link)
         .expect("workflow and recipe link commit");
 
-    assert_eq!(get_run(&connection, &record.run_id).expect("run"), Some(record));
     assert_eq!(
-        crate::capability_recipe_store::get_by_run(&connection, &link.run_id)
-            .expect("recipe link"),
+        get_run(&connection, &record.run_id).expect("run"),
+        Some(record)
+    );
+    assert_eq!(
+        crate::capability_recipe_store::get_by_run(&connection, &link.run_id).expect("recipe link"),
         Some(link.clone())
     );
     assert_eq!(
@@ -140,8 +145,13 @@ fn conflicting_recipe_idempotency_rolls_back_the_new_workflow_run() {
     let connection = connection();
     let first = run("guided-run-1");
     let first_link = recipe_link(&first.run_id, "same-request");
-    insert_run_with_recipe(&connection, &first, &[node(&first.run_id, "a")], &first_link)
-        .expect("first guided run");
+    insert_run_with_recipe(
+        &connection,
+        &first,
+        &[node(&first.run_id, "a")],
+        &first_link,
+    )
+    .expect("first guided run");
 
     let second = run("guided-run-2");
     let mut conflicting_link = recipe_link(&second.run_id, "same-request");
@@ -153,10 +163,12 @@ fn conflicting_recipe_idempotency_rolls_back_the_new_workflow_run() {
         &conflicting_link,
     )
     .is_err());
-    assert_eq!(get_run(&connection, &second.run_id).expect("run lookup"), None);
     assert_eq!(
-        crate::capability_recipe_store::get_by_run(&connection, &first.run_id)
-            .expect("first link"),
+        get_run(&connection, &second.run_id).expect("run lookup"),
+        None
+    );
+    assert_eq!(
+        crate::capability_recipe_store::get_by_run(&connection, &first.run_id).expect("first link"),
         Some(first_link)
     );
 }

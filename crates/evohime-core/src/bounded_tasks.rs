@@ -42,11 +42,8 @@ impl BoundedTaskGroup {
     }
 
     /// Spawns a task using capacity reserved before its durable work is created.
-    pub(crate) async fn spawn_reserved<F>(
-        &self,
-        permit: tokio::sync::OwnedSemaphorePermit,
-        task: F,
-    ) where
+    pub(crate) async fn spawn_reserved<F>(&self, permit: tokio::sync::OwnedSemaphorePermit, task: F)
+    where
         F: Future<Output = ()> + Send + 'static,
     {
         let mut tasks = self.tasks.lock().await;

@@ -470,11 +470,7 @@ impl IpcBridge {
         match runtime.start_guided(start, recipe_link.clone()).await {
             Ok(started_run_id) => {
                 let _ = drive_tx.send(());
-                capability_recipe_start_success(
-                    &started_run_id,
-                    &recipe_link.run_graph_hash,
-                    false,
-                )
+                capability_recipe_start_success(&started_run_id, &recipe_link.run_graph_hash, false)
             }
             Err(error) => {
                 drop(drive_tx);
@@ -567,8 +563,14 @@ impl IpcBridge {
             Err(_) => return capability_recipe_fork_failure(source_run_id, "storage_error"),
         };
         let run = match self.journal.workflow_run(&request.run_id).await {
-            Ok(Some(run)) if run.state == evohime_local_storage::workflow_store::RunState::Completed => run,
-            Ok(Some(_)) => return capability_recipe_fork_failure(source_run_id, "run_not_successful"),
+            Ok(Some(run))
+                if run.state == evohime_local_storage::workflow_store::RunState::Completed =>
+            {
+                run
+            }
+            Ok(Some(_)) => {
+                return capability_recipe_fork_failure(source_run_id, "run_not_successful")
+            }
             Ok(None) => return capability_recipe_fork_failure(source_run_id, "unknown_run"),
             Err(_) => return capability_recipe_fork_failure(source_run_id, "storage_error"),
         };
@@ -619,7 +621,10 @@ impl IpcBridge {
                 | crate::workflow::NodeType::McpTool { .. }
                 | crate::workflow::NodeType::IntegrationAction { .. }
                 | crate::workflow::NodeType::Subgraph { .. } => {
-                    return capability_recipe_fork_failure(source_run_id, "fork_requires_owner_rebinding");
+                    return capability_recipe_fork_failure(
+                        source_run_id,
+                        "fork_requires_owner_rebinding",
+                    );
                 }
                 _ => {}
             }
@@ -646,21 +651,25 @@ impl IpcBridge {
         }
         let definition_json = match serde_json::to_vec(&definition) {
             Ok(json) if json.len() <= crate::visual_workflow_builder::MAX_DRAFT_BYTES => json,
-            Ok(_) => return capability_recipe_fork_failure(source_run_id, "fork_definition_too_large"),
+            Ok(_) => {
+                return capability_recipe_fork_failure(source_run_id, "fork_definition_too_large")
+            }
             Err(_) => return capability_recipe_fork_failure(source_run_id, "serialization_failed"),
         };
         let layout_json = match serde_json::to_vec(&definition.layout) {
             Ok(json) => json,
             Err(_) => return capability_recipe_fork_failure(source_run_id, "serialization_failed"),
         };
-        let idempotency_hash = hex::encode(sha2::Sha256::digest(
-            request.idempotency_key.as_bytes(),
-        ));
+        let idempotency_hash =
+            hex::encode(sha2::Sha256::digest(request.idempotency_key.as_bytes()));
         let mut draft_digest = sha2::Sha256::new();
         draft_digest.update(request.run_id.as_bytes());
         draft_digest.update([0]);
         draft_digest.update(request.idempotency_key.as_bytes());
-        let draft_id = format!("recipe-fork-{}", hex::encode(&draft_digest.finalize()[..16]));
+        let draft_id = format!(
+            "recipe-fork-{}",
+            hex::encode(&draft_digest.finalize()[..16])
+        );
         let provenance_json = match serde_json::to_vec(&serde_json::json!({
             "source": "capability_recipe",
             "recipe_id": link.recipe_id,
@@ -694,10 +703,7 @@ impl IpcBridge {
                     if existing_json == definition_json
                         && existing_hash == execution_hash
                         && existing_layout_hash == layout_hash
-                        && existing_provenance
-                            .ok()
-                            .flatten()
-                            .as_deref()
+                        && existing_provenance.ok().flatten().as_deref()
                             == Some(provenance_json.as_slice())
                     {
                         return capability_recipe_fork_success(
@@ -739,13 +745,16 @@ impl IpcBridge {
                     );
                 }
                 Ok(Err("stale_revision")) => {
-                    if let Ok(Some((revision, existing_json, existing_hash, existing_layout_hash))) =
-                        evohime_local_storage::visual_workflow_builder_store::read_draft(
-                            database.connection(),
-                            &draft_id,
-                            &workspace,
-                        )
-                    {
+                    if let Ok(Some((
+                        revision,
+                        existing_json,
+                        existing_hash,
+                        existing_layout_hash,
+                    ))) = evohime_local_storage::visual_workflow_builder_store::read_draft(
+                        database.connection(),
+                        &draft_id,
+                        &workspace,
+                    ) {
                         let existing_provenance =
                             evohime_local_storage::visual_workflow_builder_store::read_draft_provenance(
                                 database.connection(),
@@ -755,10 +764,7 @@ impl IpcBridge {
                         if existing_json == definition_json
                             && existing_hash == execution_hash
                             && existing_layout_hash == layout_hash
-                            && existing_provenance
-                                .ok()
-                                .flatten()
-                                .as_deref()
+                            && existing_provenance.ok().flatten().as_deref()
                                 == Some(provenance_json.as_slice())
                         {
                             return capability_recipe_fork_success(
@@ -770,7 +776,10 @@ impl IpcBridge {
                                 true,
                             );
                         }
-                        return capability_recipe_fork_failure(source_run_id, "idempotency_conflict");
+                        return capability_recipe_fork_failure(
+                            source_run_id,
+                            "idempotency_conflict",
+                        );
                     }
                     return capability_recipe_fork_failure(source_run_id, "storage_error");
                 }
@@ -796,8 +805,7 @@ impl IpcBridge {
                 &request.owner_scope,
             ) {
                 Ok(Some((revision, definition_json, execution_hash, layout_hash)))
-                    if definition_json.len()
-                        <= crate::visual_workflow_builder::MAX_DRAFT_BYTES =>
+                    if definition_json.len() <= crate::visual_workflow_builder::MAX_DRAFT_BYTES =>
                 {
                     match String::from_utf8(definition_json) {
                         Ok(draft_json) => serde_json::json!({
@@ -813,7 +821,9 @@ impl IpcBridge {
                             "error_code": "",
                             "truncated": false,
                         }),
-                        Err(_) => serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"corrupt","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","draft_json":"","handoff_handle":"","error_code":"corrupt_draft","truncated":false}),
+                        Err(_) => {
+                            serde_json::json!({"schema_version":1,"request_id":request.request_id,"status":"corrupt","draft_id":request.draft_id,"revision":0,"execution_hash":"","layout_hash":"","draft_json":"","handoff_handle":"","error_code":"corrupt_draft","truncated":false})
+                        }
                     }
                 }
                 Ok(Some(_)) => {
@@ -1366,10 +1376,15 @@ fn capability_recipe_inputs(
     }
     let mut inputs = std::collections::BTreeMap::new();
     for input in values {
-        if input.name.len() > 128 || input.value.len() > crate::capability_recipes::MAX_RECIPE_INPUT_CHARS * 4 {
+        if input.name.len() > 128
+            || input.value.len() > crate::capability_recipes::MAX_RECIPE_INPUT_CHARS * 4
+        {
             return Err("input_too_large");
         }
-        if inputs.insert(input.name.clone(), input.value.clone()).is_some() {
+        if inputs
+            .insert(input.name.clone(), input.value.clone())
+            .is_some()
+        {
             return Err("duplicate_input");
         }
     }

@@ -60,7 +60,10 @@ async fn capability_recipe_catalog_is_fixed_and_marks_missing_adapters_unsupport
         crate::capability_recipes::CATALOG_VERSION
     );
     let recipes = payload["recipes"].as_array().expect("recipes");
-    assert_eq!(recipes.len(), crate::capability_recipes::BUILTIN_RECIPE_COUNT);
+    assert_eq!(
+        recipes.len(),
+        crate::capability_recipes::BUILTIN_RECIPE_COUNT
+    );
     let model_comparison = recipes
         .iter()
         .find(|recipe| recipe["id"] == "model-comparison")
@@ -100,7 +103,10 @@ async fn recipe_preflight_binds_input_and_workspace_hashes_without_echoing_value
     assert_eq!(event_type, "capability_recipe.preflight");
     assert_eq!(payload["state"], "ready_with_warnings");
     assert_eq!(payload["input_hash"].as_str().unwrap_or_default().len(), 64);
-    assert_eq!(payload["workspace_hash"].as_str().unwrap_or_default().len(), 64);
+    assert_eq!(
+        payload["workspace_hash"].as_str().unwrap_or_default().len(),
+        64
+    );
     assert!(!payload.to_string().contains(secret_question));
     assert!(!payload.to_string().contains(&workspace_path));
 }
@@ -309,8 +315,7 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
         graph_hash: expanded.canonical_hash(),
         graph_json,
         inputs_json: inputs_json.clone(),
-        policy_json: serde_json::json!({"workspace_path": &workspace_path})
-            .to_string(),
+        policy_json: serde_json::json!({"workspace_path": &workspace_path}).to_string(),
         state: evohime_local_storage::workflow_store::RunState::Completed,
         created_at_ms,
         updated_at_ms: created_at_ms,
@@ -322,18 +327,20 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
     let nodes = expanded
         .nodes
         .iter()
-        .map(|node| evohime_local_storage::workflow_store::WorkflowNodeRecord {
-            run_id: run_id.into(),
-            node_id: node.id.clone(),
-            action_kind: node.node_type.action_kind().into(),
-            state: evohime_local_storage::workflow_store::NodeState::Pending,
-            attempts: 0,
-            output_json: String::new(),
-            error_code: String::new(),
-            error_message: String::new(),
-            approval_id: String::new(),
-            updated_at_ms: created_at_ms,
-        })
+        .map(
+            |node| evohime_local_storage::workflow_store::WorkflowNodeRecord {
+                run_id: run_id.into(),
+                node_id: node.id.clone(),
+                action_kind: node.node_type.action_kind().into(),
+                state: evohime_local_storage::workflow_store::NodeState::Pending,
+                attempts: 0,
+                output_json: String::new(),
+                error_code: String::new(),
+                error_message: String::new(),
+                approval_id: String::new(),
+                updated_at_ms: created_at_ms,
+            },
+        )
         .collect::<Vec<_>>();
     let link = evohime_local_storage::capability_recipe_store::RecipeRunLink {
         run_id: run_id.into(),
@@ -344,8 +351,12 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
         template_version: binding.template_version,
         template_graph_hash: binding.template_graph_hash.clone(),
         run_graph_hash: expanded.canonical_hash(),
-        input_hash: hex::encode(<sha2::Sha256 as sha2::Digest>::digest(inputs_json.as_bytes())),
-        workspace_hash: hex::encode(<sha2::Sha256 as sha2::Digest>::digest(workspace_path.as_bytes())),
+        input_hash: hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+            inputs_json.as_bytes(),
+        )),
+        workspace_hash: hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+            workspace_path.as_bytes(),
+        )),
         idempotency_key: "recipe-fork-source-run".into(),
         created_at_ms,
     };

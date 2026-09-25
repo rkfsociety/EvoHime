@@ -419,12 +419,10 @@ impl EventJournal {
     pub async fn capability_recipe_run_by_workflow(
         &self,
         run_id: &str,
-    ) -> rusqlite::Result<Option<evohime_local_storage::capability_recipe_store::RecipeRunLink>> {
+    ) -> rusqlite::Result<Option<evohime_local_storage::capability_recipe_store::RecipeRunLink>>
+    {
         let database = self.database.lock().await;
-        evohime_local_storage::capability_recipe_store::get_by_run(
-            database.connection(),
-            run_id,
-        )
+        evohime_local_storage::capability_recipe_store::get_by_run(database.connection(), run_id)
     }
 
     /// Looks up a recipe run by its recipe-scoped idempotency key.
@@ -433,7 +431,8 @@ impl EventJournal {
         recipe_id: &str,
         recipe_version: u32,
         idempotency_key: &str,
-    ) -> rusqlite::Result<Option<evohime_local_storage::capability_recipe_store::RecipeRunLink>> {
+    ) -> rusqlite::Result<Option<evohime_local_storage::capability_recipe_store::RecipeRunLink>>
+    {
         let database = self.database.lock().await;
         evohime_local_storage::capability_recipe_store::get_by_idempotency_key(
             database.connection(),
