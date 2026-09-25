@@ -2881,28 +2881,47 @@ health store, обязательные live probes, billing/payment или ав�
 `routing.trace` schema v2 кодирует `Unknown` отдельно от `Healthy`; Electron
 читает ранее сохранённые v1 traces и отвергает неизвестные enum values в v1.
 
-## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
+## Empirical Free-Access Verification v1 (план 174, закрыт 2026-09-25)
 
-`FreeAccessEvidence` — единый Core-owned metadata contract поверх advisory
-`FreeAccessState`. Он хранит раздельно advertised и observed state, activation,
-allowance kind, opaque credential binding, region, typed limit/unit/source,
-successful samples, confidence, expiry, invalidation и content hash. Trial,
-one-time credit, activation-required, paid-only и verified recurring free
-состояния не схлопываются в boolean; strict predicate fail-closed при stale,
-expired, invalidated или unknown evidence. JSON snapshot не принимает raw
-provider response, prompt, headers или secret-like scope.
+`FreeAccessEvidence` принадлежит Core и дополняет advisory `FreeAccessState`.
+Evidence отделяет advertised и observed access, activation, allowance,
+provenance, limits/units, successful samples, confidence, expiry, invalidation
+и canonical content hash. Каждый snapshot привязан к opaque per-key credential
+binding и provider-profile revision/hash; при ротации ключа evidence прежнего
+binding удаляется транзакционно до hydration, а ошибка удаления останавливает
+startup. SQLite schema v172 хранит bounded snapshot и monotonic revision для
+provider/model/credential/region scope. Core валидирует запись, hash и scope
+при чтении и гидратирует только текущие configured profile scopes.
 
-SQLite schema v172 хранит последнюю revision для составного
-provider/model/credential-binding/region scope, принимает только следующую
-revision и сохраняет bounded metadata. При старте Core повторно валидирует
-durable snapshot, scope, content hash и revision перед гидратацией только
-configured provider/model scopes в process-local cache; несовпадающие строки
-игнорируются fail-closed. Существующий authenticated `model.catalog` event
-добавляет redacted `free_access` projection с observed/advertised state,
-activation, allowance, freshness, confidence, bounded limits и strict
-eligibility. Это projection-only состояние: probe execution, route eligibility
-и dedicated renderer UI ещё не подключены, поэтому foundation не объявляет
-provider free tier подтверждённым сам по себе.
+Core-owned coordinator поддерживает `Disabled` по умолчанию, consent-gated
+automatic policies и явную одноразовую ручную проверку. Manual и automatic
+probes делят single-flight limiter, profile-scoped cooldown, bounded synthetic
+request (8 output tokens, zero retries, 45-second deadline) и shutdown
+cancellation; in-flight work не восстанавливается после restart. Renderer
+получает только redacted projection через authenticated provider IPC/events.
+В settings UI manual verification доступна для настроенного OpenRouter profile
+с явным предупреждением о возможной оплате. Persistent automatic consent
+сбрасывается при замене или удалении ключа.
+
+Единственный authority, который может подтвердить `VerifiedFreeLimited`, —
+фиксированный OpenRouter model-detail pricing response: запрошенная model
+identity должна совпасть, а все обязательные и объявленные charge dimensions
+должны быть exact zero. Только после semantic completion и валидного usage Core
+создаёт strict-free evidence. Cloudflare Workers AI probes ограничены явным
+cost consent и могут сохранять typed activation/quota observations; bounded
+whitelist parser извлекает только numeric error codes 5035/3036 с точного
+Cloudflare endpoint. 5035 означает `ActivationRequired`, 3036 — `QuotaRejected`.
+Успешный Cloudflare completion остаётся `Unknown`, пока не появится
+authoritative pricing adapter. Остальные профили также остаются `Unknown` без
+собственного authority. Raw provider bodies, prompts, headers и credentials не
+сохраняются.
+
+`FreeOnly` проверяет свежесть, profile hash, provenance и strict eligibility
+на Core route preflight; stale, trial, activation-required, paid, quota-invalidated
+и unknown evidence блокируют dispatch. `PreferFree` использует отдельный
+explicit paid-fallback option. Catalog `free` label и `:free` suffix остаются
+advisory. Надёжность, качество и eligibility остаются разными сигналами;
+resolved route snapshot не меняется во время одного stream.
 
 ## Design Intent Review Lane v1 (план 126, реализован 2026-09-09)
 

@@ -4,8 +4,8 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::{
-    collections::HashMap,
     borrow::Cow,
+    collections::HashMap,
     future::Future,
     pin::Pin,
     time::{SystemTime, UNIX_EPOCH},
@@ -17,10 +17,8 @@ use crate::{
     ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
 };
 use evohime_listener_contract::{ListeningReason, ListeningState};
-use evohime_local_storage::{
-    EventRecord, LocalDatabase, StorageError, WorkItemRecord,
-};
 use evohime_local_storage::execution_ledger;
+use evohime_local_storage::{EventRecord, LocalDatabase, StorageError, WorkItemRecord};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_receipts::{
@@ -637,6 +635,10 @@ pub struct IpcBridge {
     /// evidence. SQLite remains the source of truth; this cache is never an
     /// authority by itself and is only populated from validated records.
     free_access_evidence: crate::free_provider_reliability_routing::FreeAccessEvidenceCache,
+    /// Process-local single-flight and cooldown guard for explicit probes.
+    free_access_probe_guard: Arc<crate::free_access_probe::FreeAccessProbeGuard>,
+    /// Shared shutdown signal for automatic and manual provider probes.
+    free_access_probe_cancellation: CancellationToken,
     selected_model: SelectedModel,
     core_instance_id: String,
     session_epoch: u64,

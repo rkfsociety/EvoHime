@@ -48,6 +48,7 @@ pub use crate::provider_contract::{
     ProbeConfig, ProbeFailure, ProbeResult, RetryConfig, RoutePolicySnapshot, RunHealthOverlay,
     RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError, SnapshotRouteDecision,
 };
+pub use crate::providers::ChatRequestOptions;
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
     ollama::OllamaProvider, openai_compatible::OpenAICompatibleProvider,
@@ -69,10 +70,18 @@ pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
 };
 use async_stream::stream;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 #[cfg(not(test))]
 use std::sync::OnceLock;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
+};
 
 /// Maximum response bytes accepted when fetching a provider model catalog.
 pub const MAX_MODEL_CATALOG_BYTES: usize = 512 * 1024;
@@ -168,6 +177,53 @@ pub trait RoutePreflight: Send + Sync {
     ) -> Result<(), ProviderError> {
         let _ = requires_tool_calls;
         self.check(route, model, now_ms)
+    }
+
+    /// Performs request preflight when the policy owner needs asynchronous evidence work.
+    fn check_for_request_async<'a>(
+        &'a self,
+        route: &'a str,
+        model: Option<&'a str>,
+        requires_tool_calls: bool,
+        now_ms: u64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ProviderError>> + Send + 'a>> {
+        Box::pin(async move { self.check_for_request(route, model, requires_tool_calls, now_ms) })
+    }
+
+    /// Records only bounded usage metadata after a successful user request.
+    fn observe_success_async<'a>(
+        &'a self,
+        _route: &'a str,
+        _model: Option<&'a str>,
+        _result: &'a ChatResult,
+        _now_ms: u64,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async {})
+    }
+
+    /// Records completion of a successful stream without retaining its content.
+    fn observe_stream_success_async<'a>(
+        &'a self,
+        _route: &'a str,
+        _model: Option<&'a str>,
+        _now_ms: u64,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async {})
+    }
+
+    /// Reports whether route policy requires verified-free candidates only.
+    fn requires_verified_free_route(&self) -> bool {
+        false
+    }
+
+    /// Reports whether verified-free candidates should rank ahead of paid routes.
+    fn prefers_verified_free_routes(&self) -> bool {
+        false
+    }
+
+    /// Checks the current route/model against authoritative free-access evidence.
+    fn is_verified_free_route(&self, _route: &str, _model: &str, _now_ms: u64) -> bool {
+        false
     }
 }
 
@@ -295,6 +351,163 @@ pub struct ModelCatalogEntry {
     pub context_tokens: Option<u32>,
     /// Advertised output token limit, when known.
     pub max_output_tokens: Option<u32>,
+}
+
+/// Redacted pricing observation from the fixed OpenRouter model-detail API.
+///
+/// Pricing strings and response bodies are discarded after normalization;
+/// callers receive only model identity, the all-zero decision, and a digest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenRouterPricingObservation {
+    /// Exact model identifier returned by the provider.
+    pub model_id: String,
+    /// Whether every declared charge dimension was an exact decimal zero.
+    pub all_dimensions_zero: bool,
+    /// Digest of normalized typed model pricing metadata.
+    pub source_hash: String,
+}
+
+/// Safe, typed failure returned by the bounded OpenRouter pricing fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenRouterPricingError {
+    /// Route is not the trusted OpenRouter profile or lacks a credential.
+    InvalidConfiguration,
+    /// Network transport failed before a response was received.
+    Transport,
+    /// OpenRouter rejected the request with an HTTP status.
+    HttpStatus(u16),
+    /// Response exceeded bounds or did not match the typed contract.
+    InvalidResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelDetailEnvelope {
+    data: OpenRouterModelDetail,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelDetail {
+    id: String,
+    pricing: BTreeMap<String, String>,
+}
+
+/// Fetches and normalizes model pricing from OpenRouter's fixed profile only.
+///
+/// This endpoint is intentionally unavailable to custom endpoints and other
+/// provider profiles. It never reads a model suffix as evidence.
+pub async fn fetch_openrouter_model_pricing(
+    route: &ModelRouteConfig,
+    model_id: &str,
+) -> Result<OpenRouterPricingObservation, OpenRouterPricingError> {
+    route
+        .validate_provider_profile()
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?;
+    if route.provider_profile_id != Some(ProviderProfileId::OpenRouter) {
+        return Err(OpenRouterPricingError::InvalidConfiguration);
+    }
+    if route.literouter.api_key.is_empty() {
+        return Err(OpenRouterPricingError::InvalidConfiguration);
+    }
+    let (author, slug) = model_id
+        .split_once('/')
+        .filter(|(author, slug)| {
+            !author.is_empty()
+                && !slug.is_empty()
+                && !slug.contains('/')
+                && model_id.len() <= MAX_MODEL_ID_CHARS
+                && model_id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"._:/-".contains(&byte))
+        })
+        .ok_or(OpenRouterPricingError::InvalidConfiguration)?;
+
+    let mut url = reqwest::Url::parse("https://openrouter.ai/api/v1/model/")
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?;
+    url.path_segments_mut()
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?
+        .push(author)
+        .push(slug);
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?;
+    let response = client
+        .get(url)
+        .bearer_auth(&route.literouter.api_key)
+        .send()
+        .await
+        .map_err(|_| OpenRouterPricingError::Transport)?;
+    if !response.status().is_success() {
+        return Err(OpenRouterPricingError::HttpStatus(
+            response.status().as_u16(),
+        ));
+    }
+    let body = read_bounded_response(response, "openrouter model pricing")
+        .await
+        .map_err(|_| OpenRouterPricingError::InvalidResponse)?;
+    let detail = serde_json::from_slice::<OpenRouterModelDetailEnvelope>(&body)
+        .map_err(|_| OpenRouterPricingError::InvalidResponse)?
+        .data;
+    normalize_openrouter_model_pricing(detail, model_id)
+}
+
+fn normalize_openrouter_model_pricing(
+    detail: OpenRouterModelDetail,
+    requested_model_id: &str,
+) -> Result<OpenRouterPricingObservation, OpenRouterPricingError> {
+    if detail.id != requested_model_id
+        || detail.pricing.is_empty()
+        || detail.pricing.len() > 32
+        || !detail.pricing.contains_key("prompt")
+        || !detail.pricing.contains_key("completion")
+        || !detail.pricing.contains_key("request")
+        || detail.pricing.iter().any(|(name, value)| {
+            name.is_empty()
+                || name.len() > 64
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                || !valid_nonnegative_decimal(value)
+        })
+    {
+        return Err(OpenRouterPricingError::InvalidResponse);
+    }
+    let all_dimensions_zero = detail.pricing.values().all(|value| {
+        value
+            .bytes()
+            .filter(|byte| *byte != b'.')
+            .all(|byte| byte == b'0')
+    });
+    let normalized = serde_json::to_vec(&(detail.id.as_str(), &detail.pricing))
+        .map_err(|_| OpenRouterPricingError::InvalidResponse)?;
+    let source_hash = hex::encode(sha2::Sha256::digest(normalized));
+    Ok(OpenRouterPricingObservation {
+        model_id: detail.id,
+        all_dimensions_zero,
+        source_hash,
+    })
+}
+
+fn valid_nonnegative_decimal(value: &str) -> bool {
+    if value.is_empty() || value.len() > 64 {
+        return false;
+    }
+    let mut decimal_points = 0_u8;
+    let mut digits = 0_u8;
+    value.bytes().all(|byte| {
+        if byte == b'.' {
+            decimal_points = decimal_points.saturating_add(1);
+            decimal_points <= 1
+        } else if byte.is_ascii_digit() {
+            digits = digits.saturating_add(1);
+            true
+        } else {
+            false
+        }
+    }) && digits > 0
+        && !value.starts_with('.')
+        && !value.ends_with('.')
 }
 
 /// Fetches the provider's current model catalog without exposing the API key
@@ -581,6 +794,9 @@ impl ModelGateway {
         route: &str,
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
+        if let Some(preflight) = &self.route_preflight {
+            preflight.check(route, None, current_time_ms())?;
+        }
         self.dispatch_stream(route, None, messages)
     }
 
@@ -591,6 +807,9 @@ impl ModelGateway {
         model: Option<&str>,
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
+        if let Some(preflight) = &self.route_preflight {
+            preflight.check(route, model, current_time_ms())?;
+        }
         self.dispatch_stream(route, model, messages)
     }
 
@@ -614,7 +833,48 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<ChatResult, ProviderError> {
-        self.dispatch_chat(route, model, messages, tools).await
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
+                .await?;
+        }
+        let result = self.dispatch_chat(route, model, messages, tools).await?;
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .observe_success_async(route, model, &result, current_time_ms())
+                .await;
+        }
+        Ok(result)
+    }
+
+    /// Executes a bounded non-streaming request on one named route.
+    ///
+    /// The normal route preflight still runs before provider dispatch. Provider
+    /// adapters that do not support the requested bounds may ignore them, so
+    /// the caller must also validate the response and usage.
+    pub async fn chat_with_tools_for_route_bounded(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> Result<ChatResult, ProviderError> {
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
+                .await?;
+        }
+        let result = self
+            .provider_for_route(route)?
+            .chat_with_tools_with_options(model, messages, tools, options)
+            .await?;
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .observe_success_async(route, model, &result, current_time_ms())
+                .await;
+        }
+        Ok(result)
     }
 
     /// Единственная внутренняя граница к provider implementation. Provenance
@@ -627,12 +887,36 @@ impl ModelGateway {
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
         let provider = self.provider_for_route(route)?;
-        Ok(match model {
+        let response = match model {
             Some(model) if !model.trim().is_empty() => {
                 provider.stream_chat_with_model(model, messages)
             }
             _ => provider.stream_chat(messages),
-        })
+        };
+        let Some(preflight) = self.route_preflight.clone() else {
+            return Ok(response);
+        };
+        let route = route.to_owned();
+        let model = model.map(str::to_owned);
+        Ok(Box::pin(stream! {
+            let mut response = response;
+            let mut has_content = false;
+            let mut completed = true;
+            while let Some(item) = response.next().await {
+                match &item {
+                    Ok(ChatStreamItem::Delta(chunk) | ChatStreamItem::Thinking(chunk))
+                        if !chunk.trim().is_empty() => has_content = true,
+                    Err(_) => completed = false,
+                    _ => {}
+                }
+                yield item;
+            }
+            if completed && has_content {
+                preflight
+                    .observe_stream_success_async(&route, model.as_deref(), current_time_ms())
+                    .await;
+            }
+        }))
     }
 
     async fn dispatch_chat(
@@ -739,12 +1023,15 @@ impl ModelGateway {
                         tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
                     }
                     if let Some(preflight) = &self.route_preflight {
-                        if let Err(error) = preflight.check_for_request(
-                            &route,
-                            model,
-                            !tools.is_empty(),
-                            current_time_ms(),
-                        ) {
+                        if let Err(error) = preflight
+                            .check_for_request_async(
+                                &route,
+                                model,
+                                !tools.is_empty(),
+                                current_time_ms(),
+                            )
+                            .await
+                        {
                             if let Some(attempt) = trace.attempts.last_mut() {
                                 attempt.failure_category = Some(FailureCategory::InvalidRequest);
                             }
@@ -811,7 +1098,9 @@ impl ModelGateway {
             .as_deref()
             .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
         if let Some(preflight) = &self.route_preflight {
-            preflight.check_for_request(route, model, !tools.is_empty(), current_time_ms())?;
+            preflight
+                .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
+                .await?;
         }
         let result = self
             .chat_with_tools_for_route(route, model, messages, tools)
@@ -997,13 +1286,38 @@ impl ModelGateway {
     fn route_candidates(&self) -> Vec<RouteCandidate> {
         let mut route_ids: Vec<&String> = self.routes.keys().collect();
         route_ids.sort();
+        let now_ms = current_time_ms();
+        let requires_verified_free = self
+            .route_preflight
+            .as_ref()
+            .is_some_and(|preflight| preflight.requires_verified_free_route());
+        let prefers_verified_free = self
+            .route_preflight
+            .as_ref()
+            .is_some_and(|preflight| preflight.prefers_verified_free_routes());
         route_ids
             .into_iter()
-            .map(|route_id| {
+            .filter_map(|route_id| {
                 let provider = &self.routes[route_id];
                 let model = provider.model_name().to_string();
-                let cost_micros_per_1k_tokens = if model.ends_with(":free") { 0 } else { 1 };
-                RouteCandidate {
+                let verified_free = self.route_preflight.as_ref().is_some_and(|preflight| {
+                    preflight.is_verified_free_route(route_id, &model, now_ms)
+                });
+                if requires_verified_free && !verified_free {
+                    return None;
+                }
+                let cost_micros_per_1k_tokens = if prefers_verified_free {
+                    if verified_free {
+                        0
+                    } else {
+                        1
+                    }
+                } else if model.ends_with(":free") {
+                    0
+                } else {
+                    1
+                };
+                Some(RouteCandidate {
                     route_id: route_id.clone(),
                     model,
                     capabilities: vec!["chat".to_string()],
@@ -1012,7 +1326,7 @@ impl ModelGateway {
                     privacy: PrivacyClass::Internal,
                     available: true,
                     fallback_rank: 0,
-                }
+                })
             })
             .collect()
     }
@@ -1057,6 +1371,72 @@ mod tests {
     use super::*;
     use futures_util::StreamExt;
 
+    fn pricing_detail(id: &str, pricing: &[(&str, &str)]) -> OpenRouterModelDetail {
+        OpenRouterModelDetail {
+            id: id.to_string(),
+            pricing: pricing
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn openrouter_pricing_requires_exact_zero_for_every_declared_dimension() {
+        let zero = normalize_openrouter_model_pricing(
+            pricing_detail(
+                "author/model:free",
+                &[
+                    ("prompt", "0"),
+                    ("completion", "0.000"),
+                    ("request", "0"),
+                    ("image", "0.0"),
+                ],
+            ),
+            "author/model:free",
+        )
+        .expect("valid zero pricing");
+        assert!(zero.all_dimensions_zero);
+        assert_eq!(zero.source_hash.len(), 64);
+
+        let paid = normalize_openrouter_model_pricing(
+            pricing_detail(
+                "author/model:free",
+                &[("prompt", "0"), ("completion", "0"), ("request", "0.1")],
+            ),
+            "author/model:free",
+        )
+        .expect("valid paid dimension");
+        assert!(!paid.all_dimensions_zero);
+    }
+
+    #[test]
+    fn openrouter_pricing_rejects_missing_dimensions_identity_drift_and_bad_decimals() {
+        assert!(normalize_openrouter_model_pricing(
+            pricing_detail("author/model", &[("prompt", "0"), ("completion", "0")]),
+            "author/model",
+        )
+        .is_err());
+        assert!(normalize_openrouter_model_pricing(
+            pricing_detail(
+                "author/other",
+                &[("prompt", "0"), ("completion", "0"), ("request", "0")],
+            ),
+            "author/model",
+        )
+        .is_err());
+        for invalid in ["-0", "+0", "0e0", "NaN", "1.2.3", ".0", "0."] {
+            assert!(normalize_openrouter_model_pricing(
+                pricing_detail(
+                    "author/model",
+                    &[("prompt", invalid), ("completion", "0"), ("request", "0")],
+                ),
+                "author/model",
+            )
+            .is_err());
+        }
+    }
+
     #[test]
     fn builds_openai_compatible_route_as_distinct_provider() {
         let config = ModelGatewayConfig {
@@ -1092,6 +1472,62 @@ mod tests {
             estimated_input_tokens: 0,
             quality_delta: 0.05,
         }
+    }
+
+    struct FreeEvidencePreflight {
+        strict: bool,
+    }
+
+    impl RoutePreflight for FreeEvidencePreflight {
+        fn check(
+            &self,
+            _route: &str,
+            _model: Option<&str>,
+            _now_ms: u64,
+        ) -> Result<(), ProviderError> {
+            Ok(())
+        }
+
+        fn requires_verified_free_route(&self) -> bool {
+            self.strict
+        }
+
+        fn prefers_verified_free_routes(&self) -> bool {
+            !self.strict
+        }
+
+        fn is_verified_free_route(&self, route: &str, _model: &str, _now_ms: u64) -> bool {
+            route == "confirmed"
+        }
+    }
+
+    #[test]
+    fn free_only_filters_unverified_candidates_and_prefer_free_ranks_only_evidence() {
+        let routes = vec![
+            ("advertised", "author/model:free"),
+            ("confirmed", "author/model"),
+            ("paid", "author/paid"),
+        ];
+        let prefer_free = gateway_with_routes(routes.clone())
+            .with_route_preflight(Arc::new(FreeEvidencePreflight { strict: false }));
+        let candidates = prefer_free.route_candidates();
+        let by_route: HashMap<_, _> = candidates
+            .iter()
+            .map(|candidate| {
+                (
+                    candidate.route_id.as_str(),
+                    candidate.cost_micros_per_1k_tokens,
+                )
+            })
+            .collect();
+        assert_eq!(by_route.get("confirmed"), Some(&0));
+        assert_eq!(by_route.get("advertised"), Some(&1));
+
+        let free_only = gateway_with_routes(routes)
+            .with_route_preflight(Arc::new(FreeEvidencePreflight { strict: true }));
+        let candidates = free_only.route_candidates();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].route_id, "confirmed");
     }
 
     fn gateway_with_routes(routes: Vec<(&str, &str)>) -> ModelGateway {

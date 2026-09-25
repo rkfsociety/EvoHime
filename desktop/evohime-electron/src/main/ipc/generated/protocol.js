@@ -1222,6 +1222,8 @@ export const evohime = $root.evohime = (() => {
                  * Properties of a ModelCatalogRequest.
                  * @typedef {Object} evohime.desktop.v1.ModelCatalogRequest.$Properties
                  * @property {string|null} [mode] ModelCatalogRequest mode
+                 * @property {string|null} [modelId] ModelCatalogRequest modelId
+                 * @property {boolean|null} [confirmPossibleCost] ModelCatalogRequest confirmPossibleCost
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -1262,6 +1264,22 @@ export const evohime = $root.evohime = (() => {
                 ModelCatalogRequest.prototype.mode = "";
 
                 /**
+                 * ModelCatalogRequest modelId.
+                 * @member {string} modelId
+                 * @memberof evohime.desktop.v1.ModelCatalogRequest
+                 * @instance
+                 */
+                ModelCatalogRequest.prototype.modelId = "";
+
+                /**
+                 * ModelCatalogRequest confirmPossibleCost.
+                 * @member {boolean} confirmPossibleCost
+                 * @memberof evohime.desktop.v1.ModelCatalogRequest
+                 * @instance
+                 */
+                ModelCatalogRequest.prototype.confirmPossibleCost = false;
+
+                /**
                  * Encodes the specified ModelCatalogRequest message. Does not implicitly {@link evohime.desktop.v1.ModelCatalogRequest.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.ModelCatalogRequest
@@ -1279,6 +1297,10 @@ export const evohime = $root.evohime = (() => {
                         throw $Error("max depth exceeded");
                     if (message.mode != null && $Object.hasOwnProperty.call(message, "mode") && message.mode !== "")
                         writer.uint32(/* id 1, wireType 2 =*/10).string(message.mode);
+                    if (message.modelId != null && $Object.hasOwnProperty.call(message, "modelId") && message.modelId !== "")
+                        writer.uint32(/* id 2, wireType 2 =*/18).string(message.modelId);
+                    if (message.confirmPossibleCost != null && $Object.hasOwnProperty.call(message, "confirmPossibleCost") && message.confirmPossibleCost !== false)
+                        writer.uint32(/* id 3, wireType 0 =*/24).bool(message.confirmPossibleCost);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -1320,6 +1342,24 @@ export const evohime = $root.evohime = (() => {
                                     message.mode = value;
                                 else
                                     delete message.mode;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.modelId = value;
+                                else
+                                    delete message.modelId;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 0)
+                                    break;
+                                if (value = reader.bool())
+                                    message.confirmPossibleCost = value;
+                                else
+                                    delete message.confirmPossibleCost;
                                 continue;
                             }
                         }

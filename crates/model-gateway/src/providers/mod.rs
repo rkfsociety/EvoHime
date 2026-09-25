@@ -165,6 +165,15 @@ pub struct ThinkingConfig {
     pub budget_tokens: Option<u32>,
 }
 
+/// Optional per-call bounds for a non-streaming provider completion.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ChatRequestOptions {
+    /// Maximum generated tokens when the provider supports the field.
+    pub max_output_tokens: Option<u32>,
+    /// Maximum retries after the first attempt; `Some(0)` disables retries.
+    pub max_retries: Option<u32>,
+}
+
 /// Configuration, transport, API, or stream failure returned by a provider adapter.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
@@ -232,5 +241,21 @@ pub trait ModelProvider: Send + Sync {
                 "provider does not support native tool_calls".into(),
             ))
         })
+    }
+
+    /// Non-streaming completion with explicit bounded-request options.
+    ///
+    /// Providers that do not support the options retain their existing
+    /// behavior; callers that require a hard bound must use a supporting
+    /// adapter and validate the returned usage.
+    fn chat_with_tools_with_options(
+        &self,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> ChatFuture {
+        let _ = options;
+        self.chat_with_tools(model, messages, tools)
     }
 }

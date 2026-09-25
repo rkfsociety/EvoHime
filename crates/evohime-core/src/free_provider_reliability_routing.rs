@@ -29,7 +29,7 @@ pub const MAX_PROVIDER_MODEL_ID_BYTES: usize = 256;
 /// Maximum accepted reliability latency sample in milliseconds.
 pub const MAX_RELIABILITY_LATENCY_MS: f64 = 86_400_000.0;
 /// Schema version for free-access evidence.
-pub const FREE_ACCESS_EVIDENCE_SCHEMA_VERSION: u16 = 1;
+pub const FREE_ACCESS_EVIDENCE_SCHEMA_VERSION: u16 = 2;
 /// Maximum number of limits carried by free-access evidence.
 pub const MAX_FREE_ACCESS_LIMITS: usize = 16;
 /// Maximum number of successful samples retained in evidence.
@@ -547,6 +547,22 @@ pub enum AllowanceKind {
     Unknown,
 }
 
+/// Typed authority used to classify a recurring no-cost allowance.
+///
+/// The source digest covers only normalized provider pricing metadata and is
+/// never a digest of a credential or raw response body.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "source", rename_all = "snake_case")]
+pub enum AllowanceProvenance {
+    /// No trusted provider signal established the allowance kind.
+    Unknown,
+    /// A fixed OpenRouter model-detail response reported zero for every price dimension.
+    OpenRouterModelPricing {
+        /// SHA-256 digest of the normalized typed price dimensions.
+        source_hash: String,
+    },
+}
+
 /// Units remain typed and opaque. In particular, credits are never converted
 /// to tokens or currency without an authoritative provider contract.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -675,6 +691,10 @@ pub struct FreeAccessEvidence {
     pub credential_binding: String,
     /// Region associated with the observation.
     pub region: String,
+    /// Revision of the provider profile used for the observation.
+    pub profile_revision: u64,
+    /// Canonical content hash of the provider profile used for the observation.
+    pub profile_content_hash: String,
     /// Coarse provider-advertised access label.
     pub advertised_state: FreeAccessState,
     /// More precise access state derived from validated evidence.
@@ -683,6 +703,8 @@ pub struct FreeAccessEvidence {
     pub activation: ActivationState,
     /// Kind of access allowance established by the evidence.
     pub allowance: AllowanceKind,
+    /// Authority supporting the allowance classification.
+    pub allowance_provenance: AllowanceProvenance,
     /// Typed account/provider/model limits observed.
     pub limits: Vec<FreeAccessLimit>,
     /// Number of successful calls supporting the observation.
@@ -704,13 +726,15 @@ pub struct FreeAccessEvidence {
 }
 
 impl FreeAccessEvidence {
-    /// Validates schema, bounds, timestamps, digest syntax, and state consistency.
+    /// Validates schema, bounds, timestamps, canonical digest, and state consistency.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.schema_version != FREE_ACCESS_EVIDENCE_SCHEMA_VERSION
             || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
-            || !valid_model_id(&self.model_id)
-            || !valid_credential_binding(&self.credential_binding)
+            || !valid_provider_model_id(&self.provider_id, &self.model_id)
+            || !valid_bound_credential(&self.credential_binding)
             || !valid_profile_token(&self.region, MAX_PROVIDER_PROFILE_REGION_BYTES)
+            || self.profile_revision == 0
+            || !valid_content_hash(&self.profile_content_hash)
             || self.limits.len() > MAX_FREE_ACCESS_LIMITS
             || self.successful_sample_count > MAX_FREE_ACCESS_SAMPLES
             || self.confidence_bps > MAX_FREE_ACCESS_CONFIDENCE_BPS
@@ -724,13 +748,25 @@ impl FreeAccessEvidence {
                 .as_deref()
                 .is_some_and(|reason| !valid_profile_token(reason, 128))
             || self.limits.iter().any(|limit| limit.validate().is_err())
+            || match &self.allowance_provenance {
+                AllowanceProvenance::Unknown => false,
+                AllowanceProvenance::OpenRouterModelPricing { source_hash } => {
+                    !valid_content_hash(source_hash)
+                }
+            }
         {
             return Err("invalid free access evidence");
         }
 
         let consistent = match self.observed_state {
             ObservedFreeAccessState::VerifiedFreeLimited => {
-                self.allowance == AllowanceKind::Recurring && self.successful_sample_count > 0
+                self.allowance == AllowanceKind::Recurring
+                    && self.successful_sample_count > 0
+                    && self.provider_id == "openrouter"
+                    && matches!(
+                        &self.allowance_provenance,
+                        AllowanceProvenance::OpenRouterModelPricing { .. }
+                    )
             }
             ObservedFreeAccessState::TrialOnly => self.allowance == AllowanceKind::TrialCredit,
             ObservedFreeAccessState::CreditOnly => self.allowance == AllowanceKind::OneTimeCredit,
@@ -743,7 +779,35 @@ impl FreeAccessEvidence {
         if !consistent {
             return Err("inconsistent free access evidence");
         }
+        if self.content_hash != self.calculate_content_hash()? {
+            return Err("free access evidence content hash mismatch");
+        }
         Ok(())
+    }
+
+    /// Computes the canonical digest after clearing its self-referential field.
+    pub fn calculate_content_hash(&self) -> Result<String, &'static str> {
+        let mut canonical = self.clone();
+        canonical.content_hash.clear();
+        let bytes = serde_json::to_vec(&canonical).map_err(|_| "invalid free access evidence")?;
+        Ok(hex::encode(Sha256::digest(bytes)))
+    }
+
+    /// Seals an evidence value with the digest of its canonical representation.
+    pub fn seal(mut self) -> Result<Self, &'static str> {
+        self.content_hash.clear();
+        self.content_hash = self.calculate_content_hash()?;
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// Confirms that this evidence belongs to the current provider profile.
+    pub fn matches_profile(&self, profile: &ProviderProfile) -> bool {
+        self.provider_id == profile.provider_id
+            && self.credential_binding == profile.credential_binding
+            && self.region == profile.region
+            && self.profile_revision == profile.revision
+            && self.profile_content_hash == profile.content_hash
     }
 
     /// Classifies evidence at `now_ms`, prioritizing explicit invalidation.
@@ -917,6 +981,12 @@ pub struct RouteSelectionExplanation {
 }
 
 impl ProviderProfile {
+    /// Returns whether the profile has a per-key opaque binding suitable for
+    /// probe evidence. Legacy or synthetic built-in bindings are excluded.
+    pub fn has_stable_credential_binding(&self) -> bool {
+        valid_bound_credential(&self.credential_binding)
+    }
+
     /// Adapts a configured gateway route into validated provider metadata.
     ///
     /// Explicit profile identity is authoritative; exact endpoint matching is
@@ -992,18 +1062,10 @@ impl ProviderProfile {
         } else {
             route.literouter.base_url.clone()
         };
-        let credential_binding =
-            if route.provider_profile_id == Some(ProviderProfileId::CloudflareWorkersAi) {
-                format!(
-                    "credential:{provider_id}:{}",
-                    route
-                        .provider_account_id
-                        .as_deref()
-                        .ok_or("invalid provider profile")?
-                )
-            } else {
-                format!("credential:{provider_id}")
-            };
+        let credential_binding = route
+            .provider_credential_binding
+            .clone()
+            .unwrap_or_else(|| format!("unbound:{provider_id}"));
         let mut profile = Self {
             schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
             provider_id,
@@ -1194,7 +1256,7 @@ impl ProviderModelDescriptor {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.schema_version != PROVIDER_MODEL_DESCRIPTOR_SCHEMA_VERSION
             || !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
-            || !valid_model_id(&self.model_id)
+            || !valid_provider_model_id(&self.provider_id, &self.model_id)
             || self.profile_revision == 0
             || self.catalog_revision == 0
             || !valid_content_hash(&self.profile_content_hash)
@@ -1524,8 +1586,12 @@ impl ProviderCatalogSnapshot {
 
 pub(crate) fn provider_catalog_scope_key(profile: &ProviderProfile) -> String {
     format!(
-        "{}|{}|{}",
-        profile.provider_id, profile.credential_binding, profile.region
+        "{}|{}|{}|{}|{}",
+        profile.provider_id,
+        profile.credential_binding,
+        profile.region,
+        profile.revision,
+        profile.content_hash
     )
 }
 
@@ -1534,8 +1600,12 @@ pub(crate) fn free_access_evidence_scope_key(
     model_id: &str,
     credential_binding: &str,
     region: &str,
+    profile_revision: u64,
+    profile_content_hash: &str,
 ) -> String {
-    format!("{provider_id}|{model_id}|{credential_binding}|{region}")
+    format!(
+        "{provider_id}|{model_id}|{credential_binding}|{region}|{profile_revision}|{profile_content_hash}"
+    )
 }
 
 /// Adapter between the Core-owned catalog lifecycle and the gateway's final
@@ -1545,6 +1615,10 @@ pub(crate) fn free_access_evidence_scope_key(
 pub struct ProviderCatalogRoutePreflight {
     config: evohime_model_gateway::ModelGatewayConfig,
     cache: ProviderCatalogCache,
+    free_access_mode: crate::free_access_probe::FreeAccessRoutingMode,
+    allow_paid_fallback: bool,
+    free_access_probe: Option<Arc<crate::free_access_probe::FreeAccessProbeCoordinator>>,
+    free_access_evidence: Option<FreeAccessEvidenceCache>,
 }
 
 impl ProviderCatalogRoutePreflight {
@@ -1553,7 +1627,29 @@ impl ProviderCatalogRoutePreflight {
         config: evohime_model_gateway::ModelGatewayConfig,
         cache: ProviderCatalogCache,
     ) -> Self {
-        Self { config, cache }
+        Self {
+            config,
+            cache,
+            free_access_mode: crate::free_access_probe::FreeAccessRoutingMode::Any,
+            allow_paid_fallback: false,
+            free_access_probe: None,
+            free_access_evidence: None,
+        }
+    }
+
+    /// Applies explicit free-access routing and consented probe policy.
+    pub fn with_free_access_policy(
+        mut self,
+        mode: crate::free_access_probe::FreeAccessRoutingMode,
+        allow_paid_fallback: bool,
+        probe: Option<Arc<crate::free_access_probe::FreeAccessProbeCoordinator>>,
+        free_access_evidence: FreeAccessEvidenceCache,
+    ) -> Self {
+        self.free_access_mode = mode;
+        self.allow_paid_fallback = allow_paid_fallback;
+        self.free_access_probe = probe;
+        self.free_access_evidence = Some(free_access_evidence);
+        self
     }
 }
 
@@ -1570,6 +1666,84 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
         now_ms: u64,
     ) -> Result<(), ProviderError> {
         self.check_with_requirements(route, model, requires_tool_calls, now_ms)
+    }
+
+    fn observe_success_async<'a>(
+        &'a self,
+        route: &'a str,
+        model: Option<&'a str>,
+        _result: &'a evohime_model_gateway::ChatResult,
+        now_ms: u64,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        let Some(probe) = self.free_access_probe.clone() else {
+            return Box::pin(async {});
+        };
+        let Some(route_config) = self.config.routes.get(route) else {
+            return Box::pin(async {});
+        };
+        let model = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| route_config.literouter.model.trim())
+            .to_owned();
+        let route = route.to_owned();
+        Box::pin(async move {
+            probe.record_passive_success(&route, &model, now_ms).await;
+        })
+    }
+
+    fn observe_stream_success_async<'a>(
+        &'a self,
+        route: &'a str,
+        model: Option<&'a str>,
+        now_ms: u64,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        let Some(probe) = self.free_access_probe.clone() else {
+            return Box::pin(async {});
+        };
+        let Some(route_config) = self.config.routes.get(route) else {
+            return Box::pin(async {});
+        };
+        let model = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| route_config.literouter.model.trim())
+            .to_owned();
+        let route = route.to_owned();
+        Box::pin(async move {
+            probe.record_passive_success(&route, &model, now_ms).await;
+        })
+    }
+
+    fn requires_verified_free_route(&self) -> bool {
+        self.free_access_mode == crate::free_access_probe::FreeAccessRoutingMode::FreeOnly
+    }
+
+    fn prefers_verified_free_routes(&self) -> bool {
+        self.free_access_mode == crate::free_access_probe::FreeAccessRoutingMode::PreferFree
+    }
+
+    fn is_verified_free_route(&self, route: &str, model: &str, now_ms: u64) -> bool {
+        let Some(route_config) = self.config.routes.get(route) else {
+            return false;
+        };
+        let Ok(profile) = ProviderProfile::from_route_config(route_config) else {
+            return false;
+        };
+        let key = free_access_evidence_scope_key(
+            &profile.provider_id,
+            model,
+            &profile.credential_binding,
+            &profile.region,
+            profile.revision,
+            &profile.content_hash,
+        );
+        self.free_access_evidence
+            .as_ref()
+            .and_then(|cache| cache.read().ok()?.get(&key).cloned())
+            .is_some_and(|evidence| {
+                evidence.matches_profile(&profile) && evidence.is_strictly_free_at(now_ms)
+            })
     }
 }
 
@@ -1608,54 +1782,74 @@ impl ProviderCatalogRoutePreflight {
             .map_err(|_| ProviderError::Config("provider_catalog_lock_failed".into()))?
             .get(&provider_catalog_scope_key(&profile))
             .cloned();
-        let Some(snapshot) = snapshot else {
-            return Ok(());
-        };
-        match snapshot.state {
-            ProviderCatalogState::Fresh if snapshot.route_eligible_at(model_id, now_ms) => {
-                let descriptor = snapshot
-                    .models
-                    .iter()
-                    .find(|candidate| candidate.model_id == model_id);
-                if descriptor.is_some_and(|descriptor| {
-                    has_confirmed_unsupported_capability(descriptor, ModelCapability::Chat)
-                        || (requires_tool_calls
-                            && has_confirmed_unsupported_capability(
-                                descriptor,
-                                ModelCapability::ToolCalls,
-                            ))
-                }) {
-                    Err(ProviderError::Config(
-                        "provider_model_capability_unsupported".into(),
-                    ))
-                } else {
-                    Ok(())
+        if let Some(snapshot) = snapshot {
+            let catalog_result = match snapshot.state {
+                ProviderCatalogState::Fresh if snapshot.route_eligible_at(model_id, now_ms) => {
+                    let descriptor = snapshot
+                        .models
+                        .iter()
+                        .find(|candidate| candidate.model_id == model_id);
+                    if descriptor.is_some_and(|descriptor| {
+                        has_confirmed_unsupported_capability(descriptor, ModelCapability::Chat)
+                            || (requires_tool_calls
+                                && has_confirmed_unsupported_capability(
+                                    descriptor,
+                                    ModelCapability::ToolCalls,
+                                ))
+                    }) {
+                        Err(ProviderError::Config(
+                            "provider_model_capability_unsupported".into(),
+                        ))
+                    } else {
+                        Ok(())
+                    }
                 }
+                ProviderCatalogState::Fresh if now_ms >= snapshot.expires_at_ms => {
+                    Err(ProviderError::Config("provider_catalog_expired".into()))
+                }
+                ProviderCatalogState::Fresh => {
+                    Err(ProviderError::Config("provider_model_not_found".into()))
+                }
+                ProviderCatalogState::Stale => {
+                    Err(ProviderError::Config("provider_catalog_stale".into()))
+                }
+                ProviderCatalogState::CredentialRejected => {
+                    Err(ProviderError::Config("provider_credential_rejected".into()))
+                }
+                ProviderCatalogState::Unavailable
+                    if snapshot.failure == Some(CatalogFailureCode::ModelNotFound) =>
+                {
+                    Err(ProviderError::Config("provider_model_not_found".into()))
+                }
+                ProviderCatalogState::Unavailable => {
+                    Err(ProviderError::Config("provider_catalog_unavailable".into()))
+                }
+                // Catalog discovery is advisory. If the user supplied an explicit
+                // model ID, a missing discovery endpoint does not prove that the
+                // completion endpoint cannot serve it.
+                ProviderCatalogState::DiscoveryUnsupported => Ok(()),
+            };
+            catalog_result?;
+        }
+        if let Some(probe) = &self.free_access_probe {
+            probe.on_route_use(route, Some(model_id));
+        }
+        let verified_free = self.is_verified_free_route(route, model_id, now_ms);
+        match self.free_access_mode {
+            crate::free_access_probe::FreeAccessRoutingMode::Any => Ok(()),
+            crate::free_access_probe::FreeAccessRoutingMode::FreeOnly if verified_free => Ok(()),
+            crate::free_access_probe::FreeAccessRoutingMode::FreeOnly => {
+                Err(ProviderError::Config("free_access_not_verified".into()))
             }
-            ProviderCatalogState::Fresh if now_ms >= snapshot.expires_at_ms => {
-                Err(ProviderError::Config("provider_catalog_expired".into()))
-            }
-            ProviderCatalogState::Fresh => {
-                Err(ProviderError::Config("provider_model_not_found".into()))
-            }
-            ProviderCatalogState::Stale => {
-                Err(ProviderError::Config("provider_catalog_stale".into()))
-            }
-            ProviderCatalogState::CredentialRejected => {
-                Err(ProviderError::Config("provider_credential_rejected".into()))
-            }
-            ProviderCatalogState::Unavailable
-                if snapshot.failure == Some(CatalogFailureCode::ModelNotFound) =>
+            crate::free_access_probe::FreeAccessRoutingMode::PreferFree if verified_free => Ok(()),
+            crate::free_access_probe::FreeAccessRoutingMode::PreferFree
+                if !model_id.ends_with(":free") && self.allow_paid_fallback =>
             {
-                Err(ProviderError::Config("provider_model_not_found".into()))
+                Ok(())
             }
-            ProviderCatalogState::Unavailable => {
-                Err(ProviderError::Config("provider_catalog_unavailable".into()))
-            }
-            // Catalog discovery is advisory. If the user supplied an explicit
-            // model ID, a missing discovery endpoint does not prove that the
-            // completion endpoint cannot serve it.
-            ProviderCatalogState::DiscoveryUnsupported => Ok(()),
+            crate::free_access_probe::FreeAccessRoutingMode::PreferFree => Err(
+                ProviderError::Config("free_access_fallback_not_allowed".into()),
+            ),
         }
     }
 }
@@ -1866,11 +2060,22 @@ fn valid_credential_binding(value: &str) -> bool {
         && !value.to_ascii_lowercase().starts_with("gsk_")
         && !value.to_ascii_lowercase().starts_with("aiza")
 }
+
+fn valid_bound_credential(value: &str) -> bool {
+    let Some(id) = value.strip_prefix("credential:") else {
+        return false;
+    };
+    id.len() == 36
+        && id.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+}
 impl ReliabilitySnapshot {
     /// Checks bounded metrics and verifies that the stored class matches the metrics.
     pub fn validate(&self) -> Result<(), &'static str> {
         if !valid_profile_token(&self.provider_id, MAX_PROVIDER_PROFILE_ID_BYTES)
-            || !valid_model_id(&self.model_id)
+            || !valid_provider_model_id(&self.provider_id, &self.model_id)
             || self.sample_count > 256
             || !self.success_rate.is_finite()
             || !(0.0..=1.0).contains(&self.success_rate)
@@ -1896,6 +2101,13 @@ fn valid_model_id(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"._:/-".contains(&byte))
+}
+
+fn valid_provider_model_id(provider_id: &str, value: &str) -> bool {
+    if provider_id == "cloudflare_workers_ai" {
+        return value.strip_prefix("@cf/").is_some_and(valid_model_id);
+    }
+    valid_model_id(value)
 }
 
 fn valid_latency(value: Option<f64>) -> bool {

@@ -1,7 +1,7 @@
-use crate::config::LiteRouterConfig;
+use crate::config::{LiteRouterConfig, ProviderProfileId};
 use crate::providers::{
-    ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, ThinkingConfig,
-    TokenStream,
+    ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
+    ThinkingConfig, TokenStream,
 };
 use crate::retry::{
     classify_rate_limit, compute_backoff, is_retryable_status, parse_retry_after_seconds,
@@ -94,8 +94,15 @@ impl LiteRouterProvider {
         tools: Option<&[ToolSpec]>,
         stream: bool,
     ) -> Result<reqwest::Response, ProviderError> {
-        self.send_chat_request_internal(model, messages, tools, stream, None)
-            .await
+        self.send_chat_request_internal(
+            model,
+            messages,
+            tools,
+            stream,
+            None,
+            ChatRequestOptions::default(),
+        )
+        .await
     }
 
     async fn send_chat_request_with_thinking(
@@ -105,7 +112,25 @@ impl LiteRouterProvider {
         tools: Option<&[ToolSpec]>,
         thinking: Option<ThinkingConfig>,
     ) -> Result<reqwest::Response, ProviderError> {
-        self.send_chat_request_internal(model, messages, tools, true, thinking)
+        self.send_chat_request_internal(
+            model,
+            messages,
+            tools,
+            true,
+            thinking,
+            ChatRequestOptions::default(),
+        )
+        .await
+    }
+
+    async fn send_chat_request_with_options(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        tools: Option<&[ToolSpec]>,
+        options: ChatRequestOptions,
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send_chat_request_internal(model, messages, tools, false, None, options)
             .await
     }
 
@@ -116,6 +141,7 @@ impl LiteRouterProvider {
         tools: Option<&[ToolSpec]>,
         stream: bool,
         thinking: Option<ThinkingConfig>,
+        options: ChatRequestOptions,
     ) -> Result<reqwest::Response, ProviderError> {
         let tools = tools.map(|specs| {
             specs
@@ -145,7 +171,10 @@ impl LiteRouterProvider {
                 None
             },
             thinking,
+            max_tokens: options.max_output_tokens,
         };
+
+        let max_retries = options.max_retries.unwrap_or(self.retry.max_retries);
 
         let mut attempt: u32 = 0;
         loop {
@@ -164,19 +193,28 @@ impl LiteRouterProvider {
                     let status = response.status();
                     let retry_after = parse_retry_after_seconds(response.headers());
                     let text = read_bounded_rate_limit_body(response).await;
+                    if let Some(code) = cloudflare_typed_error_code(&self.config.base_url, &text) {
+                        return Err(ProviderError::Api(format!(
+                            "{}: Cloudflare Workers AI error code {code}",
+                            status.as_u16()
+                        )));
+                    }
                     let rate_limit = classify_rate_limit(status, &text);
                     if matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
                         return Err(ProviderError::Api(format!(
-                            "{status}: provider quota exhausted"
+                            "{}: provider quota exhausted",
+                            status.as_u16()
                         )));
                     }
                     let rate_limit_retryable = matches!(
                         rate_limit,
                         Some(RateLimitClass::Transient | RateLimitClass::Unknown)
                     );
-                    let rate_limit_cap = matches!(rate_limit, Some(RateLimitClass::Unknown))
-                        .then_some(2)
-                        .unwrap_or(self.retry.max_retries);
+                    let rate_limit_cap = if matches!(rate_limit, Some(RateLimitClass::Unknown)) {
+                        max_retries.min(2)
+                    } else {
+                        max_retries
+                    };
                     if (is_retryable_status(status) || rate_limit_retryable)
                         && attempt < rate_limit_cap
                     {
@@ -186,11 +224,12 @@ impl LiteRouterProvider {
                         continue;
                     }
                     return Err(ProviderError::Api(format!(
-                        "{status}: provider request failed"
+                        "{}: provider request failed",
+                        status.as_u16()
                     )));
                 }
                 Err(error) => {
-                    if attempt < self.retry.max_retries {
+                    if attempt < max_retries {
                         let delay = compute_backoff(attempt, &self.retry, None);
                         tokio::time::sleep(delay).await;
                         attempt = attempt.saturating_add(1);
@@ -212,6 +251,31 @@ impl LiteRouterProvider {
             }
         }
         *last_request = Some(Instant::now());
+    }
+}
+
+/// Returns a documented Cloudflare Workers AI error code without retaining its
+/// response message or any other provider-supplied text.
+fn cloudflare_typed_error_code(base_url: &str, body: &str) -> Option<u64> {
+    let normalized_base_url = base_url.trim_end_matches('/');
+    let account_id = normalized_base_url
+        .strip_prefix("https://api.cloudflare.com/client/v4/accounts/")?
+        .strip_suffix("/ai/v1")?;
+    if ProviderProfileId::cloudflare_base_url(account_id).as_deref() != Some(normalized_base_url) {
+        return None;
+    }
+
+    let payload = serde_json::from_str::<Value>(body).ok()?;
+    if payload.get("success").and_then(Value::as_bool) != Some(false) {
+        return None;
+    }
+    let errors = payload.get("errors")?.as_array()?;
+    if errors.len() != 1 {
+        return None;
+    }
+    match errors[0].get("code")?.as_u64()? {
+        code @ (5035 | 3036) => Some(code),
+        _ => None,
     }
 }
 
@@ -402,6 +466,38 @@ impl ModelProvider for LiteRouterProvider {
             }
         })
     }
+
+    fn chat_with_tools_with_options(
+        &self,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> ChatFuture {
+        let provider = Self {
+            config: self.config.clone(),
+            client: self.client.clone(),
+            retry: self.retry.clone(),
+            request_gate: Arc::clone(&self.request_gate),
+        };
+        let model = model
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(&self.config.model)
+            .to_string();
+        let request_messages = messages.to_vec();
+        let tools = tools.to_vec();
+
+        Box::pin(async move {
+            let response = provider
+                .send_chat_request_with_options(&model, &request_messages, Some(&tools), options)
+                .await?;
+            response
+                .json::<CompletionResponse>()
+                .await
+                .map(CompletionResponse::into_chat_result)
+                .map_err(|_| ProviderError::Api("provider response is invalid".into()))
+        })
+    }
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -417,6 +513,8 @@ struct ChatCompletionRequest {
     tool_choice: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking: Option<crate::providers::ThinkingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -687,6 +785,44 @@ mod tests {
     }
 
     #[test]
+    fn extracts_only_known_cloudflare_codes_from_the_trusted_profile() {
+        let base_url = ProviderProfileId::cloudflare_base_url("0123456789abcdef0123456789abcdef")
+            .expect("valid account id");
+        let body = r#"{"success":false,"errors":[{"code":5035,"message":"private provider detail"}],"messages":[]}"#;
+
+        assert_eq!(cloudflare_typed_error_code(&base_url, body), Some(5035));
+        assert_eq!(
+            cloudflare_typed_error_code(
+                &base_url,
+                r#"{"success":false,"errors":[{"code":3036,"message":"daily free allocation exhausted"}]}"#
+            ),
+            Some(3036)
+        );
+        assert_eq!(
+            cloudflare_typed_error_code("https://api.cloudflare.com.evil/ai/v1", body),
+            None
+        );
+        assert_eq!(
+            cloudflare_typed_error_code(
+                &base_url,
+                r#"{"success":false,"errors":[{"code":9999,"message":"ignore"}]}"#
+            ),
+            None
+        );
+        assert_eq!(
+            cloudflare_typed_error_code(
+                &base_url,
+                r#"{"success":false,"errors":[{"code":5035},{"code":3036}]}"#
+            ),
+            None
+        );
+        assert_eq!(
+            cloudflare_typed_error_code(&base_url, r#"{"success":true,"errors":[{"code":5035}]}"#),
+            None
+        );
+    }
+
+    #[test]
     fn serializes_assistant_tool_call_and_tool_observation_messages() {
         let call = NativeToolCall {
             id: "call-1".into(),
@@ -712,6 +848,23 @@ mod tests {
         assert_eq!(observation_payload.role, "tool");
         assert_eq!(observation_payload.tool_call_id.as_deref(), Some("call-1"));
         assert_eq!(observation_payload.content, r#"{"ok":true}"#);
+    }
+
+    #[test]
+    fn completion_request_serializes_a_bounded_output_token_limit() {
+        let request = ChatCompletionRequest {
+            model: "author/model".into(),
+            messages: Vec::new(),
+            stream: false,
+            stream_options: None,
+            tools: None,
+            tool_choice: None,
+            thinking: None,
+            max_tokens: Some(8),
+        };
+        let value = serde_json::to_value(request).expect("request serialization");
+        assert_eq!(value["max_tokens"], 8);
+        assert_eq!(value["stream"], false);
     }
 
     #[test]

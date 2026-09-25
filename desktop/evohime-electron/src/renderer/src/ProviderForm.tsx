@@ -8,7 +8,9 @@ import {
   type ModelTier,
   type ProviderKind,
   type ProviderProfileId,
-  type ProviderSummary
+  type ProviderSummary,
+  type FreeAccessProbePolicy,
+  type FreeAccessRoutingMode
 } from '@shared/api'
 
 import { useShellApi } from './shell-api'
@@ -71,8 +73,14 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [baseUrl, setBaseUrl] = useState('')
   const [profileId, setProfileId] = useState<ProviderProfileId>('openai')
   const [accountId, setAccountId] = useState('')
+  const [probePolicy, setProbePolicy] = useState<FreeAccessProbePolicy>('disabled')
+  const [routingMode, setRoutingMode] = useState<FreeAccessRoutingMode>('any')
+  const [allowPaidFallback, setAllowPaidFallback] = useState(false)
+  const [acknowledgeProbePossibleCost, setAcknowledgeProbePossibleCost] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [catalogStatus, setCatalogStatus] = useState<string | null>(null)
+  const [freeEvidenceStatus, setFreeEvidenceStatus] = useState<string | null>(null)
+  const [probeStatus, setProbeStatus] = useState<string | null>(null)
 
   // Fields stay controlled even if a summary arrives with a missing member.
   const apply = useCallback((value: ProviderSummary) => {
@@ -82,6 +90,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setBaseUrl(value.baseUrl ?? (value.provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
     setProfileId(value.provider === 'openai_compatible' ? (value.profileId ?? 'openai') : 'custom')
     setAccountId(value.accountId ?? '')
+    setProbePolicy(value.profiles?.[value.provider]?.freeAccessProbePolicy ?? 'disabled')
+    setRoutingMode(value.freeAccessRoutingMode ?? 'any')
+    setAllowPaidFallback(value.allowPaidFallback === true)
+    setAcknowledgeProbePossibleCost(false)
   }, [])
 
   useEffect(() => {
@@ -98,6 +110,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     const projection = asRecord(parsed['provider_catalog'])
     const catalog = asRecord(projection?.['catalog'])
     const providerProjection = asRecord(projection?.['provider'])
+    const freeAccess = asRecord(parsed['free_access'])
     const state = typeof catalog?.['state'] === 'string' ? catalog['state'] : null
     const failureCode = typeof catalog?.['failure_code'] === 'string'
       ? catalog['failure_code']
@@ -106,6 +119,22 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       ? providerProjection['credential_status']
       : null
     setCatalogStatus(state ? catalogStatusLabel(state, credentialStatus, failureCode) : null)
+    setFreeEvidenceStatus(freeAccess ? freeAccessStatusLabel(freeAccess) : null)
+  }, [events])
+
+  useEffect(() => {
+    const event = [...events].reverse().find((item) => item.eventType === 'free_access.probe')
+    if (!event) return
+    const result = parseJson(event.payload)
+    const state = typeof result['state'] === 'string' ? result['state'] : 'unknown'
+    const failure = typeof result['failure_code'] === 'string' ? result['failure_code'] : null
+    if (result['strict_eligible'] === true) {
+      setProbeStatus('Проверка подтвердила бесплатный доступ. Evidence сохранено на 24 часа.')
+    } else if (state === 'paid_only') {
+      setProbeStatus('Источник цены сообщил платное измерение. Строгий FreeOnly для модели закрыт.')
+    } else {
+      setProbeStatus(probeFailureLabel(failure))
+    }
   }, [events])
 
   const selectProvider = useCallback(async (nextProvider: ProviderKind) => {
@@ -118,6 +147,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setBaseUrl(profile?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
     setProfileId(nextProvider === 'openai_compatible' ? (profile?.profileId ?? 'openai') : 'custom')
     setAccountId(profile?.accountId ?? '')
+    setProbePolicy(profile?.freeAccessProbePolicy ?? 'disabled')
+    setAcknowledgeProbePossibleCost(false)
     setStatus({ kind: 'saving' })
 
     const outcome = await api.invoke('provider.select', { provider: nextProvider })
@@ -133,6 +164,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
   const selectProfile = useCallback((nextProfile: ProviderProfileId) => {
     setProfileId(nextProfile)
+    setProbePolicy('disabled')
+    setAcknowledgeProbePossibleCost(false)
     if (nextProfile === 'cloudflare_workers_ai') {
       setAccountId('')
       setBaseUrl('')
@@ -152,6 +185,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       model,
       baseUrl,
       tier,
+      freeAccessProbePolicy: probePolicy,
+      acknowledgeProbePossibleCost,
+      freeAccessRoutingMode: routingMode,
+      allowPaidFallback: routingMode === 'prefer_free' && allowPaidFallback,
       ...(provider === 'openai_compatible' ? { profileId } : {}),
       ...(provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? { accountId } : {})
     })
@@ -163,7 +200,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
-  }, [accountId, api, apiKey, apply, applySummary, baseUrl, model, profileId, provider, tier])
+  }, [accountId, acknowledgeProbePossibleCost, allowPaidFallback, api, apiKey, apply, applySummary, baseUrl, model, probePolicy, profileId, provider, routingMode, tier])
 
   const clearKey = useCallback(async () => {
     if (!api) return
@@ -179,6 +216,20 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
   }, [api, apply, applySummary, provider])
 
+  const verifyFreeAccess = useCallback(async () => {
+    if (!api || model.trim().length === 0) return
+    const confirmed = window.confirm(
+      'Core отправит один короткий запрос выбранной модели. Проверь цену и лимиты у провайдера: возможен расход кредитов или денег. Продолжить?'
+    )
+    if (!confirmed) return
+    setProbeStatus('Проверка выполняется. Core сначала проверит источник цены, затем отправит bounded synthetic completion.')
+    const outcome = await api.invoke('provider.verifyFreeAccess', {
+      modelId: model,
+      confirmPossibleCost: true
+    })
+    if (!outcome.ok) setProbeStatus(outcome.message)
+  }, [api, model])
+
   const busy = status.kind === 'saving'
   const selectedProfile = summary?.profiles?.[provider]
   const configured = selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured)
@@ -186,6 +237,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const canSave = !busy
     && (provider === 'ollama' || apiKey.trim().length > 0 || configured)
     && (provider !== 'openai_compatible' || profileId !== 'cloudflare_workers_ai' || cloudflareAccountValid)
+    && (!(probePolicy === 'on_first_use' || probePolicy === 'periodic_bounded') ||
+      acknowledgeProbePossibleCost ||
+      (probePolicy === selectedProfile?.freeAccessProbePolicy && apiKey.trim().length === 0 &&
+        profileId === selectedProfile?.profileId && baseUrl === selectedProfile?.baseUrl && accountId === (selectedProfile?.accountId ?? '')))
   const displayBaseUrl = profileId === 'cloudflare_workers_ai' && cloudflareAccountValid
     ? `https://api.cloudflare.com/client/v4/accounts/${accountId.trim()}/ai/v1`
     : baseUrl
@@ -209,6 +264,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       </div>
 
       {catalogStatus !== null ? <p className="provider-form__catalog-status" role="status">{catalogStatus}</p> : null}
+      {freeEvidenceStatus !== null ? <p className="provider-form__catalog-status" role="status">{freeEvidenceStatus}</p> : null}
 
       <div className="provider-form__grid">
         <label htmlFor="provider-kind">
@@ -234,7 +290,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
               value={apiKey}
               autoComplete="off"
               spellCheck={false}
-              onChange={(event) => setApiKey(event.target.value)}
+              onChange={(event) => {
+                setApiKey(event.target.value)
+                setAcknowledgeProbePossibleCost(false)
+              }}
               placeholder={configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
               disabled={busy}
             />
@@ -265,7 +324,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
               value={accountId}
               autoComplete="off"
               spellCheck={false}
-              onChange={(event) => setAccountId(event.target.value)}
+              onChange={(event) => {
+                setAccountId(event.target.value)
+                setProbePolicy('disabled')
+                setAcknowledgeProbePossibleCost(false)
+              }}
               placeholder="32 шестнадцатеричных символа"
               disabled={busy}
             />
@@ -279,7 +342,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
             value={displayBaseUrl}
             autoComplete="off"
             spellCheck={false}
-            onChange={(event) => setBaseUrl(event.target.value)}
+            onChange={(event) => {
+              setBaseUrl(event.target.value)
+              setProbePolicy('disabled')
+              setAcknowledgeProbePossibleCost(false)
+            }}
             placeholder="по умолчанию провайдера"
             disabled={busy || (provider === 'openai_compatible' && profileId !== 'custom')}
           />
@@ -312,6 +379,71 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         ))}
       </fieldset> : null}
 
+      <fieldset className="provider-form__tier">
+        <legend>Проверка бесплатного доступа</legend>
+        <label htmlFor="free-access-probe-policy">
+          Как собирать данные
+          <select
+            id="free-access-probe-policy"
+            value={probePolicy}
+            onChange={(event) => {
+              setProbePolicy(event.target.value as FreeAccessProbePolicy)
+              setAcknowledgeProbePossibleCost(false)
+            }}
+            disabled={busy}
+          >
+            <option value="disabled">Выключена (ручную проверку можно запустить отдельно)</option>
+            <option value="manual_only">Только ручная проверка</option>
+            <option value="passive_only">Только наблюдать обычные запросы</option>
+            <option value="on_first_use" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>Один раз при первом использовании</option>
+            <option value="periodic_bounded" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>Повторять после истечения evidence</option>
+          </select>
+        </label>
+        {probePolicy === 'on_first_use' || probePolicy === 'periodic_bounded' ? (
+          <>
+            <p className="provider-form__hint">Автоматическая проверка отправляет короткий synthetic запрос через OpenRouter. Возможен расход кредитов или денег.</p>
+            <label>
+              <input
+                type="checkbox"
+                checked={acknowledgeProbePossibleCost}
+                onChange={(event) => setAcknowledgeProbePossibleCost(event.target.checked)}
+                disabled={busy}
+              />
+              Я отдельно разрешаю автоматическую проверку с возможным расходом для этого профиля и ключа
+            </label>
+          </>
+        ) : null}
+      </fieldset>
+
+      <fieldset className="provider-form__tier">
+        <legend>Маршрутизация по evidence</legend>
+        <label htmlFor="free-access-routing-mode">
+          Режим
+          <select
+            id="free-access-routing-mode"
+            value={routingMode}
+            onChange={(event) => setRoutingMode(event.target.value as FreeAccessRoutingMode)}
+            disabled={busy}
+          >
+            <option value="any">Обычная маршрутизация</option>
+            <option value="prefer_free">Сначала подтверждённые бесплатные модели</option>
+            <option value="free_only">Только подтверждённые бесплатные модели</option>
+          </select>
+        </label>
+        <p className="provider-form__hint">Каталожная метка и суффикс :free не подтверждают доступ. FreeOnly блокирует неизвестные, устаревшие и платные маршруты.</p>
+        {routingMode === 'prefer_free' ? (
+          <label>
+            <input
+              type="checkbox"
+              checked={allowPaidFallback}
+              onChange={(event) => setAllowPaidFallback(event.target.checked)}
+              disabled={busy}
+            />
+            Разрешить платный fallback, если подтверждённая бесплатная модель недоступна
+          </label>
+        ) : null}
+      </fieldset>
+
       <div className="provider-form__actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
           {provider === 'ollama' ? 'Сохранить параметры и применить' : 'Сохранить ключ и применить'}
@@ -322,6 +454,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           </button>
         ) : null}
       </div>
+
+      {provider === 'openai_compatible' && profileId === 'openrouter' && configured ? (
+        <div className="provider-form__catalog-status" aria-label="Проверка бесплатного доступа">
+          <p>Разовая проверка OpenRouter: Core сверит цену модели и выполнит один короткий synthetic completion. Возможен расход.</p>
+          <button type="button" onClick={() => void verifyFreeAccess()} disabled={busy || model.trim().length === 0}>
+            Проверить текущую модель
+          </button>
+          {probeStatus ? <p role="status">{probeStatus}</p> : null}
+        </div>
+      ) : null}
 
       {status.kind === 'saved' ? (
         <p className={status.restarted ? 'provider-form__ok' : 'shell__reason'}>
@@ -365,5 +507,62 @@ function catalogStatusLabel(state: string, credentialStatus: string | null, fail
     case 'discovery_unsupported': return 'Core: провайдер не поддерживает discovery'
     case 'credential_rejected': return 'Core: ключ провайдера отклонён'
     default: return 'Core: каталог ещё не проверен'
+  }
+}
+
+function freeAccessStatusLabel(value: Record<string, unknown>): string {
+  const state = typeof value['state'] === 'string' ? value['state'] : 'unknown'
+  const advertised = typeof value['advertised_state'] === 'string' ? value['advertised_state'] : 'unknown'
+  const allowance = typeof value['allowance'] === 'string' ? value['allowance'] : 'unknown'
+  const activation = typeof value['activation'] === 'string' ? value['activation'] : 'unknown'
+  const freshness = typeof value['freshness'] === 'string' ? value['freshness'] : 'unknown'
+  const samples = typeof value['successful_sample_count'] === 'number' ? value['successful_sample_count'] : 0
+  const confidence = typeof value['confidence_bps'] === 'number'
+    ? `${(value['confidence_bps'] / 100).toFixed(1)}%`
+    : 'не оценена'
+  const observedAt = typeof value['observed_at_ms'] === 'number' && value['observed_at_ms'] > 0
+    ? new Date(value['observed_at_ms']).toLocaleString()
+    : 'нет'
+  const limits = Array.isArray(value['limits'])
+    ? value['limits'].slice(0, 16).map((item) => {
+      const limit = asRecord(item)
+      if (!limit) return null
+      const scope = typeof limit['scope'] === 'string' ? limit['scope'] : 'unknown scope'
+      const unit = typeof limit['unit'] === 'string' ? limit['unit'] : 'unknown unit'
+      const source = typeof limit['source'] === 'string' ? limit['source'] : 'unknown source'
+      return `${scope}/${unit}/${source}`
+    }).filter((item): item is string => item !== null)
+    : []
+  return [
+    value['strict_eligible'] === true ? 'FreeOnly: подтверждён' : 'FreeOnly: не подтверждён',
+    `реклама ${advertised}`,
+    `наблюдение ${state}`,
+    `allowance ${allowance}`,
+    `активация ${activation}`,
+    `свежесть ${freshness}`,
+    `образцов ${samples}`,
+    `confidence ${confidence}`,
+    `лимиты ${limits.length > 0 ? limits.join(', ') : 'не наблюдались'}`,
+    `последняя запись ${observedAt}`
+  ].join(' · ')
+}
+
+function probeFailureLabel(code: string | null): string {
+  switch (code) {
+    case 'billing_required': return 'Провайдер сообщил, что требуется billing. Строгий FreeOnly выключен.'
+    case 'activation_required': return 'Провайдер требует активацию или смену плана. Бесплатность запроса не подтверждена.'
+    case 'quota_rejected': return 'Квота исчерпана или действует cooldown; это не доказательство платного доступа.'
+    case 'permission_denied': return 'Доступ запрещён, но причина не подтверждает необходимость оплаты.'
+    case 'credential_rejected': return 'Провайдер отклонил ключ. Evidence остаётся Unknown.'
+    case 'model_unavailable': return 'Провайдер не нашёл модель.'
+    case 'empty_completion': return 'Ответ не содержал проверяемого результата.'
+    case 'invalid_usage': return 'Usage ответа не прошёл bounded-проверку.'
+    case 'cooldown': return 'Проверка уже выполняется или для этого credential-профиля ещё действует cooldown.'
+    case 'consent_or_credential_required': return 'Не задано одноразовое согласие или opaque binding ключа.'
+    case 'authority_unavailable': return 'Для этого профиля нет доверенного источника цены.'
+    case 'provider_protocol_drift': return 'Ответ провайдера не соответствует проверяемому контракту.'
+    case 'cancelled': return 'Проверка остановлена до сохранения строгого evidence.'
+    case 'transport_failure': return 'Провайдер временно недоступен; повтори проверку позже.'
+    default: return 'Бесплатный доступ не подтверждён. Evidence остаётся Unknown.'
   }
 }

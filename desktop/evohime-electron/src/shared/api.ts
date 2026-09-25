@@ -670,6 +670,9 @@ export const PROVIDER_PROFILE_ENDPOINTS: Readonly<Partial<Record<ProviderProfile
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 export type ProviderProfileId = (typeof PROVIDER_PROFILE_IDS)[number]
 
+export type FreeAccessProbePolicy = 'disabled' | 'passive_only' | 'on_first_use' | 'periodic_bounded' | 'manual_only'
+export type FreeAccessRoutingMode = 'any' | 'prefer_free' | 'free_only'
+
 /** Единственный источник модели для одной задачи в чате. */
 export type ChatProviderMode = ProviderKind | 'codex_cli'
 
@@ -683,6 +686,7 @@ export interface ProviderProfileSummary {
   readonly configured: boolean
   readonly profileId?: ProviderProfileId
   readonly accountId?: string
+  readonly freeAccessProbePolicy?: FreeAccessProbePolicy
 }
 
 
@@ -699,6 +703,8 @@ export interface ProviderSummary {
   readonly profileId?: ProviderProfileId
   readonly accountId?: string
   readonly profiles: Readonly<Record<ProviderKind, ProviderProfileSummary>>
+  readonly freeAccessRoutingMode?: FreeAccessRoutingMode
+  readonly allowPaidFallback?: boolean
 }
 
 /** Модель, опубликованная локальным Codex app-server. */
@@ -1366,6 +1372,7 @@ export const RENDERER_COMMANDS = [
   'provider.save',
   'provider.select',
   'provider.clearKey',
+  'provider.verifyFreeAccess',
   'codex.getStatus',
   'codex.refresh',
   'codex.install',
@@ -1845,9 +1852,14 @@ export interface CommandPayloads {
     tier: ModelTier
     profileId?: ProviderProfileId
     accountId?: string
+    freeAccessProbePolicy?: FreeAccessProbePolicy
+    acknowledgeProbePossibleCost?: boolean
+    freeAccessRoutingMode?: FreeAccessRoutingMode
+    allowPaidFallback?: boolean
   }
   'provider.select': { provider: ProviderKind }
   'provider.clearKey': { provider?: ProviderKind }
+  'provider.verifyFreeAccess': { modelId: string; confirmPossibleCost: true }
   'codex.getStatus': Record<string, never>
   'codex.refresh': Record<string, never>
   'codex.install': Record<string, never>
@@ -2291,6 +2303,7 @@ export interface CommandResults {
   'provider.save': { summary: ProviderSummary; restarted: boolean }
   'provider.select': { summary: ProviderSummary; restarted: boolean }
   'provider.clearKey': { summary: ProviderSummary; restarted: boolean }
+  'provider.verifyFreeAccess': { accepted: boolean }
   'codex.getStatus': CodexStatus
   'codex.refresh': CodexStatus
   'codex.install': CodexStatus

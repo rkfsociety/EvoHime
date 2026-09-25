@@ -1,6 +1,7 @@
 use crate::config::LiteRouterConfig;
 use crate::providers::{
-    ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
+    ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
+    TokenStream,
 };
 use crate::retry::RetryPolicy;
 use crate::tools::ToolSpec;
@@ -75,6 +76,17 @@ impl ModelProvider for OpenAICompatibleProvider {
         tools: &[ToolSpec],
     ) -> ChatFuture {
         self.inner.chat_with_tools(model, messages, tools)
+    }
+
+    fn chat_with_tools_with_options(
+        &self,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> ChatFuture {
+        self.inner
+            .chat_with_tools_with_options(model, messages, tools, options)
     }
 }
 

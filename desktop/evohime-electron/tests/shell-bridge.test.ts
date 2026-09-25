@@ -596,6 +596,27 @@ describe('renderer command surface', () => {
     expect(sent).toContainEqual({ modelCatalog: { mode: 'paid' } })
   })
 
+  it('requires one-shot cost consent before forwarding a free-access probe', () => {
+    expect(invoke('provider.verifyFreeAccess', {
+      modelId: 'author/model:free',
+      confirmPossibleCost: true
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toContainEqual({
+      modelCatalog: {
+        mode: 'verify_free_access',
+        modelId: 'author/model:free',
+        confirmPossibleCost: true
+      }
+    })
+
+    const rejected = invoke('provider.verifyFreeAccess', {
+      modelId: 'author/model:free',
+      confirmPossibleCost: false
+    }) as CommandFailure
+    expect(rejected.ok).toBe(false)
+    expect(sent).toHaveLength(1)
+  })
+
   it('stores a provider key locally and never forwards it to Core', async () => {
     const outcome = (await invoke('provider.save', {
       provider: 'literouter',

@@ -34,9 +34,9 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000086`, `core 0.0.000374`, `installer 0.0.000065`,
-`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000106`,
-`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000117`,
+0.0.000043`, `cli 0.0.000086`, `core 0.0.000375`, `installer 0.0.000065`,
+`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000107`,
+`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000118`,
 `updater 0.0.000130` и `verifier 0.0.000056`.
 
 Новые задания чата получают из Core conversation log последние 40 durable
@@ -181,14 +181,18 @@ apply не запускается. Отдельного offline/full installer �
 канонический источник — файлы `release-versions/*.txt`, перечисленные
 выше для текущего baseline.
 
-План 174.1 получил рабочий срез: Core-owned `FreeAccessEvidence` разделяет
-advertised/observed/activation/allowance состояния, типизированные units/limits,
-confidence, expiry и invalidation; SQLite schema v172 хранит только bounded
-metadata snapshot в scope provider/model/credential-binding/region с monotonic
-revision fence. Core валидирует обратное восстановление scope/hash/revision,
-гидратирует только configured provider/model scopes до IPC и добавляет в
-существующий authenticated `model.catalog` redacted `free_access` projection.
-Probes, `FreeOnly` routing и dedicated UI остаются активными этапами 174.2–174.4.
+Plan 174 реализует Core-owned free-access evidence, consent-gated probes,
+strict routing и redacted UI projection. Evidence привязано к уникальному
+opaque binding сохранённого ключа и текущему profile revision/hash; при
+ротации ключа старые rows удаляются до hydration, а ошибка cleanup fail-closes
+Core startup. OpenRouter exact-zero pricing plus semantic completion — пока
+единственный authority для `VerifiedFreeLimited`. Cloudflare codes 5035/3036
+сохраняются только как typed `ActivationRequired`/`QuotaRejected`; успешная
+проверка Cloudflare без pricing authority остаётся `Unknown`. `FreeOnly`
+останавливает stale/unknown/activation/quota evidence, а `PreferFree` требует
+явного paid-fallback option. Реализация и локальные gates выполнены; полный
+post-push GitHub CI для release commit ожидается и будет зафиксирован в
+[`release-evidence.md`](release-evidence.md).
 План 175 получил runtime/storage-срез: общий cancellation-safe RAII lease
 сериализует dialog/ambient memory extraction и не даёт конкурентному второму
 извлечению обойти бюджеты и circuit breaker. Повторный запуск получает только
@@ -440,7 +444,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `174–181` и `184–188`; планы `149–167` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `175–181` и `184–188`; планы `149–167` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

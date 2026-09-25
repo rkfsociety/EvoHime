@@ -196,11 +196,188 @@ impl IpcBridge {
                         &evidence.model_id,
                         &evidence.credential_binding,
                         &evidence.region,
+                        evidence.profile_revision,
+                        &evidence.profile_content_hash,
                     ),
                     evidence,
                 );
         }
         Ok(persisted)
+    }
+
+    /// Runs one consented, bounded OpenRouter free-access probe for the active
+    /// provider profile and durably publishes only redacted evidence metadata.
+    pub(crate) async fn run_manual_free_access_probe(
+        &self,
+        model_id: &str,
+        confirmed_possible_cost: bool,
+    ) -> serde_json::Value {
+        use crate::free_access_probe::{
+            classify_provider_failure, collect_probe_evidence, failure_evidence,
+            FreeProbeFailureCode, GatewayProbeTransport,
+        };
+
+        let failure_payload = |code: FreeProbeFailureCode| {
+            serde_json::json!({
+                "model": model_id,
+                "state": "unknown",
+                "strict_eligible": false,
+                "failure_code": code.as_str(),
+                "redacted": true,
+            })
+        };
+        if !confirmed_possible_cost || model_id.trim().is_empty() || model_id.len() > 256 {
+            return failure_payload(FreeProbeFailureCode::ConsentOrCredentialRequired);
+        }
+        let Some(config) = self.gateway_config.as_ref() else {
+            return failure_payload(FreeProbeFailureCode::AuthorityUnavailable);
+        };
+        let route_name = config.default_route.clone();
+        let Some(route) = config.routes.get(&route_name).cloned() else {
+            return failure_payload(FreeProbeFailureCode::AuthorityUnavailable);
+        };
+        if route.provider_profile_id != Some(evohime_model_gateway::ProviderProfileId::OpenRouter) {
+            return failure_payload(FreeProbeFailureCode::AuthorityUnavailable);
+        }
+        let Ok(profile) =
+            crate::free_provider_reliability_routing::ProviderProfile::from_route_config(&route)
+        else {
+            return failure_payload(FreeProbeFailureCode::ConsentOrCredentialRequired);
+        };
+        if !profile.has_stable_credential_binding() {
+            return failure_payload(FreeProbeFailureCode::ConsentOrCredentialRequired);
+        }
+
+        let scope = crate::free_access_probe::profile_scope_key(&profile);
+        let now_ms = crate::task_memory::now_millis();
+        match crate::free_access_probe::credential_probe_cooldown_active(
+            &self.journal,
+            &profile.credential_binding,
+            now_ms,
+        )
+        .await
+        {
+            Ok(false) => {}
+            Ok(true) => return failure_payload(FreeProbeFailureCode::Cooldown),
+            Err(()) => {
+                return serde_json::json!({
+                    "model": model_id,
+                    "state": "unknown",
+                    "strict_eligible": false,
+                    "failure_code": "evidence_storage_unavailable",
+                    "redacted": true,
+                })
+            }
+        }
+        let _permit = match self.free_access_probe_guard.reserve(&scope, now_ms).await {
+            Ok(permit) => permit,
+            Err(code) => return failure_payload(code),
+        };
+        let revision = match self
+            .next_free_access_evidence_revision(&profile, model_id)
+            .await
+        {
+            Ok(revision) => revision,
+            Err(()) => {
+                return serde_json::json!({
+                    "model": model_id,
+                    "state": "unknown",
+                    "strict_eligible": false,
+                    "failure_code": "evidence_storage_unavailable",
+                    "redacted": true,
+                })
+            }
+        };
+        let gateway = match evohime_model_gateway::ModelGateway::from_config(config) {
+            Ok(gateway) => gateway,
+            Err(_) => return failure_payload(FreeProbeFailureCode::AuthorityUnavailable),
+        };
+        let transport = GatewayProbeTransport {
+            gateway: &gateway,
+            route_name: &route_name,
+        };
+        let cancellation = self.free_access_probe_cancellation.clone();
+        let probe = tokio::time::timeout(
+            std::time::Duration::from_secs(45),
+            collect_probe_evidence(
+                &transport,
+                &route,
+                &profile,
+                model_id,
+                revision,
+                now_ms,
+                &cancellation,
+            ),
+        )
+        .await;
+        let evidence = match probe {
+            Ok(Ok(evidence)) => evidence,
+            Ok(Err(code)) => match failure_evidence(&profile, model_id, revision, now_ms, code) {
+                Ok(evidence) => evidence,
+                Err(_) => return failure_payload(FreeProbeFailureCode::ProviderProtocolDrift),
+            },
+            Err(_) => match failure_evidence(
+                &profile,
+                model_id,
+                revision,
+                now_ms,
+                FreeProbeFailureCode::Cancelled,
+            ) {
+                Ok(evidence) => evidence,
+                Err(_) => return failure_payload(FreeProbeFailureCode::Cancelled),
+            },
+        };
+        if cancellation.is_cancelled() {
+            return failure_payload(FreeProbeFailureCode::Cancelled);
+        }
+        let state = evidence.observed_state;
+        let failure_code = evidence.failure_reason.clone();
+        let strict_eligible = evidence.is_strictly_free_at(now_ms);
+        let observed_at_ms = evidence.observed_at_ms;
+        let expires_at_ms = evidence.expires_at_ms;
+        let confidence_bps = evidence.confidence_bps;
+        match self.remember_free_access_evidence(evidence).await {
+            Ok(true) => serde_json::json!({
+                "model": model_id,
+                "state": state,
+                "strict_eligible": strict_eligible,
+                "failure_code": failure_code,
+                "observed_at_ms": observed_at_ms,
+                "expires_at_ms": expires_at_ms,
+                "confidence_bps": confidence_bps,
+                "redacted": true,
+            }),
+            _ => serde_json::json!({
+                "model": model_id,
+                "state": "unknown",
+                "strict_eligible": false,
+                "failure_code": "evidence_storage_unavailable",
+                "redacted": true,
+            }),
+        }
+    }
+
+    async fn next_free_access_evidence_revision(
+        &self,
+        profile: &crate::free_provider_reliability_routing::ProviderProfile,
+        model_id: &str,
+    ) -> Result<u64, ()> {
+        let database = self.journal.database().lock().await;
+        let record = evohime_local_storage::free_access_evidence_store::get(
+            database.connection(),
+            &profile.provider_id,
+            model_id,
+            &profile.credential_binding,
+            &profile.region,
+        )
+        .map_err(|_| ())?;
+        match record {
+            Some(record) => u64::try_from(record.revision)
+                .ok()
+                .and_then(|revision| revision.checked_add(1))
+                .ok_or(()),
+            None => Ok(1),
+        }
     }
 
     /// Hydrates only the configured provider/model scopes. A durable row that
@@ -259,6 +436,9 @@ impl IpcBridge {
                 );
                 continue;
             };
+            if !evidence.matches_profile(&profile) {
+                continue;
+            }
             let Ok(mut cache) = self.free_access_evidence.write() else {
                 tracing::error!(
                     target: "model.catalog",
@@ -273,6 +453,8 @@ impl IpcBridge {
                     &evidence.model_id,
                     &evidence.credential_binding,
                     &evidence.region,
+                    evidence.profile_revision,
+                    &evidence.profile_content_hash,
                 ),
                 evidence,
             );
@@ -307,6 +489,8 @@ impl IpcBridge {
                             model_id,
                             &profile.credential_binding,
                             &profile.region,
+                            profile.revision,
+                            &profile.content_hash,
                         ),
                     )
                     .cloned()
@@ -648,6 +832,33 @@ impl IpcBridge {
         self
     }
 
+    /// Shares the validated free-access cache with the Core-owned probe coordinator.
+    pub fn with_free_access_evidence_cache(
+        mut self,
+        cache: crate::free_provider_reliability_routing::FreeAccessEvidenceCache,
+    ) -> Self {
+        self.free_access_evidence = cache;
+        self
+    }
+
+    /// Shares the process-local probe single-flight and cooldown guard.
+    pub fn with_free_access_probe_guard(
+        mut self,
+        guard: Arc<crate::free_access_probe::FreeAccessProbeGuard>,
+    ) -> Self {
+        self.free_access_probe_guard = guard;
+        self
+    }
+
+    /// Shares the Core shutdown signal with one-shot provider probes.
+    pub fn with_free_access_probe_cancellation(
+        mut self,
+        cancellation: tokio_util::sync::CancellationToken,
+    ) -> Self {
+        self.free_access_probe_cancellation = cancellation;
+        self
+    }
+
     /// Safe additive projection carried by the existing authenticated
     /// `model.catalog` event. It deliberately omits endpoint, credential
     /// binding, raw provider errors and every request/response body.
@@ -777,6 +988,10 @@ impl IpcBridge {
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             free_access_evidence:
                 crate::free_provider_reliability_routing::new_free_access_evidence_cache(),
+            free_access_probe_guard: Arc::new(
+                crate::free_access_probe::FreeAccessProbeGuard::default(),
+            ),
+            free_access_probe_cancellation: tokio_util::sync::CancellationToken::new(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -825,6 +1040,10 @@ impl IpcBridge {
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             free_access_evidence:
                 crate::free_provider_reliability_routing::new_free_access_evidence_cache(),
+            free_access_probe_guard: Arc::new(
+                crate::free_access_probe::FreeAccessProbeGuard::default(),
+            ),
+            free_access_probe_cancellation: tokio_util::sync::CancellationToken::new(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
@@ -880,6 +1099,10 @@ impl IpcBridge {
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             free_access_evidence:
                 crate::free_provider_reliability_routing::new_free_access_evidence_cache(),
+            free_access_probe_guard: Arc::new(
+                crate::free_access_probe::FreeAccessProbeGuard::default(),
+            ),
+            free_access_probe_cancellation: tokio_util::sync::CancellationToken::new(),
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,

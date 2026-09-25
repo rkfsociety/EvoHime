@@ -171,13 +171,78 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
     });
     let gateway_config = model_config.clone();
+    let revoked_bindings = std::env::var("MODEL_PROVIDER_REVOKED_CREDENTIAL_BINDINGS")
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .take(128)
+                .map(str::trim)
+                .filter(|binding| !binding.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !revoked_bindings.is_empty() {
+        let mut deleted_scopes = 0u32;
+        let database = journal.database().lock().await;
+        for binding in &revoked_bindings {
+            match evohime_local_storage::free_access_evidence_store::delete_credential_scope(
+                database.connection(),
+                binding,
+            ) {
+                Ok(deleted) => deleted_scopes = deleted_scopes.saturating_add(deleted),
+                Err(error) => {
+                    return Err(
+                        format!("revoked credential evidence cleanup failed: {error}").into(),
+                    );
+                }
+            }
+        }
+        tracing::info!(
+            deleted_scopes,
+            "revoked credential evidence cleanup completed"
+        );
+    }
     let provider_catalog_cache =
         evohime_core::free_provider_reliability_routing::new_provider_catalog_cache();
+    let free_access_evidence_cache =
+        evohime_core::free_provider_reliability_routing::new_free_access_evidence_cache();
+    let free_access_probe_guard =
+        std::sync::Arc::new(evohime_core::free_access_probe::FreeAccessProbeGuard::default());
+    let free_access_probe_cancellation = tokio_util::sync::CancellationToken::new();
+    let free_access_probe_policy = std::env::var("MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY")
+        .map(|value| evohime_core::free_access_probe::FreeAccessProbePolicy::parse(&value))
+        .unwrap_or_default();
+    let free_access_probe_consent_binding =
+        std::env::var("MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING").ok();
+    let free_access_routing_mode = std::env::var("MODEL_FREE_ACCESS_ROUTING_MODE")
+        .map(|value| evohime_core::free_access_probe::FreeAccessRoutingMode::parse(&value))
+        .unwrap_or_default();
+    let allow_paid_free_fallback = std::env::var("MODEL_FREE_ACCESS_ALLOW_PAID_FALLBACK")
+        .is_ok_and(|value| value.eq_ignore_ascii_case("true"));
+    let free_access_probe_coordinator = gateway_config.clone().map(|config| {
+        evohime_core::free_access_probe::FreeAccessProbeCoordinator::new(
+            config,
+            journal.clone(),
+            free_access_evidence_cache.clone(),
+            free_access_probe_guard.clone(),
+            free_access_probe_policy,
+            free_access_probe_consent_binding,
+            free_access_probe_cancellation.clone(),
+        )
+    });
     let provider_catalog_preflight = gateway_config.clone().map(|config| {
         std::sync::Arc::new(
             evohime_core::free_provider_reliability_routing::ProviderCatalogRoutePreflight::new(
                 config,
                 provider_catalog_cache.clone(),
+            )
+            .with_free_access_policy(
+                free_access_routing_mode,
+                allow_paid_free_fallback,
+                free_access_probe_coordinator.clone(),
+                free_access_evidence_cache.clone(),
             ),
         )
     });
@@ -299,6 +364,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_selected_model(selected_model)
     .with_proactivity(proactivity)
     .with_provider_catalog_cache(provider_catalog_cache)
+    .with_free_access_evidence_cache(free_access_evidence_cache)
+    .with_free_access_probe_guard(free_access_probe_guard)
+    .with_free_access_probe_cancellation(free_access_probe_cancellation.clone())
     .with_ambient_data_dir(data_dir.clone());
     let recovered_provider_catalogs = bridge.hydrate_provider_catalog_snapshots().await;
     let recovered_free_access_evidence = bridge.hydrate_free_access_evidence().await;
@@ -352,6 +420,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
+    let free_access_probe_task = free_access_probe_coordinator
+        .clone()
+        .map(|coordinator| tokio::spawn(coordinator.run_periodic()));
     let durable_background_task = tokio::spawn(async move {
         loop {
             if let Err(error) = background_journal
@@ -391,9 +462,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Err("listener supervision unexpectedly stopped".into())
         },
     };
+    free_access_probe_cancellation.cancel();
     result.map_err(|error| format!("core failed: {error}"))?;
     heartbeat_task.abort();
     automation_scheduler_task.abort();
+    if let Some(task) = free_access_probe_task {
+        task.abort();
+    }
     durable_background_task.abort();
     approval_gc_task.abort();
     receipt_retention_task.abort();

@@ -51,6 +51,7 @@ pub mod durable_remote_task_bridge;
 pub(crate) mod event_visualizer_registry;
 pub mod experience_replay_library;
 pub mod external_source_acquisition_runtime;
+pub mod free_access_probe;
 /// Models guarded publication operations for Git remotes.
 pub mod git_remote_publication_protocol;
 pub mod headless_core_cli;

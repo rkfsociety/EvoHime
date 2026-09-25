@@ -57,6 +57,10 @@ message ModelConfigRequest {}
 
 message ModelCatalogRequest {
   string mode = 1;
+  // Model selected by a one-shot free-access verification request.
+  string model_id = 2;
+  // The shell sets this only after an explicit user cost warning is accepted.
+  bool confirm_possible_cost = 3;
 }
 
 // Selects the model used for the next request. The gateway resolves the model

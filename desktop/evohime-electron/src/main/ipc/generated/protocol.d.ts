@@ -555,6 +555,12 @@ export namespace evohime {
                 /** ModelCatalogRequest mode. */
                 mode: string;
 
+                /** ModelCatalogRequest modelId. */
+                modelId: string;
+
+                /** ModelCatalogRequest confirmPossibleCost. */
+                confirmPossibleCost: boolean;
+
                 /**
                  * Encodes the specified ModelCatalogRequest message. Does not implicitly {@link evohime.desktop.v1.ModelCatalogRequest.verify|verify} messages.
                  * @param message ModelCatalogRequest message or plain object to encode
@@ -588,6 +594,12 @@ export namespace evohime {
 
                     /** ModelCatalogRequest mode */
                     mode?: (string|null);
+
+                    /** ModelCatalogRequest modelId */
+                    modelId?: (string|null);
+
+                    /** ModelCatalogRequest confirmPossibleCost */
+                    confirmPossibleCost?: (boolean|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

@@ -185,6 +185,9 @@ pub struct ModelRouteConfig {
     /// Account identifier required by account-scoped provider profiles.
     #[serde(default)]
     pub provider_account_id: Option<String>,
+    /// Stable opaque handle for the configured credential; it is never a key or digest.
+    #[serde(default)]
+    pub provider_credential_binding: Option<String>,
     /// Wave 3B: Provider supports extended thinking
     #[serde(default = "default_thinking_support")]
     pub supports_thinking: bool,
@@ -215,6 +218,7 @@ impl ModelRouteConfig {
             },
             provider_profile_id: None,
             provider_account_id: None,
+            provider_credential_binding: None,
             supports_thinking,
         }
     }
@@ -251,8 +255,23 @@ impl ModelRouteConfig {
         self
     }
 
+    /// Associates a stable opaque scope handle with the configured provider credential.
+    pub fn with_credential_binding(mut self, binding: Option<String>) -> Self {
+        self.provider_credential_binding = binding;
+        self
+    }
+
     /// Validates that an explicit profile uses its trusted transport endpoint.
     pub fn validate_provider_profile(&self) -> Result<(), ProviderError> {
+        if self
+            .provider_credential_binding
+            .as_deref()
+            .is_some_and(|binding| !valid_credential_binding(binding))
+        {
+            return Err(ProviderError::Config(
+                "provider credential binding is invalid".into(),
+            ));
+        }
         let Some(profile_id) = self.provider_profile_id else {
             if self.provider_account_id.is_some() {
                 return Err(ProviderError::Config(
@@ -338,6 +357,7 @@ impl ModelRouteConfig {
             },
             provider_profile_id: None,
             provider_account_id: None,
+            provider_credential_binding: None,
             supports_thinking: true, // Mock supports all features
         }
     }
@@ -384,6 +404,7 @@ impl ModelGatewayConfig {
                 literouter,
                 provider_profile_id: None,
                 provider_account_id: None,
+                provider_credential_binding: None,
                 supports_thinking: true,
             },
             ProviderKind::OpenAICompatible => {
@@ -410,6 +431,7 @@ impl ModelGatewayConfig {
                 env::var("LOCAL_PROVIDER_MODEL").unwrap_or_else(|_| "local-slm".to_string()),
             ),
         };
+        route = route.with_credential_binding(env::var("MODEL_PROVIDER_CREDENTIAL_BINDING").ok());
         if provider == ProviderKind::OpenAICompatible {
             let profile_id =
                 match env::var("MODEL_PROVIDER_PROFILE_ID") {
@@ -450,6 +472,8 @@ struct EnvRouteConfig {
     provider_profile_id: Option<ProviderProfileId>,
     #[serde(default)]
     provider_account_id: Option<String>,
+    #[serde(default)]
+    provider_credential_binding: Option<String>,
 }
 
 fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, ProviderError> {
@@ -525,6 +549,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             route_config =
                 route_config.with_provider_profile(profile_id, route.provider_account_id);
         }
+        route_config = route_config.with_credential_binding(route.provider_credential_binding);
         route_config.validate_provider_profile()?;
         parsed_routes.insert(name, route_config);
     }
@@ -539,6 +564,18 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
         default_route,
         routes: parsed_routes,
     })
+}
+
+fn valid_credential_binding(value: &str) -> bool {
+    let Some((prefix, id)) = value.split_once(':') else {
+        return false;
+    };
+    prefix == "credential"
+        && id.len() == 36
+        && id.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
 }
 
 #[cfg(test)]

@@ -11,6 +11,8 @@ import {
   type PermissionMode,
   type ProviderKind,
   type ProviderProfileId,
+  type FreeAccessProbePolicy,
+  type FreeAccessRoutingMode,
   type RendererCommand,
   type ShellEvent
 } from '@shared/api'
@@ -1665,6 +1667,18 @@ function dispatch(
       const model = normalizeModel(value['model'])
       const baseUrl = normalizeBaseUrl(value['baseUrl'])
       const tier = asModelCatalogMode(value['tier'])
+      const currentSummary = providers.summary()
+      const currentProfile = provider === null ? undefined : currentSummary.profiles[provider]
+      const freeAccessProbePolicy = value['freeAccessProbePolicy'] === undefined
+        ? currentProfile?.freeAccessProbePolicy ?? 'disabled'
+        : asFreeAccessProbePolicy(value['freeAccessProbePolicy'])
+      const freeAccessRoutingMode = value['freeAccessRoutingMode'] === undefined
+        ? currentSummary.freeAccessRoutingMode ?? 'any'
+        : asFreeAccessRoutingMode(value['freeAccessRoutingMode'])
+      const acknowledgeProbePossibleCost = value['acknowledgeProbePossibleCost'] === true
+      const allowPaidFallback = value['allowPaidFallback'] === undefined
+        ? currentSummary.allowPaidFallback === true
+        : value['allowPaidFallback'] === true
       const profileIdValue = value['profileId']
       const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
       const accountIdValue = value['accountId']
@@ -1677,10 +1691,24 @@ function dispatch(
         model === null ||
         baseUrl === null ||
         tier === null ||
+        freeAccessProbePolicy === null ||
+        freeAccessRoutingMode === null ||
+        (value['acknowledgeProbePossibleCost'] !== undefined && typeof value['acknowledgeProbePossibleCost'] !== 'boolean') ||
+        (value['allowPaidFallback'] !== undefined && typeof value['allowPaidFallback'] !== 'boolean') ||
         (profileIdValue !== undefined && profileId === null) ||
         (accountIdValue !== undefined && accountId === null)
       ) {
         return failure('invalid-payload', 'Проверь ключ, модель и профиль провайдера.')
+      }
+      if (!currentProfile) return failure('invalid-payload', 'Профиль провайдера недоступен.')
+      const automaticProbe = freeAccessProbePolicy === 'on_first_use' || freeAccessProbePolicy === 'periodic_bounded'
+      if (automaticProbe && (provider !== 'openai_compatible' || profileId !== 'openrouter')) {
+        return failure('invalid-payload', 'Автоматическая проверка пока доступна только для профиля OpenRouter.')
+      }
+      if (automaticProbe && (freeAccessProbePolicy !== currentProfile.freeAccessProbePolicy || apiKey.length > 0 ||
+        profileId !== currentProfile.profileId || baseUrl !== currentProfile.baseUrl || accountId !== currentProfile.accountId) &&
+        !acknowledgeProbePossibleCost) {
+        return failure('invalid-payload', 'Для автоматической проверки подтверди возможный расход кредитов или денег.')
       }
       const summary = providers.save({
         provider,
@@ -1688,6 +1716,10 @@ function dispatch(
         model,
         baseUrl,
         tier,
+        freeAccessProbePolicy,
+        acknowledgeProbePossibleCost,
+        freeAccessRoutingMode,
+        allowPaidFallback,
         ...(profileId ? { profileId } : {}),
         ...(accountId ? { accountId } : {})
       })
@@ -1715,6 +1747,21 @@ function dispatch(
       const summary = providers.clearKey(requestedProvider ?? undefined)
       log('info', 'shell.provider_key_cleared', {})
       return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
+    }
+
+    case 'provider.verifyFreeAccess': {
+      const value = asRecord(payload)
+      const modelId = normalizeModel(value['modelId'])
+      if (modelId === null || modelId.length === 0 || value['confirmPossibleCost'] !== true) {
+        return failure('invalid-payload', 'Подтверди возможный расход и выбери модель для проверки.')
+      }
+      return accepted(client.send({
+        modelCatalog: {
+          mode: 'verify_free_access',
+          modelId,
+          confirmPossibleCost: true
+        }
+      }))
     }
 
     case 'codex.getStatus':
@@ -2976,6 +3023,15 @@ function asPermissionMode(value: unknown): 'ask' | 'read_only' | 'full' | null {
 
 function asModelCatalogMode(value: unknown): 'free' | 'paid' | null {
   return value === 'free' || value === 'paid' ? value : null
+}
+
+function asFreeAccessProbePolicy(value: unknown): FreeAccessProbePolicy | null {
+  return value === 'disabled' || value === 'passive_only' || value === 'on_first_use'
+    || value === 'periodic_bounded' || value === 'manual_only' ? value : null
+}
+
+function asFreeAccessRoutingMode(value: unknown): FreeAccessRoutingMode | null {
+  return value === 'any' || value === 'prefer_free' || value === 'free_only' ? value : null
 }
 
 function asProviderKind(value: unknown): ProviderKind | null {

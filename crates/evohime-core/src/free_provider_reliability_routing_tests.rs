@@ -83,6 +83,91 @@ fn route_preflight_rejects_known_stale_catalog_before_provider_dispatch() {
 }
 
 #[test]
+fn free_only_requires_current_profile_bound_evidence_and_prefer_free_needs_fallback_opt_in() {
+    let binding = "credential:01234567-89ab-4cde-8fab-0123456789ab";
+    let route = ModelRouteConfig::openai_compatible(
+        "test-key",
+        "https://openrouter.ai/api/v1",
+        "author/model:free",
+    )
+    .with_provider_profile(ProviderProfileId::OpenRouter, None)
+    .with_credential_binding(Some(binding.to_string()));
+    let profile = ProviderProfile::from_route_config(&route).expect("OpenRouter profile");
+    let config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "default".into(),
+        routes: std::collections::HashMap::from([("default".into(), route.clone())]),
+    };
+    let evidence_cache = new_free_access_evidence_cache();
+    let preflight =
+        ProviderCatalogRoutePreflight::new(config.clone(), new_provider_catalog_cache())
+            .with_free_access_policy(
+                crate::free_access_probe::FreeAccessRoutingMode::FreeOnly,
+                false,
+                None,
+                evidence_cache.clone(),
+            );
+    let error = preflight
+        .check("default", Some("author/model:free"), 1_500)
+        .expect_err("suffix and advertised metadata cannot satisfy FreeOnly");
+    assert!(matches!(error, ProviderError::Config(code) if code == "free_access_not_verified"));
+
+    let mut verified = evidence();
+    verified.model_id = "author/model:free".into();
+    verified.credential_binding = profile.credential_binding.clone();
+    verified.region = profile.region.clone();
+    verified.profile_revision = profile.revision;
+    verified.profile_content_hash = profile.content_hash.clone();
+    let verified = verified.seal().expect("profile-scoped strict evidence");
+    evidence_cache.write().expect("cache write").insert(
+        free_access_evidence_scope_key(
+            &profile.provider_id,
+            &verified.model_id,
+            &profile.credential_binding,
+            &profile.region,
+            profile.revision,
+            &profile.content_hash,
+        ),
+        verified,
+    );
+    assert!(preflight
+        .check("default", Some("author/model:free"), 1_500)
+        .is_ok());
+    assert!(preflight
+        .check("default", Some("author/model:free"), 24 * 60 * 60 * 1_000)
+        .is_err());
+
+    let paid_route = ModelRouteConfig::openai_compatible(
+        "test-key",
+        "https://openrouter.ai/api/v1",
+        "author/paid-model",
+    )
+    .with_provider_profile(ProviderProfileId::OpenRouter, None)
+    .with_credential_binding(Some(binding.to_string()));
+    let paid_config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "default".into(),
+        routes: std::collections::HashMap::from([("default".into(), paid_route)]),
+    };
+    let no_fallback =
+        ProviderCatalogRoutePreflight::new(paid_config.clone(), new_provider_catalog_cache())
+            .with_free_access_policy(
+                crate::free_access_probe::FreeAccessRoutingMode::PreferFree,
+                false,
+                None,
+                new_free_access_evidence_cache(),
+            );
+    assert!(no_fallback.check("default", None, 1_500).is_err());
+    let explicit_fallback =
+        ProviderCatalogRoutePreflight::new(paid_config, new_provider_catalog_cache())
+            .with_free_access_policy(
+                crate::free_access_probe::FreeAccessRoutingMode::PreferFree,
+                true,
+                None,
+                new_free_access_evidence_cache(),
+            );
+    assert!(explicit_fallback.check("default", None, 1_500).is_ok());
+}
+
+#[test]
 fn discovery_unsupported_keeps_explicit_manual_model_eligible() {
     let route = ModelRouteConfig::openai_compatible(
         "test-key",
@@ -223,12 +308,17 @@ fn evidence() -> FreeAccessEvidence {
         schema_version: FREE_ACCESS_EVIDENCE_SCHEMA_VERSION,
         provider_id: "openrouter".into(),
         model_id: "provider/model:free".into(),
-        credential_binding: "cred:openrouter".into(),
+        credential_binding: "credential:01234567-89ab-4cde-8fab-0123456789ab".into(),
         region: "global".into(),
+        profile_revision: 1,
+        profile_content_hash: "c".repeat(64),
         advertised_state: FreeAccessState::FreeTierLimited,
         observed_state: ObservedFreeAccessState::VerifiedFreeLimited,
         activation: ActivationState::Completed,
         allowance: AllowanceKind::Recurring,
+        allowance_provenance: AllowanceProvenance::OpenRouterModelPricing {
+            source_hash: "d".repeat(64),
+        },
         limits: vec![FreeAccessLimit {
             scope: EvidenceLimitScope::Model,
             source: EvidenceLimitSource::Observed,
@@ -245,9 +335,11 @@ fn evidence() -> FreeAccessEvidence {
         expires_at_ms: 2_000,
         invalidation: None,
         failure_reason: None,
-        content_hash: "b".repeat(64),
+        content_hash: String::new(),
         revision: 1,
     }
+    .seal()
+    .expect("valid evidence")
 }
 
 #[test]
@@ -361,10 +453,15 @@ fn cloudflare_catalog_scope_isolated_by_account_id() {
     let second_profile = ProviderProfile::from_route_config(&second).expect("second profile");
 
     assert_eq!(first_profile.provider_id, second_profile.provider_id);
-    assert_ne!(
+    assert_eq!(
+        first_profile.credential_binding,
+        "unbound:cloudflare_workers_ai"
+    );
+    assert_eq!(
         first_profile.credential_binding,
         second_profile.credential_binding
     );
+    assert_ne!(first_profile.content_hash, second_profile.content_hash);
     assert_ne!(
         provider_catalog_scope_key(&first_profile),
         provider_catalog_scope_key(&second_profile)
@@ -400,7 +497,10 @@ fn trusted_builtin_endpoints_keep_provider_identity_separate_from_transport() {
         assert_eq!(profile.provider_id, builtin.provider_id);
         assert_eq!(profile.provider_family, builtin.provider_family);
         assert_eq!(profile.transport_kind, TransportKind::OpenAiCompatible);
-        assert_eq!(profile.credential_binding, builtin.credential_binding);
+        assert_eq!(
+            profile.credential_binding,
+            format!("unbound:{}", builtin.provider_id)
+        );
     }
 }
 
@@ -438,6 +538,50 @@ fn model_descriptor_adapts_gateway_catalog_with_fail_closed_metadata() {
         duplicate.validate(),
         Err("invalid provider model descriptor")
     );
+}
+
+#[test]
+fn cloudflare_model_identifiers_are_scoped_to_the_cloudflare_profile() {
+    let account_id = "0123456789abcdef0123456789abcdef";
+    let route = ModelRouteConfig::openai_compatible(
+        "test-token",
+        ProviderProfileId::cloudflare_base_url(account_id).expect("Cloudflare endpoint"),
+        "@cf/meta/model",
+    )
+    .with_provider_profile(
+        ProviderProfileId::CloudflareWorkersAi,
+        Some(account_id.into()),
+    );
+    let cloudflare_profile = ProviderProfile::from_route_config(&route).expect("profile");
+    let cloudflare_entry = ModelCatalogEntry {
+        id: "@cf/meta/model".into(),
+        context_tokens: None,
+        max_output_tokens: None,
+    };
+    let descriptor = ProviderModelDescriptor::from_catalog_entry(
+        &cloudflare_profile,
+        &cloudflare_entry,
+        1,
+        "a".repeat(64),
+    )
+    .expect("Cloudflare model descriptor");
+    assert!(descriptor.validate().is_ok());
+
+    let openrouter_route = ModelRouteConfig::openai_compatible(
+        "test-token",
+        "https://openrouter.ai/api/v1",
+        "@cf/meta/model",
+    )
+    .with_provider_profile(ProviderProfileId::OpenRouter, None);
+    let openrouter_profile =
+        ProviderProfile::from_route_config(&openrouter_route).expect("profile");
+    assert!(ProviderModelDescriptor::from_catalog_entry(
+        &openrouter_profile,
+        &cloudflare_entry,
+        1,
+        "b".repeat(64),
+    )
+    .is_err());
 }
 
 #[test]
@@ -734,6 +878,7 @@ fn free_access_evidence_is_scoped_fresh_and_strict_only_when_verified() {
     trial.observed_state = ObservedFreeAccessState::TrialOnly;
     trial.allowance = AllowanceKind::TrialCredit;
     trial.activation = ActivationState::NotRequired;
+    trial = trial.seal().expect("valid trial evidence");
     assert!(trial.validate().is_ok());
     assert!(!trial.is_strictly_free_at(1_500));
 }
@@ -755,7 +900,7 @@ fn free_access_evidence_rejects_conflicting_semantics_and_raw_storage() {
         &database,
         "openrouter",
         "provider/model:free",
-        "cred:openrouter",
+        "credential:01234567-89ab-4cde-8fab-0123456789ab",
         "global",
     )
     .expect("evidence read")
@@ -785,6 +930,38 @@ fn free_access_evidence_round_trips_only_when_storage_scope_matches() {
         FreeAccessEvidence::from_storage_record(&inconsistent),
         Err("free access evidence scope mismatch")
     );
+}
+
+#[test]
+fn free_access_evidence_recomputes_canonical_hash_and_matches_profile_revision() {
+    let value = evidence();
+    let record = value.to_storage_record().expect("storage record");
+    let mut tampered = record.clone();
+    let mut decoded: serde_json::Value =
+        serde_json::from_slice(&tampered.evidence_json).expect("evidence JSON");
+    decoded["confidence_bps"] = serde_json::json!(1);
+    tampered.evidence_json = serde_json::to_vec(&decoded).expect("encode evidence");
+    assert_eq!(
+        FreeAccessEvidence::from_storage_record(&tampered),
+        Err("free access evidence content hash mismatch")
+    );
+
+    let current_profile = ProviderProfile {
+        schema_version: PROVIDER_PROFILE_SCHEMA_VERSION,
+        provider_id: value.provider_id.clone(),
+        provider_family: ProviderFamily::OpenRouter,
+        transport: "openai_compatible".into(),
+        transport_kind: TransportKind::OpenAiCompatible,
+        endpoint: "https://openrouter.ai/api/v1".into(),
+        region: value.region.clone(),
+        credential_binding: value.credential_binding.clone(),
+        content_hash: value.profile_content_hash.clone(),
+        revision: value.profile_revision,
+    };
+    assert!(value.matches_profile(&current_profile));
+    let mut changed_profile = current_profile;
+    changed_profile.content_hash = "e".repeat(64);
+    assert!(!value.matches_profile(&changed_profile));
 }
 
 #[test]

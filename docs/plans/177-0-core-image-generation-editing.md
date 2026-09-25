@@ -51,8 +51,9 @@ arbitrary URL fetch, silent workspace write и OCR/image-PII classification не
 
 ### Опциональные
 
-- Plan 174 empirical provider verification can supply fresh evidence, but its
-  absence must result in `Unknown/Stale`, not an automatic remote fallback.
+- Core `FreeAccessEvidence` in [`../architecture.md`](../architecture.md) can
+  supply fresh provider evidence, but its absence must result in
+  `Unknown/Stale`, not an automatic remote fallback.
 - Local model backends may implement the capability later; they are not a
   blocking dependency for the typed Core contract.
 
