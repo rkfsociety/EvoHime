@@ -243,7 +243,8 @@ async fn core_startup_recovers_interrupted_workflow_runs_before_ipc() {
         serde_json::from_str(&stored_run.graph_json).expect("stored graph");
     let first_node = stored_graph.nodes.first().expect("workflow node");
     {
-        let database = bridge.journal().database().lock().await;
+        let journal = bridge.journal();
+        let database = journal.database().lock().await;
         evohime_local_storage::workflow_store::begin_attempt(
             database.connection(),
             &evohime_local_storage::workflow_store::WorkflowAttemptRecord {
