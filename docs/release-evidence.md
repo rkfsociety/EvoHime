@@ -45,12 +45,34 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
   supervisor `0.0.000045` → `0.0.000046`, shell-host `0.0.000108` →
   `0.0.000109`, ui-bundle `0.0.000121` → `0.0.000122`. `desktop-ipc` поставляется
   как dependency Core; installer version не менялась.
-- Exact-SHA tests, lint/build, module release artifacts, compatible manifest и
-  rollback acceptance: **PENDING** до push и завершения module router. Локальные
-  tests/builds/linters не запускались в plan workflow; `git diff --check` passed.
-- После push ожидаются `core.yml`, `supervisor.yml`, `shell-host.yml` и
-  `ui-bundle.yml`; Core path владеет `desktop-ipc` dependency. Installer workflow
-  не ожидается, поскольку его version и packaging contract не изменены.
+- `supervisor` `0.0.000046` опубликован с артефактом и manifest после успешных
+  tests/lint/release build на SHA
+  `2ab2c850a0f66f63d1738f718e10b072722dd16c`:
+  [workflow 36248438065](https://github.com/rkfsociety/EvoHime/actions/runs/36248438065),
+  [release](https://github.com/rkfsociety/EvoHime/releases/tag/module-supervisor-v0.0.000046).
+- `shell-host` `0.0.000109` и `ui-bundle` `0.0.000122` опубликованы после
+  успешных protocol/typecheck/tests/package gates на SHA
+  `69175d090ac6999745d86d0c646e5479e24e9132`:
+  [shell-host workflow 36246121422](https://github.com/rkfsociety/EvoHime/actions/runs/36246121422),
+  [shell-host release](https://github.com/rkfsociety/EvoHime/releases/tag/module-shell-host-v0.0.000109),
+  [UI workflow 36246120383](https://github.com/rkfsociety/EvoHime/actions/runs/36246120383),
+  [UI release](https://github.com/rkfsociety/EvoHime/releases/tag/module-ui-bundle-v0.0.000122).
+- На исходном code SHA `ade24d82c09466910ef6a3d74b4236402490ac8b` Rust
+  documentation workflow `36252760145` прошёл; Core lint выявил три warnings,
+  исправленные в последующем task-only commit. На финальном SHA
+  `279689476a283fac3b9e6beddadd09f97bfee318` Core workflow
+  [36254214711](https://github.com/rkfsociety/EvoHime/actions/runs/36254214711)
+  прошёл format, tests, lint, release build и artifact upload, затем опубликовал
+  Core `0.0.000380` с manifest:
+  [release](https://github.com/rkfsociety/EvoHime/releases/tag/module-core-v0.0.000380).
+  Module router [36254168454](https://github.com/rkfsociety/EvoHime/actions/runs/36254168454)
+  и совместимый манифест [36255965206](https://github.com/rkfsociety/EvoHime/actions/runs/36255965206)
+  завершились успешно. Published compatible manifest указывает
+  `generated_from=279689476a283fac3b9e6beddadd09f97bfee318` и содержит точные
+  версии и хеши всех четырёх модулей.
+- Локальные tests/builds/linters не запускались в plan workflow;
+  `git diff --check` passed. Installer не пересобирался: его version и
+  packaging contract не изменены.
 
 ### Rust public API documentation (2026-09-24)
 

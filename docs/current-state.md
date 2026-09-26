@@ -598,7 +598,7 @@ verified-runtime admission и Electron projection. Текущий runtime bounda
 typed `unavailable_adapter`; measured profile и routing signal не создаются
 без такого adapter.
 
-## Plan 178 — Core-Owned Local Model Adaptation (implemented; exact-SHA CI pending)
+## Plan 178 — Core-Owned Local Model Adaptation (implemented and released)
 
 В working tree реализован versioned GGUF adaptation pipeline для Windows CPU:
 explicit install pinned llama.cpp `b10981`, metadata-only durable jobs, fresh
@@ -610,9 +610,13 @@ targets — `Q4_K_M`, `Q5_K_M`, `Q8_0`; VRAM/accelerator fit остаётся un
 
 Реализация и requirement-by-requirement source audit завершены; `git diff --check`
 проходит. Локальные tests/builds не запускались по workflow реализации numbered
-plans. Exact-SHA module CI и публикация ещё не подтверждены; текущий push должен
-запустить core, supervisor, shell-host и ui-bundle через module router. До
-завершения этих gates состояние остаётся непроверенным на Windows CI.
+plans. Windows CI и публикации завершены: Core `0.0.000380` подтверждён
+успешным workflow `36254214711` на SHA
+`279689476a283fac3b9e6beddadd09f97bfee318`; supervisor `0.0.000046`, shell-host
+`0.0.000109` и UI bundle `0.0.000122` имеют опубликованные артефакты после
+успешных module workflows. Совместимый manifest workflow `36255965206` прошёл
+и ссылается на текущий SHA и эти версии. Подробные ссылки и release hashes — в
+[`release-evidence.md`](release-evidence.md#core-owned-local-model-adaptation-v1-2026-09-26-текущая-задача).
 
 ## Plan 122 — Verification Evidence Ledger (закрыт 2026-09-09)
 
