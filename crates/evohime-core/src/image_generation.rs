@@ -247,19 +247,44 @@ fn decode_dimensions(
     Err(ImageValidationError::DecoderUnavailable)
 }
 
+/// Bounded request metadata used to compute a privacy-preserving request digest.
+pub struct ImageRequestHashInput<'a> {
+    /// Image operation.
+    pub operation: ImageOutputOperation,
+    /// Raw prompt, hashed before it enters request metadata.
+    pub prompt: &'a str,
+    /// Requested output width.
+    pub width: u32,
+    /// Requested output height.
+    pub height: u32,
+    /// Number of output images.
+    pub count: u8,
+    /// Requested MIME type.
+    pub mime_type: &'a str,
+    /// Maximum provider deadline.
+    pub deadline_ms: u64,
+    /// Ordered hashes of input images.
+    pub input_hashes: &'a [String],
+    /// Optional mask image hash.
+    pub mask_hash: Option<&'a str>,
+    /// Optional workspace policy hash.
+    pub workspace_hash: Option<&'a str>,
+}
+
 /// Computes a deterministic digest over a request without persisting prompt or image bytes.
-pub fn request_hash(
-    operation: ImageOutputOperation,
-    prompt: &str,
-    width: u32,
-    height: u32,
-    count: u8,
-    mime_type: &str,
-    deadline_ms: u64,
-    input_hashes: &[String],
-    mask_hash: Option<&str>,
-    workspace_hash: Option<&str>,
-) -> Result<String, ImageValidationError> {
+pub fn request_hash(input: ImageRequestHashInput<'_>) -> Result<String, ImageValidationError> {
+    let ImageRequestHashInput {
+        operation,
+        prompt,
+        width,
+        height,
+        count,
+        mime_type,
+        deadline_ms,
+        input_hashes,
+        mask_hash,
+        workspace_hash,
+    } = input;
     if prompt.trim().is_empty()
         || prompt.len() > MAX_PROMPT_BYTES
         || width == 0
@@ -619,31 +644,31 @@ mod tests {
     #[test]
     fn request_hash_is_stable_and_does_not_include_raw_prompt_in_metadata() {
         let inputs = vec!["a".repeat(64)];
-        let first = request_hash(
-            ImageOutputOperation::Edit,
-            "draw a blue square",
-            64,
-            64,
-            1,
-            "image/png",
-            MAX_PROVIDER_DEADLINE_MS,
-            &inputs,
-            None,
-            Some(&"c".repeat(64)),
-        )
+        let first = request_hash(ImageRequestHashInput {
+            operation: ImageOutputOperation::Edit,
+            prompt: "draw a blue square",
+            width: 64,
+            height: 64,
+            count: 1,
+            mime_type: "image/png",
+            deadline_ms: MAX_PROVIDER_DEADLINE_MS,
+            input_hashes: &inputs,
+            mask_hash: None,
+            workspace_hash: Some(&"c".repeat(64)),
+        })
         .expect("valid image request");
-        let second = request_hash(
-            ImageOutputOperation::Edit,
-            "draw a blue square",
-            64,
-            64,
-            1,
-            "image/png",
-            MAX_PROVIDER_DEADLINE_MS,
-            &inputs,
-            None,
-            Some(&"c".repeat(64)),
-        )
+        let second = request_hash(ImageRequestHashInput {
+            operation: ImageOutputOperation::Edit,
+            prompt: "draw a blue square",
+            width: 64,
+            height: 64,
+            count: 1,
+            mime_type: "image/png",
+            deadline_ms: MAX_PROVIDER_DEADLINE_MS,
+            input_hashes: &inputs,
+            mask_hash: None,
+            workspace_hash: Some(&"c".repeat(64)),
+        })
         .expect("valid image request");
         assert_eq!(first, second);
         assert_eq!(first.len(), 64);
@@ -651,44 +676,44 @@ mod tests {
 
     #[test]
     fn request_hash_enforces_operation_input_and_mask_invariants() {
-        assert!(request_hash(
-            ImageOutputOperation::Generate,
-            "make an image",
-            32,
-            32,
-            1,
-            "image/png",
-            MAX_PROVIDER_DEADLINE_MS,
-            &["a".repeat(64)],
-            None,
-            None,
-        )
+        assert!(request_hash(ImageRequestHashInput {
+            operation: ImageOutputOperation::Generate,
+            prompt: "make an image",
+            width: 32,
+            height: 32,
+            count: 1,
+            mime_type: "image/png",
+            deadline_ms: MAX_PROVIDER_DEADLINE_MS,
+            input_hashes: &["a".repeat(64)],
+            mask_hash: None,
+            workspace_hash: None,
+        })
         .is_err());
-        assert!(request_hash(
-            ImageOutputOperation::MaskEdit,
-            "edit this",
-            32,
-            32,
-            1,
-            "image/png",
-            MAX_PROVIDER_DEADLINE_MS,
-            &["a".repeat(64)],
-            None,
-            None,
-        )
+        assert!(request_hash(ImageRequestHashInput {
+            operation: ImageOutputOperation::MaskEdit,
+            prompt: "edit this",
+            width: 32,
+            height: 32,
+            count: 1,
+            mime_type: "image/png",
+            deadline_ms: MAX_PROVIDER_DEADLINE_MS,
+            input_hashes: &["a".repeat(64)],
+            mask_hash: None,
+            workspace_hash: None,
+        })
         .is_err());
-        assert!(request_hash(
-            ImageOutputOperation::Generate,
-            "make an image",
-            32,
-            32,
-            1,
-            "image/png",
-            0,
-            &[],
-            None,
-            None,
-        )
+        assert!(request_hash(ImageRequestHashInput {
+            operation: ImageOutputOperation::Generate,
+            prompt: "make an image",
+            width: 32,
+            height: 32,
+            count: 1,
+            mime_type: "image/png",
+            deadline_ms: 0,
+            input_hashes: &[],
+            mask_hash: None,
+            workspace_hash: None,
+        })
         .is_err());
     }
 
@@ -1308,18 +1333,18 @@ impl ImageGenerationRuntime {
             input_hashes.push(artifact_locator_hash(&mask.locator)?);
         }
         let mask_hash = mask_index.map(|index| input_hashes[index].as_str());
-        let request_hash = request_hash(
-            request.operation,
-            &request.prompt,
-            request.width,
-            request.height,
-            request.count,
-            &request.mime_type,
-            request.deadline_ms.unwrap_or(MAX_PROVIDER_DEADLINE_MS),
-            &input_hashes[..mask_index.unwrap_or(input_hashes.len())],
+        let request_hash = request_hash(ImageRequestHashInput {
+            operation: request.operation,
+            prompt: &request.prompt,
+            width: request.width,
+            height: request.height,
+            count: request.count,
+            mime_type: &request.mime_type,
+            deadline_ms: request.deadline_ms.unwrap_or(MAX_PROVIDER_DEADLINE_MS),
+            input_hashes: &input_hashes[..mask_index.unwrap_or(input_hashes.len())],
             mask_hash,
-            None,
-        )
+            workspace_hash: None,
+        })
         .map_err(|_| ImageGenerationError::InvalidRequest("request_bounds"))?;
         let now_ms = image_now_ms();
         let snapshot_json = serde_json::to_vec(&serde_json::json!({
@@ -1845,6 +1870,9 @@ impl Drop for ActiveImageJobGuard {
     }
 }
 
+// These independently optional values mirror the atomic journal transition
+// columns; keeping them explicit prevents accidental omission/defaulting.
+#[allow(clippy::too_many_arguments)]
 async fn transition_job(
     journal: &crate::EventJournal,
     job_id: &str,
