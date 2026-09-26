@@ -670,6 +670,26 @@ impl IpcBridge {
             "recipe-fork-{}",
             hex::encode(&draft_digest.finalize()[..16])
         );
+        let strategy_pin = {
+            let database = self.journal.database().lock().await;
+            match crate::prompt_strategy::recover_run_selection(
+                database.connection(),
+                &request.run_id,
+            ) {
+                Ok(Some((snapshot, profile))) => Some(serde_json::json!({
+                    "profile": crate::prompt_strategy::PromptStrategyRef::from(&profile),
+                    "selection_snapshot_id": snapshot.snapshot_id,
+                    "selection_snapshot_hash": snapshot.content_hash,
+                })),
+                Ok(None) => None,
+                Err(_) => {
+                    return capability_recipe_fork_failure(
+                        source_run_id,
+                        "strategy_pin_unavailable",
+                    )
+                }
+            }
+        };
         let provenance_json = match serde_json::to_vec(&serde_json::json!({
             "source": "capability_recipe",
             "recipe_id": link.recipe_id,
@@ -679,6 +699,7 @@ impl IpcBridge {
             "template_id": link.template_id,
             "template_version": link.template_version,
             "template_graph_hash": link.template_graph_hash,
+            "prompt_strategy_pin": strategy_pin,
             "idempotency_key_hash": idempotency_hash,
         })) {
             Ok(json) => json,

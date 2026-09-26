@@ -747,12 +747,15 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 return Err("approval_policy_not_found".into());
                             }
                             for (key, baseline) in &baselines {
+                                let suite_hash = format!("sha256:{}", suite.canonical_hash().map_err(|_| "benchmark_suite_hash_failed".to_string())?);
+                                let policy_hash = format!("sha256:{}", policy.canonical_hash().map_err(|_| "benchmark_policy_hash_failed".to_string())?);
                                 let expected_key = format!("{}:{}:{}", baseline.challenge_id,
                                     suite.model_profiles.iter().find(|profile| profile.content_hash == baseline.model_profile_hash)
                                         .map(|profile| profile.id.as_str()).unwrap_or_default(),
                                     suite.agent_profiles.iter().find(|profile| profile.content_hash == baseline.agent_profile_hash)
                                         .map(|profile| profile.id.as_str()).unwrap_or_default());
                                 if key != &expected_key || baseline.suite_version != suite.version
+                                    || baseline.suite_hash != suite_hash || baseline.policy_hash != policy_hash
                                     || !suite.challenges.iter().any(|challenge| challenge.id == baseline.challenge_id)
                                     || !suite.model_profiles.iter().any(|profile| profile.content_hash == baseline.model_profile_hash)
                                     || !suite.agent_profiles.iter().any(|profile| profile.content_hash == baseline.agent_profile_hash)
@@ -770,7 +773,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     || serde_json::from_str::<crate::agent_benchmark_matrix::Metrics>(&stored_baseline.4)
                                         .map_err(|_| "benchmark_baseline_corrupt".to_string())? != baseline.metrics
                                     || stored_baseline.5 != baseline.source_commit
-                                    || stored_baseline.6 != baseline.revision {
+                                    || stored_baseline.6 != baseline.revision
+                                    || stored_baseline.7 != baseline.suite_hash
+                                    || stored_baseline.8 != baseline.policy_hash {
                                     return Err("benchmark_baseline_identity_mismatch".into());
                                 }
                             }
@@ -1223,6 +1228,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     request.benchmark_baselines.clone().ok_or_else(|| "benchmark_baselines_required".to_string())?
                                 ).map_err(|_| "invalid_benchmark_baselines".to_string())?;
                                 let suite_hash = suite.canonical_hash().map_err(|_| "benchmark_suite_hash_failed".to_string())?;
+                                let policy_hash = format!("sha256:{}", policy.canonical_hash().map_err(|_| "benchmark_policy_hash_failed".to_string())?);
                                 let baseline_hash = crate::local_model_runtime_manager::canonical_hash(&(&policy, &baselines));
                                 if suite_hash != job.request.benchmark_suite_sha256
                                     || baseline_hash != job.request.baseline_sha256 {
@@ -1249,13 +1255,17 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                         .ok_or_else(|| "benchmark_baseline_not_registered".to_string())?;
                                     let stored_metrics: crate::agent_benchmark_matrix::Metrics = serde_json::from_str(&stored_baseline.4)
                                         .map_err(|_| "benchmark_baseline_corrupt".to_string())?;
-                                    if stored_baseline.0 != baseline.suite_version
+                                    if baseline.suite_hash != format!("sha256:{suite_hash}")
+                                        || baseline.policy_hash != policy_hash
+                                        || stored_baseline.0 != baseline.suite_version
                                         || stored_baseline.1 != baseline.challenge_id
                                         || stored_baseline.2 != baseline.model_profile_hash
                                         || stored_baseline.3 != baseline.agent_profile_hash
                                         || stored_metrics != baseline.metrics
                                         || stored_baseline.5 != baseline.source_commit
-                                        || stored_baseline.6 != baseline.revision {
+                                        || stored_baseline.6 != baseline.revision
+                                        || stored_baseline.7 != baseline.suite_hash
+                                        || stored_baseline.8 != baseline.policy_hash {
                                         return Err("benchmark_baseline_identity_mismatch".into());
                                     }
                                 }

@@ -1,7 +1,7 @@
 //! Schema-first model output with provider-native and synthetic-tool fallback.
 
 use crate::providers::ProviderError;
-use crate::{ChatMessage, ModelGateway, ToolSpec};
+use crate::{ChatMessage, ChatResult, ModelGateway, ToolSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -202,6 +202,62 @@ fn valid_contract_id(value: &str) -> bool {
 }
 
 impl ModelGateway {
+    /// Performs one route-bound structured-output attempt for policy routing.
+    /// Invalid output is returned as a bounded API error so the route owner can
+    /// apply its existing fallback and provenance behavior.
+    pub(crate) async fn structured_chat_once(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        contract: &ResponseContract,
+    ) -> Result<ChatResult, ProviderError> {
+        contract.validate_schema()
+            .map_err(|_| ProviderError::Config("invalid structured output contract".into()))?;
+        let native_supported = self.route_supports_structured_output(route)
+            .map_err(|_| ProviderError::Config("structured output capability unavailable".into()))?;
+        let strategy = match contract.strategy {
+            ResponseStrategy::SyntheticTool => ResponseStrategy::SyntheticTool,
+            ResponseStrategy::ProviderNative if native_supported => ResponseStrategy::ProviderNative,
+            ResponseStrategy::ProviderNative => return Err(ProviderError::Config("structured output unsupported".into())),
+            ResponseStrategy::Auto if native_supported => ResponseStrategy::ProviderNative,
+            ResponseStrategy::Auto => ResponseStrategy::SyntheticTool,
+        };
+        let mut tool = ToolSpec::function(
+            "__evohime_structured_output",
+            "Return the contract value.",
+            contract.schema.clone(),
+        );
+        tool.function.strict = Some(strategy == ResponseStrategy::ProviderNative);
+        let result = self.chat_with_tools_for_route(
+            route,
+            model,
+            messages,
+            std::slice::from_ref(&tool),
+        ).await?;
+        let calls = result.tool_calls.iter()
+            .filter(|call| call.name == tool.function.name)
+            .collect::<Vec<_>>();
+        if calls.len() > 1 {
+            return Err(ProviderError::Api("structured output repeated".into()));
+        }
+        let raw = calls.first().map(|call| call.arguments.as_str())
+            .or_else(|| (!result.content.trim().is_empty()).then_some(result.content.as_str()))
+            .ok_or_else(|| ProviderError::Api("structured output missing".into()))?;
+        let value: Value = serde_json::from_str(raw)
+            .map_err(|_| ProviderError::Api("structured output invalid".into()))?;
+        contract.validate_value(&value)
+            .map_err(|_| ProviderError::Api("structured output invalid".into()))?;
+        let content = serde_json::to_string(&value)
+            .map_err(|_| ProviderError::Api("structured output invalid".into()))?;
+        Ok(ChatResult {
+            content,
+            thinking: None,
+            tool_calls: Vec::new(),
+            usage: result.usage,
+        })
+    }
+
     /// Requests a schema-constrained response and validates the returned JSON value.
     pub async fn structured_response(
         &self,
@@ -344,5 +400,40 @@ mod tests {
             contract.validate_schema(),
             Err(ResponseError::Schema("contract_hash".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn policy_structured_attempt_returns_only_schema_validated_json() {
+        let provider = crate::providers::MockProvider::with_tool_call_sequence(
+            "mock-model",
+            vec![crate::ChatResult {
+                content: String::new(),
+                thinking: None,
+                tool_calls: vec![crate::NativeToolCall {
+                    id: "call-1".into(),
+                    name: "__evohime_structured_output".into(),
+                    arguments: r#"{"ok":true}"#.into(),
+                }],
+                usage: Some(crate::LlmUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 3,
+                    total_tokens: 13,
+                    ..Default::default()
+                }),
+            }],
+        );
+        let gateway = ModelGateway::from_provider(std::sync::Arc::new(provider));
+        let contract = ResponseContract::new(
+            "demo",
+            1,
+            json!({"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}),
+            ResponseStrategy::Auto,
+        ).expect("contract");
+        let route = gateway.default_route_id().to_owned();
+        let result = gateway.structured_chat_once(&route, None, &[], &contract)
+            .await.expect("validated result");
+        assert_eq!(result.content, r#"{"ok":true}"#);
+        assert!(result.tool_calls.is_empty());
+        assert_eq!(result.usage.expect("usage").total_tokens, 13);
     }
 }

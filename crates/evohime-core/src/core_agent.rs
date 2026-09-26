@@ -1,4 +1,5 @@
 use super::*;
+use sha2::Digest;
 
 pub(crate) const CODEX_MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const CODEX_MAX_LINE_BUFFER_BYTES: usize = 256 * 1024;
@@ -874,7 +875,12 @@ struct CallModelInput<'a> {
     config: &'a ProviderResilienceConfig,
     preferred_route: Option<&'a str>,
     task_class: Option<&'a str>,
+    preselected_strategy: Option<&'a crate::prompt_strategy::PromptStrategyProfile>,
     estimated_input_tokens: u32,
+    sample_index: Option<u8>,
+    total_token_budget: u32,
+    max_output_tokens: Option<u32>,
+    route_pin: Option<&'a str>,
 }
 
 pub(crate) struct ModelRequestEnvelopeInput<'a> {
@@ -887,6 +893,7 @@ pub(crate) struct ModelRequestEnvelopeInput<'a> {
     messages: &'a [ChatMessage],
     specs: &'a [ToolSpec],
     source_refs: &'a [evohime_model_provenance::SourceRef],
+    max_output_tokens: Option<u32>,
     route_snapshot_hash: &'a str,
     request_kind: evohime_model_provenance::RequestKind,
 }
@@ -894,21 +901,13 @@ pub(crate) struct ModelRequestEnvelopeInput<'a> {
 pub(crate) fn model_request_envelope(
     input: ModelRequestEnvelopeInput<'_>,
 ) -> Result<evohime_model_provenance::ModelRequestEnvelopeV1, String> {
-    let system_prompt = input
+    let original_system_prompt = input
         .messages
         .iter()
         .find(|message| message.role == ChatRole::System)
         .map(|message| message.content.clone())
         .unwrap_or_default();
-    let messages = input
-        .messages
-        .iter()
-        .filter(|message| message.role != ChatRole::System)
-        .map(|message| evohime_model_provenance::ModelMessage {
-            role: message.role.as_str().to_string(),
-            content: message.content.clone(),
-        })
-        .collect::<Vec<_>>();
+    let messages = project_messages_for_provenance(input.messages);
     let tools = input
         .specs
         .iter()
@@ -958,19 +957,59 @@ pub(crate) fn model_request_envelope(
         route_snapshot_hash: input.route_snapshot_hash.to_owned(),
         policy_snapshot_hash: input.route_snapshot_hash.to_owned(),
         route_policy_hash_shared: true,
-        system_prompt,
+        system_prompt: evohime_model_provenance::OMITTED_SYSTEM_PROMPT_MARKER.into(),
+        omitted_system_prompt_hash: Some(hex::encode(sha2::Sha256::digest(
+            original_system_prompt.as_bytes(),
+        ))),
         messages,
         tools,
         model_parameters: evohime_model_provenance::ModelParameters {
             temperature: None,
             top_p: None,
-            max_output_tokens: None,
+            max_output_tokens: input.max_output_tokens,
             reasoning_mode: None,
             provider_options: serde_json::Map::new(),
         },
         context_projection: projection,
         previous_request_hash: input.previous_request_hash,
     })
+}
+
+fn project_messages_for_provenance(
+    messages: &[ChatMessage],
+) -> Vec<evohime_model_provenance::ModelMessage> {
+    messages
+        .iter()
+        .filter(|message| message.role != ChatRole::System)
+        .map(|message| {
+            evohime_model_provenance::ModelMessage::redacted_content(
+                message.role.as_str(),
+                &message.content,
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+mod strategy_provenance_projection_tests {
+    use super::*;
+
+    #[test]
+    fn all_request_message_bodies_are_omitted_from_provenance() {
+        let example = "Approved examples\nExample 1: private reusable text".to_owned();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "system"),
+            ChatMessage::text(ChatRole::User, example.clone()),
+            ChatMessage::text(ChatRole::User, "current user request"),
+        ];
+        let projected = project_messages_for_provenance(&messages);
+
+        assert_eq!(projected.len(), 2);
+        assert_eq!(projected[0].content, evohime_model_provenance::OMITTED_MESSAGE_MARKER);
+        assert!(projected[0].verifies_omitted_content(&example));
+        assert_eq!(projected[1].content, evohime_model_provenance::OMITTED_MESSAGE_MARKER);
+        assert!(projected[1].verifies_omitted_content("current user request"));
+    }
 }
 
 #[path = "core_agent_context.rs"]

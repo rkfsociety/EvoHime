@@ -611,26 +611,70 @@ pub fn validate_decomposition(proposal: &DecompositionProposal) -> Result<(), Co
         || !valid_text(&proposal.join_contract)
         || proposal.children.is_empty()
         || proposal.children.len() > MAX_DECOMPOSITION_CHILDREN
+        || proposal.dependencies.len() > MAX_DECOMPOSITION_CHILDREN * MAX_DECOMPOSITION_CHILDREN
     {
         return Err(CoordinatorError::InvalidDecomposition);
     }
+    let mut child_ids = std::collections::BTreeSet::new();
     for child in &proposal.children {
         validate_work_item(child)?;
-        if child.id == proposal.parent_work_item_id {
+        if child.id == proposal.parent_work_item_id || !child_ids.insert(child.id.as_str()) {
             return Err(CoordinatorError::InvalidDecomposition);
         }
     }
-    let mut visiting = Vec::new();
-    for child in &proposal.children {
-        if proposal.dependencies.iter().any(|(from, to)| {
-            from == to || (from == &child.id && to == &proposal.parent_work_item_id)
-        }) {
+    let mut outgoing = std::collections::BTreeMap::<&str, Vec<&str>>::new();
+    let mut indegree = proposal
+        .children
+        .iter()
+        .map(|child| (child.id.as_str(), 0_usize))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut edges = std::collections::BTreeSet::new();
+    for (from, to) in &proposal.dependencies {
+        if from == to
+            || !child_ids.contains(from.as_str())
+            || !child_ids.contains(to.as_str())
+            || !edges.insert((from.as_str(), to.as_str()))
+        {
             return Err(CoordinatorError::InvalidDecomposition);
         }
-        if visiting.contains(&child.id) {
-            return Err(CoordinatorError::InvalidDecomposition);
+        outgoing.entry(from.as_str()).or_default().push(to.as_str());
+        let degree = indegree
+            .get_mut(to.as_str())
+            .ok_or(CoordinatorError::InvalidDecomposition)?;
+        *degree += 1;
+    }
+    let mut ready = indegree
+        .iter()
+        .filter_map(|(id, degree)| (*degree == 0).then_some(*id))
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut visited = 0_usize;
+    while let Some(id) = ready.pop_first() {
+        visited += 1;
+        if let Some(children) = outgoing.get(id) {
+            for child in children {
+                let degree = indegree
+                    .get_mut(*child)
+                    .ok_or(CoordinatorError::InvalidDecomposition)?;
+                *degree -= 1;
+                if *degree == 0 {
+                    ready.insert(*child);
+                }
+            }
         }
-        visiting.push(child.id.clone());
+    }
+    if visited != proposal.children.len() {
+        return Err(CoordinatorError::InvalidDecomposition);
+    }
+    let value = serde_json::to_value(proposal).map_err(|_| CoordinatorError::Bounds)?;
+    if forbidden(&value) {
+        return Err(CoordinatorError::SensitiveData);
+    }
+    if serde_json::to_vec(proposal)
+        .map_err(|_| CoordinatorError::Bounds)?
+        .len()
+        > MAX_PROPOSAL_BYTES
+    {
+        return Err(CoordinatorError::Bounds);
     }
     Ok(())
 }
@@ -757,6 +801,54 @@ mod tests {
         };
         assert_eq!(
             validate_decomposition(&proposal),
+            Err(CoordinatorError::InvalidDecomposition)
+        );
+    }
+
+    #[test]
+    fn decomposition_rejects_missing_dependencies_and_cycles() {
+        let mut first = item();
+        first.id = "child-a".into();
+        let mut second = item();
+        second.id = "child-b".into();
+        let proposal = DecompositionProposal {
+            schema_version: SCHEMA_VERSION,
+            parent_work_item_id: "parent".into(),
+            children: vec![first.clone(), second.clone()],
+            dependencies: vec![("child-a".into(), "missing".into())],
+            join_contract: "ordered_results_v1".into(),
+        };
+        assert_eq!(
+            validate_decomposition(&proposal),
+            Err(CoordinatorError::InvalidDecomposition)
+        );
+
+        let cyclic = DecompositionProposal {
+            dependencies: vec![
+                ("child-a".into(), "child-b".into()),
+                ("child-b".into(), "child-a".into()),
+            ],
+            ..proposal
+        };
+        assert_eq!(
+            validate_decomposition(&cyclic),
+            Err(CoordinatorError::InvalidDecomposition)
+        );
+
+        let valid = DecompositionProposal {
+            dependencies: vec![("child-a".into(), "child-b".into())],
+            children: vec![first, second],
+            ..cyclic
+        };
+        assert_eq!(validate_decomposition(&valid), Ok(()));
+
+        let duplicate = DecompositionProposal {
+            children: vec![valid.children[0].clone(), valid.children[0].clone()],
+            dependencies: Vec::new(),
+            ..valid
+        };
+        assert_eq!(
+            validate_decomposition(&duplicate),
             Err(CoordinatorError::InvalidDecomposition)
         );
     }

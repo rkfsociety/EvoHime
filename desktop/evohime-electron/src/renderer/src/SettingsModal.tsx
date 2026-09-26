@@ -12,6 +12,7 @@ import { DiagnosticsAndSupportBundlePanel } from './DiagnosticsAndSupportBundleP
 import { ExternalCodingAgentAdapterPanel } from './ExternalCodingAgentAdapterPanel'
 import { MultiReviewerEnsemblePanel } from './MultiReviewerEnsemblePanel'
 import { LanguageIntelligencePanel } from './LanguageIntelligencePanel'
+import { PromptStrategyPanel } from './PromptStrategyPanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
@@ -96,7 +97,7 @@ export function SettingsModal({ workspace, connection, events, initialTab = 'pro
                 {providerSurface === 'api' ? <ProviderForm connection={connection} events={events} /> : <CodexPanel />}
               </section>
             ) : null}
-            {tab === 'agents' ? <><ExternalCodingAgentAdapterPanel /><MultiReviewerEnsemblePanel connection={connection} /><LanguageIntelligencePanel connection={connection} /></> : null}
+            {tab === 'agents' ? <><ExternalCodingAgentAdapterPanel /><MultiReviewerEnsemblePanel connection={connection} /><LanguageIntelligencePanel connection={connection} /><PromptStrategyPanel events={events} /></> : null}
             {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'integrations' ? <IntegrationProviderPanel /> : null}
             {tab === 'triggers' ? <EventTriggerRuntimePanel /> : null}

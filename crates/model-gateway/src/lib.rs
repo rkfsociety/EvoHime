@@ -92,6 +92,36 @@ pub const MAX_MODEL_CATALOG_BYTES: usize = 512 * 1024;
 pub const MAX_MODEL_CATALOG_ENTRIES: usize = 2_048;
 /// Maximum model identifier length accepted from catalog responses.
 pub const MAX_MODEL_ID_CHARS: usize = 256;
+/// Version of adapter-declared route capability claims.
+pub const PROVIDER_CAPABILITY_CONTRACT_EPOCH: u64 = 1;
+
+/// Exact route/model capability claims declared by the configured provider adapter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCapabilitySnapshot {
+    /// Stable route identifier.
+    pub route_id: String,
+    /// Exact model identifier supplied to this route.
+    pub model_id: String,
+    /// Configured provider adapter identity.
+    pub provider_kind: String,
+    /// Adapter capability contract epoch.
+    pub capability_epoch: u64,
+    /// Whether the adapter implements native tool calls.
+    pub tool_calling: bool,
+    /// Whether the adapter implements structured output.
+    pub structured_output: bool,
+    /// Context limit is unknown unless a model catalog supplies it.
+    pub context_limit: Option<u64>,
+}
+
+impl ProviderCapabilitySnapshot {
+    /// Returns a stable digest over the exact adapter, route and model claims.
+    pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_vec(self).map(|bytes| {
+            format!("sha256:{}", hex::encode(sha2::Sha256::digest(bytes)))
+        })
+    }
+}
 
 // Ниже — хелперы политики маршрутизации, к которым обращается только ветка
 // `#[cfg(not(test))]` в `chat_with_tools_with_policy_and_route`: в тестовой
@@ -233,6 +263,28 @@ pub trait RoutePreflight: Send + Sync {
     }
 }
 
+/// Core callback invoked after route preflight and immediately before dispatch.
+#[derive(Debug, Clone)]
+pub struct PreparedRouteAttempt {
+    /// Route-specific messages, with policy-critical system boundaries preserved by Core.
+    pub messages: Vec<ChatMessage>,
+    /// Final tool subset; it may be narrower than, never broader than, the original grant.
+    pub tools: Vec<ToolSpec>,
+    /// Immutable output contract, when Core selected structured output.
+    pub structured_output: Option<crate::structured_response::ResponseContract>,
+}
+
+/// Core callback invoked after route preflight and immediately before dispatch.
+pub trait RouteAttemptHook: Send + Sync {
+    /// Prepares route-specific content while preserving the caller's tool ceiling.
+    fn prepare<'a>(
+        &'a self,
+        capabilities: &'a ProviderCapabilitySnapshot,
+        messages: &'a [ChatMessage],
+        tools: &'a [ToolSpec],
+    ) -> Pin<Box<dyn Future<Output = Result<PreparedRouteAttempt, ProviderError>> + Send + 'a>>;
+}
+
 /// Provider and route configuration exposed to the local desktop client.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelConfigResponse {
@@ -288,6 +340,27 @@ pub struct PolicyChatResult {
     pub snapshot_hash: Option<String>,
     /// Bounded route attempt trace, when collected.
     pub attempt_trace: Option<RunTrace>,
+}
+
+fn policy_route_order(
+    selected: Option<&str>,
+    fallback_chain: &[String],
+    allow_fallback: bool,
+    route_pin: Option<&str>,
+) -> Result<Vec<String>, &'static str> {
+    if let Some(route_pin) = route_pin {
+        if selected != Some(route_pin)
+            && !fallback_chain.iter().any(|route| route == route_pin)
+        {
+            return Err("pinned_route_not_eligible");
+        }
+        return Ok(vec![route_pin.to_owned()]);
+    }
+    let mut routes = selected.map(str::to_owned).into_iter().collect::<Vec<_>>();
+    if allow_fallback {
+        routes.extend(fallback_chain.iter().cloned());
+    }
+    Ok(routes)
 }
 
 #[derive(Debug, Deserialize)]
@@ -760,6 +833,24 @@ impl ModelGateway {
         Ok(self.provider_for_route(route)?.supports_structured_output())
     }
 
+    /// Returns adapter-declared capabilities for an exact route/model pair.
+    pub fn route_capability_snapshot(
+        &self,
+        route: &str,
+        model: Option<&str>,
+    ) -> Result<ProviderCapabilitySnapshot, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        Ok(ProviderCapabilitySnapshot {
+            route_id: route.to_owned(),
+            model_id: self.resolve_model_name(route, model)?,
+            provider_kind: provider.kind().as_str().to_owned(),
+            capability_epoch: PROVIDER_CAPABILITY_CONTRACT_EPOCH,
+            tool_calling: provider.supports_tool_calls(),
+            structured_output: provider.supports_structured_output(),
+            context_limit: None,
+        })
+    }
+
     /// Returns the configured model name for the default route.
     pub fn model_name(&self) -> &str {
         self.default_provider.model_name()
@@ -1038,6 +1129,19 @@ impl ModelGateway {
             .await
     }
 
+    async fn dispatch_chat_with_options(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> Result<ChatResult, ProviderError> {
+        self.provider_for_route(route)?
+            .chat_with_tools_with_options(model, messages, tools, options)
+            .await
+    }
+
     /// Policy entry point used by Core's agent loop. The caller supplies only
     /// classification/capability metadata; the route name is selected here.
     pub async fn chat_with_tools_with_policy(
@@ -1062,6 +1166,47 @@ impl ModelGateway {
         model: Option<&str>,
         messages: &[ChatMessage],
         tools: &[ToolSpec],
+    ) -> Result<PolicyChatResult, ProviderError> {
+        self.chat_with_tools_with_policy_and_route_hook(
+            mode, request, model, messages, tools, None,
+        )
+        .await
+    }
+
+    /// Executes policy routing with a Core-owned per-route preparation hook.
+    pub async fn chat_with_tools_with_policy_and_route_hook(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        hook: Option<&dyn RouteAttemptHook>,
+    ) -> Result<PolicyChatResult, ProviderError> {
+        self.chat_with_tools_with_policy_and_route_hook_options(
+            mode,
+            request,
+            model,
+            messages,
+            tools,
+            hook,
+            ChatRequestOptions::default(),
+            None,
+        )
+        .await
+    }
+
+    /// Executes policy routing with a Core-owned route hook and bounded provider options.
+    pub async fn chat_with_tools_with_policy_and_route_hook_options(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        hook: Option<&dyn RouteAttemptHook>,
+        options: ChatRequestOptions,
+        route_pin: Option<&str>,
     ) -> Result<PolicyChatResult, ProviderError> {
         #[cfg(not(test))]
         if request.task_class.is_some() || request.offline || request.estimated_input_tokens > 0 {
@@ -1088,16 +1233,23 @@ impl ModelGateway {
                 policy_hash,
                 snapshot.schema_version.clone(),
             );
-            let mut routes = Vec::new();
-            if let Some(route) = decision.selected_route.clone() {
-                routes.push(route);
-            }
-            routes.extend(decision.fallback_chain.clone());
+            let routes = policy_route_order(
+                decision.selected_route.as_deref(),
+                &decision.fallback_chain,
+                request.allow_fallback,
+                route_pin,
+            )
+            .map_err(|reason| ProviderError::Config(reason.into()))?;
             let retry = RetryConfig::default();
             let mut last_error = None;
             let mut attempt_id = 1_u32;
             'routes: for route in routes.into_iter().take(retry.max_attempts as usize) {
-                for route_attempt in 0..retry.max_attempts_per_route {
+                let route_attempt_limit = if request.allow_fallback && route_pin.is_none() {
+                    retry.max_attempts_per_route
+                } else {
+                    1
+                };
+                for route_attempt in 0..route_attempt_limit {
                     let capability_epoch = snapshot
                         .candidates
                         .iter()
@@ -1150,16 +1302,40 @@ impl ModelGateway {
                             break;
                         }
                     }
-                    match self
-                        .chat_with_tools_for_route(&route, model, messages, tools)
-                        .await
-                    {
+                    let prepared = if let Some(hook) = hook {
+                        let capabilities = self.route_capability_snapshot(&route, model)?;
+                        hook.prepare(&capabilities, messages, tools).await?
+                    } else {
+                        PreparedRouteAttempt {
+                            messages: messages.to_vec(),
+                            tools: tools.to_vec(),
+                            structured_output: None,
+                        }
+                    };
+                    let dispatched = match prepared.structured_output.as_ref() {
+                        Some(contract) => self.structured_chat_once(
+                            &route, model, &prepared.messages, contract,
+                        ).await,
+                        None => self.dispatch_chat_with_options(
+                            &route, model, &prepared.messages, &prepared.tools, options,
+                        ).await,
+                    };
+                    match dispatched {
                         Ok(result) => {
+                            if let Some(preflight) = &self.route_preflight {
+                                preflight
+                                    .observe_success_async(&route, model, &result, current_time_ms())
+                                    .await;
+                            }
                             trace.set_result(RunResult::Success);
                             trace.circuit_opened_during_run = overlay.circuit_opened_during_run();
                             return Ok(PolicyChatResult {
                                 selected_route: route,
-                                fallback_chain: decision.fallback_chain.clone(),
+                                fallback_chain: if request.allow_fallback && route_pin.is_none() {
+                                    decision.fallback_chain.clone()
+                                } else {
+                                    Vec::new()
+                                },
                                 result,
                                 decision: Some(decision),
                                 snapshot_hash,
@@ -1199,22 +1375,63 @@ impl ModelGateway {
         let runtime = self
             .plan_route(mode, request, RuntimeLimits::default())
             .map_err(|error| ProviderError::Config(error.to_string()))?;
-        let route = runtime
-            .decision()
-            .selected_route
-            .as_deref()
-            .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
+        let route = match route_pin {
+            Some(route_pin)
+                if runtime.decision().selected_route.as_deref() == Some(route_pin)
+                    || runtime
+                        .decision()
+                        .fallback_chain
+                        .iter()
+                        .any(|route| route == route_pin) =>
+            {
+                route_pin
+            }
+            Some(_) => return Err(ProviderError::Config("pinned_route_not_eligible".into())),
+            None => runtime
+                .decision()
+                .selected_route
+                .as_deref()
+                .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?,
+        };
         if let Some(preflight) = &self.route_preflight {
             preflight
                 .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
                 .await?;
         }
-        let result = self
-            .chat_with_tools_for_route(route, model, messages, tools)
-            .await?;
+        let prepared = if let Some(hook) = hook {
+            let capabilities = self.route_capability_snapshot(route, model)?;
+            hook.prepare(&capabilities, messages, tools).await?
+        } else {
+            PreparedRouteAttempt {
+                messages: messages.to_vec(),
+                tools: tools.to_vec(),
+                structured_output: None,
+            }
+        };
+        let result = match prepared.structured_output.as_ref() {
+            Some(contract) => self.structured_chat_once(route, model, &prepared.messages, contract).await?,
+            None => self
+                .dispatch_chat_with_options(
+                    route,
+                    model,
+                    &prepared.messages,
+                    &prepared.tools,
+                    options,
+                )
+                .await?,
+        };
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .observe_success_async(route, model, &result, current_time_ms())
+                .await;
+        }
         Ok(PolicyChatResult {
             selected_route: route.to_owned(),
-            fallback_chain: runtime.decision().fallback_chain.clone(),
+            fallback_chain: if request.allow_fallback && route_pin.is_none() {
+                runtime.decision().fallback_chain.clone()
+            } else {
+                Vec::new()
+            },
             result,
             decision: None,
             snapshot_hash: None,
@@ -1491,6 +1708,23 @@ mod tests {
     use super::*;
     use futures_util::StreamExt;
 
+    #[test]
+    fn bounded_call_route_pin_is_exact_and_must_be_eligible() {
+        let fallbacks = vec!["local-2".to_owned(), "local-3".to_owned()];
+        assert_eq!(
+            policy_route_order(Some("local-1"), &fallbacks, true, Some("local-2")),
+            Ok(vec!["local-2".to_owned()]),
+        );
+        assert_eq!(
+            policy_route_order(Some("local-1"), &fallbacks, false, None),
+            Ok(vec!["local-1".to_owned()]),
+        );
+        assert_eq!(
+            policy_route_order(Some("local-1"), &fallbacks, true, Some("cloud-1")),
+            Err("pinned_route_not_eligible"),
+        );
+    }
+
     #[tokio::test]
     async fn chat_only_provider_reports_typed_image_unsupported() {
         let gateway = mock_gateway(vec![]);
@@ -1710,6 +1944,31 @@ mod tests {
         }
     }
 
+    struct RecordingRouteHook(std::sync::Mutex<Vec<String>>);
+
+    impl RouteAttemptHook for RecordingRouteHook {
+        fn prepare<'a>(
+            &'a self,
+            capabilities: &'a ProviderCapabilitySnapshot,
+            messages: &'a [ChatMessage],
+            tools: &'a [ToolSpec],
+        ) -> Pin<
+            Box<dyn Future<Output = Result<PreparedRouteAttempt, ProviderError>> + Send + 'a>,
+        > {
+            Box::pin(async move {
+                self.0
+                    .lock()
+                    .map_err(|_| ProviderError::Config("hook_lock_poisoned".into()))?
+                    .push(capabilities.route_id.clone());
+                Ok(PreparedRouteAttempt {
+                    messages: messages.to_vec(),
+                    tools: tools.to_vec(),
+                    structured_output: None,
+                })
+            })
+        }
+    }
+
     #[tokio::test]
     async fn gateway_runs_route_preflight_before_provider_dispatch() {
         let gateway = gateway_with_routes(vec![("local", "local-model")])
@@ -1725,6 +1984,28 @@ mod tests {
             .await
             .expect_err("preflight must reject before provider dispatch");
         assert!(matches!(error, ProviderError::Config(code) if code == "preflight_rejected"));
+    }
+
+    #[tokio::test]
+    async fn route_hook_runs_after_selection_and_before_dispatch() {
+        let gateway = gateway_with_routes(vec![("local", "local-model")]);
+        let hook = RecordingRouteHook(std::sync::Mutex::new(Vec::new()));
+        let result = gateway
+            .chat_with_tools_with_policy_and_route_hook(
+                RoutingMode::Balanced,
+                &policy_request(),
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "hello")],
+                &[],
+                Some(&hook),
+            )
+            .await
+            .expect("dispatch after hook");
+        assert_eq!(result.selected_route, "local");
+        assert_eq!(
+            *hook.0.lock().expect("hook calls"),
+            vec!["local".to_owned()]
+        );
     }
 
     struct ToolCallAwarePreflight;
@@ -1793,6 +2074,20 @@ mod tests {
             snapshot.candidates[0].initial_health.status,
             HealthStatus::Unknown
         );
+    }
+
+    #[test]
+    fn route_capabilities_are_adapter_declared_and_model_bound() {
+        let gateway = gateway_with_routes(vec![("local", "configured-model")]);
+        let snapshot = gateway
+            .route_capability_snapshot("local", Some("selected-model"))
+            .expect("adapter capability snapshot");
+        assert_eq!(snapshot.model_id, "selected-model");
+        assert_eq!(snapshot.provider_kind, "mock");
+        assert!(snapshot.tool_calling);
+        assert!(!snapshot.structured_output);
+        assert_eq!(snapshot.context_limit, None);
+        assert!(snapshot.canonical_hash().is_ok());
     }
 
     #[test]

@@ -173,6 +173,17 @@ pub fn run_matrix<E: BenchmarkExecutor>(
                     .collect::<Vec<_>>();
                 let result = aggregate_attempts(&attempts);
                 let baseline = baselines.get(&key);
+                if baseline.is_some_and(|baseline| {
+                    baseline.suite_version != suite.version
+                        || baseline.suite_hash != suite.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
+                        || baseline.policy_hash != policy.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
+                        || baseline.challenge_id != challenge.id
+                        || baseline.model_profile_hash != model.content_hash
+                        || baseline.agent_profile_hash != agent.content_hash
+                        || baseline.revision == 0
+                }) {
+                    return Err(BenchmarkValidationError::InvalidField("incompatible_baseline".into()));
+                }
                 let comparison = if result.completed == 0 && baseline.is_none() {
                     BenchmarkComparison {
                         verdict: ComparisonVerdict::Blocked,
@@ -194,8 +205,40 @@ pub fn run_matrix<E: BenchmarkExecutor>(
         source_commit: source_commit.into(),
         suite_id: suite.id.clone(),
         suite_version: suite.version.clone(),
+        suite_hash: suite
+            .canonical_hash()
+            .map(|hash| format!("sha256:{hash}"))
+            .map_err(|_| BenchmarkValidationError::InvalidField("suite_hash".into()))?,
+        policy_hash: policy
+            .canonical_hash()
+            .map(|hash| format!("sha256:{hash}"))
+            .map_err(|_| BenchmarkValidationError::InvalidField("policy_hash".into()))?,
         model_profile_ids: suite.model_profiles.iter().map(|v| v.id.clone()).collect(),
+        model_profile_hashes: suite
+            .model_profiles
+            .iter()
+            .map(|profile| format!("sha256:{}", profile.content_hash))
+            .collect(),
         agent_profile_ids: suite.agent_profiles.iter().map(|v| v.id.clone()).collect(),
+        agent_profile_hashes: suite
+            .agent_profiles
+            .iter()
+            .map(|profile| format!("sha256:{}", profile.content_hash))
+            .collect(),
+        strategy_profile_hash_by_agent_id: suite
+            .agent_profiles
+            .iter()
+            .filter_map(|profile| {
+                profile
+                    .strategy_profile_hash
+                    .as_ref()
+                    .map(|hash| (profile.id.clone(), hash.clone()))
+            })
+            .collect(),
+        holdout_evaluation: suite
+            .challenges
+            .iter()
+            .all(|challenge| challenge.set == BenchmarkSet::Holdout),
         metrics,
         comparisons,
         redaction_status: "redacted".into(),
@@ -357,6 +400,8 @@ pub async fn run_local_model_matrix(
                 let baseline = baselines.get(&key);
                 if baseline.is_some_and(|baseline| {
                     baseline.suite_version != suite.version
+                        || baseline.suite_hash != suite.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
+                        || baseline.policy_hash != policy.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
                         || baseline.challenge_id != challenge.id
                         || baseline.model_profile_hash != model.content_hash
                         || baseline.agent_profile_hash != agent.content_hash
@@ -383,16 +428,48 @@ pub async fn run_local_model_matrix(
         source_commit: source_commit.into(),
         suite_id: suite.id.clone(),
         suite_version: suite.version.clone(),
+        suite_hash: suite
+            .canonical_hash()
+            .map(|hash| format!("sha256:{hash}"))
+            .map_err(|_| BenchmarkValidationError::InvalidField("suite_hash".into()))?,
+        policy_hash: policy
+            .canonical_hash()
+            .map(|hash| format!("sha256:{hash}"))
+            .map_err(|_| BenchmarkValidationError::InvalidField("policy_hash".into()))?,
         model_profile_ids: suite
             .model_profiles
             .iter()
             .map(|profile| profile.id.clone())
+            .collect(),
+        model_profile_hashes: suite
+            .model_profiles
+            .iter()
+            .map(|profile| format!("sha256:{}", profile.content_hash))
             .collect(),
         agent_profile_ids: suite
             .agent_profiles
             .iter()
             .map(|profile| profile.id.clone())
             .collect(),
+        agent_profile_hashes: suite
+            .agent_profiles
+            .iter()
+            .map(|profile| format!("sha256:{}", profile.content_hash))
+            .collect(),
+        strategy_profile_hash_by_agent_id: suite
+            .agent_profiles
+            .iter()
+            .filter_map(|profile| {
+                profile
+                    .strategy_profile_hash
+                    .as_ref()
+                    .map(|hash| (profile.id.clone(), hash.clone()))
+            })
+            .collect(),
+        holdout_evaluation: suite
+            .challenges
+            .iter()
+            .all(|challenge| challenge.set == BenchmarkSet::Holdout),
         metrics,
         comparisons,
         redaction_status: "redacted".into(),
@@ -446,6 +523,8 @@ pub enum BenchmarkSet {
     Improve,
     /// Explores behavior beyond the current required baseline.
     Explore,
+    /// Reserved immutable partition used only for final promotion evidence.
+    Holdout,
 }
 
 /// Immutable model configuration referenced by a benchmark suite.
@@ -490,6 +569,9 @@ pub struct AgentProfile {
     pub skills_set_hash: Option<String>,
     /// Optional digest of the refinement state.
     pub refinement_state_hash: Option<String>,
+    /// Exact prompt-strategy profile digest used for this benchmarked agent.
+    #[serde(default)]
+    pub strategy_profile_hash: Option<String>,
     /// Digest of the canonical agent profile.
     pub content_hash: String,
 }
@@ -668,6 +750,12 @@ pub struct Baseline {
     pub id: String,
     /// Suite version associated with the baseline.
     pub suite_version: String,
+    /// Canonical digest of the exact frozen benchmark suite.
+    #[serde(default)]
+    pub suite_hash: String,
+    /// Canonical digest of the exact evaluation policy.
+    #[serde(default)]
+    pub policy_hash: String,
     /// Challenge represented by the baseline.
     pub challenge_id: String,
     /// Digest of the model profile used to produce the baseline.
@@ -728,16 +816,42 @@ pub struct BenchmarkReport {
     pub suite_id: String,
     /// Suite version.
     pub suite_version: String,
+    /// Canonical digest of the frozen benchmark suite used for this run.
+    #[serde(default)]
+    pub suite_hash: String,
+    /// Canonical digest of the frozen evaluation policy used for this run.
+    #[serde(default)]
+    pub policy_hash: String,
     /// Model profile identifiers included in the run.
     pub model_profile_ids: Vec<String>,
+    /// Canonical model profile digests in the same order as `model_profile_ids`.
+    #[serde(default)]
+    pub model_profile_hashes: Vec<String>,
     /// Agent profile identifiers included in the run.
     pub agent_profile_ids: Vec<String>,
+    /// Canonical agent profile digests in the same order as `agent_profile_ids`.
+    #[serde(default)]
+    pub agent_profile_hashes: Vec<String>,
+    /// Prompt-strategy digests keyed by exact benchmark agent-profile ID.
+    #[serde(default)]
+    pub strategy_profile_hash_by_agent_id: BTreeMap<String, String>,
+    /// True only when every challenge belongs to the reserved holdout partition.
+    #[serde(default)]
+    pub holdout_evaluation: bool,
     /// Aggregated metrics keyed by challenge/model/agent combination.
     pub metrics: BTreeMap<String, Metrics>,
     /// Threshold and baseline comparison keyed by combination.
     pub comparisons: BTreeMap<String, BenchmarkComparison>,
     /// Must be `redacted` before the report is exposed.
     pub redaction_status: String,
+}
+
+impl BenchmarkReport {
+    /// Computes the canonical digest of a complete redacted evaluation report.
+    pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
+        let bytes = serde_json::to_vec(self)?;
+        Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
+    }
 }
 
 /// Invalid benchmark data, exceeded limits, sensitive output, or duplicate identifiers.
@@ -825,6 +939,16 @@ impl AgentProfile {
         bounded("agent.memory_policy_version", &self.memory_policy_version)?;
         bounded("agent.context_policy_version", &self.context_policy_version)?;
         bounded("agent.tool_routing_version", &self.tool_routing_version)?;
+        if let Some(hash) = &self.strategy_profile_hash {
+            if !hash.starts_with("sha256:")
+                || hash.len() != 71
+                || !hash[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+            {
+                return Err(BenchmarkValidationError::InvalidField(
+                    "agent.strategy_profile_hash".into(),
+                ));
+            }
+        }
         valid_hash("agent.content_hash", &self.content_hash)
     }
 }
@@ -850,11 +974,19 @@ impl BenchmarkSuite {
                 return Err(BenchmarkValidationError::Duplicate(challenge.id.clone()));
             }
         }
+        let mut model_ids = BTreeSet::new();
         for profile in &self.model_profiles {
             profile.validate()?;
+            if !model_ids.insert(profile.id.clone()) {
+                return Err(BenchmarkValidationError::Duplicate(profile.id.clone()));
+            }
         }
+        let mut agent_ids = BTreeSet::new();
         for profile in &self.agent_profiles {
             profile.validate()?;
+            if !agent_ids.insert(profile.id.clone()) {
+                return Err(BenchmarkValidationError::Duplicate(profile.id.clone()));
+            }
         }
         if self.thresholds.min_pass_rate_millis > 1000 {
             return Err(BenchmarkValidationError::Limit(
@@ -881,6 +1013,12 @@ impl BenchmarkPolicy {
             return Err(BenchmarkValidationError::Limit("max_parallelism".into()));
         }
         Ok(())
+    }
+
+    /// Computes the canonical SHA-256 digest of the frozen evaluation policy.
+    pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
+        let bytes = serde_json::to_vec(self)?;
+        Ok(hex::encode(Sha256::digest(bytes)))
     }
 }
 
@@ -1100,6 +1238,8 @@ mod tests {
             Some(&Baseline {
                 id: "b".into(),
                 suite_version: "1".into(),
+                suite_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+                policy_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
                 challenge_id: "c".into(),
                 model_profile_hash: "m".into(),
                 agent_profile_hash: "a".into(),
@@ -1138,6 +1278,7 @@ mod tests {
             continuation_policy_version: None,
             skills_set_hash: None,
             refinement_state_hash: None,
+            strategy_profile_hash: None,
             content_hash: "b".repeat(64),
         };
         BenchmarkSuite {
@@ -1193,6 +1334,41 @@ mod tests {
         assert_eq!(report.metrics["c:m:a"].attempts, 3);
         assert_eq!(report.metrics["c:m:a"].pass_rate_millis, 1000);
         assert_eq!(report.comparisons["c:m:a"].verdict, ComparisonVerdict::New);
+        assert_eq!(report.suite_hash.len(), 71);
+        assert_eq!(report.policy_hash.len(), 71);
+        assert_eq!(report.model_profile_hashes, vec![format!("sha256:{}", "a".repeat(64))]);
+        assert!(!report.holdout_evaluation);
+        assert!(report.canonical_hash().is_ok());
+    }
+
+    #[test]
+    fn matrix_rejects_baseline_from_a_different_evaluation_policy() {
+        let benchmark = suite();
+        let policy = BenchmarkPolicy {
+            attempts: 1,
+            max_parallelism: 1,
+            seed: 7,
+            global_token_budget: None,
+            global_cost_budget_micros: None,
+            mode: BenchmarkMode::Deterministic,
+        };
+        let baseline = Baseline {
+            id: "baseline".into(),
+            suite_version: benchmark.version.clone(),
+            suite_hash: format!("sha256:{}", benchmark.canonical_hash().unwrap()),
+            policy_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+            challenge_id: "c".into(),
+            model_profile_hash: "a".repeat(64),
+            agent_profile_hash: "b".repeat(64),
+            metrics: Metrics { attempts: 1, ..Metrics::default() },
+            source_commit: "commit".into(),
+            revision: 1,
+        };
+        let baselines = BTreeMap::from([("c:m:a".into(), baseline)]);
+        assert!(matches!(
+            run_matrix(&benchmark, &policy, "run", "commit", &DeterministicBenchmarkExecutor, &baselines),
+            Err(BenchmarkValidationError::InvalidField(reason)) if reason == "incompatible_baseline"
+        ));
     }
 
     #[test]

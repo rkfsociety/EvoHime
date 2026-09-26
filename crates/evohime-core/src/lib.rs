@@ -142,7 +142,8 @@ use evohime_local_storage::{
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
-    ModelGateway, PrivacyClass, RoutingMode, RoutingRequest, ToolSpec,
+    ModelGateway, PreparedRouteAttempt, PrivacyClass, ProviderCapabilitySnapshot,
+    RouteAttemptHook, RoutingMode, RoutingRequest, ToolSpec,
 };
 use evohime_receipts::{
     key_lifecycle::ReceiptKeyManager,
@@ -290,6 +291,7 @@ pub(crate) mod architecture_snapshot_runtime;
 mod core_protocol;
 pub mod plan_context;
 pub mod plan_review;
+pub mod prompt_strategy;
 pub(crate) mod task_checkpoint;
 pub(crate) mod telemetry;
 pub(crate) mod vision_contract;

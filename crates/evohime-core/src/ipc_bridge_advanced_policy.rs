@@ -1,5 +1,24 @@
 use super::*;
 
+fn bounded_strategy_id<'a>(value: &'a serde_json::Value, key: &str) -> Result<&'a str, &'static str> {
+    value.get(key).and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty() && value.len() <= crate::prompt_strategy::MAX_ID_BYTES
+            && !value.chars().any(char::is_control))
+        .ok_or("strategy_identifier_required")
+}
+
+fn strategy_state(value: &str) -> Option<crate::prompt_strategy::LifecycleState> {
+    use crate::prompt_strategy::LifecycleState;
+    match value {
+        "draft" => Some(LifecycleState::Draft),
+        "validated" => Some(LifecycleState::Validated),
+        "promoted" => Some(LifecycleState::Promoted),
+        "superseded" => Some(LifecycleState::Superseded),
+        "disabled" => Some(LifecycleState::Disabled),
+        _ => None,
+    }
+}
+
 impl IpcBridge {
     pub(crate) async fn dispatch_benchmark_matrix(
         &self,
@@ -19,6 +38,10 @@ impl IpcBridge {
             });
         }
         match request.operation.as_str() {
+            "strategyList" | "strategyGet" | "strategyRegister" | "strategyBind"
+            | "strategyExampleSet" | "strategyOutputContract" | "strategyTransition" | "strategyPromote"
+            | "strategySelections" | "strategyEvidence" | "strategyCompatibility"
+            | "strategyCompare" => self.dispatch_prompt_strategy(request).await,
             "list" => {
                 let database = self.journal.database().lock().await;
                 let runs = match database.connection().prepare(
@@ -152,7 +175,7 @@ impl IpcBridge {
                         || input_json.len() > 192 * 1024 {
                         return Err("benchmark_input_integrity_failed");
                     }
-                    let (suite, _policy, _baselines): (
+                    let (suite, policy, _baselines): (
                         crate::agent_benchmark_matrix::BenchmarkSuite,
                         crate::agent_benchmark_matrix::BenchmarkPolicy,
                         std::collections::BTreeMap<String, crate::agent_benchmark_matrix::Baseline>,
@@ -161,8 +184,16 @@ impl IpcBridge {
                         != job.request.benchmark_suite_sha256 {
                         return Err("benchmark_suite_identity_mismatch");
                     }
+                    if report.suite_hash != format!("sha256:{}", suite.canonical_hash().map_err(|_| "benchmark_suite_invalid")?)
+                        || report.policy_hash != format!("sha256:{}", policy.canonical_hash().map_err(|_| "benchmark_policy_invalid")?) {
+                        return Err("benchmark_report_evaluation_identity_mismatch");
+                    }
                     if report.model_profile_ids != suite.model_profiles.iter().map(|item| item.id.clone()).collect::<Vec<_>>()
-                        || report.agent_profile_ids != suite.agent_profiles.iter().map(|item| item.id.clone()).collect::<Vec<_>>() {
+                        || report.model_profile_hashes != suite.model_profiles.iter().map(|item| format!("sha256:{}", item.content_hash)).collect::<Vec<_>>()
+                        || report.agent_profile_ids != suite.agent_profiles.iter().map(|item| item.id.clone()).collect::<Vec<_>>()
+                        || report.agent_profile_hashes != suite.agent_profiles.iter().map(|item| format!("sha256:{}", item.content_hash)).collect::<Vec<_>>()
+                        || report.strategy_profile_hash_by_agent_id != suite.agent_profiles.iter().filter_map(|item| item.strategy_profile_hash.clone().map(|hash| (item.id.clone(), hash))).collect()
+                        || report.holdout_evaluation != suite.challenges.iter().all(|item| item.set == crate::agent_benchmark_matrix::BenchmarkSet::Holdout) {
                         return Err("benchmark_report_profile_mismatch");
                     }
                     let challenge = suite.challenges.iter().find(|item| item.id == challenge_id)
@@ -231,6 +262,9 @@ impl IpcBridge {
                             || existing.4 != metrics_json || existing.5 != report.source_commit {
                             return Err("benchmark_baseline_identity_conflict");
                         }
+                        if existing.7 != report.suite_hash || existing.8 != report.policy_hash {
+                            return Err("benchmark_baseline_identity_conflict");
+                        }
                         existing.6
                     } else {
                         let previous = evohime_local_storage::domains::evaluation::latest_baseline_revision(
@@ -239,7 +273,7 @@ impl IpcBridge {
                         ).map_err(|_| "benchmark_baseline_storage_failed")?;
                         let next = previous.checked_add(1).ok_or("benchmark_baseline_revision_overflow")?;
                         if !evohime_local_storage::domains::evaluation::put_baseline(
-                            &transaction, &baseline_id, &suite.version, &challenge.id,
+                            &transaction, &baseline_id, &suite.version, &report.suite_hash, &report.policy_hash, &challenge.id,
                             &model.content_hash, &agent.content_hash, &metrics_json,
                             &report.source_commit, next, crate::task_memory::now_millis() as i64,
                         ).map_err(|_| "benchmark_baseline_storage_failed")? {
@@ -285,6 +319,304 @@ impl IpcBridge {
                 "status": "rejected",
                 "error_code": "unsupported_operation"
             }),
+        }
+    }
+
+    async fn dispatch_prompt_strategy(
+        &self,
+        request: generated::AgentBenchmarkMatrixCommand,
+    ) -> serde_json::Value {
+        use crate::prompt_strategy as strategy;
+
+        let operation = request.operation.clone();
+        let request_id = request.request_id.clone();
+        let fail = |error_code: &'static str| serde_json::json!({
+            "schema_version":1,"request_id":request_id.clone(),"operation":operation.clone(),
+            "status":"rejected","error_code":error_code
+        });
+        if request.payload.len() > strategy::MAX_CONTRACT_BYTES {
+            return fail("strategy_payload_too_large");
+        }
+        if request.owner_scope != "prompt_strategy" {
+            return fail("strategy_owner_scope_mismatch");
+        }
+        let payload: serde_json::Value = if request.payload.is_empty() {
+            serde_json::Value::Null
+        } else {
+            match serde_json::from_slice(&request.payload) {
+                Ok(value) => value,
+                Err(_) => return fail("invalid_strategy_payload"),
+            }
+        };
+        let result = async {
+            let database = self.journal.database().lock().await;
+            let connection = database.connection();
+            match request.operation.as_str() {
+                "strategyList" => {
+                    let registry = strategy::load_registry(connection)
+                        .map_err(|_| "strategy_registry_unavailable")?;
+                    let mut profiles = Vec::with_capacity(registry.profiles.len().min(128));
+                    for (profile, state) in registry.profiles.iter().take(128) {
+                        let (_, state_revision) = evohime_local_storage::domains::strategies::get_lifecycle(
+                            connection, &profile.profile_id, profile.revision,
+                        ).map_err(|_| "strategy_lifecycle_unavailable")?
+                            .ok_or("strategy_lifecycle_missing")?;
+                        profiles.push(serde_json::json!({
+                            "profile_id":profile.profile_id.clone(),"revision":profile.revision,
+                            "content_hash":profile.content_hash.clone(),"display_name":profile.display_name.clone(),
+                            "task_kind":profile.task_kind.clone(),"role":profile.role.clone(),
+                            "composition":profile.composition.clone(),"lifecycle":state,
+                            "state_revision":state_revision,
+                            "evidence_count":profile.evidence.len()
+                        }));
+                    }
+                    Ok(serde_json::json!({"profiles":profiles,"truncated":registry.profiles.len()>128}))
+                }
+                "strategyGet" => {
+                    let profile_id = bounded_strategy_id(&payload, "profile_id")?;
+                    let revision = payload.get("revision").and_then(serde_json::Value::as_u64)
+                        .filter(|revision| *revision > 0).ok_or("strategy_revision_required")?;
+                    let profile = strategy::load_profile(connection, profile_id, revision)
+                        .map_err(|_| "strategy_profile_corrupt")?.ok_or("strategy_profile_not_found")?;
+                    let (lifecycle, state_revision) = evohime_local_storage::domains::strategies::get_lifecycle(
+                        connection, profile_id, revision,
+                    ).map_err(|_| "strategy_lifecycle_unavailable")?.ok_or("strategy_lifecycle_missing")?;
+                    Ok(serde_json::json!({"profile":profile,"lifecycle":lifecycle,"state_revision":state_revision}))
+                }
+                "strategyEvidence" => {
+                    let profile_id = bounded_strategy_id(&payload, "profile_id")?;
+                    let revision = payload.get("revision").and_then(serde_json::Value::as_u64)
+                        .filter(|revision| *revision > 0).ok_or("strategy_revision_required")?;
+                    let profile = strategy::load_profile(connection, profile_id, revision)
+                        .map_err(|_| "strategy_profile_corrupt")?.ok_or("strategy_profile_not_found")?;
+                    let mut evidence = Vec::with_capacity(profile.evidence.len());
+                    for reference in profile.evidence.iter().take(strategy::MAX_REFERENCES) {
+                        let report = match evohime_local_storage::domains::evaluation::get_run(
+                            connection, &reference.evidence_id,
+                        ).map_err(|_| "strategy_evidence_unavailable")? {
+                            Some(run) if run.2 == "ready_for_promotion" => {
+                                match run.3 {
+                                    Some(report_json) if report_json.len() <= 2 * strategy::MAX_CONTRACT_BYTES => {
+                                        match serde_json::from_str::<crate::agent_benchmark_matrix::BenchmarkReport>(&report_json) {
+                                            Ok(report) => Some(report),
+                                            Err(_) => None,
+                                        }
+                                    }
+                                    _ => None,
+                                }
+                            }
+                            _ => None,
+                        };
+                        let identity_compatible = report.as_ref().is_some_and(|report|
+                            strategy::validate_strategy_evidence_identity(&profile, report, reference).is_ok());
+                        let promotion_eligible = report.as_ref().is_some_and(|report|
+                            strategy::validate_promotion_evidence(&profile, report, reference).is_ok());
+                        evidence.push(serde_json::json!({
+                            "evidence_id":reference.evidence_id,
+                            "evidence_hash":reference.evidence_hash,
+                            "suite_hash":reference.suite_hash,
+                            "policy_hash":reference.policy_hash,
+                            "agent_profile_id":reference.agent_profile_id,
+                            "holdout":reference.holdout,
+                            "identity_compatible":identity_compatible,
+                            "promotion_eligible":promotion_eligible,
+                        }));
+                    }
+                    Ok(serde_json::json!({"profile_id":profile.profile_id,"revision":profile.revision,"evidence":evidence,"truncated":profile.evidence.len()>strategy::MAX_REFERENCES}))
+                }
+                "strategyCompatibility" => {
+                    let profile_id = bounded_strategy_id(&payload, "profile_id")?;
+                    let revision = payload.get("revision").and_then(serde_json::Value::as_u64)
+                        .filter(|revision| *revision > 0).ok_or("strategy_revision_required")?;
+                    let provenance_request_id = bounded_strategy_id(&payload, "provenance_request_id")?;
+                    let profile = strategy::load_profile(connection, profile_id, revision)
+                        .map_err(|_| "strategy_profile_corrupt")?.ok_or("strategy_profile_not_found")?;
+                    let snapshots = strategy::selections_for_provenance(connection, provenance_request_id)
+                        .map_err(|_| "strategy_selections_unavailable")?;
+                    let matches: Vec<_> = snapshots.into_iter().filter(|snapshot| {
+                        snapshot.profile_id == profile.profile_id
+                            && snapshot.profile_revision == profile.revision
+                            && snapshot.profile_hash == profile.content_hash
+                    }).collect();
+                    Ok(serde_json::json!({
+                        "profile_id":profile.profile_id,"revision":profile.revision,
+                        "compatible":!matches.is_empty(),
+                        "reason":if matches.is_empty(){"no_matching_frozen_selection"}else{"exact_profile_revision_selected"},
+                        "selections":matches,
+                    }))
+                }
+                "strategyCompare" => {
+                    let profile_id = bounded_strategy_id(&payload, "profile_id")?;
+                    let revision = payload.get("revision").and_then(serde_json::Value::as_u64)
+                        .filter(|revision| *revision > 0).ok_or("strategy_revision_required")?;
+                    let run_id = bounded_strategy_id(&payload, "run_id")?;
+                    let profile = strategy::load_profile(connection, profile_id, revision)
+                        .map_err(|_| "strategy_profile_corrupt")?.ok_or("strategy_profile_not_found")?;
+                    let run = evohime_local_storage::domains::evaluation::get_run(connection, run_id)
+                        .map_err(|_| "strategy_comparison_unavailable")?.ok_or("strategy_comparison_not_found")?;
+                    if run.2 != "ready_for_promotion" { return Err("strategy_comparison_not_ready"); }
+                    let report_json = run.3.ok_or("strategy_comparison_unavailable")?;
+                    if report_json.len() > 2 * strategy::MAX_CONTRACT_BYTES { return Err("strategy_comparison_too_large"); }
+                    let report: crate::agent_benchmark_matrix::BenchmarkReport = serde_json::from_str(&report_json)
+                        .map_err(|_| "strategy_comparison_corrupt")?;
+                    let evidence = profile.evidence.iter().find(|evidence| evidence.evidence_id == run_id)
+                        .ok_or("strategy_comparison_evidence_missing")?;
+                    strategy::validate_strategy_evidence_identity(&profile, &report, evidence)
+                        .map_err(|_| "strategy_comparison_identity_mismatch")?;
+                    let suffix = format!(":{}", evidence.agent_profile_id);
+                    let mut rows = Vec::with_capacity(128);
+                    for (key, metrics) in &report.metrics {
+                        if key.ends_with(&suffix) {
+                            if let Some(comparison) = report.comparisons.get(key) {
+                                rows.push(serde_json::json!({"key":key,"metrics":metrics,"comparison":comparison}));
+                                if rows.len() == 128 { break; }
+                            }
+                        }
+                    }
+                    let truncated = rows.len() == 128;
+                    Ok(serde_json::json!({"profile_id":profile.profile_id,"revision":profile.revision,
+                        "run_id":run_id,"suite_hash":report.suite_hash,"policy_hash":report.policy_hash,
+                        "agent_profile_id":evidence.agent_profile_id,"rows":rows,"truncated":truncated}))
+                }
+                "strategyRegister" => {
+                    let mut profile: strategy::PromptStrategyProfile = if let Some(candidate_value) = payload.get("optimization_candidate") {
+                        let candidate: crate::workflow_optimization_lab::Candidate = serde_json::from_value(candidate_value.clone())
+                            .map_err(|_| "invalid_optimization_candidate")?;
+                        let base_id = bounded_strategy_id(&payload, "base_profile_id")?;
+                        let base_revision = payload.get("base_profile_revision").and_then(serde_json::Value::as_u64)
+                            .filter(|revision| *revision > 0).ok_or("base_profile_revision_required")?;
+                        let base = strategy::load_profile(connection, base_id, base_revision)
+                            .map_err(|_| "strategy_profile_corrupt")?.ok_or("strategy_profile_not_found")?;
+                        strategy::normalize_optimization_candidate(&base, &candidate)
+                            .map_err(|_| "optimization_candidate_rejected")?
+                    } else {
+                        serde_json::from_value(
+                            payload.get("profile").cloned().ok_or("strategy_profile_required")?,
+                        ).map_err(|_| "invalid_strategy_profile")?
+                    };
+                    if profile.content_hash.is_empty() {
+                        profile.content_hash = strategy::profile_hash(&profile)
+                            .map_err(|_| "strategy_profile_hash_failed")?;
+                    }
+                    let inserted = strategy::register_profile(
+                        connection, &profile, crate::task_memory::now_millis() as i64,
+                    ).map_err(|_| "strategy_profile_rejected")?;
+                    Ok(serde_json::json!({"profile_id":profile.profile_id,"revision":profile.revision,
+                        "content_hash":profile.content_hash,"inserted":inserted}))
+                }
+                "strategyBind" => {
+                    let mut binding: strategy::StrategyBinding = serde_json::from_value(
+                        payload.get("binding").cloned().ok_or("strategy_binding_required")?,
+                    ).map_err(|_| "invalid_strategy_binding")?;
+                    if binding.content_hash.is_empty() {
+                        binding.content_hash = strategy::binding_hash(&binding)
+                            .map_err(|_| "strategy_binding_hash_failed")?;
+                    }
+                    let profile = strategy::load_profile(connection, &binding.profile_id, binding.profile_revision)
+                        .map_err(|_| "strategy_profile_corrupt")?.ok_or("strategy_profile_not_found")?;
+                    let (state, _) = evohime_local_storage::domains::strategies::get_lifecycle(
+                        connection, &profile.profile_id, profile.revision,
+                    ).map_err(|_| "strategy_lifecycle_unavailable")?.ok_or("strategy_lifecycle_missing")?;
+                    if state != "validated" && state != "promoted" {
+                        return Err("strategy_profile_not_validated");
+                    }
+                    let inserted = strategy::persist_binding(
+                        connection, &binding, crate::task_memory::now_millis() as i64,
+                    ).map_err(|_| "strategy_binding_rejected")?;
+                    Ok(serde_json::json!({"binding_id":binding.binding_id,"revision":binding.revision,
+                        "content_hash":binding.content_hash,"inserted":inserted}))
+                }
+                "strategyExampleSet" => {
+                    let mut set: strategy::ExampleSetDescriptor = serde_json::from_value(
+                        payload.get("example_set").cloned().ok_or("strategy_example_set_required")?,
+                    ).map_err(|_| "invalid_strategy_example_set")?;
+                    strategy::validate_example_set_assets(connection, &mut set)
+                        .map_err(|_| "strategy_example_asset_validation_failed")?;
+                    let inserted = strategy::persist_example_set(
+                        connection, &set, crate::task_memory::now_millis() as i64,
+                    ).map_err(|_| "strategy_example_set_rejected")?;
+                    Ok(serde_json::json!({"example_set_id":set.example_set_id,"revision":set.revision,
+                        "content_hash":set.content_hash,"inserted":inserted}))
+                }
+                "strategyOutputContract" => {
+                    let contract: crate::structured_response_contract::ResponseContract =
+                        serde_json::from_value(
+                            payload.get("contract").cloned().ok_or("strategy_contract_required")?,
+                        ).map_err(|_| "invalid_strategy_output_contract")?;
+                    let (content_hash, inserted) = strategy::register_output_contract(
+                        connection, &contract, crate::task_memory::now_millis() as i64,
+                    ).map_err(|_| "strategy_output_contract_rejected")?;
+                    Ok(serde_json::json!({
+                        "contract_id":contract.contract_id,
+                        "revision":contract.revision,
+                        "content_hash":content_hash,
+                        "inserted":inserted,
+                    }))
+                }
+                "strategyTransition" => {
+                    let profile_id = bounded_strategy_id(&payload, "profile_id")?;
+                    let revision = payload.get("revision").and_then(serde_json::Value::as_u64)
+                        .filter(|revision| *revision > 0).ok_or("strategy_revision_required")?;
+                    let expected_state_revision = request.expected_version;
+                    if expected_state_revision == 0 { return Err("expected_version_required"); }
+                    let expected_state = strategy_state(payload.get("expected_state").and_then(serde_json::Value::as_str)
+                        .ok_or("strategy_expected_state_required")?).ok_or("invalid_strategy_state")?;
+                    let next_state = strategy_state(payload.get("next_state").and_then(serde_json::Value::as_str)
+                        .ok_or("strategy_next_state_required")?).ok_or("invalid_strategy_state")?;
+                    let next_state_revision = expected_state_revision.checked_add(1)
+                        .ok_or("strategy_state_revision_overflow")?;
+                    let changed = strategy::transition_profile(
+                        connection, profile_id, revision, expected_state, expected_state_revision,
+                        next_state, crate::task_memory::now_millis() as i64,
+                    ).map_err(|_| "strategy_transition_rejected")?;
+                    if !changed { return Err("strategy_state_conflict"); }
+                    Ok(serde_json::json!({"profile_id":profile_id,"revision":revision,"state":next_state,"state_revision":next_state_revision}))
+                }
+                "strategyPromote" => {
+                    let profile_id = bounded_strategy_id(&payload, "profile_id")?;
+                    let revision = payload.get("revision").and_then(serde_json::Value::as_u64)
+                        .filter(|revision| *revision > 0).ok_or("strategy_revision_required")?;
+                    let run_id = bounded_strategy_id(&payload, "run_id")?;
+                    let evidence: strategy::StrategyEvidenceRef = serde_json::from_value(
+                        payload.get("evidence").cloned().ok_or("strategy_evidence_required")?,
+                    ).map_err(|_| "invalid_strategy_evidence")?;
+                    if request.expected_version == 0 || evidence.evidence_id != run_id {
+                        return Err("strategy_evidence_identity_mismatch");
+                    }
+                    let run = evohime_local_storage::domains::evaluation::get_run(connection, run_id)
+                        .map_err(|_| "benchmark_report_unavailable")?.ok_or("benchmark_report_unavailable")?;
+                    if run.2 != "ready_for_promotion" {
+                        return Err("benchmark_run_not_promotable");
+                    }
+                    let report_json = run.3.ok_or("benchmark_report_unavailable")?;
+                    if report_json.len() > 2 * strategy::MAX_CONTRACT_BYTES {
+                        return Err("benchmark_report_too_large");
+                    }
+                    let report: crate::agent_benchmark_matrix::BenchmarkReport = serde_json::from_str(&report_json)
+                        .map_err(|_| "benchmark_report_corrupt")?;
+                    if report.canonical_hash().map_err(|_| "benchmark_report_corrupt")? != evidence.evidence_hash {
+                        return Err("benchmark_report_identity_mismatch");
+                    }
+                    let promoted = strategy::promote_profile(
+                        connection, profile_id, revision, request.expected_version,
+                        &report, &evidence, crate::task_memory::now_millis() as i64,
+                    ).map_err(|_| "strategy_promotion_rejected")?;
+                    if !promoted { return Err("strategy_state_conflict"); }
+                    Ok(serde_json::json!({"profile_id":profile_id,"revision":revision,"lifecycle":"promoted","evidence_hash":evidence.evidence_hash}))
+                }
+                "strategySelections" => {
+                    let provenance_request_id = bounded_strategy_id(&payload, "provenance_request_id")?;
+                    let selections = strategy::selections_for_provenance(connection, provenance_request_id)
+                        .map_err(|_| "strategy_selections_unavailable")?;
+                    Ok(serde_json::json!({"selections":selections}))
+                }
+                _ => Err("unsupported_operation"),
+            }
+        }.await;
+        match result {
+            Ok(value) => serde_json::json!({"schema_version":1,"request_id":request_id.clone(),
+                "operation":operation.clone(),"status":"ok","result":value,"error_code":""}),
+            Err(error_code) => fail(error_code),
         }
     }
 

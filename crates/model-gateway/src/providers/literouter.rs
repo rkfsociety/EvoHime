@@ -317,6 +317,10 @@ impl ModelProvider for LiteRouterProvider {
         &self.config.base_url
     }
 
+    fn supports_tool_calls(&self) -> bool {
+        true
+    }
+
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream {
         self.stream_chat_with_model(&self.config.model, messages)
     }

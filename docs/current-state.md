@@ -467,7 +467,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `179–181` и `184–188`; планы `01–178` и `183` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `180–181` и `184–188`; планы `01–179` и `183` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
@@ -841,3 +841,7 @@ packaged-приложение также корректно закрываетс
 bootstrap-экран до загрузки React и пишет ошибки загрузки renderer/preload в
 shell-main.jsonl, поэтому окно больше не выглядит бесконечно пустым при сбое
 пакетированного интерфейса.
+
+## Plan 179 — Core-owned Prompt Strategy Profiles v1
+
+Checkout implementation adds schema v179 immutable strategy metadata, deterministic capability/evidence-aware resolution, exact per-dispatch snapshots and recovery, seven bounded composition types, strategy-aware benchmark identity, authenticated Core operations, guided recipe pinning, and a metadata-only Electron settings panel. Raw prompt and example bodies stay out of registry/provenance projections; generic task/context events carry omission markers. Source implementation is committed for CI acceptance; exact-SHA workflows and module publication must be recorded after push before release evidence is complete.

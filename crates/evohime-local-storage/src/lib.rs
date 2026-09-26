@@ -209,6 +209,8 @@ pub mod project_execution_board_store;
 pub mod project_instruction_stack_store;
 /// Persistence for project knowledge notebooks.
 pub mod project_knowledge_notebook_store;
+/// Persistence for immutable prompt-strategy metadata and selection snapshots.
+pub mod prompt_strategy_store;
 mod project_store;
 pub(crate) mod prompt_cache_planner_store;
 mod provenance_store;
@@ -300,7 +302,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 178;
+pub const SCHEMA_VERSION: u32 = 179;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,

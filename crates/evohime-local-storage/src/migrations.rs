@@ -150,6 +150,7 @@ pub(crate) mod v175;
 pub(crate) mod v176;
 pub(crate) mod v177;
 pub(crate) mod v178;
+pub(crate) mod v179;
 
 pub(crate) fn run(
     connection: &Connection,

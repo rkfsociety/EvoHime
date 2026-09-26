@@ -90,7 +90,7 @@ impl<'a> ArtifactStore<'a> {
         self.ensure_quota(task_id, bytes, now)?;
         self.connection.execute_batch("BEGIN IMMEDIATE")?;
         let outcome = (|| -> Result<ArtifactRef, StorageError> {
-            self.connection.execute("INSERT OR REPLACE INTO task_artifacts(content_hash,bytes,content,created_at,last_access_at) VALUES (?1,?2,?3,?4,?4)", rusqlite::params![hash, bytes as i64, content, now])?;
+            self.connection.execute("INSERT OR REPLACE INTO task_artifacts(content_hash,bytes,content,created_at,last_access_at,content_kind) VALUES (?1,?2,?3,?4,?4,?5)", rusqlite::params![hash, bytes as i64, content, now, kind])?;
             let reference = ArtifactRef {
                 locator: format!("artifact://{owner_task_id}/{hash}"),
                 content_hash: hash,
@@ -157,9 +157,9 @@ impl<'a> ArtifactStore<'a> {
             if !deduplicated {
                 self.connection.execute(
                     "INSERT OR REPLACE INTO task_artifacts
-                        (content_hash, bytes, content, created_at, last_access_at)
-                     VALUES (?1, ?2, ?3, ?4, ?4)",
-                    rusqlite::params![hash, bytes as i64, content.as_bytes(), now],
+                        (content_hash, bytes, content, created_at, last_access_at, content_kind)
+                     VALUES (?1, ?2, ?3, ?4, ?4, ?5)",
+                    rusqlite::params![hash, bytes as i64, content.as_bytes(), now, kind],
                 )?;
                 // Новое содержимое снимает tombstone: hash снова доступен.
                 self.connection.execute(
@@ -216,9 +216,27 @@ impl<'a> ArtifactStore<'a> {
         kind: &str,
         now: i64,
     ) -> Result<String, StorageError> {
+        self.read_bounded(locator, task_id, parent_chain, kind, now, u64::MAX)
+    }
+
+    /// Reads a text artifact only when the reference and stored bytes fit `max_bytes`.
+    ///
+    /// The SQL length predicate bounds allocation before UTF-8 decoding and hash validation.
+    pub fn read_bounded(
+        &self,
+        locator: &str,
+        task_id: &str,
+        parent_chain: &[String],
+        kind: &str,
+        now: i64,
+        max_bytes: u64,
+    ) -> Result<String, StorageError> {
         let reference = self
             .get_ref(locator)?
             .ok_or_else(|| StorageError::Context(format!("artifact {locator} was not found")))?;
+        if reference.bytes > max_bytes {
+            return Err(StorageError::Context("artifact size limit exceeded".into()));
+        }
         if !access_allowed(&reference, task_id, parent_chain) {
             return Err(StorageError::Context(
                 ArtifactError::AccessDenied {
@@ -240,12 +258,24 @@ impl<'a> ArtifactStore<'a> {
         let content: Option<Vec<u8>> = self
             .connection
             .query_row(
-                "SELECT content FROM task_artifacts WHERE content_hash = ?1",
-                [&reference.content_hash],
+                "SELECT content FROM task_artifacts
+                 WHERE content_hash = ?1 AND length(content) <= ?2",
+                rusqlite::params![
+                    reference.content_hash,
+                    max_bytes.min(i64::MAX as u64) as i64
+                ],
                 |row| row.get(0),
             )
             .optional()?;
         let Some(content) = content else {
+            let content_exists: bool = self.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM task_artifacts WHERE content_hash=?1)",
+                [&reference.content_hash],
+                |row| row.get(0),
+            )?;
+            if content_exists {
+                return Err(StorageError::Context("artifact size limit exceeded".into()));
+            }
             self.set_ref_status(locator, ArtifactRefStatus::Expired)?;
             return Err(StorageError::Context(
                 ArtifactError::NotReadable {
@@ -255,7 +285,18 @@ impl<'a> ArtifactStore<'a> {
                 .to_string(),
             ));
         };
-        let text = String::from_utf8_lossy(&content).to_string();
+        if reference.bytes > max_bytes || content.len() as u64 > max_bytes {
+            return Err(StorageError::Context("artifact size limit exceeded".into()));
+        }
+        let text = match String::from_utf8(content) {
+            Ok(text) => text,
+            Err(_) => {
+                self.set_ref_status(locator, ArtifactRefStatus::Invalid)?;
+                return Err(StorageError::Context(
+                    "artifact text is not UTF-8".into(),
+                ));
+            }
+        };
         let actual = content_hash(kind, &ContentForm::Text(&text));
         if actual != reference.content_hash {
             self.set_ref_status(locator, ArtifactRefStatus::Invalid)?;
@@ -329,9 +370,9 @@ impl<'a> ArtifactStore<'a> {
                 let bytes = item.content.len() as u64;
                 self.connection.execute(
                     "INSERT OR REPLACE INTO task_artifacts
-                     (content_hash,bytes,content,created_at,last_access_at)
-                     VALUES (?1,?2,?3,?4,?4)",
-                    rusqlite::params![hash, bytes as i64, item.content, now],
+                     (content_hash,bytes,content,created_at,last_access_at,content_kind)
+                     VALUES (?1,?2,?3,?4,?4,?5)",
+                    rusqlite::params![hash, bytes as i64, item.content, now, item.kind],
                 )?;
                 let reference = ArtifactRef {
                     locator: format!("artifact://{}/{hash}", item.owner_task_id),

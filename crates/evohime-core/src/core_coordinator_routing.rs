@@ -107,7 +107,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let _ = events
                 .send(CoreEvent::TaskStarted {
                     task_id: task_id.clone(),
-                    prompt: prompt.clone(),
+                    prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
                 })
                 .await;
             let Some(background_permit) = state.lock().await.background_tasks.try_acquire() else {

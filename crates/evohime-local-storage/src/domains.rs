@@ -75,7 +75,13 @@ pub mod evaluation {
     //! Facade for persisted benchmark evaluation runs and reports.
     pub use crate::benchmark_store::{
         get_baseline, get_baseline_approval, get_baseline_approval_by_key, get_run,
-        get_run_policy_json, latest_baseline_revision, put_baseline, put_baseline_approval,
+        get_run_policy_json, get_run_with_update, latest_baseline_revision, put_baseline,
+        put_baseline_approval,
         save_report, save_run, StoredBenchmarkBaseline, StoredBenchmarkRun,
     };
+}
+
+pub mod strategies {
+    //! Facade for immutable prompt-strategy definitions and replay snapshots.
+    pub use crate::prompt_strategy_store::*;
 }

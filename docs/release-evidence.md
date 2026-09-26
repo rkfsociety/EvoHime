@@ -3405,3 +3405,7 @@ module workflows passed on the immediately preceding implementation commit
 `58bdd0df675d2cc9656780e74411fae432af4663`; the intervening changes were
 Core-only Rust fixes. No full native package acceptance run was required by the
 plan's narrowed verification scope.
+
+## Core-owned Prompt Strategy Profiles v1 (plan 179)
+
+Implemented in the task commit pending post-push exact-SHA acceptance: schema v179 strategy registry, resolver/runtime snapshot and recovery, benchmark identity and promotion evidence checks, guided recipe pin/recovery, authenticated Core operations, and bounded Electron metadata projection. Source tests and regression cases were added but were not run locally under the plan implementation workflow. `git diff --check` is the only local executable gate. After push, verify the exact commit's Core, UI bundle, Rust documentation and module-router runs, and record each result and published module version here. Core and UI bundle source markers advance from `0.0.000380` to `0.0.000381` and `0.0.000122` to `0.0.000123` respectively; expected module-router dispatch is `core` and `ui-bundle`.

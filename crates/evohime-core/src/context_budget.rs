@@ -4,8 +4,9 @@
 //! прогоняет их через [`ContextPlanner`], собирает bounded loadout и возвращает
 //! готовый к отправке набор сообщений вместе с записью `context_ledger`.
 //!
-//! Наружу (в `ModelContext` и UI) уходит только bounded projection: ids, счётчики,
-//! причины и hash. Сырой prompt, тело памяти и raw tool output Core не покидают.
+//! Наружу (в `ModelContext` и UI) уходят только bounded projection: ids,
+//! счётчики, причины и hash; совместимые текстовые поля содержат redaction
+//! markers. Сырой prompt, тело памяти и raw tool output Core не покидают.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1285,14 +1286,17 @@ mod tests {
             task_id: "task".to_string(),
             workspace_path: "C:/work".to_string(),
             model: "gpt-4o-mini".to_string(),
-            system_prompt: "системная политика".to_string(),
-            user_prompt: "проверь репозиторий".to_string(),
+            system_prompt: evohime_model_provenance::OMITTED_SYSTEM_PROMPT_MARKER.into(),
+            user_prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
             tools: vec!["filesystem.read".to_string()],
             estimated_tokens: 42,
             context_limit_tokens: 128_000,
             context: Some(Box::new(assembled.projection())),
         };
         let payload = serde_json::to_value(&event).expect("event serializes");
+        let serialized = serde_json::to_string(&event).expect("event serializes to JSON");
+        assert!(!serialized.contains("системная политика"));
+        assert!(!serialized.contains("проверь репозиторий"));
         let body = payload
             .get("ModelContext")
             .expect("externally tagged event body");
@@ -1310,8 +1314,14 @@ mod tests {
         assert_eq!(legacy.task_id, "task");
         assert_eq!(legacy.workspace_path, "C:/work");
         assert_eq!(legacy.model, "gpt-4o-mini");
-        assert_eq!(legacy.system_prompt, "системная политика");
-        assert_eq!(legacy.user_prompt, "проверь репозиторий");
+        assert_eq!(
+            legacy.system_prompt,
+            evohime_model_provenance::OMITTED_SYSTEM_PROMPT_MARKER
+        );
+        assert_eq!(
+            legacy.user_prompt,
+            evohime_model_provenance::OMITTED_MESSAGE_MARKER
+        );
         assert_eq!(legacy.tools, vec!["filesystem.read".to_string()]);
         assert_eq!(legacy.estimated_tokens, 42);
         assert_eq!(legacy.context_limit_tokens, 128_000);

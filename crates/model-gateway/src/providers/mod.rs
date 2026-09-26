@@ -225,6 +225,11 @@ pub trait ModelProvider: Send + Sync {
         false
     }
 
+    /// Reports whether this adapter implements the native tool-call contract.
+    fn supports_tool_calls(&self) -> bool {
+        false
+    }
+
     /// Starts a streaming conversation using the provider's configured model.
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream;
 

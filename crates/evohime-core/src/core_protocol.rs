@@ -2074,7 +2074,7 @@ pub enum CoreCommand {
 /// contract; the IPC adapter serializes these values for transport.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum CoreEvent {
-    /// Sends the final prompt assembled for one model invocation.
+    /// Sends a bounded context projection; legacy prompt fields are redaction markers only.
     ModelContext {
         /// Task that owns the model invocation.
         task_id: String,
@@ -2082,9 +2082,9 @@ pub enum CoreEvent {
         workspace_path: String,
         /// Selected model identifier.
         model: String,
-        /// System instructions sent to the model.
+        /// Redaction marker in place of system instructions.
         system_prompt: String,
-        /// User/context messages sent to the model.
+        /// Redaction marker in place of user and context messages.
         user_prompt: String,
         /// Tool names made available to the model.
         tools: Vec<String>,
@@ -2122,7 +2122,7 @@ pub enum CoreEvent {
     TaskStarted {
         /// Identifier of the started task.
         task_id: String,
-        /// User request associated with the task.
+        /// Redaction marker; request text remains in its user-owned conversation only.
         prompt: String,
     },
     /// Streams a visible assistant text fragment for a task.

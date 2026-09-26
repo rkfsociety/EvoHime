@@ -3388,6 +3388,7 @@ impl ToolAgent {
                 messages: &provider_messages,
                 specs: &[],
                 source_refs: &source_refs,
+                max_output_tokens: None,
                 route_snapshot_hash: &route_snapshot_hash,
                 request_kind,
             }) {

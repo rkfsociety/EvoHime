@@ -1562,6 +1562,18 @@ export const RENDERER_COMMANDS = [
   'benchmarkMatrix.start',
   'benchmarkMatrix.cancel',
   'benchmarkMatrix.approveBaseline',
+  'benchmarkMatrix.strategyList',
+  'benchmarkMatrix.strategyGet',
+  'benchmarkMatrix.strategyEvidence',
+  'benchmarkMatrix.strategyCompatibility',
+  'benchmarkMatrix.strategyCompare',
+  'benchmarkMatrix.strategyRegister',
+  'benchmarkMatrix.strategyBind',
+  'benchmarkMatrix.strategyExampleSet',
+  'benchmarkMatrix.strategyOutputContract',
+  'benchmarkMatrix.strategyTransition',
+  'benchmarkMatrix.strategyPromote',
+  'benchmarkMatrix.strategySelections',
   'agentMiddleware.list',
   'agentMiddleware.start',
   'agentMiddleware.cancel',
@@ -2175,6 +2187,18 @@ export interface CommandPayloads {
   }
   'benchmarkMatrix.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
   'benchmarkMatrix.approveBaseline': { requestId: string; ownerScope: string; runId: string; challengeId: string; modelProfileId: string; agentProfileId: string; reportSha256: string; expectedVersion: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyList': { requestId: string; ownerScope: 'prompt_strategy'; payload?: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyGet': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyEvidence': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyCompatibility': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyCompare': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyRegister': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyBind': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyExampleSet': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyOutputContract': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyTransition': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyPromote': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategySelections': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
   'agentMiddleware.list': { requestId: string; ownerScope: string }
   'agentMiddleware.start': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
   'agentMiddleware.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
@@ -2543,6 +2567,18 @@ export interface CommandResults {
   'benchmarkMatrix.start': { accepted: boolean }
   'benchmarkMatrix.cancel': { accepted: boolean }
   'benchmarkMatrix.approveBaseline': { accepted: boolean }
+  'benchmarkMatrix.strategyList': { accepted: boolean }
+  'benchmarkMatrix.strategyGet': { accepted: boolean }
+  'benchmarkMatrix.strategyEvidence': { accepted: boolean }
+  'benchmarkMatrix.strategyCompatibility': { accepted: boolean }
+  'benchmarkMatrix.strategyCompare': { accepted: boolean }
+  'benchmarkMatrix.strategyRegister': { accepted: boolean }
+  'benchmarkMatrix.strategyBind': { accepted: boolean }
+  'benchmarkMatrix.strategyExampleSet': { accepted: boolean }
+  'benchmarkMatrix.strategyOutputContract': { accepted: boolean }
+  'benchmarkMatrix.strategyTransition': { accepted: boolean }
+  'benchmarkMatrix.strategyPromote': { accepted: boolean }
+  'benchmarkMatrix.strategySelections': { accepted: boolean }
   'agentMiddleware.list': { accepted: boolean }
   'agentMiddleware.start': { accepted: boolean }
   'agentMiddleware.cancel': { accepted: boolean }

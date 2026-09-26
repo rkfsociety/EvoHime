@@ -7,8 +7,8 @@ use crate::StorageError;
 /// Persisted suite binding, lifecycle state and optional report for a run.
 pub type StoredBenchmarkRun = (String, String, String, Option<String>);
 /// Persisted immutable baseline fields in suite, challenge, model, agent,
-/// metrics, source and revision order.
-pub type StoredBenchmarkBaseline = (String, String, String, String, String, String, u64);
+/// metrics, source, revision, suite digest and policy digest order.
+pub type StoredBenchmarkBaseline = (String, String, String, String, String, String, u64, String, String);
 
 pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     connection.execute_batch(
@@ -34,6 +34,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
          );
          CREATE TABLE IF NOT EXISTS benchmark_baselines (
            baseline_id TEXT PRIMARY KEY NOT NULL, suite_version TEXT NOT NULL,
+           suite_hash TEXT NOT NULL DEFAULT '', policy_hash TEXT NOT NULL DEFAULT '',
            challenge_id TEXT NOT NULL, model_profile_hash TEXT NOT NULL,
            agent_profile_hash TEXT NOT NULL, metrics_json TEXT NOT NULL,
            source_commit TEXT NOT NULL, revision INTEGER NOT NULL,
@@ -126,6 +127,20 @@ pub fn get_run(
         .optional()?)
 }
 
+/// Loads report lifecycle, body, and the time of its last durable update.
+pub fn get_run_with_update(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Option<(String, Option<String>, i64)>, StorageError> {
+    Ok(connection
+        .query_row(
+            "SELECT state,report_json,updated_at_ms FROM benchmark_runs WHERE run_id=?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?)
+}
+
 /// Loads the immutable policy payload associated with one benchmark run.
 pub fn get_run_policy_json(
     connection: &Connection,
@@ -140,7 +155,11 @@ pub fn get_run_policy_json(
         .optional()?)
 }
 
-/// Returns the newest approved baseline revision for an exact compatible key.
+/// Returns the newest baseline revision for the legacy uniqueness key.
+///
+/// Suite and policy digests are checked separately for compatibility; the
+/// stored legacy uniqueness constraint requires revisions across those hashes
+/// to remain monotonic for the same version/challenge/model/agent tuple.
 pub fn latest_baseline_revision(
     connection: &Connection,
     suite_version: &str,
@@ -162,6 +181,8 @@ pub fn put_baseline(
     connection: &Connection,
     baseline_id: &str,
     suite_version: &str,
+    suite_hash: &str,
+    policy_hash: &str,
     challenge_id: &str,
     model_profile_hash: &str,
     agent_profile_hash: &str,
@@ -172,12 +193,14 @@ pub fn put_baseline(
 ) -> Result<bool, StorageError> {
     Ok(connection.execute(
         "INSERT OR IGNORE INTO benchmark_baselines
-         (baseline_id,suite_version,challenge_id,model_profile_hash,agent_profile_hash,
+         (baseline_id,suite_version,suite_hash,policy_hash,challenge_id,model_profile_hash,agent_profile_hash,
           metrics_json,source_commit,revision,created_at_ms)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
         params![
             baseline_id,
             suite_version,
+            suite_hash,
+            policy_hash,
             challenge_id,
             model_profile_hash,
             agent_profile_hash,
@@ -246,7 +269,7 @@ pub fn get_baseline(
     Ok(connection
         .query_row(
             "SELECT suite_version,challenge_id,model_profile_hash,agent_profile_hash,
-                metrics_json,source_commit,revision
+                metrics_json,source_commit,revision,suite_hash,policy_hash
          FROM benchmark_baselines WHERE baseline_id=?1",
             [baseline_id],
             |row| {
@@ -258,6 +281,8 @@ pub fn get_baseline(
                     row.get(4)?,
                     row.get(5)?,
                     row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
                 ))
             },
         )
@@ -303,6 +328,8 @@ mod tests {
                 &connection,
                 "baseline-1",
                 "suite-v1",
+                "suite-hash",
+                "policy-hash",
                 "challenge-1",
                 "model-hash",
                 "agent-hash",
@@ -317,6 +344,8 @@ mod tests {
         assert!(!insert("{\"passed\":0}"));
         let stored = get_baseline(&connection, "baseline-1").unwrap().unwrap();
         assert_eq!(stored.4, "{\"passed\":1}");
+        assert_eq!(stored.7, "suite-hash");
+        assert_eq!(stored.8, "policy-hash");
         assert_eq!(stored.6, 1);
     }
 }

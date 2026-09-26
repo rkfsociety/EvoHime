@@ -31,6 +31,15 @@ fn binary_artifact_round_trip_never_uses_a_host_path() {
         )
         .expect("binary offload succeeds");
     assert!(result.reference.locator.starts_with("artifact://"));
+    let stored_kind: String = database
+        .connection()
+        .query_row(
+            "SELECT content_kind FROM task_artifacts WHERE content_hash=?1",
+            [&result.reference.content_hash],
+            |row| row.get(0),
+        )
+        .expect("binary kind persisted");
+    assert_eq!(stored_kind, "browser_screenshot");
     assert_eq!(
         store
             .read_bytes(
@@ -166,10 +175,41 @@ fn a_large_output_is_stored_and_summarized_for_the_context() {
     assert!(result.reference.summary.contains("ещё"));
     assert!(result.reference.summary.chars().count() <= ARTIFACT_SUMMARY_CHARS + 64);
     assert_eq!(result.reference.bytes, content.len() as u64);
+    let stored_kind: String = database
+        .connection()
+        .query_row(
+            "SELECT content_kind FROM task_artifacts WHERE content_hash=?1",
+            [&result.reference.content_hash],
+            |row| row.get(0),
+        )
+        .expect("text kind persisted");
+    assert_eq!(stored_kind, KIND);
     let read = store
         .read(&result.reference.locator, "task", &[], KIND, 2_000)
         .expect("read succeeds");
     assert_eq!(read, content);
+}
+
+#[test]
+fn bounded_text_read_checks_access_size_and_content_hash() {
+    let database = database("text-bounded-read");
+    let store = ArtifactStore::new(database.connection());
+    let text = "approved example text";
+    let result = store
+        .offload(KIND, "source-task", "source-task", text, Privacy::Workspace, 1_000)
+        .expect("text offload succeeds");
+
+    assert_eq!(
+        store.read_bounded(&result.reference.locator, "source-task", &[], KIND, 2_000, 64)
+            .expect("bounded text read"),
+        text
+    );
+    assert!(store
+        .read_bounded(&result.reference.locator, "other-task", &[], KIND, 2_000, 64)
+        .is_err());
+    assert!(store
+        .read_bounded(&result.reference.locator, "source-task", &[], KIND, 2_000, 8)
+        .is_err());
 }
 
 #[test]

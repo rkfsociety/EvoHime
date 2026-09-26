@@ -2432,6 +2432,29 @@ function dispatch(
       return accepted(client.send({ benchmarkMatrixAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
+    case 'benchmarkMatrix.strategyList':
+    case 'benchmarkMatrix.strategyGet':
+    case 'benchmarkMatrix.strategyEvidence':
+    case 'benchmarkMatrix.strategyCompatibility':
+    case 'benchmarkMatrix.strategyCompare':
+    case 'benchmarkMatrix.strategyRegister':
+    case 'benchmarkMatrix.strategyBind':
+    case 'benchmarkMatrix.strategyExampleSet':
+    case 'benchmarkMatrix.strategyOutputContract':
+    case 'benchmarkMatrix.strategyTransition':
+    case 'benchmarkMatrix.strategyPromote':
+    case 'benchmarkMatrix.strategySelections': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const operation = command.slice('benchmarkMatrix.'.length)
+      const rawPayload = value['payload'] === undefined ? '{}' : asBoundedPayload(value['payload'], 64 * 1024)
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asBoundedNumber(value['expectedVersion'], Number.MAX_SAFE_INTEGER)
+      if (requestId === null || ownerScope !== 'prompt_strategy' || idempotencyKey === null || rawPayload === null || expectedVersion === null) return failure('invalid-payload', 'Некорректная команда prompt strategy.')
+      return accepted(client.send({ benchmarkMatrixAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(rawPayload, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
     case 'agentMiddleware.list':
     case 'agentMiddleware.start':
     case 'agentMiddleware.cancel': {

@@ -3377,3 +3377,11 @@ Core and does not call providers or write workspace files. A dispatched job
 whose outcome cannot be reconciled recovers as `unknown_outcome` without blind
 retry; completed artifact refs are revalidated when read. Export remains an
 explicit existing user-authorized action.
+
+### Core-owned Prompt Strategy Profiles v1
+
+`crates/evohime-core/src/prompt_strategy.rs` owns immutable, versioned strategy profiles, bindings, lifecycle/evidence checks, deterministic selection and replay snapshots. SQLite metadata is additive in schema v179; profile, example-set, output-contract and selection rows are immutable, while lifecycle transitions use revision checks. Registry rows retain hashes and artifact references, not reusable prompt text. Few-shot assets must resolve to validated privacy-approved artifacts.
+
+The Core resolves a profile against the exact model route capability declaration, context/loadout/output constraints and fresh redacted holdout evidence. Synthetic routing defaults do not qualify as positive capability evidence. Missing/corrupt historical profile revisions fail closed. Each dispatch records a route-specific snapshot with hashes of prepared messages and effective tool schemas, correlated to model provenance. Decomposition and MultiSample are sequential, tool-free, pinned to one local/offline/free route, bounded by aggregate input/output token budgets and sent with provider output limits and retries disabled. Other strategies compose through the existing context builder and tool/output contracts.
+
+Authenticated Core operations expose bounded list/get/evidence/compatibility/compare and explicit registration, binding, promotion and lifecycle transitions. Guided workflow runs recover their exact strategy pin; the Electron Agents settings surface shows bounded metadata only. Generic `TaskStarted` and `ModelContext` events retain their compatible fields but carry omission markers instead of user/system prompts. CI acceptance and module publication evidence are tracked in `release-evidence.md`.

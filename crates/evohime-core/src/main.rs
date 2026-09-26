@@ -924,7 +924,7 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         evohime_core::CoreEvent::PendingRoutingApproval { route_id, expires_at_ms, .. } => console_line!(
             "routing.pending_approval: route={route_id} expires_at_ms={expires_at_ms}"
         ),
-        evohime_core::CoreEvent::TaskStarted { prompt, .. } => console_line!("\nЗапрос: {prompt}"),
+        evohime_core::CoreEvent::TaskStarted { task_id, .. } => console_line!("\nЗадача начата: {task_id}"),
         evohime_core::CoreEvent::AssistantDelta { content, .. } => print!("{content}"),
         evohime_core::CoreEvent::ToolStarted { tool_name, .. } => {
             console_line!("\n→ tool.started {tool_name}")

@@ -41,9 +41,11 @@ fn envelope() -> ModelRequestEnvelopeV1 {
         policy_snapshot_hash: "c".repeat(64),
         route_policy_hash_shared: false,
         system_prompt: "system".into(),
+        omitted_system_prompt_hash: None,
         messages: vec![ModelMessage {
             role: "user".into(),
             content: "hello".into(),
+            omitted_content_hash: None,
         }],
         tools: vec![ToolSchema {
             name: "tool".into(),

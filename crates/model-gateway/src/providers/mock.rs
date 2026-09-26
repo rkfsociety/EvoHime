@@ -61,6 +61,14 @@ impl ModelProvider for MockProvider {
         "mock://local"
     }
 
+    fn supports_tool_calls(&self) -> bool {
+        true
+    }
+
+    fn supports_structured_output(&self) -> bool {
+        true
+    }
+
     fn stream_chat(&self, _messages: &[ChatMessage]) -> TokenStream {
         let chunks = self.chunks.clone();
         Box::pin(stream! {

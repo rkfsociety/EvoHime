@@ -591,7 +591,7 @@ mod tests {
             events.recv().await.expect("started event"),
             CoreEvent::TaskStarted {
                 task_id: "task-1".into(),
-                prompt: "hello".into()
+                prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into()
             }
         );
         coordinator
@@ -1154,7 +1154,7 @@ mod tests {
         let first = journal
             .record(&CoreEvent::TaskStarted {
                 task_id: "task-journal".into(),
-                prompt: "persist me".into(),
+                prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
             })
             .await
             .expect("event records");
@@ -1169,6 +1169,9 @@ mod tests {
         assert_eq!(replay.len(), 1);
         assert_eq!(replay[0].event_type, "task.completed");
         assert_eq!(replay[0].task_id, "task-journal");
+        let started = journal.replay(0, 1).await.expect("started event replays");
+        assert_eq!(started.len(), 1);
+        assert!(!String::from_utf8_lossy(&started[0].payload).contains("persist me"));
         journal
             .record_audit(
                 "run-journal",
@@ -1405,7 +1408,7 @@ mod tests {
         events
             .send(CoreEvent::TaskStarted {
                 task_id: "slow-consumer".into(),
-                prompt: "first".into(),
+                prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
             })
             .await
             .expect("first event enters the bounded queue");
@@ -1474,7 +1477,7 @@ mod tests {
         coordinator
             .emit(CoreEvent::TaskStarted {
                 task_id: "journal-failure".into(),
-                prompt: "exercise journal error".into(),
+                prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
             })
             .await;
 

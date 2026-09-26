@@ -256,6 +256,8 @@ mod tests {
             &connection,
             "baseline-1",
             "suite-v1",
+            "suite-hash",
+            "policy-hash",
             "challenge-1",
             "model-hash",
             "agent-hash",

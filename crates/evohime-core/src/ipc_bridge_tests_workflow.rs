@@ -5,6 +5,254 @@ fn workflow_bridge(name: &str) -> (IpcBridge, tempfile::TempDir) {
     ambient_bridge(name)
 }
 
+#[tokio::test]
+async fn prompt_strategy_output_contract_ipc_returns_metadata_only() {
+    let (bridge, _directory) = workflow_bridge("prompt-strategy-output-contract");
+    let contract = crate::structured_response_contract::ResponseContract::new(
+        "strategy.result/v1",
+        1,
+        serde_json::json!({"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}),
+        crate::structured_response_contract::ResponseStrategy::Auto,
+    ).expect("contract");
+    let (event_type, response) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::BenchmarkMatrixAction(
+            generated::AgentBenchmarkMatrixCommand {
+                schema_version: 1,
+                request_id: "strategy-output-contract".into(),
+                owner_scope: "prompt_strategy".into(),
+                operation: "strategyOutputContract".into(),
+                payload: serde_json::to_vec(&serde_json::json!({"contract":contract}))
+                    .expect("payload"),
+                expected_version: 0,
+                idempotency_key: "strategy-output-contract-key".into(),
+            },
+        ),
+    ).await;
+    assert_eq!(event_type, "benchmark_matrix.result");
+    assert_eq!(response["status"], "ok");
+    assert_eq!(response["result"]["contract_id"], "strategy.result/v1");
+    assert_eq!(response["result"]["revision"], 1);
+    assert_eq!(response["result"]["inserted"], true);
+    assert!(!response.to_string().contains("properties"));
+    assert!(!response.to_string().contains("boolean"));
+}
+
+#[tokio::test]
+async fn prompt_strategy_compatibility_and_evidence_ipc_are_metadata_only() {
+    let (bridge, _directory) = workflow_bridge("prompt-strategy-inspection");
+    let profile = crate::prompt_strategy::declared_baseline("general", "agent")
+        .expect("baseline profile");
+    let capability_hash = format!("sha256:{}", "a".repeat(64));
+    let context_hash = format!("sha256:{}", "b".repeat(64));
+    let fresh_evidence_hashes = std::collections::HashSet::new();
+    let resolved = crate::prompt_strategy::resolve_strategy(crate::prompt_strategy::ResolverInput {
+        task_kind: "general",
+        role: "agent",
+        baseline: &profile,
+        profiles: &[],
+        pinned_profile: None,
+        bindings: &[],
+        route_id: "route",
+        model_id: "model",
+        capability_trust: crate::prompt_strategy::CapabilityTrust::Unknown,
+        capability_epoch: None,
+        supports_tool_calls: false,
+        supports_structured_output: false,
+        fresh_evidence_hashes: &fresh_evidence_hashes,
+        available_tool_ids: &[],
+        capability_snapshot_hash: &capability_hash,
+        context_profile_hash: &context_hash,
+        loadout_hash: None,
+        loadout_ref: None,
+        run_id: "strategy-run",
+        call_id: "strategy-call",
+    })
+    .expect("baseline resolution");
+    {
+        let database = bridge.journal().database().lock().await;
+        crate::prompt_strategy::register_profile(
+            database.connection(),
+            &profile,
+            crate::task_memory::now_millis() as i64,
+        )
+        .expect("register baseline");
+        crate::prompt_strategy::persist_selection(
+            database.connection(),
+            &resolved.snapshot,
+            "strategy-provenance",
+            crate::task_memory::now_millis() as i64,
+        )
+        .expect("persist selection");
+    }
+
+    let (event_type, compatibility) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::BenchmarkMatrixAction(
+            generated::AgentBenchmarkMatrixCommand {
+                schema_version: 1,
+                request_id: "strategy-compatibility".into(),
+                owner_scope: "prompt_strategy".into(),
+                operation: "strategyCompatibility".into(),
+                payload: serde_json::to_vec(&serde_json::json!({
+                    "profile_id": profile.profile_id,
+                    "revision": profile.revision,
+                    "provenance_request_id": "strategy-provenance",
+                }))
+                .expect("payload"),
+                expected_version: 0,
+                idempotency_key: "strategy-compatibility-key".into(),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(event_type, "benchmark_matrix.result");
+    assert_eq!(compatibility["status"], "ok");
+    assert_eq!(compatibility["result"]["compatible"], true);
+    assert!(!compatibility.to_string().contains("prompt text"));
+
+    let (event_type, evidence) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::BenchmarkMatrixAction(
+            generated::AgentBenchmarkMatrixCommand {
+                schema_version: 1,
+                request_id: "strategy-evidence".into(),
+                owner_scope: "prompt_strategy".into(),
+                operation: "strategyEvidence".into(),
+                payload: serde_json::to_vec(&serde_json::json!({
+                    "profile_id": profile.profile_id,
+                    "revision": profile.revision,
+                }))
+                .expect("payload"),
+                expected_version: 0,
+                idempotency_key: "strategy-evidence-key".into(),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(event_type, "benchmark_matrix.result");
+    assert_eq!(evidence["status"], "ok");
+    assert_eq!(evidence["result"]["evidence"].as_array().map(Vec::len), Some(0));
+}
+
+#[tokio::test]
+async fn prompt_strategy_compare_requires_and_projects_exact_holdout_evidence() {
+    let (bridge, _directory) = workflow_bridge("prompt-strategy-compare");
+    let mut profile = crate::prompt_strategy::declared_baseline("general", "agent")
+        .expect("baseline profile");
+    profile.composition = crate::prompt_strategy::StrategyComposition::ToolUse {
+        required_tool_ids: vec!["search".into()],
+    };
+    profile.content_hash = crate::prompt_strategy::profile_hash(&profile).expect("profile hash");
+    let strategy_hash = crate::prompt_strategy::strategy_candidate_hash(&profile)
+        .expect("candidate hash");
+    let model_hash = format!("sha256:{}", "d".repeat(64));
+    let agent_hash = format!("sha256:{}", "e".repeat(64));
+    let suite_hash = format!("sha256:{}", "a".repeat(64));
+    let policy_hash = format!("sha256:{}", "b".repeat(64));
+    let report = crate::agent_benchmark_matrix::BenchmarkReport {
+        contract_id: crate::agent_benchmark_matrix::CONTRACT_ID.into(),
+        contract_hash: hex::encode(<sha2::Sha256 as sha2::Digest>::digest(
+            crate::agent_benchmark_matrix::CONTRACT_ID.as_bytes(),
+        )),
+        run_id: "strategy-compare-run".into(),
+        source_commit: "test-commit".into(),
+        suite_id: "suite".into(),
+        suite_version: "1".into(),
+        suite_hash: suite_hash.clone(),
+        policy_hash: policy_hash.clone(),
+        model_profile_ids: vec!["model-profile".into()],
+        model_profile_hashes: vec![model_hash.clone()],
+        agent_profile_ids: vec!["agent-profile".into()],
+        agent_profile_hashes: vec![agent_hash.clone()],
+        strategy_profile_hash_by_agent_id: [("agent-profile".into(), strategy_hash.clone())]
+            .into_iter()
+            .collect(),
+        holdout_evaluation: true,
+        metrics: [("challenge:model:agent-profile".into(), Default::default())]
+            .into_iter()
+            .collect(),
+        comparisons: [(
+            "challenge:model:agent-profile".into(),
+            crate::agent_benchmark_matrix::BenchmarkComparison {
+                verdict: crate::agent_benchmark_matrix::ComparisonVerdict::Regressed,
+                security_hard_failure: false,
+                reason: "metric_regression".into(),
+            },
+        )]
+        .into_iter()
+        .collect(),
+        redaction_status: "redacted".into(),
+    };
+    let evidence = crate::prompt_strategy::StrategyEvidenceRef {
+        evidence_id: report.run_id.clone(),
+        agent_profile_id: "agent-profile".into(),
+        agent_profile_hash: agent_hash,
+        strategy_candidate_hash: strategy_hash,
+        evidence_hash: report.canonical_hash().expect("report hash"),
+        suite_hash,
+        policy_hash,
+        model_profile_hash: model_hash,
+        holdout: true,
+    };
+    profile.evidence.push(evidence);
+    profile.content_hash = crate::prompt_strategy::profile_hash(&profile).expect("profile hash");
+    let report_json = serde_json::to_string(&report).expect("report json");
+    {
+        let database = bridge.journal().database().lock().await;
+        let connection = database.connection();
+        crate::prompt_strategy::register_profile(
+            connection,
+            &profile,
+            crate::task_memory::now_millis() as i64,
+        )
+        .expect("register profile");
+        assert!(evohime_local_storage::domains::evaluation::save_run(
+            connection,
+            &report.run_id,
+            &report.suite_id,
+            &report.suite_version,
+            "{}",
+            "ready_for_promotion",
+            crate::task_memory::now_millis() as i64,
+        )
+        .expect("save run"));
+        assert!(evohime_local_storage::domains::evaluation::save_report(
+            connection,
+            &report.run_id,
+            &report_json,
+            "ready_for_promotion",
+            crate::task_memory::now_millis() as i64,
+        )
+        .expect("save report"));
+    }
+    let (event_type, result) = ambient_call(
+        &bridge,
+        generated::command_envelope::Command::BenchmarkMatrixAction(
+            generated::AgentBenchmarkMatrixCommand {
+                schema_version: 1,
+                request_id: "strategy-compare".into(),
+                owner_scope: "prompt_strategy".into(),
+                operation: "strategyCompare".into(),
+                payload: serde_json::to_vec(&serde_json::json!({
+                    "profile_id": profile.profile_id,
+                    "revision": profile.revision,
+                    "run_id": report.run_id,
+                }))
+                .expect("payload"),
+                expected_version: 0,
+                idempotency_key: "strategy-compare-key".into(),
+            },
+        ),
+    )
+    .await;
+    assert_eq!(event_type, "benchmark_matrix.result");
+    assert_eq!(result["status"], "ok");
+    assert_eq!(result["result"]["rows"].as_array().map(|rows| rows.len()), Some(1));
+    assert_eq!(result["result"]["rows"][0]["comparison"]["verdict"], "regressed");
+    assert_eq!(result["result"]["rows"][0]["metrics"]["attempts"], 0);
+}
+
 /// Каталог отдаёт версии, входы и пригодность к расписанию, но не граф
 /// целиком: renderer не должен получать материал для собственного
 /// планирования.
@@ -366,6 +614,52 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
         .insert_guided_workflow_run(&run, &nodes, &link)
         .await
         .expect("completed recipe run");
+    let strategy_profile = crate::prompt_strategy::declared_baseline("general", "agent")
+        .expect("baseline strategy");
+    let capability_hash = format!("sha256:{}", "a".repeat(64));
+    let context_hash = format!("sha256:{}", "b".repeat(64));
+    let available_tool_ids = Vec::new();
+    let resolved_strategy = crate::prompt_strategy::resolve_strategy(
+        crate::prompt_strategy::ResolverInput {
+            task_kind: "general",
+            role: "agent",
+            baseline: &strategy_profile,
+            profiles: &[],
+            pinned_profile: None,
+            bindings: &[],
+            route_id: "recipe-route",
+            model_id: "recipe-model",
+            capability_trust: crate::prompt_strategy::CapabilityTrust::Unknown,
+            capability_epoch: None,
+            supports_tool_calls: false,
+            supports_structured_output: false,
+            fresh_evidence_hashes: &std::collections::HashSet::new(),
+            available_tool_ids: &available_tool_ids,
+            capability_snapshot_hash: &capability_hash,
+            context_profile_hash: &context_hash,
+            loadout_hash: None,
+            loadout_ref: None,
+            run_id,
+            call_id: "recipe-call",
+        },
+    )
+    .expect("resolved baseline strategy");
+    {
+        let database = bridge.journal().database().lock().await;
+        crate::prompt_strategy::register_profile(
+            database.connection(),
+            &strategy_profile,
+            created_at_ms,
+        )
+        .expect("register baseline strategy");
+        crate::prompt_strategy::persist_selection(
+            database.connection(),
+            &resolved_strategy.snapshot,
+            "recipe-provenance-request",
+            created_at_ms,
+        )
+        .expect("persist run strategy pin");
+    }
 
     let (event_type, forked) = ambient_call(
         &bridge,
@@ -381,6 +675,30 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
     assert_eq!(forked["status"], "draft_created");
     assert_eq!(forked["source_run_id"], run_id);
     assert_eq!(forked["error_code"], "");
+    {
+        let database = bridge.journal().database().lock().await;
+        let provenance = evohime_local_storage::visual_workflow_builder_store::read_draft_provenance(
+            database.connection(),
+            forked["draft_id"].as_str().expect("draft id"),
+            &workspace_path,
+        )
+        .expect("read fork provenance")
+        .expect("fork provenance");
+        let provenance: serde_json::Value = serde_json::from_slice(&provenance)
+            .expect("provenance metadata");
+        assert_eq!(
+            provenance["prompt_strategy_pin"]["profile"]["profile_id"],
+            strategy_profile.profile_id
+        );
+        assert_eq!(
+            provenance["prompt_strategy_pin"]["profile"]["revision"],
+            strategy_profile.revision
+        );
+        assert_eq!(
+            provenance["prompt_strategy_pin"]["selection_snapshot_id"],
+            resolved_strategy.snapshot.snapshot_id
+        );
+    }
 
     let (event_type, recovered) = ambient_call(
         &bridge,

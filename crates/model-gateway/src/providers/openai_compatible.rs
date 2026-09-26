@@ -61,6 +61,10 @@ impl ModelProvider for OpenAICompatibleProvider {
         self.inner.base_url()
     }
 
+    fn supports_tool_calls(&self) -> bool {
+        self.inner.supports_tool_calls()
+    }
+
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream {
         self.inner.stream_chat(messages)
     }
