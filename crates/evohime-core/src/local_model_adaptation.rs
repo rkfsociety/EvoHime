@@ -692,6 +692,16 @@ fn skip_metadata_value(
 /// operation. It accepts no caller-controlled URL or destination.
 static ADAPTER_INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// Downloads, verifies and installs the fixed llama.cpp CPU package.
+///
+/// This operation accepts no caller-controlled URL or destination. Progress
+/// is reported through `progress`, and the returned path identifies the
+/// validated versioned installation under `data_root`.
+///
+/// # Errors
+///
+/// Returns [`AdaptationError::AdapterInstall`] when the installation path,
+/// pinned archive, extraction, or post-install validation fails.
 pub async fn install_pinned_adapter(
     data_root: &Path,
     progress: tokio::sync::mpsc::UnboundedSender<AdapterInstallProgress>,

@@ -40,6 +40,9 @@ pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     Ok(())
 }
 
+/// Inserts a benchmark run without overwriting an existing run identifier.
+///
+/// Returns `true` only when a new row was created.
 pub fn save_run(
     connection: &Connection,
     run_id: &str,
@@ -87,6 +90,9 @@ pub fn save_attempt(
     )? == 1)
 }
 
+/// Updates the report and lifecycle state of an existing benchmark run.
+///
+/// Returns `true` only when the run identifier matched a stored row.
 pub fn save_report(
     connection: &Connection,
     run_id: &str,
