@@ -1294,6 +1294,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 let task_group = Arc::clone(&state.lock().await.background_tasks);
                                 let permit = task_group.try_acquire()
                                     .ok_or_else(|| "adaptation_background_capacity_reached".to_string())?;
+                                let previous_revision = job.revision;
                                 {
                                     let transaction = db.connection_mut().transaction()
                                         .map_err(|_| "benchmark_run_storage_failed".to_string())?;
@@ -1317,7 +1318,6 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     ).map_err(|_| "benchmark_run_storage_failed".to_string())? {
                                         return Err("benchmark_run_id_conflict".into());
                                     }
-                                    let previous_revision = job.revision;
                                     let stored_input = evohime_local_storage::local_model_adaptation_store::get_benchmark_inputs(
                                         &transaction, job_id,
                                     ).map_err(|_| "benchmark_input_storage_failed".to_string())?
