@@ -1784,7 +1784,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             }) {
                                 return Err("adaptation_publication_identity_mismatch".into());
                             }
-                            let mut db = database;
+                            let db = database;
                             if !evohime_local_storage::local_model_adaptation_store::put_publication(
                                 db.connection(), job_id, &model_id, 1, &relative_path, expected_output,
                                 output_size, "prepared", &publication_hash, crate::task_memory::now_millis() as i64,
