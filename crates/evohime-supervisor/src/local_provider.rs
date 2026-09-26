@@ -1028,6 +1028,7 @@ mod adaptation_process_tests {
         let output_path = root.join("fake-output.gguf");
         let mut child = Command::new("cmd")
             .args(["/C", command])
+            .current_dir(root)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -1049,10 +1050,7 @@ mod adaptation_process_tests {
     #[tokio::test]
     async fn fake_quantizer_completion_returns_hash_and_size() {
         let root = root();
-        let command = format!(
-            "echo fake-output>\"{}\"",
-            root.join("fake-output.gguf").display()
-        );
+        let command = "echo fake-output>fake-output.gguf";
         let mut process = fake_quantizer(&root, &command, 1024).await;
         let result = tokio::time::timeout(Duration::from_secs(10), async {
             loop {

@@ -2,6 +2,8 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
+use crate::StorageError;
+
 /// Revision, state, request hash, snapshot hash, immutable request, snapshot.
 pub type StoredAdaptationJob = (u64, String, String, String, Vec<u8>, Vec<u8>);
 /// Model identity/revision, path, artifact hash/size, phase and journal hash.
@@ -13,7 +15,7 @@ pub type StoredJobSummary = (String, u64, String, Vec<u8>);
 pub fn get_benchmark_baseline(
     connection: &Connection,
     baseline_id: &str,
-) -> Result<Option<(String, String, String, String, String, String, u64)>> {
+) -> Result<Option<(String, String, String, String, String, String, u64)>, StorageError> {
     crate::benchmark_store::get_baseline(connection, baseline_id)
 }
 
