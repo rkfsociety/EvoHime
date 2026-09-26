@@ -1031,28 +1031,30 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 job.transition(crate::local_model_adaptation::AdaptationState::Running, job.evidence.clone())
                                     .map_err(|_| "adaptation_transition_denied".to_string())?;
                                 let snapshot = serde_json::to_vec(&job).map_err(|_| "serialization_failed".to_string())?;
-                                let mut transaction = db.connection_mut().transaction()
-                                    .map_err(|_| "adaptation_start_transaction_failed".to_string())?;
-                                let current = evohime_local_storage::local_model_adaptation_store::get_job(&transaction, job_id)
-                                    .map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "adaptation_job_not_found".to_string())?;
-                                if current.0 != previous_revision {
-                                    return Err("adaptation_job_revision_conflict".into());
+                                {
+                                    let transaction = db.connection_mut().transaction()
+                                        .map_err(|_| "adaptation_start_transaction_failed".to_string())?;
+                                    let current = evohime_local_storage::local_model_adaptation_store::get_job(&transaction, job_id)
+                                        .map_err(|_| "storage_failed".to_string())?.ok_or_else(|| "adaptation_job_not_found".to_string())?;
+                                    if current.0 != previous_revision {
+                                        return Err("adaptation_job_revision_conflict".into());
+                                    }
+                                    if !evohime_local_storage::local_model_adaptation_store::reserve_disk(
+                                        &transaction, job_id, minimum_disk_bytes,
+                                        crate::task_memory::now_millis() as i64,
+                                    ).map_err(|_| "adaptation_disk_reservation_write_failed".to_string())? {
+                                        return Err("adaptation_disk_reservation_conflict".into());
+                                    }
+                                    if !evohime_local_storage::local_model_adaptation_store::put_job(
+                                            &transaction, job_id, job.revision, job.state.storage_key(),
+                                            &job.request.idempotency_key, &current.2, &job.content_sha256,
+                                            &current.4, &snapshot, crate::task_memory::now_millis() as i64,
+                                        ).map_err(|_| "storage_failed".to_string())? {
+                                        return Err("adaptation_job_revision_conflict".into());
+                                    }
+                                    transaction.commit()
+                                        .map_err(|_| "adaptation_start_transaction_failed".to_string())?;
                                 }
-                                if !evohime_local_storage::local_model_adaptation_store::reserve_disk(
-                                    &transaction, job_id, minimum_disk_bytes,
-                                    crate::task_memory::now_millis() as i64,
-                                ).map_err(|_| "adaptation_disk_reservation_write_failed".to_string())? {
-                                    return Err("adaptation_disk_reservation_conflict".into());
-                                }
-                                if !evohime_local_storage::local_model_adaptation_store::put_job(
-                                        &transaction, job_id, job.revision, job.state.storage_key(),
-                                        &job.request.idempotency_key, &current.2, &job.content_sha256,
-                                        &current.4, &snapshot, crate::task_memory::now_millis() as i64,
-                                    ).map_err(|_| "storage_failed".to_string())? {
-                                    return Err("adaptation_job_revision_conflict".into());
-                                }
-                                transaction.commit()
-                                    .map_err(|_| "adaptation_start_transaction_failed".to_string())?;
                                 drop(db);
                                 let command = serde_json::json!({
                                     "op":"adaptation_quantize_start", "job_id":job_id,
