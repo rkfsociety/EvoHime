@@ -70,3 +70,8 @@ pub mod receipts {
     //! Facade for model-provenance receipt persistence.
     pub use crate::model_provenance::*;
 }
+
+pub mod evaluation {
+    //! Facade for persisted benchmark evaluation runs and reports.
+    pub use crate::benchmark_store::{get_run, get_run_policy_json, save_report};
+}

@@ -101,7 +101,7 @@ fn is_plain_directory(path: &Path) -> bool {
     {
         use std::os::windows::fs::MetadataExt;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-        return metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0
     }
     #[cfg(not(windows))]
     {
@@ -123,7 +123,9 @@ fn file_sha256_matches(path: &Path, expected: &str) -> bool {
     expected.len() == digest.len() * 2
         && expected
             .as_bytes()
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .zip(digest)
             .all(|(pair, byte)| {
                 let high = (pair[0] as char).to_digit(16);

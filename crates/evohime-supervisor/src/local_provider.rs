@@ -1026,7 +1026,7 @@ mod adaptation_process_tests {
         max_output_bytes: u64,
     ) -> LocalQuantizerProcess {
         let output_path = root.join("fake-output.gguf");
-        let mut child = Command::new("cmd")
+        let child = Command::new("cmd")
             .args(["/C", command])
             .current_dir(root)
             .stdin(Stdio::null())

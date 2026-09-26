@@ -955,7 +955,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 if !crate::local_model_adaptation::adapter_install_is_valid(&adapter) {
                                     return Err("adapter_unavailable".into());
                                 }
-                                let now_ms = crate::task_memory::now_millis();
+                                let now_ms = crate::task_memory::now_millis() as i64;
                                 let pressure = state.lock().await.host_telemetry.latest().cloned();
                                 let Some(pressure) = pressure else {
                                     drop(db);

@@ -1117,7 +1117,10 @@ pub async fn recover_after_restart(
 ) -> Result<u32, String> {
     let summaries = {
         let database = journal.database().lock().await;
-        crate::local_model_adaptation_store::list_jobs(database.connection(), MAX_JOBS as u32)
+        evohime_local_storage::local_model_adaptation_store::list_jobs(
+            database.connection(),
+            MAX_JOBS as u32,
+        )
             .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
     };
     let mut recovered = 0_u32;
@@ -1160,11 +1163,11 @@ pub async fn recover_after_restart(
                     .connection_mut()
                     .transaction()
                     .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
-                let current = crate::local_model_adaptation_store::get_job(&transaction, &job_id)
+                let current = evohime_local_storage::local_model_adaptation_store::get_job(&transaction, &job_id)
                     .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
                     .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
                 if current.0 != row_revision
-                    || !crate::local_model_adaptation_store::put_job(
+                    || !evohime_local_storage::local_model_adaptation_store::put_job(
                         &transaction,
                         &job_id,
                         job.revision,
@@ -1181,7 +1184,7 @@ pub async fn recover_after_restart(
                     return Err("adaptation_recovery_revision_conflict".into());
                 }
                 if let Some((_, _, run_state, _)) =
-                    crate::benchmark_store::get_run(&transaction, &job_id)
+                    evohime_local_storage::domains::evaluation::get_run(&transaction, &job_id)
                         .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
                 {
                     if run_state == "running" {
@@ -1189,7 +1192,7 @@ pub async fn recover_after_restart(
                             "status":job.state.storage_key(),"redacted":true
                         }))
                         .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
-                        if !crate::benchmark_store::save_report(
+                        if !evohime_local_storage::domains::evaluation::save_report(
                             &transaction,
                             &job_id,
                             &report,
@@ -1232,11 +1235,11 @@ pub async fn recover_after_restart(
                 let (run, stored_policy, frozen_input) = {
                     let database = journal.database().lock().await;
                     (
-                        crate::benchmark_store::get_run(database.connection(), &job_id)
+                        evohime_local_storage::domains::evaluation::get_run(database.connection(), &job_id)
                             .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
-                        crate::benchmark_store::get_run_policy_json(database.connection(), &job_id)
+                        evohime_local_storage::domains::evaluation::get_run_policy_json(database.connection(), &job_id)
                             .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
-                        crate::local_model_adaptation_store::get_benchmark_inputs(
+                        evohime_local_storage::local_model_adaptation_store::get_benchmark_inputs(
                             database.connection(),
                             &job_id,
                         )
@@ -1300,7 +1303,7 @@ async fn reconcile_prepared_publication(
     row_revision: u64,
 ) -> Result<bool, String> {
     let database = journal.database().lock().await;
-    let Some(publication) = crate::local_model_adaptation_store::get_publication(
+    let Some(publication) = evohime_local_storage::local_model_adaptation_store::get_publication(
         database.connection(),
         &job.request.job_id,
     )
@@ -1353,7 +1356,7 @@ async fn reconcile_prepared_publication(
         job.request.source.model_id, job.request.source.revision
     );
     let source_row =
-        crate::local_model_runtime_manager_store::get_record(database.connection(), &source_id)
+        evohime_local_storage::local_model_runtime_manager_store::get_record(database.connection(), &source_id)
             .map_err(|_| "adaptation_recovery_source_read_failed".to_string())?
             .ok_or_else(|| "adaptation_recovery_source_missing".to_string())?;
     let source: crate::local_model_runtime_manager::LocalModelDescriptor =
@@ -1459,7 +1462,7 @@ async fn reconcile_prepared_publication(
         .connection_mut()
         .transaction()
         .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
-    let current = crate::local_model_adaptation_store::get_job(&transaction, &job.request.job_id)
+    let current = evohime_local_storage::local_model_adaptation_store::get_job(&transaction, &job.request.job_id)
         .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
         .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
     if current.0 != row_revision || current.1 != AdaptationState::ReadyForPromotion.storage_key() {
@@ -1479,13 +1482,13 @@ async fn reconcile_prepared_publication(
     ] {
         let hash = crate::local_model_runtime_manager::canonical_hash(&json);
         if let Some(existing) =
-            crate::local_model_runtime_manager_store::get_record(&transaction, &record_id)
+            evohime_local_storage::local_model_runtime_manager_store::get_record(&transaction, &record_id)
                 .map_err(|_| "adaptation_recovery_registry_read_failed".to_string())?
         {
             if existing.0 != kind || existing.1 != 1 || existing.2 != hash || existing.3 != json {
                 return Err("adaptation_recovery_registry_conflict".into());
             }
-        } else if !crate::local_model_runtime_manager_store::put_record(
+        } else if !evohime_local_storage::local_model_runtime_manager_store::put_record(
             &transaction,
             &record_id,
             kind,
@@ -1499,7 +1502,7 @@ async fn reconcile_prepared_publication(
             return Err("adaptation_recovery_registry_conflict".into());
         }
     }
-    if !crate::local_model_adaptation_store::put_publication(
+    if !evohime_local_storage::local_model_adaptation_store::put_publication(
         &transaction,
         &promoted_job.request.job_id,
         &expected_model_id,
@@ -1515,7 +1518,7 @@ async fn reconcile_prepared_publication(
     {
         return Err("adaptation_recovery_publication_conflict".into());
     }
-    if !crate::local_model_adaptation_store::put_job(
+    if !evohime_local_storage::local_model_adaptation_store::put_job(
         &transaction,
         &promoted_job.request.job_id,
         promoted_job.revision,
@@ -1564,13 +1567,13 @@ async fn recover_interrupted_job(
         .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
     let database = journal.database().lock().await;
     let current =
-        crate::local_model_adaptation_store::get_job(database.connection(), &job.request.job_id)
+        evohime_local_storage::local_model_adaptation_store::get_job(database.connection(), &job.request.job_id)
             .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
             .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
     if current.0 != expected_revision || current.1 != expected_state {
         return Err("adaptation_recovery_revision_conflict".into());
     }
-    if !crate::local_model_adaptation_store::put_job(
+    if !evohime_local_storage::local_model_adaptation_store::put_job(
         database.connection(),
         &job.request.job_id,
         job.revision,
