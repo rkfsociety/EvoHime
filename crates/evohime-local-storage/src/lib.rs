@@ -140,6 +140,8 @@ pub mod hardware_fit_evidence_store;
 pub mod human_work_items_store;
 /// Persistence for IDE companion bridge state.
 pub mod ide_companion_bridge_store;
+/// Persistence for bounded image-generation job metadata.
+pub mod image_generation_store;
 /// Persistence for incremental change protocol state.
 pub mod incremental_change_protocol_store;
 pub(crate) mod integration_provider_store;
@@ -296,7 +298,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 176;
+pub const SCHEMA_VERSION: u32 = 177;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,

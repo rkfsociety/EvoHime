@@ -1900,6 +1900,8 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
         | ProviderError::Http(message)
         | ProviderError::Api(message)
         | ProviderError::Stream(message) => message.to_ascii_lowercase(),
+        ProviderError::ImagePreflightRejected => "image preflight rejected".into(),
+        ProviderError::ImageCapabilityStale => "image capability stale".into(),
     };
     match error {
         ProviderError::Config(_)
@@ -1910,7 +1912,9 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
         ProviderError::Config(_) if message.contains("key") || message.contains("credential") => {
             CatalogFailureCode::CredentialRejected
         }
-        ProviderError::Config(_) => CatalogFailureCode::DiscoveryUnsupported,
+        ProviderError::Config(_)
+        | ProviderError::ImagePreflightRejected
+        | ProviderError::ImageCapabilityStale => CatalogFailureCode::DiscoveryUnsupported,
         ProviderError::Http(_) | ProviderError::Stream(_) if message.contains("timeout") => {
             CatalogFailureCode::Timeout
         }

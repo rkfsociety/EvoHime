@@ -867,7 +867,9 @@ pub(crate) fn classify_gateway_error(
             };
             classify_provider_failure(provider_id, status, provider_code)
         }
-        ProviderError::Config(_) => FreeProbeFailureCode::ConsentOrCredentialRequired,
+        ProviderError::Config(_)
+        | ProviderError::ImagePreflightRejected
+        | ProviderError::ImageCapabilityStale => FreeProbeFailureCode::ConsentOrCredentialRequired,
         ProviderError::Http(_) | ProviderError::Stream(_) => FreeProbeFailureCode::TransportFailure,
     }
 }

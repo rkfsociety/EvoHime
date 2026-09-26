@@ -5,11 +5,16 @@ impl IpcBridge {
         &self,
         writer: &mut W,
         _request_id: String,
-        _client_id: String,
+        client_id: String,
         _command_hash: String,
         command: Option<generated::command_envelope::Command>,
     ) -> Result<(), IpcBridgeError> {
         match command {
+            Some(generated::command_envelope::Command::ImageGeneration(request)) => {
+                let result = self.dispatch_image_generation(&client_id, &request).await;
+                self.write_image_generation_response(writer, &request, result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::SetAmbientListening(request)) => {
                 let result = self.dispatch_set_ambient_listening(request).await;
                 self.write_response(writer, "ambient.listening", serde_json::to_vec(&result)?)
@@ -292,5 +297,187 @@ impl IpcBridge {
             _ => unreachable!("command routed to the wrong domain"),
         }
         Ok(())
+    }
+}
+
+impl IpcBridge {
+    async fn dispatch_image_generation(
+        &self,
+        client_id: &str,
+        request: &generated::ImageGenerationCommand,
+    ) -> serde_json::Value {
+        if request.schema_version != 1 || request.payload.len() > 16 * 1024 {
+            return serde_json::json!({"status":"rejected","error_code":"invalid_request"});
+        }
+        let Some(runtime) = self.image_generation_runtime() else {
+            if request.operation == "capability" {
+                return serde_json::to_value(
+                    crate::image_generation::ImageCapabilityProjection::unavailable(
+                        "unknown",
+                        "model_gateway_unavailable",
+                    ),
+                )
+                .unwrap_or_else(
+                    |_| serde_json::json!({"state":"unknown","reason_code":"projection_failed"}),
+                );
+            }
+            return serde_json::json!({"status":"unavailable","error_code":"model_gateway_unavailable"});
+        };
+        match request.operation.as_str() {
+            "capability" => serde_json::to_value(runtime.capability()).unwrap_or_else(
+                |_| serde_json::json!({"status":"unavailable","error_code":"projection_failed"}),
+            ),
+            "get" => match runtime.get_job(client_id, &request.job_id).await {
+                Ok(Some(job)) => serde_json::to_value(job)
+                    .unwrap_or_else(|_| serde_json::json!({"error_code":"projection_failed"})),
+                Ok(None) => serde_json::json!({"status":"not_found","error_code":"unknown_job"}),
+                Err(_) => serde_json::json!({"status":"failed","error_code":"storage_error"}),
+            },
+            "cancel" => match runtime.cancel_job(client_id, &request.job_id).await {
+                Ok(cancelled) => {
+                    serde_json::json!({"status":if cancelled {"cancelled"} else {"not_cancellable"},"job_id":request.job_id})
+                }
+                Err(_) => serde_json::json!({"status":"failed","error_code":"storage_error"}),
+            },
+            "start" => {
+                let Ok(mut image_request) = serde_json::from_slice::<
+                    crate::image_generation::ImageGenerationRequest,
+                >(&request.payload) else {
+                    return serde_json::json!({"status":"rejected","error_code":"invalid_request"});
+                };
+                if request.idempotency_key.trim().is_empty()
+                    || request.idempotency_key.len() > 128
+                    || request.job_id.trim().is_empty()
+                    || request.job_id.len() > 128
+                    || request.job_id != request.idempotency_key
+                {
+                    return serde_json::json!({"status":"rejected","error_code":"invalid_request_identity"});
+                }
+                image_request.idempotency_key = request.idempotency_key.clone();
+                image_request.job_id = request.job_id.clone();
+                if let Err(error) = runtime.preflight_request(&image_request) {
+                    return serde_json::json!({"status":"rejected","error_code":error.code()});
+                }
+                let background_permit = match self.background_tasks.try_acquire() {
+                    Some(permit) => permit,
+                    None => {
+                        return serde_json::json!({"status":"rejected","error_code":"image_job_capacity_reached"})
+                    }
+                };
+                let permit = match runtime.try_reserve_slot() {
+                    Ok(permit) => permit,
+                    Err(error) => {
+                        return serde_json::json!({"status":"rejected","error_code":error.code()})
+                    }
+                };
+                if let Err(error) = runtime.reserve_job(&request.job_id, client_id) {
+                    if matches!(
+                        error,
+                        crate::image_generation::ImageGenerationError::InvalidRequest(
+                            "job_already_active"
+                        )
+                    ) {
+                        return serde_json::json!({"status":"queued","job_id":request.job_id});
+                    }
+                    return serde_json::json!({"status":"rejected","error_code":error.code()});
+                }
+                let worker = runtime.clone();
+                let worker_client = client_id.to_owned();
+                self.background_tasks
+                    .spawn_reserved(background_permit, async move {
+                        let _ = worker
+                            .start_with_permit(&worker_client, image_request, permit)
+                            .await;
+                    })
+                    .await;
+                serde_json::json!({"status":"accepted","job_id":request.job_id})
+            }
+            _ => serde_json::json!({"status":"rejected","error_code":"unsupported_operation"}),
+        }
+    }
+
+    async fn write_image_generation_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        request: &generated::ImageGenerationCommand,
+        result: serde_json::Value,
+    ) -> Result<(), IpcBridgeError> {
+        let projection_json = serde_json::to_vec(&result)?;
+        let status = result
+            .get("status")
+            .or_else(|| result.get("state"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("completed")
+            .to_owned();
+        let error_code = result
+            .get("error_code")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+        let event = generated::ImageGenerationEvent {
+            schema_version: 1,
+            request_id: request.request_id.clone(),
+            operation: request.operation.clone(),
+            status,
+            projection_json: projection_json.clone(),
+            error_code,
+        };
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: "image_generation.result".into(),
+                payload: projection_json,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: Some(generated::event_envelope::Event::ImageGeneration(event)),
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod image_generation_ipc_tests {
+    use super::*;
+    use prost::Message;
+    use tokio::io::duplex;
+
+    #[tokio::test]
+    async fn image_response_is_typed_and_contains_metadata_only() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-image-ipc-{}.db", uuid::Uuid::now_v7()));
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let bridge = IpcBridge::new(journal);
+        let request = generated::ImageGenerationCommand {
+            schema_version: 1,
+            request_id: "request-1".into(),
+            operation: "capability".into(),
+            job_id: String::new(),
+            payload: Vec::new(),
+            idempotency_key: String::new(),
+        };
+        let projection =
+            serde_json::json!({"state":"unsupported","reason_code":"no_image_output_adapter"});
+        let (mut client, mut server) = duplex(4096);
+        bridge
+            .write_image_generation_response(&mut server, &request, projection)
+            .await
+            .expect("typed response writes");
+        let frame = transport::read_frame(&mut client)
+            .await
+            .expect("response reads");
+        let event = generated::EventEnvelope::decode(frame.as_slice()).expect("response decodes");
+        assert_eq!(event.event_type, "image_generation.result");
+        assert!(
+            matches!(event.event, Some(generated::event_envelope::Event::ImageGeneration(value)) if value.request_id == "request-1" && value.status == "unsupported")
+        );
+        assert!(!String::from_utf8_lossy(&event.payload).contains("prompt"));
+        drop(bridge);
+        let _ = std::fs::remove_file(path);
     }
 }

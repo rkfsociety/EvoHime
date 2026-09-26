@@ -627,6 +627,9 @@ pub struct IpcBridge {
     tools: Option<Arc<ToolRegistry>>,
     model_config: Option<ModelConfigSnapshot>,
     gateway_config: Option<ModelGatewayConfig>,
+    /// Process-local image runtime, including active cancellation tokens and bounded slots.
+    image_generation_runtime:
+        std::sync::OnceLock<Arc<crate::image_generation::ImageGenerationRuntime>>,
     /// Process-local recovery cache for the durable provider catalog. The
     /// SQLite row remains the source of truth; this cache only makes the
     /// validated snapshot available before the first catalog refresh.

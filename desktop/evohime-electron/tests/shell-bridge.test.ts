@@ -1406,3 +1406,37 @@ describe('workflow orchestration bridge', () => {
     expect(sent).toHaveLength(0)
   })
 })
+
+describe('Core image-generation bridge', () => {
+  it('forwards only bounded metadata references and stable job identity', () => {
+    const jobId = 'image-job-1'
+    expect(invoke('imageGeneration.capability', {})).toMatchObject({ ok: true, value: { accepted: true } })
+    const result = invoke('imageGeneration.start', {
+      operation: 'edit',
+      prompt: 'make this warmer',
+      width: 512,
+      height: 512,
+      count: 1,
+      mimeType: 'image/png',
+      inputImages: [{ locator: 'artifact://sha256/abc', mimeType: 'image/png', artifactKind: 'image_input' }],
+      idempotencyKey: jobId,
+      jobId
+    })
+    expect(result).toMatchObject({ ok: true, value: { accepted: true } })
+    const sentImage = sent.at(-1)?.['imageGeneration'] as { jobId: string; payload: Buffer }
+    expect(sentImage.jobId).toBe(jobId)
+    const payload = JSON.parse(sentImage.payload.toString('utf8')) as Record<string, unknown>
+    expect(payload).toMatchObject({ operation: 'edit', mime_type: 'image/png' })
+    expect(JSON.stringify(payload)).not.toContain('base64')
+    expect(invoke('imageGeneration.get', { jobId })).toMatchObject({ ok: true, value: { accepted: true } })
+    expect(invoke('imageGeneration.cancel', { jobId })).toMatchObject({ ok: true, value: { accepted: true } })
+  })
+
+  it('rejects paths, mismatched job identity, and oversized prompts before IPC', () => {
+    const common = { operation: 'generate', prompt: 'image', width: 128, height: 128, count: 1, mimeType: 'image/png', idempotencyKey: 'job-1', jobId: 'job-2' }
+    expect(invoke('imageGeneration.start', common)).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(invoke('imageGeneration.start', { ...common, jobId: 'job-1', prompt: 'x'.repeat(8193) })).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(invoke('imageGeneration.start', { ...common, jobId: 'job-1', inputImages: [{ locator: 'C:\\private\\image.png', mimeType: 'image/png', artifactKind: 'image_input' }] })).toMatchObject({ ok: false, code: 'invalid-payload' })
+    expect(sent).toHaveLength(0)
+  })
+})

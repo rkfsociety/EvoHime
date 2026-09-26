@@ -67,6 +67,7 @@ impl AdapterDescriptor {
                 context_limit: None,
                 streaming: false,
                 vision: false,
+                image_output: None,
                 execution_class: evohime_model_gateway::provider_contract::ExecutionClass::Local,
                 privacy_boundary:
                     evohime_model_gateway::provider_contract::PrivacyClass::Restricted,
@@ -207,6 +208,7 @@ mod tests {
                 context_limit: Some(4096),
                 streaming: true,
                 vision: false,
+                image_output: None,
                 execution_class: ExecutionClass::Local,
                 privacy_boundary: PrivacyClass::Restricted,
             },

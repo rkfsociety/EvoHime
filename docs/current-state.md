@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-25.
+Обновлено: 2026-09-26.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -9,7 +9,7 @@ release-gates и результаты отдельных завершённых 
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v176, а также
+v042–v116 и v149–v177, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -21,6 +21,17 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 дальнейшее
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
+
+## Image generation and editing
+
+Core exposes typed generate/edit/mask-edit jobs through the existing
+ModelGateway and authenticated desktop IPC. Schema v177 stores bounded,
+redacted lifecycle metadata only; validated PNG/JPEG outputs are published as
+owner-scoped ArtifactStore references after decoded geometry, MIME, signature,
+hash and aggregate quota checks. Current providers without an advertised image
+output capability return typed unavailable; no live provider generation was
+verified. The Operations panel exposes generate/edit when Core advertises the
+capability and otherwise shows its unavailable state.
 
 ## Актуальный code baseline
 
@@ -456,7 +467,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `177–181` и `184–188`; планы `01–176` и `183` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `178–181` и `184–188`; планы `01–177` и `183` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

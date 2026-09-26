@@ -58,6 +58,8 @@ pub mod free_access_probe;
 pub mod git_remote_publication_protocol;
 pub mod headless_core_cli;
 pub mod ide_companion_bridge;
+/// Core-owned image-generation contracts and output validation.
+pub mod image_generation;
 pub mod interactive_model_compare_workbench;
 pub mod knowledge_source_registry_project_role;
 pub mod local_inference_scheduler;

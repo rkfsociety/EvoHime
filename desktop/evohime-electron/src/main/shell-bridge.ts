@@ -2135,6 +2135,49 @@ function dispatch(
       return accepted(client.send({ forkCapabilityRecipeRun: { runId, idempotencyKey } }))
     }
 
+    case 'imageGeneration.capability':
+      return accepted(client.send({ imageGeneration: { schemaVersion: 1, requestId: randomUUID(), operation: 'capability', jobId: '', payload: Buffer.alloc(0), idempotencyKey: '' } }))
+
+    case 'imageGeneration.start': {
+      const value = asRecord(payload)
+      const operation = value['operation']
+      const prompt = asBoundedString(value['prompt'])
+      const width = asBoundedNumber(value['width'], 4096)
+      const height = asBoundedNumber(value['height'], 4096)
+      const count = asBoundedNumber(value['count'], 4)
+      const mimeType = value['mimeType']
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const jobId = asBoundedString(value['jobId'])
+      const inputs = value['inputImages'] === undefined ? [] : value['inputImages']
+      const mask = value['maskImage']
+      if (!['generate', 'edit', 'mask_edit'].includes(String(operation)) || prompt === null || Buffer.byteLength(prompt, 'utf8') > 8192 || width === null || width < 1 || height === null || height < 1 || count === null || count < 1 || (mimeType !== 'image/png' && mimeType !== 'image/jpeg') || idempotencyKey === null || idempotencyKey.length > 128 || jobId === null || jobId.length > 128 || jobId !== idempotencyKey || !/^[A-Za-z0-9-]+$/.test(jobId) || !Array.isArray(inputs) || inputs.length > 4) {
+        return failure('invalid-payload', 'Некорректный запрос генерации изображения.')
+      }
+      const parseArtifact = (candidate: unknown): { locator: string; mime_type: string; artifact_kind: string } | null => {
+        const item = asRecord(candidate)
+        const locator = asBoundedString(item['locator'])
+        const itemMime = asBoundedString(item['mimeType'])
+        const artifactKind = asBoundedString(item['artifactKind'])
+        if (locator === null || locator.length > 512 || !locator.startsWith('artifact://') || itemMime === null || itemMime.length > 64 || artifactKind === null || artifactKind.length > 64) return null
+        return { locator, mime_type: itemMime, artifact_kind: artifactKind }
+      }
+      const parsedInputs = inputs.map(parseArtifact)
+      const parsedMask = mask === undefined || mask === null ? null : parseArtifact(mask)
+      if (parsedInputs.some((item) => item === null) || (mask !== undefined && mask !== null && parsedMask === null)) return failure('invalid-payload', 'Некорректная ссылка на image artifact.')
+      const body = Buffer.from(JSON.stringify({ operation, prompt, width, height, count, mime_type: mimeType, input_images: parsedInputs, mask_image: parsedMask }), 'utf8')
+      if (body.byteLength > 16 * 1024) return failure('invalid-payload', 'Запрос изображения превышает допустимый размер.')
+      return accepted(client.send({ imageGeneration: { schemaVersion: 1, requestId: randomUUID(), operation: 'start', jobId, payload: body, idempotencyKey } }))
+    }
+
+    case 'imageGeneration.get':
+    case 'imageGeneration.cancel': {
+      const value = asRecord(payload)
+      const jobId = asBoundedString(value['jobId'])
+      if (jobId === null || jobId.length > 128) return failure('invalid-payload', 'Некорректный идентификатор image job.')
+      const operation = command.endsWith('.get') ? 'get' : 'cancel'
+      return accepted(client.send({ imageGeneration: { schemaVersion: 1, requestId: randomUUID(), operation, jobId, payload: Buffer.alloc(0), idempotencyKey: '' } }))
+    }
+
     case 'workflow.getDefinition': {
       const value = asRecord(payload)
       const templateId = asBoundedString(value['templateId'])

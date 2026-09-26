@@ -3332,6 +3332,24 @@ the validation scope was narrowed to affected modules. Its partial output is
 not treated as evidence; validation followed the affected module workflows and
 directly relevant Rust documentation workflow.
 
+## Core-owned Image Generation and Editing (plan 177)
+
+Pre-commit local evidence on Windows: `cargo fmt --all -- --check`,
+`git diff --check`, and `cargo check --locked -p evohime-model-gateway
+-p evohime-local-storage -p evohime-core --all-targets -j1` passed. Focused
+tests passed: Core image generation 7/7; local-storage image job 3/3 and atomic
+artifact batch/quota 1/1; ModelGateway image contract/unavailable 2/2; Electron
+shell bridge 71/71. Generated protocol bindings matched the canonical proto,
+and Electron main/renderer TypeScript checks passed. The Electron shell build
+passed during implementation. No live compatible provider was available, so
+provider-side image generation and full native-package acceptance remain
+unverified. Exact-commit GitHub CI evidence is pending the authorized push.
+
+The Core release marker advanced from `0.0.000377` to `0.0.000378`; the UI
+bundle marker advanced from `0.0.000120` to `0.0.000121`, matching the source
+paths selected by the Core and UI bundle module workflows. Module router is
+expected to dispatch those two releases after the push; it has not yet run.
+
 ## Guided Capability Recipes (plan 176)
 
 Implementation commit

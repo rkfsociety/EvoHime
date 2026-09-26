@@ -357,6 +357,8 @@ export interface CoreEvent {
   readonly eventType: string
   /** Redacted UTF-8 payload as produced by Core; never a secret value. */
   readonly payload: string
+  /** Metadata-only typed Core image-generation response projection, encoded as bounded JSON text. */
+  readonly imageGeneration?: string
   /** Present only for typed `ledger.*` rows (plan 08-3); null otherwise. */
   readonly executionEvent: TypedExecutionEvent | null
   /** Present only for the typed TaskCheckpoint projection response. */
@@ -1540,6 +1542,10 @@ export const RENDERER_COMMANDS = [
   'capabilityRecipe.start',
   'capabilityRecipe.getRun',
   'capabilityRecipe.forkRun',
+  'imageGeneration.capability',
+  'imageGeneration.start',
+  'imageGeneration.get',
+  'imageGeneration.cancel',
   'workflowPackage.preview',
   'workflowPackage.export',
   'workflowPackage.commit',
@@ -2079,6 +2085,21 @@ export interface CommandPayloads {
   }
   'capabilityRecipe.getRun': { runId: string }
   'capabilityRecipe.forkRun': { runId: string; idempotencyKey: string }
+  'imageGeneration.capability': Record<string, never>
+  'imageGeneration.start': {
+    operation: 'generate' | 'edit' | 'mask_edit'
+    prompt: string
+    width: number
+    height: number
+    count: number
+    mimeType: 'image/png' | 'image/jpeg'
+    inputImages?: readonly { locator: string; mimeType: string; artifactKind: string }[]
+    maskImage?: { locator: string; mimeType: string; artifactKind: string } | null
+    idempotencyKey: string
+    jobId: string
+  }
+  'imageGeneration.get': { jobId: string }
+  'imageGeneration.cancel': { jobId: string }
   'workflowPackage.preview': {
     graphJson: string
     name: string
@@ -2502,6 +2523,10 @@ export interface CommandResults {
   'capabilityRecipe.start': { accepted: boolean }
   'capabilityRecipe.getRun': { accepted: boolean }
   'capabilityRecipe.forkRun': { accepted: boolean }
+  'imageGeneration.capability': { accepted: boolean }
+  'imageGeneration.start': { accepted: boolean }
+  'imageGeneration.get': { accepted: boolean }
+  'imageGeneration.cancel': { accepted: boolean }
   'workflowPackage.preview': { accepted: boolean }
   'workflowPackage.export': { accepted: boolean }
   'workflowPackage.commit': { accepted: boolean }

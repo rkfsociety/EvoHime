@@ -30,6 +30,20 @@ pub struct OffloadResult {
     pub deduplicated: bool,
 }
 
+/// One binary object requested for atomic publication as an ArtifactStore batch.
+pub struct BinaryArtifactInput<'a> {
+    /// Stable artifact kind used in the content hash.
+    pub kind: &'a str,
+    /// Task whose quota and reference own this object.
+    pub task_id: &'a str,
+    /// Owning task used in the artifact locator.
+    pub owner_task_id: &'a str,
+    /// Encoded content to persist.
+    pub content: &'a [u8],
+    /// Privacy class governing offload.
+    pub privacy: Privacy,
+}
+
 /// Хранилище артефактов поверх общей миграции базы.
 pub struct ArtifactStore<'a> {
     connection: &'a Connection,
@@ -275,17 +289,111 @@ impl<'a> ArtifactStore<'a> {
         kind: &str,
         now: i64,
     ) -> Result<Vec<u8>, StorageError> {
+        self.read_bytes_bounded(locator, task_id, parent_chain, kind, now, u64::MAX)
+    }
+
+    /// Atomically writes a bounded group of binary objects and their references.
+    ///
+    /// The caller must validate every item before calling this method. Quota is
+    /// checked for aggregate task bytes inside the same immediate transaction.
+    pub fn offload_bytes_batch(
+        &self,
+        items: &[BinaryArtifactInput<'_>],
+        now: i64,
+    ) -> Result<Vec<ArtifactRef>, StorageError> {
+        if items.is_empty() || items.len() > 8 {
+            return Err(StorageError::InvalidInput(
+                "artifact_batch_count_limit".into(),
+            ));
+        }
+        for item in items {
+            if !item.privacy.allows_offload() || item.content.is_empty() {
+                return Err(StorageError::InvalidInput(
+                    "artifact_batch_item_invalid".into(),
+                ));
+            }
+        }
+        let mut task_totals = std::collections::BTreeMap::<&str, u64>::new();
+        for item in items {
+            let total = task_totals.entry(item.task_id).or_default();
+            *total = total.saturating_add(item.content.len() as u64);
+        }
+        self.connection.execute_batch("BEGIN IMMEDIATE")?;
+        let outcome = (|| -> Result<Vec<ArtifactRef>, StorageError> {
+            for (task_id, bytes) in &task_totals {
+                self.ensure_quota(task_id, *bytes, now)?;
+            }
+            let mut references = Vec::with_capacity(items.len());
+            for item in items {
+                let hash = content_hash(item.kind, &ContentForm::Binary(item.content));
+                let bytes = item.content.len() as u64;
+                self.connection.execute(
+                    "INSERT OR REPLACE INTO task_artifacts
+                     (content_hash,bytes,content,created_at,last_access_at)
+                     VALUES (?1,?2,?3,?4,?4)",
+                    rusqlite::params![hash, bytes as i64, item.content, now],
+                )?;
+                let reference = ArtifactRef {
+                    locator: format!("artifact://{}/{hash}", item.owner_task_id),
+                    content_hash: hash,
+                    task_id: item.task_id.into(),
+                    owner_task_id: item.owner_task_id.into(),
+                    bytes,
+                    privacy: item.privacy,
+                    status: ArtifactRefStatus::Live,
+                    created_at: now,
+                    last_access_at: now,
+                    ttl_ms: Some(self.quota.default_ttl_ms),
+                    summary: format!("binary artifact ({bytes} bytes)"),
+                };
+                self.write_ref(&reference)?;
+                references.push(reference);
+            }
+            Ok(references)
+        })();
+        match outcome {
+            Ok(references) => {
+                self.connection.execute_batch("COMMIT")?;
+                Ok(references)
+            }
+            Err(error) => {
+                let _ = self.connection.execute_batch("ROLLBACK");
+                Err(error)
+            }
+        }
+    }
+
+    /// Reads a binary artifact only when both its reference and stored bytes fit `max_bytes`.
+    ///
+    /// The SQL length predicate prevents a corrupted underreported reference
+    /// from causing an oversized blob allocation before the hash is checked.
+    pub fn read_bytes_bounded(
+        &self,
+        locator: &str,
+        task_id: &str,
+        parent_chain: &[String],
+        kind: &str,
+        now: i64,
+        max_bytes: u64,
+    ) -> Result<Vec<u8>, StorageError> {
         let reference = self
             .get_ref(locator)?
             .ok_or_else(|| StorageError::Context("artifact not found".into()))?;
         if !access_allowed(&reference, task_id, parent_chain) || !reference.is_readable() {
             return Err(StorageError::Context("artifact access denied".into()));
         }
+        if reference.bytes > max_bytes {
+            return Err(StorageError::Context("artifact size limit exceeded".into()));
+        }
         let content: Vec<u8> = self
             .connection
             .query_row(
-                "SELECT content FROM task_artifacts WHERE content_hash=?1",
-                [&reference.content_hash],
+                "SELECT content FROM task_artifacts
+                 WHERE content_hash=?1 AND length(content)<=?2",
+                rusqlite::params![
+                    reference.content_hash,
+                    max_bytes.min(i64::MAX as u64) as i64
+                ],
                 |row| row.get(0),
             )
             .optional()?

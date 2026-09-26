@@ -66,10 +66,111 @@ pub struct CapabilityMetadata {
     /// Supports vision/image input.
     #[serde(default)]
     pub vision: bool,
+    /// Image output support advertised by this route, if its adapter implements it.
+    #[serde(default)]
+    pub image_output: Option<ImageOutputCapability>,
     /// Execution class: local (loopback) or cloud.
     pub execution_class: ExecutionClass,
     /// Maximum privacy level this provider can handle.
     pub privacy_boundary: PrivacyClass,
+}
+
+/// Versioned, bounded image-output capabilities advertised by one provider route.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImageOutputCapability {
+    /// Capability descriptor schema version.
+    pub schema_version: String,
+    /// Adapter-owned capability provenance, without endpoint or credential data.
+    pub provenance: String,
+    /// Monotonic provider capability epoch frozen into each Core job snapshot.
+    pub capability_epoch: u64,
+    /// Image operations implemented by this provider route.
+    pub operations: Vec<ImageOutputOperation>,
+    /// Encoded output MIME types accepted by the provider.
+    pub mime_types: Vec<String>,
+    /// Highest privacy class this route accepts for image requests.
+    pub privacy_boundary: PrivacyClass,
+    /// Whether this route executes on-device or on cloud infrastructure.
+    pub execution_class: ExecutionClass,
+    /// Maximum encoded response size in bytes.
+    pub max_bytes: u64,
+    /// Maximum image width in pixels.
+    pub max_width: u32,
+    /// Maximum image height in pixels.
+    pub max_height: u32,
+    /// Maximum decoded pixel count.
+    pub max_pixels: u64,
+    /// Maximum images returned by one provider request.
+    pub max_outputs: u8,
+}
+
+impl ImageOutputCapability {
+    /// Validates the versioned output capability and its resource bounds.
+    pub fn validate(&self) -> bool {
+        self.schema_version == "image-output-capability/v1"
+            && !self.provenance.trim().is_empty()
+            && self.provenance.len() <= MAX_ID_BYTES
+            && self.capability_epoch > 0
+            && !self.operations.is_empty()
+            && self.operations.len() <= 3
+            && !self.mime_types.is_empty()
+            && self.mime_types.len() <= 4
+            && self
+                .mime_types
+                .iter()
+                .all(|mime| matches!(mime.as_str(), "image/png" | "image/jpeg"))
+            && (1..=32 * 1024 * 1024).contains(&self.max_bytes)
+            && (1..=8192).contains(&self.max_width)
+            && (1..=8192).contains(&self.max_height)
+            && (1..=64 * 1024 * 1024).contains(&self.max_pixels)
+            && (1..=8).contains(&self.max_outputs)
+    }
+}
+
+/// Image generation operation supported by a provider route.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageOutputOperation {
+    /// Create images from a text prompt.
+    Generate,
+    /// Edit an existing image using a prompt.
+    Edit,
+    /// Edit an existing image using an explicit mask.
+    MaskEdit,
+}
+
+/// Ephemeral image request passed to a provider adapter.
+///
+/// Prompt text and input bytes must not be serialized or logged by the gateway.
+pub struct ImageProviderRequest {
+    /// Requested image operation.
+    pub operation: ImageOutputOperation,
+    /// User prompt; retained only for the duration of the provider call.
+    pub prompt: String,
+    /// Requested output width in pixels.
+    pub width: u32,
+    /// Requested output height in pixels.
+    pub height: u32,
+    /// Requested number of outputs.
+    pub count: u8,
+    /// Requested encoded MIME type.
+    pub mime_type: String,
+    /// Privacy class required for prompt and image inputs.
+    pub required_privacy: PrivacyClass,
+    /// Whether cloud routes are permitted for this request.
+    pub allow_cloud: bool,
+    /// Existing image content supplied by Core after ArtifactStore ownership checks.
+    pub input_images: Vec<Vec<u8>>,
+    /// Optional edit mask supplied by Core after ArtifactStore ownership checks.
+    pub mask_image: Option<Vec<u8>>,
+}
+
+/// One encoded image returned by a provider adapter.
+pub struct ProviderImageOutput {
+    /// Provider-declared output MIME type; Core checks it against decoded content.
+    pub mime_type: String,
+    /// Encoded bytes; Core bounds and decodes them before ArtifactStore publication.
+    pub bytes: Vec<u8>,
 }
 
 /// Execution class distinguishes local vs cloud providers.
@@ -1316,6 +1417,27 @@ fn redact_field_name(value: String) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn image_output_capability_requires_provenance_and_bounded_contract() {
+        let mut capability = ImageOutputCapability {
+            schema_version: "image-output-capability/v1".into(),
+            provenance: "test-adapter-v1".into(),
+            capability_epoch: 1,
+            operations: vec![ImageOutputOperation::Generate],
+            mime_types: vec!["image/png".into()],
+            privacy_boundary: PrivacyClass::Restricted,
+            execution_class: ExecutionClass::Local,
+            max_bytes: 1024,
+            max_width: 64,
+            max_height: 64,
+            max_pixels: 4096,
+            max_outputs: 1,
+        };
+        assert!(capability.validate());
+        capability.provenance.clear();
+        assert!(!capability.validate());
+    }
+
     fn make_candidate(route_id: &str, epoch: u64) -> CandidateEntry {
         CandidateEntry {
             route_id: route_id.to_string(),
@@ -1329,6 +1451,7 @@ mod tests {
                 context_limit: Some(32000),
                 streaming: true,
                 vision: false,
+                image_output: None,
                 execution_class: ExecutionClass::Local,
                 privacy_boundary: PrivacyClass::Internal,
             },

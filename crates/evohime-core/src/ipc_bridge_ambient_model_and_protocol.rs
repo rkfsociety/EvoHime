@@ -31,6 +31,12 @@ fn safe_model_catalog_error_code(
             }
         }
         evohime_model_gateway::providers::ProviderError::Stream(_) => "catalog_stream_error",
+        evohime_model_gateway::providers::ProviderError::ImagePreflightRejected => {
+            "catalog_preflight_rejected"
+        }
+        evohime_model_gateway::providers::ProviderError::ImageCapabilityStale => {
+            "catalog_capability_stale"
+        }
     }
 }
 

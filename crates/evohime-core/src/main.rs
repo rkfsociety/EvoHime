@@ -371,6 +371,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_free_access_probe_guard(free_access_probe_guard)
     .with_free_access_probe_cancellation(free_access_probe_cancellation.clone())
     .with_ambient_data_dir(data_dir.clone());
+    {
+        let recovered =
+            evohime_core::image_generation::ImageGenerationRuntime::recover_durable_jobs(
+                &bridge.journal(),
+            )
+            .await
+            .map_err(|error| format!("image generation recovery failed: {}", error.code()))?;
+        tracing::info!(
+            recovered,
+            "image generation recovery completed before IPC startup"
+        );
+    }
     let workflow_recovery = bridge
         .recover_workflow_runs_on_startup()
         .await

@@ -1970,6 +1970,7 @@ message CommandEnvelope {
     StartCapabilityRecipe start_capability_recipe = 282;
     GetCapabilityRecipeRun get_capability_recipe_run = 283;
     ForkCapabilityRecipeRun fork_capability_recipe_run = 284;
+    ImageGenerationCommand image_generation = 285;
   }
 }
 
@@ -2208,7 +2209,27 @@ message EventEnvelope {
     AgentClientProtocolBridgeEvent agent_client_protocol_bridge = 122;
     MultiReviewerEnsembleEvent multi_reviewer_ensemble = 123;
     LanguageIntelligenceEvent language_intelligence = 124;
+    ImageGenerationEvent image_generation = 125;
   }
+}
+
+// Plan 177: metadata-only Core image capability and job projections. Request
+// payload is bounded JSON; raw image bytes never cross desktop IPC.
+message ImageGenerationCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string job_id = 4;
+  bytes payload = 5;
+  string idempotency_key = 6;
+}
+message ImageGenerationEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  bytes projection_json = 5;
+  string error_code = 6;
 }
 
 message ContextNamespaceCommand {

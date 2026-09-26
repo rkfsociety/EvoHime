@@ -47,6 +47,111 @@ fn binary_artifact_round_trip_never_uses_a_host_path() {
 }
 
 #[test]
+fn bounded_binary_read_rejects_reference_and_actual_oversize() {
+    let database = database("binary-bounded-read");
+    let store = ArtifactStore::new(database.connection());
+    let bytes = [0u8, 1, 2, 255];
+    let result = store
+        .offload_bytes(
+            "image/png",
+            "task",
+            "task",
+            &bytes,
+            Privacy::Workspace,
+            1_000,
+        )
+        .expect("binary offload succeeds");
+
+    assert!(store
+        .read_bytes_bounded(
+            &result.reference.locator,
+            "task",
+            &[],
+            "image/png",
+            2_000,
+            3
+        )
+        .is_err());
+    database
+        .connection()
+        .execute(
+            "UPDATE task_artifact_refs SET bytes=1 WHERE locator=?1",
+            [&result.reference.locator],
+        )
+        .expect("simulate corrupted underreported reference");
+    assert!(store
+        .read_bytes_bounded(
+            &result.reference.locator,
+            "task",
+            &[],
+            "image/png",
+            2_000,
+            3
+        )
+        .is_err());
+}
+
+#[test]
+fn binary_artifact_batch_publishes_all_refs_or_respects_aggregate_quota() {
+    let database = database("binary-batch");
+    let items = [
+        BinaryArtifactInput {
+            kind: "generated_image",
+            task_id: "image-task",
+            owner_task_id: "image-task",
+            content: &[1, 2, 3],
+            privacy: Privacy::Workspace,
+        },
+        BinaryArtifactInput {
+            kind: "generated_image",
+            task_id: "image-task",
+            owner_task_id: "image-task",
+            content: &[4, 5],
+            privacy: Privacy::Workspace,
+        },
+    ];
+    let restrictive = ArtifactStore::with_quota(
+        database.connection(),
+        ArtifactQuota {
+            per_task_bytes: 4,
+            total_bytes: 4,
+            default_ttl_ms: 1_000,
+        },
+    );
+    assert!(restrictive.offload_bytes_batch(&items, 1_000).is_err());
+    assert_eq!(
+        restrictive.total_bytes().expect("no partial blob writes"),
+        0
+    );
+    assert!(restrictive
+        .list_refs("image-task")
+        .expect("no partial refs")
+        .is_empty());
+
+    let store = ArtifactStore::new(database.connection());
+    let references = store
+        .offload_bytes_batch(&items, 1_100)
+        .expect("batch publishes");
+    assert_eq!(references.len(), 2);
+    for (reference, expected) in references.iter().zip([&[1, 2, 3][..], &[4, 5][..]]) {
+        assert_eq!(
+            store
+                .read_bytes_bounded(
+                    &reference.locator,
+                    "image-task",
+                    &[],
+                    "generated_image",
+                    1_200,
+                    3,
+                )
+                .expect("bounded read")
+                .as_slice(),
+            expected
+        );
+    }
+}
+
+#[test]
 fn a_large_output_is_stored_and_summarized_for_the_context() {
     let database = database("offload");
     let store = ArtifactStore::new(database.connection());

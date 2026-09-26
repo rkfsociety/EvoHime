@@ -44,11 +44,14 @@ pub mod tools;
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderProfileId};
 pub use crate::provider_contract::{
     select_route_snapshot, select_route_snapshot_cached, AttemptTrace, CandidateEntry,
-    CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory, HealthStatus, PolicyHashes,
-    ProbeConfig, ProbeFailure, ProbeResult, RetryConfig, RoutePolicySnapshot, RunHealthOverlay,
-    RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError, SnapshotRouteDecision,
+    CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory, HealthStatus,
+    ImageOutputCapability, ImageOutputOperation, ImageProviderRequest, PolicyHashes, ProbeConfig,
+    ProbeFailure, ProbeResult, ProviderImageOutput, RetryConfig, RoutePolicySnapshot,
+    RunHealthOverlay, RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError,
+    SnapshotRouteDecision,
 };
 pub use crate::providers::ChatRequestOptions;
+pub use crate::providers::ImageOutputFuture;
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
     ollama::OllamaProvider, openai_compatible::OpenAICompatibleProvider,
@@ -140,6 +143,9 @@ fn load_runtime_catalog() -> Option<EvaluationCatalog> {
 fn classify_failure(error: &ProviderError) -> FailureCategory {
     match error {
         ProviderError::Config(_) => FailureCategory::InvalidRequest,
+        ProviderError::ImagePreflightRejected | ProviderError::ImageCapabilityStale => {
+            FailureCategory::InvalidRequest
+        }
         ProviderError::Http(message) if message.contains("timeout") => FailureCategory::Timeout,
         ProviderError::Http(message) if message.contains("connection") => {
             FailureCategory::ConnectionRefused
@@ -800,6 +806,107 @@ impl ModelGateway {
         self.dispatch_stream(route, None, messages)
     }
 
+    /// Returns the configured default route identifier for Core-owned snapshots.
+    pub fn default_route_id(&self) -> &str {
+        &self.default_route
+    }
+
+    /// Returns a validated image-output capability for one configured route.
+    pub fn image_output_capability_for_route(
+        &self,
+        route: &str,
+    ) -> Result<Option<crate::provider_contract::ImageOutputCapability>, ProviderError> {
+        let Some(capability) = self.provider_for_route(route)?.image_output_capability() else {
+            return Ok(None);
+        };
+        if !capability.validate() {
+            return Err(ProviderError::Config(
+                "invalid_image_output_capability".into(),
+            ));
+        }
+        Ok(Some(capability))
+    }
+
+    /// Validates route capability, privacy and live route eligibility before Core records dispatch.
+    pub fn preflight_image_output_for_route(
+        &self,
+        route: &str,
+        expected_epoch: Option<u64>,
+        request: &crate::provider_contract::ImageProviderRequest,
+    ) -> Result<crate::provider_contract::ImageOutputCapability, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        let capability = provider
+            .image_output_capability()
+            .ok_or(if expected_epoch.is_some() {
+                ProviderError::ImageCapabilityStale
+            } else {
+                ProviderError::Config("image_output_unsupported".into())
+            })?;
+        let route_is_cloud = provider.kind() != ProviderKind::Local
+            && provider.kind() != ProviderKind::Ollama
+            && provider.kind() != ProviderKind::Mock;
+        if !capability.validate()
+            || expected_epoch.is_some_and(|epoch| capability.capability_epoch != epoch)
+            || !capability.operations.contains(&request.operation)
+            || !capability.mime_types.contains(&request.mime_type)
+            || request.count == 0
+            || request.count > capability.max_outputs
+            || request.width == 0
+            || request.width > capability.max_width
+            || request.height == 0
+            || request.height > capability.max_height
+            || request.required_privacy > capability.privacy_boundary
+            || (route_is_cloud && !request.allow_cloud)
+            || (capability.execution_class == ExecutionClass::Local && route_is_cloud)
+            || (capability.execution_class == ExecutionClass::Cloud && !route_is_cloud)
+            || u64::from(request.width).saturating_mul(u64::from(request.height))
+                > capability.max_pixels
+        {
+            if expected_epoch.is_some_and(|epoch| capability.capability_epoch != epoch) {
+                return Err(ProviderError::ImageCapabilityStale);
+            }
+            return Err(ProviderError::Config(
+                "image_request_outside_capability".into(),
+            ));
+        }
+        if let Some(preflight) = &self.route_preflight {
+            preflight.check(route, None, current_time_ms())?;
+        }
+        Ok(capability)
+    }
+
+    /// Calls an image-capable provider route after checking its declared bounds.
+    ///
+    /// This method does not fetch returned URLs: provider adapters return bytes
+    /// only, and Core validates and decodes them before storing artifacts.
+    pub async fn generate_image_for_route(
+        &self,
+        route: &str,
+        request: crate::provider_contract::ImageProviderRequest,
+    ) -> Result<Vec<crate::provider_contract::ProviderImageOutput>, ProviderError> {
+        self.generate_image_for_route_at_epoch(route, None, request)
+            .await
+    }
+
+    /// Dispatches only when the route still advertises the frozen capability epoch.
+    pub async fn generate_image_for_route_at_epoch(
+        &self,
+        route: &str,
+        expected_epoch: Option<u64>,
+        request: crate::provider_contract::ImageProviderRequest,
+    ) -> Result<Vec<crate::provider_contract::ProviderImageOutput>, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        if self.image_output_capability_for_route(route)?.is_none() {
+            return Err(ProviderError::Config("image_output_unsupported".into()));
+        }
+        self.preflight_image_output_for_route(route, expected_epoch, &request)
+            .map_err(|error| match error {
+                ProviderError::ImageCapabilityStale => ProviderError::ImageCapabilityStale,
+                _ => ProviderError::ImagePreflightRejected,
+            })?;
+        provider.generate_image(request).await
+    }
+
     /// Starts a streaming request using an explicit route and model override.
     pub fn stream_chat_for_route_with_model(
         &self,
@@ -1168,6 +1275,11 @@ impl ModelGateway {
                     } else {
                         ExecutionClass::Cloud
                     };
+                    let image_output = self
+                        .routes
+                        .get(&candidate.route_id)
+                        .and_then(|provider| provider.image_output_capability())
+                        .filter(crate::provider_contract::ImageOutputCapability::validate);
                     CandidateEntry {
                         route_id: candidate.route_id,
                         model,
@@ -1180,6 +1292,7 @@ impl ModelGateway {
                             context_limit: None,
                             streaming: true,
                             vision: false,
+                            image_output,
                             execution_class,
                             privacy_boundary: crate::provider_contract::PrivacyClass::Internal,
                         },
@@ -1317,10 +1430,17 @@ impl ModelGateway {
                 } else {
                     1
                 };
+                let mut capabilities = vec!["chat".to_string()];
+                if provider
+                    .image_output_capability()
+                    .is_some_and(|capability| capability.validate())
+                {
+                    capabilities.push("image_output".to_string());
+                }
                 Some(RouteCandidate {
                     route_id: route_id.clone(),
                     model,
-                    capabilities: vec!["chat".to_string()],
+                    capabilities,
                     cost_micros_per_1k_tokens,
                     p95_latency_ms: 0,
                     privacy: PrivacyClass::Internal,
@@ -1370,6 +1490,33 @@ fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, Pr
 mod tests {
     use super::*;
     use futures_util::StreamExt;
+
+    #[tokio::test]
+    async fn chat_only_provider_reports_typed_image_unsupported() {
+        let gateway = mock_gateway(vec![]);
+        let route = gateway.default_route_id().to_owned();
+        assert!(gateway
+            .image_output_capability_for_route(&route)
+            .expect("valid route")
+            .is_none());
+        let request = ImageProviderRequest {
+            operation: ImageOutputOperation::Generate,
+            prompt: "a blue square".into(),
+            width: 64,
+            height: 64,
+            count: 1,
+            mime_type: "image/png".into(),
+            required_privacy: PrivacyClass::Restricted,
+            allow_cloud: false,
+            input_images: Vec::new(),
+            mask_image: None,
+        };
+        let error = match gateway.generate_image_for_route(&route, request).await {
+            Err(error) => error,
+            Ok(_) => panic!("mock provider unexpectedly generated images"),
+        };
+        assert!(error.to_string().contains("image_output_unsupported"));
+    }
 
     fn pricing_detail(id: &str, pricing: &[(&str, &str)]) -> OpenRouterModelDetail {
         OpenRouterModelDetail {

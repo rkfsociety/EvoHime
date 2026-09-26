@@ -3322,3 +3322,24 @@ projection не расширяют filesystem grants или authority renderer.
 workflow дополнительно запрещает неразрешённые intra-doc links и некорректные
 HTML tags. `#[cfg(doc)]` не нужен для включения rustdoc и может применяться
 только для конкретного doc-only элемента, которому он действительно требуется.
+
+### Core-owned image generation and editing v1
+
+Image generation and editing use the existing ModelGateway route, provider
+profile, privacy policy, Core execution and ArtifactStore. Gateway advertises an
+additive `image_output` capability with provenance, supported operations, epoch
+and bounded MIME/byte/dimension/pixel/count limits; missing or stale capability
+fails closed. Core stores only bounded job metadata, request/result hashes,
+artifact refs and typed lifecycle reasons in schema v177. Prompt and image
+bytes are not persisted in job metadata or projected over IPC.
+
+Generate, edit and mask-edit jobs validate caller-owned inputs and decode PNG or
+JPEG through Windows Imaging Component under byte and pixel bounds. Provider
+output is checked against declared MIME, container signature, decoded geometry,
+aggregate limits and SHA-256 before a single quota-checked ArtifactStore batch
+publishes the references. URLs are never fetched implicitly. Authenticated IPC
+projects job status and artifact metadata; Electron's Operations panel invokes
+Core and does not call providers or write workspace files. A dispatched job
+whose outcome cannot be reconciled recovers as `unknown_outcome` without blind
+retry; completed artifact refs are revalidated when read. Export remains an
+explicit existing user-authorized action.

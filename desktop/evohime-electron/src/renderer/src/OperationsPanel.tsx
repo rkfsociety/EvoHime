@@ -4,6 +4,7 @@ import type { AmbientProposal, AmbientProposalList, ChatProviderMode, Connection
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
+import { ImageGenerationPanel } from './ImageGenerationPanel'
 
 interface Props {
   readonly connection: ConnectionState
@@ -632,6 +633,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
       </div>
       <div className="operations-grid">
         {repair ? <RepairCard status={repair} connection={connection} events={events} /> : null}
+        <ImageGenerationPanel connection={connection} events={events} />
         <article className={`operations-card ${projectionReady && pending.length ? 'operations-card--warning' : ''}`}>
           <h3>Память: подтверждение</h3>
           <strong>{projectionReady ? (counts['pending_confirmation'] ?? 0) : '—'}</strong>

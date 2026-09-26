@@ -1,3 +1,4 @@
+use crate::provider_contract::{ImageOutputCapability, ImageProviderRequest, ProviderImageOutput};
 use crate::tools::{ChatResult, ChatStreamItem, ToolSpec};
 use futures_util::Stream;
 use std::future::Future;
@@ -189,6 +190,12 @@ pub enum ProviderError {
     /// Provider output stream failed or was malformed.
     #[error("streaming error: {0}")]
     Stream(String),
+    /// Route preflight rejected the image request before adapter dispatch.
+    #[error("image route preflight rejected")]
+    ImagePreflightRejected,
+    /// The provider changed its image capability after Core froze the request.
+    #[error("image capability epoch is stale")]
+    ImageCapabilityStale,
 }
 
 /// Публичный trait `ModelProvider` для общего контракта поведения.
@@ -199,6 +206,19 @@ pub trait ModelProvider: Send + Sync {
     fn model_name(&self) -> &str;
     /// Returns the configured provider endpoint.
     fn base_url(&self) -> &str;
+
+    /// Returns bounded image-output support; existing adapters remain unsupported by default.
+    fn image_output_capability(&self) -> Option<ImageOutputCapability> {
+        None
+    }
+
+    /// Performs an image request for adapters that advertise the operation.
+    ///
+    /// Implementations must return encoded bytes only; Core validates the
+    /// declared MIME type and fully decodes each image before publication.
+    fn generate_image<'a>(&'a self, _request: ImageProviderRequest) -> ImageOutputFuture<'a> {
+        Box::pin(async { Err(ProviderError::Config("image_output_unsupported".into())) })
+    }
 
     /// Reports native structured-output support; defaults to false.
     fn supports_structured_output(&self) -> bool {
@@ -259,3 +279,7 @@ pub trait ModelProvider: Send + Sync {
         self.chat_with_tools(model, messages, tools)
     }
 }
+
+/// Future returned by an image-output provider call.
+pub type ImageOutputFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<ProviderImageOutput>, ProviderError>> + Send + 'a>>;

@@ -14,6 +14,32 @@ fn snapshot_matches_profile(
 }
 
 impl IpcBridge {
+    pub(crate) fn image_generation_runtime(
+        &self,
+    ) -> Option<std::sync::Arc<crate::image_generation::ImageGenerationRuntime>> {
+        if let Some(runtime) = self.image_generation_runtime.get() {
+            return Some(runtime.clone());
+        }
+        let config = self.gateway_config.as_ref()?;
+        let gateway = evohime_model_gateway::ModelGateway::from_config(config).ok()?;
+        let preflight =
+            crate::free_provider_reliability_routing::ProviderCatalogRoutePreflight::new(
+                config.clone(),
+                self.provider_catalog_snapshots.clone(),
+            );
+        let runtime = std::sync::Arc::new(crate::image_generation::ImageGenerationRuntime::new(
+            self.journal.clone(),
+            std::sync::Arc::new(gateway.with_route_preflight(std::sync::Arc::new(preflight))),
+        ));
+        let _ = self.image_generation_runtime.set(runtime.clone());
+        Some(
+            self.image_generation_runtime
+                .get()
+                .cloned()
+                .unwrap_or(runtime),
+        )
+    }
+
     /// Returns a clone of the journal bound to this IPC bridge.
     pub fn journal(&self) -> EventJournal {
         self.journal.clone()
@@ -984,6 +1010,7 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            image_generation_runtime: std::sync::OnceLock::new(),
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             free_access_evidence:
@@ -1036,6 +1063,7 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            image_generation_runtime: std::sync::OnceLock::new(),
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             free_access_evidence:
@@ -1095,6 +1123,7 @@ impl IpcBridge {
             tools: Some(tools),
             model_config,
             gateway_config,
+            image_generation_runtime: std::sync::OnceLock::new(),
             provider_catalog_snapshots:
                 crate::free_provider_reliability_routing::new_provider_catalog_cache(),
             free_access_evidence:

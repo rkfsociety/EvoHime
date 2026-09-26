@@ -47,6 +47,11 @@ pub mod workflow {
     pub use crate::workflow_store::*;
 }
 
+pub mod image_generation {
+    //! Facade for bounded image-generation job metadata.
+    pub use crate::image_generation_store::*;
+}
+
 pub mod agents {
     //! Facade for child-agent and persistent-agent registry records.
     pub use crate::child_store::*;

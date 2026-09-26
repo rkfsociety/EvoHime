@@ -49,8 +49,10 @@ pub fn is_retriable_error(error: &ProviderError) -> bool {
                 || msg.contains("rate limit")
                 || msg.contains("overload")
         }
-        ProviderError::Config(_) => false, // Config errors are not retriable
-        ProviderError::Stream(_) => true,  // Transient streaming error
+        ProviderError::Config(_)
+        | ProviderError::ImagePreflightRejected
+        | ProviderError::ImageCapabilityStale => false, // Configuration and image preflight errors are terminal.
+        ProviderError::Stream(_) => true, // Transient streaming error
     }
 }
 

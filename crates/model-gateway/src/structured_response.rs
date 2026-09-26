@@ -268,6 +268,8 @@ fn provider_error_code(error: &ProviderError) -> &'static str {
         ProviderError::Http(_) => "provider_http",
         ProviderError::Api(_) => "provider_api",
         ProviderError::Stream(_) => "provider_stream",
+        ProviderError::ImagePreflightRejected => "image_preflight_rejected",
+        ProviderError::ImageCapabilityStale => "image_capability_stale",
     }
 }
 
