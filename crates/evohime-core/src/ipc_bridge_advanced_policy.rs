@@ -72,14 +72,14 @@ impl IpcBridge {
                     // A committed approval remains replayable even if the job
                     // has since advanced to another revision or been promoted.
                     if let Some((existing_id, owner_scope, existing_run, report_hash)) =
-                        evohime_local_storage::benchmark_store::get_baseline_approval_by_key(
+                        evohime_local_storage::domains::evaluation::get_baseline_approval_by_key(
                             database.connection(), &request.idempotency_key,
                         ).map_err(|_| "benchmark_baseline_storage_failed")? {
                         if existing_id != baseline_id || owner_scope != request.owner_scope
                             || existing_run != run_id || report_hash != expected_report_hash {
                             return Err("benchmark_baseline_approval_conflict");
                         }
-                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                        let existing = evohime_local_storage::domains::evaluation::get_baseline(
                             database.connection(), &baseline_id,
                         ).map_err(|_| "benchmark_baseline_storage_failed")?
                             .ok_or("benchmark_baseline_storage_failed")?;
@@ -92,14 +92,14 @@ impl IpcBridge {
                         }));
                     }
                     if let Some((owner_scope, existing_run, report_hash)) =
-                        evohime_local_storage::benchmark_store::get_baseline_approval(
+                        evohime_local_storage::domains::evaluation::get_baseline_approval(
                             database.connection(), &baseline_id,
                         ).map_err(|_| "benchmark_baseline_storage_failed")? {
                         if owner_scope != request.owner_scope || existing_run != run_id
                             || report_hash != expected_report_hash {
                             return Err("benchmark_baseline_approval_conflict");
                         }
-                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                        let existing = evohime_local_storage::domains::evaluation::get_baseline(
                             database.connection(), &baseline_id,
                         ).map_err(|_| "benchmark_baseline_storage_failed")?
                             .ok_or("benchmark_baseline_storage_failed")?;
@@ -127,7 +127,7 @@ impl IpcBridge {
                     {
                         return Err("adaptation_job_revision_conflict");
                     }
-                    let run = evohime_local_storage::benchmark_store::get_run(database.connection(), run_id)
+                    let run = evohime_local_storage::domains::evaluation::get_run(database.connection(), run_id)
                         .map_err(|_| "benchmark_run_storage_failed")?.ok_or("benchmark_run_not_found")?;
                     if run.3.as_deref().is_none() || run.0.is_empty()
                         || !matches!(run.2.as_str(), "ready_for_promotion" | "failed") {
@@ -181,14 +181,14 @@ impl IpcBridge {
                     let transaction = database.connection_mut().transaction()
                         .map_err(|_| "benchmark_baseline_storage_failed")?;
                     if let Some((existing_id, owner_scope, existing_run, report_hash)) =
-                        evohime_local_storage::benchmark_store::get_baseline_approval_by_key(
+                        evohime_local_storage::domains::evaluation::get_baseline_approval_by_key(
                             &transaction, &request.idempotency_key,
                         ).map_err(|_| "benchmark_baseline_storage_failed")? {
                         if existing_id != baseline_id || owner_scope != request.owner_scope
                             || existing_run != run_id || report_hash != expected_report_hash {
                             return Err("benchmark_baseline_approval_conflict");
                         }
-                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                        let existing = evohime_local_storage::domains::evaluation::get_baseline(
                             &transaction, &baseline_id,
                         ).map_err(|_| "benchmark_baseline_storage_failed")?
                             .ok_or("benchmark_baseline_storage_failed")?;
@@ -202,14 +202,14 @@ impl IpcBridge {
                         }));
                     }
                     if let Some((owner_scope, existing_run, report_hash)) =
-                        evohime_local_storage::benchmark_store::get_baseline_approval(
+                        evohime_local_storage::domains::evaluation::get_baseline_approval(
                             &transaction, &baseline_id,
                         ).map_err(|_| "benchmark_baseline_storage_failed")? {
                         if owner_scope != request.owner_scope || existing_run != run_id
                             || report_hash != expected_report_hash {
                             return Err("benchmark_baseline_approval_conflict");
                         }
-                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                        let existing = evohime_local_storage::domains::evaluation::get_baseline(
                             &transaction, &baseline_id,
                         ).map_err(|_| "benchmark_baseline_storage_failed")?
                             .ok_or("benchmark_baseline_storage_failed")?;
@@ -222,7 +222,7 @@ impl IpcBridge {
                             "report_sha256":expected_report_hash,"redacted":true,"error_code":""
                         }));
                     }
-                    let existing_baseline = evohime_local_storage::benchmark_store::get_baseline(
+                    let existing_baseline = evohime_local_storage::domains::evaluation::get_baseline(
                         &transaction, &baseline_id,
                     ).map_err(|_| "benchmark_baseline_storage_failed")?;
                     let revision = if let Some(existing) = existing_baseline {
@@ -233,12 +233,12 @@ impl IpcBridge {
                         }
                         existing.6
                     } else {
-                        let previous = evohime_local_storage::benchmark_store::latest_baseline_revision(
+                        let previous = evohime_local_storage::domains::evaluation::latest_baseline_revision(
                             &transaction, &suite.version, challenge_id,
                             &model.content_hash, &agent.content_hash,
                         ).map_err(|_| "benchmark_baseline_storage_failed")?;
                         let next = previous.checked_add(1).ok_or("benchmark_baseline_revision_overflow")?;
-                        if !evohime_local_storage::benchmark_store::put_baseline(
+                        if !evohime_local_storage::domains::evaluation::put_baseline(
                             &transaction, &baseline_id, &suite.version, &challenge.id,
                             &model.content_hash, &agent.content_hash, &metrics_json,
                             &report.source_commit, next, crate::task_memory::now_millis() as i64,
@@ -247,7 +247,7 @@ impl IpcBridge {
                         }
                         next
                     };
-                    if !evohime_local_storage::benchmark_store::put_baseline_approval(
+                    if !evohime_local_storage::domains::evaluation::put_baseline_approval(
                         &transaction, &baseline_id, &request.owner_scope, run_id,
                         expected_report_hash, &request.idempotency_key,
                         crate::task_memory::now_millis() as i64,

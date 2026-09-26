@@ -373,23 +373,71 @@ pub struct LocalInferenceProcess {
     startup_deadline: Option<tokio::time::Instant>,
 }
 
+/// Verified source and bounded resource request for a pinned inference process.
+#[cfg(windows)]
+pub struct PinnedInferenceRequest<'a> {
+    /// Managed EvoHime data directory.
+    pub data_root: &'a Path,
+    /// Durable adaptation job identity.
+    pub job_id: &'a str,
+    /// Managed relative path to the promoted GGUF.
+    pub model_relative_path: &'a Path,
+    /// Expected SHA-256 digest of the model bytes.
+    pub expected_model_sha256: &'a str,
+    /// Expected model size in bytes.
+    pub expected_model_size: u64,
+    /// Bounded CPU thread count for inference.
+    pub threads: u16,
+    /// Job Object memory limit in bytes.
+    pub memory_limit_bytes: u64,
+    /// Job Object CPU limit as a percentage.
+    pub cpu_limit_percent: u8,
+}
+
+/// Verified source, target and bounded resource request for pinned quantization.
+#[cfg(windows)]
+pub struct PinnedQuantizerRequest<'a> {
+    /// Managed EvoHime data directory.
+    pub data_root: &'a Path,
+    /// Durable adaptation job identity.
+    pub job_id: &'a str,
+    /// Managed relative path to the source GGUF.
+    pub source_relative_path: &'a Path,
+    /// Expected SHA-256 digest of the source bytes.
+    pub expected_source_sha256: &'a str,
+    /// Expected source size in bytes.
+    pub expected_source_size: u64,
+    /// Fixed llama.cpp quantization target.
+    pub target: &'a str,
+    /// Bounded CPU thread count for quantization.
+    pub threads: u16,
+    /// Job Object memory limit in bytes.
+    pub memory_limit_bytes: u64,
+    /// Job Object CPU limit as a percentage.
+    pub cpu_limit_percent: u8,
+    /// Maximum output artifact size in bytes.
+    pub max_output_bytes: u64,
+}
+
 /// Starts the hash-pinned CPU server for a Core-verified staged GGUF.
 #[cfg(windows)]
 pub async fn spawn_pinned_inference(
-    data_root: &Path,
-    job_id: &str,
-    model_relative_path: &Path,
-    expected_model_sha256: &str,
-    expected_model_size: u64,
-    threads: u16,
-    memory_limit_bytes: u64,
-    cpu_limit_percent: u8,
+    request: PinnedInferenceRequest<'_>,
 ) -> Result<LocalInferenceProcess, LocalError> {
+    let PinnedInferenceRequest {
+        data_root,
+        job_id,
+        model_relative_path,
+        expected_model_sha256,
+        expected_model_size,
+        threads,
+        memory_limit_bytes,
+        cpu_limit_percent,
+    } = request;
     if job_id.trim().is_empty()
         || job_id.len() > 128
         || job_id.bytes().any(|byte| byte.is_ascii_control())
-        || memory_limit_bytes < 512 * 1024 * 1024
-        || memory_limit_bytes > 32 * 1024 * 1024 * 1024
+        || !(512 * 1024 * 1024..=32 * 1024 * 1024 * 1024).contains(&memory_limit_bytes)
         || cpu_limit_percent == 0
         || cpu_limit_percent > 100
         || expected_model_size == 0
@@ -560,26 +608,28 @@ impl LocalInferenceProcess {
 /// Starts only the installed hash-pinned llama.cpp quantizer with typed args.
 #[cfg(windows)]
 pub async fn spawn_pinned_quantizer(
-    data_root: &Path,
-    job_id: &str,
-    source_relative_path: &Path,
-    expected_source_sha256: &str,
-    expected_source_size: u64,
-    target: &str,
-    threads: u16,
-    memory_limit_bytes: u64,
-    cpu_limit_percent: u8,
-    max_output_bytes: u64,
+    request: PinnedQuantizerRequest<'_>,
 ) -> Result<LocalQuantizerProcess, LocalError> {
     const MAX_OUTPUT_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+    let PinnedQuantizerRequest {
+        data_root,
+        job_id,
+        source_relative_path,
+        expected_source_sha256,
+        expected_source_size,
+        target,
+        threads,
+        memory_limit_bytes,
+        cpu_limit_percent,
+        max_output_bytes,
+    } = request;
     if job_id.trim().is_empty()
         || job_id.len() > 128
         || job_id.bytes().any(|byte| byte.is_ascii_control())
         || !matches!(target, "Q4_K_M" | "Q5_K_M" | "Q8_0")
         || threads == 0
         || threads > 256
-        || memory_limit_bytes < 512 * 1024 * 1024
-        || memory_limit_bytes > 32 * 1024 * 1024 * 1024
+        || !(512 * 1024 * 1024..=32 * 1024 * 1024 * 1024).contains(&memory_limit_bytes)
         || cpu_limit_percent == 0
         || cpu_limit_percent > 100
         || max_output_bytes == 0
@@ -1051,7 +1101,7 @@ mod adaptation_process_tests {
     async fn fake_quantizer_completion_returns_hash_and_size() {
         let root = root();
         let command = "echo fake-output>fake-output.gguf";
-        let mut process = fake_quantizer(&root, &command, 1024).await;
+        let mut process = fake_quantizer(&root, command, 1024).await;
         let result = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
                 if let Some(result) = process.poll().await.unwrap() {

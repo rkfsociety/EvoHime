@@ -50,7 +50,7 @@ async fn transition_adaptation_job(
     ) && job.state.terminal()
     {
         if let Some((_, _, run_state, _)) =
-            evohime_local_storage::benchmark_store::get_run(&transaction, &job.request.job_id)
+            evohime_local_storage::domains::evaluation::get_run(&transaction, &job.request.job_id)
                 .map_err(|_| "benchmark_run_storage_failed".to_string())?
         {
             if run_state == "running" {
@@ -58,7 +58,7 @@ async fn transition_adaptation_job(
                     "status":job.state.storage_key(),"redacted":true
                 }))
                 .map_err(|_| "benchmark_report_serialization_failed".to_string())?;
-                if !evohime_local_storage::benchmark_store::save_report(
+                if !evohime_local_storage::domains::evaluation::save_report(
                     &transaction,
                     &job.request.job_id,
                     &report,
@@ -200,7 +200,7 @@ async fn persist_adaptation_job(
     } else {
         "{\"status\":\"failed\",\"redacted\":true}".to_owned()
     };
-    if !evohime_local_storage::benchmark_store::save_report(
+    if !evohime_local_storage::domains::evaluation::save_report(
         &transaction,
         &job.request.job_id,
         &report_json,
@@ -759,7 +759,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     || baseline.revision == 0 || baseline.metrics.attempts == 0 {
                                     return Err("benchmark_baseline_incompatible".into());
                                 }
-                                let stored_baseline = evohime_local_storage::benchmark_store::get_baseline(
+                                let stored_baseline = evohime_local_storage::domains::evaluation::get_baseline(
                                     db.connection(), &baseline.id,
                                 ).map_err(|_| "benchmark_baseline_storage_failed".to_string())?
                                     .ok_or_else(|| "benchmark_baseline_not_registered".to_string())?;
@@ -1291,11 +1291,11 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 let transaction = db.connection_mut().transaction()
                                     .map_err(|_| "benchmark_run_storage_failed".to_string())?;
                                 if resume_existing_run {
-                                    let existing_run = evohime_local_storage::benchmark_store::get_run(
+                                    let existing_run = evohime_local_storage::domains::evaluation::get_run(
                                         &transaction, job_id,
                                     ).map_err(|_| "benchmark_run_storage_failed".to_string())?
                                         .ok_or_else(|| "benchmark_run_not_resumable".to_string())?;
-                                    let existing_policy = evohime_local_storage::benchmark_store::get_run_policy_json(
+                                    let existing_policy = evohime_local_storage::domains::evaluation::get_run_policy_json(
                                         &transaction, job_id,
                                     ).map_err(|_| "benchmark_run_storage_failed".to_string())?
                                         .ok_or_else(|| "benchmark_run_not_resumable".to_string())?;
@@ -1304,7 +1304,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                         || existing_policy != policy_json {
                                         return Err("benchmark_run_not_resumable".into());
                                     }
-                                } else if !evohime_local_storage::benchmark_store::save_run(
+                                } else if !evohime_local_storage::domains::evaluation::save_run(
                                     &transaction, job_id, &suite.id, &suite.version, &policy_json,
                                     "running", crate::task_memory::now_millis() as i64,
                                 ).map_err(|_| "benchmark_run_storage_failed".to_string())? {

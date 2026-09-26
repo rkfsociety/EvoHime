@@ -457,33 +457,36 @@ async fn run_supervisor_command_channel(
                     .unwrap_or(0);
                 if quantizer_processes.contains_key(job_id) {
                     json!({"accepted":true,"job_id":job_id,"state":"running","idempotent_replay":true})
-                } else if quantizer_processes.len() >= 1
+                } else if !quantizer_processes.is_empty()
                     || !adapter_processes.is_empty()
                     || !inference_processes.is_empty()
                 {
                     json!({"accepted":false,"reason":"capacity_or_duplicate"})
                 } else {
+                    let data_root = core_data_dir();
                     match crate::local_provider::spawn_pinned_quantizer(
-                        &core_data_dir(),
-                        job_id,
-                        Path::new(relative),
-                        source_hash,
-                        source_size,
-                        target,
-                        threads,
-                        value
-                            .get("memory_limit_bytes")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
-                        value
-                            .get("cpu_limit_percent")
-                            .and_then(|v| v.as_u64())
-                            .and_then(|n| u8::try_from(n).ok())
-                            .unwrap_or(0),
-                        value
-                            .get("max_output_bytes")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
+                        crate::local_provider::PinnedQuantizerRequest {
+                            data_root: &data_root,
+                            job_id,
+                            source_relative_path: Path::new(relative),
+                            expected_source_sha256: source_hash,
+                            expected_source_size: source_size,
+                            target,
+                            threads,
+                            memory_limit_bytes: value
+                                .get("memory_limit_bytes")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            cpu_limit_percent: value
+                                .get("cpu_limit_percent")
+                                .and_then(|v| v.as_u64())
+                                .and_then(|n| u8::try_from(n).ok())
+                                .unwrap_or(0),
+                            max_output_bytes: value
+                                .get("max_output_bytes")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                        },
                     )
                     .await
                     {
@@ -547,28 +550,31 @@ async fn run_supervisor_command_channel(
                     .unwrap_or(0);
                 if inference_processes.contains_key(job_id) {
                     json!({"accepted":true,"job_id":job_id,"state":"loading","idempotent_replay":true})
-                } else if inference_processes.len() >= 1
+                } else if !inference_processes.is_empty()
                     || !adapter_processes.is_empty()
                     || !quantizer_processes.is_empty()
                 {
                     json!({"accepted":false,"reason":"runtime_capacity_reached"})
                 } else {
+                    let data_root = core_data_dir();
                     match crate::local_provider::spawn_pinned_inference(
-                        &core_data_dir(),
-                        job_id,
-                        Path::new(relative),
-                        model_hash,
-                        model_size,
-                        threads,
-                        value
-                            .get("memory_limit_bytes")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0),
-                        value
-                            .get("cpu_limit_percent")
-                            .and_then(|v| v.as_u64())
-                            .and_then(|n| u8::try_from(n).ok())
-                            .unwrap_or(0),
+                        crate::local_provider::PinnedInferenceRequest {
+                            data_root: &data_root,
+                            job_id,
+                            model_relative_path: Path::new(relative),
+                            expected_model_sha256: model_hash,
+                            expected_model_size: model_size,
+                            threads,
+                            memory_limit_bytes: value
+                                .get("memory_limit_bytes")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            cpu_limit_percent: value
+                                .get("cpu_limit_percent")
+                                .and_then(|v| v.as_u64())
+                                .and_then(|n| u8::try_from(n).ok())
+                                .unwrap_or(0),
+                        },
                     )
                     .await
                     {
