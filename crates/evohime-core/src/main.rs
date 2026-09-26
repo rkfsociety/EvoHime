@@ -142,10 +142,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .recover_durable_background_execution(evohime_core::task_memory::now_millis() as i64)
         .await
         .map_err(|e| format!("durable background execution recovery failed: {e}"))?;
-    evohime_core::local_model_adaptation::recover_after_restart(
-        &journal,
-        &data_dir.join("models"),
-    )
+    evohime_core::local_model_adaptation::recover_after_restart(&journal, &data_dir.join("models"))
         .await
         .map_err(|e| format!("local model adaptation recovery failed: {e}"))?;
     let _model_provenance_retention_task =
@@ -455,8 +452,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .map(|coordinator| tokio::spawn(coordinator.run_periodic()));
     let adaptation_scheduler_bridge = std::sync::Arc::clone(&bridge);
     let durable_background_task = tokio::spawn(async move {
-        let mut next_adaptation_dispatch = tokio::time::Instant::now()
-            + std::time::Duration::from_secs(15);
+        let mut next_adaptation_dispatch =
+            tokio::time::Instant::now() + std::time::Duration::from_secs(15);
         loop {
             if let Err(error) = background_journal
                 .poll_durable_background_execution(evohime_core::task_memory::now_millis() as i64)
@@ -471,8 +468,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 {
                     tracing::warn!(%error, "local model adaptation queue dispatch failed");
                 }
-                next_adaptation_dispatch = tokio::time::Instant::now()
-                    + std::time::Duration::from_secs(15);
+                next_adaptation_dispatch =
+                    tokio::time::Instant::now() + std::time::Duration::from_secs(15);
             }
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }

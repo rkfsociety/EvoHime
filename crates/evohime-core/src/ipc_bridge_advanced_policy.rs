@@ -34,14 +34,14 @@ impl IpcBridge {
                     Err(_) => Vec::new(),
                 };
                 serde_json::json!({
-                "schema_version": 1,
-                "request_id": request.request_id,
-                "operation": "list",
-                "status": "ok",
-                "runs": runs,
-                "error_code": ""
-            })
-            },
+                    "schema_version": 1,
+                    "request_id": request.request_id,
+                    "operation": "list",
+                    "status": "ok",
+                    "runs": runs,
+                    "error_code": ""
+                })
+            }
             "approveBaseline" => {
                 let result = async {
                     let payload: serde_json::Value = serde_json::from_slice(&request.payload)
@@ -265,8 +265,10 @@ impl IpcBridge {
                 }.await;
                 match result {
                     Ok(value) => value,
-                    Err(error_code) => serde_json::json!({"schema_version":1,"request_id":request.request_id,
-                        "operation":"approveBaseline","status":"rejected","error_code":error_code}),
+                    Err(error_code) => {
+                        serde_json::json!({"schema_version":1,"request_id":request.request_id,
+                        "operation":"approveBaseline","status":"rejected","error_code":error_code})
+                    }
                 }
             }
             "start" | "cancel" => serde_json::json!({

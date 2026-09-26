@@ -357,8 +357,8 @@ async fn run_supervisor_command_channel(
 ) -> io::Result<()> {
     use self::analysis_kernel_worker::{KernelWorkerLaunchSpec, KernelWorkerProcess};
     use crate::local_provider::{
-        ExternalAgentProcess, LocalAdapterProcess, LocalProviderManager, LocalQuantizerProcess,
-        LocalInferenceProcess, ResourceLimits,
+        ExternalAgentProcess, LocalAdapterProcess, LocalInferenceProcess, LocalProviderManager,
+        LocalQuantizerProcess, ResourceLimits,
     };
     use std::collections::BTreeMap;
 
@@ -528,10 +528,23 @@ async fn run_supervisor_command_channel(
             }
             "adaptation_runtime_start" => {
                 let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
-                let relative = value.get("model_relative_path").and_then(|v| v.as_str()).unwrap_or("");
-                let model_hash = value.get("model_sha256").and_then(|v| v.as_str()).unwrap_or("");
-                let model_size = value.get("model_size_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
-                let threads = value.get("threads").and_then(|v| v.as_u64()).and_then(|n| u16::try_from(n).ok()).unwrap_or(0);
+                let relative = value
+                    .get("model_relative_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let model_hash = value
+                    .get("model_sha256")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let model_size = value
+                    .get("model_size_bytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let threads = value
+                    .get("threads")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|n| u16::try_from(n).ok())
+                    .unwrap_or(0);
                 if inference_processes.contains_key(job_id) {
                     json!({"accepted":true,"job_id":job_id,"state":"loading","idempotent_replay":true})
                 } else if inference_processes.len() >= 1
@@ -547,14 +560,25 @@ async fn run_supervisor_command_channel(
                         model_hash,
                         model_size,
                         threads,
-                        value.get("memory_limit_bytes").and_then(|v|v.as_u64()).unwrap_or(0),
-                        value.get("cpu_limit_percent").and_then(|v|v.as_u64()).and_then(|n|u8::try_from(n).ok()).unwrap_or(0),
-                    ).await {
+                        value
+                            .get("memory_limit_bytes")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0),
+                        value
+                            .get("cpu_limit_percent")
+                            .and_then(|v| v.as_u64())
+                            .and_then(|n| u8::try_from(n).ok())
+                            .unwrap_or(0),
+                    )
+                    .await
+                    {
                         Ok(process) => {
                             inference_processes.insert(job_id.to_owned(), process);
                             json!({"accepted":true,"job_id":job_id,"state":"loading"})
                         }
-                        Err(error) => json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()}),
+                        Err(error) => {
+                            json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
                     }
                 }
             }
@@ -562,7 +586,9 @@ async fn run_supervisor_command_channel(
                 let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
                 match inference_processes.get_mut(job_id) {
                     Some(process) => match process.probe().await {
-                        Ok(Some(port)) => json!({"accepted":true,"state":"ready","port":port,"model_alias":process.model_alias()}),
+                        Ok(Some(port)) => {
+                            json!({"accepted":true,"state":"ready","port":port,"model_alias":process.model_alias()})
+                        }
                         Ok(None) => json!({"accepted":true,"state":"loading"}),
                         Err(error) => {
                             inference_processes.remove(job_id);
@@ -577,7 +603,9 @@ async fn run_supervisor_command_channel(
                 match inference_processes.remove(job_id) {
                     Some(mut process) => match process.stop().await {
                         Ok(()) => json!({"accepted":true,"state":"stopped"}),
-                        Err(error) => json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()}),
+                        Err(error) => {
+                            json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
                     },
                     None => json!({"accepted":false,"reason":"job_not_running"}),
                 }

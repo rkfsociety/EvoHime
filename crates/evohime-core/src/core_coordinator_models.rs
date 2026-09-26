@@ -22,9 +22,11 @@ async fn transition_adaptation_job(
         return Err("adaptation_job_revision_conflict".into());
     }
     job.transition(next, job.evidence.clone())
-    .map_err(|_| "adaptation_transition_denied".to_string())?;
+        .map_err(|_| "adaptation_transition_denied".to_string())?;
     let snapshot = serde_json::to_vec(&job).map_err(|_| "serialization_failed".to_string())?;
-    let transaction = db.connection_mut().transaction()
+    let transaction = db
+        .connection_mut()
+        .transaction()
         .map_err(|_| "storage_failed".to_string())?;
     if !evohime_local_storage::local_model_adaptation_store::put_job(
         &transaction,
@@ -42,27 +44,37 @@ async fn transition_adaptation_job(
     {
         return Err("adaptation_job_revision_conflict".into());
     }
-    if matches!(current.1.as_str(),
+    if matches!(
+        current.1.as_str(),
         "benchmarking" | "cancelling" | "rejecting"
     ) && job.state.terminal()
     {
-        if let Some((_, _, run_state, _)) = evohime_local_storage::benchmark_store::get_run(
-            &transaction, &job.request.job_id,
-        ).map_err(|_| "benchmark_run_storage_failed".to_string())? {
+        if let Some((_, _, run_state, _)) =
+            evohime_local_storage::benchmark_store::get_run(&transaction, &job.request.job_id)
+                .map_err(|_| "benchmark_run_storage_failed".to_string())?
+        {
             if run_state == "running" {
                 let report = serde_json::to_string(&serde_json::json!({
                     "status":job.state.storage_key(),"redacted":true
-                })).map_err(|_| "benchmark_report_serialization_failed".to_string())?;
+                }))
+                .map_err(|_| "benchmark_report_serialization_failed".to_string())?;
                 if !evohime_local_storage::benchmark_store::save_report(
-                    &transaction, &job.request.job_id, &report, job.state.storage_key(),
+                    &transaction,
+                    &job.request.job_id,
+                    &report,
+                    job.state.storage_key(),
                     crate::task_memory::now_millis() as i64,
-                ).map_err(|_| "benchmark_report_storage_failed".to_string())? {
+                )
+                .map_err(|_| "benchmark_report_storage_failed".to_string())?
+                {
                     return Err("benchmark_report_run_missing".into());
                 }
             }
         }
     }
-    transaction.commit().map_err(|_| "storage_failed".to_string())?;
+    transaction
+        .commit()
+        .map_err(|_| "storage_failed".to_string())?;
     Ok(job)
 }
 
@@ -96,8 +108,8 @@ async fn cancel_supervisor_quantizer(job_id: &str) -> Result<(), String> {
     }))
     .await
     .map_err(|_| "quantizer_cancel_failed".to_string())?;
-    let already_stopped = response.get("reason").and_then(serde_json::Value::as_str)
-        == Some("job_not_running");
+    let already_stopped =
+        response.get("reason").and_then(serde_json::Value::as_str) == Some("job_not_running");
     if response.get("accepted") != Some(&serde_json::Value::Bool(true)) && !already_stopped {
         return Err("quantizer_cancel_rejected".into());
     }
@@ -108,9 +120,11 @@ async fn cancel_supervisor_quantizer(job_id: &str) -> Result<(), String> {
 async fn stop_adaptation_runtime(job_id: &str) -> Result<(), String> {
     let response = crate::analysis_kernel::supervisor_command(serde_json::json!({
         "op":"adaptation_runtime_stop", "job_id":job_id
-    })).await.map_err(|_| "adaptation_runtime_stop_failed".to_string())?;
-    let already_stopped = response.get("reason").and_then(serde_json::Value::as_str)
-        == Some("job_not_running");
+    }))
+    .await
+    .map_err(|_| "adaptation_runtime_stop_failed".to_string())?;
+    let already_stopped =
+        response.get("reason").and_then(serde_json::Value::as_str) == Some("job_not_running");
     if response.get("accepted") != Some(&serde_json::Value::Bool(true)) && !already_stopped {
         return Err("adaptation_runtime_stop_rejected".into());
     }
@@ -128,37 +142,58 @@ async fn persist_adaptation_job(
     expected_revision: u64,
     report: Option<&crate::agent_benchmark_matrix::BenchmarkReport>,
 ) -> Result<(), String> {
-    let journal = state.lock().await.journal.clone()
+    let journal = state
+        .lock()
+        .await
+        .journal
+        .clone()
         .ok_or_else(|| "storage journal is not configured".to_string())?;
     let mut db = journal.database().lock().await;
     let current = evohime_local_storage::local_model_adaptation_store::get_job(
-        db.connection(), &job.request.job_id,
-    ).map_err(|_| "storage_failed".to_string())?
-        .ok_or_else(|| "adaptation_job_not_found".to_string())?;
+        db.connection(),
+        &job.request.job_id,
+    )
+    .map_err(|_| "storage_failed".to_string())?
+    .ok_or_else(|| "adaptation_job_not_found".to_string())?;
     if current.0 != expected_revision
         || current.1 != crate::local_model_adaptation::AdaptationState::Benchmarking.storage_key()
         || job.revision != expected_revision.saturating_add(1)
-        || !matches!(job.state,
+        || !matches!(
+            job.state,
             crate::local_model_adaptation::AdaptationState::ReadyForPromotion
-                | crate::local_model_adaptation::AdaptationState::Failed)
+                | crate::local_model_adaptation::AdaptationState::Failed
+        )
     {
         return Err("adaptation_job_revision_conflict".into());
     }
     let snapshot = serde_json::to_vec(job).map_err(|_| "serialization_failed".to_string())?;
-    let transaction = db.connection_mut().transaction()
+    let transaction = db
+        .connection_mut()
+        .transaction()
         .map_err(|_| "storage_failed".to_string())?;
     if !evohime_local_storage::local_model_adaptation_store::put_job(
-        &transaction, &job.request.job_id, job.revision, job.state.storage_key(),
-        &job.request.idempotency_key, &current.2, &job.content_sha256, &current.4,
-        &snapshot, crate::task_memory::now_millis() as i64,
-    ).map_err(|_| "storage_failed".to_string())? {
+        &transaction,
+        &job.request.job_id,
+        job.revision,
+        job.state.storage_key(),
+        &job.request.idempotency_key,
+        &current.2,
+        &job.content_sha256,
+        &current.4,
+        &snapshot,
+        crate::task_memory::now_millis() as i64,
+    )
+    .map_err(|_| "storage_failed".to_string())?
+    {
         return Err("adaptation_job_revision_conflict".into());
     }
     let report_json = if let Some(report) = report {
-        let json = serde_json::to_string(report).map_err(|_| "benchmark_report_serialization_failed".to_string())?;
+        let json = serde_json::to_string(report)
+            .map_err(|_| "benchmark_report_serialization_failed".to_string())?;
         if json.len() > 2 * 1024 * 1024
             || job.evidence.benchmark_sha256.as_deref()
-                != Some(crate::local_model_runtime_manager::canonical_hash(report).as_str()) {
+                != Some(crate::local_model_runtime_manager::canonical_hash(report).as_str())
+        {
             return Err("benchmark_report_integrity_failed".into());
         }
         json
@@ -166,12 +201,19 @@ async fn persist_adaptation_job(
         "{\"status\":\"failed\",\"redacted\":true}".to_owned()
     };
     if !evohime_local_storage::benchmark_store::save_report(
-        &transaction, &job.request.job_id, &report_json, job.state.storage_key(),
+        &transaction,
+        &job.request.job_id,
+        &report_json,
+        job.state.storage_key(),
         crate::task_memory::now_millis() as i64,
-    ).map_err(|_| "benchmark_report_storage_failed".to_string())? {
+    )
+    .map_err(|_| "benchmark_report_storage_failed".to_string())?
+    {
         return Err("benchmark_report_run_missing".into());
     }
-    transaction.commit().map_err(|_| "storage_failed".to_string())?;
+    transaction
+        .commit()
+        .map_err(|_| "storage_failed".to_string())?;
     Ok(())
 }
 
@@ -183,27 +225,45 @@ async fn execute_adaptation_benchmark(
 ) -> Result<crate::agent_benchmark_matrix::BenchmarkReport, String> {
     let probe = serde_json::json!({"op":"adaptation_runtime_probe","job_id":job.request.job_id});
     #[cfg(windows)]
-    let runtime = crate::analysis_kernel::supervisor_command(probe).await
+    let runtime = crate::analysis_kernel::supervisor_command(probe)
+        .await
         .map_err(|_| "adaptation_runtime_probe_failed".to_string())?;
     #[cfg(not(windows))]
     let runtime: serde_json::Value = return Err("quantizer_requires_windows_supervisor".into());
     if runtime.get("accepted") != Some(&serde_json::Value::Bool(true))
-        || runtime.get("state").and_then(serde_json::Value::as_str) != Some("ready") {
+        || runtime.get("state").and_then(serde_json::Value::as_str) != Some("ready")
+    {
         return Err("adaptation_runtime_not_ready".into());
     }
-    let port = runtime.get("port").and_then(serde_json::Value::as_u64)
-        .and_then(|port| u16::try_from(port).ok()).filter(|port| *port != 0)
+    let port = runtime
+        .get("port")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|port| u16::try_from(port).ok())
+        .filter(|port| *port != 0)
         .ok_or_else(|| "adaptation_runtime_invalid".to_string())?;
-    let alias = runtime.get("model_alias").and_then(serde_json::Value::as_str)
+    let alias = runtime
+        .get("model_alias")
+        .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "adaptation_runtime_invalid".to_string())?;
-    let output_hash = job.evidence.output_sha256.as_deref()
+    let output_hash = job
+        .evidence
+        .output_sha256
+        .as_deref()
         .ok_or_else(|| "adaptation_output_missing".to_string())?;
     if alias != format!("evohime-adaptation-{}", &output_hash[..16]) {
         return Err("adaptation_runtime_identity_mismatch".into());
     }
     crate::agent_benchmark_matrix::run_local_model_matrix(
-        suite, policy, &job.request.job_id, "local-adaptation-v1", port, alias, baselines,
-    ).await.map_err(|_| "real_benchmark_failed_closed".to_string())
+        suite,
+        policy,
+        &job.request.job_id,
+        "local-adaptation-v1",
+        port,
+        alias,
+        baselines,
+    )
+    .await
+    .map_err(|_| "real_benchmark_failed_closed".to_string())
 }
 
 #[cfg(windows)]
@@ -217,10 +277,17 @@ async fn ensure_adaptation_runtime_ready(
     if hardware.ram_bytes < 1024 * 1024 * 1024 || available_memory < 512 * 1024 * 1024 {
         return Err("adaptation_resources_unavailable".into());
     }
-    let memory_limit = hardware.ram_bytes.min(available_memory)
-        .saturating_mul(3).checked_div(4).unwrap_or(0)
+    let memory_limit = hardware
+        .ram_bytes
+        .min(available_memory)
+        .saturating_mul(3)
+        .checked_div(4)
+        .unwrap_or(0)
         .clamp(512 * 1024 * 1024, 32 * 1024 * 1024 * 1024);
-    let output_hash = job.evidence.output_sha256.as_deref()
+    let output_hash = job
+        .evidence
+        .output_sha256
+        .as_deref()
         .ok_or_else(|| "adaptation_output_missing".to_string())?;
     let started = match crate::analysis_kernel::supervisor_command(serde_json::json!({
         "op":"adaptation_runtime_start",
@@ -240,34 +307,46 @@ async fn ensure_adaptation_runtime_ready(
         }
     };
     if started.get("accepted") != Some(&serde_json::Value::Bool(true)) {
-        return Err(started.get("reason").and_then(serde_json::Value::as_str)
-            .unwrap_or("adaptation_runtime_start_rejected").to_owned());
+        return Err(started
+            .get("reason")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("adaptation_runtime_start_rejected")
+            .to_owned());
     }
     let runtime = match crate::analysis_kernel::supervisor_command(serde_json::json!({
         "op":"adaptation_runtime_probe", "job_id":job.request.job_id
-    })).await {
+    }))
+    .await
+    {
         Ok(runtime) => runtime,
         Err(_) => {
-            stop_adaptation_runtime(&job.request.job_id).await
+            stop_adaptation_runtime(&job.request.job_id)
+                .await
                 .map_err(|_| "adaptation_runtime_cleanup_failed".to_string())?;
             return Err("adaptation_runtime_probe_failed".into());
         }
     };
     if runtime.get("accepted") != Some(&serde_json::Value::Bool(true)) {
-        stop_adaptation_runtime(&job.request.job_id).await
+        stop_adaptation_runtime(&job.request.job_id)
+            .await
             .map_err(|_| "adaptation_runtime_cleanup_failed".to_string())?;
         return Err("adaptation_runtime_not_ready".into());
     }
     if runtime.get("state").and_then(serde_json::Value::as_str) != Some("ready") {
         return Ok(false);
     }
-    let Some(alias) = runtime.get("model_alias").and_then(serde_json::Value::as_str) else {
-        stop_adaptation_runtime(&job.request.job_id).await
+    let Some(alias) = runtime
+        .get("model_alias")
+        .and_then(serde_json::Value::as_str)
+    else {
+        stop_adaptation_runtime(&job.request.job_id)
+            .await
             .map_err(|_| "adaptation_runtime_cleanup_failed".to_string())?;
         return Err("adaptation_runtime_invalid".into());
     };
     if alias != format!("evohime-adaptation-{}", &output_hash[..16]) {
-        stop_adaptation_runtime(&job.request.job_id).await
+        stop_adaptation_runtime(&job.request.job_id)
+            .await
             .map_err(|_| "adaptation_runtime_cleanup_failed".to_string())?;
         return Err("adaptation_runtime_identity_mismatch".into());
     }

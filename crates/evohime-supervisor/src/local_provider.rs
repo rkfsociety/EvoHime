@@ -397,7 +397,9 @@ pub async fn spawn_pinned_inference(
         || threads == 0
         || threads > 64
         || expected_model_sha256.len() != 64
-        || !expected_model_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !expected_model_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
         || !is_managed_relative_path(model_relative_path)
     {
         return Err(LocalError::InvalidRequest);
@@ -420,7 +422,10 @@ pub async fn spawn_pinned_inference(
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
         .await
         .map_err(|_| LocalError::Unavailable)?;
-    let port = listener.local_addr().map_err(|_| LocalError::Unavailable)?.port();
+    let port = listener
+        .local_addr()
+        .map_err(|_| LocalError::Unavailable)?
+        .port();
     drop(listener);
     let model_alias = format!("evohime-adaptation-{}", &actual_hash[..16]);
     let job = JobObject::create_with_limits(Some(memory_limit_bytes), Some(cpu_limit_percent))
@@ -468,13 +473,21 @@ impl LocalInferenceProcess {
 
     /// Probes a loaded model using the loopback OpenAI models endpoint.
     pub async fn probe(&mut self) -> Result<Option<u16>, LocalError> {
-        if self.startup_deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+        if self
+            .startup_deadline
+            .is_some_and(|deadline| tokio::time::Instant::now() >= deadline)
+        {
             let _ = self.child.start_kill();
             let _ = self.child.wait().await;
             self.job.take();
             return Err(LocalError::Timeout);
         }
-        if self.child.try_wait().map_err(|_| LocalError::Unavailable)?.is_some() {
+        if self
+            .child
+            .try_wait()
+            .map_err(|_| LocalError::Unavailable)?
+            .is_some()
+        {
             self.job.take();
             return Err(LocalError::Unavailable);
         }
@@ -487,12 +500,20 @@ impl LocalInferenceProcess {
             let request = format!(
                 "GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
             );
-            stream.write_all(request.as_bytes()).await.map_err(|_| LocalError::Unavailable)?;
+            stream
+                .write_all(request.as_bytes())
+                .await
+                .map_err(|_| LocalError::Unavailable)?;
             let mut body = Vec::with_capacity(16 * 1024);
             let mut buffer = [0_u8; 2048];
             while body.len() < 16 * 1024 {
-                let read = stream.read(&mut buffer).await.map_err(|_| LocalError::Unavailable)?;
-                if read == 0 { break; }
+                let read = stream
+                    .read(&mut buffer)
+                    .await
+                    .map_err(|_| LocalError::Unavailable)?;
+                if read == 0 {
+                    break;
+                }
                 body.extend_from_slice(&buffer[..read]);
             }
             let text = std::str::from_utf8(&body).map_err(|_| LocalError::Unavailable)?;
@@ -500,14 +521,21 @@ impl LocalInferenceProcess {
                 return Err(LocalError::Unavailable);
             }
             let (_, payload) = text.split_once("\r\n\r\n").ok_or(LocalError::Unavailable)?;
-            let value: serde_json::Value = serde_json::from_str(payload).map_err(|_| LocalError::Unavailable)?;
-            let models = value.get("data").and_then(serde_json::Value::as_array).ok_or(LocalError::Unavailable)?;
-            if models.iter().any(|model| model.get("id").and_then(serde_json::Value::as_str) == Some(alias.as_str())) {
+            let value: serde_json::Value =
+                serde_json::from_str(payload).map_err(|_| LocalError::Unavailable)?;
+            let models = value
+                .get("data")
+                .and_then(serde_json::Value::as_array)
+                .ok_or(LocalError::Unavailable)?;
+            if models.iter().any(|model| {
+                model.get("id").and_then(serde_json::Value::as_str) == Some(alias.as_str())
+            }) {
                 Ok(Some(port))
             } else {
                 Ok(None)
             }
-        }).await;
+        })
+        .await;
         match result {
             Ok(Ok(ready)) => {
                 if ready.is_some() {
@@ -701,7 +729,9 @@ fn resolve_managed_model_path(
     must_exist: bool,
 ) -> Result<PathBuf, LocalError> {
     if !is_managed_relative_path(relative)
-        || !std::fs::symlink_metadata(root).is_ok_and(|metadata| metadata.file_type().is_dir() && !has_unsafe_reparse_point(&metadata))
+        || !std::fs::symlink_metadata(root).is_ok_and(|metadata| {
+            metadata.file_type().is_dir() && !has_unsafe_reparse_point(&metadata)
+        })
     {
         return Err(LocalError::InvalidRequest);
     }
@@ -721,7 +751,9 @@ fn resolve_managed_model_path(
         }
     }
     if must_exist
-        && !std::fs::symlink_metadata(&current).is_ok_and(|metadata| metadata.file_type().is_file() && !has_unsafe_reparse_point(&metadata))
+        && !std::fs::symlink_metadata(&current).is_ok_and(|metadata| {
+            metadata.file_type().is_file() && !has_unsafe_reparse_point(&metadata)
+        })
     {
         return Err(LocalError::ModelNotFound);
     }
@@ -1017,7 +1049,10 @@ mod adaptation_process_tests {
     #[tokio::test]
     async fn fake_quantizer_completion_returns_hash_and_size() {
         let root = root();
-        let command = format!("echo fake-output>\"{}\"", root.join("fake-output.gguf").display());
+        let command = format!(
+            "echo fake-output>\"{}\"",
+            root.join("fake-output.gguf").display()
+        );
         let mut process = fake_quantizer(&root, &command, 1024).await;
         let result = tokio::time::timeout(Duration::from_secs(10), async {
             loop {
@@ -1032,7 +1067,10 @@ mod adaptation_process_tests {
         let contents = std::fs::read(root.join("fake-output.gguf")).unwrap();
         assert_eq!(result.output_size_bytes, contents.len() as u64);
         assert_eq!(result.output_sha256, encode_hex(Sha256::digest(contents)));
-        assert_eq!(result.output_relative_path, ".adaptation-staging/fake-output.gguf");
+        assert_eq!(
+            result.output_relative_path,
+            ".adaptation-staging/fake-output.gguf"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 

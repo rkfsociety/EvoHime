@@ -219,8 +219,8 @@ pub async fn local_inference_stream(
                 finished = true;
                 break;
             }
-            let event: serde_json::Value = serde_json::from_slice(data)
-                .map_err(|_| AdaptationError::InvalidRequest)?;
+            let event: serde_json::Value =
+                serde_json::from_slice(data).map_err(|_| AdaptationError::InvalidRequest)?;
             if let Some(text) = event
                 .get("choices")
                 .and_then(serde_json::Value::as_array)
@@ -235,8 +235,12 @@ pub async fn local_inference_stream(
                 completion.extend_from_slice(text.as_bytes());
             }
             if let Some(usage) = event.get("usage") {
-                prompt_tokens = usage.get("prompt_tokens").and_then(serde_json::Value::as_u64);
-                completion_tokens = usage.get("completion_tokens").and_then(serde_json::Value::as_u64);
+                prompt_tokens = usage
+                    .get("prompt_tokens")
+                    .and_then(serde_json::Value::as_u64);
+                completion_tokens = usage
+                    .get("completion_tokens")
+                    .and_then(serde_json::Value::as_u64);
             }
         }
         if finished {
@@ -247,7 +251,8 @@ pub async fn local_inference_stream(
         return Err(AdaptationError::InvalidRequest);
     }
     let expected_match = if let Some(expected) = expected_exact_completion {
-        let output = std::str::from_utf8(&completion).map_err(|_| AdaptationError::InvalidRequest)?;
+        let output =
+            std::str::from_utf8(&completion).map_err(|_| AdaptationError::InvalidRequest)?;
         Some(output.trim() == expected)
     } else {
         None
@@ -355,23 +360,63 @@ impl AdaptationState {
             (self, next),
             (
                 S::Created,
-                S::Preflighted | S::Cancelling | S::Rejecting | S::Rejected | S::Cancelled | S::Failed
+                S::Preflighted
+                    | S::Cancelling
+                    | S::Rejecting
+                    | S::Rejected
+                    | S::Cancelled
+                    | S::Failed
             ) | (
                 S::Preflighted,
-                S::WaitingForResources | S::Running | S::Cancelling | S::Rejecting | S::Rejected | S::Cancelled | S::Failed
+                S::WaitingForResources
+                    | S::Running
+                    | S::Cancelling
+                    | S::Rejecting
+                    | S::Rejected
+                    | S::Cancelled
+                    | S::Failed
             ) | (
                 S::WaitingForResources,
-                S::Running | S::Cancelling | S::Rejecting | S::Cancelled | S::Rejected | S::Failed | S::Interrupted
+                S::Running
+                    | S::Cancelling
+                    | S::Rejecting
+                    | S::Cancelled
+                    | S::Rejected
+                    | S::Failed
+                    | S::Interrupted
             ) | (
                 S::Running,
-                S::WaitingForResources | S::Verifying | S::Cancelling | S::Rejecting | S::Cancelled | S::Rejected | S::Failed | S::Interrupted
-            ) | (S::Verifying, S::Benchmarking | S::Cancelling | S::Rejecting | S::Cancelled | S::Rejected | S::Failed | S::Interrupted)
-                | (
+                S::WaitingForResources
+                    | S::Verifying
+                    | S::Cancelling
+                    | S::Rejecting
+                    | S::Cancelled
+                    | S::Rejected
+                    | S::Failed
+                    | S::Interrupted
+            ) | (
+                S::Verifying,
+                S::Benchmarking
+                    | S::Cancelling
+                    | S::Rejecting
+                    | S::Cancelled
+                    | S::Rejected
+                    | S::Failed
+                    | S::Interrupted
+            ) | (
                 S::Benchmarking,
-                S::Benchmarking | S::ReadyForPromotion | S::Cancelling | S::Rejecting | S::Cancelled | S::Rejected | S::Failed | S::Interrupted
-                )
-                | (S::ReadyForPromotion, S::Promoted | S::Cancelling | S::Rejecting | S::Rejected)
-                | (S::Cancelling, S::Cancelled)
+                S::Benchmarking
+                    | S::ReadyForPromotion
+                    | S::Cancelling
+                    | S::Rejecting
+                    | S::Cancelled
+                    | S::Rejected
+                    | S::Failed
+                    | S::Interrupted
+            ) | (
+                S::ReadyForPromotion,
+                S::Promoted | S::Cancelling | S::Rejecting | S::Rejected
+            ) | (S::Cancelling, S::Cancelled)
                 | (S::Rejecting, S::Rejected)
         )
     }
@@ -656,8 +701,9 @@ pub async fn install_pinned_adapter(
         std::fs::canonicalize(data_root).map_err(|_| AdaptationError::AdapterInstall)?;
     let tools_root = data_root.join("tools");
     std::fs::create_dir_all(&tools_root).map_err(|_| AdaptationError::AdapterInstall)?;
-    if unsafe_install_path_metadata(&std::fs::symlink_metadata(&tools_root)
-        .map_err(|_| AdaptationError::AdapterInstall)?) {
+    if unsafe_install_path_metadata(
+        &std::fs::symlink_metadata(&tools_root).map_err(|_| AdaptationError::AdapterInstall)?,
+    ) {
         return Err(AdaptationError::AdapterInstall);
     }
     let staging = tools_root.join(".llama-cpp-b10981-staging");
@@ -1078,9 +1124,12 @@ pub async fn recover_after_restart(
     for (job_id, row_revision, row_state, snapshot) in summaries {
         let mut job: AdaptationJob = serde_json::from_slice(&snapshot)
             .map_err(|_| "adaptation_recovery_corrupt_job".to_string())?;
-        job.validate().map_err(|_| "adaptation_recovery_corrupt_job".to_string())?;
-        if job.request.job_id != job_id || job.revision != row_revision
-            || job.state.storage_key() != row_state {
+        job.validate()
+            .map_err(|_| "adaptation_recovery_corrupt_job".to_string())?;
+        if job.request.job_id != job_id
+            || job.revision != row_revision
+            || job.state.storage_key() != row_state
+        {
             return Err("adaptation_recovery_integrity_failed".into());
         }
         if reconcile_prepared_publication(journal, models_root, &mut job, row_revision).await? {
@@ -1091,10 +1140,12 @@ pub async fn recover_after_restart(
             AdaptationState::Cancelling | AdaptationState::Rejecting => {
                 stop_supervisor_adaptation(serde_json::json!({
                     "op":"adaptation_quantize_cancel", "job_id":job_id
-                })).await?;
+                }))
+                .await?;
                 stop_supervisor_adaptation(serde_json::json!({
                     "op":"adaptation_runtime_stop", "job_id":job_id
-                })).await?;
+                }))
+                .await?;
                 let next = if job.state == AdaptationState::Cancelling {
                     AdaptationState::Cancelled
                 } else {
@@ -1105,45 +1156,68 @@ pub async fn recover_after_restart(
                 let snapshot = serde_json::to_vec(&job)
                     .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
                 let mut database = journal.database().lock().await;
-                let transaction = database.connection_mut().transaction()
+                let transaction = database
+                    .connection_mut()
+                    .transaction()
                     .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
                 let current = crate::local_model_adaptation_store::get_job(&transaction, &job_id)
                     .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
                     .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
-                if current.0 != row_revision || !crate::local_model_adaptation_store::put_job(
-                    &transaction, &job_id, job.revision, job.state.storage_key(),
-                    &job.request.idempotency_key, &current.2, &job.content_sha256,
-                    &current.4, &snapshot, crate::task_memory::now_millis() as i64,
-                ).map_err(|_| "adaptation_recovery_storage_failed".to_string())? {
+                if current.0 != row_revision
+                    || !crate::local_model_adaptation_store::put_job(
+                        &transaction,
+                        &job_id,
+                        job.revision,
+                        job.state.storage_key(),
+                        &job.request.idempotency_key,
+                        &current.2,
+                        &job.content_sha256,
+                        &current.4,
+                        &snapshot,
+                        crate::task_memory::now_millis() as i64,
+                    )
+                    .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+                {
                     return Err("adaptation_recovery_revision_conflict".into());
                 }
-                if let Some((_, _, run_state, _)) = crate::benchmark_store::get_run(
-                    &transaction, &job_id,
-                ).map_err(|_| "adaptation_recovery_storage_failed".to_string())? {
+                if let Some((_, _, run_state, _)) =
+                    crate::benchmark_store::get_run(&transaction, &job_id)
+                        .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+                {
                     if run_state == "running" {
                         let report = serde_json::to_string(&serde_json::json!({
                             "status":job.state.storage_key(),"redacted":true
-                        })).map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
+                        }))
+                        .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
                         if !crate::benchmark_store::save_report(
-                            &transaction, &job_id, &report, job.state.storage_key(),
+                            &transaction,
+                            &job_id,
+                            &report,
+                            job.state.storage_key(),
                             crate::task_memory::now_millis() as i64,
-                        ).map_err(|_| "adaptation_recovery_storage_failed".to_string())? {
+                        )
+                        .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+                        {
                             return Err("adaptation_recovery_benchmark_run_missing".into());
                         }
                     }
                 }
-                transaction.commit().map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
+                transaction
+                    .commit()
+                    .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
                 recovered = recovered.saturating_add(1);
             }
             AdaptationState::Preflighted => {
                 stop_supervisor_adaptation(serde_json::json!({
                     "op":"adaptation_quantize_cancel", "job_id":job_id
-                })).await?;
+                }))
+                .await?;
             }
             AdaptationState::Running => {
                 stop_supervisor_adaptation(serde_json::json!({
                     "op":"adaptation_quantize_cancel", "job_id":job_id
-                })).await?;
+                }))
+                .await?;
                 quarantine_partial_staging(models_root, &job, row_revision)?;
                 recover_interrupted_job(journal, &mut job, row_revision).await?;
                 recovered = recovered.saturating_add(1);
@@ -1151,7 +1225,8 @@ pub async fn recover_after_restart(
             AdaptationState::Verifying => {
                 stop_supervisor_adaptation(serde_json::json!({
                     "op":"adaptation_runtime_stop", "job_id":job_id
-                })).await?;
+                }))
+                .await?;
             }
             AdaptationState::Benchmarking if job.evidence.benchmark_started => {
                 let (run, stored_policy, frozen_input) = {
@@ -1162,8 +1237,10 @@ pub async fn recover_after_restart(
                         crate::benchmark_store::get_run_policy_json(database.connection(), &job_id)
                             .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
                         crate::local_model_adaptation_store::get_benchmark_inputs(
-                            database.connection(), &job_id,
-                        ).map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
+                            database.connection(),
+                            &job_id,
+                        )
+                        .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
                     )
                 };
                 let run = run.ok_or_else(|| "adaptation_recovery_benchmark_missing".to_string())?;
@@ -1171,7 +1248,9 @@ pub async fn recover_after_restart(
                     .ok_or_else(|| "adaptation_recovery_benchmark_policy_missing".to_string())?;
                 let (input_hash, input_json) = frozen_input
                     .ok_or_else(|| "adaptation_recovery_benchmark_input_missing".to_string())?;
-                if run.2 != "running" || run.3.is_some() || input_json.len() > 192 * 1024
+                if run.2 != "running"
+                    || run.3.is_some()
+                    || input_json.len() > 192 * 1024
                     || input_hash != crate::local_model_runtime_manager::canonical_hash(&input_json)
                 {
                     return Err("adaptation_recovery_benchmark_identity_conflict".into());
@@ -1182,20 +1261,26 @@ pub async fn recover_after_restart(
                     std::collections::BTreeMap<String, crate::agent_benchmark_matrix::Baseline>,
                 ) = serde_json::from_slice(&input_json)
                     .map_err(|_| "adaptation_recovery_benchmark_input_corrupt".to_string())?;
-                if run.0 != suite.id || run.1 != suite.version
-                    || suite.canonical_hash().map_err(|_| "adaptation_recovery_benchmark_input_corrupt".to_string())?
+                if run.0 != suite.id
+                    || run.1 != suite.version
+                    || suite
+                        .canonical_hash()
+                        .map_err(|_| "adaptation_recovery_benchmark_input_corrupt".to_string())?
                         != job.request.benchmark_suite_sha256
                     || crate::local_model_runtime_manager::canonical_hash(&(&policy, &baselines))
                         != job.request.baseline_sha256
                     || policy.mode != crate::agent_benchmark_matrix::BenchmarkMode::Real
-                    || stored_policy != serde_json::to_string(&(&policy, &baselines))
-                        .map_err(|_| "adaptation_recovery_benchmark_input_corrupt".to_string())?
+                    || stored_policy
+                        != serde_json::to_string(&(&policy, &baselines)).map_err(|_| {
+                            "adaptation_recovery_benchmark_input_corrupt".to_string()
+                        })?
                 {
                     return Err("adaptation_recovery_benchmark_identity_conflict".into());
                 }
                 stop_supervisor_adaptation(serde_json::json!({
                     "op":"adaptation_runtime_stop", "job_id":job_id
-                })).await?;
+                }))
+                .await?;
                 // The exact suite, policy, baselines and run identity are durable,
                 // so Core can explicitly redispatch the benchmark after restart.
                 // Leave the state and `running` run row intact for that replay.
@@ -1216,8 +1301,11 @@ async fn reconcile_prepared_publication(
 ) -> Result<bool, String> {
     let database = journal.database().lock().await;
     let Some(publication) = crate::local_model_adaptation_store::get_publication(
-        database.connection(), &job.request.job_id,
-    ).map_err(|_| "adaptation_recovery_publication_read_failed".to_string())? else {
+        database.connection(),
+        &job.request.job_id,
+    )
+    .map_err(|_| "adaptation_recovery_publication_read_failed".to_string())?
+    else {
         return Ok(false);
     };
     if publication.5 == "registered" {
@@ -1226,68 +1314,114 @@ async fn reconcile_prepared_publication(
         }
         return Ok(false);
     }
-    if publication.5 != "prepared" || job.state != AdaptationState::ReadyForPromotion
-        || job.revision != row_revision {
+    if publication.5 != "prepared"
+        || job.state != AdaptationState::ReadyForPromotion
+        || job.revision != row_revision
+    {
         return Ok(false);
     }
-    let expected_output = job.evidence.output_sha256.as_deref()
+    let expected_output = job
+        .evidence
+        .output_sha256
+        .as_deref()
         .ok_or_else(|| "adaptation_recovery_output_missing".to_string())?;
-    let expected_benchmark = job.evidence.benchmark_sha256.as_deref()
+    let expected_benchmark = job
+        .evidence
+        .benchmark_sha256
+        .as_deref()
         .ok_or_else(|| "adaptation_recovery_benchmark_missing".to_string())?;
-    let output_size = job.evidence.output_size_bytes
+    let output_size = job
+        .evidence
+        .output_size_bytes
         .ok_or_else(|| "adaptation_recovery_output_size_missing".to_string())?;
-    let expected_model_id = format!("adapt-{}-{}",
+    let expected_model_id = format!(
+        "adapt-{}-{}",
         &crate::local_model_runtime_manager::canonical_hash(&job.request.job_id)[..16],
-        job.request.target.llama_argument().to_ascii_lowercase());
+        job.request.target.llama_argument().to_ascii_lowercase()
+    );
     let expected_relative_path = format!("adapted/{expected_model_id}/1.gguf");
-    if publication.0 != expected_model_id || publication.1 != 1
-        || publication.2 != expected_relative_path || publication.3 != expected_output
-        || publication.4 != output_size {
+    if publication.0 != expected_model_id
+        || publication.1 != 1
+        || publication.2 != expected_relative_path
+        || publication.3 != expected_output
+        || publication.4 != output_size
+    {
         return Err("adaptation_recovery_publication_identity_conflict".into());
     }
-    let source_id = format!("model:{}:{}", job.request.source.model_id, job.request.source.revision);
-    let source_row = crate::local_model_runtime_manager_store::get_record(database.connection(), &source_id)
-        .map_err(|_| "adaptation_recovery_source_read_failed".to_string())?
-        .ok_or_else(|| "adaptation_recovery_source_missing".to_string())?;
-    let source: crate::local_model_runtime_manager::LocalModelDescriptor = serde_json::from_slice(&source_row.3)
-        .map_err(|_| "adaptation_recovery_source_corrupt".to_string())?;
-    if source_row.0 != "model" || source_row.1 != job.request.source.revision
+    let source_id = format!(
+        "model:{}:{}",
+        job.request.source.model_id, job.request.source.revision
+    );
+    let source_row =
+        crate::local_model_runtime_manager_store::get_record(database.connection(), &source_id)
+            .map_err(|_| "adaptation_recovery_source_read_failed".to_string())?
+            .ok_or_else(|| "adaptation_recovery_source_missing".to_string())?;
+    let source: crate::local_model_runtime_manager::LocalModelDescriptor =
+        serde_json::from_slice(&source_row.3)
+            .map_err(|_| "adaptation_recovery_source_corrupt".to_string())?;
+    if source_row.0 != "model"
+        || source_row.1 != job.request.source.revision
         || source_row.2 != crate::local_model_runtime_manager::canonical_hash(&source_row.3)
-        || source.model_id != job.request.source.model_id || source.revision != job.request.source.revision
-        || source.artifact_hash != job.request.source.artifact_sha256 {
+        || source.model_id != job.request.source.model_id
+        || source.revision != job.request.source.revision
+        || source.artifact_hash != job.request.source.artifact_sha256
+    {
         return Err("adaptation_recovery_source_identity_conflict".into());
     }
     let model = crate::local_model_runtime_manager::LocalModelDescriptor {
-        model_id: expected_model_id.clone(), revision: 1, format: "gguf".into(),
-        quantization: job.request.target.llama_argument().into(), artifact_size_bytes: output_size,
-        artifact_hash: expected_output.into(), required_ram_bytes: source.required_ram_bytes,
-        required_accelerator_bytes: None, context_limit: source.context_limit,
-        capabilities: source.capabilities, trust: crate::local_model_runtime_manager::TrustLevel::ManagedVerified,
+        model_id: expected_model_id.clone(),
+        revision: 1,
+        format: "gguf".into(),
+        quantization: job.request.target.llama_argument().into(),
+        artifact_size_bytes: output_size,
+        artifact_hash: expected_output.into(),
+        required_ram_bytes: source.required_ram_bytes,
+        required_accelerator_bytes: None,
+        context_limit: source.context_limit,
+        capabilities: source.capabilities,
+        trust: crate::local_model_runtime_manager::TrustLevel::ManagedVerified,
     };
-    model.validate().map_err(|_| "adaptation_recovery_model_invalid".to_string())?;
+    model
+        .validate()
+        .map_err(|_| "adaptation_recovery_model_invalid".to_string())?;
     let artifact = crate::local_model_runtime_manager::LocalArtifactRecord {
-        model_id: expected_model_id.clone(), model_revision: 1, relative_path: Some(expected_relative_path.clone()),
-        expected_hash: expected_output.into(), expected_size_bytes: output_size,
+        model_id: expected_model_id.clone(),
+        model_revision: 1,
+        relative_path: Some(expected_relative_path.clone()),
+        expected_hash: expected_output.into(),
+        expected_size_bytes: output_size,
         state: crate::local_model_runtime_manager::ArtifactState::Installed,
         content_hash: Some(expected_output.into()),
     };
-    artifact.validate().map_err(|_| "adaptation_recovery_artifact_invalid".to_string())?;
-    let model_json = serde_json::to_vec(&model).map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
-    let artifact_json = serde_json::to_vec(&artifact).map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
+    artifact
+        .validate()
+        .map_err(|_| "adaptation_recovery_artifact_invalid".to_string())?;
+    let model_json = serde_json::to_vec(&model)
+        .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
+    let artifact_json = serde_json::to_vec(&artifact)
+        .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
     let publication_hash = crate::local_model_runtime_manager::canonical_hash(&(
-        &job.request, &model, &artifact, expected_output, expected_benchmark,
+        &job.request,
+        &model,
+        &artifact,
+        expected_output,
+        expected_benchmark,
     ));
     if publication.6 != publication_hash {
         return Err("adaptation_recovery_publication_hash_conflict".into());
     }
     drop(database);
     let destination = crate::local_model_runtime_manager::managed_artifact_path(
-        models_root, Path::new(&expected_relative_path),
-    ).map_err(|_| "adaptation_recovery_destination_invalid".to_string())?;
+        models_root,
+        Path::new(&expected_relative_path),
+    )
+    .map_err(|_| "adaptation_recovery_destination_invalid".to_string())?;
     let stage_relative = staging_relative_path(&job.request.job_id);
     let stage = crate::local_model_runtime_manager::managed_artifact_path(
-        models_root, Path::new(&stage_relative),
-    ).map_err(|_| "adaptation_recovery_staging_invalid".to_string())?;
+        models_root,
+        Path::new(&stage_relative),
+    )
+    .map_err(|_| "adaptation_recovery_staging_invalid".to_string())?;
     let root = models_root.to_path_buf();
     let relative = expected_relative_path.clone();
     let stage_for_worker = stage.clone();
@@ -1296,21 +1430,34 @@ async fn reconcile_prepared_publication(
     tokio::task::spawn_blocking(move || {
         if destination_for_worker.exists() {
             crate::local_model_runtime_manager::verify_managed_artifact(
-                &root, Path::new(&relative), &hash_for_worker, output_size,
-            ).map(|_| ())
+                &root,
+                Path::new(&relative),
+                &hash_for_worker,
+                output_size,
+            )
+            .map(|_| ())
         } else {
             crate::local_model_runtime_manager::atomic_promote_verified_artifact(
-                &stage_for_worker, &destination_for_worker, &hash_for_worker, output_size,
+                &stage_for_worker,
+                &destination_for_worker,
+                &hash_for_worker,
+                output_size,
             )
         }
-    }).await.map_err(|_| "adaptation_recovery_publication_worker_failed".to_string())?
-        .map_err(|_| "adaptation_recovery_artifact_unverified".to_string())?;
+    })
+    .await
+    .map_err(|_| "adaptation_recovery_publication_worker_failed".to_string())?
+    .map_err(|_| "adaptation_recovery_artifact_unverified".to_string())?;
     let mut promoted_job = job.clone();
-    promoted_job.transition(AdaptationState::Promoted, promoted_job.evidence.clone())
+    promoted_job
+        .transition(AdaptationState::Promoted, promoted_job.evidence.clone())
         .map_err(|_| "adaptation_recovery_transition_denied".to_string())?;
-    let snapshot = serde_json::to_vec(&promoted_job).map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
+    let snapshot = serde_json::to_vec(&promoted_job)
+        .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
     let mut database = journal.database().lock().await;
-    let transaction = database.connection_mut().transaction()
+    let transaction = database
+        .connection_mut()
+        .transaction()
         .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
     let current = crate::local_model_adaptation_store::get_job(&transaction, &job.request.job_id)
         .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
@@ -1319,45 +1466,85 @@ async fn reconcile_prepared_publication(
         return Err("adaptation_recovery_revision_conflict".into());
     }
     for (record_id, kind, json) in [
-        (format!("model:{}:1", expected_model_id), "model", model_json),
-        (format!("artifact:{}:1", expected_model_id), "artifact", artifact_json),
+        (
+            format!("model:{}:1", expected_model_id),
+            "model",
+            model_json,
+        ),
+        (
+            format!("artifact:{}:1", expected_model_id),
+            "artifact",
+            artifact_json,
+        ),
     ] {
         let hash = crate::local_model_runtime_manager::canonical_hash(&json);
-        if let Some(existing) = crate::local_model_runtime_manager_store::get_record(&transaction, &record_id)
-            .map_err(|_| "adaptation_recovery_registry_read_failed".to_string())? {
+        if let Some(existing) =
+            crate::local_model_runtime_manager_store::get_record(&transaction, &record_id)
+                .map_err(|_| "adaptation_recovery_registry_read_failed".to_string())?
+        {
             if existing.0 != kind || existing.1 != 1 || existing.2 != hash || existing.3 != json {
                 return Err("adaptation_recovery_registry_conflict".into());
             }
         } else if !crate::local_model_runtime_manager_store::put_record(
-            &transaction, &record_id, kind, 1, &hash, &json, crate::task_memory::now_millis() as i64,
-        ).map_err(|_| "adaptation_recovery_registry_write_failed".to_string())? {
+            &transaction,
+            &record_id,
+            kind,
+            1,
+            &hash,
+            &json,
+            crate::task_memory::now_millis() as i64,
+        )
+        .map_err(|_| "adaptation_recovery_registry_write_failed".to_string())?
+        {
             return Err("adaptation_recovery_registry_conflict".into());
         }
     }
     if !crate::local_model_adaptation_store::put_publication(
-        &transaction, &promoted_job.request.job_id, &expected_model_id, 1, &expected_relative_path,
-        expected_output, output_size, "registered", &publication_hash, crate::task_memory::now_millis() as i64,
-    ).map_err(|_| "adaptation_recovery_publication_write_failed".to_string())? {
+        &transaction,
+        &promoted_job.request.job_id,
+        &expected_model_id,
+        1,
+        &expected_relative_path,
+        expected_output,
+        output_size,
+        "registered",
+        &publication_hash,
+        crate::task_memory::now_millis() as i64,
+    )
+    .map_err(|_| "adaptation_recovery_publication_write_failed".to_string())?
+    {
         return Err("adaptation_recovery_publication_conflict".into());
     }
     if !crate::local_model_adaptation_store::put_job(
-        &transaction, &promoted_job.request.job_id, promoted_job.revision, promoted_job.state.storage_key(),
-        &promoted_job.request.idempotency_key, &current.2, &promoted_job.content_sha256, &current.4, &snapshot,
+        &transaction,
+        &promoted_job.request.job_id,
+        promoted_job.revision,
+        promoted_job.state.storage_key(),
+        &promoted_job.request.idempotency_key,
+        &current.2,
+        &promoted_job.content_sha256,
+        &current.4,
+        &snapshot,
         crate::task_memory::now_millis() as i64,
-    ).map_err(|_| "adaptation_recovery_job_write_failed".to_string())? {
+    )
+    .map_err(|_| "adaptation_recovery_job_write_failed".to_string())?
+    {
         return Err("adaptation_recovery_revision_conflict".into());
     }
-    transaction.commit().map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
+    transaction
+        .commit()
+        .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
     *job = promoted_job;
     Ok(true)
 }
 
 #[cfg(windows)]
 async fn stop_supervisor_adaptation(request: serde_json::Value) -> Result<(), String> {
-    let response = crate::analysis_kernel::supervisor_command(request).await
+    let response = crate::analysis_kernel::supervisor_command(request)
+        .await
         .map_err(|_| "adaptation_recovery_supervisor_unavailable".to_string())?;
-    let already_stopped = response.get("reason").and_then(serde_json::Value::as_str)
-        == Some("job_not_running");
+    let already_stopped =
+        response.get("reason").and_then(serde_json::Value::as_str) == Some("job_not_running");
     if response.get("accepted") != Some(&serde_json::Value::Bool(true)) && !already_stopped {
         return Err("adaptation_recovery_stop_rejected".into());
     }
@@ -1376,18 +1563,27 @@ async fn recover_interrupted_job(
     let snapshot = serde_json::to_vec(job)
         .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
     let database = journal.database().lock().await;
-    let current = crate::local_model_adaptation_store::get_job(
-        database.connection(), &job.request.job_id,
-    ).map_err(|_| "adaptation_recovery_storage_failed".to_string())?
-        .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
+    let current =
+        crate::local_model_adaptation_store::get_job(database.connection(), &job.request.job_id)
+            .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+            .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
     if current.0 != expected_revision || current.1 != expected_state {
         return Err("adaptation_recovery_revision_conflict".into());
     }
     if !crate::local_model_adaptation_store::put_job(
-        database.connection(), &job.request.job_id, job.revision, job.state.storage_key(),
-        &job.request.idempotency_key, &current.2, &job.content_sha256, &current.4,
-        &snapshot, crate::task_memory::now_millis() as i64,
-    ).map_err(|_| "adaptation_recovery_storage_failed".to_string())? {
+        database.connection(),
+        &job.request.job_id,
+        job.revision,
+        job.state.storage_key(),
+        &job.request.idempotency_key,
+        &current.2,
+        &job.content_sha256,
+        &current.4,
+        &snapshot,
+        crate::task_memory::now_millis() as i64,
+    )
+    .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+    {
         return Err("adaptation_recovery_revision_conflict".into());
     }
     Ok(())
@@ -1414,7 +1610,8 @@ fn quarantine_partial_staging(
     if !source_metadata.is_file() || unsafe_path_metadata(&source_metadata) {
         return Err("adaptation_recovery_staging_invalid".into());
     }
-    let staging_parent = source.parent()
+    let staging_parent = source
+        .parent()
         .ok_or_else(|| "adaptation_recovery_staging_invalid".to_string())?;
     let parent_metadata = fs::symlink_metadata(staging_parent)
         .map_err(|_| "adaptation_recovery_staging_invalid".to_string())?;
@@ -1435,15 +1632,17 @@ fn quarantine_partial_staging(
     if !quarantine_metadata.is_dir() || unsafe_path_metadata(&quarantine_metadata) {
         return Err("adaptation_recovery_quarantine_invalid".into());
     }
-    let filename = format!("{}-{revision}.gguf", hex::encode(Sha256::digest(job.request.job_id.as_bytes())));
+    let filename = format!(
+        "{}-{revision}.gguf",
+        hex::encode(Sha256::digest(job.request.job_id.as_bytes()))
+    );
     let destination = quarantine.join(filename);
     match fs::symlink_metadata(&destination) {
         Ok(_) => return Err("adaptation_recovery_quarantine_collision".into()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => return Err("adaptation_recovery_quarantine_unavailable".into()),
     }
-    fs::rename(source, destination)
-        .map_err(|_| "adaptation_recovery_quarantine_failed".to_string())
+    fs::rename(source, destination).map_err(|_| "adaptation_recovery_quarantine_failed".to_string())
 }
 
 #[cfg(windows)]
@@ -1563,10 +1762,17 @@ mod tests {
     #[test]
     fn supervisor_capacity_rejection_can_wait_and_retry_durably() {
         let mut job = AdaptationJob::create(request()).unwrap();
-        job.transition(AdaptationState::Preflighted, AdaptationEvidence::default()).unwrap();
-        job.transition(AdaptationState::Running, AdaptationEvidence::default()).unwrap();
-        job.transition(AdaptationState::WaitingForResources, AdaptationEvidence::default()).unwrap();
-        job.transition(AdaptationState::Running, AdaptationEvidence::default()).unwrap();
+        job.transition(AdaptationState::Preflighted, AdaptationEvidence::default())
+            .unwrap();
+        job.transition(AdaptationState::Running, AdaptationEvidence::default())
+            .unwrap();
+        job.transition(
+            AdaptationState::WaitingForResources,
+            AdaptationEvidence::default(),
+        )
+        .unwrap();
+        job.transition(AdaptationState::Running, AdaptationEvidence::default())
+            .unwrap();
         assert_eq!(job.state, AdaptationState::Running);
         assert_eq!(job.revision, 5);
         assert!(job.validate().is_ok());
@@ -1599,16 +1805,30 @@ mod tests {
     #[test]
     fn cancellation_and_rejection_persist_intent_before_terminal_state() {
         let mut cancelled = AdaptationJob::create(request()).unwrap();
-        cancelled.transition(AdaptationState::Preflighted, AdaptationEvidence::default()).unwrap();
-        cancelled.transition(AdaptationState::Running, AdaptationEvidence::default()).unwrap();
-        cancelled.transition(AdaptationState::Cancelling, AdaptationEvidence::default()).unwrap();
-        cancelled.transition(AdaptationState::Cancelled, AdaptationEvidence::default()).unwrap();
+        cancelled
+            .transition(AdaptationState::Preflighted, AdaptationEvidence::default())
+            .unwrap();
+        cancelled
+            .transition(AdaptationState::Running, AdaptationEvidence::default())
+            .unwrap();
+        cancelled
+            .transition(AdaptationState::Cancelling, AdaptationEvidence::default())
+            .unwrap();
+        cancelled
+            .transition(AdaptationState::Cancelled, AdaptationEvidence::default())
+            .unwrap();
         assert_eq!(cancelled.state, AdaptationState::Cancelled);
 
         let mut rejected = AdaptationJob::create(request()).unwrap();
-        rejected.transition(AdaptationState::Preflighted, AdaptationEvidence::default()).unwrap();
-        rejected.transition(AdaptationState::Rejecting, AdaptationEvidence::default()).unwrap();
-        rejected.transition(AdaptationState::Rejected, AdaptationEvidence::default()).unwrap();
+        rejected
+            .transition(AdaptationState::Preflighted, AdaptationEvidence::default())
+            .unwrap();
+        rejected
+            .transition(AdaptationState::Rejecting, AdaptationEvidence::default())
+            .unwrap();
+        rejected
+            .transition(AdaptationState::Rejected, AdaptationEvidence::default())
+            .unwrap();
         assert_eq!(rejected.state, AdaptationState::Rejected);
     }
 
@@ -1759,7 +1979,9 @@ mod tests {
     #[tokio::test]
     async fn local_inference_stream_consumes_bounded_sse_and_keeps_only_evidence() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
@@ -1770,13 +1992,19 @@ mod tests {
                 request.push(byte[0]);
             }
             let headers = String::from_utf8_lossy(&request);
-            let content_length = headers.lines()
-                .find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length: ").and_then(|value| value.trim().parse::<usize>().ok()))
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length: ")
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                })
                 .unwrap_or(0);
             let body_start = request.len();
             request.resize(body_start + content_length, 0);
             stream.read_exact(&mut request[body_start..]).await.unwrap();
-            let body = b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n";
+            let body =
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n";
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()

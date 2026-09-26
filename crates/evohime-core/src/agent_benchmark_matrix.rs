@@ -227,7 +227,9 @@ pub async fn run_local_model_matrix(
         || policy.global_cost_budget_micros.is_some()
         || suite.thresholds.max_cost_p95_micros.is_some()
     {
-        return Err(BenchmarkValidationError::InvalidField("real_executor".into()));
+        return Err(BenchmarkValidationError::InvalidField(
+            "real_executor".into(),
+        ));
     }
     let combinations = suite.challenges.len() as u64
         * suite.model_profiles.len() as u64
@@ -242,14 +244,22 @@ pub async fn run_local_model_matrix(
             || !challenge.dependencies.is_empty()
             || challenge.max_cost_micros.is_some()
             || challenge.timeout_ms < 300_000
-            || challenge.max_tokens.is_some_and(|value| value == 0 || value > 4096)
+            || challenge
+                .max_tokens
+                .is_some_and(|value| value == 0 || value > 4096)
     }) {
-        return Err(BenchmarkValidationError::InvalidField("unsupported_challenge".into()));
+        return Err(BenchmarkValidationError::InvalidField(
+            "unsupported_challenge".into(),
+        ));
     }
     if suite.model_profiles.iter().any(|profile| {
-        profile.max_output_tokens.is_some_and(|value| value == 0 || value > 4096)
+        profile
+            .max_output_tokens
+            .is_some_and(|value| value == 0 || value > 4096)
     }) {
-        return Err(BenchmarkValidationError::InvalidField("unsupported_model_budget".into()));
+        return Err(BenchmarkValidationError::InvalidField(
+            "unsupported_model_budget".into(),
+        ));
     }
     // This adapter supervises exactly one local model. Running a multi-model
     // suite here would attribute the same runtime's output to profiles that
@@ -257,7 +267,9 @@ pub async fn run_local_model_matrix(
     // benchmark configuration; the supervised alias is intentionally derived
     // from this run's verified artifact and is not part of the frozen suite.
     if suite.model_profiles.len() != 1 {
-        return Err(BenchmarkValidationError::InvalidField("local_model_profile_count".into()));
+        return Err(BenchmarkValidationError::InvalidField(
+            "local_model_profile_count".into(),
+        ));
     }
     let mut metrics = BTreeMap::new();
     let mut comparisons = BTreeMap::new();
@@ -266,7 +278,9 @@ pub async fn run_local_model_matrix(
             .success_evaluator
             .strip_prefix("sha256:")
             .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-            .ok_or_else(|| BenchmarkValidationError::InvalidField("unsupported_evaluator".into()))?;
+            .ok_or_else(|| {
+                BenchmarkValidationError::InvalidField("unsupported_evaluator".into())
+            })?;
         for model in &suite.model_profiles {
             for agent in &suite.agent_profiles {
                 let key = format!("{}:{}:{}", challenge.id, model.id, agent.id);
@@ -290,26 +304,40 @@ pub async fn run_local_model_matrix(
                         Ok(evidence) => {
                             let timed_out = evidence.latency_ms > challenge.timeout_ms;
                             let passed = !timed_out
-                                && evidence.completion_sha256.eq_ignore_ascii_case(expected_digest);
+                                && evidence
+                                    .completion_sha256
+                                    .eq_ignore_ascii_case(expected_digest);
                             AttemptResult {
-                            outcome: if passed { AttemptOutcome::Passed } else { AttemptOutcome::Failed },
-                            failure_class: if timed_out {
-                                Some(FailureClass::Timeout)
-                            } else if passed {
-                                None
-                            } else {
-                                Some(FailureClass::Evaluator)
-                            },
-                            security_violation: false,
-                            latency_ms: evidence.latency_ms,
-                            steps: 1,
-                            prompt_tokens: evidence.prompt_tokens.unwrap_or(0).min(u32::MAX as u64) as u32,
-                            completion_tokens: evidence.completion_tokens.unwrap_or(0).min(u32::MAX as u64) as u32,
-                            cost_micros: 0,
-                            output_digest: evidence.completion_sha256,
-                            tool_trace_digest: String::new(),
+                                outcome: if passed {
+                                    AttemptOutcome::Passed
+                                } else {
+                                    AttemptOutcome::Failed
+                                },
+                                failure_class: if timed_out {
+                                    Some(FailureClass::Timeout)
+                                } else if passed {
+                                    None
+                                } else {
+                                    Some(FailureClass::Evaluator)
+                                },
+                                security_violation: false,
+                                latency_ms: evidence.latency_ms,
+                                steps: 1,
+                                prompt_tokens: evidence
+                                    .prompt_tokens
+                                    .unwrap_or(0)
+                                    .min(u32::MAX as u64)
+                                    as u32,
+                                completion_tokens: evidence
+                                    .completion_tokens
+                                    .unwrap_or(0)
+                                    .min(u32::MAX as u64)
+                                    as u32,
+                                cost_micros: 0,
+                                output_digest: evidence.completion_sha256,
+                                tool_trace_digest: String::new(),
+                            }
                         }
-                        },
                         Err(_) => AttemptResult {
                             outcome: AttemptOutcome::Unavailable,
                             failure_class: Some(FailureClass::Infrastructure),
@@ -335,7 +363,9 @@ pub async fn run_local_model_matrix(
                         || baseline.revision == 0
                         || baseline.metrics.attempts == 0
                 }) {
-                    return Err(BenchmarkValidationError::InvalidField("incompatible_baseline".into()));
+                    return Err(BenchmarkValidationError::InvalidField(
+                        "incompatible_baseline".into(),
+                    ));
                 }
                 // A real run with no approved baseline is durable evidence for
                 // the explicit approveBaseline flow, but remains New and can
@@ -353,8 +383,16 @@ pub async fn run_local_model_matrix(
         source_commit: source_commit.into(),
         suite_id: suite.id.clone(),
         suite_version: suite.version.clone(),
-        model_profile_ids: suite.model_profiles.iter().map(|profile| profile.id.clone()).collect(),
-        agent_profile_ids: suite.agent_profiles.iter().map(|profile| profile.id.clone()).collect(),
+        model_profile_ids: suite
+            .model_profiles
+            .iter()
+            .map(|profile| profile.id.clone())
+            .collect(),
+        agent_profile_ids: suite
+            .agent_profiles
+            .iter()
+            .map(|profile| profile.id.clone())
+            .collect(),
         metrics,
         comparisons,
         redaction_status: "redacted".into(),

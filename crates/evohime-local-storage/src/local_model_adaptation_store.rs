@@ -251,25 +251,52 @@ mod tests {
     fn baseline_approval_is_durably_attributed_and_idempotently_retrievable() {
         let connection = schema();
         assert!(crate::benchmark_store::put_baseline(
-            &connection, "baseline-1", "suite-v1", "challenge-1", "model-hash",
-            "agent-hash", "{}", "source", 1, 10,
-        ).unwrap());
+            &connection,
+            "baseline-1",
+            "suite-v1",
+            "challenge-1",
+            "model-hash",
+            "agent-hash",
+            "{}",
+            "source",
+            1,
+            10,
+        )
+        .unwrap());
         assert!(crate::benchmark_store::put_baseline_approval(
-            &connection, "baseline-1", "benchmark-owner", "run-1", &"a".repeat(64),
-            "approval-key", 11,
-        ).unwrap());
+            &connection,
+            "baseline-1",
+            "benchmark-owner",
+            "run-1",
+            &"a".repeat(64),
+            "approval-key",
+            11,
+        )
+        .unwrap());
         assert_eq!(
-            crate::benchmark_store::get_baseline_approval_by_key(&connection, "approval-key").unwrap(),
-            Some(("baseline-1".into(), "benchmark-owner".into(), "run-1".into(), "a".repeat(64))),
+            crate::benchmark_store::get_baseline_approval_by_key(&connection, "approval-key")
+                .unwrap(),
+            Some((
+                "baseline-1".into(),
+                "benchmark-owner".into(),
+                "run-1".into(),
+                "a".repeat(64)
+            )),
         );
         assert_eq!(
             crate::benchmark_store::get_baseline_approval(&connection, "baseline-1").unwrap(),
             Some(("benchmark-owner".into(), "run-1".into(), "a".repeat(64))),
         );
         assert!(!crate::benchmark_store::put_baseline_approval(
-            &connection, "baseline-1", "benchmark-owner", "run-1", &"a".repeat(64),
-            "approval-key", 12,
-        ).unwrap());
+            &connection,
+            "baseline-1",
+            "benchmark-owner",
+            "run-1",
+            &"a".repeat(64),
+            "approval-key",
+            12,
+        )
+        .unwrap());
     }
 
     #[test]
@@ -382,24 +409,74 @@ mod tests {
     #[test]
     fn benchmark_inputs_are_immutable_after_first_dispatch() {
         let connection = schema();
-        assert!(put_job(&connection, "job-b", 1, "created", "key-b", "request", "hash", b"{}", b"{}", 1).unwrap());
-        assert!(put_benchmark_inputs(&connection, "job-b", "suite-hash", b"frozen-input", 2).unwrap());
-        assert!(!put_benchmark_inputs(&connection, "job-b", "different-hash", b"changed-input", 3).unwrap());
-        assert_eq!(get_benchmark_inputs(&connection, "job-b").unwrap(), Some(("suite-hash".into(), b"frozen-input".to_vec())));
+        assert!(put_job(
+            &connection,
+            "job-b",
+            1,
+            "created",
+            "key-b",
+            "request",
+            "hash",
+            b"{}",
+            b"{}",
+            1
+        )
+        .unwrap());
+        assert!(
+            put_benchmark_inputs(&connection, "job-b", "suite-hash", b"frozen-input", 2).unwrap()
+        );
+        assert!(
+            !put_benchmark_inputs(&connection, "job-b", "different-hash", b"changed-input", 3)
+                .unwrap()
+        );
+        assert_eq!(
+            get_benchmark_inputs(&connection, "job-b").unwrap(),
+            Some(("suite-hash".into(), b"frozen-input".to_vec()))
+        );
     }
 
     #[test]
     fn disk_reservations_are_accounted_until_the_job_is_terminal() {
         let connection = schema();
         for id in ["job-a", "job-b"] {
-            assert!(put_job(&connection, id, 1, "created", id, "request", "hash", b"{}", b"{}", 1).unwrap());
+            assert!(put_job(
+                &connection,
+                id,
+                1,
+                "created",
+                id,
+                "request",
+                "hash",
+                b"{}",
+                b"{}",
+                1
+            )
+            .unwrap());
         }
         assert!(reserve_disk(&connection, "job-a", 1024, 2).unwrap());
         assert!(reserve_disk(&connection, "job-b", 2048, 2).unwrap());
-        assert_eq!(active_disk_reservations(&connection, "job-a").unwrap(), 2048);
-        assert_eq!(active_disk_reservations(&connection, "job-b").unwrap(), 1024);
+        assert_eq!(
+            active_disk_reservations(&connection, "job-a").unwrap(),
+            2048
+        );
+        assert_eq!(
+            active_disk_reservations(&connection, "job-b").unwrap(),
+            1024
+        );
         assert!(!reserve_disk(&connection, "job-a", 4096, 3).unwrap());
-        assert!(put_job(&connection, "job-a", 2, "failed", "job-a", "request", "hash-2", b"{}", b"{}", 4).unwrap());
+        assert!(put_job(
+            &connection,
+            "job-a",
+            2,
+            "failed",
+            "job-a",
+            "request",
+            "hash-2",
+            b"{}",
+            b"{}",
+            4
+        )
+        .unwrap());
         assert_eq!(active_disk_reservations(&connection, "job-b").unwrap(), 0);
     }
 
@@ -407,7 +484,19 @@ mod tests {
     fn deferred_waiting_job_moves_behind_older_eligible_work() {
         let connection = schema();
         for (id, now) in [("job-a", 1), ("job-b", 2)] {
-            assert!(put_job(&connection, id, 1, "waiting_for_resources", id, "request", "hash", b"{}", b"{}", now).unwrap());
+            assert!(put_job(
+                &connection,
+                id,
+                1,
+                "waiting_for_resources",
+                id,
+                "request",
+                "hash",
+                b"{}",
+                b"{}",
+                now
+            )
+            .unwrap());
         }
         assert!(defer_waiting_job(&connection, "job-a", 3).unwrap());
         let jobs = list_jobs(&connection, 10).unwrap();

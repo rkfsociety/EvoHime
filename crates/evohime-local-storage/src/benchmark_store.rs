@@ -105,11 +105,13 @@ pub fn get_run(
     connection: &Connection,
     run_id: &str,
 ) -> Result<Option<(String, String, String, Option<String>)>, StorageError> {
-    Ok(connection.query_row(
-        "SELECT suite_id,suite_version,state,report_json FROM benchmark_runs WHERE run_id=?1",
-        [run_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-    ).optional()?)
+    Ok(connection
+        .query_row(
+            "SELECT suite_id,suite_version,state,report_json FROM benchmark_runs WHERE run_id=?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?)
 }
 
 /// Loads the immutable policy payload associated with one benchmark run.
@@ -117,11 +119,13 @@ pub fn get_run_policy_json(
     connection: &Connection,
     run_id: &str,
 ) -> Result<Option<String>, StorageError> {
-    Ok(connection.query_row(
-        "SELECT policy_json FROM benchmark_runs WHERE run_id=?1",
-        [run_id],
-        |row| row.get(0),
-    ).optional()?)
+    Ok(connection
+        .query_row(
+            "SELECT policy_json FROM benchmark_runs WHERE run_id=?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .optional()?)
 }
 
 /// Returns the newest approved baseline revision for an exact compatible key.
@@ -159,8 +163,17 @@ pub fn put_baseline(
          (baseline_id,suite_version,challenge_id,model_profile_hash,agent_profile_hash,
           metrics_json,source_commit,revision,created_at_ms)
          VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-        params![baseline_id, suite_version, challenge_id, model_profile_hash,
-            agent_profile_hash, metrics_json, source_commit, revision, now_ms],
+        params![
+            baseline_id,
+            suite_version,
+            challenge_id,
+            model_profile_hash,
+            agent_profile_hash,
+            metrics_json,
+            source_commit,
+            revision,
+            now_ms
+        ],
     )? == 1)
 }
 
@@ -178,7 +191,14 @@ pub fn put_baseline_approval(
         "INSERT OR IGNORE INTO benchmark_baseline_approvals
          (baseline_id,owner_scope,run_id,report_sha256,idempotency_key,approved_at_ms)
          VALUES(?1,?2,?3,?4,?5,?6)",
-        params![baseline_id, owner_scope, run_id, report_sha256, idempotency_key, approved_at_ms],
+        params![
+            baseline_id,
+            owner_scope,
+            run_id,
+            report_sha256,
+            idempotency_key,
+            approved_at_ms
+        ],
     )? == 1)
 }
 
@@ -211,13 +231,25 @@ pub fn get_baseline(
     connection: &Connection,
     baseline_id: &str,
 ) -> Result<Option<(String, String, String, String, String, String, u64)>, StorageError> {
-    Ok(connection.query_row(
-        "SELECT suite_version,challenge_id,model_profile_hash,agent_profile_hash,
+    Ok(connection
+        .query_row(
+            "SELECT suite_version,challenge_id,model_profile_hash,agent_profile_hash,
                 metrics_json,source_commit,revision
          FROM benchmark_baselines WHERE baseline_id=?1",
-        [baseline_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
-    ).optional()?)
+            [baseline_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            },
+        )
+        .optional()?)
 }
 
 #[cfg(test)]
@@ -231,7 +263,10 @@ mod tests {
         install_schema(&connection).unwrap();
         assert!(save_run(&connection, "r", "s", "1", "{}", "running", 1).unwrap());
         assert!(!save_run(&connection, "r", "s", "1", "{}", "running", 1).unwrap());
-        assert_eq!(get_run_policy_json(&connection, "r").unwrap().as_deref(), Some("{}"));
+        assert_eq!(
+            get_run_policy_json(&connection, "r").unwrap().as_deref(),
+            Some("{}")
+        );
         assert_eq!(get_run(&connection, "r").unwrap().unwrap().2, "running");
         let input = SaveAttemptInput {
             run_id: "r",
@@ -251,10 +286,21 @@ mod tests {
     fn approved_baseline_revision_is_immutable_and_readable() {
         let connection = Connection::open_in_memory().unwrap();
         install_schema(&connection).unwrap();
-        let insert = |metrics: &str| put_baseline(
-            &connection, "baseline-1", "suite-v1", "challenge-1", "model-hash",
-            "agent-hash", metrics, "source-commit", 1, 10,
-        ).unwrap();
+        let insert = |metrics: &str| {
+            put_baseline(
+                &connection,
+                "baseline-1",
+                "suite-v1",
+                "challenge-1",
+                "model-hash",
+                "agent-hash",
+                metrics,
+                "source-commit",
+                1,
+                10,
+            )
+            .unwrap()
+        };
         assert!(insert("{\"passed\":1}"));
         assert!(!insert("{\"passed\":0}"));
         let stored = get_baseline(&connection, "baseline-1").unwrap().unwrap();
