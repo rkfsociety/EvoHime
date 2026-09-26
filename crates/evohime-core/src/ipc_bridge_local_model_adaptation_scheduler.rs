@@ -5,7 +5,7 @@ impl IpcBridge {
     ///
     /// The normal Core start path revalidates source identity, host pressure,
     /// disk reservations and Supervisor capacity before dispatching a process.
-    pub(crate) async fn dispatch_next_waiting_adaptation(&self) -> Result<bool, String> {
+    async fn dispatch_next_waiting_adaptation_inner(&self) -> Result<bool, String> {
         let rows = {
             let database = self.journal.database().lock().await;
             evohime_local_storage::local_model_adaptation_store::list_jobs(
