@@ -1294,50 +1294,52 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 let task_group = Arc::clone(&state.lock().await.background_tasks);
                                 let permit = task_group.try_acquire()
                                     .ok_or_else(|| "adaptation_background_capacity_reached".to_string())?;
-                                let transaction = db.connection_mut().transaction()
-                                    .map_err(|_| "benchmark_run_storage_failed".to_string())?;
-                                if resume_existing_run {
-                                    let existing_run = evohime_local_storage::domains::evaluation::get_run(
-                                        &transaction, job_id,
-                                    ).map_err(|_| "benchmark_run_storage_failed".to_string())?
-                                        .ok_or_else(|| "benchmark_run_not_resumable".to_string())?;
-                                    let existing_policy = evohime_local_storage::domains::evaluation::get_run_policy_json(
-                                        &transaction, job_id,
-                                    ).map_err(|_| "benchmark_run_storage_failed".to_string())?
-                                        .ok_or_else(|| "benchmark_run_not_resumable".to_string())?;
-                                    if existing_run.0 != suite.id || existing_run.1 != suite.version
-                                        || existing_run.2 != "running" || existing_run.3.is_some()
-                                        || existing_policy != policy_json {
-                                        return Err("benchmark_run_not_resumable".into());
+                                {
+                                    let transaction = db.connection_mut().transaction()
+                                        .map_err(|_| "benchmark_run_storage_failed".to_string())?;
+                                    if resume_existing_run {
+                                        let existing_run = evohime_local_storage::domains::evaluation::get_run(
+                                            &transaction, job_id,
+                                        ).map_err(|_| "benchmark_run_storage_failed".to_string())?
+                                            .ok_or_else(|| "benchmark_run_not_resumable".to_string())?;
+                                        let existing_policy = evohime_local_storage::domains::evaluation::get_run_policy_json(
+                                            &transaction, job_id,
+                                        ).map_err(|_| "benchmark_run_storage_failed".to_string())?
+                                            .ok_or_else(|| "benchmark_run_not_resumable".to_string())?;
+                                        if existing_run.0 != suite.id || existing_run.1 != suite.version
+                                            || existing_run.2 != "running" || existing_run.3.is_some()
+                                            || existing_policy != policy_json {
+                                            return Err("benchmark_run_not_resumable".into());
+                                        }
+                                    } else if !evohime_local_storage::domains::evaluation::save_run(
+                                        &transaction, job_id, &suite.id, &suite.version, &policy_json,
+                                        "running", crate::task_memory::now_millis() as i64,
+                                    ).map_err(|_| "benchmark_run_storage_failed".to_string())? {
+                                        return Err("benchmark_run_id_conflict".into());
                                     }
-                                } else if !evohime_local_storage::domains::evaluation::save_run(
-                                    &transaction, job_id, &suite.id, &suite.version, &policy_json,
-                                    "running", crate::task_memory::now_millis() as i64,
-                                ).map_err(|_| "benchmark_run_storage_failed".to_string())? {
-                                    return Err("benchmark_run_id_conflict".into());
+                                    let previous_revision = job.revision;
+                                    let stored_input = evohime_local_storage::local_model_adaptation_store::get_benchmark_inputs(
+                                        &transaction, job_id,
+                                    ).map_err(|_| "benchmark_input_storage_failed".to_string())?
+                                        .ok_or_else(|| "benchmark_input_missing".to_string())?;
+                                    if stored_input.0 != benchmark_input_hash || stored_input.1 != benchmark_input {
+                                        return Err("frozen_benchmark_input_conflict".into());
+                                    }
+                                    job.evidence.benchmark_started = true;
+                                    job.transition(
+                                        crate::local_model_adaptation::AdaptationState::Benchmarking,
+                                        job.evidence.clone(),
+                                    ).map_err(|_| "adaptation_transition_denied".to_string())?;
+                                    let snapshot = serde_json::to_vec(&job).map_err(|_| "serialization_failed".to_string())?;
+                                    if !evohime_local_storage::local_model_adaptation_store::put_job(
+                                        &transaction, job_id, job.revision, job.state.storage_key(),
+                                        &job.request.idempotency_key, &stored.2, &job.content_sha256,
+                                        &stored.4, &snapshot, crate::task_memory::now_millis() as i64,
+                                    ).map_err(|_| "storage_failed".to_string())? {
+                                        return Err("adaptation_job_revision_conflict".into());
+                                    }
+                                    transaction.commit().map_err(|_| "benchmark_run_storage_failed".to_string())?;
                                 }
-                                let previous_revision = job.revision;
-                                let stored_input = evohime_local_storage::local_model_adaptation_store::get_benchmark_inputs(
-                                    &transaction, job_id,
-                                ).map_err(|_| "benchmark_input_storage_failed".to_string())?
-                                    .ok_or_else(|| "benchmark_input_missing".to_string())?;
-                                if stored_input.0 != benchmark_input_hash || stored_input.1 != benchmark_input {
-                                    return Err("frozen_benchmark_input_conflict".into());
-                                }
-                                job.evidence.benchmark_started = true;
-                                job.transition(
-                                    crate::local_model_adaptation::AdaptationState::Benchmarking,
-                                    job.evidence.clone(),
-                                ).map_err(|_| "adaptation_transition_denied".to_string())?;
-                                let snapshot = serde_json::to_vec(&job).map_err(|_| "serialization_failed".to_string())?;
-                                if !evohime_local_storage::local_model_adaptation_store::put_job(
-                                    &transaction, job_id, job.revision, job.state.storage_key(),
-                                    &job.request.idempotency_key, &stored.2, &job.content_sha256,
-                                    &stored.4, &snapshot, crate::task_memory::now_millis() as i64,
-                                ).map_err(|_| "storage_failed".to_string())? {
-                                    return Err("adaptation_job_revision_conflict".into());
-                                }
-                                transaction.commit().map_err(|_| "benchmark_run_storage_failed".to_string())?;
                                 let cancellation = tokio_util::sync::CancellationToken::new();
                                 state.lock().await.adaptation_benchmark_cancellations.insert(
                                     job_id.to_owned(), cancellation.clone(),
