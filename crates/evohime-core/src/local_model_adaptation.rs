@@ -1121,7 +1121,7 @@ pub async fn recover_after_restart(
             database.connection(),
             MAX_JOBS as u32,
         )
-            .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+        .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
     };
     let mut recovered = 0_u32;
     for (job_id, row_revision, row_state, snapshot) in summaries {
@@ -1163,9 +1163,12 @@ pub async fn recover_after_restart(
                     .connection_mut()
                     .transaction()
                     .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
-                let current = evohime_local_storage::local_model_adaptation_store::get_job(&transaction, &job_id)
-                    .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
-                    .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
+                let current = evohime_local_storage::local_model_adaptation_store::get_job(
+                    &transaction,
+                    &job_id,
+                )
+                .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+                .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
                 if current.0 != row_revision
                     || !evohime_local_storage::local_model_adaptation_store::put_job(
                         &transaction,
@@ -1235,10 +1238,16 @@ pub async fn recover_after_restart(
                 let (run, stored_policy, frozen_input) = {
                     let database = journal.database().lock().await;
                     (
-                        evohime_local_storage::domains::evaluation::get_run(database.connection(), &job_id)
-                            .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
-                        evohime_local_storage::domains::evaluation::get_run_policy_json(database.connection(), &job_id)
-                            .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
+                        evohime_local_storage::domains::evaluation::get_run(
+                            database.connection(),
+                            &job_id,
+                        )
+                        .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
+                        evohime_local_storage::domains::evaluation::get_run_policy_json(
+                            database.connection(),
+                            &job_id,
+                        )
+                        .map_err(|_| "adaptation_recovery_benchmark_read_failed".to_string())?,
                         evohime_local_storage::local_model_adaptation_store::get_benchmark_inputs(
                             database.connection(),
                             &job_id,
@@ -1355,10 +1364,12 @@ async fn reconcile_prepared_publication(
         "model:{}:{}",
         job.request.source.model_id, job.request.source.revision
     );
-    let source_row =
-        evohime_local_storage::local_model_runtime_manager_store::get_record(database.connection(), &source_id)
-            .map_err(|_| "adaptation_recovery_source_read_failed".to_string())?
-            .ok_or_else(|| "adaptation_recovery_source_missing".to_string())?;
+    let source_row = evohime_local_storage::local_model_runtime_manager_store::get_record(
+        database.connection(),
+        &source_id,
+    )
+    .map_err(|_| "adaptation_recovery_source_read_failed".to_string())?
+    .ok_or_else(|| "adaptation_recovery_source_missing".to_string())?;
     let source: crate::local_model_runtime_manager::LocalModelDescriptor =
         serde_json::from_slice(&source_row.3)
             .map_err(|_| "adaptation_recovery_source_corrupt".to_string())?;
@@ -1462,9 +1473,12 @@ async fn reconcile_prepared_publication(
         .connection_mut()
         .transaction()
         .map_err(|_| "adaptation_recovery_transaction_failed".to_string())?;
-    let current = evohime_local_storage::local_model_adaptation_store::get_job(&transaction, &job.request.job_id)
-        .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
-        .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
+    let current = evohime_local_storage::local_model_adaptation_store::get_job(
+        &transaction,
+        &job.request.job_id,
+    )
+    .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+    .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
     if current.0 != row_revision || current.1 != AdaptationState::ReadyForPromotion.storage_key() {
         return Err("adaptation_recovery_revision_conflict".into());
     }
@@ -1482,8 +1496,11 @@ async fn reconcile_prepared_publication(
     ] {
         let hash = crate::local_model_runtime_manager::canonical_hash(&json);
         if let Some(existing) =
-            evohime_local_storage::local_model_runtime_manager_store::get_record(&transaction, &record_id)
-                .map_err(|_| "adaptation_recovery_registry_read_failed".to_string())?
+            evohime_local_storage::local_model_runtime_manager_store::get_record(
+                &transaction,
+                &record_id,
+            )
+            .map_err(|_| "adaptation_recovery_registry_read_failed".to_string())?
         {
             if existing.0 != kind || existing.1 != 1 || existing.2 != hash || existing.3 != json {
                 return Err("adaptation_recovery_registry_conflict".into());
@@ -1566,10 +1583,12 @@ async fn recover_interrupted_job(
     let snapshot = serde_json::to_vec(job)
         .map_err(|_| "adaptation_recovery_serialization_failed".to_string())?;
     let database = journal.database().lock().await;
-    let current =
-        evohime_local_storage::local_model_adaptation_store::get_job(database.connection(), &job.request.job_id)
-            .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
-            .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
+    let current = evohime_local_storage::local_model_adaptation_store::get_job(
+        database.connection(),
+        &job.request.job_id,
+    )
+    .map_err(|_| "adaptation_recovery_storage_failed".to_string())?
+    .ok_or_else(|| "adaptation_recovery_job_missing".to_string())?;
     if current.0 != expected_revision || current.1 != expected_state {
         return Err("adaptation_recovery_revision_conflict".into());
     }
