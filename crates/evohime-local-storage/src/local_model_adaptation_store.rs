@@ -15,7 +15,7 @@ pub type StoredJobSummary = (String, u64, String, Vec<u8>);
 pub fn get_benchmark_baseline(
     connection: &Connection,
     baseline_id: &str,
-) -> Result<Option<(String, String, String, String, String, String, u64)>, StorageError> {
+) -> Result<Option<crate::domains::evaluation::StoredBenchmarkBaseline>, StorageError> {
     crate::benchmark_store::get_baseline(connection, baseline_id)
 }
 

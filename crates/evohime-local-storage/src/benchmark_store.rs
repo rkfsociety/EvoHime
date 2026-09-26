@@ -4,6 +4,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::StorageError;
 
+/// Persisted suite binding, lifecycle state and optional report for a run.
+pub type StoredBenchmarkRun = (String, String, String, Option<String>);
+/// Persisted immutable baseline fields in suite, challenge, model, agent,
+/// metrics, source and revision order.
+pub type StoredBenchmarkBaseline = (String, String, String, String, String, String, u64);
+
 pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS benchmark_suites (
@@ -110,7 +116,7 @@ pub fn save_report(
 pub fn get_run(
     connection: &Connection,
     run_id: &str,
-) -> Result<Option<(String, String, String, Option<String>)>, StorageError> {
+) -> Result<Option<StoredBenchmarkRun>, StorageError> {
     Ok(connection
         .query_row(
             "SELECT suite_id,suite_version,state,report_json FROM benchmark_runs WHERE run_id=?1",
@@ -236,7 +242,7 @@ pub fn get_baseline_approval(
 pub fn get_baseline(
     connection: &Connection,
     baseline_id: &str,
-) -> Result<Option<(String, String, String, String, String, String, u64)>, StorageError> {
+) -> Result<Option<StoredBenchmarkBaseline>, StorageError> {
     Ok(connection
         .query_row(
             "SELECT suite_version,challenge_id,model_profile_hash,agent_profile_hash,
