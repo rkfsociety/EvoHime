@@ -867,15 +867,26 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             let request_json = serde_json::to_vec(&adaptation).map_err(|_| "serialization_failed".to_string())?;
                             let snapshot_json = serde_json::to_vec(&job).map_err(|_| "serialization_failed".to_string())?;
                             let mut db = journal.database().lock().await;
-                            let transaction = db.connection_mut().transaction()
-                                .map_err(|_| "storage_failed".to_string())?;
-                            let inserted = evohime_local_storage::local_model_adaptation_store::put_job(
-                                &transaction, &adaptation.job_id, job.revision,
-                                job.state.storage_key(), &adaptation.idempotency_key, &request_hash, &job.content_sha256,
-                                &request_json, &snapshot_json, crate::task_memory::now_millis() as i64,
-                            ).map_err(|_| "storage_failed".to_string())?;
+                            let inserted = {
+                                let transaction = db.connection_mut().transaction()
+                                    .map_err(|_| "storage_failed".to_string())?;
+                                let inserted = evohime_local_storage::local_model_adaptation_store::put_job(
+                                    &transaction, &adaptation.job_id, job.revision,
+                                    job.state.storage_key(), &adaptation.idempotency_key, &request_hash, &job.content_sha256,
+                                    &request_json, &snapshot_json, crate::task_memory::now_millis() as i64,
+                                ).map_err(|_| "storage_failed".to_string())?;
+                                if inserted {
+                                    if !evohime_local_storage::local_model_adaptation_store::put_benchmark_inputs(
+                                        &transaction, &adaptation.job_id, &benchmark_input_hash, &benchmark_input,
+                                        crate::task_memory::now_millis() as i64,
+                                    ).map_err(|_| "benchmark_input_storage_failed".to_string())? {
+                                        return Err("benchmark_input_write_conflict".into());
+                                    }
+                                    transaction.commit().map_err(|_| "storage_failed".to_string())?;
+                                }
+                                inserted
+                            };
                             if !inserted {
-                                drop(transaction);
                                 drop(db);
                                 let db = journal.database().lock().await;
                                 if let Some(stored) = evohime_local_storage::local_model_adaptation_store::get_job_by_idempotency_key(
@@ -906,13 +917,6 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 }
                                 return Err("adaptation_job_already_exists".into());
                             }
-                            if !evohime_local_storage::local_model_adaptation_store::put_benchmark_inputs(
-                                &transaction, &adaptation.job_id, &benchmark_input_hash, &benchmark_input,
-                                crate::task_memory::now_millis() as i64,
-                            ).map_err(|_| "benchmark_input_storage_failed".to_string())? {
-                                return Err("benchmark_input_write_conflict".into());
-                            }
-                            transaction.commit().map_err(|_| "storage_failed".to_string())?;
                             serde_json::to_vec(&serde_json::json!({"status":"created","job":job,"redacted":true}))
                                 .map_err(|_| "serialization_failed".to_string())
                         }
