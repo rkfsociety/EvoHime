@@ -25,7 +25,12 @@ mod ipc_bridge_local_model_adaptation_scheduler;
 
 impl IpcBridge {
     /// Dispatches one durable local-model adaptation waiting for resources.
-    pub(crate) async fn dispatch_next_waiting_adaptation(&self) -> Result<bool, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the queue cannot be read or the queued job cannot
+    /// pass its normal Core validation and dispatch checks.
+    pub async fn dispatch_next_waiting_adaptation(&self) -> Result<bool, String> {
         self.dispatch_next_waiting_adaptation_inner().await
     }
 }
