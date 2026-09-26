@@ -246,7 +246,7 @@ impl IpcBridge {
                             return Err("benchmark_baseline_write_conflict");
                         }
                         next
-                    }
+                    };
                     if !evohime_local_storage::benchmark_store::put_baseline_approval(
                         &transaction, &baseline_id, &request.owner_scope, run_id,
                         expected_report_hash, &request.idempotency_key,

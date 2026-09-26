@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AgentBenchmarkMatrixPanel } from '../src/renderer/src/AgentBenchmarkMatrixPanel'
 
 describe('Agent Benchmark Matrix projection', () => {
+  afterEach(cleanup)
+
   it('uses Core for metadata and start, without exposing benchmark payloads', async () => {
     const invoke = vi.fn().mockResolvedValue({ ok: true, value: { accepted: true } })
     Object.defineProperty(window, 'evohime', { configurable: true, value: { v1: { invoke } } })
