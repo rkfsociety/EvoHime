@@ -202,6 +202,165 @@ pub fn run_matrix<E: BenchmarkExecutor>(
     })
 }
 
+/// Runs a bounded challenge matrix against the currently supervised local model.
+///
+/// The only evaluator accepted by this adapter is `sha256:<digest>`, which
+/// compares a registered expected-output digest with bytes returned by real
+/// inference. Synthetic suites, setup dependencies, and security challenges
+/// are rejected because this executor does not provide their required owners.
+pub async fn run_local_model_matrix(
+    suite: &BenchmarkSuite,
+    policy: &BenchmarkPolicy,
+    run_id: &str,
+    source_commit: &str,
+    port: u16,
+    model_alias: &str,
+    baselines: &BTreeMap<String, Baseline>,
+) -> Result<BenchmarkReport, BenchmarkValidationError> {
+    suite.validate()?;
+    policy.validate()?;
+    bounded("run_id", run_id)?;
+    bounded("source_commit", source_commit)?;
+    if policy.mode != BenchmarkMode::Real
+        || port == 0
+        || policy.global_token_budget.is_some()
+        || policy.global_cost_budget_micros.is_some()
+        || suite.thresholds.max_cost_p95_micros.is_some()
+    {
+        return Err(BenchmarkValidationError::InvalidField("real_executor".into()));
+    }
+    let combinations = suite.challenges.len() as u64
+        * suite.model_profiles.len() as u64
+        * suite.agent_profiles.len() as u64
+        * policy.attempts as u64;
+    if combinations > 16_384 {
+        return Err(BenchmarkValidationError::Limit("matrix_size".into()));
+    }
+    if suite.challenges.iter().any(|challenge| {
+        challenge.synthetic_only
+            || challenge.security
+            || !challenge.dependencies.is_empty()
+            || challenge.max_cost_micros.is_some()
+            || challenge.timeout_ms < 300_000
+            || challenge.max_tokens.is_some_and(|value| value == 0 || value > 4096)
+    }) {
+        return Err(BenchmarkValidationError::InvalidField("unsupported_challenge".into()));
+    }
+    if suite.model_profiles.iter().any(|profile| {
+        profile.max_output_tokens.is_some_and(|value| value == 0 || value > 4096)
+    }) {
+        return Err(BenchmarkValidationError::InvalidField("unsupported_model_budget".into()));
+    }
+    // This adapter supervises exactly one local model. Running a multi-model
+    // suite here would attribute the same runtime's output to profiles that
+    // were never actually executed. The stable profile identity describes the
+    // benchmark configuration; the supervised alias is intentionally derived
+    // from this run's verified artifact and is not part of the frozen suite.
+    if suite.model_profiles.len() != 1 {
+        return Err(BenchmarkValidationError::InvalidField("local_model_profile_count".into()));
+    }
+    let mut metrics = BTreeMap::new();
+    let mut comparisons = BTreeMap::new();
+    for challenge in &suite.challenges {
+        let expected_digest = challenge
+            .success_evaluator
+            .strip_prefix("sha256:")
+            .filter(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .ok_or_else(|| BenchmarkValidationError::InvalidField("unsupported_evaluator".into()))?;
+        for model in &suite.model_profiles {
+            for agent in &suite.agent_profiles {
+                let key = format!("{}:{}:{}", challenge.id, model.id, agent.id);
+                let mut attempts = Vec::with_capacity(policy.attempts as usize);
+                for _ in 0..policy.attempts {
+                    let max_tokens = challenge
+                        .max_tokens
+                        .into_iter()
+                        .chain(model.max_output_tokens)
+                        .min()
+                        .unwrap_or(256);
+                    let inference = crate::local_model_adaptation::local_inference_stream(
+                        port,
+                        model_alias,
+                        &challenge.objective,
+                        max_tokens,
+                        None,
+                    )
+                    .await;
+                    let result = match inference {
+                        Ok(evidence) => {
+                            let timed_out = evidence.latency_ms > challenge.timeout_ms;
+                            let passed = !timed_out
+                                && evidence.completion_sha256.eq_ignore_ascii_case(expected_digest);
+                            AttemptResult {
+                            outcome: if passed { AttemptOutcome::Passed } else { AttemptOutcome::Failed },
+                            failure_class: if timed_out {
+                                Some(FailureClass::Timeout)
+                            } else if passed {
+                                None
+                            } else {
+                                Some(FailureClass::Evaluator)
+                            },
+                            security_violation: false,
+                            latency_ms: evidence.latency_ms,
+                            steps: 1,
+                            prompt_tokens: evidence.prompt_tokens.unwrap_or(0).min(u32::MAX as u64) as u32,
+                            completion_tokens: evidence.completion_tokens.unwrap_or(0).min(u32::MAX as u64) as u32,
+                            cost_micros: 0,
+                            output_digest: evidence.completion_sha256,
+                            tool_trace_digest: String::new(),
+                        }
+                        },
+                        Err(_) => AttemptResult {
+                            outcome: AttemptOutcome::Unavailable,
+                            failure_class: Some(FailureClass::Infrastructure),
+                            security_violation: false,
+                            latency_ms: 0,
+                            steps: 0,
+                            prompt_tokens: 0,
+                            completion_tokens: 0,
+                            cost_micros: 0,
+                            output_digest: String::new(),
+                            tool_trace_digest: String::new(),
+                        },
+                    };
+                    attempts.push(result);
+                }
+                let result = aggregate_attempts(&attempts);
+                let baseline = baselines.get(&key);
+                if baseline.is_some_and(|baseline| {
+                    baseline.suite_version != suite.version
+                        || baseline.challenge_id != challenge.id
+                        || baseline.model_profile_hash != model.content_hash
+                        || baseline.agent_profile_hash != agent.content_hash
+                        || baseline.revision == 0
+                        || baseline.metrics.attempts == 0
+                }) {
+                    return Err(BenchmarkValidationError::InvalidField("incompatible_baseline".into()));
+                }
+                // A real run with no approved baseline is durable evidence for
+                // the explicit approveBaseline flow, but remains New and can
+                // never by itself unlock adaptation promotion.
+                let comparison = compare_metrics(&result, baseline, suite.thresholds);
+                metrics.insert(key.clone(), result);
+                comparisons.insert(key, comparison);
+            }
+        }
+    }
+    Ok(BenchmarkReport {
+        contract_id: CONTRACT_ID.into(),
+        contract_hash: hex::encode(Sha256::digest(CONTRACT_ID.as_bytes())),
+        run_id: run_id.into(),
+        source_commit: source_commit.into(),
+        suite_id: suite.id.clone(),
+        suite_version: suite.version.clone(),
+        model_profile_ids: suite.model_profiles.iter().map(|profile| profile.id.clone()).collect(),
+        agent_profile_ids: suite.agent_profiles.iter().map(|profile| profile.id.clone()).collect(),
+        metrics,
+        comparisons,
+        redaction_status: "redacted".into(),
+    })
+}
+
 /// Versioned benchmark task definition with synthetic or external fixture binding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BenchmarkChallenge {
@@ -1042,6 +1201,40 @@ mod tests {
         assert_eq!(
             report.comparisons["c:m:a"].verdict,
             ComparisonVerdict::Blocked
+        );
+    }
+
+    #[tokio::test]
+    async fn local_executor_rejects_multiple_model_profiles_before_inference() {
+        let mut benchmark = suite();
+        benchmark.challenges[0].synthetic_only = false;
+        benchmark.challenges[0].timeout_ms = 300_000;
+        benchmark.challenges[0].success_evaluator = format!("sha256:{}", "0".repeat(64));
+        let mut second_model = benchmark.model_profiles[0].clone();
+        second_model.id = "m2".into();
+        second_model.content_hash = "c".repeat(64);
+        benchmark.model_profiles.push(second_model);
+        let error = run_local_model_matrix(
+            &benchmark,
+            &BenchmarkPolicy {
+                attempts: 1,
+                max_parallelism: 1,
+                seed: 0,
+                global_token_budget: None,
+                global_cost_budget_micros: None,
+                mode: BenchmarkMode::Real,
+            },
+            "run",
+            "commit",
+            1,
+            "managed-local-model",
+            &BTreeMap::new(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error,
+            BenchmarkValidationError::InvalidField("local_model_profile_count".into())
         );
     }
 }

@@ -2807,15 +2807,49 @@ aggregate использует bounded median/p90/variance/failure rate. Отм�
 SQLite schema v96 добавляет durable calibration sessions и immutable performance
 profile metadata без raw prompts/outputs, credentials или executable args.
 Core admission повторно проверяет verified ready model/runtime/artifact и
-hardware-safe identity. В текущем checkout нет versioned inference-stream
-adapter, поэтому операции возвращают typed `unavailable_adapter`, не создают
-измеренный профиль и не меняют routing/recommendation; будущая интеграция
-разрешена только через explicit versioned lookup и capability gates.
+hardware-safe identity. При закрытии plan 121 versioned inference-stream
+adapter отсутствовал, и calibration корректно возвращал typed
+`unavailable_adapter`. Текущий source checkout добавляет adapter только как
+часть отдельного Core-owned plan 178; этот owner не меняет
+routing/recommendation и принимает только локальный Supervisor runtime с
+hash-pinned моделью.
 
 Для evidence freeze highest proto tags были `260/105`; до dedicated `261/106`
 используется существующий authenticated Local Model Runtime Manager transport.
 Electron panel — metadata-only projection, явно различающая unavailable,
 estimated, stale и measured состояния.
+
+## Core-Owned Local Model Adaptation v1 (plan 178)
+
+Adaptation принимает только already-managed GGUF F16/F32 source с проверенными
+artifact hash/size, exact model revision, target из allowlist
+`Q4_K_M`/`Q5_K_M`/`Q8_0`, frozen benchmark suite/baseline и approval-policy
+identity. Поддержанный converter/runtime — llama.cpp `b10981` Windows x64 CPU
+asset с фиксированными archive и executable/DLL SHA-256; установка начинается
+только по явному действию. Arbitrary URL, command line, executable path,
+SafeTensors/Python/CUDA conversion и accelerator-fit inference не поддержаны.
+
+Core хранит bounded request/job/evidence, frozen benchmark inputs, disk
+reservations и publication journal в SQLite schema 178; model weights остаются
+в managed filesystem. Admission повторно проверяет source record/hash, свежий
+host pressure, RAM и свободное место вместе с reservations других
+nonterminal jobs. `WaitingForResources` jobs проходят FIFO retries из
+существующего durable-background poll task с повторным preflight; output идёт
+в staging и проверяется по hash, size и GGUF structure. Supervisor запускает
+только hash-verified package с typed arguments в Windows Job Object; v1 держит
+не более одного quantizer/inference процесса и cancellation завершает process
+tree. Restart прерывает conversion без resumable checkpoint, повторяет
+verification, сохраняет benchmark для точного явного retry и reconciles
+prepared publication по journal. Активная модель не меняется при подготовке:
+promotion требует Core-side approval и exact job/output/benchmark revisions и
+hashes.
+
+Calibration использует loopback OpenAI-compatible SSE adapter с bounded
+request/response; benchmark вызывает только реальную локальную inference
+модель, а deterministic/fixture executors не могут создать promotion
+evidence. IPC остаётся authenticated через существующий Local Model Runtime
+Manager command; Electron получает bounded job/evidence projection и отправляет
+запросы, не выдавая approval и не меняя policy.
 
 ## Verification Evidence Ledger v1 (план 122, реализован 2026-09-09)
 

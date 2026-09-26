@@ -467,7 +467,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `178–181` и `184–188`; планы `01–177` и `183` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `179–181` и `184–188`; планы `01–178` и `183` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
@@ -597,6 +597,22 @@ verified-runtime admission и Electron projection. Текущий runtime bounda
 предоставляет inference-stream adapter, поэтому подтверждённое состояние —
 typed `unavailable_adapter`; measured profile и routing signal не создаются
 без такого adapter.
+
+## Plan 178 — Core-Owned Local Model Adaptation (implemented; exact-SHA CI pending)
+
+В working tree реализован versioned GGUF adaptation pipeline для Windows CPU:
+explicit install pinned llama.cpp `b10981`, metadata-only durable jobs, fresh
+resource admission и SQLite disk reservations, FIFO retry из durable-background
+poll loop, Supervisor Job Object quantizer/runtime, output validation,
+streamed local inference, real benchmark, explicit approval-gated promotion и
+restart/publication recovery. Источник — только уже managed GGUF F16/F32;
+targets — `Q4_K_M`, `Q5_K_M`, `Q8_0`; VRAM/accelerator fit остаётся unknown.
+
+Реализация и requirement-by-requirement source audit завершены; `git diff --check`
+проходит. Локальные tests/builds не запускались по workflow реализации numbered
+plans. Exact-SHA module CI и публикация ещё не подтверждены; текущий push должен
+запустить core, supervisor, shell-host и ui-bundle через module router. До
+завершения этих gates состояние остаётся непроверенным на Windows CI.
 
 ## Plan 122 — Verification Evidence Ledger (закрыт 2026-09-09)
 

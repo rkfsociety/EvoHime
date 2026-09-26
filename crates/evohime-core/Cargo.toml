@@ -16,7 +16,7 @@ name = "kill9-worker-test-helper"
 path = "tests/bin/kill9_worker.rs"
 
 [dependencies]
-tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 evohime-cli-contract = { path = "../evohime-cli-contract" }
 evohime-context-budget = { path = "../context-budget" }
 evohime-model-gateway = { path = "../model-gateway" }

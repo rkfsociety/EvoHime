@@ -142,6 +142,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .recover_durable_background_execution(evohime_core::task_memory::now_millis() as i64)
         .await
         .map_err(|e| format!("durable background execution recovery failed: {e}"))?;
+    evohime_core::local_model_adaptation::recover_after_restart(
+        &journal,
+        &data_dir.join("models"),
+    )
+        .await
+        .map_err(|e| format!("local model adaptation recovery failed: {e}"))?;
     let _model_provenance_retention_task =
         evohime_core::spawn_model_provenance_retention(journal.clone());
     let heartbeat_task = spawn_heartbeat(data_dir.join("core-heartbeat"));
@@ -447,13 +453,26 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let free_access_probe_task = free_access_probe_coordinator
         .clone()
         .map(|coordinator| tokio::spawn(coordinator.run_periodic()));
+    let adaptation_scheduler_bridge = std::sync::Arc::clone(&bridge);
     let durable_background_task = tokio::spawn(async move {
+        let mut next_adaptation_dispatch = tokio::time::Instant::now()
+            + std::time::Duration::from_secs(15);
         loop {
             if let Err(error) = background_journal
                 .poll_durable_background_execution(evohime_core::task_memory::now_millis() as i64)
                 .await
             {
                 tracing::warn!(%error, "durable background execution poll failed");
+            }
+            if tokio::time::Instant::now() >= next_adaptation_dispatch {
+                if let Err(error) = adaptation_scheduler_bridge
+                    .dispatch_next_waiting_adaptation()
+                    .await
+                {
+                    tracing::warn!(%error, "local model adaptation queue dispatch failed");
+                }
+                next_adaptation_dispatch = tokio::time::Instant::now()
+                    + std::time::Duration::from_secs(15);
             }
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }

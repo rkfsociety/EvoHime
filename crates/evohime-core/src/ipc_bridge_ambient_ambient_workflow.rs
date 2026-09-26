@@ -217,7 +217,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::BenchmarkMatrixList(request))
             | Some(generated::command_envelope::Command::BenchmarkMatrixAction(request)) => {
-                let result = self.dispatch_benchmark_matrix(request);
+                let result = self.dispatch_benchmark_matrix(request).await;
                 self.write_response(
                     writer,
                     "benchmark_matrix.result",

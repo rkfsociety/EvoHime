@@ -12,8 +12,13 @@
 
 use rand::{rngs::OsRng, RngCore};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
+#[cfg(windows)]
+use std::process::Stdio;
 #[cfg(windows)]
 use tokio::process::{Child, Command};
 
@@ -335,6 +340,438 @@ pub struct ExternalAgentProcess {
     _job: JobObject,
 }
 
+/// Result of one bounded supervised llama.cpp conversion.
+#[cfg(windows)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuantizerResult {
+    /// Core-relative path of the verified output file.
+    pub output_relative_path: String,
+    /// SHA-256 of the completed output GGUF.
+    pub output_sha256: String,
+    /// Exact output size in bytes.
+    pub output_size_bytes: u64,
+}
+
+/// Quantizer child attached to a Windows Job Object until it exits.
+#[cfg(windows)]
+pub struct LocalQuantizerProcess {
+    child: Child,
+    job: Option<JobObject>,
+    output_path: PathBuf,
+    output_relative_path: String,
+    max_output_bytes: u64,
+    deadline: tokio::time::Instant,
+}
+
+/// Pinned llama-server process used to verify and exercise one adapted model.
+#[cfg(windows)]
+pub struct LocalInferenceProcess {
+    child: Child,
+    job: Option<JobObject>,
+    port: u16,
+    model_alias: String,
+    startup_deadline: Option<tokio::time::Instant>,
+}
+
+/// Starts the hash-pinned CPU server for a Core-verified staged GGUF.
+#[cfg(windows)]
+pub async fn spawn_pinned_inference(
+    data_root: &Path,
+    job_id: &str,
+    model_relative_path: &Path,
+    expected_model_sha256: &str,
+    expected_model_size: u64,
+    threads: u16,
+    memory_limit_bytes: u64,
+    cpu_limit_percent: u8,
+) -> Result<LocalInferenceProcess, LocalError> {
+    if job_id.trim().is_empty()
+        || job_id.len() > 128
+        || job_id.bytes().any(|byte| byte.is_ascii_control())
+        || memory_limit_bytes < 512 * 1024 * 1024
+        || memory_limit_bytes > 32 * 1024 * 1024 * 1024
+        || cpu_limit_percent == 0
+        || cpu_limit_percent > 100
+        || expected_model_size == 0
+        || expected_model_size > 16 * 1024 * 1024 * 1024
+        || threads == 0
+        || threads > 64
+        || expected_model_sha256.len() != 64
+        || !expected_model_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !is_managed_relative_path(model_relative_path)
+    {
+        return Err(LocalError::InvalidRequest);
+    }
+    let data_root = std::fs::canonicalize(data_root).map_err(|_| LocalError::Unavailable)?;
+    let adapter_dir = data_root.join("tools").join("llama.cpp").join("b10981");
+    if !evohime_desktop_ipc::local_adapter_contract::verify_runtime_files(&adapter_dir) {
+        return Err(LocalError::ModelNotFound);
+    }
+    let models_root = data_root.join("models");
+    let model_path = resolve_managed_model_path(&models_root, model_relative_path, true)?;
+    let path_for_hash = model_path.clone();
+    let (actual_hash, actual_size) =
+        tokio::task::spawn_blocking(move || hash_file_sha256(&path_for_hash))
+            .await
+            .map_err(|_| LocalError::Unavailable)??;
+    if actual_hash != expected_model_sha256 || actual_size != expected_model_size {
+        return Err(LocalError::InvalidRequest);
+    }
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .map_err(|_| LocalError::Unavailable)?;
+    let port = listener.local_addr().map_err(|_| LocalError::Unavailable)?.port();
+    drop(listener);
+    let model_alias = format!("evohime-adaptation-{}", &actual_hash[..16]);
+    let job = JobObject::create_with_limits(Some(memory_limit_bytes), Some(cpu_limit_percent))
+        .map_err(|_| LocalError::ResourceLimitExceeded)?;
+    let mut child = Command::new(adapter_dir.join("llama-server.exe"))
+        .arg("--model")
+        .arg(&model_path)
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(port.to_string())
+        .arg("--alias")
+        .arg(&model_alias)
+        .arg("--ctx-size")
+        .arg("2048")
+        .arg("--threads")
+        .arg(threads.to_string())
+        .arg("--n-gpu-layers")
+        .arg("0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| LocalError::Unavailable)?;
+    if job.assign(&child).is_err() {
+        let _ = child.start_kill();
+        return Err(LocalError::ResourceLimitExceeded);
+    }
+    Ok(LocalInferenceProcess {
+        child,
+        job: Some(job),
+        port,
+        model_alias,
+        startup_deadline: Some(tokio::time::Instant::now() + Duration::from_secs(15 * 60)),
+    })
+}
+
+#[cfg(windows)]
+impl LocalInferenceProcess {
+    /// Returns the fixed alias derived from the verified model digest.
+    pub fn model_alias(&self) -> &str {
+        &self.model_alias
+    }
+
+    /// Probes a loaded model using the loopback OpenAI models endpoint.
+    pub async fn probe(&mut self) -> Result<Option<u16>, LocalError> {
+        if self.startup_deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+            let _ = self.child.start_kill();
+            let _ = self.child.wait().await;
+            self.job.take();
+            return Err(LocalError::Timeout);
+        }
+        if self.child.try_wait().map_err(|_| LocalError::Unavailable)?.is_some() {
+            self.job.take();
+            return Err(LocalError::Unavailable);
+        }
+        let port = self.port;
+        let alias = self.model_alias.clone();
+        let result = timeout(Duration::from_secs(3), async move {
+            let mut stream = TcpStream::connect(("127.0.0.1", port))
+                .await
+                .map_err(|_| LocalError::Unavailable)?;
+            let request = format!(
+                "GET /v1/models HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+            );
+            stream.write_all(request.as_bytes()).await.map_err(|_| LocalError::Unavailable)?;
+            let mut body = Vec::with_capacity(16 * 1024);
+            let mut buffer = [0_u8; 2048];
+            while body.len() < 16 * 1024 {
+                let read = stream.read(&mut buffer).await.map_err(|_| LocalError::Unavailable)?;
+                if read == 0 { break; }
+                body.extend_from_slice(&buffer[..read]);
+            }
+            let text = std::str::from_utf8(&body).map_err(|_| LocalError::Unavailable)?;
+            if !text.starts_with("HTTP/1.1 200") && !text.starts_with("HTTP/1.0 200") {
+                return Err(LocalError::Unavailable);
+            }
+            let (_, payload) = text.split_once("\r\n\r\n").ok_or(LocalError::Unavailable)?;
+            let value: serde_json::Value = serde_json::from_str(payload).map_err(|_| LocalError::Unavailable)?;
+            let models = value.get("data").and_then(serde_json::Value::as_array).ok_or(LocalError::Unavailable)?;
+            if models.iter().any(|model| model.get("id").and_then(serde_json::Value::as_str) == Some(alias.as_str())) {
+                Ok(Some(port))
+            } else {
+                Ok(None)
+            }
+        }).await;
+        match result {
+            Ok(Ok(ready)) => {
+                if ready.is_some() {
+                    self.startup_deadline = None;
+                }
+                Ok(ready)
+            }
+            Ok(Err(LocalError::Unavailable)) | Err(_) => Ok(None),
+            Ok(Err(error)) => Err(error),
+        }
+    }
+
+    /// Stops the model server and releases its process-tree job.
+    pub async fn stop(&mut self) -> Result<(), LocalError> {
+        let _ = self.child.start_kill();
+        let _ = self.child.wait().await;
+        self.job.take();
+        Ok(())
+    }
+}
+
+/// Starts only the installed hash-pinned llama.cpp quantizer with typed args.
+#[cfg(windows)]
+pub async fn spawn_pinned_quantizer(
+    data_root: &Path,
+    job_id: &str,
+    source_relative_path: &Path,
+    expected_source_sha256: &str,
+    expected_source_size: u64,
+    target: &str,
+    threads: u16,
+    memory_limit_bytes: u64,
+    cpu_limit_percent: u8,
+    max_output_bytes: u64,
+) -> Result<LocalQuantizerProcess, LocalError> {
+    const MAX_OUTPUT_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+    if job_id.trim().is_empty()
+        || job_id.len() > 128
+        || job_id.bytes().any(|byte| byte.is_ascii_control())
+        || !matches!(target, "Q4_K_M" | "Q5_K_M" | "Q8_0")
+        || threads == 0
+        || threads > 256
+        || memory_limit_bytes < 512 * 1024 * 1024
+        || memory_limit_bytes > 32 * 1024 * 1024 * 1024
+        || cpu_limit_percent == 0
+        || cpu_limit_percent > 100
+        || max_output_bytes == 0
+        || max_output_bytes > MAX_OUTPUT_BYTES
+        || expected_source_size == 0
+        || expected_source_size > 16 * 1024 * 1024 * 1024
+        || expected_source_sha256.len() != 64
+        || !expected_source_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+        || !is_managed_relative_path(source_relative_path)
+    {
+        return Err(LocalError::InvalidRequest);
+    }
+    let data_root = std::fs::canonicalize(data_root).map_err(|_| LocalError::Unavailable)?;
+    let tools_root = data_root.join("tools");
+    let adapter_dir = tools_root.join("llama.cpp").join("b10981");
+    if !evohime_desktop_ipc::local_adapter_contract::verify_runtime_files(&adapter_dir) {
+        return Err(LocalError::ModelNotFound);
+    }
+    let models_root = data_root.join("models");
+    let source_path = resolve_managed_model_path(&models_root, source_relative_path, true)?;
+    let source_for_hash = source_path.clone();
+    let (observed_hash, observed_size) =
+        tokio::task::spawn_blocking(move || hash_file_sha256(&source_for_hash))
+            .await
+            .map_err(|_| LocalError::Unavailable)??;
+    if observed_hash != expected_source_sha256 || observed_size != expected_source_size {
+        return Err(LocalError::InvalidRequest);
+    }
+    let staging_dir = models_root.join(".adaptation-staging");
+    match std::fs::symlink_metadata(&staging_dir) {
+        Ok(metadata) if metadata.file_type().is_dir() && !has_unsafe_reparse_point(&metadata) => {}
+        Ok(_) => return Err(LocalError::InvalidRequest),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir(&staging_dir).map_err(|_| LocalError::Unavailable)?;
+        }
+        Err(_) => return Err(LocalError::Unavailable),
+    }
+    let file_name = encode_hex(Sha256::digest(job_id.as_bytes()));
+    let output_relative_path = format!(".adaptation-staging/{file_name}.gguf");
+    let output_path =
+        resolve_managed_model_path(&models_root, Path::new(&output_relative_path), false)?;
+    match std::fs::symlink_metadata(&output_path) {
+        Ok(metadata) if metadata.file_type().is_file() => {
+            std::fs::remove_file(&output_path).map_err(|_| LocalError::Unavailable)?;
+        }
+        Ok(_) => return Err(LocalError::InvalidRequest),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(LocalError::Unavailable),
+    }
+    let executable = adapter_dir.join("llama-quantize.exe");
+    let job = JobObject::create_with_limits(Some(memory_limit_bytes), Some(cpu_limit_percent))
+        .map_err(|_| LocalError::ResourceLimitExceeded)?;
+    let mut child = Command::new(executable)
+        .arg(&source_path)
+        .arg(&output_path)
+        .arg(target)
+        .arg(threads.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|_| LocalError::Unavailable)?;
+    if job.assign(&child).is_err() {
+        let _ = child.start_kill();
+        return Err(LocalError::ResourceLimitExceeded);
+    }
+    Ok(LocalQuantizerProcess {
+        child,
+        job: Some(job),
+        output_path,
+        output_relative_path,
+        max_output_bytes,
+        deadline: tokio::time::Instant::now() + Duration::from_secs(6 * 60 * 60),
+    })
+}
+
+#[cfg(windows)]
+impl LocalQuantizerProcess {
+    /// Returns None while running and a bounded content result after success.
+    pub async fn poll(&mut self) -> Result<Option<QuantizerResult>, LocalError> {
+        if tokio::time::Instant::now() >= self.deadline {
+            let _ = self.child.start_kill();
+            let _ = self.child.wait().await;
+            self.job.take();
+            return Err(LocalError::Timeout);
+        }
+        if std::fs::symlink_metadata(&self.output_path)
+            .is_ok_and(|metadata| metadata.len() > self.max_output_bytes)
+        {
+            let _ = self.child.start_kill();
+            let _ = self.child.wait().await;
+            self.job.take();
+            return Err(LocalError::InvalidRequest);
+        }
+        let Some(status) = self.child.try_wait().map_err(|_| LocalError::Unavailable)? else {
+            return Ok(None);
+        };
+        self.job.take();
+        if !status.success() {
+            return Err(LocalError::Unavailable);
+        }
+        let metadata =
+            std::fs::symlink_metadata(&self.output_path).map_err(|_| LocalError::Unavailable)?;
+        if !metadata.file_type().is_file()
+            || metadata.len() == 0
+            || metadata.len() > self.max_output_bytes
+        {
+            return Err(LocalError::InvalidRequest);
+        }
+        let output_path = self.output_path.clone();
+        let (output_sha256, output_size_bytes) =
+            tokio::task::spawn_blocking(move || hash_file_sha256(&output_path))
+                .await
+                .map_err(|_| LocalError::Unavailable)??;
+        Ok(Some(QuantizerResult {
+            output_relative_path: self.output_relative_path.clone(),
+            output_sha256,
+            output_size_bytes,
+        }))
+    }
+
+    /// Kills this process tree and waits for the child to exit.
+    pub async fn cancel(&mut self) -> Result<(), LocalError> {
+        let _ = self.child.start_kill();
+        let _ = self.child.wait().await;
+        self.job.take();
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+fn is_managed_relative_path(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+#[cfg(windows)]
+fn resolve_managed_model_path(
+    root: &Path,
+    relative: &Path,
+    must_exist: bool,
+) -> Result<PathBuf, LocalError> {
+    if !is_managed_relative_path(relative)
+        || !std::fs::symlink_metadata(root).is_ok_and(|metadata| metadata.file_type().is_dir() && !has_unsafe_reparse_point(&metadata))
+    {
+        return Err(LocalError::InvalidRequest);
+    }
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(part) = component else {
+            return Err(LocalError::InvalidRequest);
+        };
+        current.push(part);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if has_unsafe_reparse_point(&metadata) => {
+                return Err(LocalError::InvalidRequest);
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && !must_exist => {}
+            Err(_) => return Err(LocalError::Unavailable),
+        }
+    }
+    if must_exist
+        && !std::fs::symlink_metadata(&current).is_ok_and(|metadata| metadata.file_type().is_file() && !has_unsafe_reparse_point(&metadata))
+    {
+        return Err(LocalError::ModelNotFound);
+    }
+    Ok(current)
+}
+
+#[cfg(windows)]
+fn hash_file_sha256(path: &Path) -> Result<(String, u64), LocalError> {
+    use std::io::Read;
+    let metadata = std::fs::symlink_metadata(path).map_err(|_| LocalError::Unavailable)?;
+    if !metadata.file_type().is_file() || has_unsafe_reparse_point(&metadata) {
+        return Err(LocalError::InvalidRequest);
+    }
+    let mut file = std::fs::File::open(path).map_err(|_| LocalError::Unavailable)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut size = 0_u64;
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|_| LocalError::Unavailable)?;
+        if read == 0 {
+            break;
+        }
+        size = size.saturating_add(read as u64);
+        hasher.update(&buffer[..read]);
+    }
+    Ok((encode_hex(hasher.finalize()), size))
+}
+
+#[cfg(windows)]
+fn has_unsafe_reparse_point(metadata: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    metadata.file_type().is_symlink()
+        || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(windows)]
+fn encode_hex(bytes: impl AsRef<[u8]>) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let bytes = bytes.as_ref();
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(HEX[(byte >> 4) as usize] as char);
+        output.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    output
+}
+
 #[cfg(windows)]
 impl ExternalAgentProcess {
     pub async fn spawn(executable_ref: &str, run_id: &str) -> Result<Self, LocalError> {
@@ -530,5 +967,91 @@ mod tests {
     fn port_selection_is_bounded() {
         let occupied: Vec<u16> = (PORT_FIRST..PORT_FIRST + 8).collect();
         assert_eq!(choose_port(&occupied), Some(PORT_FIRST + 8));
+    }
+}
+
+#[cfg(all(test, windows))]
+mod adaptation_process_tests {
+    use super::*;
+    use crate::windows_supervisor::JobObject;
+
+    fn root() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-adaptation-process-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    async fn fake_quantizer(
+        root: &Path,
+        command: &str,
+        max_output_bytes: u64,
+    ) -> LocalQuantizerProcess {
+        let output_path = root.join("fake-output.gguf");
+        let mut child = Command::new("cmd")
+            .args(["/C", command])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let job = JobObject::create().unwrap();
+        job.assign(&child).unwrap();
+        LocalQuantizerProcess {
+            child,
+            job: Some(job),
+            output_path: output_path.clone(),
+            output_relative_path: ".adaptation-staging/fake-output.gguf".into(),
+            max_output_bytes,
+            deadline: tokio::time::Instant::now() + Duration::from_secs(30),
+        }
+    }
+
+    #[tokio::test]
+    async fn fake_quantizer_completion_returns_hash_and_size() {
+        let root = root();
+        let command = format!("echo fake-output>\"{}\"", root.join("fake-output.gguf").display());
+        let mut process = fake_quantizer(&root, &command, 1024).await;
+        let result = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(result) = process.poll().await.unwrap() {
+                    break result;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let contents = std::fs::read(root.join("fake-output.gguf")).unwrap();
+        assert_eq!(result.output_size_bytes, contents.len() as u64);
+        assert_eq!(result.output_sha256, encode_hex(Sha256::digest(contents)));
+        assert_eq!(result.output_relative_path, ".adaptation-staging/fake-output.gguf");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fake_quantizer_rejects_oversized_output_and_kills_child() {
+        let root = root();
+        std::fs::write(root.join("fake-output.gguf"), b"too large").unwrap();
+        let mut process = fake_quantizer(&root, "ping -n 30 127.0.0.1 >NUL", 2).await;
+        assert_eq!(process.poll().await, Err(LocalError::InvalidRequest));
+        assert!(process.child.try_wait().unwrap().is_some());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fake_quantizer_cancel_waits_for_child_exit() {
+        let root = root();
+        let mut process = fake_quantizer(&root, "ping -n 30 127.0.0.1 >NUL", 1024).await;
+        process.cancel().await.unwrap();
+        assert!(process.child.try_wait().unwrap().is_some());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

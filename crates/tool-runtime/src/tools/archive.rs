@@ -368,6 +368,59 @@ fn extract_zip(archive_path: &Path, destination: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Verifies a pinned ZIP archive's exact size and SHA-256, then extracts it
+/// into a new staging directory using the runtime's bounded safe extractor.
+///
+/// The caller must choose a Core-owned destination below a managed root and
+/// publish that directory only after validating its package contents.
+pub fn extract_verified_zip(
+    archive_path: &Path,
+    destination: &Path,
+    expected_sha256: &str,
+    expected_size_bytes: u64,
+) -> io::Result<()> {
+    if expected_sha256.len() != 64
+        || !expected_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || expected_size_bytes == 0
+        || std::fs::symlink_metadata(destination).is_ok()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid verified archive contract",
+        ));
+    }
+    let metadata = std::fs::symlink_metadata(archive_path)?;
+    if !metadata.file_type().is_file() || metadata.len() != expected_size_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "verified archive size mismatch",
+        ));
+    }
+    let mut file = std::fs::File::open(archive_path)?;
+    let mut digest = sha2::Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    use sha2::Digest;
+    loop {
+        let read = std::io::Read::read(&mut file, &mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    if hex::encode(digest.finalize()) != expected_sha256.to_ascii_lowercase() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "verified archive digest mismatch",
+        ));
+    }
+    std::fs::create_dir(destination)?;
+    if let Err(error) = extract_zip(archive_path, destination) {
+        let _ = std::fs::remove_dir_all(destination);
+        return Err(error);
+    }
+    Ok(())
+}
+
 fn reserve_extraction(total: &mut u64, bytes: u64) -> io::Result<()> {
     let next = total.checked_add(bytes).ok_or_else(|| {
         io::Error::new(
@@ -542,6 +595,40 @@ mod tests {
         let mut total = 0;
         assert!(reserve_extraction(&mut total, MAX_EXTRACTED_BYTES).is_ok());
         assert!(reserve_extraction(&mut total, 1).is_err());
+    }
+
+    #[test]
+    fn verified_archive_rejects_digest_mismatch_before_extracting() {
+        let dir = tempdir().expect("tempdir");
+        let archive_path = dir.path().join("package.zip");
+        std_fs::write(&archive_path, b"not the pinned package").expect("write archive");
+        let destination = dir.path().join("tools");
+        let error = extract_verified_zip(&archive_path, &destination, &"0".repeat(64), 22)
+            .expect_err("digest mismatch must fail");
+        assert!(error.to_string().contains("digest mismatch"));
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn verified_archive_rejects_traversal_and_removes_staging_directory() {
+        let dir = tempdir().expect("tempdir");
+        let archive_path = dir.path().join("unsafe.zip");
+        let file = std_fs::File::create(&archive_path).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file("../escaped.txt", zip::write::SimpleFileOptions::default())
+            .expect("entry");
+        std::io::Write::write_all(&mut writer, b"must not extract").expect("content");
+        writer.finish().expect("finish");
+        let bytes = std_fs::read(&archive_path).expect("read archive");
+        use sha2::Digest;
+        let digest = hex::encode(sha2::Sha256::digest(&bytes));
+        let destination = dir.path().join("tools");
+        let error = extract_verified_zip(&archive_path, &destination, &digest, bytes.len() as u64)
+            .expect_err("unsafe archive must be rejected");
+        assert!(error.to_string().contains("escapes destination"));
+        assert!(!destination.exists());
+        assert!(!dir.path().join("escaped.txt").exists());
     }
 
     #[tokio::test]

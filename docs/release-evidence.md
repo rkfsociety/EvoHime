@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-23.
+Обновлено: 2026-09-26.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -21,10 +21,10 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 стартовал из свежей сборки, но native screenshot не снят: доступный CUA-сеанс
 не умеет привязать окно Electron; GitHub module-router и публикация `ui-bundle`
 ещё не запускались, потому что push не выполнялся.
-Актуальные release markers хранятся в `release-versions/`: `core=0.0.000369`,
-`updater=0.0.000128`, `transaction=0.0.000067`,
-`ui-bundle=0.0.000110`, `shell-host=0.0.000103` и
-`cli=0.0.000084`. Исторические разделы ниже сохраняют прежнее evidence.
+Исторические release markers в этом baseline описывали более ранние версии;
+текущие опубликованные module tags проверяются live module router. Патчи Plan
+178 и статусы их публикации перечислены ниже отдельно. Исторические разделы
+ниже сохраняют прежнее evidence.
 
 ## Статус выпуска
 
@@ -33,6 +33,24 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 снимки ниже сохраняются только как evidence исходных запусков.
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
+
+### Core-Owned Local Model Adaptation v1 (2026-09-26; текущая задача)
+
+- Реализован Core-owned GGUF adaptation pipeline на фиксированном llama.cpp
+  `b10981` Windows x64 CPU asset. Core проверяет точные archive/runtime hashes,
+  хранит только job/evidence metadata в schema 178, повторяет resource preflight
+  для FIFO retries и требует exact hash/revision evidence плюс Core approval для
+  promotion. Weights не хранятся в SQLite.
+- Изменённые исходные модули и patch markers: core `0.0.000379` → `0.0.000380`,
+  supervisor `0.0.000045` → `0.0.000046`, shell-host `0.0.000108` →
+  `0.0.000109`, ui-bundle `0.0.000121` → `0.0.000122`. `desktop-ipc` поставляется
+  как dependency Core; installer version не менялась.
+- Exact-SHA tests, lint/build, module release artifacts, compatible manifest и
+  rollback acceptance: **PENDING** до push и завершения module router. Локальные
+  tests/builds/linters не запускались в plan workflow; `git diff --check` passed.
+- После push ожидаются `core.yml`, `supervisor.yml`, `shell-host.yml` и
+  `ui-bundle.yml`; Core path владеет `desktop-ipc` dependency. Installer workflow
+  не ожидается, поскольку его version и packaging contract не изменены.
 
 ### Rust public API documentation (2026-09-24)
 

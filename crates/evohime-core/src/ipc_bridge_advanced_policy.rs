@@ -1,7 +1,7 @@
 use super::*;
 
 impl IpcBridge {
-    pub(crate) fn dispatch_benchmark_matrix(
+    pub(crate) async fn dispatch_benchmark_matrix(
         &self,
         request: generated::AgentBenchmarkMatrixCommand,
     ) -> serde_json::Value {
@@ -19,15 +19,257 @@ impl IpcBridge {
             });
         }
         match request.operation.as_str() {
-            "list" => serde_json::json!({
+            "list" => {
+                let database = self.journal.database().lock().await;
+                let runs = match database.connection().prepare(
+                    "SELECT run_id,suite_id,suite_version,state,updated_at_ms FROM benchmark_runs ORDER BY updated_at_ms DESC LIMIT 128",
+                ) {
+                    Ok(mut statement) => statement.query_map([], |row| Ok(serde_json::json!({
+                        "run_id": row.get::<_, String>(0)?,
+                        "suite_id": row.get::<_, String>(1)?,
+                        "suite_version": row.get::<_, String>(2)?,
+                        "state": row.get::<_, String>(3)?,
+                        "updated_at_ms": row.get::<_, i64>(4)?
+                    }))).map(|rows| rows.filter_map(Result::ok).collect::<Vec<_>>()).unwrap_or_default(),
+                    Err(_) => Vec::new(),
+                };
+                serde_json::json!({
                 "schema_version": 1,
                 "request_id": request.request_id,
                 "operation": "list",
                 "status": "ok",
-                "runs": [],
+                "runs": runs,
                 "error_code": ""
-            }),
-            "start" | "cancel" | "approveBaseline" => serde_json::json!({
+            })
+            },
+            "approveBaseline" => {
+                let result = async {
+                    let payload: serde_json::Value = serde_json::from_slice(&request.payload)
+                        .map_err(|_| "invalid_approval_request")?;
+                    let run_id = payload.get("run_id").and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.is_empty() && value.len() <= 128)
+                        .ok_or("run_id_required")?;
+                    let challenge_id = payload.get("challenge_id").and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.is_empty() && value.len() <= crate::agent_benchmark_matrix::MAX_ID_CHARS)
+                        .ok_or("challenge_id_required")?;
+                    let model_profile_id = payload.get("model_profile_id").and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.is_empty() && value.len() <= crate::agent_benchmark_matrix::MAX_ID_CHARS)
+                        .ok_or("model_profile_id_required")?;
+                    let agent_profile_id = payload.get("agent_profile_id").and_then(serde_json::Value::as_str)
+                        .filter(|value| !value.is_empty() && value.len() <= crate::agent_benchmark_matrix::MAX_ID_CHARS)
+                        .ok_or("agent_profile_id_required")?;
+                    let expected_report_hash = payload.get("report_sha256").and_then(serde_json::Value::as_str)
+                        .filter(|hash| hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+                        .ok_or("report_sha256_required")?;
+                    let expected_revision = request.expected_version;
+                    if expected_revision == 0 {
+                        return Err("expected_version_required");
+                    }
+                    let baseline_id = format!("baseline-{}", &crate::local_model_runtime_manager::canonical_hash(&(
+                        run_id, challenge_id, model_profile_id, agent_profile_id,
+                    ))[..32]);
+                    let mut database = self.journal.database().lock().await;
+                    // A committed approval remains replayable even if the job
+                    // has since advanced to another revision or been promoted.
+                    if let Some((existing_id, owner_scope, existing_run, report_hash)) =
+                        evohime_local_storage::benchmark_store::get_baseline_approval_by_key(
+                            database.connection(), &request.idempotency_key,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")? {
+                        if existing_id != baseline_id || owner_scope != request.owner_scope
+                            || existing_run != run_id || report_hash != expected_report_hash {
+                            return Err("benchmark_baseline_approval_conflict");
+                        }
+                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                            database.connection(), &baseline_id,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")?
+                            .ok_or("benchmark_baseline_storage_failed")?;
+                        return Ok::<_, &'static str>(serde_json::json!({
+                            "schema_version":1,"request_id":request.request_id,"operation":"approveBaseline",
+                            "status":"approved","baseline_id":baseline_id,"revision":existing.6,
+                            "run_id":run_id,"challenge_id":challenge_id,
+                            "model_profile_id":model_profile_id,"agent_profile_id":agent_profile_id,
+                            "report_sha256":expected_report_hash,"redacted":true,"error_code":""
+                        }));
+                    }
+                    if let Some((owner_scope, existing_run, report_hash)) =
+                        evohime_local_storage::benchmark_store::get_baseline_approval(
+                            database.connection(), &baseline_id,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")? {
+                        if owner_scope != request.owner_scope || existing_run != run_id
+                            || report_hash != expected_report_hash {
+                            return Err("benchmark_baseline_approval_conflict");
+                        }
+                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                            database.connection(), &baseline_id,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")?
+                            .ok_or("benchmark_baseline_storage_failed")?;
+                        return Ok::<_, &'static str>(serde_json::json!({
+                            "schema_version":1,"request_id":request.request_id,"operation":"approveBaseline",
+                            "status":"approved","baseline_id":baseline_id,"revision":existing.6,
+                            "run_id":run_id,"challenge_id":challenge_id,
+                            "model_profile_id":model_profile_id,"agent_profile_id":agent_profile_id,
+                            "report_sha256":expected_report_hash,"redacted":true,"error_code":""
+                        }));
+                    }
+                    let stored = evohime_local_storage::local_model_adaptation_store::get_job(
+                        database.connection(), run_id,
+                    ).map_err(|_| "adaptation_job_storage_failed")?.ok_or("adaptation_job_not_found")?;
+                    let job: crate::local_model_adaptation::AdaptationJob = serde_json::from_slice(&stored.5)
+                        .map_err(|_| "adaptation_job_corrupt")?;
+                    job.validate().map_err(|_| "adaptation_job_corrupt")?;
+                    if job.revision != expected_revision || stored.0 != job.revision
+                        || stored.1 != job.state.storage_key() || stored.3 != job.content_sha256
+                        || stored.2 != job.request.content_sha256().map_err(|_| "adaptation_job_corrupt")?
+                        || stored.4 != serde_json::to_vec(&job.request).map_err(|_| "adaptation_job_corrupt")?
+                        || !matches!(job.state,
+                            crate::local_model_adaptation::AdaptationState::ReadyForPromotion
+                                | crate::local_model_adaptation::AdaptationState::Failed)
+                    {
+                        return Err("adaptation_job_revision_conflict");
+                    }
+                    let run = evohime_local_storage::benchmark_store::get_run(database.connection(), run_id)
+                        .map_err(|_| "benchmark_run_storage_failed")?.ok_or("benchmark_run_not_found")?;
+                    if run.3.as_deref().is_none() || run.0.is_empty()
+                        || !matches!(run.2.as_str(), "ready_for_promotion" | "failed") {
+                        return Err("benchmark_report_unavailable");
+                    }
+                    let report: crate::agent_benchmark_matrix::BenchmarkReport = serde_json::from_str(
+                        run.3.as_deref().unwrap_or_default(),
+                    ).map_err(|_| "benchmark_report_corrupt")?;
+                    if report.run_id != run_id || report.suite_id != run.0
+                        || report.suite_version != run.1
+                        || report.contract_id != crate::agent_benchmark_matrix::CONTRACT_ID
+                        || report.redaction_status != "redacted"
+                        || job.evidence.benchmark_sha256.as_deref()
+                            != Some(crate::local_model_runtime_manager::canonical_hash(&report).as_str())
+                        || expected_report_hash != crate::local_model_runtime_manager::canonical_hash(&report) {
+                        return Err("benchmark_report_identity_mismatch");
+                    }
+                    let (input_hash, input_json) = evohime_local_storage::local_model_adaptation_store::get_benchmark_inputs(
+                        database.connection(), run_id,
+                    ).map_err(|_| "benchmark_input_storage_failed")?.ok_or("benchmark_input_not_found")?;
+                    if input_hash != crate::local_model_runtime_manager::canonical_hash(&input_json)
+                        || input_json.len() > 192 * 1024 {
+                        return Err("benchmark_input_integrity_failed");
+                    }
+                    let (suite, _policy, _baselines): (
+                        crate::agent_benchmark_matrix::BenchmarkSuite,
+                        crate::agent_benchmark_matrix::BenchmarkPolicy,
+                        std::collections::BTreeMap<String, crate::agent_benchmark_matrix::Baseline>,
+                    ) = serde_json::from_slice(&input_json).map_err(|_| "benchmark_input_corrupt")?;
+                    if suite.canonical_hash().map_err(|_| "benchmark_suite_invalid")?
+                        != job.request.benchmark_suite_sha256 {
+                        return Err("benchmark_suite_identity_mismatch");
+                    }
+                    if report.model_profile_ids != suite.model_profiles.iter().map(|item| item.id.clone()).collect::<Vec<_>>()
+                        || report.agent_profile_ids != suite.agent_profiles.iter().map(|item| item.id.clone()).collect::<Vec<_>>() {
+                        return Err("benchmark_report_profile_mismatch");
+                    }
+                    let challenge = suite.challenges.iter().find(|item| item.id == challenge_id)
+                        .ok_or("challenge_not_in_suite")?;
+                    let model = suite.model_profiles.iter().find(|item| item.id == model_profile_id)
+                        .ok_or("model_profile_not_in_suite")?;
+                    let agent = suite.agent_profiles.iter().find(|item| item.id == agent_profile_id)
+                        .ok_or("agent_profile_not_in_suite")?;
+                    let key = format!("{challenge_id}:{model_profile_id}:{agent_profile_id}");
+                    let metrics = report.metrics.get(&key).ok_or("benchmark_metrics_missing")?;
+                    let comparison = report.comparisons.get(&key).ok_or("benchmark_comparison_missing")?;
+                    if metrics.attempts == 0 || metrics.completed == 0 || comparison.security_hard_failure {
+                        return Err("benchmark_evidence_not_approvable");
+                    }
+                    let metrics_json = serde_json::to_string(metrics).map_err(|_| "benchmark_metrics_serialization_failed")?;
+                    let transaction = database.connection_mut().transaction()
+                        .map_err(|_| "benchmark_baseline_storage_failed")?;
+                    if let Some((existing_id, owner_scope, existing_run, report_hash)) =
+                        evohime_local_storage::benchmark_store::get_baseline_approval_by_key(
+                            &transaction, &request.idempotency_key,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")? {
+                        if existing_id != baseline_id || owner_scope != request.owner_scope
+                            || existing_run != run_id || report_hash != expected_report_hash {
+                            return Err("benchmark_baseline_approval_conflict");
+                        }
+                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                            &transaction, &baseline_id,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")?
+                            .ok_or("benchmark_baseline_storage_failed")?;
+                        transaction.commit().map_err(|_| "benchmark_baseline_storage_failed")?;
+                        return Ok::<_, &'static str>(serde_json::json!({
+                            "schema_version":1,"request_id":request.request_id,"operation":"approveBaseline",
+                            "status":"approved","baseline_id":baseline_id,"revision":existing.6,
+                            "run_id":run_id,"challenge_id":challenge_id,
+                            "model_profile_id":model_profile_id,"agent_profile_id":agent_profile_id,
+                            "report_sha256":expected_report_hash,"redacted":true,"error_code":""
+                        }));
+                    }
+                    if let Some((owner_scope, existing_run, report_hash)) =
+                        evohime_local_storage::benchmark_store::get_baseline_approval(
+                            &transaction, &baseline_id,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")? {
+                        if owner_scope != request.owner_scope || existing_run != run_id
+                            || report_hash != expected_report_hash {
+                            return Err("benchmark_baseline_approval_conflict");
+                        }
+                        let existing = evohime_local_storage::benchmark_store::get_baseline(
+                            &transaction, &baseline_id,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")?
+                            .ok_or("benchmark_baseline_storage_failed")?;
+                        transaction.commit().map_err(|_| "benchmark_baseline_storage_failed")?;
+                        return Ok::<_, &'static str>(serde_json::json!({
+                            "schema_version":1,"request_id":request.request_id,"operation":"approveBaseline",
+                            "status":"approved","baseline_id":baseline_id,"revision":existing.6,
+                            "run_id":run_id,"challenge_id":challenge_id,
+                            "model_profile_id":model_profile_id,"agent_profile_id":agent_profile_id,
+                            "report_sha256":expected_report_hash,"redacted":true,"error_code":""
+                        }));
+                    }
+                    let existing_baseline = evohime_local_storage::benchmark_store::get_baseline(
+                        &transaction, &baseline_id,
+                    ).map_err(|_| "benchmark_baseline_storage_failed")?;
+                    let revision = if let Some(existing) = existing_baseline {
+                        if existing.0 != suite.version || existing.1 != challenge.id
+                            || existing.2 != model.content_hash || existing.3 != agent.content_hash
+                            || existing.4 != metrics_json || existing.5 != report.source_commit {
+                            return Err("benchmark_baseline_identity_conflict");
+                        }
+                        existing.6
+                    } else {
+                        let previous = evohime_local_storage::benchmark_store::latest_baseline_revision(
+                            &transaction, &suite.version, challenge_id,
+                            &model.content_hash, &agent.content_hash,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")?;
+                        let next = previous.checked_add(1).ok_or("benchmark_baseline_revision_overflow")?;
+                        if !evohime_local_storage::benchmark_store::put_baseline(
+                            &transaction, &baseline_id, &suite.version, &challenge.id,
+                            &model.content_hash, &agent.content_hash, &metrics_json,
+                            &report.source_commit, next, crate::task_memory::now_millis() as i64,
+                        ).map_err(|_| "benchmark_baseline_storage_failed")? {
+                            return Err("benchmark_baseline_write_conflict");
+                        }
+                        next
+                    }
+                    if !evohime_local_storage::benchmark_store::put_baseline_approval(
+                        &transaction, &baseline_id, &request.owner_scope, run_id,
+                        expected_report_hash, &request.idempotency_key,
+                        crate::task_memory::now_millis() as i64,
+                    ).map_err(|_| "benchmark_baseline_storage_failed")? {
+                        return Err("benchmark_baseline_approval_conflict");
+                    }
+                    transaction.commit().map_err(|_| "benchmark_baseline_storage_failed")?;
+                    Ok::<_, &'static str>(serde_json::json!({
+                        "schema_version":1,"request_id":request.request_id,"operation":"approveBaseline",
+                        "status":"approved","baseline_id":baseline_id,"revision":revision,
+                        "run_id":run_id,"challenge_id":challenge_id,
+                        "model_profile_id":model_profile_id,"agent_profile_id":agent_profile_id,
+                        "report_sha256":expected_report_hash,"redacted":true,"error_code":""
+                    }))
+                }.await;
+                match result {
+                    Ok(value) => value,
+                    Err(error_code) => serde_json::json!({"schema_version":1,"request_id":request.request_id,
+                        "operation":"approveBaseline","status":"rejected","error_code":error_code}),
+                }
+            }
+            "start" | "cancel" => serde_json::json!({
                 "schema_version": 1,
                 "request_id": request.request_id,
                 "operation": request.operation,

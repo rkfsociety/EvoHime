@@ -63,6 +63,7 @@ pub mod image_generation;
 pub mod interactive_model_compare_workbench;
 pub mod knowledge_source_registry_project_role;
 pub mod local_inference_scheduler;
+pub mod local_model_adaptation;
 pub mod local_model_compatibility_gateway;
 pub mod minimal_change_policy;
 pub mod mobile_device_automation_runtime;

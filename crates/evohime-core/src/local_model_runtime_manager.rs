@@ -67,6 +67,19 @@ pub fn discover_hardware() -> Result<LocalHardwareProfile, ManagerError> {
     Ok(profile)
 }
 
+/// Returns a fresh Windows estimate of currently available physical memory.
+#[cfg(windows)]
+pub fn available_memory_bytes() -> Result<u64, ManagerError> {
+    use std::mem::zeroed;
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    let mut memory: MEMORYSTATUSEX = unsafe { zeroed() };
+    memory.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    if unsafe { GlobalMemoryStatusEx(&mut memory) } == 0 || memory.ullAvailPhys == 0 {
+        return Err(ManagerError::Invalid("available memory discovery"));
+    }
+    Ok(memory.ullAvailPhys)
+}
+
 #[cfg(windows)]
 fn discover_accelerator_bytes() -> Option<u64> {
     use std::mem::zeroed;
@@ -261,6 +274,10 @@ pub enum ActivationDecision {
 pub struct LocalArtifactRecord {
     pub model_id: String,
     pub model_revision: u64,
+    /// Core-managed relative path to the verified artifact, when it is local.
+    /// Older metadata without a path remains readable but cannot be adapted.
+    #[serde(default)]
+    pub relative_path: Option<String>,
     pub expected_hash: String,
     pub expected_size_bytes: u64,
     pub state: ArtifactState,
@@ -451,11 +468,34 @@ impl LocalArtifactRecord {
                 .content_hash
                 .as_deref()
                 .is_some_and(|hash| !valid_hash(hash))
+            || self
+                .relative_path
+                .as_deref()
+                .is_some_and(|path| validate_artifact_relative_path(Path::new(path)).is_err())
         {
             return Err(ManagerError::Invalid("artifact record"));
         }
         Ok(())
     }
+}
+
+/// Resolves and verifies one immutable artifact under the managed model root.
+/// A missing or stale registry path, symlink, hash or size fails closed.
+pub fn verify_managed_artifact(
+    models_root: &Path,
+    relative_path: &Path,
+    expected_hash: &str,
+    expected_size: u64,
+) -> Result<PathBuf, ManagerError> {
+    if !valid_hash(expected_hash) || expected_size == 0 || expected_size > MAX_ARTIFACT_BYTES {
+        return Err(ManagerError::Invalid("artifact identity"));
+    }
+    let path = managed_artifact_path(models_root, relative_path)?;
+    let (observed_hash, observed_size) = file_sha256(&path)?;
+    if observed_hash != expected_hash || observed_size != expected_size {
+        return Err(ManagerError::Invalid("artifact verification failed"));
+    }
+    Ok(path)
 }
 
 /// Accept only a relative artifact name.  The caller supplies the managed
@@ -482,7 +522,7 @@ pub fn managed_artifact_path(root: &Path, relative: &Path) -> Result<PathBuf, Ma
     validate_artifact_relative_path(relative)?;
     let metadata =
         fs::symlink_metadata(root).map_err(|_| ManagerError::Invalid("artifact root"))?;
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+    if !metadata.is_dir() || unsafe_managed_path(&metadata) {
         return Err(ManagerError::Invalid("artifact root"));
     }
     let mut current = root.to_path_buf();
@@ -492,7 +532,7 @@ pub fn managed_artifact_path(root: &Path, relative: &Path) -> Result<PathBuf, Ma
         };
         current.push(part);
         if let Ok(metadata) = fs::symlink_metadata(&current) {
-            if metadata.file_type().is_symlink() {
+            if unsafe_managed_path(&metadata) {
                 return Err(ManagerError::Invalid("artifact path"));
             }
         }
@@ -503,7 +543,7 @@ pub fn managed_artifact_path(root: &Path, relative: &Path) -> Result<PathBuf, Ma
 fn file_sha256(path: &Path) -> Result<(String, u64), ManagerError> {
     let metadata =
         fs::symlink_metadata(path).map_err(|_| ManagerError::Invalid("artifact file"))?;
-    if !metadata.file_type().is_file() {
+    if !metadata.file_type().is_file() || unsafe_managed_path(&metadata) {
         return Err(ManagerError::Invalid("artifact file"));
     }
     let mut file = fs::File::open(path).map_err(|_| ManagerError::Invalid("artifact file"))?;
@@ -521,6 +561,22 @@ fn file_sha256(path: &Path) -> Result<(String, u64), ManagerError> {
         hash.update(&buffer[..read]);
     }
     Ok((hex::encode(hash.finalize()), size))
+}
+
+fn unsafe_managed_path(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// Verify a staging file and atomically promote it into the Core-owned root.
@@ -857,6 +913,53 @@ mod tests {
         }
         .validate()
         .is_err());
+    }
+
+    #[test]
+    fn adaptation_source_artifact_requires_registry_bound_path_hash_and_size() {
+        let directory = tempfile::tempdir().unwrap();
+        let models_root = directory.path().join("models");
+        std::fs::create_dir(&models_root).unwrap();
+        std::fs::write(models_root.join("source.gguf"), b"managed model bytes").unwrap();
+        let hash = hex::encode(Sha256::digest(b"managed model bytes"));
+        assert!(verify_managed_artifact(
+            &models_root,
+            Path::new("source.gguf"),
+            &hash,
+            b"managed model bytes".len() as u64,
+        )
+        .is_ok());
+        assert!(verify_managed_artifact(&models_root, Path::new("source.gguf"), &hash, 1).is_err());
+        assert!(verify_managed_artifact(
+            &models_root,
+            Path::new("../outside.gguf"),
+            &hash,
+            b"managed model bytes".len() as u64,
+        )
+        .is_err());
+
+        let artifact = LocalArtifactRecord {
+            model_id: "m".into(),
+            model_revision: 1,
+            relative_path: Some("../outside.gguf".into()),
+            expected_hash: hash.clone(),
+            expected_size_bytes: b"managed model bytes".len() as u64,
+            state: ArtifactState::Installed,
+            content_hash: None,
+        };
+        assert!(artifact.validate().is_err());
+
+        let legacy_record: LocalArtifactRecord = serde_json::from_value(serde_json::json!({
+            "model_id": "legacy-model",
+            "model_revision": 1,
+            "expected_hash": hash,
+            "expected_size_bytes": 19,
+            "state": "installed",
+            "content_hash": hash
+        }))
+        .unwrap();
+        assert_eq!(legacy_record.relative_path, None);
+        assert!(legacy_record.validate().is_ok());
     }
 
     #[test]

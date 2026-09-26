@@ -159,6 +159,8 @@ mod ledger_helpers;
 mod ledger_reconciliation_store;
 mod ledger_store;
 mod legacy_migration;
+/// Persistence for metadata-only local-model adaptation jobs and publication journals.
+pub mod local_model_adaptation_store;
 /// Persistence for local model compatibility gateway state.
 pub mod local_model_compatibility_gateway_store;
 /// Persistence for local model performance calibration.
@@ -298,7 +300,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 177;
+pub const SCHEMA_VERSION: u32 = 178;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,

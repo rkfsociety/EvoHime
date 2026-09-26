@@ -19,6 +19,8 @@
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/evohime.desktop.v1.rs"));
 }
+/// Shared hash-pinned runtime identity used by Core and Supervisor.
+pub mod local_adapter_contract;
 /// Session authentication and replay state for connected IPC clients.
 pub mod session;
 /// Bounded frame encoding, decoding, and transport behavior.

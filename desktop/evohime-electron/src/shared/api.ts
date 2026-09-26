@@ -1744,7 +1744,7 @@ export interface CommandPayloads {
   'core.policyAwareToolResultCache': { operation: 'inspect' | 'put' | 'get' | 'invalidate'; cacheKey: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.codeAnchoredIntentMarkers': { operation: 'scan' | 'propose'; filePath: string; revision: string; payload: string; idempotencyKey?: string }
   'core.modelPurposeRouting': { operation: 'get' | 'put'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
-  'core.localModelRuntimeManager': { operation: 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover' | 'calibration_inspect' | 'calibration_admit' | 'ollama_pull'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.localModelRuntimeManager': { operation: 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover' | 'calibration_inspect' | 'calibration_admit' | 'ollama_pull' | 'adapter_status' | 'install_adapter' | 'adaptation_create' | 'adaptation_start' | 'adaptation_poll' | 'adaptation_calibrate' | 'adaptation_benchmark' | 'adaptation_promote' | 'adaptation_get' | 'adaptation_list' | 'adaptation_cancel' | 'adaptation_reject'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectureSnapshot': { operation: 'current' | 'refresh' | 'rebuild' | 'inspect' | 'get' | 'evidence' | 'open_evidence' | 'upstream' | 'downstream' | 'route' | 'compare' | 'review'; snapshotId?: string; workspaceRoot: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.persistentAgentOrganizationRegistry': { operation: 'list' | 'get' | 'history' | 'create' | 'revise' | 'activate' | 'pause' | 'suspend' | 'resume' | 'retire' | 'reporting_set' | 'goal_bind' | 'goal_unbind' | 'assignment_create' | 'assignment_cancel' | 'resolve' | 'availability' | 'activity' | 'recover'; agentId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
   'core.executionEnvironmentProfile': { operation: 'list' | 'get' | 'create' | 'revise' | 'preflight' | 'activate' | 'rollback' | 'current' | 'history'; profileId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
@@ -2174,7 +2174,7 @@ export interface CommandPayloads {
     idempotencyKey: string
   }
   'benchmarkMatrix.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
-  'benchmarkMatrix.approveBaseline': { requestId: string; ownerScope: string; runId: string; expectedVersion: number; idempotencyKey: string }
+  'benchmarkMatrix.approveBaseline': { requestId: string; ownerScope: string; runId: string; challengeId: string; modelProfileId: string; agentProfileId: string; reportSha256: string; expectedVersion: number; idempotencyKey: string }
   'agentMiddleware.list': { requestId: string; ownerScope: string }
   'agentMiddleware.start': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
   'agentMiddleware.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
