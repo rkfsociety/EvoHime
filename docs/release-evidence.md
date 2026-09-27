@@ -3409,3 +3409,23 @@ plan's narrowed verification scope.
 ## Core-owned Prompt Strategy Profiles v1 (plan 179)
 
 Implemented and pushed in `cbe5a595fb68c3162c9790bced2edfe1a5a92a66`: schema v179 strategy registry, resolver/runtime snapshot and recovery, benchmark identity and promotion evidence checks, guided recipe pin/recovery, authenticated Core operations, and bounded Electron metadata projection. Exact-SHA acceptance passed: [Core tests, lint, release build and publication](https://github.com/rkfsociety/EvoHime/actions/runs/36289592599), [Rust documentation and doctests](https://github.com/rkfsociety/EvoHime/actions/runs/36289562486), [module router](https://github.com/rkfsociety/EvoHime/actions/runs/36289562470), and [compatible release manifest](https://github.com/rkfsociety/EvoHime/actions/runs/36291084440). Core `0.0.000381` was published as [module-core-v0.0.000381](https://github.com/rkfsociety/EvoHime/releases/tag/module-core-v0.0.000381). UI bundle tests, protocol/typecheck, build and publication passed in [run 36281043380](https://github.com/rkfsociety/EvoHime/actions/runs/36281043380) at `fec4ff3857d219574503ca320c855bf07af3b6b1`; no UI bundle source files changed between that SHA and the implementation SHA. UI bundle `0.0.000123` was published. Local Rust/npm tests and builds were not run; CI provided these checks.
+
+## GitHub Public Repository Integration v1 (plan 189)
+
+Checkout implementation adds schema v180 storage for up to 50 explicitly saved
+public repositories, Core-owned anonymous GitHub REST reads, and a Settings
+projection for repository metadata, open issues and pull requests. The client
+uses only fixed HTTPS GET endpoints, disables redirects, bounds each response
+to 512 KiB and the complete refresh to 25 seconds, and performs no request on
+Settings open or local save. GitHub's issues endpoint can include pull requests,
+so the adapter filters those entries and loads PRs from the separate pulls
+endpoint ([GitHub REST issue endpoint](https://docs.github.com/en/rest/issues/issues)).
+Unauthenticated public API access can be rate-limited by GitHub
+([rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=latest)).
+
+Source paths select Core and UI bundle release routing. Markers advanced to
+Core `0.0.000382` and UI bundle `0.0.000124`. Local tests, builds, typecheck and
+visual preview were not run under the implementation workflow. Static review
+and `git diff --check` are the local evidence; exact-commit module workflows,
+Rust documentation, module router and compatible release manifest remain
+pending an authorized push. No push was performed for this checkout.

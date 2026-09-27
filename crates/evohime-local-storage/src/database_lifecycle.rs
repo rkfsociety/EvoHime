@@ -11,8 +11,9 @@ use crate::{
     conversation_bridge_adapters_store, conversation_event_log_store,
     customization_inventory_store, durable_background_execution_store,
     durable_remote_task_bridge_store, event_trigger_runtime_store, event_visualizer_registry_store,
-    execution_environment_profiles_store, execution_ledger, goal, human_work_items_store,
-    incremental_change_protocol_store, integration_provider_store, invocation_presets_store,
+    execution_environment_profiles_store, execution_ledger, github_repository_store, goal,
+    human_work_items_store, incremental_change_protocol_store, integration_provider_store,
+    invocation_presets_store,
     knowledge_source_registry_project_role_store, local_model_runtime_manager_store,
     memory_extraction_store, memory_store, memory_views_and_adaptive_recall_store, migrations,
     model_edit_protocol_registry_store, model_provenance, model_purpose_routing_store,
@@ -127,6 +128,7 @@ impl LocalDatabase {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         visual_workflow_builder_store::install_schema(&connection)?;
         integration_provider_store::install_schema(&connection)?;
+        github_repository_store::install_schema(&connection)?;
         event_trigger_runtime_store::install_schema(&connection)?;
         invocation_presets_store::install_schema(&connection)?;
         benchmark_store::install_schema(&connection)?;

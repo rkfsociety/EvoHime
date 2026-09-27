@@ -1,22 +1,33 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-26.
+Обновлено: 2026-09-27.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
 [`release-evidence.md`](release-evidence.md); пошаговые незавершённые работы — в
 [`plans/README.md`](plans/README.md).
 
+## Интеграции GitHub
+
+Settings «Интеграции» поддерживает сохранение до 50 публичных GitHub
+репозиториев в Core SQLite (schema v180). Core обращается к GitHub только по
+явному запросу пользователя: показывает сводку и не более 10 открытых issues и
+10 pull requests. Используется только анонимный HTTPS GET к `api.github.com`;
+redirect отключён, каждый ответ ограничен 512 KiB, общий timeout — 25 секунд.
+Вход в аккаунт, приватные репозитории и операции записи не поддерживаются.
+Проверки реализации и доставки для этого checkout отмечены в
+[`release-evidence.md`](release-evidence.md).
+
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v177, а также
+v042–v116 и v149–v180, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
 должны проходить через фасады.
 В Core внутренние workflow/runtime-модули также закрыты на уровне crate;
 проверка ссылок в workspace используется как критерий дальнейшего сужения API.
-На текущем этапе `evohime-local-storage` экспортирует 110 публичных модулей
+На текущем этапе `evohime-local-storage` экспортирует 111 публичных модулей
 (остальные реализации закрыты на уровне crate), а `evohime-core` — 113;
 дальнейшее
 сокращение оставшихся модулей требует миграции их фактических потребителей
@@ -467,7 +478,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `180–181` и `184–188`; планы `01–179` и `183` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `180–181` и `184–188`; планы `01–179`, `183` и `189` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
@@ -845,3 +856,16 @@ shell-main.jsonl, поэтому окно больше не выглядит б�
 ## Plan 179 — Core-owned Prompt Strategy Profiles v1
 
 Checkout implementation adds schema v179 immutable strategy metadata, deterministic capability/evidence-aware resolution, exact per-dispatch snapshots and recovery, seven bounded composition types, strategy-aware benchmark identity, authenticated Core operations, guided recipe pinning, and a metadata-only Electron settings panel. Raw prompt and example bodies stay out of registry/provenance projections; generic task/context events carry omission markers. Implementation commit `cbe5a595fb68c3162c9790bced2edfe1a5a92a66` is pushed to `main`; its Core tests, lint, release build and publication, Rust documentation/doctests, module router and compatible manifest workflows all passed. UI bundle tests/build/publication passed at `fec4ff3857d219574503ca320c855bf07af3b6b1`; no UI bundle source files changed between that commit and the implementation SHA.
+
+## Plan 189 — GitHub Public Repository Integration v1 (закрыт 2026-09-27)
+
+Settings «Интеграции» теперь хранит до 50 публичных GitHub `owner/repo`
+идентификаторов в Core SQLite (schema v180). По явному выбору/обновлению Core
+получает сводку репозитория, до 10 issues и до 10 pull requests; private repos,
+credentials и write actions не поддерживаются. Внешний запрос — только
+anonymous HTTPS GET к `api.github.com`, с redirect запретом, ответом не более
+512 KiB и общим timeout 25 секунд. Открытие Settings и добавление записи сами
+не запускают сеть. Добавлены migration/store, Core API contracts и mock-based
+tests, а также renderer regression test. Локальные tests/build/typecheck и
+visual preview не запускались; exact-commit CI для checkout не доступен до
+push, поэтому implementation correctness остаётся pending CI.

@@ -217,6 +217,7 @@ pub mod human_work_items;
 pub(crate) mod incremental_change_protocol;
 pub(crate) mod integration_provider_runtime;
 pub(crate) mod integration_provider_sdk;
+pub(crate) mod github_public_repository;
 pub(crate) mod invocation_presets;
 /// Exposes the kernel's capability registry facade.
 pub mod kernel_capability_facade;

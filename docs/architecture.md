@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-25.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-27.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -1566,15 +1566,36 @@ list/get/action projection с optimistic version checks. Electron OperationsPane
 
 План 33 реализован как Core-owned metadata contract. Typed manifest/action/
 trigger/credential/binding/fixture types и bounded schema validator находятся в
-`crates/evohime-core/src/integration_provider_sdk.rs`; production external
-adapters не включены, а offline `fixture.echo` доступен через
-`integration_provider_runtime.rs`. Metadata хранится в schema v40 в
+`crates/evohime-core/src/integration_provider_sdk.rs`; из production adapters
+поддержан read-only `github.public` для public repositories, а offline
+`fixture.echo` доступен через `integration_provider_runtime.rs`. Metadata хранится в schema v40 в
 `integration_provider_store.rs`; secret bytes, raw prompts и provider output не
 записываются. Workflow binding использует version-pinned `integration_action`,
 а неизвестные provider/action дают unresolved outcome. IPC остаётся
 authenticated/additive: commands 175–176 и event 35; Electron показывает
 metadata-only Integrations в `SettingsModal`. Unknown/unavailable outcomes
 fail closed и не повторяют внешний effect вслепую.
+
+### GitHub Public Repository Integration v1
+
+Settings «Интеграции» позволяет сохранить до 50 идентификаторов публичных
+репозиториев GitHub и по явному действию пользователя загрузить краткую сводку,
+до 10 открытых issues и до 10 pull requests. Schema v180 добавляет
+`github_saved_repositories` только с owner/repo и временем добавления; список
+остаётся в SQLite Core и не хранит внешние ответы или credentials.
+
+Core принимает только bounded owner/repo сегменты и обращается только к
+`https://api.github.com` анонимными HTTPS GET к repository, issues и pulls
+endpoints. Redirects отключены, каждый response ограничен 512 KiB, один refresh
+за раз ограничен общим timeout 25 секунд; response body не читается. Issues,
+содержащие `pull_request`, исключаются из issue list. `403`/`429`, not-found,
+timeout, network и oversized/invalid response возвращаются как bounded error
+codes без raw headers/body. Открытие Settings и добавление идентификатора не
+делают внешних запросов; только явный выбор/обновление repository вызывает API.
+В IPC используется существующий authenticated Integration Provider command
+175–176 и event 35, без новых proto tags. Renderer отображает Core projection,
+а внешние ссылки открывает через main-process allowlist. Private repositories,
+OAuth/PAT и write operations не поддерживаются.
 
 ### Event Trigger Runtime v1
 

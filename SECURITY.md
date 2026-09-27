@@ -17,6 +17,7 @@ EvoHime — локальный single-user Windows-клиент. Пользов�
 - IPC использует major/minor compatibility и bounded frames;
 - локальное состояние оболочки (`shell\workspaces.json`, `shell\chats.json`) — только UI-группировка: оно не выдаёт прав, и Core заново проверяет каждую команду;
 - supervisor ограничивает single-instance запуск и восстанавливает Core после сбоя; локальный Pulse digest не маскирует пропущенный или неуспешный запуск успехом.
+- Settings GitHub integration отправляет только явно выбранные публичные `owner/repo` идентификаторы: Core делает анонимные HTTPS GET только к `api.github.com`, без credentials, redirects и записи response body. Issues/PR text показывается только как обычная UI-текстовая проекция и не передаётся модели автоматически.
 
 ## Ограничения
 

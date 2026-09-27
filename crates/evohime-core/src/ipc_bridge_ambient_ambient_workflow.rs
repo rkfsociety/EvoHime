@@ -187,7 +187,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::IntegrationProviderSdkCatalog(request))
             | Some(generated::command_envelope::Command::IntegrationProviderSdkAction(request)) => {
-                let result = self.dispatch_integration_provider_sdk(request);
+                let result = self.dispatch_integration_provider_sdk(request).await;
                 self.write_response(
                     writer,
                     "integration_provider_sdk.result",

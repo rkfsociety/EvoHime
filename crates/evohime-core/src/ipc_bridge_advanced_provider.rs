@@ -1,51 +1,252 @@
 use super::*;
 
 impl IpcBridge {
-    pub(crate) fn dispatch_integration_provider_sdk(
+    pub(crate) async fn dispatch_integration_provider_sdk(
         &self,
         request: generated::IntegrationProviderSdkCommand,
     ) -> serde_json::Value {
         let operation = request.operation.as_str();
+        if request.schema_version != 1
+            || request.request_id.is_empty()
+            || request.request_id.len() > 128
+            || request.owner_scope != "settings"
+            || request.payload.len() > 8 * 1024
+        {
+            return integration_provider_result(
+                &request,
+                "rejected",
+                "invalid_request",
+                serde_json::Value::Null,
+            );
+        }
         if operation == "list_catalog" || operation == "get_provider" {
-            let Ok(manifest) = crate::integration_provider_sdk::fixture_echo_manifest() else {
-                return serde_json::json!({
-                    "schema_version": 1,
-                    "request_id": request.request_id,
-                    "status": "error",
-                    "operation": operation,
-                    "providers": [],
-                    "error_code": "fixture_serialization_failed",
-                });
+            let manifest = match crate::github_public_repository::manifest() {
+                Ok(manifest) => manifest,
+                Err(_) => {
+                    return integration_provider_result(
+                        &request,
+                        "error",
+                        "manifest_unavailable",
+                        serde_json::Value::Null,
+                    )
+                }
             };
-            return serde_json::json!({
-                "schema_version": 1,
-                "request_id": request.request_id,
-                "status": "ok",
-                "operation": operation,
-                "providers": [manifest],
-                "error_code": "",
-            });
+            let fixture = match crate::integration_provider_sdk::fixture_echo_manifest() {
+                Ok(manifest) => manifest,
+                Err(_) => {
+                    return integration_provider_result(
+                        &request,
+                        "error",
+                        "fixture_unavailable",
+                        serde_json::Value::Null,
+                    )
+                }
+            };
+            return integration_provider_result(
+                &request,
+                "ok",
+                "",
+                serde_json::json!({"providers":[manifest, fixture]}),
+            );
         }
         if operation == "invoke_fixture" {
-            let input = serde_json::from_slice(&request.payload).unwrap_or(serde_json::Value::Null);
-            let result =
-                crate::integration_provider_runtime::invoke_fixture("fixture.echo", "echo", input);
-            return serde_json::json!({
-                "schema_version": 1,
-                "request_id": request.request_id,
-                "status": "ok",
-                "operation": operation,
-                "result": result,
-                "error_code": "",
-            });
+            let input = match serde_json::from_slice(&request.payload) {
+                Ok(value) => value,
+                Err(_) => serde_json::Value::Null,
+            };
+            let result = crate::integration_provider_runtime::invoke_fixture(
+                "fixture.echo",
+                "echo",
+                input,
+            );
+            return integration_provider_result(
+                &request,
+                "ok",
+                "",
+                serde_json::json!({"result":result}),
+            );
         }
-        serde_json::json!({
-            "schema_version": 1,
-            "request_id": request.request_id,
-            "status": "unavailable",
-            "operation": operation,
-            "error_code": "provider_adapter_unavailable",
-        })
+
+        match operation {
+            "list_repositories" => {
+                let database = self.journal.database().lock().await;
+                match evohime_local_storage::github_repository_store::list(database.connection()) {
+                    Ok(repositories) => integration_provider_result(
+                        &request,
+                        "ok",
+                        "",
+                        serde_json::json!({"repositories":repositories}),
+                    ),
+                    Err(_) => integration_provider_result(
+                        &request,
+                        "error",
+                        "storage_error",
+                        serde_json::Value::Null,
+                    ),
+                }
+            }
+            "add_repository" | "remove_repository" | "refresh_repository" => {
+                let input: serde_json::Value = match serde_json::from_slice(&request.payload) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        return integration_provider_result(
+                            &request,
+                            "rejected",
+                            "invalid_payload",
+                            serde_json::Value::Null,
+                        )
+                    }
+                };
+                let owner = input.get("owner").and_then(serde_json::Value::as_str);
+                let repo = input.get("repo").and_then(serde_json::Value::as_str);
+                let (Some(owner), Some(repo)) = (owner, repo) else {
+                    return integration_provider_result(
+                        &request,
+                        "rejected",
+                        "repository_required",
+                        serde_json::Value::Null,
+                    );
+                };
+                let repository = match crate::github_public_repository::RepositoryId::parse(
+                    owner.to_owned(),
+                    repo.to_owned(),
+                ) {
+                    Ok(repository) => repository,
+                    Err(_) => {
+                        return integration_provider_result(
+                            &request,
+                            "rejected",
+                            "invalid_repository",
+                            serde_json::Value::Null,
+                        )
+                    }
+                };
+                match operation {
+                    "add_repository" => {
+                        let database = self.journal.database().lock().await;
+                        let now_ms = match std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                        {
+                            Ok(duration) => duration.as_millis().min(i64::MAX as u128) as i64,
+                            Err(_) => 0,
+                        };
+                        match evohime_local_storage::github_repository_store::save(
+                            database.connection(),
+                            &repository.owner,
+                            &repository.repo,
+                            now_ms,
+                        ) {
+                            Ok(inserted) => integration_provider_result(
+                                &request,
+                                "ok",
+                                "",
+                                serde_json::json!({"added":inserted}),
+                            ),
+                            Err(rusqlite::Error::InvalidParameterName(name))
+                                if name == "github_repository_limit" =>
+                            {
+                                integration_provider_result(
+                                    &request,
+                                    "rejected",
+                                    "repository_limit",
+                                    serde_json::Value::Null,
+                                )
+                            }
+                            Err(_) => integration_provider_result(
+                                &request,
+                                "error",
+                                "storage_error",
+                                serde_json::Value::Null,
+                            ),
+                        }
+                    }
+                    "remove_repository" => {
+                        let database = self.journal.database().lock().await;
+                        match evohime_local_storage::github_repository_store::remove(
+                            database.connection(),
+                            &repository.owner,
+                            &repository.repo,
+                        ) {
+                            Ok(removed) => integration_provider_result(
+                                &request,
+                                "ok",
+                                "",
+                                serde_json::json!({"removed":removed}),
+                            ),
+                            Err(_) => integration_provider_result(
+                                &request,
+                                "error",
+                                "storage_error",
+                                serde_json::Value::Null,
+                            ),
+                        }
+                    }
+                    "refresh_repository" => {
+                        let is_saved = {
+                            let database = self.journal.database().lock().await;
+                            match evohime_local_storage::github_repository_store::list(
+                                database.connection(),
+                            ) {
+                                Ok(saved) => saved.iter().any(|entry| {
+                                    entry.owner.eq_ignore_ascii_case(&repository.owner)
+                                        && entry.repo.eq_ignore_ascii_case(&repository.repo)
+                                }),
+                                Err(_) => {
+                                    return integration_provider_result(
+                                        &request,
+                                        "error",
+                                        "storage_error",
+                                        serde_json::Value::Null,
+                                    )
+                                }
+                            }
+                        };
+                        if !is_saved {
+                            return integration_provider_result(
+                                &request,
+                                "rejected",
+                                "repository_not_saved",
+                                serde_json::Value::Null,
+                            );
+                        }
+                        match crate::github_public_repository::GitHubPublicRepositoryClient::new() {
+                            Err(error) => integration_provider_result(
+                                &request,
+                                "unavailable",
+                                fetch_error_code(error),
+                                serde_json::Value::Null,
+                            ),
+                            Ok(client) => match client.fetch(&repository).await {
+                                Ok(projection) => integration_provider_result(
+                                    &request,
+                                    "ok",
+                                    "",
+                                    serde_json::json!({"repository":projection}),
+                                ),
+                                Err(error) => integration_provider_result(
+                                    &request,
+                                    "unavailable",
+                                    fetch_error_code(error),
+                                    serde_json::Value::Null,
+                                ),
+                            },
+                        }
+                    }
+                    _ => integration_provider_result(
+                        &request,
+                        "unavailable",
+                        "unsupported_operation",
+                        serde_json::Value::Null,
+                    ),
+                }
+            }
+            _ => integration_provider_result(
+                &request,
+                "unavailable",
+                "unsupported_operation",
+                serde_json::Value::Null,
+            ),
+        }
     }
 
     pub(crate) fn dispatch_event_trigger_runtime(
@@ -327,5 +528,37 @@ impl IpcBridge {
                 serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":"unavailable","error_code":"unsupported_operation"})
             }
         }
+    }
+}
+
+fn integration_provider_result(
+    request: &generated::IntegrationProviderSdkCommand,
+    status: &str,
+    error_code: &str,
+    projection: serde_json::Value,
+) -> serde_json::Value {
+    let mut result = serde_json::json!({
+        "schema_version":1,
+        "request_id":request.request_id,
+        "status":status,
+        "operation":request.operation,
+        "error_code":error_code,
+    });
+    if let (Some(target), Some(source)) = (result.as_object_mut(), projection.as_object()) {
+        target.extend(source.iter().map(|(key, value)| (key.clone(), value.clone())));
+    }
+    result
+}
+
+fn fetch_error_code(error: crate::github_public_repository::FetchError) -> &'static str {
+    use crate::github_public_repository::FetchError;
+    match error {
+        FetchError::Busy => "refresh_in_progress",
+        FetchError::NotFound => "repository_not_found",
+        FetchError::RateLimited => "github_rate_limited",
+        FetchError::TimedOut => "github_timeout",
+        FetchError::Network => "github_unavailable",
+        FetchError::Oversized => "github_response_too_large",
+        FetchError::InvalidResponse => "github_invalid_response",
     }
 }

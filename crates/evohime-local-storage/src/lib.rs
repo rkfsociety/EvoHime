@@ -145,6 +145,8 @@ pub mod image_generation_store;
 /// Persistence for incremental change protocol state.
 pub mod incremental_change_protocol_store;
 pub(crate) mod integration_provider_store;
+/// Persistence for locally selected public GitHub repositories.
+pub mod github_repository_store;
 /// Persistence for interactive model comparison workbenches.
 pub mod interactive_model_compare_workbench_store;
 /// Persistence for reusable invocation presets.
@@ -302,7 +304,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 179;
+pub const SCHEMA_VERSION: u32 = 180;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,
