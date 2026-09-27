@@ -16,7 +16,7 @@ import { PromptStrategyPanel } from './PromptStrategyPanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
-export type SettingsTab = 'provider' | 'agents' | 'integrations' | 'triggers' | 'workspace' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
+export type SettingsTab = 'provider' | 'agents' | 'integrations' | 'triggers' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
 
 interface SettingsModalProps {
   readonly workspace: string | null
@@ -31,7 +31,6 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
   { id: 'agents', label: 'Внешние агенты' },
   { id: 'integrations', label: 'Интеграции' },
   { id: 'triggers', label: 'Триггеры событий' },
-  { id: 'workspace', label: 'Рабочая область' },
   { id: 'speech', label: 'Распознавание речи' },
   { id: 'skills', label: 'Agent Skills' },
   { id: 'tools', label: 'Каталог tools' },
@@ -98,7 +97,6 @@ export function SettingsModal({ workspace, connection, events, initialTab = 'pro
               </section>
             ) : null}
             {tab === 'agents' ? <><ExternalCodingAgentAdapterPanel /><MultiReviewerEnsemblePanel connection={connection} /><LanguageIntelligencePanel connection={connection} /><PromptStrategyPanel events={events} /></> : null}
-            {tab === 'workspace' ? <WorkspaceSettings workspace={workspace} /> : null}
             {tab === 'integrations' ? <IntegrationProviderPanel /> : null}
             {tab === 'triggers' ? <EventTriggerRuntimePanel /> : null}
             {tab === 'speech' ? <ListenerRuntimeSection /> : null}
@@ -111,19 +109,6 @@ export function SettingsModal({ workspace, connection, events, initialTab = 'pro
         </div>
       </section>
     </div>
-  )
-}
-
-function WorkspaceSettings({ workspace }: { readonly workspace: string | null }): React.JSX.Element {
-  return (
-    <section className="settings-info" aria-label="Рабочая область">
-      <h3>Рабочая область</h3>
-      <p>Текущая папка проекта выбирается в рабочем пространстве чатов и используется агентом для задач.</p>
-      <dl className="settings-info__details">
-        <dt>Открытая папка</dt>
-        <dd>{workspace ?? 'не выбрана'}</dd>
-      </dl>
-    </section>
   )
 }
 

@@ -8,17 +8,12 @@ import { SettingsModal } from '../src/renderer/src/SettingsModal'
 afterEach(() => cleanup())
 
 describe('settings modal', () => {
-  it('switches between settings tabs and shows the current workspace', async () => {
+  it('does not show the redundant workspace tab', async () => {
     render(<SettingsModal workspace={'C:\\work\\repo'} onClose={vi.fn()} />)
 
     expect(screen.getByRole('dialog', { name: 'Настройки' })).toBeTruthy()
     expect(screen.getByText('Доступ к моделям')).toBeTruthy()
-
-    await userEvent.click(screen.getByRole('tab', { name: 'Рабочая область' }))
-
-    expect(screen.getByRole('heading', { name: 'Рабочая область' })).toBeTruthy()
-    expect(screen.getByText('C:\\work\\repo')).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'Рабочая область' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tab', { name: 'Рабочая область' })).toBeNull()
   })
 
   it('closes from the close button and Escape', async () => {
