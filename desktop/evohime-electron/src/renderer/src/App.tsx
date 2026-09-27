@@ -37,6 +37,7 @@ import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 import { ProviderStateProvider } from './provider-state'
 import { EvaIcon } from './EvaIcon'
+import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -90,6 +91,7 @@ const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запла�
 const SETTINGS_LABEL = 'Настройки'
 
 export function App(): React.JSX.Element {
+  const [appearance, setAppearance] = useState<AppearanceSettings>(() => loadAppearance())
   const [state, setState] = useState<ShellState | null>(null)
   const [events, setEvents] = useState<readonly CoreEvent[]>([])
   const [shellDiagnostics, setShellDiagnostics] = useState<readonly ShellDiagnostic[]>([])
@@ -122,6 +124,11 @@ export function App(): React.JSX.Element {
   }, [])
 
   const api = useShellApi()
+
+  useEffect(() => {
+    applyAppearance(appearance)
+    saveAppearance(appearance)
+  }, [appearance])
 
   useEffect(() => {
     workspaceRef.current = workspace
@@ -410,6 +417,8 @@ export function App(): React.JSX.Element {
           workspace={workspace}
           connection={connection}
           events={events}
+          appearance={appearance}
+          onAppearanceChange={setAppearance}
           initialTab={settingsTab}
           onClose={() => setSettingsOpen(false)}
         />
