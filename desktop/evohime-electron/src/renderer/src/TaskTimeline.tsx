@@ -744,7 +744,7 @@ export function TaskTimeline({
         showOpenTask={false}
       />
       <RoutingStatus events={taskEvents} connection={connection} />
-      {conversationLog?.sync.state === 'gap' ? (
+      {conversationLog?.historyReady && conversationLog.sync.state === 'gap' ? (
         <p role="alert" className="shell__reason">История неполна, восстанавливаю пропущенные события…</p>
       ) : null}
       {conversationLog?.sync.state === 'conflict' ? (
