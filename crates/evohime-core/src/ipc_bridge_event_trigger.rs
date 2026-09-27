@@ -688,12 +688,14 @@ fn parse_directory_change_buffer(
             u32::from_le_bytes(buffer[offset + 8..offset + 12].try_into().map_err(|_| ())?)
                 as usize;
         let name_end = header_end.checked_add(name_bytes).ok_or(())?;
-        if name_bytes == 0 || name_bytes % 2 != 0 || name_end > buffer.len() {
+        if name_bytes == 0 || !name_bytes.is_multiple_of(2) || name_end > buffer.len() {
             return Err(());
         }
         let units: Vec<u16> = buffer[header_end..name_end]
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect();
         let path = std::path::PathBuf::from(String::from_utf16_lossy(&units));
         let change_kind = match action {
@@ -708,7 +710,7 @@ fn parse_directory_change_buffer(
         if next == 0 {
             return Ok(changes);
         }
-        if next < 12 || next % 4 != 0 {
+        if next < 12 || !next.is_multiple_of(4) {
             return Err(());
         }
         offset = offset.checked_add(next).ok_or(())?;

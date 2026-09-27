@@ -216,11 +216,7 @@ impl GitHubPublicRepositoryClient {
                 segments.push(resource);
             }
         }
-        if resource == Some("issues") {
-            url.query_pairs_mut()
-                .append_pair("state", "open")
-                .append_pair("per_page", "10");
-        } else if resource == Some("pulls") {
+        if matches!(resource, Some("issues" | "pulls")) {
             url.query_pairs_mut()
                 .append_pair("state", "open")
                 .append_pair("per_page", "10");
