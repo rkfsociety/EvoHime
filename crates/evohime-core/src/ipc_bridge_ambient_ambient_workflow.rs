@@ -197,7 +197,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::EventTriggerRuntimeList(request))
             | Some(generated::command_envelope::Command::EventTriggerRuntimeAction(request)) => {
-                let result = self.dispatch_event_trigger_runtime(request);
+                let result = self.dispatch_event_trigger_runtime(request).await;
                 self.write_response(
                     writer,
                     "event_trigger_runtime.result",

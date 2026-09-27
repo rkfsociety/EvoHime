@@ -106,7 +106,18 @@ pub mod durable_background_execution_store;
 pub mod durable_remote_task_bridge_store;
 mod event_export;
 mod event_store;
-pub(crate) mod event_trigger_runtime_store;
+mod event_trigger_runtime_store;
+/// Core-facing persistence operations for event-trigger definitions and redacted event history.
+pub use event_trigger_runtime_store::{
+    EventRecordMeta as EventTriggerEventRecordMeta, EventSummary as EventTriggerEventSummary,
+    StoredDefinition as StoredEventTriggerDefinition,
+    definition_owner_scope as event_trigger_definition_owner_scope,
+    definition_version as event_trigger_definition_version,
+    get_definition as get_event_trigger_definition, install_schema as install_event_trigger_schema,
+    list_definitions as list_event_trigger_definitions, list_events as list_event_trigger_events,
+    put_definition as put_event_trigger_definition, record_dedup as record_event_trigger_dedup,
+    record_event as record_event_trigger_event,
+};
 /// Registry for event visualizer definitions.
 pub mod event_visualizer_registry_store;
 /// Registry for execution backends.
@@ -128,6 +139,8 @@ pub mod feedback_store;
 pub mod free_access_evidence_store;
 /// Persistence for Git remote publication protocol state.
 pub mod git_remote_publication_protocol_store;
+/// Persistence for locally selected public GitHub repositories.
+pub mod github_repository_store;
 /// Persistence for durable user and runtime goals.
 pub mod goal;
 /// Persistence for grounded research records.
@@ -145,8 +158,6 @@ pub mod image_generation_store;
 /// Persistence for incremental change protocol state.
 pub mod incremental_change_protocol_store;
 pub(crate) mod integration_provider_store;
-/// Persistence for locally selected public GitHub repositories.
-pub mod github_repository_store;
 /// Persistence for interactive model comparison workbenches.
 pub mod interactive_model_compare_workbench_store;
 /// Persistence for reusable invocation presets.

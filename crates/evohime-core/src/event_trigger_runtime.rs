@@ -65,6 +65,9 @@ pub struct TriggerDefinition {
     pub owner_scope: String,
     pub source_kind: SourceKind,
     pub event_kind: String,
+    /// Workspace used to execute the pinned workflow after a matching event.
+    #[serde(default)]
+    pub workspace_path: String,
     pub workflow: WorkflowBinding,
     pub mapping: BTreeMap<String, String>,
     pub state: TriggerState,
@@ -221,8 +224,26 @@ pub fn validate_definition(def: &TriggerDefinition) -> Result<(), TriggerError> 
     if def.contract_version != CONTRACT_VERSION {
         return Err(TriggerError::UnsupportedVersion);
     }
-    if def.trigger_id.is_empty() || def.owner_scope.is_empty() || def.event_kind.is_empty() {
+    if def.trigger_id.is_empty()
+        || def.trigger_id.len() > 128
+        || !def
+            .trigger_id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"-_".contains(&byte))
+        || def.owner_scope.is_empty()
+        || def.owner_scope.len() > 256
+    {
         return Err(TriggerError::InvalidField("identity"));
+    }
+    let supported_event = match def.source_kind {
+        SourceKind::LocalWorkspaceEvent => def.event_kind == "file_changed",
+        SourceKind::SystemEvent => {
+            matches!(def.event_kind.as_str(), "task_completed" | "task_failed")
+        }
+        SourceKind::IntegrationWebhook => false,
+    };
+    if !supported_event {
+        return Err(TriggerError::InvalidField("event_kind"));
     }
     if def.workflow.workflow_id.is_empty()
         || def.workflow.workflow_version == 0
@@ -230,11 +251,22 @@ pub fn validate_definition(def: &TriggerDefinition) -> Result<(), TriggerError> 
     {
         return Err(TriggerError::InvalidField("workflow_binding"));
     }
+    if def.workspace_path.len() > 32 * 1024 {
+        return Err(TriggerError::InvalidField("workspace_path"));
+    }
+    let supported_sources: &[&str] = match def.source_kind {
+        SourceKind::LocalWorkspaceEvent => &["path", "change_kind", "workspace"],
+        SourceKind::SystemEvent => &["task_id", "outcome", "workspace"],
+        SourceKind::IntegrationWebhook => &[],
+    };
     if def.mapping.len() > MAX_MAPPING_FIELDS
-        || def
-            .mapping
-            .keys()
-            .any(|k| k.is_empty() || k.starts_with('/'))
+        || def.mapping.iter().any(|(target, source)| {
+            target.is_empty()
+                || target.starts_with('/')
+                || source.is_empty()
+                || source.len() > 128
+                || !supported_sources.contains(&source.as_str())
+        })
     {
         return Err(TriggerError::MappingRejected);
     }
@@ -294,12 +326,13 @@ mod tests {
             owner_scope: "w".into(),
             source_kind: SourceKind::LocalWorkspaceEvent,
             event_kind: "file_changed".into(),
+            workspace_path: "C:/workspace".into(),
             workflow: WorkflowBinding {
                 workflow_id: "wf".into(),
                 workflow_version: 1,
                 execution_hash: "hash".into(),
             },
-            mapping: [("value".into(), "value".into())].into_iter().collect(),
+            mapping: [("scope".into(), "workspace".into())].into_iter().collect(),
             state: TriggerState::Active,
             content_hash: "hash".into(),
             created_at_ms: 1,
@@ -314,7 +347,7 @@ mod tests {
             event_kind: "file_changed".into(),
             schema_version: 1,
             received_at_ms: 1,
-            payload: serde_json::json!({"value": 1}),
+            payload: serde_json::json!({"workspace": "test"}),
             payload_hash: "hash".into(),
             authenticity: auth.into(),
             origin: "test".into(),
@@ -333,6 +366,27 @@ mod tests {
         ));
     }
     #[test]
+    fn definition_accepts_only_bounded_supported_event_kinds() {
+        let mut def = definition();
+        def.event_kind = "arbitrary_external_event".into();
+        assert!(matches!(
+            validate_definition(&def),
+            Err(TriggerError::InvalidField("event_kind"))
+        ));
+        def = definition();
+        def.trigger_id = "../../outside".into();
+        assert!(matches!(
+            validate_definition(&def),
+            Err(TriggerError::InvalidField("identity"))
+        ));
+        def = definition();
+        def.mapping.insert("scope".into(), "raw_prompt".into());
+        assert!(matches!(
+            validate_definition(&def),
+            Err(TriggerError::MappingRejected)
+        ));
+    }
+    #[test]
     fn webhook_requires_verified_authenticity() {
         assert!(matches!(
             validate_envelope(&envelope(SourceKind::IntegrationWebhook, "core_local"), 10),
@@ -343,8 +397,8 @@ mod tests {
     fn mapping_is_allowlisted() {
         let d = definition();
         assert_eq!(
-            map_input(&d, &serde_json::json!({"value": 7})).unwrap()["value"],
-            7
+            map_input(&d, &serde_json::json!({"workspace": "src"})).unwrap()["scope"],
+            "src"
         );
         assert!(map_input(&d, &serde_json::json!({})).is_err());
     }

@@ -101,7 +101,7 @@ export function SettingsModal({ workspace, connection, events, appearance, onApp
             ) : null}
             {tab === 'agents' ? <><ExternalCodingAgentAdapterPanel /><MultiReviewerEnsemblePanel connection={connection} /><LanguageIntelligencePanel connection={connection} /><PromptStrategyPanel events={events} /></> : null}
             {tab === 'integrations' ? <IntegrationProviderPanel /> : null}
-            {tab === 'triggers' ? <EventTriggerRuntimePanel /> : null}
+            {tab === 'triggers' ? <EventTriggerRuntimePanel workspace={workspace} /> : null}
             {tab === 'speech' ? <ListenerRuntimeSection /> : null}
             {tab === 'skills' ? <SkillCatalogPanel workspace={workspace} connection={connection} events={events} /> : null}
             {tab === 'tools' ? <AdaptiveToolCatalogPanel connection={connection} events={events} /> : null}

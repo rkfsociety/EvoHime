@@ -613,6 +613,31 @@ body {
   justify-content: space-between;
 }
 
+.event-trigger-runtime { max-width: 900px; }
+.event-trigger-runtime__notice { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-active); }
+.event-trigger-runtime__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
+.event-trigger-runtime__toolbar h4 { margin: 0; }
+.event-trigger-runtime__toolbar > div, .event-trigger-runtime__form > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.event-trigger-runtime__list, .event-trigger-runtime__history ul { display: grid; gap: 10px; margin: 14px 0; padding: 0; list-style: none; }
+.event-trigger-runtime__list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.event-trigger-runtime__list li > div { display: grid; gap: 4px; min-width: 0; }
+.event-trigger-runtime__list li span { color: var(--fg-muted); font-size: 12px; overflow-wrap: anywhere; }
+.event-trigger-runtime__form { display: grid; gap: 12px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.event-trigger-runtime__form h4 { margin: 0; }
+.event-trigger-runtime__form label { display: grid; gap: 6px; color: var(--fg-muted); font-size: 13px; }
+.event-trigger-runtime__form input, .event-trigger-runtime__form select, .event-trigger-runtime__form textarea { width: 100%; }
+.event-trigger-runtime__form textarea { min-height: 96px; resize: vertical; }
+.event-trigger-runtime__form small { color: var(--fg-faint); }
+.event-trigger-runtime__history { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.event-trigger-runtime__history h4 { margin: 0; }
+.event-trigger-runtime__history li { color: var(--fg-muted); font-size: 12px; }
+
+@media (max-width: 780px) {
+  .event-trigger-runtime__toolbar { align-items: flex-start; flex-direction: column; }
+  .event-trigger-runtime__list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .event-trigger-runtime__list li > div { grid-column: 1 / -1; }
+}
+
 .integration-provider__detail {
   margin-top: 20px;
   padding-top: 16px;

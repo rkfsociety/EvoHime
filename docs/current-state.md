@@ -25,6 +25,17 @@ redirect отключён, каждый ответ ограничен 512 KiB, �
 Проверки реализации и доставки для этого checkout отмечены в
 [`release-evidence.md`](release-evidence.md).
 
+## Триггеры событий
+
+Settings → «Триггеры событий» создаёт versioned правила с привязкой к конкретной
+версии встроенного workflow. На Windows доступны события завершения/ошибки задач
+Core из durable journal и изменения файлов внутри выбранной рабочей папки через
+`ReadDirectoryChangesW`. Включённые правила проходят обычную проверку
+capability/approval в WorkflowRuntime; история содержит только bounded metadata.
+Изменения в рабочей папке пропускаются с outcome `dropped_with_audit`, пока в ней
+выполняется workflow, запущенный триггером, чтобы избежать рекурсивного запуска.
+Webhook-провайдер не подключён.
+
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
 v042–v116 и v149–v180, а также
@@ -63,9 +74,9 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000086`, `core 0.0.000376`, `installer 0.0.000065`,
+0.0.000043`, `cli 0.0.000086`, `core 0.0.000383`, `installer 0.0.000065`,
 `listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000107`,
-`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000119`,
+`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000126`,
 `updater 0.0.000130` и `verifier 0.0.000056`.
 
 Новые задания чата получают из Core conversation log последние 40 durable

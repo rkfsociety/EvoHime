@@ -1599,19 +1599,30 @@ OAuth/PAT и write operations не поддерживаются.
 
 ### Event Trigger Runtime v1
 
-План 34 реализован как bounded Core-owned ingress для `local_workspace_event` и
-`system_event`. Контракт находится в
-`crates/evohime-core/src/event_trigger_runtime.rs`: immutable workflow binding
-с pinned version/execution hash, normalized envelope, allowlisted mapping,
-Core-local authenticity, дедупликация, rate/queue bounds и typed outcomes.
-Provider webhook остаётся честным `unavailable` без production adapter.
+Settings → «Триггеры событий» управляет versioned Core-owned правилами,
+закреплёнными за точными `template_id`, версией и execution hash workflow.
+Контракт и bounded admission policy находятся в
+`crates/evohime-core/src/event_trigger_runtime.rs`: allowlisted mapping,
+Core-local authenticity, дедупликация, лимиты очереди/частоты и typed outcomes.
+
+`system_event` принимает только durable journal события `task.completed` и
+`task.failed`; watch channel служит сигналом пробуждения, а содержимое задачи
+не переносится в payload триггера. `local_workspace_event` на Windows использует
+`ReadDirectoryChangesW` по явно выбранной папке, рекурсивно, с bounded каналом
+128 уведомлений и лимитом 32 активных корней. При остановке/паузе правила watcher
+отменяет ожидающее Win32 чтение. Повторные уведомления одного пути и типа в
+750-миллисекундном debounce окне объединяются. Workflow запускается через
+обычный `WorkflowRuntime`, поэтому его capability checks и approval остаются
+обязательными. Core не запускает повторный файловый триггер для изменений в
+рабочей папке, пока там выполняется workflow, созданный триггером; такой
+пропуск получает `dropped_with_audit`.
 
 Durable metadata schema v41 находится в
 `crates/evohime-local-storage/src/event_trigger_runtime_store.rs`; она не
-содержит credentials или raw prompt/output. Authenticated IPC additive commands
-177–178 и event 36 подключены к Electron; Settings → «Триггеры событий»
-показывает только bounded projection и unavailable provider state. Runtime не
-повторяет unknown external effect вслепую и не выдаёт renderer authority.
+содержит credentials, raw task output или содержимое файлов. Authenticated IPC
+commands 177–178 и event 36 подключены к Electron; Settings показывает список,
+редактирование, включение/паузу, pinned workflow и bounded историю событий.
+Provider webhook остаётся `unavailable` без production adapter.
 
 ### Invocation Presets v1
 

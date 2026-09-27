@@ -18,6 +18,8 @@ mod ipc_bridge_terminal_review;
 #[path = "ipc_bridge_workspace_commands.rs"]
 mod ipc_bridge_workspace_commands;
 pub(crate) use ipc_bridge_projections::*;
+#[path = "ipc_bridge_event_trigger.rs"]
+mod ipc_bridge_event_trigger;
 #[path = "ipc_bridge_extension_commands.rs"]
 mod ipc_bridge_extension_commands;
 #[path = "ipc_bridge_local_model_adaptation_scheduler.rs"]

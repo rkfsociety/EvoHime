@@ -440,6 +440,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }),
     );
     let bridge = std::sync::Arc::new(bridge);
+    let event_trigger_bridge = std::sync::Arc::clone(&bridge);
+    let event_trigger_cancellation = tokio_util::sync::CancellationToken::new();
+    let event_trigger_task_cancellation = event_trigger_cancellation.clone();
+    let event_trigger_source_task = tokio::spawn(async move {
+        event_trigger_bridge
+            .run_event_trigger_event_source(event_trigger_task_cancellation)
+            .await;
+    });
     let scheduler_bridge = std::sync::Arc::clone(&bridge);
     let automation_scheduler_task = tokio::spawn(async move {
         loop {
@@ -502,6 +510,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Err("listener supervision unexpectedly stopped".into())
         },
     };
+    event_trigger_cancellation.cancel();
+    let _ = event_trigger_source_task.await;
     free_access_probe_cancellation.cancel();
     result.map_err(|error| format!("core failed: {error}"))?;
     heartbeat_task.abort();
