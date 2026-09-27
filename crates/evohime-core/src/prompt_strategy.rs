@@ -568,6 +568,7 @@ pub fn resolve_strategy(input: ResolverInput<'_>) -> Result<ResolvedStrategy, Pr
         capability_snapshot_hash: input.capability_snapshot_hash.to_owned(),
         context_profile_hash: input.context_profile_hash.to_owned(),
         loadout_hash: input.loadout_hash.map(str::to_owned),
+        loadout_ref: input.loadout_ref.map(str::to_owned),
         output_contract_id: profile.output_contract_id.clone(),
         output_contract_revision: profile.output_contract_revision,
         output_contract_hash: profile.output_contract_hash.clone(),
@@ -781,6 +782,8 @@ pub struct StrategySelectionSnapshot {
     pub context_profile_hash: String,
     /// Optional exact Context Loadout revision commitment.
     pub loadout_hash: Option<String>,
+    /// Optional exact Context Loadout reference used by compatibility selection.
+    pub loadout_ref: Option<String>,
     /// Existing Core output contract selected for the model call.
     pub output_contract_id: String,
     /// Exact structured-output contract revision selected for the model call.
@@ -1984,6 +1987,13 @@ pub fn validate_snapshot(snapshot: &StrategySelectionSnapshot) -> Result<(), Pro
         }
     }
     if snapshot
+        .loadout_ref
+        .as_deref()
+        .is_some_and(|reference| !bounded_text(reference, MAX_ID_BYTES))
+    {
+        return Err(PromptStrategyError::Invalid("loadout_ref"));
+    }
+    if snapshot
         .prepared_messages_hash
         .as_deref()
         .is_some_and(|hash| !digest(hash))
@@ -2338,7 +2348,7 @@ mod tests {
             revision: 1,
             examples: vec![ExampleReference {
                 artifact_ref: format!("artifact://owner-task/{content_hash}"),
-                content_hash,
+                content_hash: content_hash.clone(),
                 provenance_hash: valid_hash(),
                 privacy: ExamplePrivacy::Public,
                 trust: ExampleTrust::Unreviewed,

@@ -38,7 +38,7 @@ fn aggregate_sample_usage(
             .iter()
             .copied()
             .filter_map(project)
-            .fold(None, |total, value| {
+                .fold(None::<u32>, |total, value| {
                 Some(total.unwrap_or_default().saturating_add(value))
             })
     };
@@ -77,7 +77,7 @@ fn aggregate_strategy_usages(
             .iter()
             .copied()
             .filter_map(project)
-            .fold(None, |total, value| {
+                .fold(None::<u32>, |total, value| {
                 Some(total.unwrap_or_default().saturating_add(value))
             })
     };
@@ -341,7 +341,8 @@ impl ToolAgent {
             ));
         }
         let per_sample_budget = input.total_token_budget / u32::from(sample_count);
-        let mut samples = Vec::with_capacity(usize::from(sample_count));
+        let mut samples: Vec<ProvenancedModelResult> =
+            Vec::with_capacity(usize::from(sample_count));
         let mut accumulated_tokens = 0_u64;
         let sample_config = ProviderResilienceConfig {
             retry_max: 0,
@@ -1153,7 +1154,7 @@ impl ToolAgent {
                     preselected_profile: preselected_strategy.cloned(),
                     context_profile_hash: format!(
                         "sha256:{}",
-                        context_budget::hash::sha256_hex(&ledger.profile_snapshot)
+                        evohime_context_budget::hash::sha256_hex(&ledger.profile_snapshot)
                     ),
                     loadout_hash: selected_loadout_hash.clone(),
                     loadout_ref: selected_loadout_ref.clone(),

@@ -72,7 +72,8 @@ async fn prompt_strategy_compatibility_and_evidence_ipc_are_metadata_only() {
         })
         .expect("baseline resolution");
     {
-        let database = bridge.journal().database().lock().await;
+        let journal = bridge.journal();
+        let database = journal.database().lock().await;
         crate::prompt_strategy::register_profile(
             database.connection(),
             &profile,
@@ -204,7 +205,8 @@ async fn prompt_strategy_compare_requires_and_projects_exact_holdout_evidence() 
     profile.content_hash = crate::prompt_strategy::profile_hash(&profile).expect("profile hash");
     let report_json = serde_json::to_string(&report).expect("report json");
     {
-        let database = bridge.journal().database().lock().await;
+        let journal = bridge.journal();
+        let database = journal.database().lock().await;
         let connection = database.connection();
         crate::prompt_strategy::register_profile(
             connection,
@@ -655,7 +657,8 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
         })
         .expect("resolved baseline strategy");
     {
-        let database = bridge.journal().database().lock().await;
+        let journal = bridge.journal();
+        let database = journal.database().lock().await;
         crate::prompt_strategy::register_profile(
             database.connection(),
             &strategy_profile,
@@ -686,7 +689,8 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
     assert_eq!(forked["source_run_id"], run_id);
     assert_eq!(forked["error_code"], "");
     {
-        let database = bridge.journal().database().lock().await;
+        let journal = bridge.journal();
+        let database = journal.database().lock().await;
         let provenance =
             evohime_local_storage::visual_workflow_builder_store::read_draft_provenance(
                 database.connection(),
