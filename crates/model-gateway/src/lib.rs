@@ -117,9 +117,8 @@ pub struct ProviderCapabilitySnapshot {
 impl ProviderCapabilitySnapshot {
     /// Returns a stable digest over the exact adapter, route and model claims.
     pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_vec(self).map(|bytes| {
-            format!("sha256:{}", hex::encode(sha2::Sha256::digest(bytes)))
-        })
+        serde_json::to_vec(self)
+            .map(|bytes| format!("sha256:{}", hex::encode(sha2::Sha256::digest(bytes))))
     }
 }
 
@@ -349,9 +348,7 @@ fn policy_route_order(
     route_pin: Option<&str>,
 ) -> Result<Vec<String>, &'static str> {
     if let Some(route_pin) = route_pin {
-        if selected != Some(route_pin)
-            && !fallback_chain.iter().any(|route| route == route_pin)
-        {
+        if selected != Some(route_pin) && !fallback_chain.iter().any(|route| route == route_pin) {
             return Err("pinned_route_not_eligible");
         }
         return Ok(vec![route_pin.to_owned()]);
@@ -1167,10 +1164,8 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<PolicyChatResult, ProviderError> {
-        self.chat_with_tools_with_policy_and_route_hook(
-            mode, request, model, messages, tools, None,
-        )
-        .await
+        self.chat_with_tools_with_policy_and_route_hook(mode, request, model, messages, tools, None)
+            .await
     }
 
     /// Executes policy routing with a Core-owned per-route preparation hook.
@@ -1313,18 +1308,31 @@ impl ModelGateway {
                         }
                     };
                     let dispatched = match prepared.structured_output.as_ref() {
-                        Some(contract) => self.structured_chat_once(
-                            &route, model, &prepared.messages, contract,
-                        ).await,
-                        None => self.dispatch_chat_with_options(
-                            &route, model, &prepared.messages, &prepared.tools, options,
-                        ).await,
+                        Some(contract) => {
+                            self.structured_chat_once(&route, model, &prepared.messages, contract)
+                                .await
+                        }
+                        None => {
+                            self.dispatch_chat_with_options(
+                                &route,
+                                model,
+                                &prepared.messages,
+                                &prepared.tools,
+                                options,
+                            )
+                            .await
+                        }
                     };
                     match dispatched {
                         Ok(result) => {
                             if let Some(preflight) = &self.route_preflight {
                                 preflight
-                                    .observe_success_async(&route, model, &result, current_time_ms())
+                                    .observe_success_async(
+                                        &route,
+                                        model,
+                                        &result,
+                                        current_time_ms(),
+                                    )
                                     .await;
                             }
                             trace.set_result(RunResult::Success);
@@ -1409,16 +1417,20 @@ impl ModelGateway {
             }
         };
         let result = match prepared.structured_output.as_ref() {
-            Some(contract) => self.structured_chat_once(route, model, &prepared.messages, contract).await?,
-            None => self
-                .dispatch_chat_with_options(
+            Some(contract) => {
+                self.structured_chat_once(route, model, &prepared.messages, contract)
+                    .await?
+            }
+            None => {
+                self.dispatch_chat_with_options(
                     route,
                     model,
                     &prepared.messages,
                     &prepared.tools,
                     options,
                 )
-                .await?,
+                .await?
+            }
         };
         if let Some(preflight) = &self.route_preflight {
             preflight
@@ -1952,9 +1964,8 @@ mod tests {
             capabilities: &'a ProviderCapabilitySnapshot,
             messages: &'a [ChatMessage],
             tools: &'a [ToolSpec],
-        ) -> Pin<
-            Box<dyn Future<Output = Result<PreparedRouteAttempt, ProviderError>> + Send + 'a>,
-        > {
+        ) -> Pin<Box<dyn Future<Output = Result<PreparedRouteAttempt, ProviderError>> + Send + 'a>>
+        {
             Box::pin(async move {
                 self.0
                     .lock()

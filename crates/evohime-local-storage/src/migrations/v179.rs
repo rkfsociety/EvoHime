@@ -145,8 +145,9 @@ mod tests {
     #[test]
     fn migration_protects_output_contract_revisions_from_mutation() {
         let mut connection = Connection::open_in_memory().expect("database");
-        connection.execute_batch(
-            "CREATE TABLE benchmark_baselines (
+        connection
+            .execute_batch(
+                "CREATE TABLE benchmark_baselines (
                 baseline_id TEXT PRIMARY KEY NOT NULL, suite_version TEXT NOT NULL,
                 challenge_id TEXT NOT NULL, model_profile_hash TEXT NOT NULL,
                 agent_profile_hash TEXT NOT NULL, metrics_json TEXT NOT NULL,
@@ -158,7 +159,8 @@ mod tests {
                 content_hash TEXT PRIMARY KEY, bytes INTEGER NOT NULL, content BLOB NOT NULL,
                 created_at INTEGER NOT NULL, last_access_at INTEGER NOT NULL
              );",
-        ).expect("legacy schema");
+            )
+            .expect("legacy schema");
         let transaction = connection.transaction().expect("migration transaction");
         apply(&transaction, 178).expect("migration");
         transaction.commit().expect("commit");

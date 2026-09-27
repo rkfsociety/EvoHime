@@ -15,7 +15,11 @@ fn provider_error_code(error: &ProviderError) -> &'static str {
 fn aggregate_sample_usage(
     samples: &[ProvenancedModelResult],
 ) -> Option<evohime_model_gateway::LlmUsage> {
-    if samples.is_empty() || samples.iter().any(|sample| sample.result.result.usage.is_none()) {
+    if samples.is_empty()
+        || samples
+            .iter()
+            .any(|sample| sample.result.result.usage.is_none())
+    {
         return None;
     }
     let usages = samples
@@ -30,17 +34,19 @@ fn aggregate_sample_usage(
             .fold(0_u32, u32::saturating_add)
     };
     let sum_optional = |project: fn(evohime_model_gateway::LlmUsage) -> Option<u32>| {
-        usages.iter().copied().filter_map(project).fold(
-            None,
-            |total, value| Some(total.unwrap_or_default().saturating_add(value)),
-        )
+        usages
+            .iter()
+            .copied()
+            .filter_map(project)
+            .fold(None, |total, value| {
+                Some(total.unwrap_or_default().saturating_add(value))
+            })
     };
     Some(evohime_model_gateway::LlmUsage {
         prompt_tokens: sum(|usage| usage.prompt_tokens),
         completion_tokens: sum(|usage| usage.completion_tokens),
         total_tokens: sum(|usage| usage.total_tokens).max(
-            sum(|usage| usage.prompt_tokens)
-                .saturating_add(sum(|usage| usage.completion_tokens)),
+            sum(|usage| usage.prompt_tokens).saturating_add(sum(|usage| usage.completion_tokens)),
         ),
         cache_creation_input_tokens: sum_optional(|usage| usage.cache_creation_input_tokens),
         cache_read_input_tokens: sum_optional(|usage| usage.cache_read_input_tokens),
@@ -67,17 +73,19 @@ fn aggregate_strategy_usages(
             .fold(0_u32, u32::saturating_add)
     };
     let sum_optional = |project: fn(evohime_model_gateway::LlmUsage) -> Option<u32>| {
-        usages.iter().copied().filter_map(project).fold(
-            None,
-            |total, value| Some(total.unwrap_or_default().saturating_add(value)),
-        )
+        usages
+            .iter()
+            .copied()
+            .filter_map(project)
+            .fold(None, |total, value| {
+                Some(total.unwrap_or_default().saturating_add(value))
+            })
     };
     evohime_model_gateway::LlmUsage {
         prompt_tokens: sum(|usage| usage.prompt_tokens),
         completion_tokens: sum(|usage| usage.completion_tokens),
         total_tokens: sum(|usage| usage.total_tokens).max(
-            sum(|usage| usage.prompt_tokens)
-                .saturating_add(sum(|usage| usage.completion_tokens)),
+            sum(|usage| usage.prompt_tokens).saturating_add(sum(|usage| usage.completion_tokens)),
         ),
         cache_creation_input_tokens: sum_optional(|usage| usage.cache_creation_input_tokens),
         cache_read_input_tokens: sum_optional(|usage| usage.cache_read_input_tokens),
@@ -87,7 +95,12 @@ fn aggregate_strategy_usages(
 
 fn estimate_strategy_message_tokens(messages: &[ChatMessage]) -> u32 {
     messages.iter().fold(0_u32, |total, message| {
-        total.saturating_add(u32::try_from(message.content.len()).unwrap_or(u32::MAX).div_ceil(3))
+        total
+            .saturating_add(
+                u32::try_from(message.content.len())
+                    .unwrap_or(u32::MAX)
+                    .div_ceil(3),
+            )
             .saturating_add(8)
     })
 }
@@ -149,7 +162,11 @@ impl RouteAttemptHook for CorePromptStrategyRouteHook {
         messages: &'a [ChatMessage],
         tools: &'a [ToolSpec],
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<PreparedRouteAttempt, ProviderError>> + Send + 'a>,
+        Box<
+            dyn std::future::Future<Output = Result<PreparedRouteAttempt, ProviderError>>
+                + Send
+                + 'a,
+        >,
     > {
         Box::pin(async move {
             let attempt = self
@@ -168,8 +185,9 @@ impl RouteAttemptHook for CorePromptStrategyRouteHook {
             .map_err(|error| ProviderError::Config(error.to_string()))?;
             let registry = crate::prompt_strategy::load_registry(connection)
                 .map_err(|error| ProviderError::Config(error.to_string()))?;
-            let recovered_pin = crate::prompt_strategy::recover_run_selection(connection, &self.task_id)
-                .map_err(|error| ProviderError::Config(error.to_string()))?;
+            let recovered_pin =
+                crate::prompt_strategy::recover_run_selection(connection, &self.task_id)
+                    .map_err(|error| ProviderError::Config(error.to_string()))?;
             let profile_refs: Vec<_> = registry
                 .profiles
                 .iter()
@@ -181,18 +199,22 @@ impl RouteAttemptHook for CorePromptStrategyRouteHook {
                 task_memory::now_millis() as i64,
             )
             .map_err(|error| ProviderError::Config(error.to_string()))?;
-            let available_tool_ids: Vec<_> =
-                tools.iter().map(|tool| tool.function.name.clone()).collect();
+            let available_tool_ids: Vec<_> = tools
+                .iter()
+                .map(|tool| tool.function.name.clone())
+                .collect();
             let capability_hash = capabilities
                 .canonical_hash()
                 .map_err(|error| ProviderError::Config(error.to_string()))?;
-            let resolved = crate::prompt_strategy::resolve_strategy(
-                crate::prompt_strategy::ResolverInput {
+            let resolved =
+                crate::prompt_strategy::resolve_strategy(crate::prompt_strategy::ResolverInput {
                     task_kind: &self.task_kind,
                     role: "agent",
                     baseline: &baseline,
                     profiles: &profile_refs,
-                    pinned_profile: recovered_pin.as_ref().map(|(_, profile)| profile)
+                    pinned_profile: recovered_pin
+                        .as_ref()
+                        .map(|(_, profile)| profile)
                         .or(self.preselected_profile.as_ref()),
                     bindings: &registry.bindings,
                     route_id: &capabilities.route_id,
@@ -209,23 +231,36 @@ impl RouteAttemptHook for CorePromptStrategyRouteHook {
                     loadout_ref: self.loadout_ref.as_deref(),
                     run_id: &self.task_id,
                     call_id: &call_id,
-                },
-            )
-            .map_err(|error| ProviderError::Config(error.to_string()))?;
+                })
+                .map_err(|error| ProviderError::Config(error.to_string()))?;
             crate::prompt_strategy::validate_profile_assets(connection, &resolved.profile)
                 .map_err(|error| ProviderError::Config(error.to_string()))?;
             let structured_output = match &resolved.profile.composition {
                 crate::prompt_strategy::StrategyComposition::StructuredOutput { contract_id } => {
-                    let revision = resolved.profile.output_contract_revision
-                        .ok_or_else(|| ProviderError::Config("structured output revision missing".into()))?;
-                    let hash = resolved.profile.output_contract_hash.as_deref()
-                        .ok_or_else(|| ProviderError::Config("structured output hash missing".into()))?;
-                    Some(crate::prompt_strategy::load_output_contract(
-                        connection, contract_id, revision, hash,
-                    ).map_err(|_| ProviderError::Config("structured output contract unavailable".into()))?
+                    let revision = resolved.profile.output_contract_revision.ok_or_else(|| {
+                        ProviderError::Config("structured output revision missing".into())
+                    })?;
+                    let hash = resolved
+                        .profile
+                        .output_contract_hash
+                        .as_deref()
+                        .ok_or_else(|| {
+                            ProviderError::Config("structured output hash missing".into())
+                        })?;
+                    Some(
+                        crate::prompt_strategy::load_output_contract(
+                            connection,
+                            contract_id,
+                            revision,
+                            hash,
+                        )
+                        .map_err(|_| {
+                            ProviderError::Config("structured output contract unavailable".into())
+                        })?
                         .ok_or_else(|| {
                             ProviderError::Config("structured output contract unavailable".into())
-                        })?)
+                        })?,
+                    )
                 }
                 _ => None,
             };
@@ -285,12 +320,13 @@ impl ToolAgent {
         let composition = input
             .preselected_strategy
             .map(|profile| profile.composition.clone());
-        if let Some(crate::prompt_strategy::StrategyComposition::Decomposition {
-            max_subtasks,
-        }) = composition.as_ref()
+        if let Some(crate::prompt_strategy::StrategyComposition::Decomposition { max_subtasks }) =
+            composition.as_ref()
         {
             let max_subtasks = *max_subtasks;
-            return self.call_model_with_decomposition(input, max_subtasks).await;
+            return self
+                .call_model_with_decomposition(input, max_subtasks)
+                .await;
         }
         let (sample_count, reducer_id) = match composition.as_ref() {
             Some(crate::prompt_strategy::StrategyComposition::MultiSample {
@@ -319,10 +355,10 @@ impl ToolAgent {
                 input.estimated_input_tokens,
             )
             .ok_or_else(|| {
-                    AgentRunError::Internal(
-                        "PROMPT_STRATEGY_MULTI_SAMPLE_TOKEN_BUDGET_EXHAUSTED".into(),
-                    )
-                })?;
+                AgentRunError::Internal(
+                    "PROMPT_STRATEGY_MULTI_SAMPLE_TOKEN_BUDGET_EXHAUSTED".into(),
+                )
+            })?;
             let sample = self
                 .call_model_with_resilience(CallModelInput {
                     task_id: input.task_id,
@@ -339,18 +375,14 @@ impl ToolAgent {
                     sample_index: Some(sample_index),
                     total_token_budget: input.total_token_budget,
                     max_output_tokens: Some(max_output_tokens),
-                    route_pin: samples.first().map(|sample| sample.result.selected_route.as_str()),
+                    route_pin: samples
+                        .first()
+                        .map(|sample| sample.result.selected_route.as_str()),
                 })
                 .await?;
-            let usage = sample
-                .result
-                .result
-                .usage
-                .ok_or_else(|| {
-                    AgentRunError::Internal(
-                        "PROMPT_STRATEGY_MULTI_SAMPLE_USAGE_UNAVAILABLE".into(),
-                    )
-                })?;
+            let usage = sample.result.result.usage.ok_or_else(|| {
+                AgentRunError::Internal("PROMPT_STRATEGY_MULTI_SAMPLE_USAGE_UNAVAILABLE".into())
+            })?;
             accumulated_tokens = accumulated_tokens.saturating_add(observed_sample_tokens(usage));
             if accumulated_tokens > u64::from(input.total_token_budget) {
                 return Err(AgentRunError::Internal(
@@ -362,9 +394,12 @@ impl ToolAgent {
                     "PROMPT_STRATEGY_MULTI_SAMPLE_TOOL_CALL_REFUSED".into(),
                 ));
             }
-            if samples.first().is_some_and(|first: &ProvenancedModelResult| {
-                first.result.selected_route != sample.result.selected_route
-            }) {
+            if samples
+                .first()
+                .is_some_and(|first: &ProvenancedModelResult| {
+                    first.result.selected_route != sample.result.selected_route
+                })
+            {
                 return Err(AgentRunError::Internal(
                     "PROMPT_STRATEGY_MULTI_SAMPLE_ROUTE_MISMATCH".into(),
                 ));
@@ -375,11 +410,10 @@ impl ToolAgent {
             .iter()
             .map(|sample| sample.result.result.content.clone())
             .collect::<Vec<_>>();
-        let winner = crate::prompt_strategy::reduce_multi_sample_outputs(
-            &reducer_id,
-            &outputs,
-        )
-        .map_err(|error| AgentRunError::Internal(format!("PROMPT_STRATEGY_REDUCER_FAILED: {error}")))?;
+        let winner = crate::prompt_strategy::reduce_multi_sample_outputs(&reducer_id, &outputs)
+            .map_err(|error| {
+                AgentRunError::Internal(format!("PROMPT_STRATEGY_REDUCER_FAILED: {error}"))
+            })?;
         let usage = aggregate_sample_usage(&samples);
         let mut selected = samples
             .into_iter()
@@ -426,10 +460,8 @@ impl ToolAgent {
             planning_estimate,
         )
         .ok_or_else(|| {
-                AgentRunError::Internal(
-                    "PROMPT_STRATEGY_DECOMPOSITION_TOKEN_BUDGET_EXHAUSTED".into(),
-                )
-            })?;
+            AgentRunError::Internal("PROMPT_STRATEGY_DECOMPOSITION_TOKEN_BUDGET_EXHAUSTED".into())
+        })?;
         let planning = self
             .call_model_with_resilience(CallModelInput {
                 task_id: input.task_id,
@@ -456,15 +488,9 @@ impl ToolAgent {
                 "PROMPT_STRATEGY_DECOMPOSITION_PROPOSAL_INVALID".into(),
             ));
         }
-        let usage = planning
-            .result
-            .result
-            .usage
-            .ok_or_else(|| {
-                AgentRunError::Internal(
-                    "PROMPT_STRATEGY_DECOMPOSITION_USAGE_UNAVAILABLE".into(),
-                )
-            })?;
+        let usage = planning.result.result.usage.ok_or_else(|| {
+            AgentRunError::Internal("PROMPT_STRATEGY_DECOMPOSITION_USAGE_UNAVAILABLE".into())
+        })?;
         let mut accumulated_tokens = observed_sample_tokens(usage);
         if accumulated_tokens > u64::from(input.total_token_budget) {
             return Err(AgentRunError::Internal(
@@ -474,9 +500,7 @@ impl ToolAgent {
         let mut usages = vec![usage];
         let proposal: DecompositionPlan = serde_json::from_str(&planning.result.result.content)
             .map_err(|_| {
-                AgentRunError::Internal(
-                    "PROMPT_STRATEGY_DECOMPOSITION_PROPOSAL_INVALID".into(),
-                )
+                AgentRunError::Internal("PROMPT_STRATEGY_DECOMPOSITION_PROPOSAL_INVALID".into())
             })?;
         if !validate_decomposition_plan(&proposal, max_subtasks) {
             return Err(AgentRunError::Internal(
@@ -502,10 +526,10 @@ impl ToolAgent {
                 estimated_input_tokens,
             )
             .ok_or_else(|| {
-                    AgentRunError::Internal(
-                        "PROMPT_STRATEGY_DECOMPOSITION_TOKEN_BUDGET_EXHAUSTED".into(),
-                    )
-                })?;
+                AgentRunError::Internal(
+                    "PROMPT_STRATEGY_DECOMPOSITION_TOKEN_BUDGET_EXHAUSTED".into(),
+                )
+            })?;
             let child = self
                 .call_model_with_resilience(CallModelInput {
                     task_id: input.task_id,
@@ -538,19 +562,21 @@ impl ToolAgent {
                 ));
             }
             let child_usage = child.result.result.usage.ok_or_else(|| {
-                AgentRunError::Internal(
-                    "PROMPT_STRATEGY_DECOMPOSITION_USAGE_UNAVAILABLE".into(),
-                )
+                AgentRunError::Internal("PROMPT_STRATEGY_DECOMPOSITION_USAGE_UNAVAILABLE".into())
             })?;
-            accumulated_tokens = accumulated_tokens
-                .saturating_add(observed_sample_tokens(child_usage));
+            accumulated_tokens =
+                accumulated_tokens.saturating_add(observed_sample_tokens(child_usage));
             if accumulated_tokens > u64::from(input.total_token_budget) {
                 return Err(AgentRunError::Internal(
                     "PROMPT_STRATEGY_DECOMPOSITION_TOKEN_BUDGET_EXHAUSTED".into(),
                 ));
             }
             usages.push(child_usage);
-            completed.push(format!("Подзадача {}:\n{}", index + 1, child.result.result.content));
+            completed.push(format!(
+                "Подзадача {}:\n{}",
+                index + 1,
+                child.result.result.content
+            ));
             last = child;
         }
         last.result.result.content = completed.join("\n\n");
@@ -959,12 +985,7 @@ impl ToolAgent {
             .as_ref()
             .map(|loadout| {
                 serde_json::to_vec(loadout)
-                    .map(|bytes| {
-                        format!(
-                            "sha256:{}",
-                            hex::encode(sha2::Sha256::digest(bytes))
-                        )
-                    })
+                    .map(|bytes| format!("sha256:{}", hex::encode(sha2::Sha256::digest(bytes))))
                     .map_err(|error| AgentRunError::Internal(error.to_string()))
             })
             .transpose()?;
@@ -1145,21 +1166,22 @@ impl ToolAgent {
             let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> =
                 match timeout(
                     timeout_duration,
-                    self.gateway.chat_with_tools_with_policy_and_route_hook_options(
-                        RoutingMode::Balanced,
-                        &routing_request,
-                        self.selected_model.get().as_deref(),
-                        &provider_messages,
-                        effective_specs,
-                        strategy_hook
-                            .as_ref()
-                            .map(|hook| hook as &dyn RouteAttemptHook),
-                        evohime_model_gateway::ChatRequestOptions {
-                            max_output_tokens,
-                            max_retries: max_output_tokens.map(|_| 0),
-                        },
-                        route_pin,
-                    ),
+                    self.gateway
+                        .chat_with_tools_with_policy_and_route_hook_options(
+                            RoutingMode::Balanced,
+                            &routing_request,
+                            self.selected_model.get().as_deref(),
+                            &provider_messages,
+                            effective_specs,
+                            strategy_hook
+                                .as_ref()
+                                .map(|hook| hook as &dyn RouteAttemptHook),
+                            evohime_model_gateway::ChatRequestOptions {
+                                max_output_tokens,
+                                max_retries: max_output_tokens.map(|_| 0),
+                            },
+                            route_pin,
+                        ),
                 )
                 .await
                 {

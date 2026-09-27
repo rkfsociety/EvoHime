@@ -292,9 +292,7 @@ impl<'a> ArtifactStore<'a> {
             Ok(text) => text,
             Err(_) => {
                 self.set_ref_status(locator, ArtifactRefStatus::Invalid)?;
-                return Err(StorageError::Context(
-                    "artifact text is not UTF-8".into(),
-                ));
+                return Err(StorageError::Context("artifact text is not UTF-8".into()));
             }
         };
         let actual = content_hash(kind, &ContentForm::Text(&text));

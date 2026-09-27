@@ -154,14 +154,18 @@ impl ToolAgent {
         let task_class = classify_routing_task(&user_prompt, &specs);
         let preselected_strategy = if let Some(journal) = &self.journal {
             let database = journal.database().lock().await;
-            Some(crate::prompt_strategy::preselect_context_strategy(
-                database.connection(),
-                task_class,
-                "agent",
-                &task_id,
-                task_memory::now_millis() as i64,
+            Some(
+                crate::prompt_strategy::preselect_context_strategy(
+                    database.connection(),
+                    task_class,
+                    "agent",
+                    &task_id,
+                    task_memory::now_millis() as i64,
+                )
+                .map_err(|error| {
+                    AgentRunError::Internal(format!("PROMPT_STRATEGY_PREFLIGHT_FAILED: {error}"))
+                })?,
             )
-            .map_err(|error| AgentRunError::Internal(format!("PROMPT_STRATEGY_PREFLIGHT_FAILED: {error}")))?)
         } else {
             None
         };
@@ -183,21 +187,22 @@ impl ToolAgent {
             // must be absent from the context ledger and every child request.
             specs.clear();
         }
-        let retrieval_limit = preselected_strategy.as_ref().and_then(|profile| {
-            match &profile.composition {
-                crate::prompt_strategy::StrategyComposition::RetrievalGrounded { max_evidence_items } =>
-                    Some(*max_evidence_items as usize),
-                _ => None,
-            }
-        });
+        let retrieval_limit =
+            preselected_strategy
+                .as_ref()
+                .and_then(|profile| match &profile.composition {
+                    crate::prompt_strategy::StrategyComposition::RetrievalGrounded {
+                        max_evidence_items,
+                    } => Some(*max_evidence_items as usize),
+                    _ => None,
+                });
         let (few_shot_message, strategy_example_refs) = if let Some(profile) =
             preselected_strategy.as_ref().filter(|profile| {
                 matches!(
                     &profile.composition,
                     crate::prompt_strategy::StrategyComposition::FewShot { .. }
                 )
-            })
-        {
+            }) {
             let journal = self.journal.as_ref().ok_or_else(|| {
                 AgentRunError::Internal("PROMPT_STRATEGY_STORAGE_UNAVAILABLE".into())
             })?;
@@ -759,12 +764,12 @@ impl ToolAgent {
                 let parsed_legacy_calls = parse_legacy_function_calls(&result.content, iteration);
                 if !parsed_legacy_calls.is_empty() {
                     write_model_trace(
-                            "legacy.tool_calls.parsed",
-                            serde_json::json!({
-                                "task_id": task_id,
-                                "tool_call_count": parsed_legacy_calls.len(),
-                                "tool_names": parsed_legacy_calls.iter().map(|call| &call.name).collect::<Vec<_>>()
-                            }),
+                        "legacy.tool_calls.parsed",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_call_count": parsed_legacy_calls.len(),
+                            "tool_names": parsed_legacy_calls.iter().map(|call| &call.name).collect::<Vec<_>>()
+                        }),
                     );
                     // Legacy models often print an entire future plan in one
                     // response. Respect the one-tool-per-step contract and

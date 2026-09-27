@@ -28,7 +28,8 @@ async fn prompt_strategy_output_contract_ipc_returns_metadata_only() {
                 idempotency_key: "strategy-output-contract-key".into(),
             },
         ),
-    ).await;
+    )
+    .await;
     assert_eq!(event_type, "benchmark_matrix.result");
     assert_eq!(response["status"], "ok");
     assert_eq!(response["result"]["contract_id"], "strategy.result/v1");
@@ -41,34 +42,35 @@ async fn prompt_strategy_output_contract_ipc_returns_metadata_only() {
 #[tokio::test]
 async fn prompt_strategy_compatibility_and_evidence_ipc_are_metadata_only() {
     let (bridge, _directory) = workflow_bridge("prompt-strategy-inspection");
-    let profile = crate::prompt_strategy::declared_baseline("general", "agent")
-        .expect("baseline profile");
+    let profile =
+        crate::prompt_strategy::declared_baseline("general", "agent").expect("baseline profile");
     let capability_hash = format!("sha256:{}", "a".repeat(64));
     let context_hash = format!("sha256:{}", "b".repeat(64));
     let fresh_evidence_hashes = std::collections::HashSet::new();
-    let resolved = crate::prompt_strategy::resolve_strategy(crate::prompt_strategy::ResolverInput {
-        task_kind: "general",
-        role: "agent",
-        baseline: &profile,
-        profiles: &[],
-        pinned_profile: None,
-        bindings: &[],
-        route_id: "route",
-        model_id: "model",
-        capability_trust: crate::prompt_strategy::CapabilityTrust::Unknown,
-        capability_epoch: None,
-        supports_tool_calls: false,
-        supports_structured_output: false,
-        fresh_evidence_hashes: &fresh_evidence_hashes,
-        available_tool_ids: &[],
-        capability_snapshot_hash: &capability_hash,
-        context_profile_hash: &context_hash,
-        loadout_hash: None,
-        loadout_ref: None,
-        run_id: "strategy-run",
-        call_id: "strategy-call",
-    })
-    .expect("baseline resolution");
+    let resolved =
+        crate::prompt_strategy::resolve_strategy(crate::prompt_strategy::ResolverInput {
+            task_kind: "general",
+            role: "agent",
+            baseline: &profile,
+            profiles: &[],
+            pinned_profile: None,
+            bindings: &[],
+            route_id: "route",
+            model_id: "model",
+            capability_trust: crate::prompt_strategy::CapabilityTrust::Unknown,
+            capability_epoch: None,
+            supports_tool_calls: false,
+            supports_structured_output: false,
+            fresh_evidence_hashes: &fresh_evidence_hashes,
+            available_tool_ids: &[],
+            capability_snapshot_hash: &capability_hash,
+            context_profile_hash: &context_hash,
+            loadout_hash: None,
+            loadout_ref: None,
+            run_id: "strategy-run",
+            call_id: "strategy-call",
+        })
+        .expect("baseline resolution");
     {
         let database = bridge.journal().database().lock().await;
         crate::prompt_strategy::register_profile(
@@ -132,20 +134,23 @@ async fn prompt_strategy_compatibility_and_evidence_ipc_are_metadata_only() {
     .await;
     assert_eq!(event_type, "benchmark_matrix.result");
     assert_eq!(evidence["status"], "ok");
-    assert_eq!(evidence["result"]["evidence"].as_array().map(Vec::len), Some(0));
+    assert_eq!(
+        evidence["result"]["evidence"].as_array().map(Vec::len),
+        Some(0)
+    );
 }
 
 #[tokio::test]
 async fn prompt_strategy_compare_requires_and_projects_exact_holdout_evidence() {
     let (bridge, _directory) = workflow_bridge("prompt-strategy-compare");
-    let mut profile = crate::prompt_strategy::declared_baseline("general", "agent")
-        .expect("baseline profile");
+    let mut profile =
+        crate::prompt_strategy::declared_baseline("general", "agent").expect("baseline profile");
     profile.composition = crate::prompt_strategy::StrategyComposition::ToolUse {
         required_tool_ids: vec!["search".into()],
     };
     profile.content_hash = crate::prompt_strategy::profile_hash(&profile).expect("profile hash");
-    let strategy_hash = crate::prompt_strategy::strategy_candidate_hash(&profile)
-        .expect("candidate hash");
+    let strategy_hash =
+        crate::prompt_strategy::strategy_candidate_hash(&profile).expect("candidate hash");
     let model_hash = format!("sha256:{}", "d".repeat(64));
     let agent_hash = format!("sha256:{}", "e".repeat(64));
     let suite_hash = format!("sha256:{}", "a".repeat(64));
@@ -248,8 +253,14 @@ async fn prompt_strategy_compare_requires_and_projects_exact_holdout_evidence() 
     .await;
     assert_eq!(event_type, "benchmark_matrix.result");
     assert_eq!(result["status"], "ok");
-    assert_eq!(result["result"]["rows"].as_array().map(|rows| rows.len()), Some(1));
-    assert_eq!(result["result"]["rows"][0]["comparison"]["verdict"], "regressed");
+    assert_eq!(
+        result["result"]["rows"].as_array().map(|rows| rows.len()),
+        Some(1)
+    );
+    assert_eq!(
+        result["result"]["rows"][0]["comparison"]["verdict"],
+        "regressed"
+    );
     assert_eq!(result["result"]["rows"][0]["metrics"]["attempts"], 0);
 }
 
@@ -614,13 +625,13 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
         .insert_guided_workflow_run(&run, &nodes, &link)
         .await
         .expect("completed recipe run");
-    let strategy_profile = crate::prompt_strategy::declared_baseline("general", "agent")
-        .expect("baseline strategy");
+    let strategy_profile =
+        crate::prompt_strategy::declared_baseline("general", "agent").expect("baseline strategy");
     let capability_hash = format!("sha256:{}", "a".repeat(64));
     let context_hash = format!("sha256:{}", "b".repeat(64));
     let available_tool_ids = Vec::new();
-    let resolved_strategy = crate::prompt_strategy::resolve_strategy(
-        crate::prompt_strategy::ResolverInput {
+    let resolved_strategy =
+        crate::prompt_strategy::resolve_strategy(crate::prompt_strategy::ResolverInput {
             task_kind: "general",
             role: "agent",
             baseline: &strategy_profile,
@@ -641,9 +652,8 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
             loadout_ref: None,
             run_id,
             call_id: "recipe-call",
-        },
-    )
-    .expect("resolved baseline strategy");
+        })
+        .expect("resolved baseline strategy");
     {
         let database = bridge.journal().database().lock().await;
         crate::prompt_strategy::register_profile(
@@ -677,15 +687,16 @@ async fn recipe_fork_uses_the_pinned_template_placeholders_and_clears_child_gran
     assert_eq!(forked["error_code"], "");
     {
         let database = bridge.journal().database().lock().await;
-        let provenance = evohime_local_storage::visual_workflow_builder_store::read_draft_provenance(
-            database.connection(),
-            forked["draft_id"].as_str().expect("draft id"),
-            &workspace_path,
-        )
-        .expect("read fork provenance")
-        .expect("fork provenance");
-        let provenance: serde_json::Value = serde_json::from_slice(&provenance)
-            .expect("provenance metadata");
+        let provenance =
+            evohime_local_storage::visual_workflow_builder_store::read_draft_provenance(
+                database.connection(),
+                forked["draft_id"].as_str().expect("draft id"),
+                &workspace_path,
+            )
+            .expect("read fork provenance")
+            .expect("fork provenance");
+        let provenance: serde_json::Value =
+            serde_json::from_slice(&provenance).expect("provenance metadata");
         assert_eq!(
             provenance["prompt_strategy_pin"]["profile"]["profile_id"],
             strategy_profile.profile_id

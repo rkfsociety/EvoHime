@@ -121,7 +121,10 @@ pub fn put_immutable(
     let (id_column, revision_column, json_column) = table.columns();
     let sql = format!(
         "INSERT OR IGNORE INTO {}({},{},content_hash,{},created_at_ms) VALUES(?1,?2,?3,?4,?5)",
-        table.name(), id_column, revision_column, json_column
+        table.name(),
+        id_column,
+        revision_column,
+        json_column
     );
     Ok(connection.execute(&sql, params![id, revision, hash, json, now_ms])? == 1)
 }
@@ -295,7 +298,10 @@ pub fn put_selection(
 }
 
 /// Loads a frozen selection snapshot by its stable snapshot identity.
-pub fn get_selection(connection: &Connection, snapshot_id: &str) -> rusqlite::Result<Option<Vec<u8>>> {
+pub fn get_selection(
+    connection: &Connection,
+    snapshot_id: &str,
+) -> rusqlite::Result<Option<Vec<u8>>> {
     connection
         .query_row(
             "SELECT snapshot_json FROM prompt_strategy_selections WHERE snapshot_id=?1",
@@ -353,12 +359,20 @@ mod tests {
         transaction.commit().expect("commit");
 
         let transaction = connection.transaction().expect("transaction");
-        assert!(transition_lifecycle(&transaction, "p", 1, "draft", 1, "validated", 2).expect("transition"));
-        assert!(!transition_lifecycle(&transaction, "p", 1, "draft", 1, "promoted", 3).expect("stale transition"));
+        assert!(
+            transition_lifecycle(&transaction, "p", 1, "draft", 1, "validated", 2)
+                .expect("transition")
+        );
+        assert!(
+            !transition_lifecycle(&transaction, "p", 1, "draft", 1, "promoted", 3)
+                .expect("stale transition")
+        );
         transaction.commit().expect("commit");
 
         let transaction = connection.unchecked_transaction().expect("transaction");
-        assert!(!put_profile(&transaction, "p", 1, "other", b"other", 4).expect("duplicate revision"));
+        assert!(
+            !put_profile(&transaction, "p", 1, "other", b"other", 4).expect("duplicate revision")
+        );
         transaction.commit().expect("commit");
         assert!(connection.execute(
             "UPDATE prompt_strategy_profiles SET content_hash='changed' WHERE profile_id='p' AND profile_revision=1",

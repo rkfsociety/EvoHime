@@ -212,14 +212,22 @@ impl ModelGateway {
         messages: &[ChatMessage],
         contract: &ResponseContract,
     ) -> Result<ChatResult, ProviderError> {
-        contract.validate_schema()
+        contract
+            .validate_schema()
             .map_err(|_| ProviderError::Config("invalid structured output contract".into()))?;
-        let native_supported = self.route_supports_structured_output(route)
-            .map_err(|_| ProviderError::Config("structured output capability unavailable".into()))?;
+        let native_supported = self.route_supports_structured_output(route).map_err(|_| {
+            ProviderError::Config("structured output capability unavailable".into())
+        })?;
         let strategy = match contract.strategy {
             ResponseStrategy::SyntheticTool => ResponseStrategy::SyntheticTool,
-            ResponseStrategy::ProviderNative if native_supported => ResponseStrategy::ProviderNative,
-            ResponseStrategy::ProviderNative => return Err(ProviderError::Config("structured output unsupported".into())),
+            ResponseStrategy::ProviderNative if native_supported => {
+                ResponseStrategy::ProviderNative
+            }
+            ResponseStrategy::ProviderNative => {
+                return Err(ProviderError::Config(
+                    "structured output unsupported".into(),
+                ))
+            }
             ResponseStrategy::Auto if native_supported => ResponseStrategy::ProviderNative,
             ResponseStrategy::Auto => ResponseStrategy::SyntheticTool,
         };
@@ -229,24 +237,26 @@ impl ModelGateway {
             contract.schema.clone(),
         );
         tool.function.strict = Some(strategy == ResponseStrategy::ProviderNative);
-        let result = self.chat_with_tools_for_route(
-            route,
-            model,
-            messages,
-            std::slice::from_ref(&tool),
-        ).await?;
-        let calls = result.tool_calls.iter()
+        let result = self
+            .chat_with_tools_for_route(route, model, messages, std::slice::from_ref(&tool))
+            .await?;
+        let calls = result
+            .tool_calls
+            .iter()
             .filter(|call| call.name == tool.function.name)
             .collect::<Vec<_>>();
         if calls.len() > 1 {
             return Err(ProviderError::Api("structured output repeated".into()));
         }
-        let raw = calls.first().map(|call| call.arguments.as_str())
+        let raw = calls
+            .first()
+            .map(|call| call.arguments.as_str())
             .or_else(|| (!result.content.trim().is_empty()).then_some(result.content.as_str()))
             .ok_or_else(|| ProviderError::Api("structured output missing".into()))?;
         let value: Value = serde_json::from_str(raw)
             .map_err(|_| ProviderError::Api("structured output invalid".into()))?;
-        contract.validate_value(&value)
+        contract
+            .validate_value(&value)
             .map_err(|_| ProviderError::Api("structured output invalid".into()))?;
         let content = serde_json::to_string(&value)
             .map_err(|_| ProviderError::Api("structured output invalid".into()))?;
@@ -428,10 +438,13 @@ mod tests {
             1,
             json!({"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}),
             ResponseStrategy::Auto,
-        ).expect("contract");
+        )
+        .expect("contract");
         let route = gateway.default_route_id().to_owned();
-        let result = gateway.structured_chat_once(&route, None, &[], &contract)
-            .await.expect("validated result");
+        let result = gateway
+            .structured_chat_once(&route, None, &[], &contract)
+            .await
+            .expect("validated result");
         assert_eq!(result.content, r#"{"ok":true}"#);
         assert!(result.tool_calls.is_empty());
         assert_eq!(result.usage.expect("usage").total_tokens, 13);

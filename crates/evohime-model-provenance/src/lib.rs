@@ -344,14 +344,22 @@ impl ModelRequestEnvelopeV1 {
         if self.system_prompt.len() > MAX_SYSTEM_PROMPT_BYTES {
             return Err(ProvenanceError::TooLarge);
         }
-        if self.omitted_system_prompt_hash.as_ref().is_some_and(|hash| {
-            self.system_prompt != OMITTED_SYSTEM_PROMPT_MARKER || !valid_sha256(hash)
-        }) {
+        if self
+            .omitted_system_prompt_hash
+            .as_ref()
+            .is_some_and(|hash| {
+                self.system_prompt != OMITTED_SYSTEM_PROMPT_MARKER || !valid_sha256(hash)
+            })
+        {
             return Err(ProvenanceError::Invalid(
                 "omitted system prompt commitment is invalid".into(),
             ));
         }
-        if self.messages.iter().any(|m| m.content.len() > MAX_MESSAGE_BYTES) {
+        if self
+            .messages
+            .iter()
+            .any(|m| m.content.len() > MAX_MESSAGE_BYTES)
+        {
             return Err(ProvenanceError::TooLarge);
         }
         if self.messages.iter().any(|message| {
@@ -820,10 +828,16 @@ mod tests {
 
         let mut request = envelope();
         request.messages = vec![message];
-        let bytes = request.canonical_bytes().expect("redacted envelope validates");
+        let bytes = request
+            .canonical_bytes()
+            .expect("redacted envelope validates");
         assert!(!String::from_utf8_lossy(&bytes).contains(raw));
-        assert!(String::from_utf8_lossy(&bytes)
-            .contains(request.messages[0].omitted_content_hash.as_deref().expect("digest")));
+        assert!(String::from_utf8_lossy(&bytes).contains(
+            request.messages[0]
+                .omitted_content_hash
+                .as_deref()
+                .expect("digest")
+        ));
     }
 
     #[test]

@@ -76,8 +76,7 @@ pub mod evaluation {
     pub use crate::benchmark_store::{
         get_baseline, get_baseline_approval, get_baseline_approval_by_key, get_run,
         get_run_policy_json, get_run_with_update, latest_baseline_revision, put_baseline,
-        put_baseline_approval,
-        save_report, save_run, StoredBenchmarkBaseline, StoredBenchmarkRun,
+        put_baseline_approval, save_report, save_run, StoredBenchmarkBaseline, StoredBenchmarkRun,
     };
 }
 

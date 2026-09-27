@@ -182,7 +182,13 @@ impl ModelProvider for OpenAIResponsesProvider {
         let tools = tools.to_vec();
         Box::pin(async move {
             let response = provider
-                .request(&model, &messages, Some(&tools), false, ChatRequestOptions::default())
+                .request(
+                    &model,
+                    &messages,
+                    Some(&tools),
+                    false,
+                    ChatRequestOptions::default(),
+                )
                 .await?;
             let payload: Value = response
                 .json()

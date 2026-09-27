@@ -196,19 +196,48 @@ fn bounded_text_read_checks_access_size_and_content_hash() {
     let store = ArtifactStore::new(database.connection());
     let text = "approved example text";
     let result = store
-        .offload(KIND, "source-task", "source-task", text, Privacy::Workspace, 1_000)
+        .offload(
+            KIND,
+            "source-task",
+            "source-task",
+            text,
+            Privacy::Workspace,
+            1_000,
+        )
         .expect("text offload succeeds");
 
     assert_eq!(
-        store.read_bounded(&result.reference.locator, "source-task", &[], KIND, 2_000, 64)
+        store
+            .read_bounded(
+                &result.reference.locator,
+                "source-task",
+                &[],
+                KIND,
+                2_000,
+                64
+            )
             .expect("bounded text read"),
         text
     );
     assert!(store
-        .read_bounded(&result.reference.locator, "other-task", &[], KIND, 2_000, 64)
+        .read_bounded(
+            &result.reference.locator,
+            "other-task",
+            &[],
+            KIND,
+            2_000,
+            64
+        )
         .is_err());
     assert!(store
-        .read_bounded(&result.reference.locator, "source-task", &[], KIND, 2_000, 8)
+        .read_bounded(
+            &result.reference.locator,
+            "source-task",
+            &[],
+            KIND,
+            2_000,
+            8
+        )
         .is_err());
 }
 

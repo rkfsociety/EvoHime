@@ -175,14 +175,24 @@ pub fn run_matrix<E: BenchmarkExecutor>(
                 let baseline = baselines.get(&key);
                 if baseline.is_some_and(|baseline| {
                     baseline.suite_version != suite.version
-                        || baseline.suite_hash != suite.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
-                        || baseline.policy_hash != policy.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
+                        || baseline.suite_hash
+                            != suite
+                                .canonical_hash()
+                                .map(|hash| format!("sha256:{hash}"))
+                                .unwrap_or_default()
+                        || baseline.policy_hash
+                            != policy
+                                .canonical_hash()
+                                .map(|hash| format!("sha256:{hash}"))
+                                .unwrap_or_default()
                         || baseline.challenge_id != challenge.id
                         || baseline.model_profile_hash != model.content_hash
                         || baseline.agent_profile_hash != agent.content_hash
                         || baseline.revision == 0
                 }) {
-                    return Err(BenchmarkValidationError::InvalidField("incompatible_baseline".into()));
+                    return Err(BenchmarkValidationError::InvalidField(
+                        "incompatible_baseline".into(),
+                    ));
                 }
                 let comparison = if result.completed == 0 && baseline.is_none() {
                     BenchmarkComparison {
@@ -400,8 +410,16 @@ pub async fn run_local_model_matrix(
                 let baseline = baselines.get(&key);
                 if baseline.is_some_and(|baseline| {
                     baseline.suite_version != suite.version
-                        || baseline.suite_hash != suite.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
-                        || baseline.policy_hash != policy.canonical_hash().map(|hash| format!("sha256:{hash}")).unwrap_or_default()
+                        || baseline.suite_hash
+                            != suite
+                                .canonical_hash()
+                                .map(|hash| format!("sha256:{hash}"))
+                                .unwrap_or_default()
+                        || baseline.policy_hash
+                            != policy
+                                .canonical_hash()
+                                .map(|hash| format!("sha256:{hash}"))
+                                .unwrap_or_default()
                         || baseline.challenge_id != challenge.id
                         || baseline.model_profile_hash != model.content_hash
                         || baseline.agent_profile_hash != agent.content_hash
@@ -1238,8 +1256,10 @@ mod tests {
             Some(&Baseline {
                 id: "b".into(),
                 suite_version: "1".into(),
-                suite_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
-                policy_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+                suite_hash:
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+                policy_hash:
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
                 challenge_id: "c".into(),
                 model_profile_hash: "m".into(),
                 agent_profile_hash: "a".into(),
@@ -1336,7 +1356,10 @@ mod tests {
         assert_eq!(report.comparisons["c:m:a"].verdict, ComparisonVerdict::New);
         assert_eq!(report.suite_hash.len(), 71);
         assert_eq!(report.policy_hash.len(), 71);
-        assert_eq!(report.model_profile_hashes, vec![format!("sha256:{}", "a".repeat(64))]);
+        assert_eq!(
+            report.model_profile_hashes,
+            vec![format!("sha256:{}", "a".repeat(64))]
+        );
         assert!(!report.holdout_evaluation);
         assert!(report.canonical_hash().is_ok());
     }
@@ -1356,11 +1379,15 @@ mod tests {
             id: "baseline".into(),
             suite_version: benchmark.version.clone(),
             suite_hash: format!("sha256:{}", benchmark.canonical_hash().unwrap()),
-            policy_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
+            policy_hash: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                .into(),
             challenge_id: "c".into(),
             model_profile_hash: "a".repeat(64),
             agent_profile_hash: "b".repeat(64),
-            metrics: Metrics { attempts: 1, ..Metrics::default() },
+            metrics: Metrics {
+                attempts: 1,
+                ..Metrics::default()
+            },
             source_commit: "commit".into(),
             revision: 1,
         };

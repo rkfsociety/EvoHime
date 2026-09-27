@@ -8,7 +8,17 @@ use crate::StorageError;
 pub type StoredBenchmarkRun = (String, String, String, Option<String>);
 /// Persisted immutable baseline fields in suite, challenge, model, agent,
 /// metrics, source, revision, suite digest and policy digest order.
-pub type StoredBenchmarkBaseline = (String, String, String, String, String, String, u64, String, String);
+pub type StoredBenchmarkBaseline = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    u64,
+    String,
+    String,
+);
 
 pub fn install_schema(connection: &Connection) -> Result<(), StorageError> {
     connection.execute_batch(

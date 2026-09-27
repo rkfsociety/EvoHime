@@ -4,8 +4,8 @@
 //! stores prompt text, examples, credentials, capability grants, or hidden
 //! model reasoning.
 
-use serde::{Deserialize, Serialize};
 use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
@@ -39,7 +39,10 @@ pub enum StrategyComposition {
     /// Use the declared baseline prompt composition.
     Direct,
     /// Add a validated immutable set of example artifact references.
-    FewShot { example_set_id: String, revision: u64 },
+    FewShot {
+        example_set_id: String,
+        revision: u64,
+    },
     /// Request bounded, sequential tool-free subcalls executed by Core.
     Decomposition { max_subtasks: u8 },
     /// Ground the request in validated retrieval evidence.
@@ -49,7 +52,10 @@ pub enum StrategyComposition {
     /// Require an existing structured-output contract.
     StructuredOutput { contract_id: String },
     /// Request a bounded number of independent samples for an existing reducer.
-    MultiSample { sample_count: u8, reducer_id: String },
+    MultiSample {
+        sample_count: u8,
+        reducer_id: String,
+    },
 }
 
 /// Lifecycle state changed only through an explicit compare-and-swap transition.
@@ -378,8 +384,8 @@ pub fn load_registry(
     let profiles = stored_profiles
         .into_iter()
         .map(|(body, stored_hash, lifecycle, _state_revision)| {
-            let profile: PromptStrategyProfile = serde_json::from_slice(&body)
-                .map_err(|_| PromptStrategyError::Serialization)?;
+            let profile: PromptStrategyProfile =
+                serde_json::from_slice(&body).map_err(|_| PromptStrategyError::Serialization)?;
             validate_profile(&profile)?;
             if profile.content_hash != stored_hash {
                 return Err(PromptStrategyError::Invalid("stored_profile_hash"));
@@ -391,8 +397,8 @@ pub fn load_registry(
     let bindings = stored_bindings
         .into_iter()
         .map(|(body, stored_hash)| {
-            let binding: StrategyBinding = serde_json::from_slice(&body)
-                .map_err(|_| PromptStrategyError::Serialization)?;
+            let binding: StrategyBinding =
+                serde_json::from_slice(&body).map_err(|_| PromptStrategyError::Serialization)?;
             validate_binding(&binding)?;
             if binding.content_hash != stored_hash {
                 return Err(PromptStrategyError::Invalid("stored_binding_hash"));
@@ -403,8 +409,8 @@ pub fn load_registry(
     let example_sets = stored_examples
         .into_iter()
         .map(|(body, stored_hash)| {
-            let set: ExampleSetDescriptor = serde_json::from_slice(&body)
-                .map_err(|_| PromptStrategyError::Serialization)?;
+            let set: ExampleSetDescriptor =
+                serde_json::from_slice(&body).map_err(|_| PromptStrategyError::Serialization)?;
             validate_example_set(&set)?;
             if set.content_hash != stored_hash {
                 return Err(PromptStrategyError::Invalid("stored_example_set_hash"));
@@ -443,7 +449,9 @@ pub fn resolve_strategy(input: ResolverInput<'_>) -> Result<ResolvedStrategy, Pr
         || !bounded_text(input.run_id, MAX_ID_BYTES)
         || !bounded_text(input.call_id, MAX_ID_BYTES)
     {
-        return Err(PromptStrategyError::Invalid("resolver_baseline_or_snapshot"));
+        return Err(PromptStrategyError::Invalid(
+            "resolver_baseline_or_snapshot",
+        ));
     }
     let mut matched: Vec<(&StrategyBinding, &PromptStrategyProfile)> = input
         .bindings
@@ -465,7 +473,9 @@ pub fn resolve_strategy(input: ResolverInput<'_>) -> Result<ResolvedStrategy, Pr
                     && output_contract_compatible(profile, input.baseline)
                     && profile.evidence.iter().any(|evidence| evidence.holdout)
                     && profile.evidence.iter().all(|evidence| {
-                        input.fresh_evidence_hashes.contains(&evidence_freshness_key(profile, evidence))
+                        input
+                            .fresh_evidence_hashes
+                            .contains(&evidence_freshness_key(profile, evidence))
                     })
                     && validate_profile(profile).is_ok()
                     && composition_compatible(
@@ -497,7 +507,10 @@ pub fn resolve_strategy(input: ResolverInput<'_>) -> Result<ResolvedStrategy, Pr
                 profile.profile_id == pinned.profile_id
                     && profile.revision == pinned.revision
                     && profile.content_hash == pinned.content_hash
-                    && matches!(*state, LifecycleState::Promoted | LifecycleState::Superseded)
+                    && matches!(
+                        *state,
+                        LifecycleState::Promoted | LifecycleState::Superseded
+                    )
             });
             if !exact_promoted
                 || pinned.task_kind != input.task_kind
@@ -506,7 +519,9 @@ pub fn resolve_strategy(input: ResolverInput<'_>) -> Result<ResolvedStrategy, Pr
                 || !output_contract_compatible(pinned, input.baseline)
                 || !pinned.evidence.iter().any(|evidence| evidence.holdout)
                 || !pinned.evidence.iter().all(|evidence| {
-                    input.fresh_evidence_hashes.contains(&evidence_freshness_key(pinned, evidence))
+                    input
+                        .fresh_evidence_hashes
+                        .contains(&evidence_freshness_key(pinned, evidence))
                 })
                 || !composition_compatible(
                     &pinned.composition,
@@ -523,19 +538,21 @@ pub fn resolve_strategy(input: ResolverInput<'_>) -> Result<ResolvedStrategy, Pr
     } else {
         None
     };
-    let (profile, reason) = pinned.unwrap_or_else(|| matched
-        .first()
-        .map(|(_, profile)| {
-            (
-                *profile,
-                if matched.len() == 1 {
-                    SelectionReason::ExactBinding
-                } else {
-                    SelectionReason::PriorityBinding
-                },
-            )
-        })
-        .unwrap_or((input.baseline, SelectionReason::BaselineFallback)));
+    let (profile, reason) = pinned.unwrap_or_else(|| {
+        matched
+            .first()
+            .map(|(_, profile)| {
+                (
+                    *profile,
+                    if matched.len() == 1 {
+                        SelectionReason::ExactBinding
+                    } else {
+                        SelectionReason::PriorityBinding
+                    },
+                )
+            })
+            .unwrap_or((input.baseline, SelectionReason::BaselineFallback))
+    });
     let mut snapshot = StrategySelectionSnapshot {
         schema_version: SCHEMA_VERSION,
         snapshot_id: uuid::Uuid::now_v7().to_string(),
@@ -648,7 +665,7 @@ pub(crate) fn reduce_multi_sample_outputs(
     }
     let Some((_, (count, first_index))) = counts.into_iter().max_by(|left, right| {
         left.1
-            .0
+             .0
             .cmp(&right.1 .0)
             .then_with(|| right.1 .1.cmp(&left.1 .1))
     }) else {
@@ -871,8 +888,7 @@ pub fn validate_strategy_evidence_identity(
         .agent_profile_ids
         .iter()
         .position(|id| id == &evidence.agent_profile_id);
-    let exact_agent_hash = agent_index
-        .and_then(|index| report.agent_profile_hashes.get(index));
+    let exact_agent_hash = agent_index.and_then(|index| report.agent_profile_hashes.get(index));
     if report.redaction_status != "redacted"
         || report.run_id != evidence.evidence_id
         || report_hash != evidence.evidence_hash
@@ -886,7 +902,9 @@ pub fn validate_strategy_evidence_identity(
             .model_profile_hashes
             .iter()
             .any(|hash| hash == &evidence.model_profile_hash)
-        || !report.agent_profile_ids.contains(&evidence.agent_profile_id)
+        || !report
+            .agent_profile_ids
+            .contains(&evidence.agent_profile_id)
         || exact_agent_hash != Some(&evidence.agent_profile_hash)
         || !report.holdout_evaluation
         || !evidence.holdout
@@ -998,7 +1016,9 @@ pub fn register_profile(
             return Err(PromptStrategyError::RevisionConflict);
         }
     }
-    transaction.commit().map_err(|_| PromptStrategyError::Storage)?;
+    transaction
+        .commit()
+        .map_err(|_| PromptStrategyError::Storage)?;
     Ok(inserted)
 }
 
@@ -1014,7 +1034,8 @@ pub fn load_profile(
         profile_id,
         revision,
     )
-    .map_err(|_| PromptStrategyError::Storage)? else {
+    .map_err(|_| PromptStrategyError::Storage)?
+    else {
         return Ok(None);
     };
     if body.len() > MAX_CONTRACT_BYTES {
@@ -1103,7 +1124,17 @@ pub fn validate_example_set_assets(
             )
             .optional()
             .map_err(|_| PromptStrategyError::Storage)?;
-        let Some((content_hash, task_id, owner_task_id, bytes, privacy, status, content_kind, content_present)) = metadata else {
+        let Some((
+            content_hash,
+            task_id,
+            owner_task_id,
+            bytes,
+            privacy,
+            status,
+            content_kind,
+            content_present,
+        )) = metadata
+        else {
             return Err(PromptStrategyError::Invalid("example_artifact_missing"));
         };
         let locator_identity = example
@@ -1118,7 +1149,9 @@ pub fn validate_example_set_assets(
                 locator_owner != owner_task_id || locator_hash != content_hash
             })
             || bytes <= 0
-            || content_kind.as_deref().is_none_or(|kind| !bounded_text(kind, MAX_ID_BYTES))
+            || content_kind
+                .as_deref()
+                .is_none_or(|kind| !bounded_text(kind, MAX_ID_BYTES))
             || privacy != "workspace"
             || status != "live"
             || !content_present
@@ -1135,10 +1168,7 @@ pub fn validate_example_set_assets(
             content_kind.as_deref(),
         ))
         .map_err(|_| PromptStrategyError::Serialization)?;
-        example.provenance_hash = format!(
-            "sha256:{}",
-            hex::encode(Sha256::digest(provenance))
-        );
+        example.provenance_hash = format!("sha256:{}", hex::encode(Sha256::digest(provenance)));
         example.privacy = ExamplePrivacy::Workspace;
         example.trust = ExampleTrust::Validated;
     }
@@ -1238,8 +1268,8 @@ pub fn recover_selection(
     if body.len() > MAX_CONTRACT_BYTES {
         return Err(PromptStrategyError::SnapshotUnavailable);
     }
-    let snapshot: StrategySelectionSnapshot = serde_json::from_slice(&body)
-        .map_err(|_| PromptStrategyError::SnapshotUnavailable)?;
+    let snapshot: StrategySelectionSnapshot =
+        serde_json::from_slice(&body).map_err(|_| PromptStrategyError::SnapshotUnavailable)?;
     validate_snapshot(&snapshot).map_err(|_| PromptStrategyError::SnapshotUnavailable)?;
     if snapshot.snapshot_id != snapshot_id {
         return Err(PromptStrategyError::SnapshotUnavailable);
@@ -1261,18 +1291,17 @@ pub fn recover_run_selection(
     if !bounded_text(run_id, MAX_ID_BYTES) {
         return Err(PromptStrategyError::SnapshotUnavailable);
     }
-    let Some(body) = evohime_local_storage::domains::strategies::first_selection_for_run(
-        connection,
-        run_id,
-    )
-    .map_err(|_| PromptStrategyError::Storage)? else {
+    let Some(body) =
+        evohime_local_storage::domains::strategies::first_selection_for_run(connection, run_id)
+            .map_err(|_| PromptStrategyError::Storage)?
+    else {
         return Ok(None);
     };
     if body.len() > MAX_CONTRACT_BYTES {
         return Err(PromptStrategyError::SnapshotUnavailable);
     }
-    let snapshot: StrategySelectionSnapshot = serde_json::from_slice(&body)
-        .map_err(|_| PromptStrategyError::SnapshotUnavailable)?;
+    let snapshot: StrategySelectionSnapshot =
+        serde_json::from_slice(&body).map_err(|_| PromptStrategyError::SnapshotUnavailable)?;
     if snapshot.run_id != run_id {
         return Err(PromptStrategyError::SnapshotUnavailable);
     }
@@ -1292,8 +1321,7 @@ pub fn selections_for_provenance(
         return Err(PromptStrategyError::Invalid("provenance_request_id"));
     }
     evohime_local_storage::domains::strategies::list_selections_for_provenance(
-        connection,
-        request_id,
+        connection, request_id,
     )
     .map_err(|_| PromptStrategyError::Storage)?
     .into_iter()
@@ -1344,7 +1372,9 @@ pub fn transition_profile(
         now_ms,
     )
     .map_err(|_| PromptStrategyError::Storage)?;
-    transaction.commit().map_err(|_| PromptStrategyError::Storage)?;
+    transaction
+        .commit()
+        .map_err(|_| PromptStrategyError::Storage)?;
     Ok(changed)
 }
 
@@ -1353,14 +1383,26 @@ pub fn validate_profile_assets(
     profile: &PromptStrategyProfile,
 ) -> Result<(), PromptStrategyError> {
     if let StrategyComposition::StructuredOutput { contract_id } = &profile.composition {
-        let revision = profile.output_contract_revision
-            .ok_or(PromptStrategyError::Invalid("structured_output_contract_revision"))?;
-        let hash = profile.output_contract_hash.as_deref()
-            .ok_or(PromptStrategyError::Invalid("structured_output_contract_hash"))?;
-        load_output_contract(connection, contract_id, revision, hash)?
-            .ok_or(PromptStrategyError::Invalid("structured_output_contract_missing"))?;
+        let revision = profile
+            .output_contract_revision
+            .ok_or(PromptStrategyError::Invalid(
+                "structured_output_contract_revision",
+            ))?;
+        let hash = profile
+            .output_contract_hash
+            .as_deref()
+            .ok_or(PromptStrategyError::Invalid(
+                "structured_output_contract_hash",
+            ))?;
+        load_output_contract(connection, contract_id, revision, hash)?.ok_or(
+            PromptStrategyError::Invalid("structured_output_contract_missing"),
+        )?;
     }
-    if let StrategyComposition::FewShot { example_set_id, revision } = &profile.composition {
+    if let StrategyComposition::FewShot {
+        example_set_id,
+        revision,
+    } = &profile.composition
+    {
         let set = evohime_local_storage::domains::strategies::get_immutable(
             connection,
             evohime_local_storage::prompt_strategy_store::ImmutableTable::ExampleSets,
@@ -1369,8 +1411,8 @@ pub fn validate_profile_assets(
         )
         .map_err(|_| PromptStrategyError::Storage)?
         .ok_or(PromptStrategyError::Invalid("example_set_missing"))?;
-        let set: ExampleSetDescriptor = serde_json::from_slice(&set)
-            .map_err(|_| PromptStrategyError::Serialization)?;
+        let set: ExampleSetDescriptor =
+            serde_json::from_slice(&set).map_err(|_| PromptStrategyError::Serialization)?;
         validate_example_set(&set)?;
         if set.example_set_id != *example_set_id || set.revision != *revision {
             return Err(PromptStrategyError::Invalid("example_set_identity"));
@@ -1447,7 +1489,9 @@ pub(crate) fn load_few_shot_examples(
             )
             .optional()
             .map_err(|_| PromptStrategyError::Storage)?
-            .ok_or(PromptStrategyError::Invalid("example_artifact_kind_missing"))?;
+            .ok_or(PromptStrategyError::Invalid(
+                "example_artifact_kind_missing",
+            ))?;
         let authorized_parent = [reference.owner_task_id.clone()];
         let text = store
             .read_bounded(
@@ -1486,9 +1530,11 @@ pub fn register_output_contract(
     contract: &crate::structured_response_contract::ResponseContract,
     now_ms: i64,
 ) -> Result<(String, bool), PromptStrategyError> {
-    contract.validate_schema()
+    contract
+        .validate_schema()
         .map_err(|_| PromptStrategyError::Invalid("structured_output_contract"))?;
-    let contract_digest = contract.compute_hash()
+    let contract_digest = contract
+        .compute_hash()
         .map_err(|_| PromptStrategyError::Serialization)?;
     let hash = format!("sha256:{contract_digest}");
     let mut normalized = contract.clone();
@@ -1505,14 +1551,16 @@ pub fn register_output_contract(
         &hash,
         &body,
         now_ms,
-    ).map_err(|_| PromptStrategyError::Storage)?;
+    )
+    .map_err(|_| PromptStrategyError::Storage)?;
     if !inserted {
         let existing = evohime_local_storage::domains::strategies::get_immutable(
             connection,
             evohime_local_storage::prompt_strategy_store::ImmutableTable::OutputContracts,
             &contract.contract_id,
             contract.revision,
-        ).map_err(|_| PromptStrategyError::Storage)?;
+        )
+        .map_err(|_| PromptStrategyError::Storage)?;
         if existing.as_deref() != Some(body.as_slice()) {
             return Err(PromptStrategyError::RevisionConflict);
         }
@@ -1528,27 +1576,39 @@ pub fn load_output_contract(
     expected_hash: &str,
 ) -> Result<Option<crate::structured_response_contract::ResponseContract>, PromptStrategyError> {
     if !bounded_text(contract_id, MAX_ID_BYTES) || revision == 0 || !digest(expected_hash) {
-        return Err(PromptStrategyError::Invalid("structured_output_contract_ref"));
+        return Err(PromptStrategyError::Invalid(
+            "structured_output_contract_ref",
+        ));
     }
     let Some(body) = evohime_local_storage::domains::strategies::get_immutable(
         connection,
         evohime_local_storage::prompt_strategy_store::ImmutableTable::OutputContracts,
         contract_id,
         revision,
-    ).map_err(|_| PromptStrategyError::Storage)? else {
+    )
+    .map_err(|_| PromptStrategyError::Storage)?
+    else {
         return Ok(None);
     };
     if body.len() > MAX_CONTRACT_BYTES {
         return Err(PromptStrategyError::Limit);
     }
-    let contract: crate::structured_response_contract::ResponseContract = serde_json::from_slice(&body)
-        .map_err(|_| PromptStrategyError::Serialization)?;
-    contract.validate_schema()
+    let contract: crate::structured_response_contract::ResponseContract =
+        serde_json::from_slice(&body).map_err(|_| PromptStrategyError::Serialization)?;
+    contract
+        .validate_schema()
         .map_err(|_| PromptStrategyError::Invalid("structured_output_contract_corrupt"))?;
-    let hash = format!("sha256:{}", contract.compute_hash()
-        .map_err(|_| PromptStrategyError::Serialization)?);
-    if contract.contract_id != contract_id || contract.revision != revision || hash != expected_hash {
-        return Err(PromptStrategyError::Invalid("structured_output_contract_identity"));
+    let hash = format!(
+        "sha256:{}",
+        contract
+            .compute_hash()
+            .map_err(|_| PromptStrategyError::Serialization)?
+    );
+    if contract.contract_id != contract_id || contract.revision != revision || hash != expected_hash
+    {
+        return Err(PromptStrategyError::Invalid(
+            "structured_output_contract_identity",
+        ));
     }
     Ok(Some(contract))
 }
@@ -1582,7 +1642,9 @@ pub fn promote_profile(
         now_ms,
     )
     .map_err(|_| PromptStrategyError::Storage)?;
-    transaction.commit().map_err(|_| PromptStrategyError::Storage)?;
+    transaction
+        .commit()
+        .map_err(|_| PromptStrategyError::Storage)?;
     Ok(changed)
 }
 
@@ -1597,9 +1659,7 @@ fn lifecycle_state_name(state: LifecycleState) -> &'static str {
 }
 
 fn bounded_text(value: &str, max_bytes: usize) -> bool {
-    !value.trim().is_empty()
-        && value.len() <= max_bytes
-        && !value.chars().any(char::is_control)
+    !value.trim().is_empty() && value.len() <= max_bytes && !value.chars().any(char::is_control)
 }
 
 fn digest(value: &str) -> bool {
@@ -1612,7 +1672,10 @@ fn artifact_digest(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn canonical_hash<T: Serialize + Clone>(value: &T, clear: impl FnOnce(&mut T)) -> Result<String, PromptStrategyError> {
+fn canonical_hash<T: Serialize + Clone>(
+    value: &T,
+    clear: impl FnOnce(&mut T),
+) -> Result<String, PromptStrategyError> {
     let mut value = value.clone();
     clear(&mut value);
     let bytes = serde_json::to_vec(&value).map_err(|_| PromptStrategyError::Serialization)?;
@@ -1658,7 +1721,10 @@ pub fn normalize_optimization_candidate(
         .filter(|mutations| mutations.len() == 1 && mutations.contains_key("composition"))
         .ok_or(PromptStrategyError::Invalid("candidate_mutation_scope"))?;
     let composition: StrategyComposition = serde_json::from_value(
-        mutations.get("composition").cloned().ok_or(PromptStrategyError::Serialization)?,
+        mutations
+            .get("composition")
+            .cloned()
+            .ok_or(PromptStrategyError::Serialization)?,
     )
     .map_err(|_| PromptStrategyError::Invalid("candidate_composition"))?;
     let mut profile = base.clone();
@@ -1711,14 +1777,25 @@ pub fn validate_profile(profile: &PromptStrategyProfile) -> Result<(), PromptStr
     match &profile.composition {
         StrategyComposition::StructuredOutput { contract_id }
             if contract_id != &profile.output_contract_id
-                || profile.output_contract_revision.is_none_or(|revision| revision == 0)
-                || profile.output_contract_hash.as_deref().is_none_or(|hash| !digest(hash)) =>
+                || profile
+                    .output_contract_revision
+                    .is_none_or(|revision| revision == 0)
+                || profile
+                    .output_contract_hash
+                    .as_deref()
+                    .is_none_or(|hash| !digest(hash)) =>
         {
-            return Err(PromptStrategyError::Invalid("structured_output_contract_ref"));
+            return Err(PromptStrategyError::Invalid(
+                "structured_output_contract_ref",
+            ));
         }
         StrategyComposition::StructuredOutput { .. } => {}
-        _ if profile.output_contract_revision.is_some() || profile.output_contract_hash.is_some() => {
-            return Err(PromptStrategyError::Invalid("unexpected_output_contract_ref"));
+        _ if profile.output_contract_revision.is_some()
+            || profile.output_contract_hash.is_some() =>
+        {
+            return Err(PromptStrategyError::Invalid(
+                "unexpected_output_contract_ref",
+            ));
         }
         _ => {}
     }
@@ -1731,7 +1808,10 @@ pub fn validate_profile(profile: &PromptStrategyProfile) -> Result<(), PromptStr
 fn validate_composition(composition: &StrategyComposition) -> Result<(), PromptStrategyError> {
     match composition {
         StrategyComposition::Direct => Ok(()),
-        StrategyComposition::FewShot { example_set_id, revision } => {
+        StrategyComposition::FewShot {
+            example_set_id,
+            revision,
+        } => {
             if !bounded_text(example_set_id, MAX_ID_BYTES) || *revision == 0 {
                 return Err(PromptStrategyError::Invalid("example_set_reference"));
             }
@@ -1752,7 +1832,9 @@ fn validate_composition(composition: &StrategyComposition) -> Result<(), PromptS
         StrategyComposition::ToolUse { required_tool_ids } => {
             if required_tool_ids.is_empty()
                 || required_tool_ids.len() > MAX_REFERENCES
-                || required_tool_ids.iter().any(|id| !bounded_text(id, MAX_ID_BYTES))
+                || required_tool_ids
+                    .iter()
+                    .any(|id| !bounded_text(id, MAX_ID_BYTES))
                 || required_tool_ids.iter().collect::<HashSet<_>>().len() != required_tool_ids.len()
             {
                 return Err(PromptStrategyError::Limit);
@@ -1765,7 +1847,10 @@ fn validate_composition(composition: &StrategyComposition) -> Result<(), PromptS
             }
             Ok(())
         }
-        StrategyComposition::MultiSample { sample_count, reducer_id } => {
+        StrategyComposition::MultiSample {
+            sample_count,
+            reducer_id,
+        } => {
             if !(2..=MAX_MULTI_SAMPLE_COUNT).contains(sample_count)
                 || reducer_id != MULTI_SAMPLE_REDUCER_ID
             {
@@ -1887,9 +1972,7 @@ pub fn validate_snapshot(snapshot: &StrategySelectionSnapshot) -> Result<(), Pro
             .any(|id| !bounded_text(id, MAX_ID_BYTES))
         || snapshot.evidence_hashes.len() > MAX_REFERENCES
         || snapshot.evidence_hashes.iter().any(|hash| !digest(hash))
-        || snapshot
-            .capability_epoch
-            .is_some_and(|epoch| epoch == 0)
+        || snapshot.capability_epoch.is_some_and(|epoch| epoch == 0)
         || (snapshot.capability_trust == CapabilityTrust::Unknown
             && snapshot.capability_epoch.is_some())
     {
@@ -1914,12 +1997,21 @@ pub fn validate_snapshot(snapshot: &StrategySelectionSnapshot) -> Result<(), Pro
         return Err(PromptStrategyError::Invalid("prepared_request_hashes"));
     }
     if snapshot.output_contract_revision.is_some() != snapshot.output_contract_hash.is_some()
-        || snapshot.output_contract_revision.is_some_and(|revision| revision == 0)
-        || snapshot.output_contract_hash.as_deref().is_some_and(|hash| !digest(hash))
+        || snapshot
+            .output_contract_revision
+            .is_some_and(|revision| revision == 0)
+        || snapshot
+            .output_contract_hash
+            .as_deref()
+            .is_some_and(|hash| !digest(hash))
     {
         return Err(PromptStrategyError::Invalid("snapshot_output_contract"));
     }
-    if snapshot.selected_tool_ids.iter().collect::<HashSet<_>>().len()
+    if snapshot
+        .selected_tool_ids
+        .iter()
+        .collect::<HashSet<_>>()
+        .len()
         != snapshot.selected_tool_ids.len()
     {
         return Err(PromptStrategyError::Invalid("snapshot_tool_ids"));
@@ -1937,9 +2029,16 @@ pub fn validate_transition(
 ) -> Result<(), PromptStrategyError> {
     let allowed = matches!(
         (current, next),
-        (LifecycleState::Draft, LifecycleState::Validated | LifecycleState::Disabled)
-            | (LifecycleState::Validated, LifecycleState::Promoted | LifecycleState::Disabled)
-            | (LifecycleState::Promoted, LifecycleState::Superseded | LifecycleState::Disabled)
+        (
+            LifecycleState::Draft,
+            LifecycleState::Validated | LifecycleState::Disabled
+        ) | (
+            LifecycleState::Validated,
+            LifecycleState::Promoted | LifecycleState::Disabled
+        ) | (
+            LifecycleState::Promoted,
+            LifecycleState::Superseded | LifecycleState::Disabled
+        )
     );
     if allowed {
         Ok(())
@@ -2019,7 +2118,9 @@ mod tests {
             .expect("register immutable contract");
         assert!(inserted);
         assert_eq!(
-            register_output_contract(&connection, &contract, 2).expect("idempotent contract").1,
+            register_output_contract(&connection, &contract, 2)
+                .expect("idempotent contract")
+                .1,
             false,
         );
 
@@ -2044,10 +2145,18 @@ mod tests {
             1,
             LifecycleState::Validated,
             3,
-        ).expect("validate profile"));
+        )
+        .expect("validate profile"));
         assert_eq!(
-            load_output_contract(&connection, &contract.contract_id, contract.revision, &valid_hash()),
-            Err(PromptStrategyError::Invalid("structured_output_contract_identity")),
+            load_output_contract(
+                &connection,
+                &contract.contract_id,
+                contract.revision,
+                &valid_hash()
+            ),
+            Err(PromptStrategyError::Invalid(
+                "structured_output_contract_identity"
+            )),
         );
     }
 
@@ -2062,21 +2171,27 @@ mod tests {
             security_rejected: false,
             content_hash: String::new(),
         };
-        candidate.content_hash = crate::workflow_optimization_lab::hash(&candidate).expect("candidate hash");
-        let normalized = normalize_optimization_candidate(&base, &candidate).expect("draft normalization");
+        candidate.content_hash =
+            crate::workflow_optimization_lab::hash(&candidate).expect("candidate hash");
+        let normalized =
+            normalize_optimization_candidate(&base, &candidate).expect("draft normalization");
         assert_eq!(normalized.profile_id, base.profile_id);
         assert_eq!(normalized.revision, 2);
         assert_eq!(normalized.evidence, Vec::new());
-        assert_eq!(normalized.composition, StrategyComposition::ToolUse {
-            required_tool_ids: vec!["search".into()]
-        });
+        assert_eq!(
+            normalized.composition,
+            StrategyComposition::ToolUse {
+                required_tool_ids: vec!["search".into()]
+            }
+        );
         assert_eq!(validate_profile(&normalized), Ok(()));
 
         candidate.mutations = serde_json::json!({
             "composition":{"direct":{}},
             "system_prompt":"must not enter the strategy registry"
         });
-        candidate.content_hash = crate::workflow_optimization_lab::hash(&candidate).expect("candidate hash");
+        candidate.content_hash =
+            crate::workflow_optimization_lab::hash(&candidate).expect("candidate hash");
         assert_eq!(
             normalize_optimization_candidate(&base, &candidate),
             Err(PromptStrategyError::Invalid("candidate_mutation_scope"))
@@ -2116,8 +2231,7 @@ mod tests {
             content_hash: String::new(),
         };
         snapshot.content_hash = snapshot_hash(&snapshot).expect("snapshot hash");
-        persist_selection(&connection, &snapshot, "provenance-first", 1)
-            .expect("persist run pin");
+        persist_selection(&connection, &snapshot, "provenance-first", 1).expect("persist run pin");
         let mut later_snapshot = snapshot.clone();
         later_snapshot.snapshot_id = "snapshot-later".into();
         later_snapshot.call_id = "call-later".into();
@@ -2212,7 +2326,10 @@ mod tests {
                 "INSERT INTO task_artifact_refs
                  (locator,content_hash,task_id,owner_task_id,bytes,privacy,status)
                  VALUES (?1,?2,'source-task','owner-task',12,'workspace','live')",
-                rusqlite::params![format!("artifact://owner-task/{content_hash}"), content_hash],
+                rusqlite::params![
+                    format!("artifact://owner-task/{content_hash}"),
+                    content_hash
+                ],
             )
             .expect("artifact reference");
         let mut set = ExampleSetDescriptor {
@@ -2246,7 +2363,10 @@ mod tests {
             load_few_shot_examples(&connection, &few_shot, 2).expect("bounded artifact read");
         assert!(rendered.contains("example text"));
         assert!(!sources.is_empty());
-        assert_eq!(sources[0].source_version.as_deref(), Some(content_hash.as_str()));
+        assert_eq!(
+            sources[0].source_version.as_deref(),
+            Some(content_hash.as_str())
+        );
 
         connection
             .execute(
@@ -2330,8 +2450,8 @@ mod tests {
             "Search workspace",
             serde_json::json!({"type":"object"}),
         )];
-        let (messages_hash, tools_hash) = prepared_request_hashes(&messages, &tools)
-            .expect("prepared request commitments");
+        let (messages_hash, tools_hash) =
+            prepared_request_hashes(&messages, &tools).expect("prepared request commitments");
         let changed_messages = vec![
             messages[0].clone(),
             evohime_model_gateway::providers::ChatMessage::text(
@@ -2344,8 +2464,8 @@ mod tests {
         let (reordered_hash, _) =
             prepared_request_hashes(&messages.into_iter().rev().collect::<Vec<_>>(), &tools)
                 .expect("reordered request");
-        let (_, changed_tools_hash) = prepared_request_hashes(&changed_messages, &[])
-            .expect("narrowed tools");
+        let (_, changed_tools_hash) =
+            prepared_request_hashes(&changed_messages, &[]).expect("narrowed tools");
 
         assert_ne!(messages_hash, changed_messages_hash);
         assert_ne!(messages_hash, reordered_hash);
@@ -2354,7 +2474,11 @@ mod tests {
 
     #[test]
     fn multi_sample_reducer_requires_strict_exact_majority() {
-        let consensus = vec!["answer  one".to_owned(), "answer one".to_owned(), "other".to_owned()];
+        let consensus = vec![
+            "answer  one".to_owned(),
+            "answer one".to_owned(),
+            "other".to_owned(),
+        ];
         assert_eq!(
             reduce_multi_sample_outputs(MULTI_SAMPLE_REDUCER_ID, &consensus),
             Ok(0)
@@ -2431,8 +2555,10 @@ mod tests {
         let bindings = [binding("binding-z", 9, &tool_profile)];
         let capability_hash = valid_hash();
         let context_hash = valid_hash();
-        let fresh_evidence_hashes =
-            HashSet::from([evidence_freshness_key(&tool_profile, &tool_profile.evidence[0])]);
+        let fresh_evidence_hashes = HashSet::from([evidence_freshness_key(
+            &tool_profile,
+            &tool_profile.evidence[0],
+        )]);
         let available_tool_ids = vec!["search".to_owned()];
         let input = |trust| ResolverInput {
             task_kind: "general",
@@ -2458,11 +2584,18 @@ mod tests {
         };
         let selected = resolve_strategy(input(CapabilityTrust::AdapterDeclared)).expect("resolve");
         assert_eq!(selected.profile.profile_id, "tool-strategy");
-        assert_eq!(selected.snapshot.selection_reason, SelectionReason::ExactBinding);
+        assert_eq!(
+            selected.snapshot.selection_reason,
+            SelectionReason::ExactBinding
+        );
         assert_eq!(selected.snapshot.selected_tool_ids, available_tool_ids);
-        let fallback = resolve_strategy(input(CapabilityTrust::SyntheticDefault)).expect("fallback");
+        let fallback =
+            resolve_strategy(input(CapabilityTrust::SyntheticDefault)).expect("fallback");
         assert_eq!(fallback.profile.profile_id, "baseline");
-        assert_eq!(fallback.snapshot.selection_reason, SelectionReason::BaselineFallback);
+        assert_eq!(
+            fallback.snapshot.selection_reason,
+            SelectionReason::BaselineFallback
+        );
         let pinned = resolve_strategy(ResolverInput {
             pinned_profile: Some(&tool_profile),
             ..input(CapabilityTrust::AdapterDeclared)
@@ -2477,9 +2610,15 @@ mod tests {
             ..input(CapabilityTrust::AdapterDeclared)
         })
         .expect("route fallback retains pinned revision");
-        assert_eq!(fallback_route.profile.content_hash, tool_profile.content_hash);
+        assert_eq!(
+            fallback_route.profile.content_hash,
+            tool_profile.content_hash
+        );
         assert_eq!(fallback_route.snapshot.route_id, "fallback-route");
-        assert_ne!(fallback_route.snapshot.snapshot_id, pinned.snapshot.snapshot_id);
+        assert_ne!(
+            fallback_route.snapshot.snapshot_id,
+            pinned.snapshot.snapshot_id
+        );
         assert_eq!(
             resolve_strategy(ResolverInput {
                 pinned_profile: Some(&tool_profile),
@@ -2542,12 +2681,21 @@ mod tests {
 
         let exact = resolve_strategy(input(Some("loadout:research-v1"))).expect("exact loadout");
         assert_eq!(exact.profile.profile_id, "loadout-bound-strategy");
-        assert_eq!(exact.snapshot.loadout_ref.as_deref(), Some("loadout:research-v1"));
-        assert_eq!(exact.snapshot.loadout_hash.as_deref(), Some(loadout_hash.as_str()));
+        assert_eq!(
+            exact.snapshot.loadout_ref.as_deref(),
+            Some("loadout:research-v1")
+        );
+        assert_eq!(
+            exact.snapshot.loadout_hash.as_deref(),
+            Some(loadout_hash.as_str())
+        );
 
         let mismatched = resolve_strategy(input(Some("loadout:inspect-v1"))).expect("fallback");
         assert_eq!(mismatched.profile.profile_id, baseline.profile_id);
-        assert_eq!(mismatched.snapshot.selection_reason, SelectionReason::BaselineFallback);
+        assert_eq!(
+            mismatched.snapshot.selection_reason,
+            SelectionReason::BaselineFallback
+        );
 
         let mut unbound = candidate.clone();
         unbound.profile_id = "unbound-loadout-strategy".into();
@@ -2560,9 +2708,8 @@ mod tests {
         unbound.content_hash = profile_hash(&unbound).expect("profile hash");
         let unbound_profiles = [(&unbound, LifecycleState::Promoted)];
         let unbound_bindings = [binding("unbound-loadout-binding", 1, &unbound)];
-        let unbound_fresh_evidence = HashSet::from([
-            evidence_freshness_key(&unbound, &unbound_evidence),
-        ]);
+        let unbound_fresh_evidence =
+            HashSet::from([evidence_freshness_key(&unbound, &unbound_evidence)]);
         let unbound_input = |loadout_ref| ResolverInput {
             task_kind: "general",
             role: "agent",
@@ -2593,13 +2740,15 @@ mod tests {
     #[test]
     fn resolver_evidence_must_match_a_recent_durable_holdout_report() {
         let connection = rusqlite::Connection::open_in_memory().expect("database");
-        connection.execute_batch(
-            "CREATE TABLE benchmark_runs (
+        connection
+            .execute_batch(
+                "CREATE TABLE benchmark_runs (
                 run_id TEXT PRIMARY KEY, suite_id TEXT NOT NULL, suite_version TEXT NOT NULL,
                 policy_json TEXT NOT NULL, state TEXT NOT NULL, report_json TEXT,
                 created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL
             );",
-        ).expect("benchmark run schema");
+            )
+            .expect("benchmark run schema");
         let mut candidate = profile();
         candidate.profile_id = "fresh-evidence-profile".into();
         candidate.composition = StrategyComposition::ToolUse {
@@ -2653,21 +2802,17 @@ mod tests {
             rusqlite::params![evidence.evidence_id, report_json],
         ).expect("persist report");
         let profiles = [(&candidate, LifecycleState::Promoted)];
-        let fresh = fresh_profile_evidence_hashes(
-            &connection,
-            &profiles,
-            100 + MAX_EVIDENCE_AGE_MS,
-        ).expect("fresh evidence lookup");
+        let fresh =
+            fresh_profile_evidence_hashes(&connection, &profiles, 100 + MAX_EVIDENCE_AGE_MS)
+                .expect("fresh evidence lookup");
         assert!(fresh.contains(&evidence_freshness_key(&candidate, &evidence)));
         let mut another_candidate = candidate.clone();
         another_candidate.profile_id = "copied-report-profile".into();
         another_candidate.content_hash = profile_hash(&another_candidate).expect("profile hash");
         assert!(!fresh.contains(&evidence_freshness_key(&another_candidate, &evidence)));
-        let stale = fresh_profile_evidence_hashes(
-            &connection,
-            &profiles,
-            101 + MAX_EVIDENCE_AGE_MS,
-        ).expect("stale evidence lookup");
+        let stale =
+            fresh_profile_evidence_hashes(&connection, &profiles, 101 + MAX_EVIDENCE_AGE_MS)
+                .expect("stale evidence lookup");
         assert!(!stale.contains(&evidence_freshness_key(&candidate, &evidence)));
     }
 }

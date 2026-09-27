@@ -209,10 +209,10 @@ pub mod project_execution_board_store;
 pub mod project_instruction_stack_store;
 /// Persistence for project knowledge notebooks.
 pub mod project_knowledge_notebook_store;
-/// Persistence for immutable prompt-strategy metadata and selection snapshots.
-pub mod prompt_strategy_store;
 mod project_store;
 pub(crate) mod prompt_cache_planner_store;
+/// Persistence for immutable prompt-strategy metadata and selection snapshots.
+pub mod prompt_strategy_store;
 mod provenance_store;
 /// Persistence for provider profile catalog entries.
 pub mod provider_profile_catalog_store;

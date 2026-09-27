@@ -1005,9 +1005,15 @@ mod strategy_provenance_projection_tests {
         let projected = project_messages_for_provenance(&messages);
 
         assert_eq!(projected.len(), 2);
-        assert_eq!(projected[0].content, evohime_model_provenance::OMITTED_MESSAGE_MARKER);
+        assert_eq!(
+            projected[0].content,
+            evohime_model_provenance::OMITTED_MESSAGE_MARKER
+        );
         assert!(projected[0].verifies_omitted_content(&example));
-        assert_eq!(projected[1].content, evohime_model_provenance::OMITTED_MESSAGE_MARKER);
+        assert_eq!(
+            projected[1].content,
+            evohime_model_provenance::OMITTED_MESSAGE_MARKER
+        );
         assert!(projected[1].verifies_omitted_content("current user request"));
     }
 }

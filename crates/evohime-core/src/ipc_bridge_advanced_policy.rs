@@ -1,9 +1,17 @@
 use super::*;
 
-fn bounded_strategy_id<'a>(value: &'a serde_json::Value, key: &str) -> Result<&'a str, &'static str> {
-    value.get(key).and_then(serde_json::Value::as_str)
-        .filter(|value| !value.is_empty() && value.len() <= crate::prompt_strategy::MAX_ID_BYTES
-            && !value.chars().any(char::is_control))
+fn bounded_strategy_id<'a>(
+    value: &'a serde_json::Value,
+    key: &str,
+) -> Result<&'a str, &'static str> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= crate::prompt_strategy::MAX_ID_BYTES
+                && !value.chars().any(char::is_control)
+        })
         .ok_or("strategy_identifier_required")
 }
 
@@ -38,9 +46,17 @@ impl IpcBridge {
             });
         }
         match request.operation.as_str() {
-            "strategyList" | "strategyGet" | "strategyRegister" | "strategyBind"
-            | "strategyExampleSet" | "strategyOutputContract" | "strategyTransition" | "strategyPromote"
-            | "strategySelections" | "strategyEvidence" | "strategyCompatibility"
+            "strategyList"
+            | "strategyGet"
+            | "strategyRegister"
+            | "strategyBind"
+            | "strategyExampleSet"
+            | "strategyOutputContract"
+            | "strategyTransition"
+            | "strategyPromote"
+            | "strategySelections"
+            | "strategyEvidence"
+            | "strategyCompatibility"
             | "strategyCompare" => self.dispatch_prompt_strategy(request).await,
             "list" => {
                 let database = self.journal.database().lock().await;
@@ -330,10 +346,12 @@ impl IpcBridge {
 
         let operation = request.operation.clone();
         let request_id = request.request_id.clone();
-        let fail = |error_code: &'static str| serde_json::json!({
-            "schema_version":1,"request_id":request_id.clone(),"operation":operation.clone(),
-            "status":"rejected","error_code":error_code
-        });
+        let fail = |error_code: &'static str| {
+            serde_json::json!({
+                "schema_version":1,"request_id":request_id.clone(),"operation":operation.clone(),
+                "status":"rejected","error_code":error_code
+            })
+        };
         if request.payload.len() > strategy::MAX_CONTRACT_BYTES {
             return fail("strategy_payload_too_large");
         }

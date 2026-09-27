@@ -1,6 +1,9 @@
 //! Ollama provider and device-aware local model catalogue.
 
-use super::{ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind, TokenStream};
+use super::{
+    ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
+    TokenStream,
+};
 use crate::config::LiteRouterConfig;
 use crate::providers::literouter::LiteRouterProvider;
 use crate::retry::RetryPolicy;

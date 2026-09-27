@@ -142,8 +142,8 @@ use evohime_local_storage::{
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
-    ModelGateway, PreparedRouteAttempt, PrivacyClass, ProviderCapabilitySnapshot,
-    RouteAttemptHook, RoutingMode, RoutingRequest, ToolSpec,
+    ModelGateway, PreparedRouteAttempt, PrivacyClass, ProviderCapabilitySnapshot, RouteAttemptHook,
+    RoutingMode, RoutingRequest, ToolSpec,
 };
 use evohime_receipts::{
     key_lifecycle::ReceiptKeyManager,
