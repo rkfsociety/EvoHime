@@ -214,9 +214,7 @@ pub fn get_immutable(
 }
 
 /// Lists immutable revisions and their lifecycle states in stable identity order.
-pub fn list_profiles(
-    connection: &Connection,
-) -> rusqlite::Result<Vec<ProfileLifecycleRow>> {
+pub fn list_profiles(connection: &Connection) -> rusqlite::Result<Vec<ProfileLifecycleRow>> {
     let mut statement = connection.prepare(
         "SELECT profile_json,content_hash,state,state_revision FROM prompt_strategy_profiles
          JOIN prompt_strategy_lifecycle USING(profile_id,profile_revision)
