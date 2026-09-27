@@ -2096,7 +2096,7 @@ mod tests {
         assert_eq!(snapshot.model_id, "selected-model");
         assert_eq!(snapshot.provider_kind, "mock");
         assert!(snapshot.tool_calling);
-        assert!(!snapshot.structured_output);
+        assert!(snapshot.structured_output);
         assert_eq!(snapshot.context_limit, None);
         assert!(snapshot.canonical_hash().is_ok());
     }
