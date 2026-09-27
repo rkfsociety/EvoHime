@@ -414,7 +414,7 @@ mod tests {
 
     #[tokio::test]
     async fn policy_structured_attempt_returns_only_schema_validated_json() {
-        let provider = crate::providers::MockProvider::with_tool_call_sequence(
+        let provider = crate::providers::mock::MockProvider::with_tool_call_sequence(
             "mock-model",
             vec![crate::ChatResult {
                 content: String::new(),
