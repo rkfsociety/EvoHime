@@ -60,6 +60,12 @@ if ($dispatchBlock -notmatch 'Resolve-DispatchedRun') { throw 'Router does not r
 if ($dispatchBlock -notmatch 'gh run view') { throw 'Router does not wait for dispatched module workflows.' }
 if ($dispatchBlock -notmatch 'conclusion -ne .success') { throw 'Router does not fail when a dispatched module workflow fails.' }
 if ($dispatchBlock -notmatch 'gh workflow run compatible-manifest\.yml') { throw 'Router does not publish the compatibility manifest after module workflows.' }
+$manifestDispatch = $dispatchBlock.IndexOf('gh workflow run compatible-manifest.yml', [StringComparison]::Ordinal)
+$finalFailure = $dispatchBlock.IndexOf('Ошибки дочерних workflow после публикации актуального совместимого комплекта', [StringComparison]::Ordinal)
+if ($manifestDispatch -lt 0 -or $finalFailure -lt $manifestDispatch) { throw 'Router does not publish compatibility metadata before reporting module failures.' }
+if ($dispatchBlock -notmatch 'workflowFailures = \[System\.Collections\.Generic\.List\[string\]\]::new\(\)') { throw 'Router does not retain child workflow failures while continuing to manifest publication.' }
+if ($dispatchBlock -notmatch 'Resolve-DispatchedRun \(\[PSCustomObject\]@\{ Module = .compatible-manifest.') { throw 'Router does not wait for the compatibility manifest workflow.' }
+if ($dispatchBlock -notmatch 'workflowFailures\.Count -eq 0') { throw 'Router may publish the installer after a module workflow failure.' }
 foreach ($module in @('shell-host','ui-bundle','core','supervisor','cli','analysis-worker','listener','listener-runtime','transaction','verifier','updater')) {
     if ($dispatchBlock -notmatch [regex]::Escape("'$module'")) { throw "Dispatch map is missing: $module" }
 }
