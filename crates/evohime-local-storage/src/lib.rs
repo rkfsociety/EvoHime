@@ -109,14 +109,13 @@ mod event_store;
 mod event_trigger_runtime_store;
 /// Core-facing persistence operations for event-trigger definitions and redacted event history.
 pub use event_trigger_runtime_store::{
-    EventRecordMeta as EventTriggerEventRecordMeta, EventSummary as EventTriggerEventSummary,
-    StoredDefinition as StoredEventTriggerDefinition,
     definition_owner_scope as event_trigger_definition_owner_scope,
     definition_version as event_trigger_definition_version,
     get_definition as get_event_trigger_definition, install_schema as install_event_trigger_schema,
     list_definitions as list_event_trigger_definitions, list_events as list_event_trigger_events,
     put_definition as put_event_trigger_definition, record_dedup as record_event_trigger_dedup,
-    record_event as record_event_trigger_event,
+    record_event as record_event_trigger_event, EventRecordMeta as EventTriggerEventRecordMeta,
+    EventSummary as EventTriggerEventSummary, StoredDefinition as StoredEventTriggerDefinition,
 };
 /// Registry for event visualizer definitions.
 pub mod event_visualizer_registry_store;

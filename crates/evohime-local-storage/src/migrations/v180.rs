@@ -32,9 +32,7 @@ mod tests {
         assert_eq!(version, 180);
 
         let columns: Vec<String> = connection
-            .prepare(
-                "SELECT name FROM pragma_table_info('github_saved_repositories') ORDER BY cid",
-            )
+            .prepare("SELECT name FROM pragma_table_info('github_saved_repositories') ORDER BY cid")
             .expect("table info")
             .query_map([], |row| row.get(0))
             .expect("columns")

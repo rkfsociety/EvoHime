@@ -207,9 +207,7 @@ impl GitHubPublicRepositoryClient {
     ) -> Result<Url, FetchError> {
         let mut url = self.api_base.clone();
         {
-            let mut segments = url
-                .path_segments_mut()
-                .map_err(|_| FetchError::Network)?;
+            let mut segments = url.path_segments_mut().map_err(|_| FetchError::Network)?;
             segments.pop_if_empty();
             segments.push("repos");
             segments.push(&repository.owner);
@@ -231,18 +229,13 @@ impl GitHubPublicRepositoryClient {
     }
 
     async fn get_json<T: for<'de> Deserialize<'de>>(&self, url: Url) -> Result<T, FetchError> {
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|error| {
-                if error.is_timeout() {
-                    FetchError::TimedOut
-                } else {
-                    FetchError::Network
-                }
-            })?;
+        let response = self.client.get(url).send().await.map_err(|error| {
+            if error.is_timeout() {
+                FetchError::TimedOut
+            } else {
+                FetchError::Network
+            }
+        })?;
         ensure_success(&response)?;
         let bytes = bounded_response(response).await?;
         serde_json::from_slice(&bytes).map_err(|_| FetchError::InvalidResponse)
@@ -322,8 +315,7 @@ fn ensure_success(response: &Response) -> Result<(), FetchError> {
     if status == reqwest::StatusCode::NOT_FOUND {
         return Err(FetchError::NotFound);
     }
-    if status == reqwest::StatusCode::FORBIDDEN
-        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+    if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::TOO_MANY_REQUESTS
     {
         return Err(FetchError::RateLimited);
     }
@@ -364,7 +356,12 @@ mod tests {
     #[test]
     fn repository_identifiers_reject_urls_and_path_segments() {
         assert!(RepositoryId::parse("owner".into(), "repo".into()).is_ok());
-        for bad in ["../repo", "owner/repo", "https://github.com/o/r", "repo?x=1"] {
+        for bad in [
+            "../repo",
+            "owner/repo",
+            "https://github.com/o/r",
+            "repo?x=1",
+        ] {
             assert!(RepositoryId::parse("owner".into(), bad.into()).is_err());
         }
         assert!(RepositoryId::parse("owner/name".into(), "repo".into()).is_err());
@@ -383,8 +380,8 @@ mod tests {
     #[test]
     fn endpoint_is_fixed_and_encodes_path_segments() {
         let client = GitHubPublicRepositoryClient::new().expect("fixed GitHub client");
-        let repository = RepositoryId::parse("Some-Owner".into(), "a.repo".into())
-            .expect("valid identifier");
+        let repository =
+            RepositoryId::parse("Some-Owner".into(), "a.repo".into()).expect("valid identifier");
         let url = client
             .endpoint(&repository, Some("issues"))
             .expect("endpoint");
@@ -428,8 +425,8 @@ mod tests {
 
         let client = GitHubPublicRepositoryClient::with_base(&format!("{}/", server.uri()))
             .expect("mock client");
-        let repository = RepositoryId::parse("octocat".into(), "Hello-World".into())
-            .expect("valid repository");
+        let repository =
+            RepositoryId::parse("octocat".into(), "Hello-World".into()).expect("valid repository");
         let projection = client.fetch(&repository).await.expect("projection");
         assert_eq!(projection.full_name, "octocat/Hello-World");
         assert_eq!(projection.issues.len(), 1);
@@ -452,7 +449,10 @@ mod tests {
             .respond_with(ResponseTemplate::new(403))
             .mount(&server)
             .await;
-        assert_eq!(client.fetch(&repository).await, Err(FetchError::RateLimited));
+        assert_eq!(
+            client.fetch(&repository).await,
+            Err(FetchError::RateLimited)
+        );
 
         let second_server = MockServer::start().await;
         let redirect_client =
@@ -465,7 +465,10 @@ mod tests {
             )
             .mount(&second_server)
             .await;
-        assert_eq!(redirect_client.fetch(&repository).await, Err(FetchError::Network));
+        assert_eq!(
+            redirect_client.fetch(&repository).await,
+            Err(FetchError::Network)
+        );
 
         let third_server = MockServer::start().await;
         let oversized_client =

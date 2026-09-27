@@ -340,13 +340,11 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
     let record = snapshot.to_storage_record(&profile).expect("record");
     {
         let database = journal.database().lock().await;
-        assert!(
-            evohime_local_storage::provider_profile_catalog_store::put(
-                database.connection(),
-                &record,
-            )
-            .expect("snapshot stores")
-        );
+        assert!(evohime_local_storage::provider_profile_catalog_store::put(
+            database.connection(),
+            &record,
+        )
+        .expect("snapshot stores"));
     }
 
     let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());

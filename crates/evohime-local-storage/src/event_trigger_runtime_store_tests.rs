@@ -11,11 +11,9 @@ fn schema_has_no_secret_payload_columns() {
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
-    assert!(
-        !names
-            .iter()
-            .any(|n| n.contains("secret") || n.contains("credential"))
-    );
+    assert!(!names
+        .iter()
+        .any(|n| n.contains("secret") || n.contains("credential")));
     assert!(record_dedup(&c, "t", "k", "e", 10).unwrap());
     assert!(!record_dedup(&c, "t", "k", "e2", 10).unwrap());
     record_event(
@@ -108,11 +106,9 @@ fn duplicate_definition_version_is_idempotent() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].definition, serde_json::json!({"first": true}));
     assert_eq!(listed[0].version, 1);
-    assert!(
-        list_definitions::<serde_json::Value>(&c, "other-scope")
-            .unwrap()
-            .is_empty()
-    );
+    assert!(list_definitions::<serde_json::Value>(&c, "other-scope")
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -146,9 +142,7 @@ fn event_history_is_scoped_and_returns_metadata_only() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_id, "event-1");
     assert_eq!(events[0].outcome, "pending");
-    assert!(
-        list_events(&c, "trigger", "owner-b", 10, 20)
-            .unwrap()
-            .is_empty()
-    );
+    assert!(list_events(&c, "trigger", "owner-b", 10, 20)
+        .unwrap()
+        .is_empty());
 }

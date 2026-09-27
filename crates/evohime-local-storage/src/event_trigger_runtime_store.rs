@@ -1,6 +1,6 @@
 //! Durable metadata store for Event Trigger Runtime; payloads are bounded JSON only.
-use rusqlite::{Connection, OptionalExtension, params};
-use serde::{Serialize, de::DeserializeOwned};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::{de::DeserializeOwned, Serialize};
 
 const MAX_DEFINITION_BYTES: usize = 64 * 1024;
 

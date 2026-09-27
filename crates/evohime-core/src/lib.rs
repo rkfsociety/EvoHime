@@ -209,6 +209,7 @@ pub(crate) mod export;
 pub mod extension_conformance_kit;
 pub(crate) mod external_coding_agent_adapter;
 pub mod free_provider_reliability_routing;
+pub(crate) mod github_public_repository;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
@@ -217,7 +218,6 @@ pub mod human_work_items;
 pub(crate) mod incremental_change_protocol;
 pub(crate) mod integration_provider_runtime;
 pub(crate) mod integration_provider_sdk;
-pub(crate) mod github_public_repository;
 pub(crate) mod invocation_presets;
 /// Exposes the kernel's capability registry facade.
 pub mod kernel_capability_facade;
