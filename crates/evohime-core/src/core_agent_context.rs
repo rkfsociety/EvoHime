@@ -38,7 +38,7 @@ fn aggregate_sample_usage(
             .iter()
             .copied()
             .filter_map(project)
-                .fold(None::<u32>, |total, value| {
+            .fold(None::<u32>, |total, value| {
                 Some(total.unwrap_or_default().saturating_add(value))
             })
     };
@@ -77,7 +77,7 @@ fn aggregate_strategy_usages(
             .iter()
             .copied()
             .filter_map(project)
-                .fold(None::<u32>, |total, value| {
+            .fold(None::<u32>, |total, value| {
                 Some(total.unwrap_or_default().saturating_add(value))
             })
     };
