@@ -415,10 +415,7 @@ impl IpcBridge {
                             Some(run) if run.2 == "ready_for_promotion" => {
                                 match run.3 {
                                     Some(report_json) if report_json.len() <= 2 * strategy::MAX_CONTRACT_BYTES => {
-                                        match serde_json::from_str::<crate::agent_benchmark_matrix::BenchmarkReport>(&report_json) {
-                                            Ok(report) => Some(report),
-                                            Err(_) => None,
-                                        }
+                                        serde_json::from_str::<crate::agent_benchmark_matrix::BenchmarkReport>(&report_json).ok()
                                     }
                                     _ => None,
                                 }
