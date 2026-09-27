@@ -40,20 +40,36 @@ pub enum StrategyComposition {
     Direct,
     /// Add a validated immutable set of example artifact references.
     FewShot {
+        /// Immutable example-set identifier.
         example_set_id: String,
+        /// Exact example-set revision.
         revision: u64,
     },
     /// Request bounded, sequential tool-free subcalls executed by Core.
-    Decomposition { max_subtasks: u8 },
+    Decomposition {
+        /// Maximum number of sequential child calls.
+        max_subtasks: u8,
+    },
     /// Ground the request in validated retrieval evidence.
-    RetrievalGrounded { max_evidence_items: u8 },
+    RetrievalGrounded {
+        /// Maximum number of evidence items inserted into the context.
+        max_evidence_items: u8,
+    },
     /// Use only tools already granted by the Core execution policy.
-    ToolUse { required_tool_ids: Vec<String> },
+    ToolUse {
+        /// Exact pre-existing tool identifiers required by this strategy.
+        required_tool_ids: Vec<String>,
+    },
     /// Require an existing structured-output contract.
-    StructuredOutput { contract_id: String },
+    StructuredOutput {
+        /// Identifier of the registered output contract.
+        contract_id: String,
+    },
     /// Request a bounded number of independent samples for an existing reducer.
     MultiSample {
+        /// Number of sequential independent samples, bounded by [`MAX_MULTI_SAMPLE_COUNT`].
         sample_count: u8,
+        /// Registered deterministic reducer identifier.
         reducer_id: String,
     },
 }
@@ -1381,6 +1397,10 @@ pub fn transition_profile(
     Ok(changed)
 }
 
+/// Validates every immutable asset reference used by a profile.
+///
+/// This rejects missing or incompatible example sets and structured-output
+/// contracts before a profile is registered or selected.
 pub fn validate_profile_assets(
     connection: &Connection,
     profile: &PromptStrategyProfile,
@@ -2230,6 +2250,7 @@ mod tests {
             capability_snapshot_hash: valid_hash(),
             context_profile_hash: valid_hash(),
             loadout_hash: None,
+            loadout_ref: None,
             output_contract_id: profile.output_contract_id.clone(),
             output_contract_revision: profile.output_contract_revision,
             output_contract_hash: profile.output_contract_hash.clone(),
@@ -2423,6 +2444,7 @@ mod tests {
             capability_snapshot_hash: valid_hash(),
             context_profile_hash: valid_hash(),
             loadout_hash: None,
+            loadout_ref: None,
             output_contract_id: "text/v1".into(),
             output_contract_revision: None,
             output_contract_hash: None,
