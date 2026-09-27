@@ -116,6 +116,14 @@ fn ensure_column(
     column: &str,
     alter_sql: &str,
 ) -> rusqlite::Result<()> {
+    let table_exists = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+        [table],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !table_exists {
+        return Ok(());
+    }
     let exists = transaction.query_row(
         "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name=?2)",
         rusqlite::params![table, column],
