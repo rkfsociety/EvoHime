@@ -3000,8 +3000,11 @@ request (8 output tokens, zero retries, 45-second deadline) и shutdown
 cancellation; in-flight work не восстанавливается после restart. Renderer
 получает только redacted projection через authenticated provider IPC/events.
 В settings UI manual verification доступна для настроенного OpenRouter profile
-с явным предупреждением о возможной оплате. Persistent automatic consent
-сбрасывается при замене или удалении ключа.
+с явным предупреждением о возможной оплате. Для нового OpenRouter profile UI
+предвыбирает автоматическую проверку при первом использовании; она не начнётся,
+пока пользователь отдельно не подтвердит возможную оплату. Ранее сохранённый
+выбор профиля сохраняется. Persistent automatic consent сбрасывается при замене
+или удалении ключа.
 
 Единственный authority, который может подтвердить `VerifiedFreeLimited`, —
 фиксированный OpenRouter model-detail pricing response: запрошенная model

@@ -52,6 +52,10 @@ const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly
   { id: 'paid', label: 'Платные', hint: 'списываются с баланса провайдера' }
 ]
 
+function defaultProbePolicy(provider: ProviderKind, profileId: ProviderProfileId): FreeAccessProbePolicy {
+  return provider === 'openai_compatible' && profileId === 'openrouter' ? 'on_first_use' : 'disabled'
+}
+
 type Status =
   | { readonly kind: 'idle' }
   | { readonly kind: 'saving' }
@@ -84,13 +88,15 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
   // Fields stay controlled even if a summary arrives with a missing member.
   const apply = useCallback((value: ProviderSummary) => {
-    setProvider(PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter')
+    const nextProvider = PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter'
+    const nextProfileId = nextProvider === 'openai_compatible' ? (value.profileId ?? 'openai') : 'custom'
+    setProvider(nextProvider)
     setModel(value.model ?? '')
     setTier(value.tier === 'paid' ? 'paid' : 'free')
     setBaseUrl(value.baseUrl ?? (value.provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
-    setProfileId(value.provider === 'openai_compatible' ? (value.profileId ?? 'openai') : 'custom')
+    setProfileId(nextProfileId)
     setAccountId(value.accountId ?? '')
-    setProbePolicy(value.profiles?.[value.provider]?.freeAccessProbePolicy ?? 'disabled')
+    setProbePolicy(value.profiles?.[value.provider]?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
     setRoutingMode(value.freeAccessRoutingMode ?? 'any')
     setAllowPaidFallback(value.allowPaidFallback === true)
     setAcknowledgeProbePossibleCost(false)
@@ -147,7 +153,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setBaseUrl(profile?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
     setProfileId(nextProvider === 'openai_compatible' ? (profile?.profileId ?? 'openai') : 'custom')
     setAccountId(profile?.accountId ?? '')
-    setProbePolicy(profile?.freeAccessProbePolicy ?? 'disabled')
+    const nextProfileId = nextProvider === 'openai_compatible' ? (profile?.profileId ?? 'openai') : 'custom'
+    setProbePolicy(profile?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
     setAcknowledgeProbePossibleCost(false)
     setStatus({ kind: 'saving' })
 
@@ -164,7 +171,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
   const selectProfile = useCallback((nextProfile: ProviderProfileId) => {
     setProfileId(nextProfile)
-    setProbePolicy('disabled')
+    const savedProfile = summary?.profiles?.openai_compatible
+    const savedPolicy = savedProfile?.profileId === nextProfile ? savedProfile.freeAccessProbePolicy : undefined
+    setProbePolicy(savedPolicy ?? defaultProbePolicy('openai_compatible', nextProfile))
     setAcknowledgeProbePossibleCost(false)
     if (nextProfile === 'cloudflare_workers_ai') {
       setAccountId('')
@@ -173,7 +182,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     }
     setAccountId('')
     setBaseUrl(PROVIDER_PROFILE_ENDPOINTS[nextProfile] ?? '')
-  }, [])
+  }, [summary])
 
   const save = useCallback(async () => {
     if (!api) return
@@ -395,7 +404,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
             <option value="disabled">Выключена (ручную проверку можно запустить отдельно)</option>
             <option value="manual_only">Только ручная проверка</option>
             <option value="passive_only">Только наблюдать обычные запросы</option>
-            <option value="on_first_use" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>Один раз при первом использовании</option>
+            <option value="on_first_use" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>Авто (проверить при первом использовании)</option>
             <option value="periodic_bounded" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>Повторять после истечения evidence</option>
           </select>
         </label>

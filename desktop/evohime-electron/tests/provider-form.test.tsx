@@ -268,20 +268,20 @@ describe('provider form', () => {
     confirm.mockRestore()
   })
 
-  it('requires persistent cost consent before saving an automatic OpenRouter probe policy', async () => {
+  it('defaults a new OpenRouter profile to automatic first-use checks and requires cost consent', async () => {
     selectOutcome = ok({
       summary: {
         provider: 'openai_compatible',
         model: 'author/model:free',
-        baseUrl: 'https://openrouter.ai/api/v1',
+        baseUrl: 'https://api.openai.com/v1',
         tier: 'free',
         configured: true,
-        profileId: 'openrouter',
+        profileId: 'openai',
         profiles: {
           literouter: { model: '', baseUrl: '', tier: 'free', configured: false },
           openai_compatible: {
-            model: 'author/model:free', baseUrl: 'https://openrouter.ai/api/v1', tier: 'free',
-            configured: true, profileId: 'openrouter', freeAccessProbePolicy: 'disabled'
+            model: 'author/model:free', baseUrl: 'https://api.openai.com/v1', tier: 'free',
+            configured: true, profileId: 'openai', freeAccessProbePolicy: 'disabled'
           },
           openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
           ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
@@ -293,7 +293,8 @@ describe('provider form', () => {
     })
     renderProviderForm()
     await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'openai_compatible')
-    await userEvent.selectOptions(await screen.findByLabelText('Как собирать данные'), 'on_first_use')
+    await userEvent.selectOptions(await screen.findByLabelText('Профиль провайдера'), 'openrouter')
+    expect((screen.getByLabelText('Как собирать данные') as HTMLSelectElement).value).toBe('on_first_use')
     const save = screen.getByRole('button', { name: 'Сохранить ключ и применить' })
     expect((save as HTMLButtonElement).disabled).toBe(true)
     await userEvent.click(screen.getByLabelText(/отдельно разрешаю автоматическую проверку/i))
@@ -307,6 +308,30 @@ describe('provider form', () => {
         acknowledgeProbePossibleCost: true
       })
     }))
+  })
+
+  it('preserves an existing OpenRouter policy when returning to its saved profile', async () => {
+    providerGetSummary = {
+      provider: 'openai_compatible',
+      model: 'author/model:free',
+      baseUrl: 'https://openrouter.ai/api/v1',
+      tier: 'free',
+      configured: true,
+      profileId: 'openrouter',
+      profiles: {
+        openai_compatible: {
+          model: 'author/model:free', baseUrl: 'https://openrouter.ai/api/v1', tier: 'free',
+          configured: true, profileId: 'openrouter', freeAccessProbePolicy: 'disabled'
+        }
+      }
+    }
+    renderProviderForm()
+
+    const profile = await screen.findByLabelText('Профиль провайдера')
+    await userEvent.selectOptions(profile, 'openai')
+    await userEvent.selectOptions(profile, 'openrouter')
+
+    expect((screen.getByLabelText('Как собирать данные') as HTMLSelectElement).value).toBe('disabled')
   })
 
   it('surfaces a rejected write instead of reporting success', async () => {
