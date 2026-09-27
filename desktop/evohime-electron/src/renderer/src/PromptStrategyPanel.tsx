@@ -38,10 +38,10 @@ export function PromptStrategyPanel({ events }: PromptStrategyPanelProps): React
 
   const parsedRevision = Number(revision)
   const parsedExpectedVersion = Number(expectedVersion)
-  return <section className="settings-info" aria-label="Prompt Strategy Resolver">
+  return <section className="settings-info prompt-strategy" aria-label="Prompt Strategy Resolver">
     <h3>Prompt Strategy Resolver</h3>
     <p>Core хранит только bounded strategy metadata и evidence references. Renderer не получает prompt text или reusable example contents.</p>
-    <div className="settings-info__actions">
+    <div className="settings-info__actions prompt-strategy__actions">
       <button type="button" disabled={!api} onClick={() => send('strategyList', {})}>Обновить registry</button>
       <button type="button" disabled={!api || !profileId || !Number.isSafeInteger(parsedRevision) || parsedRevision <= 0}
         onClick={() => send('strategyGet', { profile_id: profileId, revision: parsedRevision })}>Получить профиль</button>

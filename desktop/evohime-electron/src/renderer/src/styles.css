@@ -567,6 +567,88 @@ body {
   line-height: 1.6;
 }
 
+.prompt-strategy {
+  display: grid;
+  gap: 14px;
+  max-width: 760px;
+}
+
+.prompt-strategy > p {
+  margin: 0 0 4px;
+}
+
+.prompt-strategy__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prompt-strategy > label,
+.prompt-strategy fieldset label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.prompt-strategy > label input,
+.prompt-strategy > label textarea,
+.prompt-strategy fieldset label input,
+.prompt-strategy fieldset label select,
+.prompt-strategy fieldset label textarea {
+  width: 100%;
+}
+
+.prompt-strategy > label textarea {
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--mono);
+  line-height: 1.45;
+}
+
+.prompt-strategy fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prompt-strategy fieldset legend {
+  padding: 0 5px;
+  color: var(--fg-muted);
+}
+
+.prompt-strategy fieldset button,
+.prompt-strategy fieldset label:has(textarea),
+.prompt-strategy details {
+  grid-column: 1 / -1;
+}
+
+.prompt-strategy fieldset textarea {
+  min-height: 88px;
+  resize: vertical;
+  font-family: var(--mono);
+  line-height: 1.45;
+}
+
+.prompt-strategy details pre {
+  max-width: 100%;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .prompt-strategy fieldset {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .settings-info__details {
   display: grid;
   grid-template-columns: max-content 1fr;
@@ -2301,6 +2383,31 @@ body {
 .panel h3,
 .panel p {
   margin: 0;
+}
+
+.panel > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.panel > label input,
+.panel > label textarea,
+.panel > label select,
+.panel > input,
+.panel > textarea,
+.panel > select {
+  width: 100%;
+}
+
+.panel > label textarea,
+.panel > textarea {
+  min-height: 96px;
+  resize: vertical;
+  font-family: var(--mono);
+  line-height: 1.45;
 }
 
 .panel__eyebrow,
