@@ -9,7 +9,7 @@ fn workflow_bridge(name: &str) -> (IpcBridge, tempfile::TempDir) {
 async fn prompt_strategy_output_contract_ipc_returns_metadata_only() {
     let (bridge, _directory) = workflow_bridge("prompt-strategy-output-contract");
     let contract = crate::structured_response_contract::ResponseContract::new(
-        "strategy.result/v1",
+        "strategy.result.v1",
         1,
         serde_json::json!({"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}),
         crate::structured_response_contract::ResponseStrategy::Auto,
@@ -32,7 +32,7 @@ async fn prompt_strategy_output_contract_ipc_returns_metadata_only() {
     .await;
     assert_eq!(event_type, "benchmark_matrix.result");
     assert_eq!(response["status"], "ok");
-    assert_eq!(response["result"]["contract_id"], "strategy.result/v1");
+    assert_eq!(response["result"]["contract_id"], "strategy.result.v1");
     assert_eq!(response["result"]["revision"], 1);
     assert_eq!(response["result"]["inserted"], true);
     assert!(!response.to_string().contains("properties"));

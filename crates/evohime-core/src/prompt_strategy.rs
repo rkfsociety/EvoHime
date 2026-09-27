@@ -1730,11 +1730,6 @@ pub fn normalize_optimization_candidate(
     candidate: &crate::workflow_optimization_lab::Candidate,
 ) -> Result<PromptStrategyProfile, PromptStrategyError> {
     validate_profile(base)?;
-    crate::workflow_optimization_lab::validate_candidate(
-        candidate,
-        crate::workflow_optimization_lab::Split::Validation,
-    )
-    .map_err(|_| PromptStrategyError::IncompatibleEvidence)?;
     if candidate.parent_hash != base.content_hash || candidate.version <= base.revision {
         return Err(PromptStrategyError::IncompatibleEvidence);
     }
@@ -1743,6 +1738,11 @@ pub fn normalize_optimization_candidate(
         .as_object()
         .filter(|mutations| mutations.len() == 1 && mutations.contains_key("composition"))
         .ok_or(PromptStrategyError::Invalid("candidate_mutation_scope"))?;
+    crate::workflow_optimization_lab::validate_candidate(
+        candidate,
+        crate::workflow_optimization_lab::Split::Validation,
+    )
+    .map_err(|_| PromptStrategyError::IncompatibleEvidence)?;
     let composition: StrategyComposition = serde_json::from_value(
         mutations
             .get("composition")
@@ -2139,7 +2139,7 @@ mod tests {
         evohime_local_storage::prompt_strategy_store::install_schema(&connection)
             .expect("strategy schema");
         let contract = crate::structured_response_contract::ResponseContract::new(
-            "result/v1",
+            "result.v1",
             1,
             serde_json::json!({"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}),
             crate::structured_response_contract::ResponseStrategy::Auto,
@@ -2283,6 +2283,7 @@ mod tests {
         connection
             .execute_batch(
                 "DROP TRIGGER prompt_strategy_profiles_immutable_delete;
+                 PRAGMA foreign_keys=OFF;
                  DELETE FROM prompt_strategy_profiles
                  WHERE profile_id='baseline' AND profile_revision=1;",
             )
