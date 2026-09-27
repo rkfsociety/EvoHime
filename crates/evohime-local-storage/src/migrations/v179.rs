@@ -3,11 +3,26 @@ use rusqlite::Transaction;
 /// Installs immutable prompt-strategy metadata and replay snapshot tables.
 pub(crate) fn apply(transaction: &Transaction<'_>, current: u32) -> rusqlite::Result<()> {
     if current < 179 {
+        ensure_column(
+            transaction,
+            "benchmark_baselines",
+            "suite_hash",
+            "ALTER TABLE benchmark_baselines ADD COLUMN suite_hash TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            transaction,
+            "benchmark_baselines",
+            "policy_hash",
+            "ALTER TABLE benchmark_baselines ADD COLUMN policy_hash TEXT NOT NULL DEFAULT ''",
+        )?;
+        ensure_column(
+            transaction,
+            "task_artifacts",
+            "content_kind",
+            "ALTER TABLE task_artifacts ADD COLUMN content_kind TEXT",
+        )?;
         transaction.execute_batch(
-            "ALTER TABLE benchmark_baselines ADD COLUMN suite_hash TEXT NOT NULL DEFAULT '';
-            ALTER TABLE benchmark_baselines ADD COLUMN policy_hash TEXT NOT NULL DEFAULT '';
-            ALTER TABLE task_artifacts ADD COLUMN content_kind TEXT;
-            CREATE TABLE IF NOT EXISTS prompt_strategy_profiles (
+            "CREATE TABLE IF NOT EXISTS prompt_strategy_profiles (
                 profile_id TEXT NOT NULL CHECK(length(CAST(profile_id AS BLOB)) <= 128),
                 profile_revision INTEGER NOT NULL CHECK(profile_revision > 0),
                 content_hash TEXT NOT NULL,
@@ -91,6 +106,23 @@ pub(crate) fn apply(transaction: &Transaction<'_>, current: u32) -> rusqlite::Re
                 BEFORE DELETE ON prompt_strategy_selections BEGIN SELECT RAISE(ABORT,'immutable prompt strategy snapshot'); END;
             PRAGMA user_version = 179;",
         )?;
+    }
+    Ok(())
+}
+
+fn ensure_column(
+    transaction: &Transaction<'_>,
+    table: &str,
+    column: &str,
+    alter_sql: &str,
+) -> rusqlite::Result<()> {
+    let exists = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name=?2)",
+        rusqlite::params![table, column],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if !exists {
+        transaction.execute_batch(alter_sql)?;
     }
     Ok(())
 }
