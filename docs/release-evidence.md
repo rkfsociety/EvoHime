@@ -3423,6 +3423,9 @@ endpoint ([GitHub REST issue endpoint](https://docs.github.com/en/rest/issues/is
 Unauthenticated public API access can be rate-limited by GitHub
 ([rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=latest)).
 
+Implementation commit `3622c74088183c093d5b5b8c7bbf96f88f1f0daf` is local on
+`main` and has not been pushed.
+
 Source paths select Core and UI bundle release routing. Markers advanced to
 Core `0.0.000382` and UI bundle `0.0.000124`. Local tests, builds, typecheck and
 visual preview were not run under the implementation workflow. Static review
