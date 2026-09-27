@@ -27,7 +27,16 @@ pub const MAX_EVIDENCE_AGE_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
 pub const MAX_EVIDENCE_LOOKUPS_PER_RESOLUTION: usize = 512;
 const MAX_EXAMPLE_BYTES: u64 = 1_024;
 const MAX_EXAMPLE_SET_BYTES: u64 = 64 * 1_024;
-type ExampleArtifactMetadata = (String, String, String, i64, String, String, Option<String>, bool);
+type ExampleArtifactMetadata = (
+    String,
+    String,
+    String,
+    i64,
+    String,
+    String,
+    Option<String>,
+    bool,
+);
 /// Reducer included in v1: exact normalized majority; ties fail closed.
 pub const MULTI_SAMPLE_REDUCER_ID: &str = "majority_exact_v1";
 /// Maximum independent model responses permitted for one multi-sample call.
@@ -2148,9 +2157,11 @@ mod tests {
         let (contract_hash, inserted) = register_output_contract(&connection, &contract, 1)
             .expect("register immutable contract");
         assert!(inserted);
-        assert!(!register_output_contract(&connection, &contract, 2)
-            .expect("idempotent contract")
-            .1);
+        assert!(
+            !register_output_contract(&connection, &contract, 2)
+                .expect("idempotent contract")
+                .1
+        );
 
         let mut candidate = profile();
         candidate.profile_id = "structured-result".into();
