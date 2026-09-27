@@ -2,6 +2,9 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
+/// Stored profile bytes with their content hash and lifecycle metadata.
+pub type ProfileLifecycleRow = (Vec<u8>, String, String, u64);
+
 /// Maximum registry profiles loaded by one resolver pass.
 pub const MAX_PROFILES_PER_READ: usize = 1024;
 /// Maximum exact bindings loaded by one resolver pass.
@@ -213,7 +216,7 @@ pub fn get_immutable(
 /// Lists immutable revisions and their lifecycle states in stable identity order.
 pub fn list_profiles(
     connection: &Connection,
-) -> rusqlite::Result<Vec<(Vec<u8>, String, String, u64)>> {
+) -> rusqlite::Result<Vec<ProfileLifecycleRow>> {
     let mut statement = connection.prepare(
         "SELECT profile_json,content_hash,state,state_revision FROM prompt_strategy_profiles
          JOIN prompt_strategy_lifecycle USING(profile_id,profile_revision)
@@ -280,6 +283,7 @@ pub fn transition_lifecycle(
 }
 
 /// Inserts an exact per-call selection snapshot idempotently.
+#[allow(clippy::too_many_arguments)]
 pub fn put_selection(
     connection: &Connection,
     snapshot_id: &str,

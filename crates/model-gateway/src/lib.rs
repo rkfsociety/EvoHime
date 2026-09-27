@@ -1192,6 +1192,7 @@ impl ModelGateway {
     }
 
     /// Executes policy routing with a Core-owned route hook and bounded provider options.
+    #[allow(clippy::too_many_arguments)]
     pub async fn chat_with_tools_with_policy_and_route_hook_options(
         &self,
         mode: RoutingMode,
