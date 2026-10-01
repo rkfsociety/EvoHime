@@ -25,6 +25,7 @@ import {
   markOptimisticRetry,
   prependConversationEvents,
   resumeAtRetainedBoundary,
+  type OptimisticConversationMessage,
   type ConversationProjectionState
 } from './conversation-projection'
 
@@ -44,6 +45,10 @@ interface ComposerAttachment {
   readonly name: string
   readonly relativePath: string
 }
+
+type TimelineItemDescriptor =
+  | { readonly key: string; readonly kind: 'user'; readonly message: ChatMessage; readonly delivery: OptimisticConversationMessage | null }
+  | { readonly key: string; readonly kind: 'transcript'; readonly entry: ReturnType<typeof buildTranscript>['entries'][number]; readonly keySuffix: string }
 
 function buildConversationPageKey(page: { conversationId: string; oldestSequence: number; earliestAvailableSequence?: number; errorCode?: string; events: readonly { eventId: string; sequence: number }[] }): string {
   const signature = page.events.map((entry) => `${entry.sequence}:${entry.eventId}`).join('|')
@@ -142,6 +147,10 @@ export function TaskTimeline({
     scrollHeight: 0
   })
   const entryTimes = useRef(new Map<string, number>())
+  const transcriptCacheRef = useRef<{
+    chatId: string | null
+    tasks: Map<string, { signature: string; transcript: ReturnType<typeof buildTranscript> }>
+  }>({ chatId, tasks: new Map() })
   const cancelRequestedTaskId = useRef<string | null>(null)
   const eventCursorRef = useRef<{ seenKeys: Set<string>; firstKey: string | null; length: number }>({
     seenKeys: new Set<string>(),
@@ -455,6 +464,10 @@ export function TaskTimeline({
     [activeTaskEvents, activeTaskId]
   )
 
+  if (transcriptCacheRef.current.chatId !== chatId) {
+    transcriptCacheRef.current = { chatId, tasks: new Map() }
+  }
+
   const conversation = useMemo(() => {
     const authoritativeMessages = projectedConversationEvents
       .filter((event) => event.kind === 'user_message_accepted')
@@ -488,14 +501,29 @@ export function TaskTimeline({
       if (taskEventsForId) taskEventsForId.push(event)
       else eventsByTask.set(event.taskId, [event])
     }
-    return messages.map((message) => ({
-      message,
-      delivery: conversationLog?.optimistic.find(
-        (item) => item.clientMessageId === message.clientMessageId
-      ) ?? null,
-      transcript: buildTranscript(eventsByTask.get(message.taskId) ?? [])
-    }))
-  }, [chat?.messages, conversationLog?.optimistic, projectedConversationEvents, sentPrompt, sentPromptAtMs, taskId, taskEvents])
+    const retainedTasks = new Set(messages.map((message) => message.taskId))
+    for (const cachedTaskId of transcriptCacheRef.current.tasks.keys()) {
+      if (!retainedTasks.has(cachedTaskId)) transcriptCacheRef.current.tasks.delete(cachedTaskId)
+    }
+    return messages.map((message) => {
+      const taskEventsForMessage = eventsByTask.get(message.taskId) ?? []
+      const signature = `${taskEventsForMessage.length}:${taskEventsForMessage[0]?.sequenceId ?? ''}:${taskEventsForMessage.at(-1)?.sequenceId ?? ''}`
+      const cached = transcriptCacheRef.current.tasks.get(message.taskId)
+      const transcript = cached?.signature === signature
+        ? cached.transcript
+        : buildTranscript(taskEventsForMessage)
+      if (cached?.signature !== signature) {
+        transcriptCacheRef.current.tasks.set(message.taskId, { signature, transcript })
+      }
+      return {
+        message,
+        delivery: conversationLog?.optimistic.find(
+          (item) => item.clientMessageId === message.clientMessageId
+        ) ?? null,
+        transcript
+      }
+    })
+  }, [chatId, chat?.messages, conversationLog?.optimistic, projectedConversationEvents, sentPrompt, sentPromptAtMs, taskId, taskEvents])
 
   const retryMessage = useCallback(async (clientMessageId: string) => {
     if (!api || !conversationLog) return
@@ -520,48 +548,63 @@ export function TaskTimeline({
 
   const timelineItems = useMemo(() => {
     if (conversation.length > 0) {
-      return conversation.flatMap(({ message, transcript, delivery }) => {
+      return conversation.flatMap(({ message, transcript, delivery }): TimelineItemDescriptor[] => {
         const messageId = `user-${message.taskId}-${message.atMs}`
         return [
-          <li key={messageId} className="message message--user">
-            <div className="message__bubble">{message.prompt}</div>
-            {delivery ? (
-              <small className="message__delivery" role="status">
-                {delivery.status === 'sending' ? 'Отправляется…' : null}
-                {delivery.status === 'retry' ? 'Повторная отправка…' : null}
-                {delivery.status === 'failed' ? (
-                  <button type="button" onClick={() => void retryMessage(delivery.clientMessageId)}>
-                    Повторить отправку
-                  </button>
-                ) : null}
-              </small>
-            ) : null}
-            <MessageActions
-              id={messageId}
-              text={message.prompt}
-              atMs={message.atMs}
-              copied={copiedMessageId === messageId}
-              onCopy={setCopiedMessageId}
-            />
-          </li>,
-          ...transcript.entries.map((entry, index) =>
-            renderTranscriptEntry(entry, `${message.taskId}-${index}`, entryTimes, copiedMessageId, setCopiedMessageId)
-          )
+          { key: messageId, kind: 'user', message, delivery },
+          ...transcript.entries.map((entry, index) => {
+            const keySuffix = `${message.taskId}-${index}`
+            return { key: `${entry.kind}-${entry.id}-${keySuffix}`, kind: 'transcript' as const, entry, keySuffix }
+          })
         ]
       })
     }
-    return entries.map((entry, index) =>
-      renderTranscriptEntry(entry, String(index), entryTimes, copiedMessageId, setCopiedMessageId)
-    )
-  }, [conversation, copiedMessageId, entries, retryMessage])
+    return entries.map((entry, index) => {
+      const keySuffix = String(index)
+      return { key: `${entry.kind}-${entry.id}-${keySuffix}`, kind: 'transcript' as const, entry, keySuffix }
+    })
+  }, [conversation, entries])
 
   const timelineItemKeys = useMemo(
-    () => timelineItems.map((item) => item.key === null ? '' : String(item.key)),
+    () => timelineItems.map((item) => item.key),
     [timelineItems]
   )
   const maxTimelineWindowStart = Math.max(0, timelineItems.length - MAX_RENDERED_ITEMS)
   const renderedTimelineStart = Math.min(timelineWindowStart, maxTimelineWindowStart)
-  const renderedTimelineItems = timelineItems.slice(renderedTimelineStart, renderedTimelineStart + MAX_RENDERED_ITEMS)
+  const renderedTimelineDescriptors = timelineItems.slice(renderedTimelineStart, renderedTimelineStart + MAX_RENDERED_ITEMS)
+  const renderedTimelineItems = useMemo(
+    () => renderedTimelineDescriptors.map((item) => {
+      if (item.kind === 'transcript') {
+        return renderTranscriptEntry(item.entry, item.keySuffix, entryTimes, copiedMessageId, setCopiedMessageId)
+      }
+      const messageId = item.key
+      const { message, delivery } = item
+      return (
+        <li key={messageId} className="message message--user">
+          <div className="message__bubble">{message.prompt}</div>
+          {delivery ? (
+            <small className="message__delivery" role="status">
+              {delivery.status === 'sending' ? 'Отправляется…' : null}
+              {delivery.status === 'retry' ? 'Повторная отправка…' : null}
+              {delivery.status === 'failed' ? (
+                <button type="button" onClick={() => void retryMessage(delivery.clientMessageId)}>
+                  Повторить отправку
+                </button>
+              ) : null}
+            </small>
+          ) : null}
+          <MessageActions
+            id={messageId}
+            text={message.prompt}
+            atMs={message.atMs}
+            copied={copiedMessageId === messageId}
+            onCopy={setCopiedMessageId}
+          />
+        </li>
+      )
+    }),
+    [copiedMessageId, entryTimes, renderedTimelineDescriptors, retryMessage]
+  )
 
   const handleTimelineScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
     const element = event.currentTarget

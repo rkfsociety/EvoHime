@@ -25,7 +25,12 @@ impl EventJournal {
         std::thread::Builder::new()
             .name("evohime-journal-writer".into())
             .spawn(move || {
-                while let Ok(JournalWrite(write, result)) = receiver.recv() {
+                while let Ok(JournalWrite(write, result, enqueued_at)) = receiver.recv() {
+                    let queue_wait_ms = enqueued_at.elapsed().as_secs_f64() * 1000.0;
+                    tracing::debug!(
+                        queue_wait_ms,
+                        "core event journal writer queue wait completed"
+                    );
                     let mut database = worker_database.blocking_lock();
                     let _ = result.send(write(&mut database));
                 }

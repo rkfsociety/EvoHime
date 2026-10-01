@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -139,6 +139,28 @@ describe('chat store', () => {
     expect(readFileSync(join(dirname(path), recoveryFiles[0]!), 'utf8')).toBe(original)
     await expect(store.create('C:\\work\\repo')).rejects.toMatchObject({ kind: 'corrupt' })
     expect(readFileSync(path, 'utf8')).toBe(original)
+  })
+
+  it('does not publish a mutation to the cache when its file write fails', async () => {
+    const path = storePath()
+    const store = newStore(path)
+    expect(await store.list('C:\\work\\repo')).toEqual([])
+    mkdirSync(path)
+
+    await expect(store.create('C:\\work\\repo')).rejects.toMatchObject({ kind: 'write-failed' })
+    expect(await store.list('C:\\work\\repo')).toEqual([])
+  })
+
+  it('retries a transient read failure on the next access', async () => {
+    const path = storePath()
+    mkdirSync(path)
+    const store = newStore(path)
+
+    await expect(store.list('C:\\work\\repo')).rejects.toMatchObject({ kind: 'read-failed' })
+    rmdirSync(path)
+    writeFileSync(path, JSON.stringify({ version: 1, chats: [] }), 'utf8')
+
+    expect(await store.list('C:\\work\\repo')).toEqual([])
   })
 
   it('bounds a title taken from a long prompt', () => {
