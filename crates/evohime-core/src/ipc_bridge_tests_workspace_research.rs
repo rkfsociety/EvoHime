@@ -1012,7 +1012,7 @@ async fn reconnect_replays_only_events_after_last_sequence() {
     let first = journal
         .record(&CoreEvent::TaskStarted {
             task_id: "task-reconnect".into(),
-            prompt: "one".into(),
+            prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
         })
         .await
         .expect("first event");

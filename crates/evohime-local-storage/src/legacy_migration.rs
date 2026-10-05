@@ -152,6 +152,11 @@ pub(crate) fn run(
     migrations::v173::apply(&transaction, current)?;
     migrations::v174::apply(&transaction, current)?;
     migrations::v175::apply(&transaction, current)?;
+    migrations::v176::apply(&transaction, current)?;
+    migrations::v177::apply(&transaction, current)?;
+    migrations::v178::apply(&transaction, current)?;
+    migrations::v179::apply(&transaction, current)?;
+    migrations::v180::apply(&transaction, current)?;
     transaction.commit()?;
     Ok(())
 }

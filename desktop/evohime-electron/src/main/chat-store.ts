@@ -184,10 +184,16 @@ export class ChatStore {
     // subsequent reads use the in-memory snapshot.
     if (this.cached) return Promise.resolve(this.cached)
     if (!this.loadPromise) {
-      this.loadPromise = this.readFromDisk().then((document) => {
-        this.cached = document
-        return document
-      })
+      this.loadPromise = this.readFromDisk().then(
+        (document) => {
+          this.cached = document
+          return document
+        },
+        (error: unknown) => {
+          this.loadPromise = undefined
+          throw error
+        }
+      )
     }
     return this.loadPromise
   }
@@ -220,10 +226,12 @@ export class ChatStore {
   }
 
   private write(document: StoredDocument): Promise<void> {
-    // Update the cache before waiting so concurrent mutations build on the
-    // latest logical state while physical writes remain ordered.
-    this.cached = document
-    const operation = this.writeQueue.then(() => this.writeOnce(document))
+    // Publish the new snapshot only after the atomic replacement succeeds.
+    // A rejected write must not make an unsaved mutation visible to later reads.
+    const operation = this.writeQueue.then(async () => {
+      await this.writeOnce(document)
+      this.cached = document
+    })
     this.writeQueue = operation.catch(() => undefined)
     return operation
   }

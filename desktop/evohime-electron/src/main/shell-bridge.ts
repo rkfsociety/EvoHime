@@ -10,6 +10,9 @@ import {
   type CommandFailure,
   type PermissionMode,
   type ProviderKind,
+  type ProviderProfileId,
+  type FreeAccessProbePolicy,
+  type FreeAccessRoutingMode,
   type RendererCommand,
   type ShellEvent
 } from '@shared/api'
@@ -30,6 +33,8 @@ import { resolveIdentity, resolveRepository } from './identity'
 import {
   normalizeApiKey,
   normalizeBaseUrl,
+  isProviderProfileId,
+  normalizeCloudflareAccountId,
   normalizeModel,
   type ProviderStore
 } from './provider-store'
@@ -614,7 +619,7 @@ function dispatch(
     }
     case 'core.codeAnchoredIntentMarkers': { const value=asRecord(payload); const operation=value['operation']==='propose'?'propose':'scan'; const filePath=asBoundedString(value['filePath']); const revision=asBoundedString(value['revision']); const body=value['payload']===undefined?'':asBoundedString(value['payload']); const idempotencyKey=value['idempotencyKey']===undefined?randomUUID():asBoundedString(value['idempotencyKey']); if(filePath===null||revision===null||body===null||idempotencyKey===null||filePath.length>4096||body.length>64*1024)return failure('invalid-payload','Некорректная операция Code-Anchored Intent Markers.'); return accepted(client.send({codeAnchoredIntentMarkers:{schemaVersion:1,operation,filePath,revision,payload:Buffer.from(body,'utf8'),idempotencyKey}})) }
     case 'core.modelPurposeRouting': { const value=asRecord(payload); const operation=value['operation']==='put'?'put':'get'; const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=value['idempotencyKey']===undefined?randomUUID():asBoundedString(value['idempotencyKey']); if(body===null||expectedVersion===null||idempotencyKey===null||body.length>256*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Model Purpose Routing.'); return accepted(client.send({modelPurposeRouting:{schemaVersion:1,operation,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
-    case 'core.localModelRuntimeManager': { const value=asRecord(payload); const allowed=['inspect','hardware','fit','download_artifact','save_policy','get_policy','start','stop','probe','verify_artifact','promote_artifact','transition','profile','register_model','register_runtime','register_artifact','register_session','recover','ollama_pull']; const operation=allowed.includes(String(value['operation']))?String(value['operation']):'inspect'; const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=value['idempotencyKey']===undefined?randomUUID():asBoundedString(value['idempotencyKey']); if(body===null||expectedVersion===null||idempotencyKey===null||body.length>256*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Local Model Runtime Manager.'); return accepted(client.send({localModelRuntimeManager:{schemaVersion:1,operation,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
+    case 'core.localModelRuntimeManager': { const value=asRecord(payload); const allowed=['inspect','hardware','fit','download_artifact','save_policy','get_policy','start','stop','probe','verify_artifact','promote_artifact','transition','profile','register_model','register_runtime','register_artifact','register_session','recover','ollama_pull','adapter_status','install_adapter','adaptation_create','adaptation_start','adaptation_poll','adaptation_calibrate','adaptation_benchmark','adaptation_promote','adaptation_get','adaptation_list','adaptation_cancel','adaptation_reject']; const operation=allowed.includes(String(value['operation']))?String(value['operation']):'inspect'; const body=value['payload']===undefined?'':asBoundedString(value['payload']); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=value['idempotencyKey']===undefined?randomUUID():asBoundedString(value['idempotencyKey']); if(body===null||expectedVersion===null||idempotencyKey===null||body.length>256*1024||idempotencyKey.length>128)return failure('invalid-payload','Некорректная операция Local Model Runtime Manager.'); return accepted(client.send({localModelRuntimeManager:{schemaVersion:1,operation,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
     case 'core.architectureSnapshot': { const value=asRecord(payload); const root=asBoundedString(value['workspaceRoot']); const body=value['payload']===undefined?'':asBoundedString(value['payload']); const id= value['snapshotId']===undefined?'architecture-current':asBoundedString(value['snapshotId']); const allowed=['current','refresh','rebuild','inspect','get','evidence','open_evidence','upstream','downstream','route','compare','review']; const requested=asBoundedString(value['operation']); const operation=requested===null?'current':(allowed.includes(requested)?requested:null); const expectedVersion=value['expectedVersion']===undefined?0:asNonNegativeInteger(value['expectedVersion']); const idempotencyKey=value['idempotencyKey']===undefined?randomUUID():asBoundedString(value['idempotencyKey']); if(root===null||body===null||id===null||operation===null||expectedVersion===null||idempotencyKey===null||body.length>256*1024)return failure('invalid-payload','Некорректный запрос architecture snapshot.'); return accepted(client.send({architectureSnapshot:{schemaVersion:1,operation,snapshotId:id,workspaceRoot:root,payload:Buffer.from(body,'utf8'),expectedVersion,idempotencyKey}})) }
     case 'core.persistentAgentOrganizationRegistry': {
       const value = asRecord(payload)
@@ -1662,16 +1667,62 @@ function dispatch(
       const model = normalizeModel(value['model'])
       const baseUrl = normalizeBaseUrl(value['baseUrl'])
       const tier = asModelCatalogMode(value['tier'])
+      const currentSummary = providers.summary()
+      const currentProfile = provider === null ? undefined : currentSummary.profiles[provider]
+      const freeAccessProbePolicy = value['freeAccessProbePolicy'] === undefined
+        ? currentProfile?.freeAccessProbePolicy ?? 'disabled'
+        : asFreeAccessProbePolicy(value['freeAccessProbePolicy'])
+      const freeAccessRoutingMode = value['freeAccessRoutingMode'] === undefined
+        ? currentSummary.freeAccessRoutingMode ?? 'any'
+        : asFreeAccessRoutingMode(value['freeAccessRoutingMode'])
+      const acknowledgeProbePossibleCost = value['acknowledgeProbePossibleCost'] === true
+      const allowPaidFallback = value['allowPaidFallback'] === undefined
+        ? currentSummary.allowPaidFallback === true
+        : value['allowPaidFallback'] === true
+      const profileIdValue = value['profileId']
+      const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
+      const accountIdValue = value['accountId']
+      const accountId = accountIdValue === undefined
+        ? undefined
+        : normalizeCloudflareAccountId(accountIdValue)
       if (
         provider === null ||
         apiKey === null ||
         model === null ||
         baseUrl === null ||
-        tier === null
+        tier === null ||
+        freeAccessProbePolicy === null ||
+        freeAccessRoutingMode === null ||
+        (value['acknowledgeProbePossibleCost'] !== undefined && typeof value['acknowledgeProbePossibleCost'] !== 'boolean') ||
+        (value['allowPaidFallback'] !== undefined && typeof value['allowPaidFallback'] !== 'boolean') ||
+        (profileIdValue !== undefined && profileId === null) ||
+        (accountIdValue !== undefined && accountId === null)
       ) {
-        return failure('invalid-payload', 'Проверь ключ, модель и адрес: адрес должен быть https.')
+        return failure('invalid-payload', 'Проверь ключ, модель и профиль провайдера.')
       }
-      const summary = providers.save({ provider, apiKey, model, baseUrl, tier })
+      if (!currentProfile) return failure('invalid-payload', 'Профиль провайдера недоступен.')
+      const automaticProbe = freeAccessProbePolicy === 'on_first_use' || freeAccessProbePolicy === 'periodic_bounded'
+      if (automaticProbe && (provider !== 'openai_compatible' || profileId !== 'openrouter')) {
+        return failure('invalid-payload', 'Автоматическая проверка пока доступна только для профиля OpenRouter.')
+      }
+      if (automaticProbe && (freeAccessProbePolicy !== currentProfile.freeAccessProbePolicy || apiKey.length > 0 ||
+        profileId !== currentProfile.profileId || baseUrl !== currentProfile.baseUrl || accountId !== currentProfile.accountId) &&
+        !acknowledgeProbePossibleCost) {
+        return failure('invalid-payload', 'Для автоматической проверки подтверди возможный расход кредитов или денег.')
+      }
+      const summary = providers.save({
+        provider,
+        apiKey,
+        model,
+        baseUrl,
+        tier,
+        freeAccessProbePolicy,
+        acknowledgeProbePossibleCost,
+        freeAccessRoutingMode,
+        allowPaidFallback,
+        ...(profileId ? { profileId } : {}),
+        ...(accountId ? { accountId } : {})
+      })
       if (summary === null) {
         log('error', 'shell.provider_encryption_unavailable', {})
         return failure('protocol-error', 'Windows не даёт зашифровать ключ — он не сохранён.')
@@ -1696,6 +1747,21 @@ function dispatch(
       const summary = providers.clearKey(requestedProvider ?? undefined)
       log('info', 'shell.provider_key_cleared', {})
       return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
+    }
+
+    case 'provider.verifyFreeAccess': {
+      const value = asRecord(payload)
+      const modelId = normalizeModel(value['modelId'])
+      if (modelId === null || modelId.length === 0 || value['confirmPossibleCost'] !== true) {
+        return failure('invalid-payload', 'Подтверди возможный расход и выбери модель для проверки.')
+      }
+      return accepted(client.send({
+        modelCatalog: {
+          mode: 'verify_free_access',
+          modelId,
+          confirmPossibleCost: true
+        }
+      }))
     }
 
     case 'codex.getStatus':
@@ -2019,6 +2085,99 @@ function dispatch(
     case 'workflow.listTemplates':
       return accepted(client.send({ listWorkflowTemplates: {} }))
 
+    case 'capabilityRecipe.list':
+      return accepted(client.send({ listCapabilityRecipes: {} }))
+
+    case 'capabilityRecipe.preflight': {
+      const value = asRecord(payload)
+      const recipeId = asBoundedString(value['recipeId'])
+      const recipeVersion = asBoundedNumber(value['recipeVersion'], Number.MAX_SAFE_INTEGER)
+      const recipeHash = asBoundedString(value['recipeHash'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const inputs = asWorkflowInputs(value['inputs'])
+      if (recipeId === null || recipeVersion === null || recipeVersion < 1 || recipeHash === null || workspacePath === null) {
+        return failure('invalid-payload', 'Некорректный запрос preflight recipe.')
+      }
+      if (inputs === null) return failure('invalid-payload', 'Некорректные входы recipe.')
+      return accepted(client.send({ preflightCapabilityRecipe: { recipeId, recipeVersion, recipeHash, inputs, workspacePath } }))
+    }
+
+    case 'capabilityRecipe.start': {
+      const value = asRecord(payload)
+      const recipeId = asBoundedString(value['recipeId'])
+      const recipeVersion = asBoundedNumber(value['recipeVersion'], Number.MAX_SAFE_INTEGER)
+      const recipeHash = asBoundedString(value['recipeHash'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const inputs = asWorkflowInputs(value['inputs'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const preflightHash = asBoundedString(value['preflightHash'])
+      if (recipeId === null || recipeVersion === null || recipeVersion < 1 || recipeHash === null || workspacePath === null || idempotencyKey === null || idempotencyKey.length > 256 || preflightHash === null) {
+        return failure('invalid-payload', 'Некорректный запрос запуска recipe.')
+      }
+      if (inputs === null) return failure('invalid-payload', 'Некорректные входы recipe.')
+      return accepted(client.send({ startCapabilityRecipe: { recipeId, recipeVersion, recipeHash, workspacePath, inputs, idempotencyKey, preflightHash } }))
+    }
+
+    case 'capabilityRecipe.getRun': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      if (runId === null) return failure('invalid-payload', 'Некорректный идентификатор запуска recipe.')
+      return accepted(client.send({ getCapabilityRecipeRun: { runId } }))
+    }
+
+    case 'capabilityRecipe.forkRun': {
+      const value = asRecord(payload)
+      const runId = asBoundedString(value['runId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (runId === null || idempotencyKey === null || idempotencyKey.length > 256) {
+        return failure('invalid-payload', 'Некорректный запрос fork recipe run.')
+      }
+      return accepted(client.send({ forkCapabilityRecipeRun: { runId, idempotencyKey } }))
+    }
+
+    case 'imageGeneration.capability':
+      return accepted(client.send({ imageGeneration: { schemaVersion: 1, requestId: randomUUID(), operation: 'capability', jobId: '', payload: Buffer.alloc(0), idempotencyKey: '' } }))
+
+    case 'imageGeneration.start': {
+      const value = asRecord(payload)
+      const operation = value['operation']
+      const prompt = asBoundedString(value['prompt'])
+      const width = asBoundedNumber(value['width'], 4096)
+      const height = asBoundedNumber(value['height'], 4096)
+      const count = asBoundedNumber(value['count'], 4)
+      const mimeType = value['mimeType']
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const jobId = asBoundedString(value['jobId'])
+      const inputs = value['inputImages'] === undefined ? [] : value['inputImages']
+      const mask = value['maskImage']
+      if (!['generate', 'edit', 'mask_edit'].includes(String(operation)) || prompt === null || Buffer.byteLength(prompt, 'utf8') > 8192 || width === null || width < 1 || height === null || height < 1 || count === null || count < 1 || (mimeType !== 'image/png' && mimeType !== 'image/jpeg') || idempotencyKey === null || idempotencyKey.length > 128 || jobId === null || jobId.length > 128 || jobId !== idempotencyKey || !/^[A-Za-z0-9-]+$/.test(jobId) || !Array.isArray(inputs) || inputs.length > 4) {
+        return failure('invalid-payload', 'Некорректный запрос генерации изображения.')
+      }
+      const parseArtifact = (candidate: unknown): { locator: string; mime_type: string; artifact_kind: string } | null => {
+        const item = asRecord(candidate)
+        const locator = asBoundedString(item['locator'])
+        const itemMime = asBoundedString(item['mimeType'])
+        const artifactKind = asBoundedString(item['artifactKind'])
+        if (locator === null || locator.length > 512 || !locator.startsWith('artifact://') || itemMime === null || itemMime.length > 64 || artifactKind === null || artifactKind.length > 64) return null
+        return { locator, mime_type: itemMime, artifact_kind: artifactKind }
+      }
+      const parsedInputs = inputs.map(parseArtifact)
+      const parsedMask = mask === undefined || mask === null ? null : parseArtifact(mask)
+      if (parsedInputs.some((item) => item === null) || (mask !== undefined && mask !== null && parsedMask === null)) return failure('invalid-payload', 'Некорректная ссылка на image artifact.')
+      const body = Buffer.from(JSON.stringify({ operation, prompt, width, height, count, mime_type: mimeType, input_images: parsedInputs, mask_image: parsedMask }), 'utf8')
+      if (body.byteLength > 16 * 1024) return failure('invalid-payload', 'Запрос изображения превышает допустимый размер.')
+      return accepted(client.send({ imageGeneration: { schemaVersion: 1, requestId: randomUUID(), operation: 'start', jobId, payload: body, idempotencyKey } }))
+    }
+
+    case 'imageGeneration.get':
+    case 'imageGeneration.cancel': {
+      const value = asRecord(payload)
+      const jobId = asBoundedString(value['jobId'])
+      if (jobId === null || jobId.length > 128) return failure('invalid-payload', 'Некорректный идентификатор image job.')
+      const operation = command.endsWith('.get') ? 'get' : 'cancel'
+      return accepted(client.send({ imageGeneration: { schemaVersion: 1, requestId: randomUUID(), operation, jobId, payload: Buffer.alloc(0), idempotencyKey: '' } }))
+    }
+
     case 'workflow.getDefinition': {
       const value = asRecord(payload)
       const templateId = asBoundedString(value['templateId'])
@@ -2264,9 +2423,36 @@ function dispatch(
       const runId = value['runId'] === undefined ? '' : asBoundedString(value['runId'])
       const attempts = value['attempts'] === undefined ? 3 : asBoundedNumber(value['attempts'], 32)
       const expectedVersion = value['expectedVersion'] === undefined ? 0 : asBoundedNumber(value['expectedVersion'], Number.MAX_SAFE_INTEGER)
-      if (requestId === null || ownerScope === null || idempotencyKey === null || suiteId === null || runId === null || attempts === null || expectedVersion === null) return failure('invalid-payload', 'Некорректная команда benchmark matrix.')
-      const payloadJson = JSON.stringify({ suiteId, runId, attempts, mode: value['mode'] === 'real' ? 'real' : 'deterministic' })
+      const challengeId = value['challengeId'] === undefined ? '' : asBoundedString(value['challengeId'])
+      const modelProfileId = value['modelProfileId'] === undefined ? '' : asBoundedString(value['modelProfileId'])
+      const agentProfileId = value['agentProfileId'] === undefined ? '' : asBoundedString(value['agentProfileId'])
+      const reportSha256 = value['reportSha256'] === undefined ? '' : asBoundedString(value['reportSha256'])
+      if (requestId === null || ownerScope === null || idempotencyKey === null || suiteId === null || runId === null || attempts === null || expectedVersion === null || challengeId === null || modelProfileId === null || agentProfileId === null || reportSha256 === null) return failure('invalid-payload', 'Некорректная команда benchmark matrix.')
+      const payloadJson = JSON.stringify({ suiteId, runId, run_id: runId, attempts, mode: value['mode'] === 'real' ? 'real' : 'deterministic', challenge_id: challengeId, model_profile_id: modelProfileId, agent_profile_id: agentProfileId, report_sha256: reportSha256 })
       return accepted(client.send({ benchmarkMatrixAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(payloadJson, 'utf8'), expectedVersion, idempotencyKey } }))
+    }
+
+    case 'benchmarkMatrix.strategyList':
+    case 'benchmarkMatrix.strategyGet':
+    case 'benchmarkMatrix.strategyEvidence':
+    case 'benchmarkMatrix.strategyCompatibility':
+    case 'benchmarkMatrix.strategyCompare':
+    case 'benchmarkMatrix.strategyRegister':
+    case 'benchmarkMatrix.strategyBind':
+    case 'benchmarkMatrix.strategyExampleSet':
+    case 'benchmarkMatrix.strategyOutputContract':
+    case 'benchmarkMatrix.strategyTransition':
+    case 'benchmarkMatrix.strategyPromote':
+    case 'benchmarkMatrix.strategySelections': {
+      const value = asRecord(payload)
+      const requestId = asBoundedString(value['requestId'])
+      const ownerScope = asBoundedString(value['ownerScope'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      const operation = command.slice('benchmarkMatrix.'.length)
+      const rawPayload = value['payload'] === undefined ? '{}' : asBoundedPayload(value['payload'], 64 * 1024)
+      const expectedVersion = value['expectedVersion'] === undefined ? 0 : asBoundedNumber(value['expectedVersion'], Number.MAX_SAFE_INTEGER)
+      if (requestId === null || ownerScope !== 'prompt_strategy' || idempotencyKey === null || rawPayload === null || expectedVersion === null) return failure('invalid-payload', 'Некорректная команда prompt strategy.')
+      return accepted(client.send({ benchmarkMatrixAction: { schemaVersion: 1, requestId, ownerScope, operation, payload: Buffer.from(rawPayload, 'utf8'), expectedVersion, idempotencyKey } }))
     }
 
     case 'agentMiddleware.list':
@@ -2959,10 +3145,23 @@ function asModelCatalogMode(value: unknown): 'free' | 'paid' | null {
   return value === 'free' || value === 'paid' ? value : null
 }
 
+function asFreeAccessProbePolicy(value: unknown): FreeAccessProbePolicy | null {
+  return value === 'disabled' || value === 'passive_only' || value === 'on_first_use'
+    || value === 'periodic_bounded' || value === 'manual_only' ? value : null
+}
+
+function asFreeAccessRoutingMode(value: unknown): FreeAccessRoutingMode | null {
+  return value === 'any' || value === 'prefer_free' || value === 'free_only' ? value : null
+}
+
 function asProviderKind(value: unknown): ProviderKind | null {
   return typeof value === 'string' && (PROVIDER_KINDS as readonly string[]).includes(value)
     ? (value as ProviderKind)
     : null
+}
+
+function asProviderProfileId(value: unknown): ProviderProfileId | null {
+  return isProviderProfileId(value) ? value : null
 }
 
 function asArguments(value: unknown): string[] | null {

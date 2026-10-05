@@ -66,14 +66,20 @@ pub fn save_draft(
     input: SaveDraft<'_>,
 ) -> rusqlite::Result<Result<u64, &'static str>> {
     let tx = connection.unchecked_transaction()?;
-    let current: Option<u64> = tx
+    let current: Option<(String, u64)> = tx
         .query_row(
-            "SELECT revision FROM visual_workflow_drafts WHERE draft_id=?1 AND owner_scope=?2",
-            (input.draft_id, input.owner_scope),
-            |row| row.get(0),
+            "SELECT owner_scope, revision FROM visual_workflow_drafts WHERE draft_id=?1",
+            [input.draft_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
-    if current.unwrap_or(0) != input.expected_revision {
+    if current
+        .as_ref()
+        .is_some_and(|(owner_scope, _)| owner_scope != input.owner_scope)
+    {
+        return Ok(Err("owner_conflict"));
+    }
+    if current.map(|(_, revision)| revision).unwrap_or(0) != input.expected_revision {
         return Ok(Err("stale_revision"));
     }
     let revision = input.expected_revision + 1;
@@ -191,6 +197,22 @@ pub fn read_draft(
     owner_scope: &str,
 ) -> rusqlite::Result<Option<DraftRow>> {
     connection.query_row("SELECT revision, definition_json, execution_hash, layout_hash FROM visual_workflow_drafts WHERE draft_id=?1 AND owner_scope=?2", (draft_id, owner_scope), |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))).optional()
+}
+
+/// Reads optional provenance for one owner-scoped draft identifier.
+pub fn read_draft_provenance(
+    connection: &Connection,
+    draft_id: &str,
+    owner_scope: &str,
+) -> rusqlite::Result<Option<Vec<u8>>> {
+    connection
+        .query_row(
+            "SELECT composer_provenance_json FROM visual_workflow_drafts WHERE draft_id=?1 AND owner_scope=?2",
+            (draft_id, owner_scope),
+            |row| row.get(0),
+        )
+        .optional()
+        .map(Option::flatten)
 }
 
 #[cfg(test)]

@@ -357,7 +357,8 @@ async fn run_supervisor_command_channel(
 ) -> io::Result<()> {
     use self::analysis_kernel_worker::{KernelWorkerLaunchSpec, KernelWorkerProcess};
     use crate::local_provider::{
-        ExternalAgentProcess, LocalAdapterProcess, LocalProviderManager, ResourceLimits,
+        ExternalAgentProcess, LocalAdapterProcess, LocalInferenceProcess, LocalProviderManager,
+        LocalQuantizerProcess, ResourceLimits,
     };
     use std::collections::BTreeMap;
 
@@ -365,6 +366,8 @@ async fn run_supervisor_command_channel(
     let mut adapter_processes: BTreeMap<String, LocalAdapterProcess> = BTreeMap::new();
     let mut kernel_processes: BTreeMap<String, KernelWorkerProcess> = BTreeMap::new();
     let mut external_processes: BTreeMap<String, ExternalAgentProcess> = BTreeMap::new();
+    let mut quantizer_processes: BTreeMap<String, LocalQuantizerProcess> = BTreeMap::new();
+    let mut inference_processes: BTreeMap<String, LocalInferenceProcess> = BTreeMap::new();
     let mut verifier = evohime_desktop_ipc::session::HandshakeVerifier::new(
         context.launch_context.clone(),
         evohime_desktop_ipc::session::DEFAULT_NONCE_TTL_MS,
@@ -432,6 +435,187 @@ async fn run_supervisor_command_channel(
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
         let response = match op {
+            "adaptation_quantize_start" => {
+                let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
+                let relative = value
+                    .get("source_relative_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let source_hash = value
+                    .get("source_sha256")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let source_size = value
+                    .get("source_size_bytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let target = value.get("target").and_then(|v| v.as_str()).unwrap_or("");
+                let threads = value
+                    .get("threads")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|n| u16::try_from(n).ok())
+                    .unwrap_or(0);
+                if quantizer_processes.contains_key(job_id) {
+                    json!({"accepted":true,"job_id":job_id,"state":"running","idempotent_replay":true})
+                } else if !quantizer_processes.is_empty()
+                    || !adapter_processes.is_empty()
+                    || !inference_processes.is_empty()
+                {
+                    json!({"accepted":false,"reason":"capacity_or_duplicate"})
+                } else {
+                    let data_root = core_data_dir();
+                    match crate::local_provider::spawn_pinned_quantizer(
+                        crate::local_provider::PinnedQuantizerRequest {
+                            data_root: &data_root,
+                            job_id,
+                            source_relative_path: Path::new(relative),
+                            expected_source_sha256: source_hash,
+                            expected_source_size: source_size,
+                            target,
+                            threads,
+                            memory_limit_bytes: value
+                                .get("memory_limit_bytes")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            cpu_limit_percent: value
+                                .get("cpu_limit_percent")
+                                .and_then(|v| v.as_u64())
+                                .and_then(|n| u8::try_from(n).ok())
+                                .unwrap_or(0),
+                            max_output_bytes: value
+                                .get("max_output_bytes")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                        },
+                    )
+                    .await
+                    {
+                        Ok(process) => {
+                            quantizer_processes.insert(job_id.to_owned(), process);
+                            json!({"accepted":true,"job_id":job_id,"state":"running"})
+                        }
+                        Err(error) => {
+                            json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
+                    }
+                }
+            }
+            "adaptation_quantize_poll" => {
+                let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
+                match quantizer_processes.get_mut(job_id) {
+                    Some(process) => match process.poll().await {
+                        Ok(Some(result)) => {
+                            quantizer_processes.remove(job_id);
+                            json!({"accepted":true,"state":"completed","output_relative_path":result.output_relative_path,"output_sha256":result.output_sha256,"output_size_bytes":result.output_size_bytes})
+                        }
+                        Ok(None) => json!({"accepted":true,"state":"running"}),
+                        Err(error) => {
+                            quantizer_processes.remove(job_id);
+                            json!({"accepted":false,"state":"failed","reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
+                    },
+                    None => json!({"accepted":false,"reason":"job_not_running"}),
+                }
+            }
+            "adaptation_quantize_cancel" => {
+                let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
+                match quantizer_processes.remove(job_id) {
+                    Some(mut process) => match process.cancel().await {
+                        Ok(()) => json!({"accepted":true,"state":"cancelled"}),
+                        Err(error) => {
+                            json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
+                    },
+                    None => json!({"accepted":false,"reason":"job_not_running"}),
+                }
+            }
+            "adaptation_runtime_start" => {
+                let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
+                let relative = value
+                    .get("model_relative_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let model_hash = value
+                    .get("model_sha256")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let model_size = value
+                    .get("model_size_bytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let threads = value
+                    .get("threads")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|n| u16::try_from(n).ok())
+                    .unwrap_or(0);
+                if inference_processes.contains_key(job_id) {
+                    json!({"accepted":true,"job_id":job_id,"state":"loading","idempotent_replay":true})
+                } else if !inference_processes.is_empty()
+                    || !adapter_processes.is_empty()
+                    || !quantizer_processes.is_empty()
+                {
+                    json!({"accepted":false,"reason":"runtime_capacity_reached"})
+                } else {
+                    let data_root = core_data_dir();
+                    match crate::local_provider::spawn_pinned_inference(
+                        crate::local_provider::PinnedInferenceRequest {
+                            data_root: &data_root,
+                            job_id,
+                            model_relative_path: Path::new(relative),
+                            expected_model_sha256: model_hash,
+                            expected_model_size: model_size,
+                            threads,
+                            memory_limit_bytes: value
+                                .get("memory_limit_bytes")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0),
+                            cpu_limit_percent: value
+                                .get("cpu_limit_percent")
+                                .and_then(|v| v.as_u64())
+                                .and_then(|n| u8::try_from(n).ok())
+                                .unwrap_or(0),
+                        },
+                    )
+                    .await
+                    {
+                        Ok(process) => {
+                            inference_processes.insert(job_id.to_owned(), process);
+                            json!({"accepted":true,"job_id":job_id,"state":"loading"})
+                        }
+                        Err(error) => {
+                            json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
+                    }
+                }
+            }
+            "adaptation_runtime_probe" => {
+                let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
+                match inference_processes.get_mut(job_id) {
+                    Some(process) => match process.probe().await {
+                        Ok(Some(port)) => {
+                            json!({"accepted":true,"state":"ready","port":port,"model_alias":process.model_alias()})
+                        }
+                        Ok(None) => json!({"accepted":true,"state":"loading"}),
+                        Err(error) => {
+                            inference_processes.remove(job_id);
+                            json!({"accepted":false,"state":"failed","reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
+                    },
+                    None => json!({"accepted":false,"reason":"job_not_running"}),
+                }
+            }
+            "adaptation_runtime_stop" => {
+                let job_id = value.get("job_id").and_then(|v| v.as_str()).unwrap_or("");
+                match inference_processes.remove(job_id) {
+                    Some(mut process) => match process.stop().await {
+                        Ok(()) => json!({"accepted":true,"state":"stopped"}),
+                        Err(error) => {
+                            json!({"accepted":false,"reason":format!("{error:?}").to_ascii_lowercase()})
+                        }
+                    },
+                    None => json!({"accepted":false,"reason":"job_not_running"}),
+                }
+            }
             "external_agent_start" => {
                 let run_id = value.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                 let executable_ref = value
@@ -571,6 +755,8 @@ async fn run_supervisor_command_channel(
                     || request_id.trim().is_empty()
                 {
                     json!({"accepted": false, "reason": "invalid_request"})
+                } else if !quantizer_processes.is_empty() || !inference_processes.is_empty() {
+                    json!({"accepted": false, "reason": "adaptation_resource_busy"})
                 } else if adapter_processes.contains_key(model_id) {
                     json!({"accepted": false, "reason": "already_running"})
                 } else {

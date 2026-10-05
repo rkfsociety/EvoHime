@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   ConnectionState,
@@ -23,6 +23,7 @@ import { ScheduledPanel } from './ScheduledPanel'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
 import { WorkflowPanel } from './WorkflowPanel'
+import { CapabilityRecipePanel } from './CapabilityRecipePanel'
 import { OverviewPanel } from './OverviewPanel'
 import { ListeningPanel, REASON_TEXTS, STATE_TITLES } from './ListeningPanel'
 import { TracePanel } from './TracePanel'
@@ -36,6 +37,7 @@ import { WorkbenchPanel } from './WorkbenchPanel'
 import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 import { ProviderStateProvider } from './provider-state'
 import { EvaIcon } from './EvaIcon'
+import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -89,13 +91,17 @@ const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запла�
 const SETTINGS_LABEL = 'Настройки'
 
 export function App(): React.JSX.Element {
+  const [appearance, setAppearance] = useState<AppearanceSettings>(() => loadAppearance())
   const [state, setState] = useState<ShellState | null>(null)
   const [events, setEvents] = useState<readonly CoreEvent[]>([])
   const [shellDiagnostics, setShellDiagnostics] = useState<readonly ShellDiagnostic[]>([])
   const [apiMissing, setApiMissing] = useState(false)
   const [view, setView] = useState<ViewId>('chat')
   const [workspace, setWorkspace] = useState<string | null>(null)
+  const [builderDraftId, setBuilderDraftId] = useState('builder-draft')
+  const [builderDraftOwnerScope, setBuilderDraftOwnerScope] = useState<string | null>(null)
   const [chatId, setChatId] = useState<string | null>(null)
+  const workspaceRef = useRef(workspace)
   // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
   const [chatRevision, setChatRevision] = useState(0)
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
@@ -111,8 +117,33 @@ export function App(): React.JSX.Element {
   const [workbenchVisible, setWorkbenchVisible] = useState(false)
   const [browserVisible, setBrowserVisible] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
+  const openRecipeDraft = useCallback((draftId: string, ownerScope: string) => {
+    if (!sameWorkspacePath(workspaceRef.current, ownerScope)) return
+    setBuilderDraftId(draftId)
+    setBuilderDraftOwnerScope(ownerScope)
+  }, [])
 
   const api = useShellApi()
+
+  useEffect(() => {
+    applyAppearance(appearance)
+    saveAppearance(appearance)
+  }, [appearance])
+
+  useEffect(() => {
+    workspaceRef.current = workspace
+  }, [workspace])
+
+  useEffect(() => {
+    setBuilderDraftId('builder-draft')
+    setBuilderDraftOwnerScope(null)
+  }, [workspace])
+
+  const changeWorkspace = useCallback((nextWorkspace: string | null) => {
+    if (!sameWorkspacePath(workspaceRef.current, nextWorkspace)) setChatId(null)
+    workspaceRef.current = nextWorkspace
+    setWorkspace(nextWorkspace)
+  }, [])
 
   useEffect(() => {
     if (!api) {
@@ -220,7 +251,7 @@ export function App(): React.JSX.Element {
             connection={connection}
             workspace={workspace}
             chatId={chatId}
-            onWorkspaceChange={setWorkspace}
+            onWorkspaceChange={changeWorkspace}
             onChatChange={(id) => {
               setChatId(id)
               // Starting or picking a chat means going back to the conversation.
@@ -333,7 +364,7 @@ export function App(): React.JSX.Element {
                 connection={connection}
                 events={events}
                 workspace={workspace}
-                onWorkspaceChange={setWorkspace}
+                onWorkspaceChange={changeWorkspace}
                 chatId={chatId}
                 onChatTouched={() => setChatRevision((value) => value + 1)}
                 onChatOpened={(id) => {
@@ -367,8 +398,9 @@ export function App(): React.JSX.Element {
               {view === 'workflows' ? (
                 <>
                   <WorkflowPanel connection={connection} events={events} workspace={workspace} />
+                  <CapabilityRecipePanel connection={connection} events={events} workspace={workspace} onOpenDraft={openRecipeDraft} />
                   <ConversationalWorkflowComposerPanel connection={connection} events={events} workspace={workspace} />
-                  <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} />
+                  <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} draftId={builderDraftId} ownerScope={builderDraftOwnerScope} />
                 </>
               ) : null}
               {view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null}
@@ -385,6 +417,8 @@ export function App(): React.JSX.Element {
           workspace={workspace}
           connection={connection}
           events={events}
+          appearance={appearance}
+          onAppearanceChange={setAppearance}
           initialTab={settingsTab}
           onClose={() => setSettingsOpen(false)}
         />
@@ -498,4 +532,8 @@ function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
       {view.label}
     </button>
   )
+}
+
+function sameWorkspacePath(left: string | null, right: string | null): boolean {
+  return left === right || (left !== null && right !== null && left.toLowerCase() === right.toLowerCase())
 }

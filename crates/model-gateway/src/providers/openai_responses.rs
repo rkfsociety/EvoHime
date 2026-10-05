@@ -6,7 +6,8 @@
 
 use crate::config::LiteRouterConfig;
 use crate::providers::{
-    ChatFuture, ChatMessage, ChatRole, ModelProvider, ProviderError, ProviderKind, TokenStream,
+    ChatFuture, ChatMessage, ChatRequestOptions, ChatRole, ModelProvider, ProviderError,
+    ProviderKind, TokenStream,
 };
 use crate::retry::{compute_backoff, is_retryable_status, RetryPolicy};
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
@@ -59,14 +60,19 @@ impl OpenAIResponsesProvider {
         messages: &[ChatMessage],
         tools: Option<&[ToolSpec]>,
         stream: bool,
+        options: ChatRequestOptions,
     ) -> Result<reqwest::Response, ProviderError> {
-        let body = json!({
+        let mut body = json!({
             "model": model,
             "input": messages.iter().map(response_input).collect::<Vec<_>>(),
             "tools": tools.map(|items| items.iter().map(response_tool).collect::<Vec<_>>()),
             "stream": stream,
             "store": false,
         });
+        if let Some(max_output_tokens) = options.max_output_tokens {
+            body["max_output_tokens"] = json!(max_output_tokens);
+        }
+        let max_retries = options.max_retries.unwrap_or(self.retry.max_retries);
         let mut attempt = 0;
         loop {
             match self
@@ -80,7 +86,7 @@ impl OpenAIResponsesProvider {
                 Ok(response) if response.status().is_success() => return Ok(response),
                 Ok(response) => {
                     let status = response.status();
-                    if is_retryable_status(status) && attempt < self.retry.max_retries {
+                    if is_retryable_status(status) && attempt < max_retries {
                         tokio::time::sleep(compute_backoff(attempt, &self.retry, None)).await;
                         attempt = attempt.saturating_add(1);
                         continue;
@@ -89,7 +95,7 @@ impl OpenAIResponsesProvider {
                         "{status}: Responses API request failed"
                     )));
                 }
-                Err(error) if attempt < self.retry.max_retries => {
+                Err(error) if attempt < max_retries => {
                     tokio::time::sleep(compute_backoff(attempt, &self.retry, None)).await;
                     attempt = attempt.saturating_add(1);
                     let _ = error;
@@ -115,6 +121,10 @@ impl ModelProvider for OpenAIResponsesProvider {
         true
     }
 
+    fn supports_tool_calls(&self) -> bool {
+        true
+    }
+
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream {
         self.stream_chat_with_model(&self.config.model, messages)
     }
@@ -128,7 +138,10 @@ impl ModelProvider for OpenAIResponsesProvider {
         let model = model.to_string();
         let messages = messages.to_vec();
         Box::pin(stream! {
-            let response = match provider.request(&model, &messages, None, true).await {
+            let response = match provider
+                .request(&model, &messages, None, true, ChatRequestOptions::default())
+                .await
+            {
                 Ok(response) => response,
                 Err(error) => { yield Err(error); return; }
             };
@@ -169,7 +182,43 @@ impl ModelProvider for OpenAIResponsesProvider {
         let tools = tools.to_vec();
         Box::pin(async move {
             let response = provider
-                .request(&model, &messages, Some(&tools), false)
+                .request(
+                    &model,
+                    &messages,
+                    Some(&tools),
+                    false,
+                    ChatRequestOptions::default(),
+                )
+                .await?;
+            let payload: Value = response
+                .json()
+                .await
+                .map_err(|error| ProviderError::Api(error.to_string()))?;
+            Ok(parse_result(&payload))
+        })
+    }
+
+    fn chat_with_tools_with_options(
+        &self,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> ChatFuture {
+        let provider = Self {
+            config: self.config.clone(),
+            client: self.client.clone(),
+            retry: self.retry.clone(),
+        };
+        let model = model
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(&self.config.model)
+            .to_string();
+        let messages = messages.to_vec();
+        let tools = tools.to_vec();
+        Box::pin(async move {
+            let response = provider
+                .request(&model, &messages, Some(&tools), false, options)
                 .await?;
             let payload: Value = response
                 .json()

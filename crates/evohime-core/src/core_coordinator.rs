@@ -23,11 +23,13 @@ pub(crate) struct CoordinatorState {
     tasks: HashMap<String, ActiveTask>,
     workspace_index_cancellations: HashMap<String, CancellationToken>,
     backup_cancellations: HashMap<String, CancellationToken>,
+    adaptation_benchmark_cancellations: HashMap<String, CancellationToken>,
     backup_approvals: HashMap<String, String>,
     routing_decisions: HashMap<String, bool>,
     routing_approvals: RoutingApprovalRegistry,
     events: EventSink,
     notifications: broadcast::Sender<CoreEvent>,
+    journalled_tx: Arc<tokio::sync::watch::Sender<u64>>,
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
     audit: crate::audit::AuditTrail,
@@ -190,6 +192,8 @@ impl TaskCoordinator {
         let (commands, mut command_rx) = mpsc::channel(buffer.max(1));
         let (notifications, notification_rx) = broadcast::channel(buffer.max(1));
         let (event_tx, mut event_rx) = mpsc::channel(buffer.max(1));
+        let (journalled, journalled_rx) = tokio::sync::watch::channel(0_u64);
+        let journalled = Arc::new(journalled);
         let events = EventSink::new(event_tx);
         let background_tasks = Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
             crate::bounded_tasks::DEFAULT_CAPACITY,
@@ -200,11 +204,13 @@ impl TaskCoordinator {
             tasks: HashMap::new(),
             workspace_index_cancellations: HashMap::new(),
             backup_cancellations: HashMap::new(),
+            adaptation_benchmark_cancellations: HashMap::new(),
             backup_approvals: HashMap::new(),
             routing_decisions: HashMap::new(),
             routing_approvals: RoutingApprovalRegistry::default(),
             events,
             notifications: notifications.clone(),
+            journalled_tx: Arc::clone(&journalled),
             executor,
             journal,
             audit: crate::audit::AuditTrail::default(),
@@ -218,8 +224,6 @@ impl TaskCoordinator {
         // The shell is fed from the journal, so it must be told after a record
         // lands — not when the event was broadcast. Watching the broadcast
         // directly raced the writer and left the last event of a task unsent.
-        let (journalled, journalled_rx) = tokio::sync::watch::channel(0_u64);
-        let journalled = Arc::new(journalled);
         let audit_state = Arc::clone(&state);
         let journal_state = Arc::clone(&state);
         let journalled_for_worker = Arc::clone(&journalled);
@@ -279,9 +283,59 @@ impl TaskCoordinator {
         });
     }
 
+    pub(crate) async fn persist_and_emit_state_event(
+        state: &Arc<Mutex<CoordinatorState>>,
+        event: CoreEvent,
+    ) -> Result<i64, String> {
+        let (journal, journalled, notifications) = {
+            let state = state.lock().await;
+            (
+                state.journal.clone(),
+                Arc::clone(&state.journalled_tx),
+                state.notifications.clone(),
+            )
+        };
+        let Some(journal) = journal else {
+            let error = "event journal is not configured".to_owned();
+            Self::report_persistence_error(state, "journal", error.clone()).await;
+            return Err(error);
+        };
+        let sequence = match journal.record(&event).await {
+            Ok(sequence) => sequence,
+            Err(error) => {
+                let error = error.to_string();
+                Self::report_persistence_error(state, "journal", error.clone()).await;
+                return Err(error);
+            }
+        };
+        let _ = journalled.send(sequence.max(0) as u64);
+        Self::record_audit_for_event(state, &event).await;
+        let _ = notifications.send(event);
+        Ok(sequence)
+    }
+
     /// Возвращает последнюю ошибку обязательной записи событий.
     pub async fn persistence_error(&self) -> Option<String> {
         self.state.lock().await.persistence_error.clone()
+    }
+
+    /// Schedules the executor's bounded startup reconciliation through the
+    /// coordinator's existing background task capacity.
+    pub async fn recover_memory_extractions(&self) -> bool {
+        let (executor, background_tasks, events) = {
+            let state = self.state.lock().await;
+            (
+                state.executor.clone(),
+                Arc::clone(&state.background_tasks),
+                state.events.clone(),
+            )
+        };
+        let Some(executor) = executor else {
+            return false;
+        };
+        background_tasks
+            .try_spawn(async move { executor.recover_memory_extractions(events).await })
+            .await
     }
 
     #[cfg(test)]

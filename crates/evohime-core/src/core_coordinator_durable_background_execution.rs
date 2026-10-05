@@ -54,10 +54,13 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
         revision: expected_revision,
         projection_json: projection,
     };
-    let journal = state.lock().await.journal.clone();
-    if let Some(journal) = journal {
-        let _ = journal.record(&event).await;
-    }
-    TaskCoordinator::emit_state_event(&state, event).await;
+    let persisted = TaskCoordinator::persist_and_emit_state_event(&state, event)
+        .await
+        .is_ok();
+    let result = if result.is_ok() && !persisted {
+        Err("event_persistence_failed".to_owned())
+    } else {
+        result
+    };
     let _ = reply.send(result);
 }

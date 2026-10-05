@@ -172,6 +172,13 @@ pub fn project_core_event(
             "internal",
             usage_summary(&normalized),
         )?),
+        "memory.extraction" => events.push(draft(
+            "memory_extraction_status",
+            "memory",
+            "compactable",
+            "internal",
+            memory_extraction_summary(&normalized)?,
+        )?),
         "routing.terminal" | "routing.pending_approval" => events.push(draft(
             "backend_snapshot",
             "backend",
@@ -226,6 +233,85 @@ pub fn project_core_event(
         }
     }
     Ok(events)
+}
+
+fn memory_extraction_summary(
+    value: &serde_json::Value,
+) -> Result<serde_json::Value, ConversationEventError> {
+    const STAGES: &[&str] = &[
+        "source",
+        "extractor",
+        "candidate",
+        "finalization",
+        "recovery",
+    ];
+    const STATUSES: &[&str] = &[
+        "attempted",
+        "skipped",
+        "captured",
+        "rejected",
+        "duplicate",
+        "conflict",
+        "superseded",
+        "deferred",
+        "recovered",
+        "committed",
+        "stale",
+        "failed",
+    ];
+    const ORIGINS: &[&str] = &["dialog", "ambient", "recovery"];
+    let stage = value
+        .get("stage")
+        .and_then(serde_json::Value::as_str)
+        .filter(|item| STAGES.contains(item))
+        .ok_or(ConversationEventError::InvalidPayload)?;
+    let status = value
+        .get("status")
+        .and_then(serde_json::Value::as_str)
+        .filter(|item| STATUSES.contains(item))
+        .ok_or(ConversationEventError::InvalidPayload)?;
+    let origin = value
+        .get("origin")
+        .and_then(serde_json::Value::as_str)
+        .filter(|item| ORIGINS.contains(item))
+        .ok_or(ConversationEventError::InvalidPayload)?;
+    let reason_code = value
+        .get("reason_code")
+        .and_then(serde_json::Value::as_str)
+        .filter(|item| {
+            !item.is_empty()
+                && item.len() <= 64
+                && item
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        });
+    let source_id = value
+        .get("source_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|item| {
+            !item.is_empty()
+                && item.len() <= 128
+                && item
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'_' | b'-'))
+        });
+    let counter = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_u64)
+            .filter(|count| *count <= 1_000_000)
+            .map_or(0, |count| count as u32)
+    };
+    Ok(serde_json::json!({
+        "stage": stage,
+        "status": status,
+        "origin": origin,
+        "reason_code": reason_code,
+        "source_id": source_id,
+        "backlog": counter("backlog"),
+        "conflict_count": counter("conflict_count"),
+        "suppressed_reentry_count": counter("suppressed_reentry_count"),
+    }))
 }
 
 pub fn renderer_event(
@@ -586,6 +672,38 @@ mod tests {
         assert_eq!(payload["source"], "main_model");
         assert_eq!(payload["input_tokens"], 42);
         assert_eq!(payload["output_tokens"], 0);
+    }
+
+    #[test]
+    fn memory_extraction_projection_is_bounded_and_excludes_private_payloads() {
+        let projected = project_core_event(
+            "memory.extraction",
+            br#"{"MemoryExtractionDiagnostic":{"task_id":"task-1","source_id":"sha256:abcd","origin":"dialog","stage":"finalization","status":"deferred","reason_code":"lease_busy","backlog":2,"conflict_count":1,"suppressed_reentry_count":0,"prompt":"private prompt","statement":"private memory body","model_output":"private output"}}"#,
+        )
+        .expect("valid bounded memory diagnostic");
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].kind, "memory_extraction_status");
+        assert_eq!(projected[0].category, "memory");
+        assert_eq!(projected[0].persistence_class, "compactable");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&projected[0].renderer_payload).expect("renderer JSON");
+        assert_eq!(payload["stage"], "finalization");
+        assert_eq!(payload["status"], "deferred");
+        assert_eq!(payload["reason_code"], "lease_busy");
+        assert_eq!(payload["backlog"], 2);
+        assert_eq!(payload["conflict_count"], 1);
+        assert!(payload.get("prompt").is_none());
+        assert!(payload.get("statement").is_none());
+        assert!(payload.get("model_output").is_none());
+    }
+
+    #[test]
+    fn memory_extraction_projection_fails_closed_on_unknown_contract_values() {
+        let projected = project_core_event(
+            "memory.extraction",
+            br#"{"MemoryExtractionDiagnostic":{"origin":"dialog","stage":"future_stage","status":"committed","backlog":0,"conflict_count":0,"suppressed_reentry_count":0}}"#,
+        );
+        assert_eq!(projected, Err(ConversationEventError::InvalidPayload));
     }
 
     #[test]

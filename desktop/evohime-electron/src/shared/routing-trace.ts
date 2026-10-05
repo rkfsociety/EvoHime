@@ -1,12 +1,13 @@
 /** Versioned, Core-owned routing trace projection consumed by the renderer. */
-export const ROUTING_SCHEMA_MAJOR = 1 as const
+export const ROUTING_SCHEMA_MAJOR = 2 as const
+const SUPPORTED_ROUTING_SCHEMA_MAJORS = [1, ROUTING_SCHEMA_MAJOR] as const
 export const ROUTES = ['local', 'cloud'] as const
 export const MAX_TRACE_METADATA_BYTES = 128
 export const MAX_TRACE_CANDIDATES = 64
 export type RouteId = (typeof ROUTES)[number]
 export type TerminalStatus = 'success' | 'cancelled' | 'no_routes_configured' | 'both_routes_unavailable' | 'classification_incomplete' | 'context_limit_exceeded' | 'policy_violation' | 'budget_unavailable' | 'context_assembly_failed' | 'fallback_limit_reached' | 'run_deadline_exceeded' | 'reroute_approval_declined' | 'internal_error'
 export type PrivacyLabel = 'sensitive' | 'non_sensitive' | 'unknown'
-export type HealthState = 'healthy' | 'degraded' | 'unavailable'
+export type HealthState = 'unknown' | 'healthy' | 'degraded' | 'unavailable'
 
 const REFUSALS = new Set<TerminalStatus>([
   'no_routes_configured', 'both_routes_unavailable', 'classification_incomplete', 'context_limit_exceeded',
@@ -41,6 +42,13 @@ export interface RoutingTrace {
   readonly sequence: number
 }
 export type RoutingViewState = 'normal' | 'partial_fallback' | 'degraded' | 'refusal' | 'cancelled' | 'unknown_state' | 'core_unavailable'
+
+const HEALTH_TEXT: Record<HealthState, string> = {
+  unknown: 'состояние не проверено',
+  healthy: 'доступен',
+  degraded: 'работает с ограничениями',
+  unavailable: 'недоступен'
+}
 
 export interface PendingRoutingApproval {
   readonly traceId: string
@@ -86,7 +94,7 @@ export function parseRoutingTrace(raw: string): RoutingTrace | null {
   const v = outer.trace && typeof outer.trace === 'object' ? outer.trace as Record<string, unknown> : outer
   const version = v.schema_version
   const major = typeof version === 'number' ? version : typeof version === 'string' ? Number(version.split('.')[0]) : NaN
-  if (major !== ROUTING_SCHEMA_MAJOR || typeof v.terminal_status !== 'string' || typeof v.selected_route === 'undefined' || !Array.isArray(v.candidates) || typeof v.fallback_count !== 'number' || typeof v.privacy_label !== 'string' || typeof v.trace_id !== 'string' || typeof v.run_id !== 'string' || typeof v.sequence !== 'number' || typeof v.reason_code !== 'string') return null
+  if (!SUPPORTED_ROUTING_SCHEMA_MAJORS.includes(major as (typeof SUPPORTED_ROUTING_SCHEMA_MAJORS)[number]) || typeof v.terminal_status !== 'string' || typeof v.selected_route === 'undefined' || !Array.isArray(v.candidates) || typeof v.fallback_count !== 'number' || typeof v.privacy_label !== 'string' || typeof v.trace_id !== 'string' || typeof v.run_id !== 'string' || typeof v.sequence !== 'number' || typeof v.reason_code !== 'string') return null
   if (!isSafeTraceToken(v.trace_id) || !isSafeTraceToken(v.run_id) || !isSafeTraceToken(v.reason_code) || !Number.isSafeInteger(v.sequence) || v.sequence < 0 || !Number.isSafeInteger(v.fallback_count) || v.fallback_count < 0 || v.fallback_count > MAX_TRACE_CANDIDATES || v.candidates.length > MAX_TRACE_CANDIDATES) return null
   if (!(v.terminal_status in STATUS_TEXT) || !['sensitive', 'non_sensitive', 'unknown'].includes(v.privacy_label)) return internalErrorProjection(v)
   if (v.terminal_status === 'success' && typeof v.selected_route !== 'string') return null
@@ -101,7 +109,8 @@ export function parseRoutingTrace(raw: string): RoutingTrace | null {
   const candidates = v.candidates.filter((candidate): candidate is RoutingCandidate => {
     if (!candidate || typeof candidate !== 'object') return false
     const c = candidate as Record<string, unknown>
-    return typeof c.route_id === 'string' && isSafeTraceToken(c.route_id) && ['healthy', 'degraded', 'unavailable'].includes(String(c.health_state)) && (typeof c.reject_reason === 'undefined' || c.reject_reason === null || (typeof c.reject_reason === 'string' && isSafeTraceToken(c.reject_reason)))
+    const healthStates = major === 1 ? ['healthy', 'degraded', 'unavailable'] : ['unknown', 'healthy', 'degraded', 'unavailable']
+    return typeof c.route_id === 'string' && isSafeTraceToken(c.route_id) && healthStates.includes(String(c.health_state)) && (typeof c.reject_reason === 'undefined' || c.reject_reason === null || (typeof c.reject_reason === 'string' && isSafeTraceToken(c.reject_reason)))
   })
   if (candidates.length !== v.candidates.length) return null
   if (['both_routes_unavailable', 'context_limit_exceeded', 'context_assembly_failed'].includes(v.terminal_status as string) && candidates.length === 0) return null
@@ -153,6 +162,7 @@ export function routingViewState(trace: RoutingTrace, preferred: RouteId | null)
 export function routingText(trace: RoutingTrace): string {
   return STATUS_TEXT[trace.terminal_status] ?? 'Состояние маршрута неизвестно'
 }
+export function healthStateText(state: HealthState): string { return HEALTH_TEXT[state] }
 export function safeActionText(action: string | null | undefined): string | null { return action ? SAFE_ACTION[action] ?? 'Обратиться в поддержку' : null }
 export function isRefusal(status: string): boolean { return REFUSALS.has(status as TerminalStatus) }
 

@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-23.
+Обновлено: 2026-09-26.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -21,10 +21,10 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 стартовал из свежей сборки, но native screenshot не снят: доступный CUA-сеанс
 не умеет привязать окно Electron; GitHub module-router и публикация `ui-bundle`
 ещё не запускались, потому что push не выполнялся.
-Актуальные release markers хранятся в `release-versions/`: `core=0.0.000369`,
-`updater=0.0.000128`, `transaction=0.0.000067`,
-`ui-bundle=0.0.000110`, `shell-host=0.0.000103` и
-`cli=0.0.000084`. Исторические разделы ниже сохраняют прежнее evidence.
+Исторические release markers в этом baseline описывали более ранние версии;
+текущие опубликованные module tags проверяются live module router. Патчи Plan
+178 и статусы их публикации перечислены ниже отдельно. Исторические разделы
+ниже сохраняют прежнее evidence.
 
 ## Статус выпуска
 
@@ -33,6 +33,46 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 снимки ниже сохраняются только как evidence исходных запусков.
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
+
+### Core-Owned Local Model Adaptation v1 (2026-09-26; текущая задача)
+
+- Реализован Core-owned GGUF adaptation pipeline на фиксированном llama.cpp
+  `b10981` Windows x64 CPU asset. Core проверяет точные archive/runtime hashes,
+  хранит только job/evidence metadata в schema 178, повторяет resource preflight
+  для FIFO retries и требует exact hash/revision evidence плюс Core approval для
+  promotion. Weights не хранятся в SQLite.
+- Изменённые исходные модули и patch markers: core `0.0.000379` → `0.0.000380`,
+  supervisor `0.0.000045` → `0.0.000046`, shell-host `0.0.000108` →
+  `0.0.000109`, ui-bundle `0.0.000121` → `0.0.000122`. `desktop-ipc` поставляется
+  как dependency Core; installer version не менялась.
+- `supervisor` `0.0.000046` опубликован с артефактом и manifest после успешных
+  tests/lint/release build на SHA
+  `2ab2c850a0f66f63d1738f718e10b072722dd16c`:
+  [workflow 36248438065](https://github.com/rkfsociety/EvoHime/actions/runs/36248438065),
+  [release](https://github.com/rkfsociety/EvoHime/releases/tag/module-supervisor-v0.0.000046).
+- `shell-host` `0.0.000109` и `ui-bundle` `0.0.000122` опубликованы после
+  успешных protocol/typecheck/tests/package gates на SHA
+  `69175d090ac6999745d86d0c646e5479e24e9132`:
+  [shell-host workflow 36246121422](https://github.com/rkfsociety/EvoHime/actions/runs/36246121422),
+  [shell-host release](https://github.com/rkfsociety/EvoHime/releases/tag/module-shell-host-v0.0.000109),
+  [UI workflow 36246120383](https://github.com/rkfsociety/EvoHime/actions/runs/36246120383),
+  [UI release](https://github.com/rkfsociety/EvoHime/releases/tag/module-ui-bundle-v0.0.000122).
+- На исходном code SHA `ade24d82c09466910ef6a3d74b4236402490ac8b` Rust
+  documentation workflow `36252760145` прошёл; Core lint выявил три warnings,
+  исправленные в последующем task-only commit. На финальном SHA
+  `279689476a283fac3b9e6beddadd09f97bfee318` Core workflow
+  [36254214711](https://github.com/rkfsociety/EvoHime/actions/runs/36254214711)
+  прошёл format, tests, lint, release build и artifact upload, затем опубликовал
+  Core `0.0.000380` с manifest:
+  [release](https://github.com/rkfsociety/EvoHime/releases/tag/module-core-v0.0.000380).
+  Module router [36254168454](https://github.com/rkfsociety/EvoHime/actions/runs/36254168454)
+  и совместимый манифест [36255965206](https://github.com/rkfsociety/EvoHime/actions/runs/36255965206)
+  завершились успешно. Published compatible manifest указывает
+  `generated_from=279689476a283fac3b9e6beddadd09f97bfee318` и содержит точные
+  версии и хеши всех четырёх модулей.
+- Локальные tests/builds/linters не запускались в plan workflow;
+  `git diff --check` passed. Installer не пересобирался: его version и
+  packaging contract не изменены.
 
 ### Rust public API documentation (2026-09-24)
 
@@ -291,9 +331,9 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 
 ### CLI redaction hardening follow-up (2026-09-20)
 
-- Redaction вынесен в отдельный `redaction`-модуль: alias-поля
-  `api_key`/`access_key`/`password`/`authorization`/`cookie`/`private_key`
-  удаляются из CLI projection, а JSON nesting ограничен 64 уровнями.
+- Redaction вынесен в отдельный `redaction`-модуль: известные credential,
+  authorization и cookie aliases удаляются из CLI projection, а JSON nesting
+  ограничен 64 уровнями.
 - Добавлены regression tests для credential aliases и depth bound; публичный
   `redact_payload` сохранён, source module `cli` повышен до `0.0.000051`.
 
@@ -3250,3 +3290,145 @@ fingerprint/canonical-hash contracts сохранены. Core marker повыш�
 `0.0.000331 -> 0.0.000332`; 50 permissions tests, strict clippy,
 format/diff-check и Core+permissions check прошли локально. CI evidence для
 новой commit-группы будет добавлено после её десятого коммита.
+
+Cloud provider profiles добавлены для OpenAI-compatible transports и
+Cloudflare Workers AI: discovery сохраняет границы размера/пагинации, профиль
+и модель выбираются явно, а routing preflight использует только подтверждённые
+capabilities. Core, shell-host и ui-bundle markers повышены соответственно
+`0.0.000373 -> 0.0.000374`, `0.0.000105 -> 0.0.000106` и
+`0.0.000116 -> 0.0.000117`. Локально прошли Core+model-gateway tests (965 и
+81 тест), strict clippy, fmt, Rustdoc gates, Electron protocol/typecheck/tests/
+bundle gates и security, license, release-evidence, documentation и module
+router gates. Для commit
+[`9c49ff6b4ce47cee7be8253da87d703726e931c6`](https://github.com/rkfsociety/EvoHime/commit/9c49ff6b4ce47cee7be8253da87d703726e931c6)
+успешно завершились полный [Windows package acceptance](https://github.com/rkfsociety/EvoHime/actions/runs/36086090323),
+[Rust documentation](https://github.com/rkfsociety/EvoHime/actions/runs/36086047609),
+[module router](https://github.com/rkfsociety/EvoHime/actions/runs/36086047603),
+[Core](https://github.com/rkfsociety/EvoHime/actions/runs/36086097413),
+[shell-host](https://github.com/rkfsociety/EvoHime/actions/runs/36086095706),
+[UI bundle](https://github.com/rkfsociety/EvoHime/actions/runs/36086094098) и
+[compatible release manifest](https://github.com/rkfsociety/EvoHime/actions/runs/36088178539)
+workflows. Опубликованы `module-core-v0.0.000374`,
+`module-shell-host-v0.0.000106` и `module-ui-bundle-v0.0.000117`.
+
+Empirical free-access verification (plan 174) is complete. Local Core (974),
+local-storage (409 unit and 13 doc), model-gateway, and Electron suites passed;
+strict clippy, formatting, Rust documentation, protocol/typecheck, production
+bundle, release, security, license, documentation, and module-router gates
+passed. The Electron suite reported 682 passed and 4 skipped. Full Windows
+native-package acceptance, including Rust/security gates, real-Core IPC E2E,
+Electron package build, and package smoke matrix, passed for commit
+[`7fa1af30ff2071da390828c1137a7df59308a864`](https://github.com/rkfsociety/EvoHime/commit/7fa1af30ff2071da390828c1137a7df59308a864).
+The exact-commit [Windows acceptance](https://github.com/rkfsociety/EvoHime/actions/runs/36112034614),
+[Rust documentation](https://github.com/rkfsociety/EvoHime/actions/runs/36111981735),
+[module router](https://github.com/rkfsociety/EvoHime/actions/runs/36111981759),
+[Core module](https://github.com/rkfsociety/EvoHime/actions/runs/36112046062),
+[shell-host module](https://github.com/rkfsociety/EvoHime/actions/runs/36112043741),
+[UI bundle](https://github.com/rkfsociety/EvoHime/actions/runs/36112041270), and
+[compatible release manifest](https://github.com/rkfsociety/EvoHime/actions/runs/36114759101)
+workflows all succeeded. Published release tags point to that same commit:
+`module-core-v0.0.000375`, `module-shell-host-v0.0.000107`, and
+`module-ui-bundle-v0.0.000118`.
+
+## Memory Ingestion Integrity (plan 175)
+
+Memory extraction recovery and freshness were extended in additive schema v176.
+Core persists eligible source metadata before `TaskCompleted`, enforces typed
+origin/root/depth during capture and recovery, and routes restart reconciliation
+through the existing bounded coordinator hook. Candidate publication uses a
+stable slot plus source-order/head-revision CAS. Every auxiliary extractor
+provider dispatch now requires its durable Model Request Provenance v1 envelope,
+receipt and dispatch marker. `memory.extraction` projects bounded lifecycle
+metadata to the read-only OperationsPanel without memory body or prompt.
+
+Local checks on the implementation checkout: `cargo check --locked -p
+evohime-core --all-targets -j 1`; `cargo clippy --locked -p evohime-core
+--all-targets -j 1 -- -D warnings`; 3 Core memory runtime tests, 4 recovery
+integration tests, 2 Core projection tests, and the full local-storage suite
+(421 unit and 13 doc tests) passed. Electron OperationsPanel tests passed 18/18
+and renderer TypeScript check passed. Workspace `cargo doc --workspace
+--no-deps --locked` completed. Security evaluation, module-router, module-release
+and license-inventory gates passed. `cargo fmt --all -- --check` passed.
+
+Published module markers are `core 0.0.000376` and `ui-bundle 0.0.000119`; only
+those two source modules changed. Implementation commit
+[`927a7dcefa54bec49f09714a8d08658f6b77fec8`](https://github.com/rkfsociety/EvoHime/commit/927a7dcefa54bec49f09714a8d08658f6b77fec8)
+passed [Rust documentation](https://github.com/rkfsociety/EvoHime/actions/runs/36156741701)
+and the [UI bundle module workflow](https://github.com/rkfsociety/EvoHime/actions/runs/36156813850).
+The UI release `module-ui-bundle-v0.0.000119` was published from that commit.
+
+The first Core module run reached the 30-minute job timeout during the release
+build after Core tests and lint succeeded; the module router consequently
+reported that Core run as cancelled. CI-only commit
+[`267acd275b797d7a5c7694e595779bf91c9664c7`](https://github.com/rkfsociety/EvoHime/commit/267acd275b797d7a5c7694e595779bf91c9664c7)
+raised the Core job timeout to 45 minutes without changing module versions.
+The follow-up [Core module workflow](https://github.com/rkfsociety/EvoHime/actions/runs/36160575907)
+passed format, all five Core crate test suites, lint, release build and stable
+module publication; the [module router](https://github.com/rkfsociety/EvoHime/actions/runs/36160480489)
+also passed. Core release `module-core-v0.0.000376` was published.
+
+The full native package acceptance run was cancelled before completion after
+the validation scope was narrowed to affected modules. Its partial output is
+not treated as evidence; validation followed the affected module workflows and
+directly relevant Rust documentation workflow.
+
+## Core-owned Image Generation and Editing (plan 177)
+
+Pre-commit local evidence on Windows: `cargo fmt --all -- --check`,
+`git diff --check`, and `cargo check --locked -p evohime-model-gateway
+-p evohime-local-storage -p evohime-core --all-targets -j1` passed. Focused
+tests passed: Core image generation 7/7; local-storage image job 3/3 and atomic
+artifact batch/quota 1/1; ModelGateway image contract/unavailable 2/2; Electron
+shell bridge 71/71. Generated protocol bindings matched the canonical proto,
+and Electron main/renderer TypeScript checks passed. The Electron shell build
+passed during implementation. No live compatible provider was available, so
+provider-side image generation and full native-package acceptance remain
+unverified. Exact-commit GitHub CI evidence is pending the authorized push.
+
+The Core release marker advanced from `0.0.000377` to `0.0.000378`; the UI
+bundle marker advanced from `0.0.000120` to `0.0.000121`, matching the source
+paths selected by the Core and UI bundle module workflows. Module router is
+expected to dispatch those two releases after the push; it has not yet run.
+
+## Guided Capability Recipes (plan 176)
+
+Implementation commit
+[`39bf340d38f56a3bf8d2abf09ec7cbb4f2987bdf`](https://github.com/rkfsociety/EvoHime/commit/39bf340d38f56a3bf8d2abf09ec7cbb4f2987bdf)
+passed the exact-commit [Core module workflow](https://github.com/rkfsociety/EvoHime/actions/runs/36191335248)
+(format, all Core tests, lint, release build and stable publication),
+[Rust documentation and doc-tests](https://github.com/rkfsociety/EvoHime/actions/runs/36191281975),
+and [module router](https://github.com/rkfsociety/EvoHime/actions/runs/36191282074).
+Core release `module-core-v0.0.000377` points to the implementation commit.
+The affected Electron [shell-host](https://github.com/rkfsociety/EvoHime/actions/runs/36188048592)
+and [UI bundle](https://github.com/rkfsociety/EvoHime/actions/runs/36188044890)
+module workflows passed on the immediately preceding implementation commit
+`58bdd0df675d2cc9656780e74411fae432af4663`; the intervening changes were
+Core-only Rust fixes. No full native package acceptance run was required by the
+plan's narrowed verification scope.
+
+## Core-owned Prompt Strategy Profiles v1 (plan 179)
+
+Implemented and pushed in `cbe5a595fb68c3162c9790bced2edfe1a5a92a66`: schema v179 strategy registry, resolver/runtime snapshot and recovery, benchmark identity and promotion evidence checks, guided recipe pin/recovery, authenticated Core operations, and bounded Electron metadata projection. Exact-SHA acceptance passed: [Core tests, lint, release build and publication](https://github.com/rkfsociety/EvoHime/actions/runs/36289592599), [Rust documentation and doctests](https://github.com/rkfsociety/EvoHime/actions/runs/36289562486), [module router](https://github.com/rkfsociety/EvoHime/actions/runs/36289562470), and [compatible release manifest](https://github.com/rkfsociety/EvoHime/actions/runs/36291084440). Core `0.0.000381` was published as [module-core-v0.0.000381](https://github.com/rkfsociety/EvoHime/releases/tag/module-core-v0.0.000381). UI bundle tests, protocol/typecheck, build and publication passed in [run 36281043380](https://github.com/rkfsociety/EvoHime/actions/runs/36281043380) at `fec4ff3857d219574503ca320c855bf07af3b6b1`; no UI bundle source files changed between that SHA and the implementation SHA. UI bundle `0.0.000123` was published. Local Rust/npm tests and builds were not run; CI provided these checks.
+
+## GitHub Public Repository Integration v1 (plan 189)
+
+Checkout implementation adds schema v180 storage for up to 50 explicitly saved
+public repositories, Core-owned anonymous GitHub REST reads, and a Settings
+projection for repository metadata, open issues and pull requests. The client
+uses only fixed HTTPS GET endpoints, disables redirects, bounds each response
+to 512 KiB and the complete refresh to 25 seconds, and performs no request on
+Settings open or local save. GitHub's issues endpoint can include pull requests,
+so the adapter filters those entries and loads PRs from the separate pulls
+endpoint ([GitHub REST issue endpoint](https://docs.github.com/en/rest/issues/issues)).
+Unauthenticated public API access can be rate-limited by GitHub
+([rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api?apiVersion=latest)).
+
+Implementation commit `3622c74088183c093d5b5b8c7bbf96f88f1f0daf` is local on
+`main` and has not been pushed.
+
+Source paths select Core and UI bundle release routing. Markers advanced to
+Core `0.0.000382` and UI bundle `0.0.000124`. Local tests, builds, typecheck and
+visual preview were not run under the implementation workflow. Static review
+and `git diff --check` are the local evidence; exact-commit module workflows,
+Rust documentation, module router and compatible release manifest remain
+pending an authorized push. No push was performed for this checkout.

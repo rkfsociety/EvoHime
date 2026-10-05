@@ -41,6 +41,10 @@ pub const CONTEXT_PROJECTION_DOMAIN: &[u8] = b"evohime-context-projection-v1\0";
 pub const MAX_REQUEST_ENVELOPE_BYTES: usize = 1_048_576;
 /// Максимальный размер system prompt в UTF-8 bytes.
 pub const MAX_SYSTEM_PROMPT_BYTES: usize = 262_144;
+/// Fixed marker stored when the original system prompt is omitted.
+pub const OMITTED_SYSTEM_PROMPT_MARKER: &str = "[redacted system prompt]";
+/// Fixed marker stored for message content omitted from durable provenance.
+pub const OMITTED_MESSAGE_MARKER: &str = "[redacted message content]";
 /// Максимальный размер одного сообщения в UTF-8 bytes.
 pub const MAX_MESSAGE_BYTES: usize = 262_144;
 /// Максимальный сериализованный размер одной tool schema.
@@ -193,6 +197,12 @@ pub struct ModelMessage {
     pub role: String,
     /// Message body captured at dispatch time.
     pub content: String,
+    /// Digest of request content intentionally omitted from this projection.
+    ///
+    /// When present, `content` must be the fixed redaction marker and this digest
+    /// commits to the exact provider-bound body without retaining reusable examples.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted_content_hash: Option<String>,
 }
 
 /// Bounded reference from a projection entry to an upstream source.
@@ -288,6 +298,9 @@ pub struct ModelRequestEnvelopeV1 {
     pub route_policy_hash_shared: bool,
     /// System instruction sent with the request.
     pub system_prompt: String,
+    /// SHA-256 commitment to the omitted original system instruction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted_system_prompt_hash: Option<String>,
     /// Ordered messages sent to the provider.
     pub messages: Vec<ModelMessage>,
     /// Available provider tool schemas.
@@ -332,11 +345,31 @@ impl ModelRequestEnvelopeV1 {
             return Err(ProvenanceError::TooLarge);
         }
         if self
+            .omitted_system_prompt_hash
+            .as_ref()
+            .is_some_and(|hash| {
+                self.system_prompt != OMITTED_SYSTEM_PROMPT_MARKER || !valid_sha256(hash)
+            })
+        {
+            return Err(ProvenanceError::Invalid(
+                "omitted system prompt commitment is invalid".into(),
+            ));
+        }
+        if self
             .messages
             .iter()
             .any(|m| m.content.len() > MAX_MESSAGE_BYTES)
         {
             return Err(ProvenanceError::TooLarge);
+        }
+        if self.messages.iter().any(|message| {
+            message.omitted_content_hash.as_ref().is_some_and(|hash| {
+                message.content != OMITTED_MESSAGE_MARKER || !valid_sha256(hash)
+            })
+        }) {
+            return Err(ProvenanceError::Invalid(
+                "omitted message content commitment is invalid".into(),
+            ));
         }
         if self.tools.iter().any(|t| {
             serde_json::to_vec(t)
@@ -500,6 +533,30 @@ fn canonical_json<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let value =
         serde_json::to_value(value).map_err(|error| ProvenanceError::Invalid(error.to_string()))?;
     canonical_json_value(&value)
+}
+
+impl ModelMessage {
+    /// Creates a provenance projection that commits to, but omits, bounded sensitive content.
+    pub fn redacted_content(role: impl Into<String>, original_content: &str) -> Self {
+        Self {
+            role: role.into(),
+            content: OMITTED_MESSAGE_MARKER.into(),
+            omitted_content_hash: Some(sha256_hex(original_content.as_bytes())),
+        }
+    }
+
+    /// Checks whether `original_content` matches this message's omitted-content commitment.
+    pub fn verifies_omitted_content(&self, original_content: &str) -> bool {
+        self.content == OMITTED_MESSAGE_MARKER
+            && self
+                .omitted_content_hash
+                .as_deref()
+                .is_some_and(|expected| expected == sha256_hex(original_content.as_bytes()))
+    }
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn canonical_json_value(value: &Value) -> Result<Vec<u8>> {
@@ -718,9 +775,11 @@ mod tests {
             policy_snapshot_hash: "c".repeat(64),
             route_policy_hash_shared: false,
             system_prompt: "system".into(),
+            omitted_system_prompt_hash: None,
             messages: vec![ModelMessage {
                 role: "user".into(),
                 content: "hello".into(),
+                omitted_content_hash: None,
             }],
             tools: vec![
                 ToolSchema {
@@ -756,6 +815,39 @@ mod tests {
             two.canonical_bytes().unwrap()
         );
         assert_eq!(one.envelope_hash().unwrap(), two.envelope_hash().unwrap());
+    }
+
+    #[test]
+    fn omitted_content_is_bound_by_digest_without_retaining_the_body() {
+        let raw = "private reusable example";
+        let message = ModelMessage::redacted_content("user", raw);
+        assert!(message.verifies_omitted_content(raw));
+        assert!(!message.verifies_omitted_content("different example"));
+        assert_eq!(message.content, OMITTED_MESSAGE_MARKER);
+        assert!(message.omitted_content_hash.is_some());
+
+        let mut request = envelope();
+        request.messages = vec![message];
+        let bytes = request
+            .canonical_bytes()
+            .expect("redacted envelope validates");
+        assert!(!String::from_utf8_lossy(&bytes).contains(raw));
+        assert!(String::from_utf8_lossy(&bytes).contains(
+            request.messages[0]
+                .omitted_content_hash
+                .as_deref()
+                .expect("digest")
+        ));
+    }
+
+    #[test]
+    fn system_prompt_commitment_requires_redacted_marker_and_sha256() {
+        let mut value = envelope();
+        value.system_prompt = OMITTED_SYSTEM_PROMPT_MARKER.into();
+        value.omitted_system_prompt_hash = Some("a".repeat(64));
+        assert!(value.validate().is_ok());
+        value.system_prompt = "raw system prompt".into();
+        assert!(value.validate().is_err());
     }
 
     #[test]

@@ -3,14 +3,16 @@
 | Provider | Status | Docs |
 | --- | --- | --- |
 | **LiteRouter** | ✅ Active (current default) | [literouter.md](literouter.md) |
-| OpenAI-compatible (`openai_compatible`) | ✅ Active | — |
+| OpenAI-compatible (`openai_compatible`) | ✅ Active | [OpenAI-compatible profiles](openai-compatible-profiles.md) |
 | OpenAI Responses (`openai_responses`) | ✅ Active | [openai-and-codex.md](openai-and-codex.md) |
 | Mock (`mock`) | ✅ Только для тестов | — |
 | Anthropic | Planned | — |
 | Ollama (`ollama`) | ✅ Active (локально) | [ollama.md](ollama.md) |
 
-**Правило:** первый и текущий облачный провайдер в EvoHime — **LiteRouter**;
-Ollama работает как локальный провайдер без API-ключа.
+**Правило:** LiteRouter остаётся текущим облачным провайдером по умолчанию;
+Ollama работает как локальный провайдер без API-ключа. В профилях
+`openai_compatible` можно выбрать известного поставщика или оставить generic
+OpenAI-compatible адрес.
 
 **Примечание:** Core уже поддерживает несколько маршрутов модели и выбор на уровне задачи. Любой маршрут может указывать на OpenAI-compatible endpoint с отдельным ключом, базовым URL и моделью.
 

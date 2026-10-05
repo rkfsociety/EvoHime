@@ -193,6 +193,7 @@ jobs:
           }
 
           $runs = @(foreach ($item in $dispatched) { Resolve-DispatchedRun $item })
+          $workflowFailures = [System.Collections.Generic.List[string]]::new()
           foreach ($run in $runs) {
             Write-Host "Ожидание workflow $($run.Module), run $($run.RunId)"
             do {
@@ -202,14 +203,17 @@ jobs:
               if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
             } while ($state.status -ne 'completed')
             if ($state.conclusion -ne 'success') {
-              throw "Workflow модуля $($run.Module), run $($run.RunId), завершился: $($state.conclusion)."
+              $failure = "Workflow модуля $($run.Module), run $($run.RunId), завершился: $($state.conclusion)."
+              Write-Error $failure -ErrorAction Continue
+              [void]$workflowFailures.Add($failure)
+              continue
             }
             Write-Host "Workflow модуля $($run.Module) завершён успешно."
           }
 
           # Web installer скачивает опубликованный self-contained updater module.
           # Поэтому его нельзя запускать параллельно с публикацией updater.
-          if ($selected['installer'] -eq 'true') {
+          if ($selected['installer'] -eq 'true' -and $workflowFailures.Count -eq 0) {
             $workflow = $workflowFiles['installer']
             $dispatchStarted = [DateTime]::UtcNow
             gh workflow run $workflow --repo $env:REPOSITORY --ref $env:REF
@@ -222,10 +226,30 @@ jobs:
               $state = $stateJson | ConvertFrom-Json
               if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
             } while ($state.status -ne 'completed')
-            if ($state.conclusion -ne 'success') { throw "Workflow web installer, run $($installerRun.RunId), завершился: $($state.conclusion)." }
-            Write-Host 'Web installer workflow завершён успешно.'
+            if ($state.conclusion -ne 'success') {
+              $failure = "Workflow web installer, run $($installerRun.RunId), завершился: $($state.conclusion)."
+              Write-Error $failure -ErrorAction Continue
+              [void]$workflowFailures.Add($failure)
+            } else {
+              Write-Host 'Web installer workflow завершён успешно.'
+            }
+          } elseif ($selected['installer'] -eq 'true') {
+            Write-Warning 'Installer workflow пропущен: один или несколько модульных workflow завершились ошибкой.'
           }
 
+          $dispatchStarted = [DateTime]::UtcNow
           gh workflow run compatible-manifest.yml --repo $env:REPOSITORY --ref $env:REF
           if ($LASTEXITCODE -ne 0) { throw 'Не удалось запустить публикацию compatibility-манифеста.' }
           Write-Host 'Запущена финальная публикация compatibility-манифеста после проверки всех модулей.'
+          $manifestRun = Resolve-DispatchedRun ([PSCustomObject]@{ Module = 'compatible-manifest'; Workflow = 'compatible-manifest.yml' })
+          do {
+            $stateJson = gh run view $manifestRun.RunId --repo $env:REPOSITORY --json status,conclusion
+            if ($LASTEXITCODE -ne 0) { throw "Не удалось прочитать состояние compatibility workflow, run $($manifestRun.RunId)." }
+            $state = $stateJson | ConvertFrom-Json
+            if ($state.status -ne 'completed') { Start-Sleep -Seconds 15 }
+          } while ($state.status -ne 'completed')
+          if ($state.conclusion -ne 'success') { throw "Compatibility workflow, run $($manifestRun.RunId), завершился: $($state.conclusion)." }
+          Write-Host 'Совместимый комплект опубликован из всех доступных module releases.'
+          if ($workflowFailures.Count -gt 0) {
+            throw "Ошибки дочерних workflow после публикации актуального совместимого комплекта:`n$($workflowFailures -join "`n")"
+          }

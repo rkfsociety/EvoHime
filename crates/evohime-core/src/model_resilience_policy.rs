@@ -156,7 +156,9 @@ pub fn normalize_provider_error(
 ) -> FailureCategory {
     use evohime_model_gateway::providers::ProviderError;
     match error {
-        ProviderError::Config(_) => FailureCategory::InvalidRequest,
+        ProviderError::Config(_)
+        | ProviderError::ImagePreflightRejected
+        | ProviderError::ImageCapabilityStale => FailureCategory::InvalidRequest,
         ProviderError::Http(message) => {
             let lower = message.to_ascii_lowercase();
             if lower.contains("timeout") {

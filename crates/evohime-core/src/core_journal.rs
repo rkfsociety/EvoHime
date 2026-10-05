@@ -22,6 +22,7 @@ pub(crate) type JournalWriteFn =
 pub(crate) struct JournalWrite(
     pub JournalWriteFn,
     pub std::sync::mpsc::Sender<Result<i64, StorageError>>,
+    pub std::time::Instant,
 );
 
 /// Bounded replay page with sequence-gap metadata for an event consumer.

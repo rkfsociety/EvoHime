@@ -672,12 +672,24 @@ impl MemoryStoreSql {
 
     /// Archives a memory without erasing its content; returns whether a row changed.
     pub fn archive(connection: &Connection, id: &str) -> Result<bool, MemoryStoreError> {
-        Ok(connection.execute(Self::ARCHIVE, params![id])? == 1)
+        let transaction = connection.unchecked_transaction()?;
+        let changed = transaction.execute(Self::ARCHIVE, params![id])? == 1;
+        if changed {
+            crate::memory_extraction_store::bump_candidate_head_revision(&transaction, id)?;
+        }
+        transaction.commit()?;
+        Ok(changed)
     }
 
     /// Logically forgets a memory by erasing user content and retaining its audit metadata.
     pub fn forget(connection: &Connection, id: &str) -> Result<bool, MemoryStoreError> {
-        Ok(connection.execute(Self::FORGET, params![id])? == 1)
+        let transaction = connection.unchecked_transaction()?;
+        let changed = transaction.execute(Self::FORGET, params![id])? == 1;
+        if changed {
+            crate::memory_extraction_store::bump_candidate_head_revision(&transaction, id)?;
+        }
+        transaction.commit()?;
+        Ok(changed)
     }
 
     /// Записи в одном state (например, весь pending queue) для одного scope.
@@ -801,6 +813,7 @@ impl MemoryStoreSql {
             "UPDATE memory_entries SET confirmation_state = ?2 WHERE id = ?1",
             params![id, target],
         )?;
+        crate::memory_extraction_store::bump_candidate_head_revision(&transaction, id)?;
         transaction.commit()?;
         Ok(target.to_owned())
     }
@@ -841,6 +854,7 @@ impl MemoryStoreSql {
              WHERE id = ?1",
             params![id, redact_sensitive(statement)],
         )?;
+        crate::memory_extraction_store::bump_candidate_head_revision(&transaction, id)?;
         transaction.commit()?;
         Ok(())
     }
@@ -895,6 +909,8 @@ impl MemoryStoreSql {
              WHERE id = ?1",
             params![new_id, old_id, reason],
         )?;
+        crate::memory_extraction_store::bump_candidate_head_revision(&transaction, old_id)?;
+        crate::memory_extraction_store::bump_candidate_head_revision(&transaction, new_id)?;
         transaction.commit()?;
         Ok(())
     }
@@ -932,12 +948,27 @@ impl MemoryStoreSql {
     /// Помечает истёкшие записи. Истёкшая запись исключается из retrieval и
     /// может быть продлена только явным действием или новой проверкой.
     pub fn expire_due(connection: &Connection, now: &str) -> Result<usize, MemoryStoreError> {
-        Ok(connection.execute(
+        let transaction = connection.unchecked_transaction()?;
+        let expired_ids = {
+            let mut statement = transaction.prepare(
+                "SELECT id FROM memory_entries
+                 WHERE expires_at IS NOT NULL AND expires_at <= ?1
+                   AND confirmation_state IN ('confirmed', 'pending_confirmation', 'candidate')",
+            )?;
+            let rows = statement.query_map(params![now], |row| row.get::<_, String>(0))?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+        for id in &expired_ids {
+            crate::memory_extraction_store::bump_candidate_head_revision(&transaction, id)?;
+        }
+        let changed = transaction.execute(
             "UPDATE memory_entries SET confirmation_state = 'expired'
              WHERE expires_at IS NOT NULL AND expires_at <= ?1
                AND confirmation_state IN ('confirmed', 'pending_confirmation', 'candidate')",
             params![now],
-        )?)
+        )?;
+        transaction.commit()?;
+        Ok(changed)
     }
 
     /// Forget с tombstone: body стирается, а в audit остаётся только
@@ -986,6 +1017,7 @@ impl MemoryStoreSql {
             return Ok(false);
         };
         let digest = digest_hex(&content);
+        crate::memory_extraction_store::bump_candidate_head_revision(&transaction, id)?;
         transaction.execute(Self::FORGET, params![id])?;
         transaction.execute(
             "INSERT INTO memory_tombstones

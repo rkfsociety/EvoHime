@@ -1,4 +1,5 @@
 use super::*;
+use sha2::Digest;
 
 pub(crate) const CODEX_MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 const CODEX_MAX_LINE_BUFFER_BYTES: usize = 256 * 1024;
@@ -182,6 +183,13 @@ impl ApprovalCoordinator {
 
 /// Executes agent tasks with cancellation and event reporting.
 pub trait TaskExecutor: Send + Sync {
+    /// Reconciles durable auxiliary memory extraction work at process startup.
+    /// Executors without that subsystem have nothing to recover.
+    fn recover_memory_extractions(&self, events: EventSink) -> BoxFuture<'static, ()> {
+        let _ = events;
+        Box::pin(async {})
+    }
+
     /// Executes a task using the implementation's default workspace behavior.
     fn execute(
         &self,
@@ -261,8 +269,12 @@ pub trait TaskExecutor: Send + Sync {
     /// ни отменяемого хода, и притворяться, будто есть, значило бы сломать
     /// смысл `user_asserted` в policy. Исполнитель без модели ничего не
     /// делает — это не ошибка, а отсутствие извлекателя.
-    fn extract_ambient_memory(&self, episode_id: String) -> BoxFuture<'static, ()> {
-        let _ = episode_id;
+    fn extract_ambient_memory(
+        &self,
+        episode_id: String,
+        events: EventSink,
+    ) -> BoxFuture<'static, ()> {
+        let _ = (episode_id, events);
         Box::pin(async {})
     }
 }
@@ -863,7 +875,12 @@ struct CallModelInput<'a> {
     config: &'a ProviderResilienceConfig,
     preferred_route: Option<&'a str>,
     task_class: Option<&'a str>,
+    preselected_strategy: Option<&'a crate::prompt_strategy::PromptStrategyProfile>,
     estimated_input_tokens: u32,
+    sample_index: Option<u8>,
+    total_token_budget: u32,
+    max_output_tokens: Option<u32>,
+    route_pin: Option<&'a str>,
 }
 
 pub(crate) struct ModelRequestEnvelopeInput<'a> {
@@ -876,27 +893,21 @@ pub(crate) struct ModelRequestEnvelopeInput<'a> {
     messages: &'a [ChatMessage],
     specs: &'a [ToolSpec],
     source_refs: &'a [evohime_model_provenance::SourceRef],
+    max_output_tokens: Option<u32>,
     route_snapshot_hash: &'a str,
+    request_kind: evohime_model_provenance::RequestKind,
 }
 
 pub(crate) fn model_request_envelope(
     input: ModelRequestEnvelopeInput<'_>,
 ) -> Result<evohime_model_provenance::ModelRequestEnvelopeV1, String> {
-    let system_prompt = input
+    let original_system_prompt = input
         .messages
         .iter()
         .find(|message| message.role == ChatRole::System)
         .map(|message| message.content.clone())
         .unwrap_or_default();
-    let messages = input
-        .messages
-        .iter()
-        .filter(|message| message.role != ChatRole::System)
-        .map(|message| evohime_model_provenance::ModelMessage {
-            role: message.role.as_str().to_string(),
-            content: message.content.clone(),
-        })
-        .collect::<Vec<_>>();
+    let messages = project_messages_for_provenance(input.messages);
     let tools = input
         .specs
         .iter()
@@ -940,25 +951,71 @@ pub(crate) fn model_request_envelope(
         attempt: input.attempt,
         parent_request_id: input.parent_request_id,
         ledger_id: input.ledger.id.clone(),
-        request_kind: evohime_model_provenance::RequestKind::Agent,
+        request_kind: input.request_kind,
         provider: input.ledger.provider.clone(),
         model: input.ledger.model.clone(),
         route_snapshot_hash: input.route_snapshot_hash.to_owned(),
         policy_snapshot_hash: input.route_snapshot_hash.to_owned(),
         route_policy_hash_shared: true,
-        system_prompt,
+        system_prompt: evohime_model_provenance::OMITTED_SYSTEM_PROMPT_MARKER.into(),
+        omitted_system_prompt_hash: Some(hex::encode(sha2::Sha256::digest(
+            original_system_prompt.as_bytes(),
+        ))),
         messages,
         tools,
         model_parameters: evohime_model_provenance::ModelParameters {
             temperature: None,
             top_p: None,
-            max_output_tokens: None,
+            max_output_tokens: input.max_output_tokens,
             reasoning_mode: None,
             provider_options: serde_json::Map::new(),
         },
         context_projection: projection,
         previous_request_hash: input.previous_request_hash,
     })
+}
+
+fn project_messages_for_provenance(
+    messages: &[ChatMessage],
+) -> Vec<evohime_model_provenance::ModelMessage> {
+    messages
+        .iter()
+        .filter(|message| message.role != ChatRole::System)
+        .map(|message| {
+            evohime_model_provenance::ModelMessage::redacted_content(
+                message.role.as_str(),
+                &message.content,
+            )
+        })
+        .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+mod strategy_provenance_projection_tests {
+    use super::*;
+
+    #[test]
+    fn all_request_message_bodies_are_omitted_from_provenance() {
+        let example = "Approved examples\nExample 1: private reusable text".to_owned();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "system"),
+            ChatMessage::text(ChatRole::User, example.clone()),
+            ChatMessage::text(ChatRole::User, "current user request"),
+        ];
+        let projected = project_messages_for_provenance(&messages);
+
+        assert_eq!(projected.len(), 2);
+        assert_eq!(
+            projected[0].content,
+            evohime_model_provenance::OMITTED_MESSAGE_MARKER
+        );
+        assert!(projected[0].verifies_omitted_content(&example));
+        assert_eq!(
+            projected[1].content,
+            evohime_model_provenance::OMITTED_MESSAGE_MARKER
+        );
+        assert!(projected[1].verifies_omitted_content("current user request"));
+    }
 }
 
 #[path = "core_agent_context.rs"]
@@ -994,6 +1051,26 @@ fn conversation_prompt_for_cli(history: &[ChatMessage], prompt: &str) -> String 
 }
 
 impl TaskExecutor for ToolAgent {
+    fn recover_memory_extractions(&self, events: EventSink) -> BoxFuture<'static, ()> {
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+            tools: Arc::clone(&self.tools),
+            max_iterations: self.max_iterations,
+            approvals: self.approvals.clone(),
+            routing_approvals: self.routing_approvals.clone(),
+            journal: self.journal.clone(),
+            selected_model: self.selected_model.clone(),
+            receipt_keys: self.receipt_keys.clone(),
+            extraction_guard: Arc::clone(&self.extraction_guard),
+            extraction_lease: Arc::clone(&self.extraction_lease),
+            proactivity: self.proactivity.clone(),
+            workflow_registry: Arc::clone(&self.workflow_registry),
+        };
+        Box::pin(async move {
+            agent.recover_pending_memory_extractions(&events).await;
+        })
+    }
+
     fn execute(
         &self,
         task_id: String,
@@ -1207,7 +1284,11 @@ impl TaskExecutor for ToolAgent {
         })
     }
 
-    fn extract_ambient_memory(&self, episode_id: String) -> BoxFuture<'static, ()> {
+    fn extract_ambient_memory(
+        &self,
+        episode_id: String,
+        events: EventSink,
+    ) -> BoxFuture<'static, ()> {
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
             tools: Arc::clone(&self.tools),
@@ -1225,7 +1306,9 @@ impl TaskExecutor for ToolAgent {
             workflow_registry: Arc::clone(&self.workflow_registry),
         };
         Box::pin(async move {
-            agent.run_ambient_memory_extraction(&episode_id).await;
+            agent
+                .run_ambient_memory_extraction(&episode_id, &events)
+                .await;
         })
     }
 }

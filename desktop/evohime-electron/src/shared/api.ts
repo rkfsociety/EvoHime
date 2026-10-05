@@ -357,6 +357,8 @@ export interface CoreEvent {
   readonly eventType: string
   /** Redacted UTF-8 payload as produced by Core; never a secret value. */
   readonly payload: string
+  /** Metadata-only typed Core image-generation response projection, encoded as bounded JSON text. */
+  readonly imageGeneration?: string
   /** Present only for typed `ledger.*` rows (plan 08-3); null otherwise. */
   readonly executionEvent: TypedExecutionEvent | null
   /** Present only for the typed TaskCheckpoint projection response. */
@@ -649,7 +651,29 @@ export interface RepairStatus {
 export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'openai_responses', 'ollama'] as const
 export const OLLAMA_DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1'
 
+/** Vendor identities available through the OpenAI-compatible transport. */
+export const PROVIDER_PROFILE_IDS = [
+  'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'cloudflare_workers_ai',
+  'nvidia_nim', 'cerebras', 'hugging_face', 'custom'
+] as const
+
+/** Default base URLs for fixed-endpoint vendor profiles. */
+export const PROVIDER_PROFILE_ENDPOINTS: Readonly<Partial<Record<ProviderProfileId, string>>> = {
+  openai: 'https://api.openai.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  mistral: 'https://api.mistral.ai/v1',
+  nvidia_nim: 'https://integrate.api.nvidia.com/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
+  hugging_face: 'https://router.huggingface.co/v1'
+}
+
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
+export type ProviderProfileId = (typeof PROVIDER_PROFILE_IDS)[number]
+
+export type FreeAccessProbePolicy = 'disabled' | 'passive_only' | 'on_first_use' | 'periodic_bounded' | 'manual_only'
+export type FreeAccessRoutingMode = 'any' | 'prefer_free' | 'free_only'
 
 /** Единственный источник модели для одной задачи в чате. */
 export type ChatProviderMode = ProviderKind | 'codex_cli'
@@ -662,6 +686,9 @@ export interface ProviderProfileSummary {
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly configured: boolean
+  readonly profileId?: ProviderProfileId
+  readonly accountId?: string
+  readonly freeAccessProbePolicy?: FreeAccessProbePolicy
 }
 
 
@@ -675,7 +702,11 @@ export interface ProviderSummary {
   readonly baseUrl: string
   readonly tier: ModelTier
   readonly configured: boolean
+  readonly profileId?: ProviderProfileId
+  readonly accountId?: string
   readonly profiles: Readonly<Record<ProviderKind, ProviderProfileSummary>>
+  readonly freeAccessRoutingMode?: FreeAccessRoutingMode
+  readonly allowPaidFallback?: boolean
 }
 
 /** Модель, опубликованная локальным Codex app-server. */
@@ -1156,6 +1187,117 @@ export interface WorkflowCancelResult {
   readonly error_code: string
 }
 
+/** Fixed Core-owned recipe entry; it never contains instantiated input values. */
+export interface CapabilityRecipeDescriptor {
+  readonly id: string
+  readonly version: number
+  readonly category: 'model_comparison' | 'prompt_variants' | 'structured_output' | 'tool_use' | 'knowledge_grounding' | 'multi_agent_review' | 'local_model_fit' | 'trust_boundaries'
+  readonly difficulty: 'introductory' | 'intermediate' | 'advanced'
+  readonly title: string
+  readonly description: string
+  readonly inputs: readonly WorkflowTemplateInput[]
+  readonly required_capabilities: readonly string[]
+  readonly optional_capabilities: readonly string[]
+  readonly workflow_binding: {
+    readonly template_id: string
+    readonly template_version: number
+    readonly template_graph_hash: string
+  } | null
+  readonly preview: readonly string[]
+  readonly availability:
+    | { readonly status: 'ready' }
+    | { readonly status: 'unsupported'; readonly reason_code: string }
+  readonly content_hash: string
+}
+
+export interface CapabilityRecipeCatalog {
+  readonly catalog_version: number
+  readonly recipes: readonly CapabilityRecipeDescriptor[]
+  readonly error_code: string
+}
+
+export interface CapabilityRecipePreflight {
+  readonly catalog_version: number
+  readonly recipe_id: string
+  readonly recipe_version: number
+  readonly recipe_hash: string
+  readonly state: 'ready' | 'ready_with_warnings' | 'blocked' | 'unsupported' | 'invalid_definition'
+  readonly reason_codes: readonly string[]
+  readonly workflow_binding: CapabilityRecipeDescriptor['workflow_binding']
+  readonly input_hash: string
+  readonly workspace_hash: string
+  readonly run_graph_hash: string
+  readonly preview: readonly string[]
+  readonly required_capabilities: readonly string[]
+  readonly optional_capabilities: readonly string[]
+  readonly revisions: readonly CapabilityRecipeRevision[]
+  readonly workflow_budget: {
+    readonly max_parallel_nodes: number
+    readonly max_tokens: number
+    readonly max_tool_calls: number
+    readonly max_wall_clock_ms: number
+  } | null
+  readonly approval_points: readonly string[]
+  readonly degraded_paths: readonly string[]
+  readonly preflight_hash: string
+  readonly error_code: string
+}
+
+export interface CapabilityRecipeRevision {
+  readonly owner_kind: string
+  readonly owner_id: string
+  readonly revision: string | null
+  readonly content_hash: string | null
+  readonly state: 'pinned' | 'not_pinned'
+  readonly reason_code: string
+}
+
+export interface CapabilityRecipeReplayOption {
+  readonly availability: 'available' | 'unavailable'
+  readonly reason_code: string
+}
+
+export interface CapabilityRecipeStartResult {
+  readonly run_id: string
+  readonly state: string
+  readonly graph_hash: string
+  readonly deduplicated: boolean
+  readonly error_code: string
+}
+
+export interface CapabilityRecipeRunResult {
+  readonly recipe_run: {
+    readonly run_id: string
+    readonly recipe_id: string
+    readonly recipe_version: number
+    readonly recipe_hash: string
+    readonly template_id: string
+    readonly template_version: number
+    readonly template_graph_hash: string
+    readonly run_graph_hash: string
+    readonly input_hash: string
+    readonly workspace_hash: string
+    readonly created_at_ms: number
+  } | null
+  readonly run: WorkflowRunProjection
+  readonly replay_options?: {
+    readonly reproduce_exact: CapabilityRecipeReplayOption
+    readonly rerun_current_compatible: CapabilityRecipeReplayOption
+  }
+  readonly error_code: string
+}
+
+export interface CapabilityRecipeForkResult {
+  readonly status: 'draft_created' | 'refused'
+  readonly source_run_id: string
+  readonly draft_id: string
+  readonly revision: number
+  readonly execution_hash: string
+  readonly layout_hash: string
+  readonly deduplicated: boolean
+  readonly error_code: string
+}
+
 export type PermissionMode = 'ask' | 'read_only' | 'full'
 
 /**
@@ -1343,6 +1485,7 @@ export const RENDERER_COMMANDS = [
   'provider.save',
   'provider.select',
   'provider.clearKey',
+  'provider.verifyFreeAccess',
   'codex.getStatus',
   'codex.refresh',
   'codex.install',
@@ -1394,6 +1537,15 @@ export const RENDERER_COMMANDS = [
   'workflow.getRun',
   'workflow.cancel',
   'workflow.listEvents',
+  'capabilityRecipe.list',
+  'capabilityRecipe.preflight',
+  'capabilityRecipe.start',
+  'capabilityRecipe.getRun',
+  'capabilityRecipe.forkRun',
+  'imageGeneration.capability',
+  'imageGeneration.start',
+  'imageGeneration.get',
+  'imageGeneration.cancel',
   'workflowPackage.preview',
   'workflowPackage.export',
   'workflowPackage.commit',
@@ -1410,6 +1562,18 @@ export const RENDERER_COMMANDS = [
   'benchmarkMatrix.start',
   'benchmarkMatrix.cancel',
   'benchmarkMatrix.approveBaseline',
+  'benchmarkMatrix.strategyList',
+  'benchmarkMatrix.strategyGet',
+  'benchmarkMatrix.strategyEvidence',
+  'benchmarkMatrix.strategyCompatibility',
+  'benchmarkMatrix.strategyCompare',
+  'benchmarkMatrix.strategyRegister',
+  'benchmarkMatrix.strategyBind',
+  'benchmarkMatrix.strategyExampleSet',
+  'benchmarkMatrix.strategyOutputContract',
+  'benchmarkMatrix.strategyTransition',
+  'benchmarkMatrix.strategyPromote',
+  'benchmarkMatrix.strategySelections',
   'agentMiddleware.list',
   'agentMiddleware.start',
   'agentMiddleware.cancel',
@@ -1592,7 +1756,7 @@ export interface CommandPayloads {
   'core.policyAwareToolResultCache': { operation: 'inspect' | 'put' | 'get' | 'invalidate'; cacheKey: string; payload: string; expectedVersion?: number; idempotencyKey?: string }
   'core.codeAnchoredIntentMarkers': { operation: 'scan' | 'propose'; filePath: string; revision: string; payload: string; idempotencyKey?: string }
   'core.modelPurposeRouting': { operation: 'get' | 'put'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
-  'core.localModelRuntimeManager': { operation: 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover' | 'calibration_inspect' | 'calibration_admit' | 'ollama_pull'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
+  'core.localModelRuntimeManager': { operation: 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover' | 'calibration_inspect' | 'calibration_admit' | 'ollama_pull' | 'adapter_status' | 'install_adapter' | 'adaptation_create' | 'adaptation_start' | 'adaptation_poll' | 'adaptation_calibrate' | 'adaptation_benchmark' | 'adaptation_promote' | 'adaptation_get' | 'adaptation_list' | 'adaptation_cancel' | 'adaptation_reject'; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.architectureSnapshot': { operation: 'current' | 'refresh' | 'rebuild' | 'inspect' | 'get' | 'evidence' | 'open_evidence' | 'upstream' | 'downstream' | 'route' | 'compare' | 'review'; snapshotId?: string; workspaceRoot: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.persistentAgentOrganizationRegistry': { operation: 'list' | 'get' | 'history' | 'create' | 'revise' | 'activate' | 'pause' | 'suspend' | 'resume' | 'retire' | 'reporting_set' | 'goal_bind' | 'goal_unbind' | 'assignment_create' | 'assignment_cancel' | 'resolve' | 'availability' | 'activity' | 'recover'; agentId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
   'core.executionEnvironmentProfile': { operation: 'list' | 'get' | 'create' | 'revise' | 'preflight' | 'activate' | 'rollback' | 'current' | 'history'; profileId?: string; ownerScope: string; payload?: string; expectedRevision?: number; idempotencyKey?: string }
@@ -1814,9 +1978,22 @@ export interface CommandPayloads {
   /** Пустой `destinationPath` означает «спроси путь диалогом сохранения». */
   'review.saveRevision': { revisionId: string; destinationPath: string; fileName?: string }
   'provider.get': Record<string, never>
-  'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
+  'provider.save': {
+    provider: ProviderKind
+    apiKey: string
+    model: string
+    baseUrl: string
+    tier: ModelTier
+    profileId?: ProviderProfileId
+    accountId?: string
+    freeAccessProbePolicy?: FreeAccessProbePolicy
+    acknowledgeProbePossibleCost?: boolean
+    freeAccessRoutingMode?: FreeAccessRoutingMode
+    allowPaidFallback?: boolean
+  }
   'provider.select': { provider: ProviderKind }
   'provider.clearKey': { provider?: ProviderKind }
+  'provider.verifyFreeAccess': { modelId: string; confirmPossibleCost: true }
   'codex.getStatus': Record<string, never>
   'codex.refresh': Record<string, never>
   'codex.install': Record<string, never>
@@ -1901,6 +2078,40 @@ export interface CommandPayloads {
   'workflow.getRun': { runId: string }
   'workflow.cancel': { runId: string }
   'workflow.listEvents': { runId: string; afterSequence?: number; limit?: number }
+  'capabilityRecipe.list': Record<string, never>
+  'capabilityRecipe.preflight': {
+    recipeId: string
+    recipeVersion: number
+    recipeHash: string
+    workspacePath: string
+    inputs: Record<string, string>
+  }
+  'capabilityRecipe.start': {
+    recipeId: string
+    recipeVersion: number
+    recipeHash: string
+    workspacePath: string
+    inputs: Record<string, string>
+    idempotencyKey: string
+    preflightHash: string
+  }
+  'capabilityRecipe.getRun': { runId: string }
+  'capabilityRecipe.forkRun': { runId: string; idempotencyKey: string }
+  'imageGeneration.capability': Record<string, never>
+  'imageGeneration.start': {
+    operation: 'generate' | 'edit' | 'mask_edit'
+    prompt: string
+    width: number
+    height: number
+    count: number
+    mimeType: 'image/png' | 'image/jpeg'
+    inputImages?: readonly { locator: string; mimeType: string; artifactKind: string }[]
+    maskImage?: { locator: string; mimeType: string; artifactKind: string } | null
+    idempotencyKey: string
+    jobId: string
+  }
+  'imageGeneration.get': { jobId: string }
+  'imageGeneration.cancel': { jobId: string }
   'workflowPackage.preview': {
     graphJson: string
     name: string
@@ -1975,7 +2186,19 @@ export interface CommandPayloads {
     idempotencyKey: string
   }
   'benchmarkMatrix.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
-  'benchmarkMatrix.approveBaseline': { requestId: string; ownerScope: string; runId: string; expectedVersion: number; idempotencyKey: string }
+  'benchmarkMatrix.approveBaseline': { requestId: string; ownerScope: string; runId: string; challengeId: string; modelProfileId: string; agentProfileId: string; reportSha256: string; expectedVersion: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyList': { requestId: string; ownerScope: 'prompt_strategy'; payload?: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyGet': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyEvidence': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyCompatibility': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyCompare': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyRegister': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyBind': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyExampleSet': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyOutputContract': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyTransition': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategyPromote': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
+  'benchmarkMatrix.strategySelections': { requestId: string; ownerScope: 'prompt_strategy'; payload: string; expectedVersion?: number; idempotencyKey: string }
   'agentMiddleware.list': { requestId: string; ownerScope: string }
   'agentMiddleware.start': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
   'agentMiddleware.cancel': { requestId: string; ownerScope: string; runId: string; idempotencyKey: string }
@@ -2260,6 +2483,7 @@ export interface CommandResults {
   'provider.save': { summary: ProviderSummary; restarted: boolean }
   'provider.select': { summary: ProviderSummary; restarted: boolean }
   'provider.clearKey': { summary: ProviderSummary; restarted: boolean }
+  'provider.verifyFreeAccess': { accepted: boolean }
   'codex.getStatus': CodexStatus
   'codex.refresh': CodexStatus
   'codex.install': CodexStatus
@@ -2318,6 +2542,15 @@ export interface CommandResults {
   'workflow.getRun': { accepted: boolean }
   'workflow.cancel': { accepted: boolean }
   'workflow.listEvents': { accepted: boolean }
+  'capabilityRecipe.list': { accepted: boolean }
+  'capabilityRecipe.preflight': { accepted: boolean }
+  'capabilityRecipe.start': { accepted: boolean }
+  'capabilityRecipe.getRun': { accepted: boolean }
+  'capabilityRecipe.forkRun': { accepted: boolean }
+  'imageGeneration.capability': { accepted: boolean }
+  'imageGeneration.start': { accepted: boolean }
+  'imageGeneration.get': { accepted: boolean }
+  'imageGeneration.cancel': { accepted: boolean }
   'workflowPackage.preview': { accepted: boolean }
   'workflowPackage.export': { accepted: boolean }
   'workflowPackage.commit': { accepted: boolean }
@@ -2334,6 +2567,18 @@ export interface CommandResults {
   'benchmarkMatrix.start': { accepted: boolean }
   'benchmarkMatrix.cancel': { accepted: boolean }
   'benchmarkMatrix.approveBaseline': { accepted: boolean }
+  'benchmarkMatrix.strategyList': { accepted: boolean }
+  'benchmarkMatrix.strategyGet': { accepted: boolean }
+  'benchmarkMatrix.strategyEvidence': { accepted: boolean }
+  'benchmarkMatrix.strategyCompatibility': { accepted: boolean }
+  'benchmarkMatrix.strategyCompare': { accepted: boolean }
+  'benchmarkMatrix.strategyRegister': { accepted: boolean }
+  'benchmarkMatrix.strategyBind': { accepted: boolean }
+  'benchmarkMatrix.strategyExampleSet': { accepted: boolean }
+  'benchmarkMatrix.strategyOutputContract': { accepted: boolean }
+  'benchmarkMatrix.strategyTransition': { accepted: boolean }
+  'benchmarkMatrix.strategyPromote': { accepted: boolean }
+  'benchmarkMatrix.strategySelections': { accepted: boolean }
   'agentMiddleware.list': { accepted: boolean }
   'agentMiddleware.start': { accepted: boolean }
   'agentMiddleware.cancel': { accepted: boolean }

@@ -45,6 +45,8 @@ pub mod batch_invocation_runtime_store;
 pub(crate) mod benchmark_store;
 /// Persistence for browser session metadata.
 pub mod browser_session_store;
+/// Persistence for metadata-only guided recipe run links.
+pub mod capability_recipe_store;
 /// Persistence for selected capability state.
 pub mod capability_selection_store;
 /// Persistence for capability definitions and assignments.
@@ -104,7 +106,17 @@ pub mod durable_background_execution_store;
 pub mod durable_remote_task_bridge_store;
 mod event_export;
 mod event_store;
-pub(crate) mod event_trigger_runtime_store;
+mod event_trigger_runtime_store;
+/// Core-facing persistence operations for event-trigger definitions and redacted event history.
+pub use event_trigger_runtime_store::{
+    definition_owner_scope as event_trigger_definition_owner_scope,
+    definition_version as event_trigger_definition_version,
+    get_definition as get_event_trigger_definition, install_schema as install_event_trigger_schema,
+    list_definitions as list_event_trigger_definitions, list_events as list_event_trigger_events,
+    put_definition as put_event_trigger_definition, record_dedup as record_event_trigger_dedup,
+    record_event as record_event_trigger_event, EventRecordMeta as EventTriggerEventRecordMeta,
+    EventSummary as EventTriggerEventSummary, StoredDefinition as StoredEventTriggerDefinition,
+};
 /// Registry for event visualizer definitions.
 pub mod event_visualizer_registry_store;
 /// Registry for execution backends.
@@ -126,6 +138,8 @@ pub mod feedback_store;
 pub mod free_access_evidence_store;
 /// Persistence for Git remote publication protocol state.
 pub mod git_remote_publication_protocol_store;
+/// Persistence for locally selected public GitHub repositories.
+pub mod github_repository_store;
 /// Persistence for durable user and runtime goals.
 pub mod goal;
 /// Persistence for grounded research records.
@@ -138,6 +152,8 @@ pub mod hardware_fit_evidence_store;
 pub mod human_work_items_store;
 /// Persistence for IDE companion bridge state.
 pub mod ide_companion_bridge_store;
+/// Persistence for bounded image-generation job metadata.
+pub mod image_generation_store;
 /// Persistence for incremental change protocol state.
 pub mod incremental_change_protocol_store;
 pub(crate) mod integration_provider_store;
@@ -155,6 +171,8 @@ mod ledger_helpers;
 mod ledger_reconciliation_store;
 mod ledger_store;
 mod legacy_migration;
+/// Persistence for metadata-only local-model adaptation jobs and publication journals.
+pub mod local_model_adaptation_store;
 /// Persistence for local model compatibility gateway state.
 pub mod local_model_compatibility_gateway_store;
 /// Persistence for local model performance calibration.
@@ -205,6 +223,8 @@ pub mod project_instruction_stack_store;
 pub mod project_knowledge_notebook_store;
 mod project_store;
 pub(crate) mod prompt_cache_planner_store;
+/// Persistence for immutable prompt-strategy metadata and selection snapshots.
+pub mod prompt_strategy_store;
 mod provenance_store;
 /// Persistence for provider profile catalog entries.
 pub mod provider_profile_catalog_store;
@@ -294,7 +314,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 175;
+pub const SCHEMA_VERSION: u32 = 180;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,

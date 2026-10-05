@@ -9,7 +9,15 @@
 
 pub mod memory {
     //! Facade for durable memory records, candidate publication, and recall views.
-    pub use crate::memory_extraction_store::{publish_candidate, PublishOutcome};
+    pub use crate::memory_extraction_store::{
+        acquire_source_lease, candidate_basis_for, candidate_slot_for, capture_candidate,
+        capture_source, defer_expired_source_lease, finalize_candidate, finish_source, get_source,
+        link_extractor_request, link_extractor_response, list_recoverable_sources,
+        publish_candidate, CaptureCandidateInput, CaptureCandidateOutcome, CaptureSourceInput,
+        CaptureSourceOutcome, FinalizeCandidateInput, MemoryExtractionOrigin,
+        MemoryExtractionSourceRecord, MemoryExtractionSourceState, PublishOutcome,
+        SourceLeaseOutcome, MAX_EXTRACTION_DEPTH, MAX_RECOVERABLE_SOURCES,
+    };
     pub use crate::memory_store::{
         install_schema, InsertSessionNoteInput, MemoryExtractionFields, MemoryPrivacy,
         MemoryRecord, MemoryRecordInput, MemoryScope, MemoryStoreError, MemoryStoreSql,
@@ -39,6 +47,11 @@ pub mod workflow {
     pub use crate::workflow_store::*;
 }
 
+pub mod image_generation {
+    //! Facade for bounded image-generation job metadata.
+    pub use crate::image_generation_store::*;
+}
+
 pub mod agents {
     //! Facade for child-agent and persistent-agent registry records.
     pub use crate::child_store::*;
@@ -56,4 +69,18 @@ pub mod audit {
 pub mod receipts {
     //! Facade for model-provenance receipt persistence.
     pub use crate::model_provenance::*;
+}
+
+pub mod evaluation {
+    //! Facade for persisted benchmark evaluation runs and reports.
+    pub use crate::benchmark_store::{
+        get_baseline, get_baseline_approval, get_baseline_approval_by_key, get_run,
+        get_run_policy_json, get_run_with_update, latest_baseline_revision, put_baseline,
+        put_baseline_approval, save_report, save_run, StoredBenchmarkBaseline, StoredBenchmarkRun,
+    };
+}
+
+pub mod strategies {
+    //! Facade for immutable prompt-strategy definitions and replay snapshots.
+    pub use crate::prompt_strategy_store::*;
 }

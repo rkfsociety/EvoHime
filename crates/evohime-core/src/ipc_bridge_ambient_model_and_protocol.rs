@@ -31,6 +31,12 @@ fn safe_model_catalog_error_code(
             }
         }
         evohime_model_gateway::providers::ProviderError::Stream(_) => "catalog_stream_error",
+        evohime_model_gateway::providers::ProviderError::ImagePreflightRejected => {
+            "catalog_preflight_rejected"
+        }
+        evohime_model_gateway::providers::ProviderError::ImageCapabilityStale => {
+            "catalog_capability_stale"
+        }
     }
 }
 
@@ -312,6 +318,22 @@ impl IpcBridge {
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::ModelCatalog(request)) => {
+                if request.mode == "verify_free_access" {
+                    let payload = self
+                        .run_manual_free_access_probe(
+                            &request.model_id,
+                            request.confirm_possible_cost,
+                        )
+                        .await;
+                    self.write_response(
+                        writer,
+                        "free_access.probe",
+                        serde_json::to_vec(&payload)
+                            .map_err(|error| FrameError::Io(error.to_string()))?,
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 let mode = if request.mode == "paid" {
                     "paid"
                 } else {

@@ -576,6 +576,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       taskId: event.taskId ?? '',
       eventType: event.eventType ?? '',
       payload: decodePayload(event.payload),
+      ...(event.imageGeneration ? { imageGeneration: decodePayload(event.imageGeneration.projectionJson) } : {}),
       executionEvent: decodeExecutionEvent(event.executionEvent),
       taskCheckpoint: decodeTaskCheckpoint(event.taskCheckpoint),
       taskCheckpointAction: decodeTaskCheckpointAction(event.taskCheckpointActionResult),

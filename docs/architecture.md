@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-23.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-09-27.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -748,16 +748,20 @@ fork request и metadata-only projection.
 
 ## Memory Extraction
 
-Извлечение фактов из диалога реализовано в `crates/evohime-core/src/memory_extraction.rs`. Этот раздел — канонический контракт: исходный план удалён из `docs/plans/` после реализации, как того требует правило каталога.
+Извлечение фактов из диалога реализовано в `crates/evohime-core/src/memory_extraction.rs`. Этот раздел — канонический контракт поведения и границ подсистемы; подтверждённый статус текущего checkout указан в [`current-state.md`](current-state.md).
 
 - Единственный владелец extraction, policy, validation и storage — Core. Всё, что вернула модель, — это candidate, а не память.
 - По умолчанию работает `strict`-режим: извлечение запускается только после явного триггера пользователя («запомни», «важно», «ограничение» и эквиваленты). Режим переключается переменной `EVOHIME_MEMORY_EXTRACTION` (`disabled` | `strict` | `open`); в `open` результат всегда получает `pending_confirmation`. Даже при `disabled` ручной триггер продолжает работать.
 - `constraint`, `decision`, любой high-risk, `sensitive` privacy, неоднозначный subject, недостаточный confidence и незавершённая проверка дают `pending_confirmation`. Автосохранение возможно только для low-risk предпочтения, подтверждённого явным утверждением пользователя. Секреты не сохраняются вообще.
 - `model_confidence` — уверенность извлекателя; `verification_confidence` поднимает только версионируемая verification policy. Повтор факта моделью уверенность не повышает.
 - Конфликт определяется по `kind + canonical_subject + scope`. Неразрешённый конфликт оставляет старую запись активной, а новую — pending; supersede происходит только по явному выбору пользователя и хранит причину из закрытого набора.
-- Extraction выполняется после отправки ответа, поэтому не добавляет задержки к ходу задачи, а недоступность модели или валидатора не ломает задачу.
+- До отправки `TaskCompleted` Core проверяет eligibility и durable-записывает metadata-only ссылку на источник и его ревизию; само извлечение запускается после ответа. Поэтому потеря процесса не оставляет принятую extraction intent без записи, а недоступность извлекателя не ломает основной ход.
 - Диалоговый и ambient-пути используют общий cancellation-safe RAII `ExtractionLease` на экземпляр Core-agent. Lease захватывается до async-вызова извлекателя и освобождается через `Drop`, поэтому конкурентный второй запуск не проходит даже при отмене первого; он получает bounded `ThrottleReason::Reentrant` и пишет только `memory.extraction.skipped` либо `memory.ambient.skipped` с причиной `reentrant`.
-- Публикация кандидата выполняется владельцем Memory storage одной SQLite-транзакцией: metadata-only lifecycle в schema v175 сначала фиксирует bounded source-basis/idempotency hashes как `finalizing`, затем вставляет `memory_entries` и переводит запись в `committed`. Повтор ключа возвращает прежний `memory_id`, а повтор source basis под новым ключом отбрасывается; statement, transcript, prompt, URL и secrets в lifecycle не сохраняются.
+- Typed `MemoryExtractionOrigin`, root execution reference и конечная глубина принадлежат extraction-контракту Core; storage отвергает неизвестные origin, пустую lineage и глубину выше limit, а restart recovery повторно проверяет lineage для dialog и ambient источников. Неизвестный origin из SQLite fail-closes при чтении.
+- Публикация кандидата выполняется владельцем Memory storage одной SQLite-транзакцией: additive schema v176 хранит metadata-only source/lifecycle, stable candidate-slot, source order и ожидаемую head/revision; вставка `memory_entries` и `committed` остаются одним CAS эффектом. Повтор ключа возвращает прежний `memory_id`, а более старый source basis не перезаписывает новый head; statement, transcript, prompt, URL и secrets в extraction lifecycle не сохраняются.
+- Перед каждым auxiliary extractor dispatch Core durable-коммитит Model Request Provenance v1 envelope, receipt и dispatch marker. Каждый retry получает новый request id под общей logical request; failure provenance закрывает dispatch с bounded `provenance_unavailable`. Response provenance фиксируется до capture candidate. Extractor получает только restricted policy context и не получает generic tools.
+- Startup recovery проходит через существующую bounded background-reconciliation точку. Dialog source rehydrate-ится только из единственной bounded пары `TaskStarted`/`TaskCompleted`, её source revision сверяется с сохранённым digest; duplicate, oversized, missing или mismatched данные закрываются typed outcome.
+- Metadata-only event `memory.extraction` показывает lifecycle diagnostics в read-only `OperationsPanel`; Core projection и renderer ограничивают enum-поля и размеры, исключая memory body, prompt и model output. Unknown major/field values fail closed, существующие memory controls и forget semantics остаются владельцами изменения данных.
 - Кандидата можно изменить до подтверждения или оставить только на текущую сессию (`ReviseMemoryCandidate`). Правка делает запись пользовательским утверждением и сбрасывает прошлую проверку, но ничего не подтверждает; session-only не создаёт persistent row и живёт до автоматического expiry.
 - `forget` — logical deletion с tombstone из одних metadata и digest; он же вращает backup-контейнеры старше 7 дней, потому что стёртое утверждение остаётся в снимках, снятых до удаления.
 - **Ambient как источник кандидатов.** `SourceTrust::Ambient` — пятое значение доверия, строго более слабое, чем остальные: `can_ground_strict_save()` для него ложно, `requires_validation()` истинно, а `evaluate` возвращает `pending` с причиной `ambient_never_auto_confirms` сразу после проверки на секрет — раньше любых порогов, kind и scope. Перебор всех комбинаций `kind × scope × privacy × confidence × subject` показывает, что `AutoConfirm` для ambient недостижим. Секрет по-прежнему отвергается раньше: услышанный ключ не сохраняется даже в pending.
@@ -1436,6 +1440,36 @@ publish, owner-scoped single-use handoff, recovery и read-only live inspection
 обслуживаются Core; renderer не получает полномочий, credentials или raw
 runtime payload.
 
+### Guided Capability Recipes v1
+
+Guided recipe catalog — фиксированный Core-owned индекс над существующими
+workflow templates, а не второй граф, runner или provider/evaluation owner.
+`CapabilityRecipeDescriptor` имеет стабильный id/version и canonical hash;
+catalog содержит восемь категорий из плана 176. Запуск доступен только при
+exact binding на прошедший registry validation workflow template. Recipe без
+такого binding получает typed `Unsupported`; текущие model-comparison,
+prompt-variants, tool-use и local-model-fit не симулируют отсутствующий runner.
+
+Core preflight сверяет bounded inputs, выбранный workspace, граф, capability
+grants, budgets, approval nodes и known revisions. Внешние model/context/tool
+owners, которые не сохраняют exact revision, отмечаются как `NotPinned`; exact
+replay и compatible rerun для них возвращают typed `unavailable`, а не
+подставляют `latest`. `StartCapabilityRecipe` заново выполняет preflight и
+создаёт существующий workflow run вместе с immutable
+`capability_recipe_run_links` sidecar одной SQLite-транзакцией до запуска
+effects. Sidecar хранит recipe/template/graph/input/workspace hashes и
+idempotency key; lifecycle, cancellation и run recovery остаются за
+`workflow_store`/`WorkflowRuntime`.
+
+Authenticated additive IPC commands 280–284 обслуживают catalog, preflight,
+start, run lookup и fork. Shell отображает только bounded Core projections в
+существующей workflow builder surface и использует существующие workflow
+status/cancel commands. Fork разрешён только для завершённого run и строит
+новый user-owned draft из exact исходного template с placeholders; он не
+копирует run inputs, outputs, grants, secrets или allowlists и не запускает
+draft автоматически. Перед IPC startup Core вызывает recovery существующих
+workflow runs; ошибка recovery не позволяет Core принять команды.
+
 ## Plan Artifact v1 (план 57)
 
 `evohime-local-storage::plan_artifact` — единственный mutable authority для
@@ -1532,9 +1566,9 @@ list/get/action projection с optimistic version checks. Electron OperationsPane
 
 План 33 реализован как Core-owned metadata contract. Typed manifest/action/
 trigger/credential/binding/fixture types и bounded schema validator находятся в
-`crates/evohime-core/src/integration_provider_sdk.rs`; production external
-adapters не включены, а offline `fixture.echo` доступен через
-`integration_provider_runtime.rs`. Metadata хранится в schema v40 в
+`crates/evohime-core/src/integration_provider_sdk.rs`; из production adapters
+поддержан read-only `github.public` для public repositories, а offline
+`fixture.echo` доступен через `integration_provider_runtime.rs`. Metadata хранится в schema v40 в
 `integration_provider_store.rs`; secret bytes, raw prompts и provider output не
 записываются. Workflow binding использует version-pinned `integration_action`,
 а неизвестные provider/action дают unresolved outcome. IPC остаётся
@@ -1542,21 +1576,53 @@ authenticated/additive: commands 175–176 и event 35; Electron показыв�
 metadata-only Integrations в `SettingsModal`. Unknown/unavailable outcomes
 fail closed и не повторяют внешний effect вслепую.
 
+### GitHub Public Repository Integration v1
+
+Settings «Интеграции» позволяет сохранить до 50 идентификаторов публичных
+репозиториев GitHub и по явному действию пользователя загрузить краткую сводку,
+до 10 открытых issues и до 10 pull requests. Schema v180 добавляет
+`github_saved_repositories` только с owner/repo и временем добавления; список
+остаётся в SQLite Core и не хранит внешние ответы или credentials.
+
+Core принимает только bounded owner/repo сегменты и обращается только к
+`https://api.github.com` анонимными HTTPS GET к repository, issues и pulls
+endpoints. Redirects отключены, каждый response ограничен 512 KiB, один refresh
+за раз ограничен общим timeout 25 секунд; response body не читается. Issues,
+содержащие `pull_request`, исключаются из issue list. `403`/`429`, not-found,
+timeout, network и oversized/invalid response возвращаются как bounded error
+codes без raw headers/body. Открытие Settings и добавление идентификатора не
+делают внешних запросов; только явный выбор/обновление repository вызывает API.
+В IPC используется существующий authenticated Integration Provider command
+175–176 и event 35, без новых proto tags. Renderer отображает Core projection,
+а внешние ссылки открывает через main-process allowlist. Private repositories,
+OAuth/PAT и write operations не поддерживаются.
+
 ### Event Trigger Runtime v1
 
-План 34 реализован как bounded Core-owned ingress для `local_workspace_event` и
-`system_event`. Контракт находится в
-`crates/evohime-core/src/event_trigger_runtime.rs`: immutable workflow binding
-с pinned version/execution hash, normalized envelope, allowlisted mapping,
-Core-local authenticity, дедупликация, rate/queue bounds и typed outcomes.
-Provider webhook остаётся честным `unavailable` без production adapter.
+Settings → «Триггеры событий» управляет versioned Core-owned правилами,
+закреплёнными за точными `template_id`, версией и execution hash workflow.
+Контракт и bounded admission policy находятся в
+`crates/evohime-core/src/event_trigger_runtime.rs`: allowlisted mapping,
+Core-local authenticity, дедупликация, лимиты очереди/частоты и typed outcomes.
+
+`system_event` принимает только durable journal события `task.completed` и
+`task.failed`; watch channel служит сигналом пробуждения, а содержимое задачи
+не переносится в payload триггера. `local_workspace_event` на Windows использует
+`ReadDirectoryChangesW` по явно выбранной папке, рекурсивно, с bounded каналом
+128 уведомлений и лимитом 32 активных корней. При остановке/паузе правила watcher
+отменяет ожидающее Win32 чтение. Повторные уведомления одного пути и типа в
+750-миллисекундном debounce окне объединяются. Workflow запускается через
+обычный `WorkflowRuntime`, поэтому его capability checks и approval остаются
+обязательными. Core не запускает повторный файловый триггер для изменений в
+рабочей папке, пока там выполняется workflow, созданный триггером; такой
+пропуск получает `dropped_with_audit`.
 
 Durable metadata schema v41 находится в
 `crates/evohime-local-storage/src/event_trigger_runtime_store.rs`; она не
-содержит credentials или raw prompt/output. Authenticated IPC additive commands
-177–178 и event 36 подключены к Electron; Settings → «Триггеры событий»
-показывает только bounded projection и unavailable provider state. Runtime не
-повторяет unknown external effect вслепую и не выдаёт renderer authority.
+содержит credentials, raw task output или содержимое файлов. Authenticated IPC
+commands 177–178 и event 36 подключены к Electron; Settings показывает список,
+редактирование, включение/паузу, pinned workflow и bounded историю событий.
+Provider webhook остаётся `unavailable` без production adapter.
 
 ### Invocation Presets v1
 
@@ -1860,6 +1926,13 @@ overscan, сохраняет якорь `scrollTop` при prepend старой 
 изменение глобального массива из другого чата не повторяет применение всей
 истории. Подписка управляется отдельным effect только при смене чата или
 восстановлении соединения.
+
+Shell группирует чаты по `workspacePath` и показывает только историю выбранной
+папки. При смене workspace активный чат закрывается до следующего запроса;
+нельзя продолжить conversation одного проекта с путём другого. Core связывает
+`conversation_id` с производным scope переданной workspace-папки и отклоняет
+несовпадение. Модельная история остаётся внутри conversation, а проектная память
+и RAG читаются в scope текущего workspace.
 # Team SOP Protocols v1 (plan 48)
 
 `evohime-core::team_sop_protocols` provides bounded versioned TeamProtocol
@@ -2766,15 +2839,49 @@ aggregate использует bounded median/p90/variance/failure rate. Отм�
 SQLite schema v96 добавляет durable calibration sessions и immutable performance
 profile metadata без raw prompts/outputs, credentials или executable args.
 Core admission повторно проверяет verified ready model/runtime/artifact и
-hardware-safe identity. В текущем checkout нет versioned inference-stream
-adapter, поэтому операции возвращают typed `unavailable_adapter`, не создают
-измеренный профиль и не меняют routing/recommendation; будущая интеграция
-разрешена только через explicit versioned lookup и capability gates.
+hardware-safe identity. При закрытии plan 121 versioned inference-stream
+adapter отсутствовал, и calibration корректно возвращал typed
+`unavailable_adapter`. Текущий source checkout добавляет adapter только как
+часть отдельного Core-owned plan 178; этот owner не меняет
+routing/recommendation и принимает только локальный Supervisor runtime с
+hash-pinned моделью.
 
 Для evidence freeze highest proto tags были `260/105`; до dedicated `261/106`
 используется существующий authenticated Local Model Runtime Manager transport.
 Electron panel — metadata-only projection, явно различающая unavailable,
 estimated, stale и measured состояния.
+
+## Core-Owned Local Model Adaptation v1 (plan 178)
+
+Adaptation принимает только already-managed GGUF F16/F32 source с проверенными
+artifact hash/size, exact model revision, target из allowlist
+`Q4_K_M`/`Q5_K_M`/`Q8_0`, frozen benchmark suite/baseline и approval-policy
+identity. Поддержанный converter/runtime — llama.cpp `b10981` Windows x64 CPU
+asset с фиксированными archive и executable/DLL SHA-256; установка начинается
+только по явному действию. Arbitrary URL, command line, executable path,
+SafeTensors/Python/CUDA conversion и accelerator-fit inference не поддержаны.
+
+Core хранит bounded request/job/evidence, frozen benchmark inputs, disk
+reservations и publication journal в SQLite schema 178; model weights остаются
+в managed filesystem. Admission повторно проверяет source record/hash, свежий
+host pressure, RAM и свободное место вместе с reservations других
+nonterminal jobs. `WaitingForResources` jobs проходят FIFO retries из
+существующего durable-background poll task с повторным preflight; output идёт
+в staging и проверяется по hash, size и GGUF structure. Supervisor запускает
+только hash-verified package с typed arguments в Windows Job Object; v1 держит
+не более одного quantizer/inference процесса и cancellation завершает process
+tree. Restart прерывает conversion без resumable checkpoint, повторяет
+verification, сохраняет benchmark для точного явного retry и reconciles
+prepared publication по journal. Активная модель не меняется при подготовке:
+promotion требует Core-side approval и exact job/output/benchmark revisions и
+hashes.
+
+Calibration использует loopback OpenAI-compatible SSE adapter с bounded
+request/response; benchmark вызывает только реальную локальную inference
+модель, а deterministic/fixture executors не могут создать promotion
+evidence. IPC остаётся authenticated через существующий Local Model Runtime
+Manager command; Electron получает bounded job/evidence projection и отправляет
+запросы, не выдавая approval и не меняя policy.
 
 ## Verification Evidence Ledger v1 (план 122, реализован 2026-09-09)
 
@@ -2818,91 +2925,106 @@ reliability snapshot; Model Gateway остаётся transport/retry authority.
 не становятся Healthy, а credentials и raw provider payloads не сохраняются.
 SQLite schema v100 добавляет только reliability metadata.
 
-## Cloud Provider Profiles contract v1 (план 173.1, partial)
+## Cloud Provider Profiles contract v1 (план 173, закрыт 2026-09-25)
 
-`ProviderProfile` теперь versioned и сохраняет provider family отдельно от
-transport kind, opaque credential binding, trusted endpoint metadata, region,
-revision и content hash. Старый metadata-only JSON остаётся совместимым через
-defaults; неизвестные family/transport не становятся разрешением на runtime
-маршрутизацию.
+`ProviderProfileId` является явной стабильной identity для `openai`, восьми
+built-in OpenAI-compatible профилей и `custom`; она независима от
+`ProviderKind` транспорта. Новые настройки оболочки сохраняют ID профиля
+отдельно от base URL. Маршруты старого формата без ID остаются совместимыми;
+только точные ранее известные endpoint могут восстановить legacy identity,
+произвольный endpoint остаётся generic OpenAI-compatible. Фиксированные
+профили строят URL из trusted defaults. Для Cloudflare account ID принимается
+отдельно, проверяется как 32 шестнадцатеричных символа и используется только
+для построения account-scoped URL; host/path не редактируются. Токен остаётся в
+зашифрованном provider store и передаётся Core через окружение supervisor.
 
-`ProviderModelDescriptor` является immutable adapter над каноническим
-`evohime-model-gateway::ModelCatalogEntry`: он добавляет profile/catalog
-revision и hash provenance, typed limits, capability flags с provenance,
-privacy, usage и lifecycle. Отсутствующие capability/privacy/usage остаются
-`Unknown`, а raw catalog response, arbitrary endpoint и credential material в
-descriptor не попадают. Восемь bounded built-in profile identities описывают
-OpenRouter, Groq, Gemini, Mistral, Cloudflare Workers AI, NVIDIA NIM, Cerebras
-и Hugging Face; trusted exact OpenAI-compatible endpoints сохраняют эту identity
-при адаптации route, а произвольный endpoint остаётся generic OpenAI. SQLite
-schema v174 атомарно хранит bounded profile/catalog
-snapshot с provider/credential-binding/region scope, revision fence и
-idempotent publication через существующий local-storage owner. В той же строке
-сохраняются lifecycle state, observation/expiry timestamps и typed failure code;
-additive migration v174 переносит старые v173 таблицы без потери metadata, а
-validated read-back отбрасывает несовместимые profile/catalog identity.
-При запуске Core настроенные routes читают свои snapshots из существующего
-SQLite store в bounded process-local cache до открытия IPC; profile scope/hash
-проверяются повторно, несовместимые строки игнорируются fail-closed. Поэтому
-первый неудачный catalog refresh после перезапуска может показать validated
-stale entries, но не может сделать stale snapshot route-eligible. Route
-preflight теперь вызывается ModelGateway непосредственно перед transport
-dispatch. Существующий authenticated `model.catalog` event дополнительно
-несёт bounded `provider_catalog` projection с lifecycle, credential status,
-safe profile identity, limits и capability/privacy/usage/lifecycle metadata;
-новый независимый catalog event не создаётся. Renderer отображает эту
-проекцию, но не выбирает route compatibility и не читает SQLite.
+Core `ProviderProfile` и `ProviderModelDescriptor` сохраняют версию,
+profile/catalog revisions и content hashes, typed limits, capability
+provenance, privacy, usage и lifecycle. Они адаптируют канонический gateway
+`ModelCatalogEntry`; неподтверждённые capability/privacy/usage остаются
+`Unknown`. Raw provider response, credential material, произвольный endpoint
+из catalog и headers в descriptor не включаются. SQLite schema v174
+транзакционно хранит bounded snapshots со scope provider/credential-binding/
+region, monotonic revision fence, content hash, lifecycle и typed failure;
+validated recovery гидратирует только согласованные записи в ограниченный
+process-local cache.
 
-`ProviderCatalogSnapshot` задаёт lifecycle `Fresh`, `Stale`, `Unavailable`,
-`CredentialRejected` и `DiscoveryUnsupported`, а `CatalogFailureCode` скрывает
-raw `ProviderError`. Gateway entries сортируются и deduplicate-ятся до создания
-immutable descriptors; expired/stale/failed snapshots не проходят
-`route_eligible_at`. При временной ошибке refresh уже сохраняет прежние bounded
-entries как `Stale` с typed failure для отображения, но не для маршрутизации;
-credential rejection и unsupported discovery fail closed без stale fallback.
-Явный `model not found` получает отдельный bounded `model_not_found` outcome.
-HTTP 404 при чтении `/models` означает `discovery_unsupported`, поскольку этот
-запрос не содержит выбранную модель; эти исходы не маскируются под generic
-protocol mismatch.
-SQLite boundary принимает только этот bounded код из allow-list и сохраняет его
-при восстановлении снапшота.
-Capability filtering по provider-declared/observed metadata ещё расширяется.
-Route preflight
-проверяет configured credential, известное lifecycle-состояние snapshot,
-свежесть и присутствие выбранной модели; неизвестный snapshot означает
-`unobserved`, оставляет `configured_model_eligible=null` и сохраняет
-совместимость первого запуска, а известный stale или failed snapshot даёт
-bounded `false` и fail-closed до provider dispatch. Missing model остаётся
-отдельным `provider_model_not_found`, а истёкший snapshot —
-`provider_catalog_expired`, а не generic catalog outage.
-Authenticated `model.catalog` projects an already-expired fresh snapshot as
-`expired`, so ModelPicker does not display an expired catalog as current.
-ModelPicker keeps provider-returned models visible and renders capability,
-limits and privacy hints only from the bounded Core descriptor; it has no
-provider-name or model-name compatibility table.
+Model Gateway остаётся единственным владельцем provider transport и запроса.
+Совместимые профили используют общий OpenAI-compatible transport и bounded
+`/models` discovery; Cloudflare использует тот же account ID и отдельный
+bounded Model Search запрос с pagination, page/entry/body/time caps. Каталоги
+нормализуются детерминированно. Состояния `Fresh`, `Stale`, `Unavailable`,
+`CredentialRejected` и `DiscoveryUnsupported` имеют отдельные typed outcomes;
+404 запроса списка моделей означает отсутствие discovery endpoint, а не
+отсутствие выбранной модели. `DiscoveryUnsupported` остаётся видимым и не
+блокирует вручную выбранный model ID после проверки настроенного route и
+credential. Известный stale/expired/failed catalog и подтверждённое отсутствие
+модели блокируют dispatch по существующей route policy.
 
-## Empirical Free-Access Evidence foundation v1 (план 174.1, partial)
+Core-owned route preflight проверяет модель непосредственно перед dispatch.
+Только capability `Unsupported` с provenance `ProviderDeclared` или `Observed`
+блокирует chat или требуемые запросом tool calls; `Unknown` не выдаётся за
+поддержку и не блокирует запрос без policy-требования доказательства. Renderer
+получает только bounded redacted `provider_catalog` в существующем
+authenticated `model.catalog` событии, показывает профиль, lifecycle,
+capability и model selection, но не читает storage/API, не определяет vendor и
+не принимает routing/privacy решения. Скрытые credentials и raw provider
+ошибки не попадают в UI.
 
-`FreeAccessEvidence` — единый Core-owned metadata contract поверх advisory
-`FreeAccessState`. Он хранит раздельно advertised и observed state, activation,
-allowance kind, opaque credential binding, region, typed limit/unit/source,
-successful samples, confidence, expiry, invalidation и content hash. Trial,
-one-time credit, activation-required, paid-only и verified recurring free
-состояния не схлопываются в boolean; strict predicate fail-closed при stale,
-expired, invalidated или unknown evidence. JSON snapshot не принимает raw
-provider response, prompt, headers или secret-like scope.
+Начальное provider health в route snapshot — `Unknown`, пока нет probe или
+наблюдения. Существующие `RunHealthOverlay`, circuit breaker, route ranking и
+redacted `routing.trace` остаются владельцами наблюдённых runtime-сбоев;
+unknown-route health отображается как «состояние не проверено». Свежий каталог
+сам по себе не доказывает доступность провайдера. План не добавляет постоянный
+health store, обязательные live probes, billing/payment или автоматическую
+активацию провайдера.
+`routing.trace` schema v2 кодирует `Unknown` отдельно от `Healthy`; Electron
+читает ранее сохранённые v1 traces и отвергает неизвестные enum values в v1.
 
-SQLite schema v172 хранит последнюю revision для составного
-provider/model/credential-binding/region scope, принимает только следующую
-revision и сохраняет bounded metadata. При старте Core повторно валидирует
-durable snapshot, scope, content hash и revision перед гидратацией только
-configured provider/model scopes в process-local cache; несовпадающие строки
-игнорируются fail-closed. Существующий authenticated `model.catalog` event
-добавляет redacted `free_access` projection с observed/advertised state,
-activation, allowance, freshness, confidence, bounded limits и strict
-eligibility. Это projection-only состояние: probe execution, route eligibility
-и dedicated renderer UI ещё не подключены, поэтому foundation не объявляет
-provider free tier подтверждённым сам по себе.
+## Empirical Free-Access Verification v1 (план 174, закрыт 2026-09-25)
+
+`FreeAccessEvidence` принадлежит Core и дополняет advisory `FreeAccessState`.
+Evidence отделяет advertised и observed access, activation, allowance,
+provenance, limits/units, successful samples, confidence, expiry, invalidation
+и canonical content hash. Каждый snapshot привязан к opaque per-key credential
+binding и provider-profile revision/hash; при ротации ключа evidence прежнего
+binding удаляется транзакционно до hydration, а ошибка удаления останавливает
+startup. SQLite schema v172 хранит bounded snapshot и monotonic revision для
+provider/model/credential/region scope. Core валидирует запись, hash и scope
+при чтении и гидратирует только текущие configured profile scopes.
+
+Core-owned coordinator поддерживает `Disabled` по умолчанию, consent-gated
+automatic policies и явную одноразовую ручную проверку. Manual и automatic
+probes делят single-flight limiter, profile-scoped cooldown, bounded synthetic
+request (8 output tokens, zero retries, 45-second deadline) и shutdown
+cancellation; in-flight work не восстанавливается после restart. Renderer
+получает только redacted projection через authenticated provider IPC/events.
+В settings UI manual verification доступна для настроенного OpenRouter profile
+с явным предупреждением о возможной оплате. Для нового OpenRouter profile UI
+предвыбирает автоматическую проверку при первом использовании; она не начнётся,
+пока пользователь отдельно не подтвердит возможную оплату. Ранее сохранённый
+выбор профиля сохраняется. Persistent automatic consent сбрасывается при замене
+или удалении ключа.
+
+Единственный authority, который может подтвердить `VerifiedFreeLimited`, —
+фиксированный OpenRouter model-detail pricing response: запрошенная model
+identity должна совпасть, а все обязательные и объявленные charge dimensions
+должны быть exact zero. Только после semantic completion и валидного usage Core
+создаёт strict-free evidence. Cloudflare Workers AI probes ограничены явным
+cost consent и могут сохранять typed activation/quota observations; bounded
+whitelist parser извлекает только numeric error codes 5035/3036 с точного
+Cloudflare endpoint. 5035 означает `ActivationRequired`, 3036 — `QuotaRejected`.
+Успешный Cloudflare completion остаётся `Unknown`, пока не появится
+authoritative pricing adapter. Остальные профили также остаются `Unknown` без
+собственного authority. Raw provider bodies, prompts, headers и credentials не
+сохраняются.
+
+`FreeOnly` проверяет свежесть, profile hash, provenance и strict eligibility
+на Core route preflight; stale, trial, activation-required, paid, quota-invalidated
+и unknown evidence блокируют dispatch. `PreferFree` использует отдельный
+explicit paid-fallback option. Catalog `free` label и `:free` suffix остаются
+advisory. Надёжность, качество и eligibility остаются разными сигналами;
+resolved route snapshot не меняется во время одного stream.
 
 ## Design Intent Review Lane v1 (план 126, реализован 2026-09-09)
 
@@ -3269,3 +3391,32 @@ projection не расширяют filesystem grants или authority renderer.
 workflow дополнительно запрещает неразрешённые intra-doc links и некорректные
 HTML tags. `#[cfg(doc)]` не нужен для включения rustdoc и может применяться
 только для конкретного doc-only элемента, которому он действительно требуется.
+
+### Core-owned image generation and editing v1
+
+Image generation and editing use the existing ModelGateway route, provider
+profile, privacy policy, Core execution and ArtifactStore. Gateway advertises an
+additive `image_output` capability with provenance, supported operations, epoch
+and bounded MIME/byte/dimension/pixel/count limits; missing or stale capability
+fails closed. Core stores only bounded job metadata, request/result hashes,
+artifact refs and typed lifecycle reasons in schema v177. Prompt and image
+bytes are not persisted in job metadata or projected over IPC.
+
+Generate, edit and mask-edit jobs validate caller-owned inputs and decode PNG or
+JPEG through Windows Imaging Component under byte and pixel bounds. Provider
+output is checked against declared MIME, container signature, decoded geometry,
+aggregate limits and SHA-256 before a single quota-checked ArtifactStore batch
+publishes the references. URLs are never fetched implicitly. Authenticated IPC
+projects job status and artifact metadata; Electron's Operations panel invokes
+Core and does not call providers or write workspace files. A dispatched job
+whose outcome cannot be reconciled recovers as `unknown_outcome` without blind
+retry; completed artifact refs are revalidated when read. Export remains an
+explicit existing user-authorized action.
+
+### Core-owned Prompt Strategy Profiles v1
+
+`crates/evohime-core/src/prompt_strategy.rs` owns immutable, versioned strategy profiles, bindings, lifecycle/evidence checks, deterministic selection and replay snapshots. SQLite metadata is additive in schema v179; profile, example-set, output-contract and selection rows are immutable, while lifecycle transitions use revision checks. Registry rows retain hashes and artifact references, not reusable prompt text. Few-shot assets must resolve to validated privacy-approved artifacts.
+
+The Core resolves a profile against the exact model route capability declaration, context/loadout/output constraints and fresh redacted holdout evidence. Synthetic routing defaults do not qualify as positive capability evidence. Missing/corrupt historical profile revisions fail closed. Each dispatch records a route-specific snapshot with hashes of prepared messages and effective tool schemas, correlated to model provenance. Decomposition and MultiSample are sequential, tool-free, pinned to one local/offline/free route, bounded by aggregate input/output token budgets and sent with provider output limits and retries disabled. Other strategies compose through the existing context builder and tool/output contracts.
+
+Authenticated Core operations expose bounded list/get/evidence/compatibility/compare and explicit registration, binding, promotion and lifecycle transitions. Guided workflow runs recover their exact strategy pin; the Electron Agents settings surface shows bounded metadata only. Generic `TaskStarted` and `ModelContext` events retain their compatible fields but carry omission markers instead of user/system prompts. CI acceptance and module publication evidence are tracked in `release-evidence.md`.

@@ -45,6 +45,33 @@ describe('conversation projection', () => {
     expect(applyConversationEvents(state, [event(1, 'corrupt', 'task_started')]).sync.state).toBe('conflict')
   })
 
+  it('keeps startup gaps quiet until initial history arrives, then clears a recovered gap', () => {
+    const starting = applyConversationEvents(
+      createConversationProjection('conversation-1'),
+      [event(2, 'event-2', 'task_started')]
+    )
+    expect(starting.sync.state).toBe('gap')
+    expect(starting.historyReady).toBe(false)
+
+    const recovered = applyInitialConversationHistory(starting, [
+      event(1, 'event-1', 'user_message_accepted'),
+      event(2, 'event-2', 'task_started')
+    ])
+    expect(recovered.historyReady).toBe(true)
+    expect(recovered.lastSequence).toBe(2)
+    expect(recovered.sync.state).toBe('complete')
+  })
+
+  it('preserves a startup gap when initial history does not contain the missing event', () => {
+    const starting = applyConversationEvents(
+      createConversationProjection('conversation-1'),
+      [event(2, 'event-2', 'task_started')]
+    )
+    const incomplete = applyInitialConversationHistory(starting, [event(1, 'event-1', 'user_message_accepted')])
+    expect(incomplete.historyReady).toBe(true)
+    expect(incomplete.sync).toEqual({ state: 'gap', expectedSequence: 1, receivedSequence: 2 })
+  })
+
   it('reconciles optimistic messages only by stable client id', () => {
     let state = addOptimisticMessage(
       createConversationProjection('conversation-1'),

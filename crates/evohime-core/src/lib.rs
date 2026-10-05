@@ -31,6 +31,8 @@ pub(crate) mod approval_policy_profiles;
 /// Models authorization state for security assessments.
 pub mod authorized_security_assessment;
 pub mod autonomous_metric_experiment_runtime;
+/// Provides a safe Core-owned catalog of guided capability recipes.
+pub mod capability_recipes;
 pub mod capability_workbenches;
 pub(crate) mod checkpoint_forking_and_replay;
 pub mod code_diagnostics_feedback_loop;
@@ -51,13 +53,17 @@ pub mod durable_remote_task_bridge;
 pub(crate) mod event_visualizer_registry;
 pub mod experience_replay_library;
 pub mod external_source_acquisition_runtime;
+pub mod free_access_probe;
 /// Models guarded publication operations for Git remotes.
 pub mod git_remote_publication_protocol;
 pub mod headless_core_cli;
 pub mod ide_companion_bridge;
+/// Core-owned image-generation contracts and output validation.
+pub mod image_generation;
 pub mod interactive_model_compare_workbench;
 pub mod knowledge_source_registry_project_role;
 pub mod local_inference_scheduler;
+pub mod local_model_adaptation;
 pub mod local_model_compatibility_gateway;
 pub mod minimal_change_policy;
 pub mod mobile_device_automation_runtime;
@@ -136,7 +142,8 @@ use evohime_local_storage::{
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
-    ModelGateway, PrivacyClass, RoutingMode, RoutingRequest, ToolSpec,
+    ModelGateway, PreparedRouteAttempt, PrivacyClass, ProviderCapabilitySnapshot, RouteAttemptHook,
+    RoutingMode, RoutingRequest, ToolSpec,
 };
 use evohime_receipts::{
     key_lifecycle::ReceiptKeyManager,
@@ -202,6 +209,7 @@ pub(crate) mod export;
 pub mod extension_conformance_kit;
 pub(crate) mod external_coding_agent_adapter;
 pub mod free_provider_reliability_routing;
+pub(crate) mod github_public_repository;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
@@ -284,6 +292,7 @@ pub(crate) mod architecture_snapshot_runtime;
 mod core_protocol;
 pub mod plan_context;
 pub mod plan_review;
+pub mod prompt_strategy;
 pub(crate) mod task_checkpoint;
 pub(crate) mod telemetry;
 pub(crate) mod vision_contract;

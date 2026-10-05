@@ -464,6 +464,49 @@ impl<'a> ModelProvenanceRepository<'a> {
         Ok(self.connection.query_row("SELECT request_id,logical_request_id,attempt,parent_request_id,previous_request_hash,request_kind,ledger_id,provider,model,envelope_version,payload_mode,envelope_hash,envelope_blob,context_projection_hash,route_snapshot_hash,policy_snapshot_hash,route_policy_hash_shared,status,dispatch_at,completed_at FROM model_requests WHERE request_id=?1", [request_id], row_record).optional()?)
     }
 
+    /// Loads the response metadata and retained output for one request.
+    pub fn get_response_for_request(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<ModelResponseRecord>> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT response_id,request_id,status,output,output_hash,finish_reason,started_at,completed_at
+                 FROM model_responses WHERE request_id=?1",
+                [request_id],
+                |row| {
+                    Ok(ModelResponseRecord {
+                        response_id: row.get(0)?,
+                        request_id: row.get(1)?,
+                        status: row.get(2)?,
+                        output: row.get(3)?,
+                        output_hash: row.get(4)?,
+                        finish_reason: row.get(5)?,
+                        started_at: row.get(6)?,
+                        completed_at: row.get(7)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Loads the newest committed attempt for one logical request.
+    pub fn latest_for_logical_request(
+        &self,
+        logical_request_id: &str,
+    ) -> Result<Option<ModelRequestRecord>> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT request_id,logical_request_id,attempt,parent_request_id,previous_request_hash,request_kind,ledger_id,provider,model,envelope_version,payload_mode,envelope_hash,envelope_blob,context_projection_hash,route_snapshot_hash,policy_snapshot_hash,route_policy_hash_shared,status,dispatch_at,completed_at
+                 FROM model_requests WHERE logical_request_id=?1 ORDER BY attempt DESC LIMIT 1",
+                [logical_request_id],
+                row_record,
+            )
+            .optional()?)
+    }
+
     /// Marks a request dispatched at the supplied timestamp.
     pub fn mark_dispatch(&self, request_id: &str, at: i64) -> Result<()> {
         let changed = self.connection.execute("UPDATE model_requests SET dispatch_at=?2 WHERE request_id=?1 AND status='active' AND dispatch_at IS NULL", params![request_id, at])?;

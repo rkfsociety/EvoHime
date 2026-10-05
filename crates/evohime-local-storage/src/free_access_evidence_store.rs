@@ -202,6 +202,37 @@ pub fn count(connection: &Connection) -> rusqlite::Result<u32> {
     })
 }
 
+/// Deletes all evidence scoped to one credential binding after key rotation or removal.
+pub fn delete_credential_scope(
+    connection: &Connection,
+    credential_binding: &str,
+) -> Result<u32, &'static str> {
+    if !valid_credential_binding(credential_binding) {
+        return Err("invalid credential binding");
+    }
+    let transaction = connection.unchecked_transaction().map_err(|_| "sqlite")?;
+    let deleted = transaction
+        .execute(
+            "DELETE FROM free_access_evidence WHERE credential_binding=?1",
+            [credential_binding],
+        )
+        .map_err(|_| "sqlite")?;
+    transaction.commit().map_err(|_| "sqlite")?;
+    u32::try_from(deleted).map_err(|_| "sqlite")
+}
+
+/// Returns the most recent observation timestamp across all models in one credential scope.
+pub fn latest_observed_at_for_credential(
+    connection: &Connection,
+    credential_binding: &str,
+) -> rusqlite::Result<Option<i64>> {
+    connection.query_row(
+        "SELECT MAX(observed_at_ms) FROM free_access_evidence WHERE credential_binding=?1",
+        [credential_binding],
+        |row| row.get(0),
+    )
+}
+
 fn validate_record(record: &FreeAccessEvidenceRecord) -> Result<(), &'static str> {
     if !valid_token(&record.provider_id, MAX_SCOPE_TOKEN_BYTES)
         || !valid_token(&record.model_id, MAX_SCOPE_TOKEN_BYTES)

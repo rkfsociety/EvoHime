@@ -24,6 +24,8 @@ export interface ConversationProjectionState {
   readonly liveEvents: readonly ConversationEventProjection[]
   readonly optimistic: readonly OptimisticConversationMessage[]
   readonly lastSequence: number
+  /** True after the initial history establishes this conversation's baseline. */
+  readonly historyReady: boolean
   readonly sync: ConversationSync
 }
 
@@ -35,6 +37,7 @@ export function createConversationProjection(conversationId: string, cacheKey = 
     liveEvents: [],
     optimistic: [],
     lastSequence: 0,
+    historyReady: false,
     sync: { state: 'complete' }
   }
 }
@@ -89,6 +92,7 @@ export function resumeAtRetainedBoundary(
     historyEvents: [],
     liveEvents: [],
     lastSequence: Math.max(0, earliestAvailableSequence - 1),
+    historyReady: true,
     sync: { state: 'complete' }
   }
 }
@@ -126,6 +130,7 @@ export function applyConversationEvents(
     next = {
       ...next,
       liveEvents: [...next.liveEvents, event].slice(-MAX_LIVE_EVENTS),
+      historyReady: next.historyReady || event.sequence === 1,
       optimistic:
         event.kind === 'user_message_accepted' && event.clientMessageId.length > 0
           ? next.optimistic.filter((message) => message.clientMessageId !== event.clientMessageId)
@@ -187,9 +192,30 @@ export function applyInitialConversationHistory(
   incoming: readonly ConversationEventProjection[]
 ): ConversationProjectionState {
   const next = prependConversationEvents(state, incoming)
-  if (next === state || state.historyEvents.length > 0 || state.liveEvents.length > 0) return next
-  const newestSequence = Math.max(0, ...next.historyEvents.map((event) => event.sequence))
-  return { ...next, lastSequence: newestSequence }
+  const hasLiveCursor = state.historyEvents.length > 0 || state.liveEvents.length > 0
+  const newestSequence = hasLiveCursor
+    ? next.lastSequence
+    : Math.max(0, ...next.historyEvents.map((event) => event.sequence))
+  const sync = next.sync.state === 'gap' && coversGap(conversationEvents(next), next.sync)
+    ? { state: 'complete' as const }
+    : next.sync
+  return { ...next, lastSequence: newestSequence, historyReady: true, sync }
+}
+
+function coversGap(
+  events: readonly ConversationEventProjection[],
+  gap: Extract<ConversationSync, { readonly state: 'gap' }>
+): boolean {
+  let expected = gap.expectedSequence
+  const coveringEvents = events
+    .filter((event) => event.sequence >= gap.expectedSequence && event.sequence <= gap.receivedSequence)
+    .sort((left, right) => left.sequence - right.sequence)
+  for (const event of coveringEvents) {
+    if (event.sequence !== expected) return false
+    if (expected === gap.receivedSequence) return true
+    expected += 1
+  }
+  return false
 }
 
 function sameConversationEvent(

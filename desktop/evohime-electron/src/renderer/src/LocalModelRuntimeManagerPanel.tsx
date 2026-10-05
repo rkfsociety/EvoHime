@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 import type { ConnectionState, LocalModelRuntimeManagerProjection, ShellEvent } from '@shared/api'
 
-type ManagerOperation = 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover'
+type ManagerOperation = 'inspect' | 'hardware' | 'fit' | 'download_artifact' | 'save_policy' | 'get_policy' | 'start' | 'stop' | 'probe' | 'verify_artifact' | 'promote_artifact' | 'transition' | 'profile' | 'register_model' | 'register_runtime' | 'register_artifact' | 'register_session' | 'recover' | 'adapter_status' | 'install_adapter' | 'adaptation_create' | 'adaptation_start' | 'adaptation_poll' | 'adaptation_calibrate' | 'adaptation_benchmark' | 'adaptation_promote' | 'adaptation_get' | 'adaptation_list' | 'adaptation_cancel' | 'adaptation_reject'
 
 export function LocalModelRuntimeManagerPanel({ connection }: { readonly connection: ConnectionState }): React.JSX.Element {
   const api = useShellApi()
@@ -12,9 +12,9 @@ export function LocalModelRuntimeManagerPanel({ connection }: { readonly connect
   useEffect(() => api?.subscribe((event: ShellEvent) => {
     if (event.kind === 'core-event' && event.event.localModelRuntimeManager) setProjection(event.event.localModelRuntimeManager)
   }), [api])
-  const request = async (operation: ManagerOperation) => {
+  const request = async (operation: ManagerOperation, requestPayload = payload) => {
     if (!api || connection !== 'connected') { setMessage('Нет подключения к Core.'); return }
-    const result = await api.invoke('core.localModelRuntimeManager', { operation, payload, expectedVersion: projection?.version ?? 0, idempotencyKey: crypto.randomUUID() })
+    const result = await api.invoke('core.localModelRuntimeManager', { operation, payload: requestPayload, expectedVersion: projection?.version ?? 0, idempotencyKey: crypto.randomUUID() })
     setMessage(result.ok ? 'Запрос принят Core.' : result.message)
   }
   return <section aria-label="Local Model Runtime Manager">
@@ -22,6 +22,18 @@ export function LocalModelRuntimeManagerPanel({ connection }: { readonly connect
     <p>Hardware, catalog, artifact и health остаются Core-owned; запуск процесса возможен только через supervisor boundary.</p>
     <textarea aria-label="Manager payload JSON" value={payload} onChange={event => setPayload(event.target.value)} maxLength={256 * 1024} />
     <div>
+      <button type="button" onClick={() => void request('adapter_status', '{}')}>Проверить llama.cpp adapter</button>
+      <button type="button" onClick={() => void request('install_adapter', '{}')}>Установить фиксированный llama.cpp adapter</button>
+      <button type="button" onClick={() => void request('adaptation_create')}>Создать задачу адаптации из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_start')}>Запустить quantization задачи из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_poll')}>Обновить состояние quantization из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_calibrate')}>Проверить streamed inference из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_benchmark')}>Запустить real benchmark по frozen suite из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_promote')}>Установить проверенную модель по revision и hash из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_get')}>Получить задачу адаптации из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_list', '{}')}>Список задач адаптации</button>
+      <button type="button" onClick={() => void request('adaptation_cancel')}>Отменить задачу адаптации из JSON</button>
+      <button type="button" onClick={() => void request('adaptation_reject')}>Отклонить задачу адаптации из JSON</button>
       <button type="button" onClick={() => void request('inspect')}>Показать состояние</button>
       <button type="button" onClick={() => void request('hardware')}>Снять hardware snapshot</button>
       <button type="button" onClick={() => void request('fit')}>Рассчитать fit</button>

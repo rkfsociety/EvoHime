@@ -2074,7 +2074,7 @@ pub enum CoreCommand {
 /// contract; the IPC adapter serializes these values for transport.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum CoreEvent {
-    /// Sends the final prompt assembled for one model invocation.
+    /// Sends a bounded context projection; legacy prompt fields are redaction markers only.
     ModelContext {
         /// Task that owns the model invocation.
         task_id: String,
@@ -2082,9 +2082,9 @@ pub enum CoreEvent {
         workspace_path: String,
         /// Selected model identifier.
         model: String,
-        /// System instructions sent to the model.
+        /// Redaction marker in place of system instructions.
         system_prompt: String,
-        /// User/context messages sent to the model.
+        /// Redaction marker in place of user and context messages.
         user_prompt: String,
         /// Tool names made available to the model.
         tools: Vec<String>,
@@ -2122,7 +2122,7 @@ pub enum CoreEvent {
     TaskStarted {
         /// Identifier of the started task.
         task_id: String,
-        /// User request associated with the task.
+        /// Redaction marker; request text remains in its user-owned conversation only.
         prompt: String,
     },
     /// Streams a visible assistant text fragment for a task.
@@ -2944,5 +2944,28 @@ pub enum CoreEvent {
     ReviewHistoryCleared {
         /// Durable marker separating future review history from older entries.
         marker_id: String,
+    },
+    /// Publishes metadata-only progress for Core-owned memory extraction.
+    /// Source text, transcript content, prompts, credentials, and model output
+    /// are never part of this event.
+    MemoryExtractionDiagnostic {
+        /// Task or ambient episode associated with the source.
+        task_id: String,
+        /// Opaque identifier for a persisted extraction source, if captured.
+        source_id: Option<String>,
+        /// Bounded source class, such as `dialog` or `ambient`.
+        origin: String,
+        /// Bounded lifecycle phase.
+        stage: String,
+        /// Bounded lifecycle outcome.
+        status: String,
+        /// Stable reason code, when the phase needs explanation.
+        reason_code: Option<String>,
+        /// Number of sources left for bounded startup recovery.
+        backlog: u32,
+        /// Number of conflicts observed in the current extraction run.
+        conflict_count: u32,
+        /// One when this event records a suppressed reentrant attempt.
+        suppressed_reentry_count: u32,
     },
 }

@@ -57,6 +57,10 @@ message ModelConfigRequest {}
 
 message ModelCatalogRequest {
   string mode = 1;
+  // Model selected by a one-shot free-access verification request.
+  string model_id = 2;
+  // The shell sets this only after an explicit user cost warning is accepted.
+  bool confirm_possible_cost = 3;
 }
 
 // Selects the model used for the next request. The gateway resolves the model
@@ -1347,6 +1351,37 @@ message ListWorkflowEvents {
   int32 limit = 3;
 }
 
+// Guided capability recipes add safe Core projections over existing workflow
+// owners. They do not carry workflow graphs or runtime state in the renderer.
+message ListCapabilityRecipes {}
+
+message PreflightCapabilityRecipe {
+  string recipe_id = 1;
+  uint32 recipe_version = 2;
+  string recipe_hash = 3;
+  repeated WorkflowInput inputs = 4;
+  string workspace_path = 5;
+}
+
+message StartCapabilityRecipe {
+  string recipe_id = 1;
+  uint32 recipe_version = 2;
+  string recipe_hash = 3;
+  string workspace_path = 4;
+  repeated WorkflowInput inputs = 5;
+  string idempotency_key = 6;
+  string preflight_hash = 7;
+}
+
+message GetCapabilityRecipeRun {
+  string run_id = 1;
+}
+
+message ForkCapabilityRecipeRun {
+  string run_id = 1;
+  string idempotency_key = 2;
+}
+
 // --- Automation scheduler (plan 18.1) -------------------------------------
 // Additive commands. Core owns schedule validation, persistence and trigger
 // idempotency; the renderer receives only bounded projections.
@@ -1930,6 +1965,12 @@ message CommandEnvelope {
     AgentClientProtocolBridgeCommand agent_client_protocol_bridge = 277;
     MultiReviewerEnsembleCommand multi_reviewer_ensemble = 278;
     LanguageIntelligenceCommand language_intelligence = 279;
+    ListCapabilityRecipes list_capability_recipes = 280;
+    PreflightCapabilityRecipe preflight_capability_recipe = 281;
+    StartCapabilityRecipe start_capability_recipe = 282;
+    GetCapabilityRecipeRun get_capability_recipe_run = 283;
+    ForkCapabilityRecipeRun fork_capability_recipe_run = 284;
+    ImageGenerationCommand image_generation = 285;
   }
 }
 
@@ -2168,7 +2209,27 @@ message EventEnvelope {
     AgentClientProtocolBridgeEvent agent_client_protocol_bridge = 122;
     MultiReviewerEnsembleEvent multi_reviewer_ensemble = 123;
     LanguageIntelligenceEvent language_intelligence = 124;
+    ImageGenerationEvent image_generation = 125;
   }
+}
+
+// Plan 177: metadata-only Core image capability and job projections. Request
+// payload is bounded JSON; raw image bytes never cross desktop IPC.
+message ImageGenerationCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string job_id = 4;
+  bytes payload = 5;
+  string idempotency_key = 6;
+}
+message ImageGenerationEvent {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string status = 4;
+  bytes projection_json = 5;
+  string error_code = 6;
 }
 
 message ContextNamespaceCommand {

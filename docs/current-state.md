@@ -1,26 +1,66 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-24.
+Обновлено: 2026-09-27.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
 [`release-evidence.md`](release-evidence.md); пошаговые незавершённые работы — в
 [`plans/README.md`](plans/README.md).
 
+## Внешний вид оболочки
+
+Settings «Внешний вид» управляет темой (системная, светлая, тёмная), масштабом,
+плотностью элементов, цветом акцента и уменьшением анимации. Выбор применяется
+сразу и сохраняется в localStorage renderer оболочки; Core и его состояние не
+затрагиваются. Сброс возвращает системную тему и стандартные параметры.
+
+## Интеграции GitHub
+
+Settings «Интеграции» поддерживает сохранение до 50 публичных GitHub
+репозиториев в Core SQLite (schema v180). Core обращается к GitHub только по
+явному запросу пользователя: показывает сводку и не более 10 открытых issues и
+10 pull requests. Используется только анонимный HTTPS GET к `api.github.com`;
+redirect отключён, каждый ответ ограничен 512 KiB, общий timeout — 25 секунд.
+Вход в аккаунт, приватные репозитории и операции записи не поддерживаются.
+Проверки реализации и доставки для этого checkout отмечены в
+[`release-evidence.md`](release-evidence.md).
+
+## Триггеры событий
+
+Settings → «Триггеры событий» создаёт versioned правила с привязкой к конкретной
+версии встроенного workflow. На Windows доступны события завершения/ошибки задач
+Core из durable journal и изменения файлов внутри выбранной рабочей папки через
+`ReadDirectoryChangesW`. Включённые правила проходят обычную проверку
+capability/approval в WorkflowRuntime; история содержит только bounded metadata.
+Изменения в рабочей папке пропускаются с outcome `dropped_with_audit`, пока в ней
+выполняется workflow, запущенный триггером, чтобы избежать рекурсивного запуска.
+Webhook-провайдер не подключён.
+
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v175, а также
+v042–v116 и v149–v180, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
 должны проходить через фасады.
 В Core внутренние workflow/runtime-модули также закрыты на уровне crate;
 проверка ссылок в workspace используется как критерий дальнейшего сужения API.
-На текущем этапе `evohime-local-storage` экспортирует 110 публичных модулей
+На текущем этапе `evohime-local-storage` экспортирует 111 публичных модулей
 (остальные реализации закрыты на уровне crate), а `evohime-core` — 113;
 дальнейшее
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
+
+## Image generation and editing
+
+Core exposes typed generate/edit/mask-edit jobs through the existing
+ModelGateway and authenticated desktop IPC. Schema v177 stores bounded,
+redacted lifecycle metadata only; validated PNG/JPEG outputs are published as
+owner-scoped ArtifactStore references after decoded geometry, MIME, signature,
+hash and aggregate quota checks. Current providers without an advertised image
+output capability return typed unavailable; no live provider generation was
+verified. The Operations panel exposes generate/edit when Core advertises the
+capability and otherwise shows its unavailable state.
 
 ## Актуальный code baseline
 
@@ -31,9 +71,13 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 `.github/workflows/rustdoc.yml`; точный post-push результат фиксируется в
 `release-evidence.md`.
 
-Последний опубликованный baseline до текущей локальной задачи — `cbd5aa6539ff873248a418ceb133e61fcb91417d` (модуль `evohime-local-storage`, 2026-09-21). Текущий checkout дополнительно содержит task-local подключение действий композера shell: выбор файлов текущего workspace, существующий выбор режима доступа через Core и флаг веб-поиска для следующего запроса. Композер собран в компактную тёмную панель с общей строкой проекта, состояния Git и параметров задачи; на узкой ширине строка переносится, индикатор контекста остаётся виден, а статус ветки нельзя случайно скрыть. Новых IPC-контрактов и Core-owned state не добавлено.
-
-Актуальные release markers берутся из `release-versions/`: `core 0.0.000373`, `cli 0.0.000084`, `ui-bundle 0.0.000114`, `shell-host 0.0.000099`, `updater 0.0.000127`, `supervisor 0.0.000043`, `transaction 0.0.000067`, `verifier 0.0.000054`, `listener 0.0.000042`, `listener-runtime 0.0.000041`, `analysis-worker 0.0.000041` и `installer 0.0.000061`.
+Текущий опубликованный commit и результаты CI для закрытых направлений
+фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
+Актуальные release markers берутся из `release-versions/`: `analysis-worker
+0.0.000043`, `cli 0.0.000086`, `core 0.0.000383`, `installer 0.0.000065`,
+`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000107`,
+`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000126`,
+`updater 0.0.000130` и `verifier 0.0.000056`.
 
 Новые задания чата получают из Core conversation log последние 40 durable
 реплик пользователя и ассистента (до 64 KiB), сохранённые до текущего запроса.
@@ -177,70 +221,56 @@ apply не запускается. Отдельного offline/full installer �
 канонический источник — файлы `release-versions/*.txt`, перечисленные
 выше для текущего baseline.
 
-План 174.1 получил рабочий срез: Core-owned `FreeAccessEvidence` разделяет
-advertised/observed/activation/allowance состояния, типизированные units/limits,
-confidence, expiry и invalidation; SQLite schema v172 хранит только bounded
-metadata snapshot в scope provider/model/credential-binding/region с monotonic
-revision fence. Core валидирует обратное восстановление scope/hash/revision,
-гидратирует только configured provider/model scopes до IPC и добавляет в
-существующий authenticated `model.catalog` redacted `free_access` projection.
-Probes, `FreeOnly` routing и dedicated UI остаются активными этапами 174.2–174.4.
-План 175 получил runtime/storage-срез: общий cancellation-safe RAII lease
-сериализует dialog/ambient memory extraction и не даёт конкурентному второму
-извлечению обойти бюджеты и circuit breaker. Повторный запуск получает только
-bounded `reentrant` reason в `memory.extraction.skipped` или
-`memory.ambient.skipped`; SQLite schema v175 добавляет metadata-only lifecycle
-с source-basis/idempotency hashes и атомарным `finalizing → committed` publish,
-не сохраняя statement, transcript, prompt или secrets. Recovery, deferred
-finalization и IPC projection остаются активными этапами 175.2–175.4.
-План 173.1 получил совместимый Core-контракт: versioned `ProviderProfile`
-разделяет provider family и transport, а `ProviderModelDescriptor` адаптирует
-существующий gateway `ModelCatalogEntry` с profile/catalog revision/hash,
-typed limits и fail-closed capability/privacy/usage metadata. Восемь
-built-in identities добавлены как bounded metadata. SQLite schema v174
-атомарно хранит profile/catalog snapshot в provider/credential-binding/region
-scope с monotonic revision fence, bounded JSON, lifecycle state, observation/
-expiry timestamps и typed failure code; v174 additive migration совместима со
-старыми v173 таблицами. Core имеет validated read-back adapter и при старте
-гидратирует snapshots настроенных routes в bounded process-local cache до
-открытия IPC. При временной ошибке первый refresh после перезапуска использует
-этот cache для stale UI fallback, сохраняя fail-closed `route_eligible_at`.
-Route preflight подключён к реальному ModelGateway dispatch. Существующий
-authenticated `model.catalog` event теперь несёт bounded `provider_catalog`
-projection, а ModelPicker и ProviderForm отображают Core-owned lifecycle и
-credential status; IPC/UI остаются активными этапами 173.3–173.4 для
-дальнейшего capability filtering.
-`ProviderCatalogSnapshot` теперь задаёт bounded lifecycle
+Plan 174 реализует Core-owned free-access evidence, consent-gated probes,
+strict routing и redacted UI projection. Evidence привязано к уникальному
+opaque binding сохранённого ключа и текущему profile revision/hash; при
+ротации ключа старые rows удаляются до hydration, а ошибка cleanup fail-closes
+Core startup. OpenRouter exact-zero pricing plus semantic completion — пока
+единственный authority для `VerifiedFreeLimited`. Cloudflare codes 5035/3036
+сохраняются только как typed `ActivationRequired`/`QuotaRejected`; успешная
+проверка Cloudflare без pricing authority остаётся `Unknown`. `FreeOnly`
+останавливает stale/unknown/activation/quota evidence, а `PreferFree` требует
+явного paid-fallback option. Реализация, локальные gates и полный GitHub CI
+успешны для commit
+[`7fa1af30ff2071da390828c1137a7df59308a864`](https://github.com/rkfsociety/EvoHime/commit/7fa1af30ff2071da390828c1137a7df59308a864);
+детальные workflow и module release evidence записаны в
+[`release-evidence.md`](release-evidence.md).
+План 175 реализован и опубликован: затронутые Core и UI bundle module
+workflows, module router и Rust documentation gates завершились успешно.
+Полный native package acceptance был отменён до завершения после уточнения
+модульного scope; его частичный вывод не считается evidence. Точные module tags
+и CI evidence приведены в [`release-evidence.md`](release-evidence.md).
+SQLite schema v176 добавляет metadata-only extraction source, provenance links,
+fenced lease и candidate freshness/head CAS поверх неизменённой v175 истории.
+Core durable-записывает eligible source до `TaskCompleted`, сохраняет typed
+origin/root/depth, сериализует dialog/ambient извлечение cancellation-safe
+RAII lease и восстанавливает bounded source через существующую background
+reconciliation точку. Auxiliary extractor dispatch требует durable Model
+Request Provenance v1 envelope, receipt и dispatch marker; failure блокирует
+provider вызов и записывается как typed lifecycle outcome. Event
+`memory.extraction` и read-only `OperationsPanel` показывают только bounded
+metadata. Основное тело памяти остаётся в единственном Memory storage owner.
+Затронутые module markers повышены только для `core` и `ui-bundle`; подтверждение
+их публикации и полных GitHub gates будет добавлено в
+[`release-evidence.md`](release-evidence.md).
+План 173 Cloud Provider Profiles закрыт: явная profile identity и отдельный
+Cloudflare account ID проходят через encrypted provider store и supervisor
+environment; Core хранит bounded profile/catalog snapshots в SQLite schema
+v174, выполняет discovery и capability preflight, а при старте восстанавливает
+только валидированные snapshots. Каталог имеет lifecycle
 `Fresh/Stale/Unavailable/CredentialRejected/DiscoveryUnsupported`, typed
-failure codes, deterministic gateway-catalog deduplication и fail-closed
-`route_eligible_at`; raw `ProviderError` text не переносится в snapshot.
-`model.catalog` IPC refresh строит redacted profile из route config и
-публикует success/failure snapshot в schema v174; startup recovery-read для
-настроенных routes повторно проверяет profile/catalog identity, lifecycle и
-typed failure перед использованием. Перед provider dispatch Gateway вызывает
-Core-owned route preflight: известные stale/expired/failed snapshots и
-неподтверждённые модели отклоняются без отправки prompt, а fallback-policy
-может перейти к следующему route. В тот же authenticated `model.catalog`
-payload добавлена bounded `provider_catalog` projection без URL, prompt,
-credential binding или raw provider errors; renderer только отображает её.
-При network/timeout/rate-limit ошибке имеющийся bounded catalog сохраняется как
-`Stale` с typed failure и может быть показан UI; `route_eligible_at` остаётся
-false. Credential rejection и unsupported discovery не используют stale cache.
-Явный `model not found` получает отдельный bounded `model_not_found` outcome;
-HTTP 404 при чтении catalog endpoint означает `discovery_unsupported`, а не
-пропажу выбранной модели, и оба случая не смешиваются с `protocol_mismatch`; storage
-boundary принимает и восстанавливает этот код.
-Renderer показывает этот код как «модель не найдена у провайдера» и не выводит
-сырой ответ каталога.
-Route preflight сохраняет этот исход как `provider_model_not_found`, включая
-случай, когда fresh catalog больше не содержит выбранную модель.
-Истёкший snapshot получает отдельный `provider_catalog_expired`, а UI получает
-согласованное состояние `expired` вместо misleading `fresh`. ModelPicker больше
-не фильтрует модели по renderer-именам: capability, limits и privacy берутся
-только из bounded Core descriptor, unknown остаётся unknown.
-Если Core помечает `configured_model_eligible=false`, ModelPicker отдельно
-показывает, что выбранная модель не подтверждена для текущего маршрута;
-для `unobserved` projection оставляет это поле `null`.
+failure codes и deterministic deduplication; provider errors не раскрываются в
+projection. Stale/expired/failed snapshots и подтверждённое отсутствие модели
+не проходят route preflight; `DiscoveryUnsupported` не блокирует явно
+выбранный model ID. Только подтверждённое `Unsupported` для chat или
+запрошенных tool calls блокирует dispatch. Неизвестные capability и исходное
+provider health остаются `Unknown`. Bounded redacted `provider_catalog`
+передаётся через существующий authenticated `model.catalog`; ProviderForm и
+ModelPicker отображают Core-owned profile, lifecycle и capability state.
+Полный контракт находится в [`architecture.md`](architecture.md), проверки —
+в [`release-evidence.md`](release-evidence.md).
+Новое состояние трассы выпускается как `routing.trace` schema v2; renderer
+сохраняет чтение ранее сохранённых v1 событий.
 Staging marker updater теперь всегда записывается как полный
 `evohime.component-manifest.v1`, совместимый со встроенным transaction parser.
 При staged apply активный `evohime-updater.exe` исключается из preflight и
@@ -272,6 +302,11 @@ conversation event IDs, и обновляет только затронутую 
 отображает историю через перемещаемое окно до 80 строк, сохраняет позицию чтения при prepend
 старой страницы и не автопрокручивает пользователя, если он читает старый
 участок ленты.
+
+Список чатов оболочки отфильтрован по выбранному `workspacePath`; модельная
+история привязана к ID conversation, а проектный контекст — к workspace scope.
+Смена проекта сбрасывает открытый чат и его renderer projection, поэтому новый
+запрос создаёт или открывает только чат выбранного проекта.
 
 Исторические refs и workflow закрытых планов сохранены в
 [`release-evidence.md`](release-evidence.md) с их исходными commit и run ID.
@@ -309,8 +344,10 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 
 ## Провайдеры и модели
 
-Поддерживаются профили LiteRouter, OpenAI-compatible, OpenAI Responses API и
-Ollama; `mock` используется только в тестах. Ollama не требует ключа и
+Поддерживаются LiteRouter, OpenAI Responses API, Ollama и OpenAI-compatible
+транспорт с явными профилями OpenAI, OpenRouter, Groq, Gemini, Mistral,
+Cloudflare Workers AI, NVIDIA NIM, Cerebras, Hugging Face и generic custom;
+`mock` используется только в тестах. Ollama не требует ключа и
 ограничен loopback endpoint.
 Профили и зашифрованные ключи хранятся в
 `%LOCALAPPDATA%\EvoHime\shell\provider.json`; ключ доступен Core только через
@@ -459,11 +496,25 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `173–181`; планы `149–167` закрыты. Планы `102`,
+Незавершённый каталог содержит планы `180–181` и `184–188`; планы `01–179`, `183` и `189` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
 не по старому линейному списку.
+
+## Plan 176 — Guided Capability Recipes v1 (закрыт 2026-09-25)
+
+Core предоставляет фиксированный каталог восьми typed recipes поверх
+существующих workflow templates. Запуск требует точного registry-validated
+binding; неподдержанные категории остаются `Unsupported`. Preflight проверяет
+bounded inputs, workspace, workflow graph, grants, budgets, approvals и
+revisions. Запуск создаёт обычный workflow run и immutable recipe attribution
+одной SQLite-транзакцией; recovery, status и cancellation принадлежат
+существующему workflow runtime. IPC commands 280–284 дают Electron bounded
+catalog/preflight/run/fork projections. Fork завершённого run создаёт draft
+из точного template с placeholders и без inputs, outputs, grants, secrets или
+allowlists. Канонический контракт находится в
+[`architecture.md`](architecture.md#guided-capability-recipes-v1).
 
 ## Plan 132 — Durable Background Execution Plane (закрыт 2026-09-09)
 
@@ -575,6 +626,26 @@ verified-runtime admission и Electron projection. Текущий runtime bounda
 предоставляет inference-stream adapter, поэтому подтверждённое состояние —
 typed `unavailable_adapter`; measured profile и routing signal не создаются
 без такого adapter.
+
+## Plan 178 — Core-Owned Local Model Adaptation (implemented and released)
+
+В working tree реализован versioned GGUF adaptation pipeline для Windows CPU:
+explicit install pinned llama.cpp `b10981`, metadata-only durable jobs, fresh
+resource admission и SQLite disk reservations, FIFO retry из durable-background
+poll loop, Supervisor Job Object quantizer/runtime, output validation,
+streamed local inference, real benchmark, explicit approval-gated promotion и
+restart/publication recovery. Источник — только уже managed GGUF F16/F32;
+targets — `Q4_K_M`, `Q5_K_M`, `Q8_0`; VRAM/accelerator fit остаётся unknown.
+
+Реализация и requirement-by-requirement source audit завершены; `git diff --check`
+проходит. Локальные tests/builds не запускались по workflow реализации numbered
+plans. Windows CI и публикации завершены: Core `0.0.000380` подтверждён
+успешным workflow `36254214711` на SHA
+`279689476a283fac3b9e6beddadd09f97bfee318`; supervisor `0.0.000046`, shell-host
+`0.0.000109` и UI bundle `0.0.000122` имеют опубликованные артефакты после
+успешных module workflows. Совместимый manifest workflow `36255965206` прошёл
+и ссылается на текущий SHA и эти версии. Подробные ссылки и release hashes — в
+[`release-evidence.md`](release-evidence.md#core-owned-local-model-adaptation-v1-2026-09-26-текущая-задача).
 
 ## Plan 122 — Verification Evidence Ledger (закрыт 2026-09-09)
 
@@ -799,3 +870,20 @@ packaged-приложение также корректно закрываетс
 bootstrap-экран до загрузки React и пишет ошибки загрузки renderer/preload в
 shell-main.jsonl, поэтому окно больше не выглядит бесконечно пустым при сбое
 пакетированного интерфейса.
+
+## Plan 179 — Core-owned Prompt Strategy Profiles v1
+
+Checkout implementation adds schema v179 immutable strategy metadata, deterministic capability/evidence-aware resolution, exact per-dispatch snapshots and recovery, seven bounded composition types, strategy-aware benchmark identity, authenticated Core operations, guided recipe pinning, and a metadata-only Electron settings panel. Raw prompt and example bodies stay out of registry/provenance projections; generic task/context events carry omission markers. Implementation commit `cbe5a595fb68c3162c9790bced2edfe1a5a92a66` is pushed to `main`; its Core tests, lint, release build and publication, Rust documentation/doctests, module router and compatible manifest workflows all passed. UI bundle tests/build/publication passed at `fec4ff3857d219574503ca320c855bf07af3b6b1`; no UI bundle source files changed between that commit and the implementation SHA.
+
+## Plan 189 — GitHub Public Repository Integration v1 (закрыт 2026-09-27)
+
+Settings «Интеграции» теперь хранит до 50 публичных GitHub `owner/repo`
+идентификаторов в Core SQLite (schema v180). По явному выбору/обновлению Core
+получает сводку репозитория, до 10 issues и до 10 pull requests; private repos,
+credentials и write actions не поддерживаются. Внешний запрос — только
+anonymous HTTPS GET к `api.github.com`, с redirect запретом, ответом не более
+512 KiB и общим timeout 25 секунд. Открытие Settings и добавление записи сами
+не запускают сеть. Добавлены migration/store, Core API contracts и mock-based
+tests, а также renderer regression test. Локальные tests/build/typecheck и
+visual preview не запускались; exact-commit CI для checkout не доступен до
+push, поэтому implementation correctness остаётся pending CI.

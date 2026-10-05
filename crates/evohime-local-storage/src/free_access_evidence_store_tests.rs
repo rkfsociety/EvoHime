@@ -51,3 +51,69 @@ fn secret_like_scope_is_rejected() {
         Err("invalid free access evidence")
     );
 }
+
+#[test]
+fn credential_rotation_deletes_all_old_scoped_evidence_transactionally() {
+    let connection = Connection::open_in_memory().expect("sqlite");
+    install_schema(&connection).expect("schema");
+    let binding = "credential:01234567-89ab-4cde-8fab-0123456789ab";
+    assert!(put(&connection, &record(binding, 1)).expect("write"));
+    let mut second_model = record(binding, 1);
+    second_model.model_id = "provider/another-model".into();
+    second_model.region = "eu".into();
+    assert!(put(&connection, &second_model).expect("write second model and region"));
+    assert!(put(
+        &connection,
+        &record("credential:11234567-89ab-4cde-8fab-0123456789ab", 1)
+    )
+    .expect("write other credential"));
+
+    assert_eq!(delete_credential_scope(&connection, binding), Ok(2));
+    assert_eq!(count(&connection).expect("count"), 1);
+    assert!(get(
+        &connection,
+        "openrouter",
+        "provider/model:free",
+        "credential:11234567-89ab-4cde-8fab-0123456789ab",
+        "global"
+    )
+    .expect("other credential remains readable")
+    .is_some());
+    assert_eq!(delete_credential_scope(&connection, binding), Ok(0));
+    assert_eq!(
+        delete_credential_scope(&connection, "not a binding"),
+        Err("invalid credential binding")
+    );
+}
+
+#[test]
+fn latest_observation_is_shared_across_models_but_not_credentials() {
+    let connection = Connection::open_in_memory().expect("sqlite");
+    install_schema(&connection).expect("schema");
+    let binding = "credential:01234567-89ab-4cde-8fab-0123456789ab";
+    let mut first_model = record(binding, 1);
+    first_model.observed_at_ms = 1_000;
+    first_model.expires_at_ms = 10_000;
+    assert!(put(&connection, &first_model).expect("first model"));
+    let mut second_model = record(binding, 1);
+    second_model.model_id = "provider/another-model".into();
+    second_model.observed_at_ms = 2_500;
+    second_model.expires_at_ms = 10_000;
+    assert!(put(&connection, &second_model).expect("second model"));
+    let mut other_credential = record("credential:11234567-89ab-4cde-8fab-0123456789ab", 1);
+    other_credential.observed_at_ms = 3_000;
+    other_credential.expires_at_ms = 10_000;
+    assert!(put(&connection, &other_credential).expect("other credential"));
+
+    assert_eq!(
+        latest_observed_at_for_credential(&connection, binding),
+        Ok(Some(2_500))
+    );
+    assert_eq!(
+        latest_observed_at_for_credential(
+            &connection,
+            "credential:21234567-89ab-4cde-8fab-0123456789ab"
+        ),
+        Ok(None)
+    );
+}

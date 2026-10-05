@@ -1,8 +1,11 @@
+use crate::provider_contract::{ImageOutputCapability, ImageProviderRequest, ProviderImageOutput};
 use crate::tools::{ChatResult, ChatStreamItem, ToolSpec};
 use futures_util::Stream;
 use std::future::Future;
 use std::pin::Pin;
 
+/// Cloudflare Workers AI catalog discovery for its OpenAI-compatible transport.
+pub mod cloudflare_workers_ai;
 /// LiteRouter provider adapter.
 pub mod literouter;
 /// Supervisor-authenticated local model adapter.
@@ -163,6 +166,15 @@ pub struct ThinkingConfig {
     pub budget_tokens: Option<u32>,
 }
 
+/// Optional per-call bounds for a non-streaming provider completion.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ChatRequestOptions {
+    /// Maximum generated tokens when the provider supports the field.
+    pub max_output_tokens: Option<u32>,
+    /// Maximum retries after the first attempt; `Some(0)` disables retries.
+    pub max_retries: Option<u32>,
+}
+
 /// Configuration, transport, API, or stream failure returned by a provider adapter.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
@@ -178,6 +190,12 @@ pub enum ProviderError {
     /// Provider output stream failed or was malformed.
     #[error("streaming error: {0}")]
     Stream(String),
+    /// Route preflight rejected the image request before adapter dispatch.
+    #[error("image route preflight rejected")]
+    ImagePreflightRejected,
+    /// The provider changed its image capability after Core froze the request.
+    #[error("image capability epoch is stale")]
+    ImageCapabilityStale,
 }
 
 /// Публичный trait `ModelProvider` для общего контракта поведения.
@@ -189,8 +207,26 @@ pub trait ModelProvider: Send + Sync {
     /// Returns the configured provider endpoint.
     fn base_url(&self) -> &str;
 
+    /// Returns bounded image-output support; existing adapters remain unsupported by default.
+    fn image_output_capability(&self) -> Option<ImageOutputCapability> {
+        None
+    }
+
+    /// Performs an image request for adapters that advertise the operation.
+    ///
+    /// Implementations must return encoded bytes only; Core validates the
+    /// declared MIME type and fully decodes each image before publication.
+    fn generate_image<'a>(&'a self, _request: ImageProviderRequest) -> ImageOutputFuture<'a> {
+        Box::pin(async { Err(ProviderError::Config("image_output_unsupported".into())) })
+    }
+
     /// Reports native structured-output support; defaults to false.
     fn supports_structured_output(&self) -> bool {
+        false
+    }
+
+    /// Reports whether this adapter implements the native tool-call contract.
+    fn supports_tool_calls(&self) -> bool {
         false
     }
 
@@ -231,4 +267,24 @@ pub trait ModelProvider: Send + Sync {
             ))
         })
     }
+
+    /// Non-streaming completion with explicit bounded-request options.
+    ///
+    /// Providers that do not support the options retain their existing
+    /// behavior; callers that require a hard bound must use a supporting
+    /// adapter and validate the returned usage.
+    fn chat_with_tools_with_options(
+        &self,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> ChatFuture {
+        let _ = options;
+        self.chat_with_tools(model, messages, tools)
+    }
 }
+
+/// Future returned by an image-output provider call.
+pub type ImageOutputFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<ProviderImageOutput>, ProviderError>> + Send + 'a>>;

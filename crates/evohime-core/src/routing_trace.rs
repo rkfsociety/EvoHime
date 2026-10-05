@@ -7,7 +7,7 @@ pub(crate) const ROUTING_POLICY_VERSION: &str = "routing-policy-v1";
 /// Версия встроенного каталога маршрутов.
 pub(crate) const ROUTING_CATALOG_VERSION: &str = "builtin-v1";
 /// Версия схемы записи routing trace.
-pub(crate) const ROUTING_TRACE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const ROUTING_TRACE_SCHEMA_VERSION: u32 = 2;
 /// Имя терминального события в трассировке маршрутизации.
 pub(crate) const ROUTING_EVENT_TERMINAL: &str = "terminal";
 /// Причина отката к локальному выбору runtime.
@@ -50,6 +50,9 @@ pub(crate) fn routing_success_trace(
                 .iter()
                 .map(|candidate| {
                     let health_state = match candidate.health_status {
+                        evohime_model_gateway::HealthStatus::Unknown => {
+                            evohime_model_gateway::HealthState::Unknown
+                        }
                         evohime_model_gateway::HealthStatus::Ready => {
                             evohime_model_gateway::HealthState::Healthy
                         }
@@ -197,5 +200,44 @@ pub(crate) fn classify_routing_task(prompt: &str, tools: &[ToolSpec]) -> &'stati
         "simple"
     } else {
         "complex"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_provider_health_stays_unknown_in_the_core_trace() {
+        let decision = evohime_model_gateway::SnapshotRouteDecision {
+            selected_route: Some("cloud".into()),
+            fallback_chain: Vec::new(),
+            candidates: vec![evohime_model_gateway::SnapshotCandidateDecision {
+                route_id: "cloud".into(),
+                capability_epoch: 1,
+                health_status: evohime_model_gateway::HealthStatus::Unknown,
+                circuit_state: evohime_model_gateway::CircuitState::Closed,
+                reject_reason: None,
+            }],
+            reason_code: "only_candidate".into(),
+        };
+        let trace = routing_success_trace(RoutingSuccessInput {
+            run_id: "run-unknown-health",
+            selected_route: "cloud",
+            fallback_count: 0,
+            estimated_input_tokens: 1,
+            profile_version: "profile-v1",
+            context_ledger_hash: "ledger-hash",
+            classification: "complex",
+            decision: Some(&decision),
+            snapshot_hash: Some("snapshot-hash"),
+            attempt_id: 0,
+            now_ms: 1_000,
+        });
+
+        assert_eq!(
+            trace.candidates[0].health_state,
+            evohime_model_gateway::HealthState::Unknown
+        );
     }
 }

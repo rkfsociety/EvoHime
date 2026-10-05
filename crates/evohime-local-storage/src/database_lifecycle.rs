@@ -11,18 +11,18 @@ use crate::{
     conversation_bridge_adapters_store, conversation_event_log_store,
     customization_inventory_store, durable_background_execution_store,
     durable_remote_task_bridge_store, event_trigger_runtime_store, event_visualizer_registry_store,
-    execution_environment_profiles_store, execution_ledger, goal, human_work_items_store,
-    incremental_change_protocol_store, integration_provider_store, invocation_presets_store,
-    knowledge_source_registry_project_role_store, local_model_runtime_manager_store,
-    memory_extraction_store, memory_store, memory_views_and_adaptive_recall_store, migrations,
-    model_edit_protocol_registry_store, model_provenance, model_purpose_routing_store,
-    output_guardrail_pipeline_store, persistent_agent_registry_store,
-    policy_aware_tool_result_cache_store, privacy_telemetry_store, prompt_cache_planner_store,
-    reasoning_operator_library_store, refinement_store, remote_conversation_channels_store,
-    retained_child_store, skill_trust_pipeline_store, standing_approval_profiles_store,
-    task_checkpoint, team_coordination_policies_store, team_sop_protocols_store, toolkit_store,
-    visual_workflow_builder_store, workflow_package_store, workflow_store,
-    workspace_state_checkpoint, LocalDatabase, StorageError, SCHEMA_VERSION,
+    execution_environment_profiles_store, execution_ledger, github_repository_store, goal,
+    human_work_items_store, incremental_change_protocol_store, integration_provider_store,
+    invocation_presets_store, knowledge_source_registry_project_role_store,
+    local_model_runtime_manager_store, memory_extraction_store, memory_store,
+    memory_views_and_adaptive_recall_store, migrations, model_edit_protocol_registry_store,
+    model_provenance, model_purpose_routing_store, output_guardrail_pipeline_store,
+    persistent_agent_registry_store, policy_aware_tool_result_cache_store, privacy_telemetry_store,
+    prompt_cache_planner_store, reasoning_operator_library_store, refinement_store,
+    remote_conversation_channels_store, retained_child_store, skill_trust_pipeline_store,
+    standing_approval_profiles_store, task_checkpoint, team_coordination_policies_store,
+    team_sop_protocols_store, toolkit_store, visual_workflow_builder_store, workflow_package_store,
+    workflow_store, workspace_state_checkpoint, LocalDatabase, StorageError, SCHEMA_VERSION,
 };
 
 impl LocalDatabase {
@@ -113,7 +113,7 @@ impl LocalDatabase {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         memory_store::install_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-        memory_extraction_store::install_schema(&connection)?;
+        memory_extraction_store::install_current_schema(&connection)?;
         context_ledger_store::install_compaction_schema(&connection)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         task_checkpoint::install_schema(&connection)?;
@@ -127,6 +127,7 @@ impl LocalDatabase {
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         visual_workflow_builder_store::install_schema(&connection)?;
         integration_provider_store::install_schema(&connection)?;
+        github_repository_store::install_schema(&connection)?;
         event_trigger_runtime_store::install_schema(&connection)?;
         invocation_presets_store::install_schema(&connection)?;
         benchmark_store::install_schema(&connection)?;

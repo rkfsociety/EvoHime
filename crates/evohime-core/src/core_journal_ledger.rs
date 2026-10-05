@@ -27,6 +27,7 @@ impl EventJournal {
             | CoreEvent::TaskCompleted { task_id, .. }
             | CoreEvent::TaskFailed { task_id, .. }
             | CoreEvent::TaskStopped { task_id } => task_id,
+            CoreEvent::MemoryExtractionDiagnostic { task_id, .. } => task_id,
             CoreEvent::EventPersistenceFailed { .. } => "event-persistence",
             CoreEvent::ReviewProgress { review_id, .. } => review_id,
             CoreEvent::RevisionProgress { revision_id, .. } => revision_id,
@@ -116,6 +117,7 @@ impl EventJournal {
             CoreEvent::TaskCompleted { .. } => "task.completed",
             CoreEvent::TaskFailed { .. } => "task.failed",
             CoreEvent::TaskStopped { .. } => "task.stopped",
+            CoreEvent::MemoryExtractionDiagnostic { .. } => "memory.extraction",
             CoreEvent::EventPersistenceFailed { .. } => "event.persistence_failed",
             CoreEvent::ReviewProgress { .. } => "review.progress",
             CoreEvent::RevisionProgress { .. } => "revision.progress",
@@ -222,6 +224,7 @@ impl EventJournal {
             CoreEvent::WorkspaceBootstrapManifest { .. } => serialize_payload(event)?,
             CoreEvent::TeamCoordinationPolicies { .. } => serialize_payload(event)?,
             CoreEvent::MemoryViewsAndAdaptiveRecall { .. } => serialize_payload(event)?,
+            CoreEvent::MemoryExtractionDiagnostic { .. } => serialize_payload(event)?,
             CoreEvent::ModelEditProtocolRegistry { .. } => serialize_payload(event)?,
             CoreEvent::RemoteConversationChannels { .. } => serialize_payload(event)?,
             CoreEvent::PromptCachePlanner { .. } => serialize_payload(event)?,
@@ -256,13 +259,14 @@ impl EventJournal {
         let task_id = task_id.to_owned();
         let event_type = event_type.to_owned();
         let event_type_for_sql = event_type.clone();
-        let queue_started = std::time::Instant::now();
+        let blocking_submitted_at = std::time::Instant::now();
         let writer = self.writer.clone();
         #[cfg(test)]
         let test_fail_after_primary = self.test_fail_after_primary.clone();
         let result = tokio::task::spawn_blocking(move || -> Result<i64, StorageError> {
+            let blocking_pool_wait_ms = blocking_submitted_at.elapsed().as_secs_f64() * 1000.0;
             let (result_sender, result_receiver) = std::sync::mpsc::channel();
-            let queue_wait_ms = queue_started.elapsed().as_secs_f64() * 1000.0;
+            let enqueued_at = std::time::Instant::now();
             writer
                 .send(JournalWrite(
                     Box::new(move |database| {
@@ -339,12 +343,16 @@ impl EventJournal {
                         Ok(last_sequence)
                     }),
                     result_sender,
+                    enqueued_at,
                 ))
                 .map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
             let result = result_receiver
                 .recv()
                 .map_err(|_| StorageError::InvalidInput("journal writer stopped".into()))?;
-            tracing::debug!(queue_wait_ms, "core event journal queue wait completed");
+            tracing::debug!(
+                blocking_pool_wait_ms,
+                "core event journal blocking pool wait completed"
+            );
             result
         })
         .await

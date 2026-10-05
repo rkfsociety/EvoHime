@@ -41,13 +41,17 @@ pub mod structured_response;
 /// Tool call and chat response types exposed by the gateway.
 pub mod tools;
 
-pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
+pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderProfileId};
 pub use crate::provider_contract::{
     select_route_snapshot, select_route_snapshot_cached, AttemptTrace, CandidateEntry,
-    CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory, HealthStatus, PolicyHashes,
-    ProbeConfig, ProbeFailure, ProbeResult, RetryConfig, RoutePolicySnapshot, RunHealthOverlay,
-    RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError, SnapshotRouteDecision,
+    CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory, HealthStatus,
+    ImageOutputCapability, ImageOutputOperation, ImageProviderRequest, PolicyHashes, ProbeConfig,
+    ProbeFailure, ProbeResult, ProviderImageOutput, RetryConfig, RoutePolicySnapshot,
+    RunHealthOverlay, RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError,
+    SnapshotRouteDecision,
 };
+pub use crate::providers::ChatRequestOptions;
+pub use crate::providers::ImageOutputFuture;
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
     ollama::OllamaProvider, openai_compatible::OpenAICompatibleProvider,
@@ -69,10 +73,18 @@ pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
 };
 use async_stream::stream;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 #[cfg(not(test))]
 use std::sync::OnceLock;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, HashMap},
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::Duration,
+};
 
 /// Maximum response bytes accepted when fetching a provider model catalog.
 pub const MAX_MODEL_CATALOG_BYTES: usize = 512 * 1024;
@@ -80,6 +92,35 @@ pub const MAX_MODEL_CATALOG_BYTES: usize = 512 * 1024;
 pub const MAX_MODEL_CATALOG_ENTRIES: usize = 2_048;
 /// Maximum model identifier length accepted from catalog responses.
 pub const MAX_MODEL_ID_CHARS: usize = 256;
+/// Version of adapter-declared route capability claims.
+pub const PROVIDER_CAPABILITY_CONTRACT_EPOCH: u64 = 1;
+
+/// Exact route/model capability claims declared by the configured provider adapter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCapabilitySnapshot {
+    /// Stable route identifier.
+    pub route_id: String,
+    /// Exact model identifier supplied to this route.
+    pub model_id: String,
+    /// Configured provider adapter identity.
+    pub provider_kind: String,
+    /// Adapter capability contract epoch.
+    pub capability_epoch: u64,
+    /// Whether the adapter implements native tool calls.
+    pub tool_calling: bool,
+    /// Whether the adapter implements structured output.
+    pub structured_output: bool,
+    /// Context limit is unknown unless a model catalog supplies it.
+    pub context_limit: Option<u64>,
+}
+
+impl ProviderCapabilitySnapshot {
+    /// Returns a stable digest over the exact adapter, route and model claims.
+    pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_vec(self)
+            .map(|bytes| format!("sha256:{}", hex::encode(sha2::Sha256::digest(bytes))))
+    }
+}
 
 // Ниже — хелперы политики маршрутизации, к которым обращается только ветка
 // `#[cfg(not(test))]` в `chat_with_tools_with_policy_and_route`: в тестовой
@@ -131,6 +172,9 @@ fn load_runtime_catalog() -> Option<EvaluationCatalog> {
 fn classify_failure(error: &ProviderError) -> FailureCategory {
     match error {
         ProviderError::Config(_) => FailureCategory::InvalidRequest,
+        ProviderError::ImagePreflightRejected | ProviderError::ImageCapabilityStale => {
+            FailureCategory::InvalidRequest
+        }
         ProviderError::Http(message) if message.contains("timeout") => FailureCategory::Timeout,
         ProviderError::Http(message) if message.contains("connection") => {
             FailureCategory::ConnectionRefused
@@ -154,6 +198,90 @@ pub struct ModelGateway {
 pub trait RoutePreflight: Send + Sync {
     /// Checks that the selected route/model is still eligible immediately before dispatch.
     fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError>;
+
+    /// Checks request-specific requirements before dispatch.
+    ///
+    /// Implementations that do not use capability evidence remain compatible
+    /// through the default delegation to [`Self::check`].
+    fn check_for_request(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        requires_tool_calls: bool,
+        now_ms: u64,
+    ) -> Result<(), ProviderError> {
+        let _ = requires_tool_calls;
+        self.check(route, model, now_ms)
+    }
+
+    /// Performs request preflight when the policy owner needs asynchronous evidence work.
+    fn check_for_request_async<'a>(
+        &'a self,
+        route: &'a str,
+        model: Option<&'a str>,
+        requires_tool_calls: bool,
+        now_ms: u64,
+    ) -> Pin<Box<dyn Future<Output = Result<(), ProviderError>> + Send + 'a>> {
+        Box::pin(async move { self.check_for_request(route, model, requires_tool_calls, now_ms) })
+    }
+
+    /// Records only bounded usage metadata after a successful user request.
+    fn observe_success_async<'a>(
+        &'a self,
+        _route: &'a str,
+        _model: Option<&'a str>,
+        _result: &'a ChatResult,
+        _now_ms: u64,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async {})
+    }
+
+    /// Records completion of a successful stream without retaining its content.
+    fn observe_stream_success_async<'a>(
+        &'a self,
+        _route: &'a str,
+        _model: Option<&'a str>,
+        _now_ms: u64,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async {})
+    }
+
+    /// Reports whether route policy requires verified-free candidates only.
+    fn requires_verified_free_route(&self) -> bool {
+        false
+    }
+
+    /// Reports whether verified-free candidates should rank ahead of paid routes.
+    fn prefers_verified_free_routes(&self) -> bool {
+        false
+    }
+
+    /// Checks the current route/model against authoritative free-access evidence.
+    fn is_verified_free_route(&self, _route: &str, _model: &str, _now_ms: u64) -> bool {
+        false
+    }
+}
+
+/// Core callback invoked after route preflight and immediately before dispatch.
+#[derive(Debug, Clone)]
+pub struct PreparedRouteAttempt {
+    /// Route-specific messages, with policy-critical system boundaries preserved by Core.
+    pub messages: Vec<ChatMessage>,
+    /// Final tool subset; it may be narrower than, never broader than, the original grant.
+    pub tools: Vec<ToolSpec>,
+    /// Immutable output contract, when Core selected structured output.
+    pub structured_output: Option<crate::structured_response::ResponseContract>,
+}
+
+/// Core callback invoked after route preflight and immediately before dispatch.
+pub trait RouteAttemptHook: Send + Sync {
+    /// Prepares route-specific content while preserving the caller's tool ceiling.
+    fn prepare<'a>(
+        &'a self,
+        capabilities: &'a ProviderCapabilitySnapshot,
+        messages: &'a [ChatMessage],
+        tools: &'a [ToolSpec],
+    ) -> Pin<Box<dyn Future<Output = Result<PreparedRouteAttempt, ProviderError>> + Send + 'a>>;
 }
 
 /// Provider and route configuration exposed to the local desktop client.
@@ -211,6 +339,25 @@ pub struct PolicyChatResult {
     pub snapshot_hash: Option<String>,
     /// Bounded route attempt trace, when collected.
     pub attempt_trace: Option<RunTrace>,
+}
+
+fn policy_route_order(
+    selected: Option<&str>,
+    fallback_chain: &[String],
+    allow_fallback: bool,
+    route_pin: Option<&str>,
+) -> Result<Vec<String>, &'static str> {
+    if let Some(route_pin) = route_pin {
+        if selected != Some(route_pin) && !fallback_chain.iter().any(|route| route == route_pin) {
+            return Err("pinned_route_not_eligible");
+        }
+        return Ok(vec![route_pin.to_owned()]);
+    }
+    let mut routes = selected.map(str::to_owned).into_iter().collect::<Vec<_>>();
+    if allow_fallback {
+        routes.extend(fallback_chain.iter().cloned());
+    }
+    Ok(routes)
 }
 
 #[derive(Debug, Deserialize)]
@@ -282,14 +429,183 @@ pub struct ModelCatalogEntry {
     pub max_output_tokens: Option<u32>,
 }
 
+/// Redacted pricing observation from the fixed OpenRouter model-detail API.
+///
+/// Pricing strings and response bodies are discarded after normalization;
+/// callers receive only model identity, the all-zero decision, and a digest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenRouterPricingObservation {
+    /// Exact model identifier returned by the provider.
+    pub model_id: String,
+    /// Whether every declared charge dimension was an exact decimal zero.
+    pub all_dimensions_zero: bool,
+    /// Digest of normalized typed model pricing metadata.
+    pub source_hash: String,
+}
+
+/// Safe, typed failure returned by the bounded OpenRouter pricing fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenRouterPricingError {
+    /// Route is not the trusted OpenRouter profile or lacks a credential.
+    InvalidConfiguration,
+    /// Network transport failed before a response was received.
+    Transport,
+    /// OpenRouter rejected the request with an HTTP status.
+    HttpStatus(u16),
+    /// Response exceeded bounds or did not match the typed contract.
+    InvalidResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelDetailEnvelope {
+    data: OpenRouterModelDetail,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenRouterModelDetail {
+    id: String,
+    pricing: BTreeMap<String, String>,
+}
+
+/// Fetches and normalizes model pricing from OpenRouter's fixed profile only.
+///
+/// This endpoint is intentionally unavailable to custom endpoints and other
+/// provider profiles. It never reads a model suffix as evidence.
+pub async fn fetch_openrouter_model_pricing(
+    route: &ModelRouteConfig,
+    model_id: &str,
+) -> Result<OpenRouterPricingObservation, OpenRouterPricingError> {
+    route
+        .validate_provider_profile()
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?;
+    if route.provider_profile_id != Some(ProviderProfileId::OpenRouter) {
+        return Err(OpenRouterPricingError::InvalidConfiguration);
+    }
+    if route.literouter.api_key.is_empty() {
+        return Err(OpenRouterPricingError::InvalidConfiguration);
+    }
+    let (author, slug) = model_id
+        .split_once('/')
+        .filter(|(author, slug)| {
+            !author.is_empty()
+                && !slug.is_empty()
+                && !slug.contains('/')
+                && model_id.len() <= MAX_MODEL_ID_CHARS
+                && model_id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"._:/-".contains(&byte))
+        })
+        .ok_or(OpenRouterPricingError::InvalidConfiguration)?;
+
+    let mut url = reqwest::Url::parse("https://openrouter.ai/api/v1/model/")
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?;
+    url.path_segments_mut()
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?
+        .push(author)
+        .push(slug);
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|_| OpenRouterPricingError::InvalidConfiguration)?;
+    let response = client
+        .get(url)
+        .bearer_auth(&route.literouter.api_key)
+        .send()
+        .await
+        .map_err(|_| OpenRouterPricingError::Transport)?;
+    if !response.status().is_success() {
+        return Err(OpenRouterPricingError::HttpStatus(
+            response.status().as_u16(),
+        ));
+    }
+    let body = read_bounded_response(response, "openrouter model pricing")
+        .await
+        .map_err(|_| OpenRouterPricingError::InvalidResponse)?;
+    let detail = serde_json::from_slice::<OpenRouterModelDetailEnvelope>(&body)
+        .map_err(|_| OpenRouterPricingError::InvalidResponse)?
+        .data;
+    normalize_openrouter_model_pricing(detail, model_id)
+}
+
+fn normalize_openrouter_model_pricing(
+    detail: OpenRouterModelDetail,
+    requested_model_id: &str,
+) -> Result<OpenRouterPricingObservation, OpenRouterPricingError> {
+    if detail.id != requested_model_id
+        || detail.pricing.is_empty()
+        || detail.pricing.len() > 32
+        || !detail.pricing.contains_key("prompt")
+        || !detail.pricing.contains_key("completion")
+        || !detail.pricing.contains_key("request")
+        || detail.pricing.iter().any(|(name, value)| {
+            name.is_empty()
+                || name.len() > 64
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                || !valid_nonnegative_decimal(value)
+        })
+    {
+        return Err(OpenRouterPricingError::InvalidResponse);
+    }
+    let all_dimensions_zero = detail.pricing.values().all(|value| {
+        value
+            .bytes()
+            .filter(|byte| *byte != b'.')
+            .all(|byte| byte == b'0')
+    });
+    let normalized = serde_json::to_vec(&(detail.id.as_str(), &detail.pricing))
+        .map_err(|_| OpenRouterPricingError::InvalidResponse)?;
+    let source_hash = hex::encode(sha2::Sha256::digest(normalized));
+    Ok(OpenRouterPricingObservation {
+        model_id: detail.id,
+        all_dimensions_zero,
+        source_hash,
+    })
+}
+
+fn valid_nonnegative_decimal(value: &str) -> bool {
+    if value.is_empty() || value.len() > 64 {
+        return false;
+    }
+    let mut decimal_points = 0_u8;
+    let mut digits = 0_u8;
+    value.bytes().all(|byte| {
+        if byte == b'.' {
+            decimal_points = decimal_points.saturating_add(1);
+            decimal_points <= 1
+        } else if byte.is_ascii_digit() {
+            digits = digits.saturating_add(1);
+            true
+        } else {
+            false
+        }
+    }) && digits > 0
+        && !value.starts_with('.')
+        && !value.ends_with('.')
+}
+
 /// Fetches the provider's current model catalog without exposing the API key
 /// to the desktop UI. The provider API is OpenAI-compatible and returns
 /// `{ "data": [{ "id": "...", "context_length": 128000 }] }`.
 pub async fn fetch_model_catalog(
     route: &ModelRouteConfig,
 ) -> Result<Vec<ModelCatalogEntry>, ProviderError> {
+    route.validate_provider_profile()?;
     if route.provider == ProviderKind::Ollama {
         return providers::ollama::fetch_installed_models(&route.literouter).await;
+    }
+    if route.provider_profile_id == Some(ProviderProfileId::CloudflareWorkersAi) {
+        let account_id = route
+            .provider_account_id
+            .as_deref()
+            .ok_or_else(|| ProviderError::Config("provider profile account is required".into()))?;
+        return providers::cloudflare_workers_ai::fetch_model_catalog(
+            &route.literouter,
+            account_id,
+        )
+        .await;
     }
     if route.provider == ProviderKind::Mock {
         return Ok(if route.literouter.model.is_empty() {
@@ -386,6 +702,9 @@ impl ModelGateway {
                 "default model route '{}' not configured",
                 config.default_route
             )));
+        }
+        for route in config.routes.values() {
+            route.validate_provider_profile()?;
         }
         let mut routes = HashMap::new();
         for (name, route_config) in &config.routes {
@@ -511,6 +830,24 @@ impl ModelGateway {
         Ok(self.provider_for_route(route)?.supports_structured_output())
     }
 
+    /// Returns adapter-declared capabilities for an exact route/model pair.
+    pub fn route_capability_snapshot(
+        &self,
+        route: &str,
+        model: Option<&str>,
+    ) -> Result<ProviderCapabilitySnapshot, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        Ok(ProviderCapabilitySnapshot {
+            route_id: route.to_owned(),
+            model_id: self.resolve_model_name(route, model)?,
+            provider_kind: provider.kind().as_str().to_owned(),
+            capability_epoch: PROVIDER_CAPABILITY_CONTRACT_EPOCH,
+            tool_calling: provider.supports_tool_calls(),
+            structured_output: provider.supports_structured_output(),
+            context_limit: None,
+        })
+    }
+
     /// Returns the configured model name for the default route.
     pub fn model_name(&self) -> &str {
         self.default_provider.model_name()
@@ -551,7 +888,111 @@ impl ModelGateway {
         route: &str,
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
+        if let Some(preflight) = &self.route_preflight {
+            preflight.check(route, None, current_time_ms())?;
+        }
         self.dispatch_stream(route, None, messages)
+    }
+
+    /// Returns the configured default route identifier for Core-owned snapshots.
+    pub fn default_route_id(&self) -> &str {
+        &self.default_route
+    }
+
+    /// Returns a validated image-output capability for one configured route.
+    pub fn image_output_capability_for_route(
+        &self,
+        route: &str,
+    ) -> Result<Option<crate::provider_contract::ImageOutputCapability>, ProviderError> {
+        let Some(capability) = self.provider_for_route(route)?.image_output_capability() else {
+            return Ok(None);
+        };
+        if !capability.validate() {
+            return Err(ProviderError::Config(
+                "invalid_image_output_capability".into(),
+            ));
+        }
+        Ok(Some(capability))
+    }
+
+    /// Validates route capability, privacy and live route eligibility before Core records dispatch.
+    pub fn preflight_image_output_for_route(
+        &self,
+        route: &str,
+        expected_epoch: Option<u64>,
+        request: &crate::provider_contract::ImageProviderRequest,
+    ) -> Result<crate::provider_contract::ImageOutputCapability, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        let capability = provider
+            .image_output_capability()
+            .ok_or(if expected_epoch.is_some() {
+                ProviderError::ImageCapabilityStale
+            } else {
+                ProviderError::Config("image_output_unsupported".into())
+            })?;
+        let route_is_cloud = provider.kind() != ProviderKind::Local
+            && provider.kind() != ProviderKind::Ollama
+            && provider.kind() != ProviderKind::Mock;
+        if !capability.validate()
+            || expected_epoch.is_some_and(|epoch| capability.capability_epoch != epoch)
+            || !capability.operations.contains(&request.operation)
+            || !capability.mime_types.contains(&request.mime_type)
+            || request.count == 0
+            || request.count > capability.max_outputs
+            || request.width == 0
+            || request.width > capability.max_width
+            || request.height == 0
+            || request.height > capability.max_height
+            || request.required_privacy > capability.privacy_boundary
+            || (route_is_cloud && !request.allow_cloud)
+            || (capability.execution_class == ExecutionClass::Local && route_is_cloud)
+            || (capability.execution_class == ExecutionClass::Cloud && !route_is_cloud)
+            || u64::from(request.width).saturating_mul(u64::from(request.height))
+                > capability.max_pixels
+        {
+            if expected_epoch.is_some_and(|epoch| capability.capability_epoch != epoch) {
+                return Err(ProviderError::ImageCapabilityStale);
+            }
+            return Err(ProviderError::Config(
+                "image_request_outside_capability".into(),
+            ));
+        }
+        if let Some(preflight) = &self.route_preflight {
+            preflight.check(route, None, current_time_ms())?;
+        }
+        Ok(capability)
+    }
+
+    /// Calls an image-capable provider route after checking its declared bounds.
+    ///
+    /// This method does not fetch returned URLs: provider adapters return bytes
+    /// only, and Core validates and decodes them before storing artifacts.
+    pub async fn generate_image_for_route(
+        &self,
+        route: &str,
+        request: crate::provider_contract::ImageProviderRequest,
+    ) -> Result<Vec<crate::provider_contract::ProviderImageOutput>, ProviderError> {
+        self.generate_image_for_route_at_epoch(route, None, request)
+            .await
+    }
+
+    /// Dispatches only when the route still advertises the frozen capability epoch.
+    pub async fn generate_image_for_route_at_epoch(
+        &self,
+        route: &str,
+        expected_epoch: Option<u64>,
+        request: crate::provider_contract::ImageProviderRequest,
+    ) -> Result<Vec<crate::provider_contract::ProviderImageOutput>, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        if self.image_output_capability_for_route(route)?.is_none() {
+            return Err(ProviderError::Config("image_output_unsupported".into()));
+        }
+        self.preflight_image_output_for_route(route, expected_epoch, &request)
+            .map_err(|error| match error {
+                ProviderError::ImageCapabilityStale => ProviderError::ImageCapabilityStale,
+                _ => ProviderError::ImagePreflightRejected,
+            })?;
+        provider.generate_image(request).await
     }
 
     /// Starts a streaming request using an explicit route and model override.
@@ -561,6 +1002,9 @@ impl ModelGateway {
         model: Option<&str>,
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
+        if let Some(preflight) = &self.route_preflight {
+            preflight.check(route, model, current_time_ms())?;
+        }
         self.dispatch_stream(route, model, messages)
     }
 
@@ -584,7 +1028,48 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<ChatResult, ProviderError> {
-        self.dispatch_chat(route, model, messages, tools).await
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
+                .await?;
+        }
+        let result = self.dispatch_chat(route, model, messages, tools).await?;
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .observe_success_async(route, model, &result, current_time_ms())
+                .await;
+        }
+        Ok(result)
+    }
+
+    /// Executes a bounded non-streaming request on one named route.
+    ///
+    /// The normal route preflight still runs before provider dispatch. Provider
+    /// adapters that do not support the requested bounds may ignore them, so
+    /// the caller must also validate the response and usage.
+    pub async fn chat_with_tools_for_route_bounded(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> Result<ChatResult, ProviderError> {
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
+                .await?;
+        }
+        let result = self
+            .provider_for_route(route)?
+            .chat_with_tools_with_options(model, messages, tools, options)
+            .await?;
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .observe_success_async(route, model, &result, current_time_ms())
+                .await;
+        }
+        Ok(result)
     }
 
     /// Единственная внутренняя граница к provider implementation. Provenance
@@ -597,12 +1082,36 @@ impl ModelGateway {
         messages: &[ChatMessage],
     ) -> Result<TokenStream, ProviderError> {
         let provider = self.provider_for_route(route)?;
-        Ok(match model {
+        let response = match model {
             Some(model) if !model.trim().is_empty() => {
                 provider.stream_chat_with_model(model, messages)
             }
             _ => provider.stream_chat(messages),
-        })
+        };
+        let Some(preflight) = self.route_preflight.clone() else {
+            return Ok(response);
+        };
+        let route = route.to_owned();
+        let model = model.map(str::to_owned);
+        Ok(Box::pin(stream! {
+            let mut response = response;
+            let mut has_content = false;
+            let mut completed = true;
+            while let Some(item) = response.next().await {
+                match &item {
+                    Ok(ChatStreamItem::Delta(chunk) | ChatStreamItem::Thinking(chunk))
+                        if !chunk.trim().is_empty() => has_content = true,
+                    Err(_) => completed = false,
+                    _ => {}
+                }
+                yield item;
+            }
+            if completed && has_content {
+                preflight
+                    .observe_stream_success_async(&route, model.as_deref(), current_time_ms())
+                    .await;
+            }
+        }))
     }
 
     async fn dispatch_chat(
@@ -614,6 +1123,19 @@ impl ModelGateway {
     ) -> Result<ChatResult, ProviderError> {
         self.provider_for_route(route)?
             .chat_with_tools(model, messages, tools)
+            .await
+    }
+
+    async fn dispatch_chat_with_options(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        options: ChatRequestOptions,
+    ) -> Result<ChatResult, ProviderError> {
+        self.provider_for_route(route)?
+            .chat_with_tools_with_options(model, messages, tools, options)
             .await
     }
 
@@ -642,6 +1164,46 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<PolicyChatResult, ProviderError> {
+        self.chat_with_tools_with_policy_and_route_hook(mode, request, model, messages, tools, None)
+            .await
+    }
+
+    /// Executes policy routing with a Core-owned per-route preparation hook.
+    pub async fn chat_with_tools_with_policy_and_route_hook(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        hook: Option<&dyn RouteAttemptHook>,
+    ) -> Result<PolicyChatResult, ProviderError> {
+        self.chat_with_tools_with_policy_and_route_hook_options(
+            mode,
+            request,
+            model,
+            messages,
+            tools,
+            hook,
+            ChatRequestOptions::default(),
+            None,
+        )
+        .await
+    }
+
+    /// Executes policy routing with a Core-owned route hook and bounded provider options.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn chat_with_tools_with_policy_and_route_hook_options(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+        hook: Option<&dyn RouteAttemptHook>,
+        options: ChatRequestOptions,
+        route_pin: Option<&str>,
+    ) -> Result<PolicyChatResult, ProviderError> {
         #[cfg(not(test))]
         if request.task_class.is_some() || request.offline || request.estimated_input_tokens > 0 {
             let now_ms = current_time_ms();
@@ -667,16 +1229,23 @@ impl ModelGateway {
                 policy_hash,
                 snapshot.schema_version.clone(),
             );
-            let mut routes = Vec::new();
-            if let Some(route) = decision.selected_route.clone() {
-                routes.push(route);
-            }
-            routes.extend(decision.fallback_chain.clone());
+            let routes = policy_route_order(
+                decision.selected_route.as_deref(),
+                &decision.fallback_chain,
+                request.allow_fallback,
+                route_pin,
+            )
+            .map_err(|reason| ProviderError::Config(reason.into()))?;
             let retry = RetryConfig::default();
             let mut last_error = None;
             let mut attempt_id = 1_u32;
             'routes: for route in routes.into_iter().take(retry.max_attempts as usize) {
-                for route_attempt in 0..retry.max_attempts_per_route {
+                let route_attempt_limit = if request.allow_fallback && route_pin.is_none() {
+                    retry.max_attempts_per_route
+                } else {
+                    1
+                };
+                for route_attempt in 0..route_attempt_limit {
                     let capability_epoch = snapshot
                         .candidates
                         .iter()
@@ -709,7 +1278,15 @@ impl ModelGateway {
                         tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
                     }
                     if let Some(preflight) = &self.route_preflight {
-                        if let Err(error) = preflight.check(&route, model, current_time_ms()) {
+                        if let Err(error) = preflight
+                            .check_for_request_async(
+                                &route,
+                                model,
+                                !tools.is_empty(),
+                                current_time_ms(),
+                            )
+                            .await
+                        {
                             if let Some(attempt) = trace.attempts.last_mut() {
                                 attempt.failure_category = Some(FailureCategory::InvalidRequest);
                             }
@@ -721,16 +1298,53 @@ impl ModelGateway {
                             break;
                         }
                     }
-                    match self
-                        .chat_with_tools_for_route(&route, model, messages, tools)
-                        .await
-                    {
+                    let prepared = if let Some(hook) = hook {
+                        let capabilities = self.route_capability_snapshot(&route, model)?;
+                        hook.prepare(&capabilities, messages, tools).await?
+                    } else {
+                        PreparedRouteAttempt {
+                            messages: messages.to_vec(),
+                            tools: tools.to_vec(),
+                            structured_output: None,
+                        }
+                    };
+                    let dispatched = match prepared.structured_output.as_ref() {
+                        Some(contract) => {
+                            self.structured_chat_once(&route, model, &prepared.messages, contract)
+                                .await
+                        }
+                        None => {
+                            self.dispatch_chat_with_options(
+                                &route,
+                                model,
+                                &prepared.messages,
+                                &prepared.tools,
+                                options,
+                            )
+                            .await
+                        }
+                    };
+                    match dispatched {
                         Ok(result) => {
+                            if let Some(preflight) = &self.route_preflight {
+                                preflight
+                                    .observe_success_async(
+                                        &route,
+                                        model,
+                                        &result,
+                                        current_time_ms(),
+                                    )
+                                    .await;
+                            }
                             trace.set_result(RunResult::Success);
                             trace.circuit_opened_during_run = overlay.circuit_opened_during_run();
                             return Ok(PolicyChatResult {
                                 selected_route: route,
-                                fallback_chain: decision.fallback_chain.clone(),
+                                fallback_chain: if request.allow_fallback && route_pin.is_none() {
+                                    decision.fallback_chain.clone()
+                                } else {
+                                    Vec::new()
+                                },
                                 result,
                                 decision: Some(decision),
                                 snapshot_hash,
@@ -770,20 +1384,67 @@ impl ModelGateway {
         let runtime = self
             .plan_route(mode, request, RuntimeLimits::default())
             .map_err(|error| ProviderError::Config(error.to_string()))?;
-        let route = runtime
-            .decision()
-            .selected_route
-            .as_deref()
-            .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
+        let route = match route_pin {
+            Some(route_pin)
+                if runtime.decision().selected_route.as_deref() == Some(route_pin)
+                    || runtime
+                        .decision()
+                        .fallback_chain
+                        .iter()
+                        .any(|route| route == route_pin) =>
+            {
+                route_pin
+            }
+            Some(_) => return Err(ProviderError::Config("pinned_route_not_eligible".into())),
+            None => runtime
+                .decision()
+                .selected_route
+                .as_deref()
+                .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?,
+        };
         if let Some(preflight) = &self.route_preflight {
-            preflight.check(route, model, current_time_ms())?;
+            preflight
+                .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
+                .await?;
         }
-        let result = self
-            .chat_with_tools_for_route(route, model, messages, tools)
-            .await?;
+        let prepared = if let Some(hook) = hook {
+            let capabilities = self.route_capability_snapshot(route, model)?;
+            hook.prepare(&capabilities, messages, tools).await?
+        } else {
+            PreparedRouteAttempt {
+                messages: messages.to_vec(),
+                tools: tools.to_vec(),
+                structured_output: None,
+            }
+        };
+        let result = match prepared.structured_output.as_ref() {
+            Some(contract) => {
+                self.structured_chat_once(route, model, &prepared.messages, contract)
+                    .await?
+            }
+            None => {
+                self.dispatch_chat_with_options(
+                    route,
+                    model,
+                    &prepared.messages,
+                    &prepared.tools,
+                    options,
+                )
+                .await?
+            }
+        };
+        if let Some(preflight) = &self.route_preflight {
+            preflight
+                .observe_success_async(route, model, &result, current_time_ms())
+                .await;
+        }
         Ok(PolicyChatResult {
             selected_route: route.to_owned(),
-            fallback_chain: runtime.decision().fallback_chain.clone(),
+            fallback_chain: if request.allow_fallback && route_pin.is_none() {
+                runtime.decision().fallback_chain.clone()
+            } else {
+                Vec::new()
+            },
             result,
             decision: None,
             snapshot_hash: None,
@@ -822,53 +1483,58 @@ impl ModelGateway {
         model_override: Option<&str>,
         now_ms: u64,
     ) -> Result<RoutePolicySnapshot, SnapshotError> {
-        let candidates = self
-            .route_candidates()
-            .into_iter()
-            .map(|candidate| {
-                let model = if candidate.route_id == self.default_route {
-                    model_override
-                        .map(str::trim)
-                        .filter(|model| !model.is_empty())
-                        .unwrap_or(&candidate.model)
-                        .to_owned()
-                } else {
-                    candidate.model
-                };
-                let execution_class = if self
-                    .routes
-                    .get(&candidate.route_id)
-                    .is_some_and(|provider| provider.kind() == ProviderKind::Local)
-                {
-                    ExecutionClass::Local
-                } else {
-                    ExecutionClass::Cloud
-                };
-                CandidateEntry {
-                    route_id: candidate.route_id,
-                    model,
-                    capabilities: CapabilityMetadata {
-                        schema_version: "capability-metadata-v1".into(),
-                        provider_version: "gateway".into(),
-                        capability_epoch: 1,
-                        tool_calling: true,
-                        structured_output: true,
-                        context_limit: None,
-                        streaming: true,
-                        vision: false,
-                        execution_class,
-                        privacy_boundary: crate::provider_contract::PrivacyClass::Internal,
-                    },
-                    initial_health: crate::provider_contract::CandidateHealthSnapshot::ready_at(
-                        30_000, now_ms,
-                    ),
-                    cost_micros_per_1k_tokens: candidate.cost_micros_per_1k_tokens,
-                    p95_latency_ms: candidate.p95_latency_ms,
-                    privacy: crate::provider_contract::PrivacyClass::Internal,
-                    fallback_rank: candidate.fallback_rank,
-                }
-            })
-            .collect();
+        let candidates =
+            self.route_candidates()
+                .into_iter()
+                .map(|candidate| {
+                    let model = if candidate.route_id == self.default_route {
+                        model_override
+                            .map(str::trim)
+                            .filter(|model| !model.is_empty())
+                            .unwrap_or(&candidate.model)
+                            .to_owned()
+                    } else {
+                        candidate.model
+                    };
+                    let execution_class = if self
+                        .routes
+                        .get(&candidate.route_id)
+                        .is_some_and(|provider| provider.kind() == ProviderKind::Local)
+                    {
+                        ExecutionClass::Local
+                    } else {
+                        ExecutionClass::Cloud
+                    };
+                    let image_output = self
+                        .routes
+                        .get(&candidate.route_id)
+                        .and_then(|provider| provider.image_output_capability())
+                        .filter(crate::provider_contract::ImageOutputCapability::validate);
+                    CandidateEntry {
+                        route_id: candidate.route_id,
+                        model,
+                        capabilities: CapabilityMetadata {
+                            schema_version: "capability-metadata-v1".into(),
+                            provider_version: "gateway".into(),
+                            capability_epoch: 1,
+                            tool_calling: true,
+                            structured_output: true,
+                            context_limit: None,
+                            streaming: true,
+                            vision: false,
+                            image_output,
+                            execution_class,
+                            privacy_boundary: crate::provider_contract::PrivacyClass::Internal,
+                        },
+                        initial_health:
+                            crate::provider_contract::CandidateHealthSnapshot::unknown_at(now_ms),
+                        cost_micros_per_1k_tokens: candidate.cost_micros_per_1k_tokens,
+                        p95_latency_ms: candidate.p95_latency_ms,
+                        privacy: crate::provider_contract::PrivacyClass::Internal,
+                        fallback_rank: candidate.fallback_rank,
+                    }
+                })
+                .collect();
         let preference = crate::provider_contract::UserPreference {
             preferred_order: request.preferred_route.clone().into_iter().collect(),
             avoid: Vec::new(),
@@ -963,22 +1629,54 @@ impl ModelGateway {
     fn route_candidates(&self) -> Vec<RouteCandidate> {
         let mut route_ids: Vec<&String> = self.routes.keys().collect();
         route_ids.sort();
+        let now_ms = current_time_ms();
+        let requires_verified_free = self
+            .route_preflight
+            .as_ref()
+            .is_some_and(|preflight| preflight.requires_verified_free_route());
+        let prefers_verified_free = self
+            .route_preflight
+            .as_ref()
+            .is_some_and(|preflight| preflight.prefers_verified_free_routes());
         route_ids
             .into_iter()
-            .map(|route_id| {
+            .filter_map(|route_id| {
                 let provider = &self.routes[route_id];
                 let model = provider.model_name().to_string();
-                let cost_micros_per_1k_tokens = if model.ends_with(":free") { 0 } else { 1 };
-                RouteCandidate {
+                let verified_free = self.route_preflight.as_ref().is_some_and(|preflight| {
+                    preflight.is_verified_free_route(route_id, &model, now_ms)
+                });
+                if requires_verified_free && !verified_free {
+                    return None;
+                }
+                let cost_micros_per_1k_tokens = if prefers_verified_free {
+                    if verified_free {
+                        0
+                    } else {
+                        1
+                    }
+                } else if model.ends_with(":free") {
+                    0
+                } else {
+                    1
+                };
+                let mut capabilities = vec!["chat".to_string()];
+                if provider
+                    .image_output_capability()
+                    .is_some_and(|capability| capability.validate())
+                {
+                    capabilities.push("image_output".to_string());
+                }
+                Some(RouteCandidate {
                     route_id: route_id.clone(),
                     model,
-                    capabilities: vec!["chat".to_string()],
+                    capabilities,
                     cost_micros_per_1k_tokens,
                     p95_latency_ms: 0,
                     privacy: PrivacyClass::Internal,
                     available: true,
                     fallback_rank: 0,
-                }
+                })
             })
             .collect()
     }
@@ -1024,6 +1722,116 @@ mod tests {
     use futures_util::StreamExt;
 
     #[test]
+    fn bounded_call_route_pin_is_exact_and_must_be_eligible() {
+        let fallbacks = vec!["local-2".to_owned(), "local-3".to_owned()];
+        assert_eq!(
+            policy_route_order(Some("local-1"), &fallbacks, true, Some("local-2")),
+            Ok(vec!["local-2".to_owned()]),
+        );
+        assert_eq!(
+            policy_route_order(Some("local-1"), &fallbacks, false, None),
+            Ok(vec!["local-1".to_owned()]),
+        );
+        assert_eq!(
+            policy_route_order(Some("local-1"), &fallbacks, true, Some("cloud-1")),
+            Err("pinned_route_not_eligible"),
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_only_provider_reports_typed_image_unsupported() {
+        let gateway = mock_gateway(vec![]);
+        let route = gateway.default_route_id().to_owned();
+        assert!(gateway
+            .image_output_capability_for_route(&route)
+            .expect("valid route")
+            .is_none());
+        let request = ImageProviderRequest {
+            operation: ImageOutputOperation::Generate,
+            prompt: "a blue square".into(),
+            width: 64,
+            height: 64,
+            count: 1,
+            mime_type: "image/png".into(),
+            required_privacy: PrivacyClass::Restricted,
+            allow_cloud: false,
+            input_images: Vec::new(),
+            mask_image: None,
+        };
+        let error = match gateway.generate_image_for_route(&route, request).await {
+            Err(error) => error,
+            Ok(_) => panic!("mock provider unexpectedly generated images"),
+        };
+        assert!(error.to_string().contains("image_output_unsupported"));
+    }
+
+    fn pricing_detail(id: &str, pricing: &[(&str, &str)]) -> OpenRouterModelDetail {
+        OpenRouterModelDetail {
+            id: id.to_string(),
+            pricing: pricing
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn openrouter_pricing_requires_exact_zero_for_every_declared_dimension() {
+        let zero = normalize_openrouter_model_pricing(
+            pricing_detail(
+                "author/model:free",
+                &[
+                    ("prompt", "0"),
+                    ("completion", "0.000"),
+                    ("request", "0"),
+                    ("image", "0.0"),
+                ],
+            ),
+            "author/model:free",
+        )
+        .expect("valid zero pricing");
+        assert!(zero.all_dimensions_zero);
+        assert_eq!(zero.source_hash.len(), 64);
+
+        let paid = normalize_openrouter_model_pricing(
+            pricing_detail(
+                "author/model:free",
+                &[("prompt", "0"), ("completion", "0"), ("request", "0.1")],
+            ),
+            "author/model:free",
+        )
+        .expect("valid paid dimension");
+        assert!(!paid.all_dimensions_zero);
+    }
+
+    #[test]
+    fn openrouter_pricing_rejects_missing_dimensions_identity_drift_and_bad_decimals() {
+        assert!(normalize_openrouter_model_pricing(
+            pricing_detail("author/model", &[("prompt", "0"), ("completion", "0")]),
+            "author/model",
+        )
+        .is_err());
+        assert!(normalize_openrouter_model_pricing(
+            pricing_detail(
+                "author/other",
+                &[("prompt", "0"), ("completion", "0"), ("request", "0")],
+            ),
+            "author/model",
+        )
+        .is_err());
+        for invalid in ["-0", "+0", "0e0", "NaN", "1.2.3", ".0", "0."] {
+            assert!(normalize_openrouter_model_pricing(
+                pricing_detail(
+                    "author/model",
+                    &[("prompt", invalid), ("completion", "0"), ("request", "0")],
+                ),
+                "author/model",
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
     fn builds_openai_compatible_route_as_distinct_provider() {
         let config = ModelGatewayConfig {
             default_route: "openai".to_string(),
@@ -1060,6 +1868,62 @@ mod tests {
         }
     }
 
+    struct FreeEvidencePreflight {
+        strict: bool,
+    }
+
+    impl RoutePreflight for FreeEvidencePreflight {
+        fn check(
+            &self,
+            _route: &str,
+            _model: Option<&str>,
+            _now_ms: u64,
+        ) -> Result<(), ProviderError> {
+            Ok(())
+        }
+
+        fn requires_verified_free_route(&self) -> bool {
+            self.strict
+        }
+
+        fn prefers_verified_free_routes(&self) -> bool {
+            !self.strict
+        }
+
+        fn is_verified_free_route(&self, route: &str, _model: &str, _now_ms: u64) -> bool {
+            route == "confirmed"
+        }
+    }
+
+    #[test]
+    fn free_only_filters_unverified_candidates_and_prefer_free_ranks_only_evidence() {
+        let routes = vec![
+            ("advertised", "author/model:free"),
+            ("confirmed", "author/model"),
+            ("paid", "author/paid"),
+        ];
+        let prefer_free = gateway_with_routes(routes.clone())
+            .with_route_preflight(Arc::new(FreeEvidencePreflight { strict: false }));
+        let candidates = prefer_free.route_candidates();
+        let by_route: HashMap<_, _> = candidates
+            .iter()
+            .map(|candidate| {
+                (
+                    candidate.route_id.as_str(),
+                    candidate.cost_micros_per_1k_tokens,
+                )
+            })
+            .collect();
+        assert_eq!(by_route.get("confirmed"), Some(&0));
+        assert_eq!(by_route.get("advertised"), Some(&1));
+
+        let free_only = gateway_with_routes(routes)
+            .with_route_preflight(Arc::new(FreeEvidencePreflight { strict: true }));
+        let candidates = free_only.route_candidates();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].route_id, "confirmed");
+    }
+
     fn gateway_with_routes(routes: Vec<(&str, &str)>) -> ModelGateway {
         let default_route = routes
             .iter()
@@ -1093,6 +1957,30 @@ mod tests {
         }
     }
 
+    struct RecordingRouteHook(std::sync::Mutex<Vec<String>>);
+
+    impl RouteAttemptHook for RecordingRouteHook {
+        fn prepare<'a>(
+            &'a self,
+            capabilities: &'a ProviderCapabilitySnapshot,
+            messages: &'a [ChatMessage],
+            tools: &'a [ToolSpec],
+        ) -> Pin<Box<dyn Future<Output = Result<PreparedRouteAttempt, ProviderError>> + Send + 'a>>
+        {
+            Box::pin(async move {
+                self.0
+                    .lock()
+                    .map_err(|_| ProviderError::Config("hook_lock_poisoned".into()))?
+                    .push(capabilities.route_id.clone());
+                Ok(PreparedRouteAttempt {
+                    messages: messages.to_vec(),
+                    tools: tools.to_vec(),
+                    structured_output: None,
+                })
+            })
+        }
+    }
+
     #[tokio::test]
     async fn gateway_runs_route_preflight_before_provider_dispatch() {
         let gateway = gateway_with_routes(vec![("local", "local-model")])
@@ -1110,6 +1998,81 @@ mod tests {
         assert!(matches!(error, ProviderError::Config(code) if code == "preflight_rejected"));
     }
 
+    #[tokio::test]
+    async fn route_hook_runs_after_selection_and_before_dispatch() {
+        let gateway = gateway_with_routes(vec![("local", "local-model")]);
+        let hook = RecordingRouteHook(std::sync::Mutex::new(Vec::new()));
+        let result = gateway
+            .chat_with_tools_with_policy_and_route_hook(
+                RoutingMode::Balanced,
+                &policy_request(),
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "hello")],
+                &[],
+                Some(&hook),
+            )
+            .await
+            .expect("dispatch after hook");
+        assert_eq!(result.selected_route, "local");
+        assert_eq!(
+            *hook.0.lock().expect("hook calls"),
+            vec!["local".to_owned()]
+        );
+    }
+
+    struct ToolCallAwarePreflight;
+
+    impl RoutePreflight for ToolCallAwarePreflight {
+        fn check(
+            &self,
+            _route: &str,
+            _model: Option<&str>,
+            _now_ms: u64,
+        ) -> Result<(), ProviderError> {
+            Err(ProviderError::Config(
+                "request_requirements_not_forwarded".into(),
+            ))
+        }
+
+        fn check_for_request(
+            &self,
+            _route: &str,
+            _model: Option<&str>,
+            requires_tool_calls: bool,
+            _now_ms: u64,
+        ) -> Result<(), ProviderError> {
+            if requires_tool_calls {
+                Ok(())
+            } else {
+                Err(ProviderError::Config(
+                    "tool_call_requirement_missing".into(),
+                ))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn gateway_forwards_tool_call_requirement_to_route_preflight() {
+        let gateway = gateway_with_routes(vec![("local", "local-model")])
+            .with_route_preflight(Arc::new(ToolCallAwarePreflight));
+        let tools = [ToolSpec::function(
+            "example",
+            "example tool",
+            serde_json::json!({"type":"object","properties":{}}),
+        )];
+        let result = gateway
+            .chat_with_tools_with_policy_and_route(
+                RoutingMode::Balanced,
+                &policy_request(),
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "hello")],
+                &tools,
+            )
+            .await
+            .expect("tool requirement should reach preflight");
+        assert_eq!(result.selected_route, "local");
+    }
+
     #[test]
     fn policy_snapshot_uses_selected_model_for_default_route() {
         let gateway = gateway_with_routes(vec![("local", "")]);
@@ -1119,6 +2082,24 @@ mod tests {
             .expect("selected model should make the snapshot valid");
 
         assert_eq!(snapshot.candidates[0].model, "provider-model");
+        assert_eq!(
+            snapshot.candidates[0].initial_health.status,
+            HealthStatus::Unknown
+        );
+    }
+
+    #[test]
+    fn route_capabilities_are_adapter_declared_and_model_bound() {
+        let gateway = gateway_with_routes(vec![("local", "configured-model")]);
+        let snapshot = gateway
+            .route_capability_snapshot("local", Some("selected-model"))
+            .expect("adapter capability snapshot");
+        assert_eq!(snapshot.model_id, "selected-model");
+        assert_eq!(snapshot.provider_kind, "mock");
+        assert!(snapshot.tool_calling);
+        assert!(snapshot.structured_output);
+        assert_eq!(snapshot.context_limit, None);
+        assert!(snapshot.canonical_hash().is_ok());
     }
 
     #[test]

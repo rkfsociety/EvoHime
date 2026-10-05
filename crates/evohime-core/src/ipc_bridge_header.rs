@@ -4,8 +4,8 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::{
-    collections::HashMap,
     borrow::Cow,
+    collections::HashMap,
     future::Future,
     pin::Pin,
     time::{SystemTime, UNIX_EPOCH},
@@ -17,10 +17,8 @@ use crate::{
     ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
 };
 use evohime_listener_contract::{ListeningReason, ListeningState};
-use evohime_local_storage::{
-    EventRecord, LocalDatabase, StorageError, WorkItemRecord,
-};
 use evohime_local_storage::execution_ledger;
+use evohime_local_storage::{EventRecord, LocalDatabase, StorageError, WorkItemRecord};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_receipts::{
@@ -629,6 +627,9 @@ pub struct IpcBridge {
     tools: Option<Arc<ToolRegistry>>,
     model_config: Option<ModelConfigSnapshot>,
     gateway_config: Option<ModelGatewayConfig>,
+    /// Process-local image runtime, including active cancellation tokens and bounded slots.
+    image_generation_runtime:
+        std::sync::OnceLock<Arc<crate::image_generation::ImageGenerationRuntime>>,
     /// Process-local recovery cache for the durable provider catalog. The
     /// SQLite row remains the source of truth; this cache only makes the
     /// validated snapshot available before the first catalog refresh.
@@ -637,6 +638,10 @@ pub struct IpcBridge {
     /// evidence. SQLite remains the source of truth; this cache is never an
     /// authority by itself and is only populated from validated records.
     free_access_evidence: crate::free_provider_reliability_routing::FreeAccessEvidenceCache,
+    /// Process-local single-flight and cooldown guard for explicit probes.
+    free_access_probe_guard: Arc<crate::free_access_probe::FreeAccessProbeGuard>,
+    /// Shared shutdown signal for automatic and manual provider probes.
+    free_access_probe_cancellation: CancellationToken,
     selected_model: SelectedModel,
     core_instance_id: String,
     session_epoch: u64,
@@ -757,7 +762,7 @@ fn continuation_public_json(
 /// Оболочка не назначает права: набор фиксирован Core и совпадает с тем, что
 /// уже разрешено обычной задаче чтения репозитория. Child-узел может получить
 /// только подмножество.
-fn workflow_parent_capabilities() -> crate::workflow_registry::ParentCapabilities {
+pub(crate) fn workflow_parent_capabilities() -> crate::workflow_registry::ParentCapabilities {
     crate::workflow_registry::ParentCapabilities {
         grants: std::collections::BTreeSet::from([
             "fs.read".to_string(),
