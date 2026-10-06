@@ -3449,7 +3449,7 @@ Local verification on Windows passed: targeted RAG decode test (1/1), Core
 `cargo check --locked -p evohime-core`, `cargo fmt --all -- --check`, Electron
 focused logger/workflow tests (16/16), full Electron suite (140 files, 702
 passed, 4 skipped), `npm run typecheck`, `npm run check:protocol`, shell and
-updater production builds, `npm run check:bundle`, documentation gate (111
+updater production builds, `npm run check:bundle`, documentation gate (106
 tracked text files), and `git diff --check`. Skips are the existing gated
 source-update E2E (2 tests) and two update-service scenarios.
 
@@ -3463,6 +3463,6 @@ cursor pagination, non-overlap before timeout, terminal stop and timer cleanup.
 Source changes advanced the module patch markers to Core `0.0.000385`,
 shell-host `0.0.000110`, updater `0.0.000131`, and UI bundle `0.0.000131`.
 `update-agent.yml` now selects the shared logger source path, and the shell-host
-workflow already covers `src/main/**`. The exact local implementation commit
-is recorded in the follow-up evidence update. No push was performed; exact-SHA
-GitHub CI and module publication remain pending that push.
+workflow already covers `src/main/**`. Task-only implementation commit
+`99413adf8b671158afc98993e1e0accbd7f0f281` is local on `main` and has not been
+pushed. Exact-SHA GitHub CI and module publication remain pending that push.
