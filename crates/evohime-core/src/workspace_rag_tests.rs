@@ -1,4 +1,31 @@
 use super::*;
+
+#[test]
+fn text_decoding_preserves_utf8_lossy_and_utf16_contracts() {
+    assert_eq!(
+        decode_text(b"valid \xe2\x9c\x93"),
+        ("valid ✓".to_owned(), "utf-8", "valid")
+    );
+    assert_eq!(decode_text(b""), (String::new(), "utf-8", "valid"));
+    assert_eq!(
+        decode_text(b"bad \xff bytes \xc3"),
+        ("bad � bytes �".to_owned(), "utf-8", "lossy")
+    );
+
+    let mut little_endian = vec![0xff, 0xfe];
+    little_endian.extend("LE ✓".encode_utf16().flat_map(u16::to_le_bytes));
+    assert_eq!(
+        decode_text(&little_endian),
+        ("LE ✓".to_owned(), "utf-16le", "valid")
+    );
+
+    let mut big_endian = vec![0xfe, 0xff];
+    big_endian.extend("BE ✓".encode_utf16().flat_map(u16::to_be_bytes));
+    assert_eq!(
+        decode_text(&big_endian),
+        ("BE ✓".to_owned(), "utf-16be", "valid")
+    );
+}
 use evohime_local_storage::LocalDatabase;
 
 struct Fixture {

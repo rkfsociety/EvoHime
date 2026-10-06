@@ -3420,3 +3420,36 @@ explicit existing user-authorized action.
 The Core resolves a profile against the exact model route capability declaration, context/loadout/output constraints and fresh redacted holdout evidence. Synthetic routing defaults do not qualify as positive capability evidence. Missing/corrupt historical profile revisions fail closed. Each dispatch records a route-specific snapshot with hashes of prepared messages and effective tool schemas, correlated to model provenance. Decomposition and MultiSample are sequential, tool-free, pinned to one local/offline/free route, bounded by aggregate input/output token budgets and sent with provider output limits and retries disabled. Other strategies compose through the existing context builder and tool/output contracts.
 
 Authenticated Core operations expose bounded list/get/evidence/compatibility/compare and explicit registration, binding, promotion and lifecycle transitions. Guided workflow runs recover their exact strategy pin; the Electron Agents settings surface shows bounded metadata only. Generic `TaskStarted` and `ModelContext` events retain their compatible fields but carry omission markers instead of user/system prompts. CI acceptance and module publication evidence are tracked in `release-evidence.md`.
+
+## Bounded Electron diagnostics and event projections
+
+`desktop/evohime-electron/src/main/diagnostics/logger.ts` redacts and
+serializes each shell record before enqueue, then writes through one async
+queue per Electron process. Queue capacity is bounded by 512 records and
+1 MiB of encoded JSONL by default; overflow drops the incoming record and is
+reported through bounded logger status. Disk failures disable that logger
+instance and drop its pending tail without recursive logging or retries.
+Rotation remains bounded to 4 MiB per active file and three generations.
+Main and standalone updater use separate `shell-main.jsonl` and
+`shell-updater.jsonl` paths because their processes have independent lifecycle
+and cannot safely coordinate rotation. Normal quit and controlled exits drain
+for at most 1.5 seconds, then continue with a fixed stderr message; a process
+crash can lose no more than the configured pending queue. Support-bundle
+creation flushes the main logger first and includes its redacted counters.
+
+The workspace RAG UTF-8 decoder validates borrowed bytes with
+`std::str::from_utf8` before creating the required owned text. Invalid UTF-8
+continues through the lossy replacement path; UTF-16 BOM decoding and original
+byte/chunk semantics are unchanged.
+
+Electron chat event scanning retains only a compact
+`coreInstanceId/sessionEpoch/sequenceId/taskId/eventType` boundary. It does not
+retain payload strings or duplicate conversation pages; existing Core
+projection helpers provide event-ID/sequence replay and conflict semantics.
+The local message timestamp LRU is capped at 256 IDs; explicitly loaded
+conversation history remains visible and is not silently trimmed. Workflow
+polling correlates Core projections by `run_id`, advances only from returned
+event pages through the existing `afterSequence` contract, fetches the next
+page when full, allows only one projection cycle at a time, and stops only
+after a terminal run's final page has been observed. Reconnect starts a new
+cycle from the retained event cursor; unmount/run change clears timers.

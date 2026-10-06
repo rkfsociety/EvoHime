@@ -3432,3 +3432,37 @@ visual preview were not run under the implementation workflow. Static review
 and `git diff --check` are the local evidence; exact-commit module workflows,
 Rust documentation, module router and compatible release manifest remain
 pending an authorized push. No push was performed for this checkout.
+
+## Bounded Core/Electron Runtime Performance (plan 190)
+
+Implemented locally on `main`: Core UTF-8 decoding validates borrowed bytes
+before allocating the owned text and preserves lossy/UTF-16 behavior. Electron
+shell diagnostics now use a redacted asynchronous queue bounded to 512 records
+and 1 MiB, with serialized append/rotation, observable drops/failure state,
+bounded shutdown flush, and separate main/updater JSONL files. Chat event scan
+retains only compact boundary metadata; workflow polling advances through
+`afterSequence`, merges pages by event sequence, waits for both projections,
+and stops after terminal catch-up. No IPC, schema, durable data, or installed
+client changes were made.
+
+Local verification on Windows passed: targeted RAG decode test (1/1), Core
+`cargo check --locked -p evohime-core`, `cargo fmt --all -- --check`, Electron
+focused logger/workflow tests (16/16), full Electron suite (140 files, 702
+passed, 4 skipped), `npm run typecheck`, `npm run check:protocol`, shell and
+updater production builds, `npm run check:bundle`, documentation gate (111
+tracked text files), and `git diff --check`. Skips are the existing gated
+source-update E2E (2 tests) and two update-service scenarios.
+
+No comparative performance run was available on the same pre-change fixture:
+decode p50/p95, event-loop latency, logger peak queue bytes/drops under a fixed
+load, transcript preparation and renderer cache peak were not measured. The
+decode change structurally removes the temporary `Vec` copy before lossy
+replacement; this is not presented as a measured speedup. Workflow tests prove
+cursor pagination, non-overlap before timeout, terminal stop and timer cleanup.
+
+Source changes advanced the module patch markers to Core `0.0.000385`,
+shell-host `0.0.000110`, updater `0.0.000131`, and UI bundle `0.0.000131`.
+`update-agent.yml` now selects the shared logger source path, and the shell-host
+workflow already covers `src/main/**`. The exact local implementation commit
+is recorded in the follow-up evidence update. No push was performed; exact-SHA
+GitHub CI and module publication remain pending that push.

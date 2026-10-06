@@ -16,6 +16,7 @@ const CHECK_INTERVAL_MS = 350
 
 export interface UpdaterWindowOptions extends HardeningOptions {
   readonly log: ShellLog
+  readonly flushLogs: () => Promise<boolean>
 }
 
 /** Runs the standalone Electron updater application. */
@@ -30,6 +31,15 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   })
   const crashGuard = recordUpdaterStart(join(dataDirectory(), 'update-state'))
   let shuttingDown = false
+  let allowQuitAfterFlush = false
+  let shutdownStarted = false
+  const exitAfterLoggerFlush = (): void => {
+    shuttingDown = true
+    void options.flushLogs().then((flushed) => {
+      if (!flushed) process.stderr.write('EvoHime updater diagnostics flush timed out; exiting with a bounded log tail.\n')
+      app.exit(0)
+    })
+  }
   const service = new ModuleUpdateService({
     dataDirectory: dataDirectory(),
     branch: config.branch,
@@ -39,8 +49,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     intervalMs: CHECK_INTERVAL_MS,
     emit: () => publish(),
     quitForApply: () => {
-      shuttingDown = true
-      app.exit(0)
+      exitAfterLoggerFlush()
     }
   })
 
@@ -86,8 +95,7 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
     try {
       const child = spawn(shell, [], { cwd: installDirectory, detached: true, stdio: 'ignore', windowsHide: true })
       child.unref()
-      shuttingDown = true
-      app.exit(0)
+      exitAfterLoggerFlush()
     } catch {
       publishFailure('Не удалось запустить EvoHime.')
     }
@@ -181,12 +189,21 @@ export async function runUpdaterApplication(options: UpdaterWindowOptions): Prom
   }
   publish()
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (allowQuitAfterFlush) return
+    event.preventDefault()
+    if (shutdownStarted) return
+    shutdownStarted = true
     shuttingDown = true
     service.stop()
     ipcMain.removeHandler('updater.get-status')
     ipcMain.removeHandler('updater.close')
     ipcMain.removeHandler('updater.minimize')
+    void options.flushLogs().then((flushed) => {
+      if (!flushed) process.stderr.write('EvoHime updater diagnostics flush timed out; exiting with a bounded log tail.\n')
+      allowQuitAfterFlush = true
+      app.quit()
+    })
   })
   app.on('window-all-closed', () => app.quit())
 }

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, ConversationEventProjection, CoreEvent, WorkspaceOption } from '@shared/api'
+import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEvent, WorkspaceOption } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -50,34 +50,9 @@ type TimelineItemDescriptor =
   | { readonly key: string; readonly kind: 'user'; readonly message: ChatMessage; readonly delivery: OptimisticConversationMessage | null }
   | { readonly key: string; readonly kind: 'transcript'; readonly entry: ReturnType<typeof buildTranscript>['entries'][number]; readonly keySuffix: string }
 
-function buildConversationPageKey(page: { conversationId: string; oldestSequence: number; earliestAvailableSequence?: number; errorCode?: string; events: readonly { eventId: string; sequence: number }[] }): string {
-  const signature = page.events.map((entry) => `${entry.sequence}:${entry.eventId}`).join('|')
-  return `${page.conversationId}:${page.oldestSequence}:${page.earliestAvailableSequence ?? 0}:${page.errorCode ?? ''}:${signature}`
-}
-
-interface ConversationEventCursor {
-  readonly pages: Set<string>
-  readonly eventsById: Map<string, ConversationEventProjection>
-}
-
-function createConversationEventCursor(): ConversationEventCursor {
-  return { pages: new Set<string>(), eventsById: new Map<string, ConversationEventProjection>() }
-}
-
-function buildCoreEventKey(event: CoreEvent): string {
-  const instance = `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}`
-  if (event.conversationEventLog) {
-    return `conversation:${instance}:${JSON.stringify(event.conversationEventLog)}`
-  }
-  return `core:${instance}:${event.sequenceId}:${event.taskId}:${event.eventType}:${event.payload}`
-}
-
-function conversationEventIndexKey(event: ConversationEventProjection): string {
-  return event.eventId.length > 0 ? event.eventId : `${event.sequence}:${event.kind}:${event.taskId}`
-}
-
-function sameConversationEvent(left: ConversationEventProjection, right: ConversationEventProjection): boolean {
-  return JSON.stringify(left) === JSON.stringify(right)
+function buildCoreEventKey(event: CoreEvent): string | null {
+  if (!Number.isSafeInteger(event.sequenceId) || event.sequenceId <= 0) return null
+  return `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${event.sequenceId}:${event.taskId}:${event.eventType}`
 }
 
 export interface TaskTimelineProps {
@@ -152,12 +127,10 @@ export function TaskTimeline({
     tasks: Map<string, { signature: string; transcript: ReturnType<typeof buildTranscript> }>
   }>({ chatId, tasks: new Map() })
   const cancelRequestedTaskId = useRef<string | null>(null)
-  const eventCursorRef = useRef<{ seenKeys: Set<string>; firstKey: string | null; length: number }>({
-    seenKeys: new Set<string>(),
+  const eventCursorRef = useRef<{ firstKey: string | null; length: number }>({
     firstKey: null,
     length: 0
   })
-  const conversationEventCursorRef = useRef(new Map<string, ConversationEventCursor>())
   const subscriptionCursorRef = useRef<string | null>(null)
   const previousConnectionRef = useRef<ConnectionState>(connection)
   const conversationLogRef = useRef<ConversationProjectionState | null>(null)
@@ -218,10 +191,8 @@ export function TaskTimeline({
     setTimelineWindowStart(0)
     followLiveRef.current = true
     previousTimelineRef.current = { firstKey: null, length: 0, scrollHeight: 0 }
-    eventCursorRef.current.seenKeys.clear()
     eventCursorRef.current.firstKey = null
     eventCursorRef.current.length = 0
-    conversationEventCursorRef.current.clear()
     subscriptionCursorRef.current = null
     const nextConversationLog = chatId === null
       ? null
@@ -256,22 +227,18 @@ export function TaskTimeline({
     const resumed = !CONNECTED_STATES.includes(previous) && CONNECTED_STATES.includes(connection)
     previousConnectionRef.current = connection
     if (!resumed) return
-    eventCursorRef.current.seenKeys.clear()
     eventCursorRef.current.firstKey = null
     eventCursorRef.current.length = 0
-    conversationEventCursorRef.current.clear()
     subscriptionCursorRef.current = null
   }, [connection])
 
   useEffect(() => {
     if (chatId === null) return
 
-    const cursor = conversationEventCursorRef.current.get(chatId) ?? createConversationEventCursor()
-    conversationEventCursorRef.current.set(chatId, cursor)
     const newEvents: CoreEvent[] = []
     const eventCursor = eventCursorRef.current
     const firstKey = events[0] ? buildCoreEventKey(events[0]) : null
-    if (eventCursor.seenKeys.size === 0) {
+    if (eventCursor.firstKey === null) {
       newEvents.push(...events)
     } else if (firstKey === eventCursor.firstKey && events.length > eventCursor.length) {
       // The test/replay path can append events while the live App prepends
@@ -283,12 +250,14 @@ export function TaskTimeline({
       // walking the retained global history.
       for (const event of events) {
         const key = buildCoreEventKey(event)
-        if (eventCursor.seenKeys.has(key)) break
+        if (key !== null && key === eventCursor.firstKey) {
+          break
+        }
         newEvents.push(event)
       }
-    }
-    for (const event of newEvents) {
-      eventCursor.seenKeys.add(buildCoreEventKey(event))
+      // The app retains only a bounded live window. If the old boundary fell
+      // out of it, process that bounded window and rely on Core projection
+      // sequence/idempotency checks for replay safety.
     }
     eventCursor.firstKey = firstKey
     eventCursor.length = events.length
@@ -297,22 +266,7 @@ export function TaskTimeline({
     for (const event of newEvents) {
       const page = event.conversationEventLog
       if (page == null || page.conversationId !== chatId) continue
-      const pageKey = buildConversationPageKey(page)
-      const isNewPage = !cursor.pages.has(pageKey)
-      const newPageEvents = page.events.filter((entry) => {
-        const indexKey = conversationEventIndexKey(entry)
-        const previous = cursor.eventsById.get(indexKey)
-        if (previous && sameConversationEvent(previous, entry)) return false
-        cursor.eventsById.set(indexKey, entry)
-        return true
-      })
-      cursor.pages.add(pageKey)
-      if (!isNewPage && newPageEvents.length === 0) continue
-      if (isNewPage && page.events.length > 0 && newPageEvents.length === 0) continue
-      pageEnvelopes.push({
-        event,
-        page: newPageEvents.length === page.events.length ? page : { ...page, events: newPageEvents }
-      })
+      pageEnvelopes.push({ event, page })
     }
     if (pageEnvelopes.length === 0) return
 
@@ -1151,9 +1105,18 @@ const TranscriptMessage = memo(function TranscriptMessage({
 
 function messageTime(times: React.MutableRefObject<Map<string, number>>, id: string): number {
   const existing = times.current.get(id)
-  if (existing !== undefined) return existing
+  if (existing !== undefined) {
+    times.current.delete(id)
+    times.current.set(id, existing)
+    return existing
+  }
   const now = Date.now()
   times.current.set(id, now)
+  while (times.current.size > 256) {
+    const oldest = times.current.keys().next().value
+    if (oldest === undefined) break
+    times.current.delete(oldest)
+  }
   return now
 }
 

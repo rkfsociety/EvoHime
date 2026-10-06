@@ -1022,8 +1022,8 @@ fn decode_text(bytes: &[u8]) -> (String, &'static str, &'static str) {
             .collect();
         return (text, "utf-16be", "valid");
     }
-    match String::from_utf8(bytes.to_vec()) {
-        Ok(text) => (text, "utf-8", "valid"),
+    match std::str::from_utf8(bytes) {
+        Ok(text) => (text.to_owned(), "utf-8", "valid"),
         Err(_) => (
             String::from_utf8_lossy(bytes).into_owned(),
             "utf-8",

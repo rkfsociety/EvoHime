@@ -9,6 +9,7 @@ on:
       - 'crates/evohime-updater/**'
       - 'desktop/evohime-electron/src/main/updater.ts'
       - 'desktop/evohime-electron/src/main/updater-window.ts'
+      - 'desktop/evohime-electron/src/main/diagnostics/logger.ts'
       - 'desktop/evohime-electron/src/main/update/module-update-service.ts'
       - 'desktop/evohime-electron/src/main/update/**'
       - 'desktop/evohime-electron/src/preload/updater.ts'

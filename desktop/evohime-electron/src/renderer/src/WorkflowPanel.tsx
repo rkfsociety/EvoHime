@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   ConnectionState,
   CoreEvent,
+  WorkflowEventEntry,
   WorkflowEventList,
   WorkflowDefinition,
   WorkflowRunProjection,
@@ -29,6 +30,25 @@ const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 
 
 /** Как часто панель перезапрашивает проекцию активного запуска. */
 const POLL_MS = 2_000
+const POLL_TIMEOUT_MS = 5_000
+const EVENT_PAGE_SIZE = 200
+const TERMINAL_RUN_STATES = new Set(['completed', 'failed', 'cancelled', 'degraded', 'interrupted'])
+
+interface WorkflowPollCycle {
+  readonly baselineSequence: number
+  readonly coreIdentity: string
+  runSeen: boolean
+  eventsSeen: boolean
+  eventPageLength: number
+  runState: string
+}
+
+interface WorkflowPollControl {
+  readonly runId: string
+  cycle: WorkflowPollCycle | null
+  timer: ReturnType<typeof setTimeout> | null
+  poll: () => void
+}
 
 const RUN_STATE_LABELS: Readonly<Record<string, string>> = {
   pending: 'ожидает',
@@ -98,11 +118,16 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [runId, setRunId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [workflowEvents, setWorkflowEvents] = useState<readonly WorkflowEventEntry[]>([])
+  const workflowEventCursor = useRef(-1)
+  const workflowEventMap = useRef(new Map<number, WorkflowEventEntry>())
+  const latestEnvelopeSequence = useRef(0)
+  const latestCoreIdentity = useRef('legacy:0')
+  const workflowPollControl = useRef<WorkflowPollControl | null>(null)
 
   const catalog = latestPayload<WorkflowTemplateList>(events, 'workflow.templates')
   const started = latestPayload<{ run_id: string; error_code: string }>(events, 'workflow.started')
   const run = latestPayload<WorkflowRunProjection>(events, 'workflow.run')
-  const eventList = latestPayload<WorkflowEventList>(events, 'workflow.events')
   const definition = latestPayload<WorkflowDefinition>(events, 'workflow.definition')
   const presetResult = latestPayload<{ status?: string; presets?: { id: string; revision: number; content_hash: string; state: string }[] }>(events, 'invocation_preset.result')
 
@@ -129,17 +154,152 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
     }
   }, [started])
 
+  useEffect(() => {
+    workflowEventCursor.current = -1
+    workflowEventMap.current.clear()
+    setWorkflowEvents([])
+    setNotice(null)
+  }, [runId])
+
+  useEffect(() => {
+    const newest = events[0]
+    if (!newest) return
+    const identity = `${newest.coreInstanceId ?? 'legacy'}:${newest.sessionEpoch ?? 0}`
+    if (identity !== latestCoreIdentity.current) {
+      latestCoreIdentity.current = identity
+      latestEnvelopeSequence.current = events
+        .filter((event) => `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}` === identity)
+        .reduce((latest, event) => Math.max(latest, event.sequenceId), 0)
+      return
+    }
+    latestEnvelopeSequence.current = events.reduce((latest, event) => {
+      const eventIdentity = `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}`
+      return eventIdentity === identity ? Math.max(latest, event.sequenceId) : latest
+    }, latestEnvelopeSequence.current)
+  }, [events])
+
+  useEffect(() => {
+    const latestPageEvent = events.find((event) => event.eventType === 'workflow.events')
+    if (latestPageEvent) {
+      try {
+        const page = JSON.parse(latestPageEvent.payload) as WorkflowEventList
+        if (page.run_id === runId && page.error_code === '') {
+          for (const entry of page.events) {
+            if (entry.sequence > workflowEventCursor.current) workflowEventMap.current.set(entry.sequence, entry)
+          }
+          const ordered = [...workflowEventMap.current.values()].sort((left, right) => left.sequence - right.sequence)
+          const lastSequence = ordered.at(-1)?.sequence
+          if (lastSequence !== undefined) workflowEventCursor.current = Math.max(workflowEventCursor.current, lastSequence)
+          setWorkflowEvents(ordered)
+        }
+      } catch {
+        // Ignore malformed event-list payloads and wait for a fresh Core projection.
+      }
+    }
+    const control = workflowPollControl.current
+    if (!control || control.runId !== runId || !control.cycle) return
+    const cycle = control.cycle
+    if (cycle.coreIdentity !== latestCoreIdentity.current) {
+      if (control.timer) clearTimeout(control.timer)
+      control.cycle = null
+      control.timer = setTimeout(() => {
+        control.timer = null
+        control.poll()
+      }, 0)
+      return
+    }
+    const fresh = events
+      .filter((event) => event.sequenceId > cycle.baselineSequence
+        && `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}` === cycle.coreIdentity)
+      .slice()
+      .reverse()
+    for (const event of fresh) {
+      if (event.eventType !== 'workflow.run' && event.eventType !== 'workflow.events') continue
+      let payload: WorkflowRunProjection | WorkflowEventList
+      try { payload = JSON.parse(event.payload) as WorkflowRunProjection | WorkflowEventList } catch { continue }
+      if (payload.run_id !== runId) continue
+      if (event.eventType === 'workflow.run') {
+        const runPayload = payload as WorkflowRunProjection
+        cycle.runSeen = true
+        cycle.runState = runPayload.state
+      } else {
+        const page = payload as WorkflowEventList
+        cycle.eventsSeen = true
+        cycle.eventPageLength = page.error_code === '' ? page.events.length : EVENT_PAGE_SIZE
+        if (page.error_code === '') {
+          for (const entry of page.events) {
+            if (entry.sequence > workflowEventCursor.current) workflowEventMap.current.set(entry.sequence, entry)
+          }
+          const ordered = [...workflowEventMap.current.values()].sort((left, right) => left.sequence - right.sequence)
+          const lastSequence = ordered.at(-1)?.sequence
+          if (lastSequence !== undefined) workflowEventCursor.current = Math.max(workflowEventCursor.current, lastSequence)
+          setWorkflowEvents(ordered)
+        }
+      }
+    }
+    if (cycle.runSeen && cycle.eventsSeen) {
+      if (control.timer) clearTimeout(control.timer)
+      control.cycle = null
+      if (TERMINAL_RUN_STATES.has(cycle.runState) && cycle.eventPageLength < EVENT_PAGE_SIZE) {
+        control.timer = null
+      } else {
+        control.timer = setTimeout(() => {
+          control.timer = null
+          control.poll()
+        }, cycle.eventPageLength >= EVENT_PAGE_SIZE ? 0 : POLL_MS)
+      }
+    }
+  }, [events, runId])
+
   // Опрос, а не собственный расчёт прогресса: панель не знает, когда узел
   // закончится, и не должна изображать движение.
   useEffect(() => {
     if (!api || !connected || !runId) return
-    const poll = (): void => {
-      void api.invoke('workflow.getRun', { runId })
-      void api.invoke('workflow.listEvents', { runId, afterSequence: -1, limit: 200 })
+    const control: WorkflowPollControl = {
+      runId,
+      cycle: null,
+      timer: null,
+      poll: () => undefined
     }
-    poll()
-    const timer = setInterval(poll, POLL_MS)
-    return () => clearInterval(timer)
+    const retry = (message?: string): void => {
+      if (control.timer) clearTimeout(control.timer)
+      control.cycle = null
+      if (message) setNotice(message)
+      control.timer = setTimeout(() => {
+        control.timer = null
+        control.poll()
+      }, POLL_MS)
+    }
+    control.poll = () => {
+      if (control.cycle) return
+      const cycle: WorkflowPollCycle = {
+        baselineSequence: latestEnvelopeSequence.current,
+        coreIdentity: latestCoreIdentity.current,
+        runSeen: false,
+        eventsSeen: false,
+        eventPageLength: 0,
+        runState: 'unknown_state'
+      }
+      control.cycle = cycle
+      control.timer = setTimeout(() => retry('Ядро не вернуло полную проекцию запуска; повторяю запрос.'), POLL_TIMEOUT_MS)
+      void api.invoke('workflow.getRun', { runId }).then((outcome) => {
+        if (!outcome.ok && control.cycle === cycle) retry(outcome.message)
+      })
+      void api.invoke('workflow.listEvents', {
+        runId,
+        afterSequence: workflowEventCursor.current,
+        limit: EVENT_PAGE_SIZE
+      }).then((outcome) => {
+        if (!outcome.ok && control.cycle === cycle) retry(outcome.message)
+      })
+    }
+    workflowPollControl.current = control
+    control.poll()
+    return () => {
+      if (control.timer) clearTimeout(control.timer)
+      control.cycle = null
+      if (workflowPollControl.current === control) workflowPollControl.current = null
+    }
   }, [api, connected, runId])
 
   const start = useCallback(async () => {
@@ -364,7 +524,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
           </button>
           <h4>События</h4>
           <ul className="workflow__events">
-            {(eventList?.run_id === runId ? eventList.events : []).map((event) => (
+            {workflowEvents.map((event) => (
               <li key={event.sequence}>
                 #{event.sequence} {event.event_type}
                 {event.node_id ? ` · ${event.node_id}` : ''}

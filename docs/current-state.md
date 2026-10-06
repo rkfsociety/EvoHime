@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-09-27.
+Обновлено: 2026-10-06.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -173,6 +173,18 @@ base64 ZIP, после чего issue содержит ссылку, разме�
 replay/resync failures при запуске не отправляются; один task ID claim-ится не
 более одного раза за процесс. Отказ GitHub/Gist остаётся best-effort shell
 diagnostic и не меняет исходный Core failure.
+
+Electron JSONL diagnostics redacts before enqueue, uses one serialized async
+writer per process, and bounds pending records by count and UTF-8 bytes. Main
+shell and updater write separate `shell-main.jsonl` / `shell-updater.jsonl`
+files so their independent rotation cannot race. Controlled shutdown performs
+a bounded flush; a timeout reports only a fixed message to stderr and allows
+exit. Support-bundle runtime metadata includes the redacted logger status. The
+chat event boundary keeps compact Core instance/epoch/sequence metadata, while
+conversation projection helpers own replay deduplication; only the timestamp
+LRU is retained locally and it is capped at 256 entries. Workflow event polling
+uses `afterSequence`, correlates projections by run ID, drains full pages, and
+stops after terminal catch-up. See [`architecture.md`](architecture.md).
 
 ## Продуктовая граница
 
@@ -456,19 +468,21 @@ runtime переиспользует canonical hash, ограничивает г
 
 ## Подтверждённые проверки checkout
 
-Текущий checkout находится в `main`; `HEAD` совпадает с `origin/main`.
-Актуальные module router, Core и compatible-release workflow завершились
-успешно для code baseline `cbd5aa6539ff873248a418ceb133e61fcb91417d`.
-Полный Windows workflow
-`34912288572` является историческим evidence предыдущего опубликованного
-baseline; актуальные installer/module/router/compatibility результаты и
-подробное release evidence находятся в
-[`release-evidence.md`](release-evidence.md).
+Текущая задача реализована локально в `main`; task-only commit создан после
+проверок. Изменения ещё не опубликованы, поэтому exact-SHA GitHub workflows и
+module releases ожидают разрешённого push. Исторические baseline и результаты
+сохранены в [`release-evidence.md`](release-evidence.md).
 
 | Проверка | Результат |
 | --- | --- |
-| Статическая сверка исходников, тестов и workflow | Выполнена; документационный gate прошёл, узкие локальные проверки и актуальные GitHub Actions gates зафиксированы в `release-evidence.md` |
-| `git diff --check` | PASS |
+| Workspace RAG decode regression | PASS; valid/invalid/empty UTF-8 и UTF-16LE/BE |
+| `cargo check --locked -p evohime-core` и `cargo fmt --all -- --check` | PASS |
+| Electron полный `npm test` | PASS: 140 файлов, 702 теста; 1 файл и 4 теста skipped |
+| Electron `npm run typecheck`, `npm run check:protocol` | PASS |
+| Electron shell/updater production builds и `npm run check:bundle` | PASS |
+| `scripts/documentation.tests.ps1` и `git diff --check` | PASS |
+| Сравнительный benchmark latency/cache | Не выполнялся; ускорение не заявляется |
+| GitHub exact-SHA CI / публикация модулей | Ожидает push; локальный workflow этого не подтверждает |
 
 ## Исторические сведения о закрытых планах
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { WorkflowPanel } from '../src/renderer/src/WorkflowPanel'
@@ -20,8 +20,8 @@ function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
 }
 
-function event(eventType: string, payload: Record<string, unknown>): CoreEvent {
-  return { sequenceId: 0, taskId: '', eventType, payload: JSON.stringify(payload) }
+function event(eventType: string, payload: Record<string, unknown>, sequenceId = 0): CoreEvent {
+  return { sequenceId, taskId: '', eventType, payload: JSON.stringify(payload) }
 }
 
 const templates = event('workflow.templates', {
@@ -52,7 +52,7 @@ const templates = event('workflow.templates', {
   ]
 })
 
-function runProjection(state: string, nodeState: string): CoreEvent {
+function runProjection(state: string, nodeState: string, sequenceId = 0): CoreEvent {
   return event('workflow.run', {
     run_id: 'run-1',
     task_id: 'task-1',
@@ -90,7 +90,7 @@ function runProjection(state: string, nodeState: string): CoreEvent {
         dependencies: ['evidence']
       }
     ]
-  })
+  }, sequenceId)
 }
 
 beforeEach(() => {
@@ -234,5 +234,104 @@ describe('панель составных задач', () => {
     render(<WorkflowPanel connection="disconnected" events={[templates]} workspace={WORKSPACE} />)
     expect(screen.getByText(/Ядро недоступно/)).toBeTruthy()
     expect(calls).toHaveLength(0)
+  })
+
+  it('не запускает следующий polling cycle до ответа или timeout текущего', async () => {
+    vi.useFakeTimers()
+    try {
+      const { unmount } = render(
+        <WorkflowPanel
+          connection="connected"
+          events={[event('workflow.started', { run_id: 'run-1', error_code: '' }, 1)]}
+          workspace={WORKSPACE}
+        />
+      )
+      expect(calls.filter((call) => call.command === 'workflow.getRun')).toHaveLength(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(4_900) })
+      expect(calls.filter((call) => call.command === 'workflow.getRun')).toHaveLength(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+      expect(calls.filter((call) => call.command === 'workflow.getRun')).toHaveLength(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+      expect(calls.filter((call) => call.command === 'workflow.getRun')).toHaveLength(2)
+      unmount()
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+      expect(calls.filter((call) => call.command === 'workflow.getRun')).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('запрашивает следующую страницу по cursor и останавливается после terminal catch-up', async () => {
+    vi.useFakeTimers()
+    try {
+      const started = event('workflow.started', { run_id: 'run-1', error_code: '' }, 1)
+      const { rerender } = render(<WorkflowPanel connection="connected" events={[started]} workspace={WORKSPACE} />)
+      const page = Array.from({ length: 200 }, (_, index) => ({
+        sequence: index + 1,
+        node_id: 'node',
+        event_type: `event.${index + 1}`,
+        payload: '{}',
+        created_at_ms: index
+      }))
+      rerender(
+        <WorkflowPanel
+          connection="connected"
+          events={[
+            event('workflow.events', { run_id: 'run-1', error_code: '', events: page }, 3),
+            runProjection('running', 'running', 2),
+            started
+          ]}
+          workspace={WORKSPACE}
+        />
+      )
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      const nextPage = calls.filter((call) => call.command === 'workflow.listEvents').at(-1)
+      expect(nextPage?.payload).toMatchObject({ afterSequence: 200, limit: 200 })
+
+      rerender(
+        <WorkflowPanel
+          connection="connected"
+          events={[
+            event('workflow.events', { run_id: 'run-1', error_code: '', events: [] }, 5),
+            runProjection('completed', 'succeeded', 4),
+            event('workflow.events', { run_id: 'run-1', error_code: '', events: page }, 3),
+            runProjection('running', 'running', 2),
+            started
+          ]}
+          workspace={WORKSPACE}
+        />
+      )
+      const requestsAfterTerminal = calls.filter((call) => call.command === 'workflow.getRun').length
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
+      expect(calls.filter((call) => call.command === 'workflow.getRun')).toHaveLength(requestsAfterTerminal)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('перезапускает polling baseline при смене Core instance и epoch', async () => {
+    vi.useFakeTimers()
+    try {
+      const started = { ...event('workflow.started', { run_id: 'run-1', error_code: '' }, 9), coreInstanceId: 'core-old', sessionEpoch: 3 }
+      const { rerender } = render(<WorkflowPanel connection="connected" events={[started]} workspace={WORKSPACE} />)
+      const firstRequest = calls.filter((call) => call.command === 'workflow.listEvents').at(-1)
+      expect(firstRequest?.payload).toMatchObject({ afterSequence: -1 })
+
+      rerender(
+        <WorkflowPanel
+          connection="replaying"
+          events={[
+            { ...event('workflow.events', { run_id: 'run-1', error_code: '', events: [] }, 2), coreInstanceId: 'core-new', sessionEpoch: 1 },
+            { ...runProjection('running', 'running', 1), coreInstanceId: 'core-new', sessionEpoch: 1 },
+            started
+          ]}
+          workspace={WORKSPACE}
+        />
+      )
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(calls.filter((call) => call.command === 'workflow.listEvents')).toHaveLength(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

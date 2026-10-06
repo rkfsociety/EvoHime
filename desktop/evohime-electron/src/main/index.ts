@@ -45,6 +45,13 @@ import { runBrowserBackend } from './browser-backend'
 const logger = new JsonlLogger({ directory: logDirectory(), stream: 'main' })
 const log: HardeningOptions['log'] = (level, event, fields) => logger.write(level, event, fields)
 
+function exitAfterLoggerFlush(code: number): void {
+  void logger.flush().then((flushed) => {
+    if (!flushed) process.stderr.write('EvoHime diagnostics flush timed out; exiting with a bounded log tail.\n')
+    app.exit(code)
+  })
+}
+
 const reloadLimiter = new ReloadLimiter()
 
 let mainWindow: BrowserWindow | null = null
@@ -87,20 +94,20 @@ const hardening: HardeningOptions = { rendererOrigin, log }
 if (process.argv.includes('--evohime-browser-backend')) {
   void runBrowserBackend().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error))
-    app.exit(1)
+    exitAfterLoggerFlush(1)
   })
 } else if (process.argv.includes(BUILD_WORKER_FLAG)) {
   void runBuildWorkerProcess(process.argv.slice(2))
-    .then(() => app.exit(0))
+    .then(() => exitAfterLoggerFlush(0))
     .catch((error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error))
-      app.exit(1)
+      exitAfterLoggerFlush(1)
     })
 } else if (!app.requestSingleInstanceLock()) {
   // The supervisor owns single-instance for Core; this lock only prevents a
   // second shell. The first instance focuses its window instead.
   log('info', 'shell.second_instance_exit', {})
-  app.exit(0)
+  exitAfterLoggerFlush(0)
 } else {
   hardenProcess(hardening)
 
@@ -240,28 +247,33 @@ if (process.argv.includes('--evohime-browser-backend')) {
       }
     })
 
-    const buildCurrentSupportBundle = (snapshotEvent: import('@shared/api').CoreEvent): { readonly archive: Buffer; readonly issueDraft: string } => {
+    const buildCurrentSupportBundle = async (snapshotEvent: import('@shared/api').CoreEvent): Promise<{ readonly archive: Buffer; readonly issueDraft: string }> => {
+      const shellLogsFlushed = await logger.flush()
       let snapshot: unknown
       try { snapshot = JSON.parse(snapshotEvent.payload) as unknown } catch { throw new Error('Core diagnostic snapshot was malformed.') }
       const files = buildSupportBundleFiles({
         snapshot,
-        runtime: { appVersion: app.getVersion(), platform: process.platform, architecture: process.arch, state: lastShellState, update: lastUpdateStatus, repair: lastRepairStatus },
+        runtime: {
+          appVersion: app.getVersion(), platform: process.platform, architecture: process.arch,
+          state: lastShellState, update: lastUpdateStatus, repair: lastRepairStatus,
+          shellDiagnostics: { ...logger.status, snapshotAvailable: shellLogsFlushed }
+        },
         events: recentCoreEvents,
-        // Keep the shell stream first for the fallback marker, then include
-        // Core/Supervisor and one rotated shell generation. The bundle helper
-        // applies its own line, file and total-size bounds.
+        // Include shell files only after a complete drain so the bundle never
+        // races an in-progress JSONL append. Core/Supervisor remain bounded by
+        // the bundle reader.
         logs: [
-          logger.path,
+          ...(shellLogsFlushed ? [logger.path] : []),
           join(logDirectory(), 'core.jsonl'),
           join(logDirectory(), 'supervisor.jsonl'),
-          `${logger.path}.1`
+          ...(shellLogsFlushed ? [`${logger.path}.1`] : [])
         ]
       })
       return { archive: serializeSupportBundle(files), issueDraft: files.issueDraft }
     }
 
     const submitSupportBundle = async (): Promise<string> => {
-      const bundle = buildCurrentSupportBundle(await requestDiagnosticSnapshot())
+      const bundle = await buildCurrentSupportBundle(await requestDiagnosticSnapshot())
       const token = await resolveGithubToken({ configured: updateConfig.githubToken })
       const url = await reportSupportBundle(updateConfig, bundle, {
         token: token?.token ?? null,
@@ -295,7 +307,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
           ? await dialog.showSaveDialog(window, { defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
           : await dialog.showSaveDialog({ defaultPath: 'evohime-support-bundle.zip', filters: [{ name: 'ZIP archive', extensions: ['zip'] }] })
         if (save.canceled || !save.filePath) return { cancelled: true, path: '' }
-        writeFileSync(save.filePath, buildCurrentSupportBundle(await requestDiagnosticSnapshot()).archive, { mode: 0o600 })
+        writeFileSync(save.filePath, (await buildCurrentSupportBundle(await requestDiagnosticSnapshot())).archive, { mode: 0o600 })
         return { cancelled: false, path: save.filePath }
       },
       submitDiagnostics: async () => ({ url: await submitSupportBundle() }),
@@ -361,7 +373,13 @@ if (process.argv.includes('--evohime-browser-backend')) {
     ambientHotkeyRegistered = false
   })
 
-  app.on('before-quit', () => {
+  let shutdownStarted = false
+  let allowQuitAfterFlush = false
+  app.on('before-quit', (event) => {
+    if (allowQuitAfterFlush) return
+    event.preventDefault()
+    if (shutdownStarted) return
+    shutdownStarted = true
     client?.stop()
     codex?.dispose()
     updates?.stop()
@@ -380,6 +398,11 @@ if (process.argv.includes('--evohime-browser-backend')) {
     tray?.destroy()
     overlay?.destroy()
     log('info', 'shell.stopping', {})
+    void logger.flush().then((flushed) => {
+      if (!flushed) process.stderr.write('EvoHime diagnostics flush timed out; exiting with a bounded log tail.\n')
+      allowQuitAfterFlush = true
+      app.quit()
+    })
   })
 }
 
@@ -614,7 +637,7 @@ function quitForUpdate(): void {
   }
   const timer = setTimeout(() => {
     log('warn', 'shell.update_quit_forced', {})
-    app.exit(0)
+    exitAfterLoggerFlush(0)
   }, UPDATE_QUIT_GRACE_MS)
   timer.unref?.()
 }
