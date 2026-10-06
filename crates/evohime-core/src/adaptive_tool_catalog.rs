@@ -140,6 +140,24 @@ pub fn build_projection(
     })
 }
 
+/// Resolves a provider-returned function name only to one exact tool in the
+/// active allow-listed loadout. Providers that replace dots with underscores
+/// can therefore round-trip builtin ids without gaining access to other tools.
+pub(crate) fn canonical_tool_call_name(name: &str, allowed_tool_ids: &[String]) -> Option<String> {
+    if allowed_tool_ids.iter().any(|tool_id| tool_id == name) {
+        return Some(name.to_owned());
+    }
+
+    let mut aliases = allowed_tool_ids
+        .iter()
+        .filter(|tool_id| tool_id.replace('.', "_") == name);
+    let canonical = aliases.next()?;
+    if aliases.next().is_some() {
+        return None;
+    }
+    Some(canonical.clone())
+}
+
 pub fn select_deterministic(
     projection: &ToolCatalogProjection,
     query: &str,
@@ -334,6 +352,33 @@ mod tests {
         let result = select_deterministic(&projection, "read file", 1).unwrap();
         assert_eq!(result.selected_ids, ["filesystem.read"]);
         assert!(result.cache_key.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn canonical_tool_call_name_accepts_only_unique_aliases_from_the_loadout() {
+        let allowed = vec!["filesystem.list".to_string(), "git.status".to_string()];
+
+        assert_eq!(
+            canonical_tool_call_name("filesystem.list", &allowed).as_deref(),
+            Some("filesystem.list")
+        );
+        assert_eq!(
+            canonical_tool_call_name("filesystem_list", &allowed).as_deref(),
+            Some("filesystem.list")
+        );
+        assert_eq!(canonical_tool_call_name("filesystem_read", &allowed), None);
+    }
+
+    #[test]
+    fn canonical_tool_call_name_preserves_exact_name_and_rejects_ambiguous_aliases() {
+        let exact_preferred = vec!["filesystem.list".to_string(), "filesystem_list".to_string()];
+        assert_eq!(
+            canonical_tool_call_name("filesystem_list", &exact_preferred).as_deref(),
+            Some("filesystem_list")
+        );
+
+        let ambiguous = vec!["a.b_c".to_string(), "a_b.c".to_string()];
+        assert_eq!(canonical_tool_call_name("a_b_c", &ambiguous), None);
     }
 
     #[test]

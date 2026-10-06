@@ -760,6 +760,13 @@ impl ToolAgent {
                 }),
             );
             let mut tool_calls = result.tool_calls.clone();
+            for call in &mut tool_calls {
+                if let Some(canonical_name) =
+                    adaptive_tool_catalog::canonical_tool_call_name(&call.name, &tool_names)
+                {
+                    call.name = canonical_name;
+                }
+            }
             if !strategy_fanout_call && tool_calls.is_empty() {
                 let parsed_legacy_calls = parse_legacy_function_calls(&result.content, iteration);
                 if !parsed_legacy_calls.is_empty() {

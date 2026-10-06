@@ -284,6 +284,10 @@ fn map_tool_error(error: ToolError) -> NodeError {
             "permission_denied",
             format!("право {permission:?} не выдано"),
         ),
+        ToolError::WorkspaceBoundaryDenied(permission) => NodeError::permanent(
+            "workspace_boundary_denied",
+            format!("путь вышел за выбранный workspace для права {permission:?}"),
+        ),
         ToolError::NeedsApproval(_) => NodeError::permanent(
             "approval_required",
             "инструменту требуется подтверждение, объявите approval у узла",

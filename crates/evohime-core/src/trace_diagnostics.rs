@@ -34,7 +34,7 @@ pub(crate) fn classify_tool_path(
     arguments: &str,
     workspace_root: &Path,
 ) -> Option<PathTraceMetadata> {
-    if !tool_name.starts_with("filesystem.") {
+    if !tool_name.starts_with("filesystem.") && !tool_name.starts_with("filesystem_") {
         return None;
     }
     let value = serde_json::from_str::<Value>(arguments).ok()?;
@@ -237,5 +237,13 @@ mod tests {
     fn ignores_non_filesystem_tools_and_malformed_arguments() {
         assert!(classify_tool_path("shell.execute", r#"{"path":"x"}"#, &workspace()).is_none());
         assert!(classify_tool_path("filesystem.read", "not-json", &workspace()).is_none());
+    }
+
+    #[test]
+    fn recognizes_underscore_filesystem_aliases_in_historical_traces() {
+        let metadata = classify_tool_path("filesystem_list", r#"{"path":".."}"#, &workspace())
+            .expect("underscore alias is a filesystem tool");
+        assert_eq!(metadata.path_form, "relative");
+        assert_eq!(metadata.path_boundary_reason, "parent_traversal");
     }
 }

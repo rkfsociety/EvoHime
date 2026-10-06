@@ -110,7 +110,7 @@ mod tests {
             .expect_err("path traversal blocked");
 
         match error {
-            ToolError::PermissionDenied(Permission::FilesystemRead) => {}
+            ToolError::WorkspaceBoundaryDenied(Permission::FilesystemRead) => {}
             other => panic!("unexpected error: {other:?}"),
         }
     }

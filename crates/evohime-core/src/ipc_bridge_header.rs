@@ -339,6 +339,7 @@ fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static 
         evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
         evohime_tool_runtime::ToolError::InvalidInput { .. } => "invalid_input",
         evohime_tool_runtime::ToolError::PermissionDenied(_) => "permission_denied",
+        evohime_tool_runtime::ToolError::WorkspaceBoundaryDenied(_) => "permission_denied",
         evohime_tool_runtime::ToolError::NotFound { .. } => "not_found",
         evohime_tool_runtime::ToolError::NeedsApproval(_) => "approval_required",
         evohime_tool_runtime::ToolError::ApprovalMismatch => "approval_mismatch",

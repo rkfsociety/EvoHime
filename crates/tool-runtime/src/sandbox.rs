@@ -61,16 +61,19 @@ impl WorkspaceSandbox {
         })?;
         let mut existing_parent = parent;
         while !existing_parent.exists() {
-            existing_parent = existing_parent
-                .parent()
-                .ok_or(ToolError::PermissionDenied(Permission::FilesystemWrite))?;
+            existing_parent =
+                existing_parent
+                    .parent()
+                    .ok_or(ToolError::WorkspaceBoundaryDenied(
+                        Permission::FilesystemWrite,
+                    ))?;
         }
         let canonical_parent = existing_parent
             .canonicalize()
             .map_err(|e| ToolError::Execution(format!("parent path invalid: {e}")))?;
         let suffix = parent
             .strip_prefix(existing_parent)
-            .map_err(|_| ToolError::PermissionDenied(Permission::FilesystemWrite))?;
+            .map_err(|_| ToolError::WorkspaceBoundaryDenied(Permission::FilesystemWrite))?;
         let resolved = canonical_parent
             .join(suffix)
             .join(
@@ -88,7 +91,7 @@ impl WorkspaceSandbox {
         if path.starts_with(&self.root) {
             Ok(path)
         } else {
-            Err(ToolError::PermissionDenied(permission))
+            Err(ToolError::WorkspaceBoundaryDenied(permission))
         }
     }
 
@@ -176,7 +179,9 @@ mod tests {
         assert!(sandbox.resolve_existing("a.txt").is_ok());
         assert!(matches!(
             sandbox.resolve_existing(".."),
-            Err(ToolError::PermissionDenied(Permission::FilesystemRead))
+            Err(ToolError::WorkspaceBoundaryDenied(
+                Permission::FilesystemRead
+            ))
         ));
     }
 
