@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -264,31 +265,30 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
 
   return (
     <section className="settings-info workflow-recipe" aria-label="Guided capability recipes">
-      <h3>Готовые сценарии</h3>
-      <p>Каталог и решения о запуске принадлежат Core. Исполняются только сценарии с подтверждённым workflow binding.</p>
-      {!connected ? <p role="status">Ядро недоступно — каталог и состояние запуска не обновляются.</p> : null}
-      {catalog?.error_code ? <p role="alert">Каталог недоступен: {catalog.error_code}</p> : null}
+      <h3>{translate("Готовые сценарии")}</h3>
+      <p>{translate("Каталог и решения о запуске принадлежат Core. Исполняются только сценарии с подтверждённым workflow binding.")}</p>
+      {!connected ? <p role="status">{translate("Ядро недоступно — каталог и состояние запуска не обновляются.")}</p> : null}
+      {catalog?.error_code ? <p role="alert">{translate("Каталог недоступен:")}{translate(catalog.error_code)}</p> : null}
       <label>
-        Сценарий
-        <select value={selectedId} onChange={(event) => changeRecipe(event.target.value)} disabled={!connected || recipes.length === 0 || Boolean(startPending)}>
+        {translate("Сценарий")}<select value={selectedId} onChange={(event) => changeRecipe(event.target.value)} disabled={!connected || recipes.length === 0 || Boolean(startPending)}>
           {recipes.map((recipe) => (
             <option key={recipe.id} value={recipe.id}>
-              {recipe.title}{recipe.availability.status === 'unsupported' ? ' · недоступен' : ''}
+              {translate(recipe.title)}{translate(recipe.availability.status === 'unsupported' ? translate(" · недоступен") : '')}
             </option>
           ))}
         </select>
       </label>
       {selected ? (
         <>
-          <p>{selected.description}</p>
+          <p>{translate(selected.description)}</p>
           {selected.availability.status === 'unsupported' ? (
-            <p role="status">Запуск недоступен: {selected.availability.reason_code}</p>
+            <p role="status">{translate("Запуск недоступен:")}{translate(selected.availability.reason_code)}</p>
           ) : (
-            <p>Binding: {selected.workflow_binding?.template_id} · версия {selected.workflow_binding?.template_version}</p>
+            <p>Binding: {translate(selected.workflow_binding?.template_id)} {translate("· версия")}{translate(selected.workflow_binding?.template_version)}</p>
           )}
           {selected.inputs.map((input) => (
             <label key={input.name}>
-              {input.title}{input.required ? ' *' : ''}
+              {translate(input.title)}{translate(input.required ? ' *' : '')}
               <input
                 type="text"
                 maxLength={input.max_chars}
@@ -306,83 +306,78 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
           ))}
           <div>
             <button type="button" disabled={!api || !connected || !workspace || Boolean(preflightPending) || Boolean(startPending)} onClick={() => void check()}>
-              Проверить
-            </button>{' '}
+              {translate("Проверить")}</button>{translate(' ')}
             <button type="button" disabled={!api || !connected || !ready || Boolean(startPending)} onClick={() => void start()}>
-              Запустить
-            </button>
+              {translate("Запустить")}</button>
           </div>
         </>
-      ) : recipes.length === 0 && connected ? <p role="status">Core ещё не прислал каталог сценариев.</p> : null}
+      ) : recipes.length === 0 && connected ? <p role="status">{translate("Core ещё не прислал каталог сценариев.")}</p> : null}
 
       {preflight && confirmedSignature === signature ? (
-        <div aria-label="Результат проверки сценария">
-          <h4>Проверка Core: {statusLabel(preflight.state)}</h4>
-          {preflight.preview.length > 0 ? <ol>{preflight.preview.map((line) => <li key={line}>{line}</li>)}</ol> : null}
-          {preflight.reason_codes.length > 0 ? <p>Коды: {preflight.reason_codes.join(', ')}</p> : null}
-          {preflight.required_capabilities.length > 0 ? <p>Требуются: {preflight.required_capabilities.join(', ')}</p> : null}
-          {preflight.optional_capabilities.length > 0 ? <p>Дополнительно: {preflight.optional_capabilities.join(', ')}</p> : null}
+        <div aria-label={translate("Результат проверки сценария")}>
+          <h4>{translate("Проверка Core:")}{translate(statusLabel(preflight.state))}</h4>
+          {preflight.preview.length > 0 ? <ol>{preflight.preview.map((line) => <li key={line}>{translate(line)}</li>)}</ol> : null}
+          {preflight.reason_codes.length > 0 ? <p>{translate("Коды:")}{translate(preflight.reason_codes.join(', '))}</p> : null}
+          {preflight.required_capabilities.length > 0 ? <p>{translate("Требуются:")}{translate(preflight.required_capabilities.join(', '))}</p> : null}
+          {preflight.optional_capabilities.length > 0 ? <p>{translate("Дополнительно:")}{translate(preflight.optional_capabilities.join(', '))}</p> : null}
           {preflight.workflow_budget ? (
             <p>
-              Бюджет: {preflight.workflow_budget.max_parallel_nodes} параллельных узлов · {preflight.workflow_budget.max_tokens} токенов · {preflight.workflow_budget.max_tool_calls} вызовов · {preflight.workflow_budget.max_wall_clock_ms} мс
-            </p>
+              {translate("Бюджет:")}{translate(preflight.workflow_budget.max_parallel_nodes)} {translate("параллельных узлов ·")}{translate(preflight.workflow_budget.max_tokens)} {translate("токенов ·")}{translate(preflight.workflow_budget.max_tool_calls)} {translate("вызовов ·")}{translate(preflight.workflow_budget.max_wall_clock_ms)} {translate("мс")}</p>
           ) : null}
-          {preflight.approval_points.length > 0 ? <p>Требуют подтверждения: {preflight.approval_points.join(', ')}</p> : null}
-          {preflight.degraded_paths.length > 0 ? <p>Перепроверяются при запуске: {preflight.degraded_paths.join(', ')}</p> : null}
+          {preflight.approval_points.length > 0 ? <p>{translate("Требуют подтверждения:")}{translate(preflight.approval_points.join(', '))}</p> : null}
+          {preflight.degraded_paths.length > 0 ? <p>{translate("Перепроверяются при запуске:")}{translate(preflight.degraded_paths.join(', '))}</p> : null}
           {preflight.revisions.length > 0 ? (
             <details>
-              <summary>Зафиксированные и отсутствующие revisions</summary>
+              <summary>{translate("Зафиксированные и отсутствующие revisions")}</summary>
               <ul>
                 {preflight.revisions.map((revision) => (
                   <li key={`${revision.owner_kind}:${revision.owner_id}`}>
-                    {revision.owner_kind} · {revision.owner_id} · {revision.state === 'pinned' ? `v${revision.revision ?? '—'}` : `не закреплён (${revision.reason_code})`}
-                    {revision.content_hash ? ` · ${revision.content_hash}` : ''}
+                    {translate(revision.owner_kind)} · {translate(revision.owner_id)} · {translate(revision.state === 'pinned' ? `v${revision.revision ?? '—'}` : `не закреплён (${revision.reason_code})`)}
+                    {translate(revision.content_hash ? ` · ${revision.content_hash}` : '')}
                   </li>
                 ))}
               </ul>
             </details>
           ) : null}
-          {preflight.run_graph_hash ? <small>Graph hash: {preflight.run_graph_hash}</small> : null}
+          {preflight.run_graph_hash ? <small>Graph hash: {translate(preflight.run_graph_hash)}</small> : null}
         </div>
       ) : null}
 
       {runId ? (
-        <div aria-label="Состояние сценария">
-          <h4>Запуск {runId}</h4>
-          <p role="status">{statusLabel(runState || 'unknown_state')}</p>
+        <div aria-label={translate("Состояние сценария")}>
+          <h4>{translate("Запуск")}{translate(runId)}</h4>
+          <p role="status">{translate(statusLabel(runState || 'unknown_state'))}</p>
           {workflowRun ? (
             <ol>
               {workflowRun.nodes.map((node) => (
-                <li key={node.node_id}>{node.node_id} · {node.action_kind} · {statusLabel(node.state)}{node.error_code ? ` · ${node.error_code}` : ''}</li>
+                <li key={node.node_id}>{translate(node.node_id)} · {translate(node.action_kind)} · {translate(statusLabel(node.state))}{translate(node.error_code ? ` · ${node.error_code}` : '')}</li>
               ))}
             </ol>
           ) : null}
           {recipeRun ? (
             <details>
-              <summary>Происхождение и повторяемость</summary>
-              <p>{recipeRun.recipe_id} v{recipeRun.recipe_version} · {recipeRun.template_id} v{recipeRun.template_version}</p>
-              <p>Recipe hash: {recipeRun.recipe_hash}</p>
-              <p>Template hash: {recipeRun.template_graph_hash}</p>
-              <p>Input hash: {recipeRun.input_hash}</p>
-              <p>Workspace hash: {recipeRun.workspace_hash}</p>
+              <summary>{translate("Происхождение и повторяемость")}</summary>
+              <p>{translate(recipeRun.recipe_id)} v{translate(recipeRun.recipe_version)} · {translate(recipeRun.template_id)} v{translate(recipeRun.template_version)}</p>
+              <p>Recipe hash: {translate(recipeRun.recipe_hash)}</p>
+              <p>Template hash: {translate(recipeRun.template_graph_hash)}</p>
+              <p>Input hash: {translate(recipeRun.input_hash)}</p>
+              <p>Workspace hash: {translate(recipeRun.workspace_hash)}</p>
               {recipeRunEvent?.payload.replay_options ? (
                 <>
-                  <p>ReproduceExact: недоступно ({recipeRunEvent.payload.replay_options.reproduce_exact.reason_code})</p>
-                  <p>ReRunWithCurrentCompatible: недоступно ({recipeRunEvent.payload.replay_options.rerun_current_compatible.reason_code})</p>
+                  <p>{translate("ReproduceExact: недоступно (")}{translate(recipeRunEvent.payload.replay_options.reproduce_exact.reason_code)})</p>
+                  <p>{translate("ReRunWithCurrentCompatible: недоступно (")}{translate(recipeRunEvent.payload.replay_options.rerun_current_compatible.reason_code)})</p>
                 </>
               ) : null}
-              <p>ForkAndModify создаёт отдельный draft из исходного шаблона после успешного запуска.</p>
+              <p>{translate("ForkAndModify создаёт отдельный draft из исходного шаблона после успешного запуска.")}</p>
             </details>
           ) : null}
           <button type="button" disabled={!api || !connected || ['completed', 'failed', 'cancelled', 'degraded', 'interrupted'].includes(runState)} onClick={() => void cancel()}>
-            Отменить запуск
-          </button>{' '}
+            {translate("Отменить запуск")}</button>{translate(' ')}
           <button type="button" disabled={!api || !connected || runState !== 'completed' || Boolean(forkPending)} onClick={() => void fork()}>
-            Создать draft из шаблона
-          </button>
+            {translate("Создать draft из шаблона")}</button>
         </div>
       ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
+      {notice ? <p role="status">{translate(notice)}</p> : null}
     </section>
   )
 }

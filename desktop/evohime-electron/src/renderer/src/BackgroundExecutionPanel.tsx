@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import type { BackgroundExecutionProjection, ConnectionState, CoreEvent, ShellEvent } from '@shared/api'
 import { useEffect, useMemo, useState } from 'react'
 import type { JSX } from 'react'
@@ -46,15 +47,15 @@ export function BackgroundExecutionPanel({ connection, events }: { readonly conn
   const body = projection?.projection
   return <section className="panel" aria-label="Durable Background Execution">
     <h2>Durable Background Execution</h2>
-    <p>Core-owned detached runs, schedules, waits, queues и immutable attempt history. Панель показывает только redacted metadata.</p>
+    <p>{translate("Core-owned detached runs, schedules, waits, queues и immutable attempt history. Панель показывает только redacted metadata.")}</p>
     <div className="panel__actions">
-      <label>Операция <select value={operation} onChange={(event) => setOperation(event.target.value as Operation)}>{OPERATIONS.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-      <label>Run ID <input value={runId} onChange={(event) => setRunId(event.target.value)} maxLength={128} placeholder="для операции run-level" /></label>
+      <label>{translate("Операция")}<select value={operation} onChange={(event) => setOperation(event.target.value as Operation)}>{OPERATIONS.map((item) => <option key={item} value={item}>{translate(item)}</option>)}</select></label>
+      <label>Run ID <input value={runId} onChange={(event) => setRunId(event.target.value)} maxLength={128} placeholder={translate("для операции run-level")} /></label>
       <label>Bounded JSON <textarea value={payload} onChange={(event) => setPayload(event.target.value)} maxLength={64 * 1024} aria-label="Background execution JSON" /></label>
-      <button type="button" onClick={() => void send()} disabled={!api || connection !== 'connected'}>Запросить</button>
+      <button type="button" onClick={() => void send()} disabled={!api || connection !== 'connected'}>{translate("Запросить")}</button>
     </div>
-    <p role="status">Соединение: {connection} · Projection: {projection?.status ?? 'unknown'} · Ошибка: {projection?.errorCode || 'нет'}</p>
-    {message ? <p role="status">{message}</p> : null}
-    {body ? <pre aria-label="Background execution projection">{JSON.stringify(body, null, 2)}</pre> : <p>Данных ещё нет. При отключённом Core verdict не вычисляется в renderer.</p>}
+    <p role="status">{translate("Соединение:")}{translate(connection)} · Projection: {translate(projection?.status ?? 'unknown')} {translate("· Ошибка:")}{translate(projection?.errorCode || translate("нет"))}</p>
+    {message ? <p role="status">{translate(message)}</p> : null}
+    {body ? <pre aria-label="Background execution projection">{translate(JSON.stringify(body, null, 2))}</pre> : <p>{translate("Данных ещё нет. При отключённом Core verdict не вычисляется в renderer.")}</p>}
   </section>
 }

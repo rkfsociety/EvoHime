@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import type { ConnectionState, PersistentAgentOrganizationRegistryProjection, ShellEvent } from '@shared/api'
 import { useShellApi } from './shell-api'
@@ -26,14 +27,14 @@ export function PersistentAgentOrganizationRegistryPanel({ connection }: { reado
   }
 
   return <section className="panel" aria-label="Persistent Agent Organization Registry">
-    <h2>Организация постоянных агентов</h2>
-    <p>Durable identity, reporting graph, Goal revision и assignment snapshots принадлежат Core. Runtime, grants, credentials и raw output здесь не хранятся.</p>
-    <label>Операция<select value={operation} onChange={event => setOperation(event.target.value as Operation)}>{OPERATIONS.map(item => <option key={item}>{item}</option>)}</select></label>
+    <h2>{translate("Организация постоянных агентов")}</h2>
+    <p>{translate("Durable identity, reporting graph, Goal revision и assignment snapshots принадлежат Core. Runtime, grants, credentials и raw output здесь не хранятся.")}</p>
+    <label>{translate("Операция")}<select value={operation} onChange={event => setOperation(event.target.value as Operation)}>{OPERATIONS.map(item => <option key={item}>{translate(item)}</option>)}</select></label>
     <label>Agent ID<input value={agentId} onChange={event => setAgentId(event.target.value)} maxLength={128} /></label>
     <label>Owner scope<input value={ownerScope} onChange={event => setOwnerScope(event.target.value)} maxLength={128} /></label>
     <label>Payload JSON<textarea value={payload} onChange={event => setPayload(event.target.value)} maxLength={64 * 1024} /></label>
-    <button type="button" onClick={() => void send()}>Отправить в Core</button>
-    {projection ? <><p role="status">{projection.operation}: {projection.status} · revision {projection.revision}</p><pre>{JSON.stringify(projection.projection, null, 2)}</pre></> : <p role="status">Ожидание проекции Core.</p>}
-    {message ? <p role="status">{message}</p> : null}
+    <button type="button" onClick={() => void send()}>{translate("Отправить в Core")}</button>
+    {projection ? <><p role="status">{translate(projection.operation)}: {translate(projection.status)} · revision {translate(projection.revision)}</p><pre>{translate(JSON.stringify(projection.projection, null, 2))}</pre></> : <p role="status">{translate("Ожидание проекции Core.")}</p>}
+    {message ? <p role="status">{translate(message)}</p> : null}
   </section>
 }

@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -19,15 +20,15 @@ export function ModelResiliencePolicyPanel(): React.JSX.Element {
     return unsubscribe
   }, [api])
   return <section className="panel" aria-label="Model Resilience Policy">
-    <h2>Надёжность модели</h2>
-    {!projection && <p>Ожидание состояния Core…</p>}
+    <h2>{translate("Надёжность модели")}</h2>
+    {!projection && <p>{translate("Ожидание состояния Core…")}</p>}
     {projection?.status === 'ok' && <>
-      <p>Политика: {projection.policy_id}</p>
-      <p>Попытки: {projection.attempts} · retry: {projection.retries} · fallback: {projection.fallbacks}</p>
-      <p>Терминальное правило: {projection.terminal_outcome}</p>
-      <p>Hash: {projection.policy_hash}</p>
+      <p>{translate("Политика:")}{translate(projection.policy_id)}</p>
+      <p>{translate("Попытки:")}{translate(projection.attempts)} · retry: {translate(projection.retries)} · fallback: {translate(projection.fallbacks)}</p>
+      <p>{translate("Терминальное правило:")}{translate(projection.terminal_outcome)}</p>
+      <p>Hash: {translate(projection.policy_hash)}</p>
     </>}
-    {projection && projection.status !== 'ok' && <p>Состояние: {projection.status} ({projection.error_code || 'unknown'})</p>}
-    <p>Профили проверяются Core; prompt, output, credentials и provider payload в UI не передаются.</p>
+    {projection && projection.status !== 'ok' && <p>{translate("Состояние:")}{translate(projection.status)} ({translate(projection.error_code || 'unknown')})</p>}
+    <p>{translate("Профили проверяются Core; prompt, output, credentials и provider payload в UI не передаются.")}</p>
   </section>
 }

@@ -1,3 +1,6 @@
+import type { AppLocale } from '@shared/api'
+export type { AppLocale } from '@shared/api'
+
 export type AppearanceTheme = 'system' | 'dark' | 'light'
 export type AppearanceDensity = 'comfortable' | 'compact'
 export type AppearanceAccent = 'violet' | 'blue' | 'teal' | 'rose'
@@ -9,6 +12,7 @@ export interface AppearanceSettings {
   readonly accent: AppearanceAccent
   readonly scale: AppearanceScale
   readonly reduceMotion: boolean
+  readonly locale: AppLocale
 }
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
@@ -16,7 +20,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   density: 'comfortable',
   accent: 'violet',
   scale: '100',
-  reduceMotion: false
+  reduceMotion: false,
+  locale: 'ru'
 }
 
 const STORAGE_KEY = 'evohime.appearance.v1'
@@ -24,6 +29,7 @@ const THEMES: readonly AppearanceTheme[] = ['system', 'dark', 'light']
 const DENSITIES: readonly AppearanceDensity[] = ['comfortable', 'compact']
 const ACCENTS: readonly AppearanceAccent[] = ['violet', 'blue', 'teal', 'rose']
 const SCALES: readonly AppearanceScale[] = ['90', '100', '110']
+const LOCALES: readonly AppLocale[] = ['ru', 'en']
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -38,7 +44,8 @@ export function loadAppearance(): AppearanceSettings {
       density: DENSITIES.includes(stored['density'] as AppearanceDensity) ? stored['density'] as AppearanceDensity : DEFAULT_APPEARANCE.density,
       accent: ACCENTS.includes(stored['accent'] as AppearanceAccent) ? stored['accent'] as AppearanceAccent : DEFAULT_APPEARANCE.accent,
       scale: SCALES.includes(stored['scale'] as AppearanceScale) ? stored['scale'] as AppearanceScale : DEFAULT_APPEARANCE.scale,
-      reduceMotion: typeof stored['reduceMotion'] === 'boolean' ? stored['reduceMotion'] : DEFAULT_APPEARANCE.reduceMotion
+      reduceMotion: typeof stored['reduceMotion'] === 'boolean' ? stored['reduceMotion'] : DEFAULT_APPEARANCE.reduceMotion,
+      locale: LOCALES.includes(stored['locale'] as AppLocale) ? stored['locale'] as AppLocale : DEFAULT_APPEARANCE.locale
     }
   } catch {
     return DEFAULT_APPEARANCE

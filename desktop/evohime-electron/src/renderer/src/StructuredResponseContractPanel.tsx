@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -12,6 +13,6 @@ export function StructuredResponseContractPanel(): React.JSX.Element {
   }, [api])
   return <section className="settings-info" aria-label="Structured Response Contract">
     <h3>Structured Response Contract</h3>
-    <p>{status}. Core валидирует schema, strategy и provenance; raw output не попадает в UI.</p>
+    <p>{translate(status)}{translate(". Core валидирует schema, strategy и provenance; raw output не попадает в UI.")}</p>
   </section>
 }

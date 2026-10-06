@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -23,14 +24,14 @@ export function AgenticBrowserSessionPanel({ onClose }: { readonly onClose: () =
   })
   return <section className="panel browser-session-panel" aria-label="Agentic Browser Session">
     <div className="panel__header">
-      <div><h2>Браузерная сессия</h2><span>Дополнительная панель</span></div>
-      <button type="button" onClick={onClose}>Скрыть</button>
+      <div><h2>{translate("Браузерная сессия")}</h2><span>{translate("Дополнительная панель")}</span></div>
+      <button type="button" onClick={onClose}>{translate("Скрыть")}</button>
     </div>
-    <p role="status">{projection ? `${projection.state ?? 'unknown'} · rev ${projection.revision ?? 0}` : 'Ожидание состояния Core…'}</p>
-    {projection?.session_id && <p>Сессия: {projection.session_id}</p>}
-    {projection?.profile_policy && <p>Профиль: {projection.profile_policy} · сеть: {projection.network_policy}</p>}
-    {projection?.error_code && <p role="alert">Ошибка: {projection.error_code}</p>}
-    {!projection?.session_id && <button type="button" onClick={() => void create()}>Создать сессию</button>}
-    <p>CDP: {projection?.cdp_endpoint ? 'запрещён к показу' : 'не передаётся'} · credentials: {projection?.credentials ? 'запрещены' : 'не передаются'}</p>
+    <p role="status">{translate(projection ? `${projection.state ?? 'unknown'} · rev ${projection.revision ?? 0}` : translate("Ожидание состояния Core…"))}</p>
+    {projection?.session_id && <p>{translate("Сессия:")}{translate(projection.session_id)}</p>}
+    {projection?.profile_policy && <p>{translate("Профиль:")}{translate(projection.profile_policy)} {translate("· сеть:")}{translate(projection.network_policy)}</p>}
+    {projection?.error_code && <p role="alert">{translate("Ошибка:")}{translate(projection.error_code)}</p>}
+    {!projection?.session_id && <button type="button" onClick={() => void create()}>{translate("Создать сессию")}</button>}
+    <p>CDP: {translate(projection?.cdp_endpoint ? translate("запрещён к показу") : translate("не передаётся"))} · credentials: {translate(projection?.credentials ? translate("запрещены") : translate("не передаются"))}</p>
   </section>
 }

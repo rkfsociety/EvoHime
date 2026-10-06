@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 import type { ConnectionState, ShellEvent } from '@shared/api'
@@ -30,9 +31,9 @@ export function LocalModelPerformanceCalibrationPanel({ connection }: { readonly
   }, [api, connection])
 
   return <section className="settings-info" aria-label="Local Model Performance Calibration">
-    <h3>Производительность локальной модели</h3>
-    <p>Измерения запускаются только через verified runtime adapter. При его отсутствии результат остаётся typed unavailable.</p>
-    <p role="status">{message}</p>
-    {projection ? <pre aria-label="Calibration projection">{JSON.stringify(projection, null, 2)}</pre> : null}
+    <h3>{translate("Производительность локальной модели")}</h3>
+    <p>{translate("Измерения запускаются только через verified runtime adapter. При его отсутствии результат остаётся typed unavailable.")}</p>
+    <p role="status">{translate(message)}</p>
+    {projection ? <pre aria-label="Calibration projection">{translate(JSON.stringify(projection, null, 2))}</pre> : null}
   </section>
 }

@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -19,16 +20,16 @@ export function ExecutionPolicyProfilesPanel(): React.JSX.Element {
     return unsubscribe
   }, [api])
   return <section className="panel" aria-label="Execution Policy Profiles">
-    <h2>Профиль выполнения процессов</h2>
-    {!projection && <p>Ожидание состояния Core…</p>}
+    <h2>{translate("Профиль выполнения процессов")}</h2>
+    {!projection && <p>{translate("Ожидание состояния Core…")}</p>}
     {projection && projection.status === 'ok' && <>
-      <p>Профиль: {projection.profile_id} · версия {projection.version}</p>
-      <p>Backend: {projection.backend} · сеть: {projection.network_policy}</p>
-      <p>Environment: {projection.environment_policy} · timeout: {projection.timeout_ms} ms</p>
-      <p>Output limit: {projection.max_output_bytes} bytes</p>
-      <p>Hash: {projection.profile_hash}</p>
+      <p>{translate("Профиль:")}{translate(projection.profile_id)} {translate("· версия")}{translate(projection.version)}</p>
+      <p>Backend: {translate(projection.backend)} {translate("· сеть:")}{translate(projection.network_policy)}</p>
+      <p>Environment: {translate(projection.environment_policy)} · timeout: {translate(projection.timeout_ms)} ms</p>
+      <p>Output limit: {translate(projection.max_output_bytes)} bytes</p>
+      <p>Hash: {translate(projection.profile_hash)}</p>
     </>}
-    {projection && projection.status !== 'ok' && <p>Состояние: {projection.status} ({projection.error_code || 'unknown'})</p>}
-    <p>Команда и environment не выбирают профиль и не передаются в эту проекцию.</p>
+    {projection && projection.status !== 'ok' && <p>{translate("Состояние:")}{translate(projection.status)} ({translate(projection.error_code || 'unknown')})</p>}
+    <p>{translate("Команда и environment не выбирают профиль и не передаются в эту проекцию.")}</p>
   </section>
 }

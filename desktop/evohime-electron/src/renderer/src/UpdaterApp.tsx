@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { UpdaterUiStatus } from '@shared/updater'
@@ -63,8 +64,8 @@ export function UpdaterApp(): React.JSX.Element {
           </span>
         </div>
         <div className="updater-window-actions">
-          <button type="button" aria-label="Свернуть" onClick={() => void window.evohimeUpdater.minimize()}>—</button>
-          <button type="button" aria-label="Закрыть" onClick={() => void window.evohimeUpdater.close()}>×</button>
+          <button type="button" aria-label={translate("Свернуть")} onClick={() => void window.evohimeUpdater.minimize()}>—</button>
+          <button type="button" aria-label={translate("Закрыть")} onClick={() => void window.evohimeUpdater.close()}>×</button>
         </div>
       </header>
 
@@ -74,17 +75,17 @@ export function UpdaterApp(): React.JSX.Element {
           <div className="updater-hero-glow updater-hero-glow--left" />
           <div className="updater-hero-glow updater-hero-glow--right" />
           <div className="updater-hero-copy updater-hero-copy--left">
-            <span>ЛУЧШАЯ</span>
-            <span>ВЕРСИЯ</span>
-            <span>ТЕБЯ</span>
+            <span>{translate("ЛУЧШАЯ")}</span>
+            <span>{translate("ВЕРСИЯ")}</span>
+            <span>{translate("ТЕБЯ")}</span>
             <i />
-            <span>ВМЕСТЕ</span>
-            <span>С EVOHIME</span>
+            <span>{translate("ВМЕСТЕ")}</span>
+            <span>{translate("С EVOHIME")}</span>
           </div>
           <div className="updater-hero-copy updater-hero-copy--right">
-            <span>БОЛЬШЕ</span>
-            <span>ЧЕМ ИИ</span>
-            <span>ВМЕСТЕ С ТОБОЙ</span>
+            <span>{translate("БОЛЬШЕ")}</span>
+            <span>{translate("ЧЕМ ИИ")}</span>
+            <span>{translate("ВМЕСТЕ С ТОБОЙ")}</span>
             <i />
           </div>
           <div className="updater-hero-signature">EvoHime <span>♡</span></div>
@@ -93,31 +94,31 @@ export function UpdaterApp(): React.JSX.Element {
         <div className="updater-status-orbit" aria-hidden="true">
           <div className="updater-status-orbit__ring updater-status-orbit__ring--one" />
           <div className="updater-status-orbit__ring updater-status-orbit__ring--two" />
-          <div className="updater-status-icon">{icon}</div>
+          <div className="updater-status-icon">{translate(icon)}</div>
         </div>
 
         <div className="updater-panel">
-          <h1 id="updater-heading">{status.heading}</h1>
-          <p className="updater-message" aria-live="polite">{status.message}</p>
+          <h1 id="updater-heading">{translate(status.heading)}</h1>
+          <p className="updater-message" aria-live="polite">{translate(status.message)}</p>
 
           <div className="updater-progress-block">
             <div className="updater-progress-row">
-              <div className={`updater-progress${progressPercent === null ? ' updater-progress--indeterminate' : ''}`} role="progressbar" aria-label="Прогресс обновления" {...(progressPercent === null ? {} : { 'aria-valuenow': progressPercent, 'aria-valuemin': 0, 'aria-valuemax': 100 })}>
+              <div className={`updater-progress${progressPercent === null ? ' updater-progress--indeterminate' : ''}`} role="progressbar" aria-label={translate("Прогресс обновления")} {...(progressPercent === null ? {} : { 'aria-valuenow': progressPercent, 'aria-valuemin': 0, 'aria-valuemax': 100 })}>
                 <div className="updater-progress__value" style={progressStyle} />
               </div>
-              <span className="updater-progress__label">{progressLabel}</span>
+              <span className="updater-progress__label">{translate(progressLabel)}</span>
             </div>
           </div>
 
-          {failed && status.detail.length > 0 ? <p className="updater-detail" role="status">{status.detail}</p> : null}
+          {failed && status.detail.length > 0 ? <p className="updater-detail" role="status">{translate(status.detail)}</p> : null}
 
           <div className="updater-features" aria-hidden="true">
-            <div className="updater-feature"><span>♢</span><p>Безопасное<br />обновление</p></div>
-            <div className="updater-feature"><span>ϟ</span><p>Новые<br />возможности</p></div>
-            <div className="updater-feature"><span>♡</span><p>Спасибо,<br />что ты с нами</p></div>
+            <div className="updater-feature"><span>♢</span><p>{translate("Безопасное")}<br />{translate("обновление")}</p></div>
+            <div className="updater-feature"><span>ϟ</span><p>{translate("Новые")}<br />{translate("возможности")}</p></div>
+            <div className="updater-feature"><span>♡</span><p>{translate("Спасибо,")}<br />{translate("что ты с нами")}</p></div>
           </div>
 
-          <p className="updater-footer">EVOHIME <span>•</span> РАЗВИВАЕМСЯ ВМЕСТЕ <span>•</span> С КАЖДЫМ ОБНОВЛЕНИЕМ</p>
+          <p className="updater-footer">EVOHIME <span>•</span> {translate("РАЗВИВАЕМСЯ ВМЕСТЕ")}<span>•</span> {translate("С КАЖДЫМ ОБНОВЛЕНИЕМ")}</p>
         </div>
       </section>
     </main>

@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -13,5 +14,5 @@ export function AgentRoleProfilesPanel(): React.JSX.Element {
     return unsubscribe
   }, [api])
   const meta = projection?.projection_json
-  return <section className="panel" aria-label="Agent Role Profiles"><h2>Профили ролей агентов</h2><p role="status">Профилей: {meta?.profile_count ?? 0} · состояние: {projection?.status ?? 'ожидание Core'}</p><p>Версия контракта: v1 · profile revision/hash фиксируются на run.</p><p>Режимы human/AI проверяются Core; requested grants не расширяют parent/policy/registry intersection.</p><p>Raw prompts: запрещены · credentials: не передаются.</p>{projection && projection.status !== 'ok' && <p>Ошибка: {projection.error_code || projection.status}</p>}</section>
+  return <section className="panel" aria-label="Agent Role Profiles"><h2>{translate("Профили ролей агентов")}</h2><p role="status">{translate("Профилей:")}{translate(meta?.profile_count ?? 0)} {translate("· состояние:")}{translate(projection?.status ?? translate("ожидание Core"))}</p><p>{translate("Версия контракта: v1 · profile revision/hash фиксируются на run.")}</p><p>{translate("Режимы human/AI проверяются Core; requested grants не расширяют parent/policy/registry intersection.")}</p><p>{translate("Raw prompts: запрещены · credentials: не передаются.")}</p>{projection && projection.status !== 'ok' && <p>{translate("Ошибка:")}{translate(projection.error_code || projection.status)}</p>}</section>
 }

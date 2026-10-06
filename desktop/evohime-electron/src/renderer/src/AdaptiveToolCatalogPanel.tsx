@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useMemo } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -24,13 +25,13 @@ export function AdaptiveToolCatalogPanel({ connection, events }: Props): React.J
   return (
     <section className="settings-info" aria-label="Adaptive Tool Catalog">
       <h3>Adaptive Tool Catalog</h3>
-      <p>Core передаёт модели только bounded loadout разрешённых инструментов. Полные schemas не попадают в renderer.</p>
-      <small>Состояние: {connection} · последний Core snapshot: {latest ? 'получен' : 'ожидается'}</small>
+      <p>{translate("Core передаёт модели только bounded loadout разрешённых инструментов. Полные schemas не попадают в renderer.")}</p>
+      <small>{translate("Состояние:")}{translate(connection)} {translate("· последний Core snapshot:")}{translate(latest ? translate("получен") : translate("ожидается"))}</small>
       {latest && latest.length > 0 ? (
-        <ul className="skill-catalog__list" aria-label="Выбранные инструменты">
-          {latest.map((tool) => <li key={tool}><code>{tool}</code></li>)}
+        <ul className="skill-catalog__list" aria-label={translate("Выбранные инструменты")}>
+          {latest.map((tool) => <li key={tool}><code>{translate(tool)}</code></li>)}
         </ul>
-      ) : <span className="settings-info__badge">Выбор инструментов ещё не опубликован</span>}
+      ) : <span className="settings-info__badge">{translate("Выбор инструментов ещё не опубликован")}</span>}
     </section>
   )
 }

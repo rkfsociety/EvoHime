@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useCallback, useEffect, useState } from 'react'
 
 import type { CodexStatus } from '@shared/api'
@@ -71,44 +72,43 @@ export function CodexPanel(): React.JSX.Element {
       <div className="settings-panel__heading">
         <div>
           <p className="settings-modal__eyebrow">ChatGPT + Codex CLI</p>
-          <h3>Codex CLI для Евы</h3>
+          <h3>{translate("Codex CLI для Евы")}</h3>
         </div>
         <button type="button" className="button button--secondary" disabled={busy} onClick={() => void load(true)}>
-          {busy ? 'Обновление…' : 'Обновить'}
+          {translate(busy ? translate("Обновление…") : translate("Обновить"))}
         </button>
       </div>
       <p className="settings-info__text">
-        Данные берутся из локального Codex CLI, авторизованного через ChatGPT. Ключ API для этого не нужен.
-      </p>
+        {translate("Данные берутся из локального Codex CLI, авторизованного через ChatGPT. Ключ API для этого не нужен.")}</p>
       {status?.available ? (
         <>
           <label className="field">
-            <span className="field__label">Модель Codex</span>
+            <span className="field__label">{translate("Модель Codex")}</span>
             <select value={status.selectedModel} disabled={busy || status.models.length === 0} onChange={(event) => void selectModel(event.target.value)}>
-              {status.models.map((model) => <option key={model.id} value={model.id}>{model.displayName} ({model.id})</option>)}
+              {status.models.map((model) => <option key={model.id} value={model.id}>{translate(model.displayName)} ({translate(model.id)})</option>)}
             </select>
           </label>
           <div className="settings-info__details">
-            <strong>Остаток лимита</strong>
+            <strong>{translate("Остаток лимита")}</strong>
             <CodexRateLimits rateLimits={status.rateLimits} />
           </div>
         </>
       ) : (
         <>
-          <p className="settings-info__badge">{status?.error ?? 'Проверяем вход в Codex…'}</p>
+          <p className="settings-info__badge">{translate(status?.error ?? translate("Проверяем вход в Codex…"))}</p>
           {status && !status.installed ? (
             <button type="button" onClick={() => void install()} disabled={busy}>
-              {status.installing ? 'Установка Codex CLI…' : 'Установить Codex CLI'}
+              {translate(status.installing ? translate("Установка Codex CLI…") : translate("Установить Codex CLI"))}
             </button>
           ) : null}
           {status?.installed ? (
             <button type="button" onClick={() => void login()} disabled={busy || status.loggingIn}>
-              {status.loggingIn ? 'Заверши вход в окне Codex CLI…' : 'Войти через ChatGPT'}
+              {translate(status.loggingIn ? translate("Заверши вход в окне Codex CLI…") : translate("Войти через ChatGPT"))}
             </button>
           ) : null}
         </>
       )}
-      {message && message !== status?.error ? <p className="form-status">{message}</p> : null}
+      {message && message !== status?.error ? <p className="form-status">{translate(message)}</p> : null}
     </section>
   )
 }

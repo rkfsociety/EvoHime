@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useMemo } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -18,16 +19,16 @@ export function AnalysisKernelPanel({ connection, events }: Props): React.JSX.El
 
   return <section className="panel analysis-kernel-panel">
     <div className="panel__header">
-      <div><span className="panel__eyebrow">Persistent Analysis Kernel v1</span><h3>Аналитические ядра</h3></div>
-      <span className={`status-pill status-pill--${connection}`}>{connection}</span>
+      <div><span className="panel__eyebrow">Persistent Analysis Kernel v1</span><h3>{translate("Аналитические ядра")}</h3></div>
+      <span className={`status-pill status-pill--${connection}`}>{translate(connection)}</span>
     </div>
-    <p className="panel__muted">Core показывает только состояние, лимиты и метаданные. Память процесса и значения объектов в UI не передаются.</p>
-    {projections.length === 0 ? <div className="empty-state">Нет созданных аналитических ядер.</div> : <div className="stack-list">
+    <p className="panel__muted">{translate("Core показывает только состояние, лимиты и метаданные. Память процесса и значения объектов в UI не передаются.")}</p>
+    {projections.length === 0 ? <div className="empty-state">{translate("Нет созданных аналитических ядер.")}</div> : <div className="stack-list">
       {projections.map((kernel) => <article className="stack-list__item" key={kernel.kernelId}>
-        <div><strong>{kernel.kernelId}</strong><span className="panel__muted"> · {kernel.status}</span></div>
-        <div className="panel__muted">Задача: {kernel.taskId} · объектов: {kernel.objectCount} · revision: {kernel.revision}</div>
-        <div className="panel__muted">Runtime: {kernel.runtimeVersion}</div>
-        {kernel.errorCode ? <div className="error-text">{kernel.errorCode}</div> : null}
+        <div><strong>{translate(kernel.kernelId)}</strong><span className="panel__muted"> · {translate(kernel.status)}</span></div>
+        <div className="panel__muted">{translate("Задача:")}{translate(kernel.taskId)} {translate("· объектов:")}{translate(kernel.objectCount)} · revision: {translate(kernel.revision)}</div>
+        <div className="panel__muted">Runtime: {translate(kernel.runtimeVersion)}</div>
+        {kernel.errorCode ? <div className="error-text">{translate(kernel.errorCode)}</div> : null}
       </article>)}
     </div>}
   </section>

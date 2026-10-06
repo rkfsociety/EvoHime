@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 import type { ConnectionState, CoreEvent } from '@shared/api'
 import { useShellApi } from './shell-api'
@@ -17,9 +18,9 @@ export function ConversationalWorkflowComposerPanel({ connection, events, worksp
   }
   return <section className="settings-info workflow-composer" aria-label="Conversational Workflow Composer">
     <h3>Composer workflow</h3>
-    <p>Модель предлагает draft, а Core отдельно проверяет права, binding и риск. Запуск выполняется только явным действием.</p>
-    <textarea aria-label="Описание workflow" value={request} onChange={(event) => setRequest(event.target.value)} rows={4} placeholder="Опиши желаемый workflow обычным языком" />
-    <button type="button" disabled={!api || !workspace || !['connected', 'replaying', 'resyncing'].includes(connection) || !request.trim()} onClick={() => void generate()}>Создать draft</button>
-    {last ? <pre aria-label="Результат Composer">{last.payload}</pre> : <p>Результат и blockers появятся после ответа Core.</p>}
+    <p>{translate("Модель предлагает draft, а Core отдельно проверяет права, binding и риск. Запуск выполняется только явным действием.")}</p>
+    <textarea aria-label={translate("Описание workflow")} value={request} onChange={(event) => setRequest(event.target.value)} rows={4} placeholder={translate("Опиши желаемый workflow обычным языком")} />
+    <button type="button" disabled={!api || !workspace || !['connected', 'replaying', 'resyncing'].includes(connection) || !request.trim()} onClick={() => void generate()}>{translate("Создать draft")}</button>
+    {last ? <pre aria-label={translate("Результат Composer")}>{translate(last.payload)}</pre> : <p>{translate("Результат и blockers появятся после ответа Core.")}</p>}
   </section>
 }

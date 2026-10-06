@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, CodexRateLimit, ModelTier } from '@shared/api'
@@ -195,11 +196,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     // where the user is, instead of leaving an empty dropdown.
     return (
       <span className="model-picker model-picker--error" role="status">
-        {catalogStatus?.failureCode === 'model_not_found'
-          ? 'Модель не найдена у провайдера — выбери доступную модель'
+        {translate(catalogStatus?.failureCode === 'model_not_found'
+          ? translate("Модель не найдена у провайдера — выбери доступную модель")
           : provider === 'ollama'
-            ? 'Модели недоступны — запусти Ollama'
-            : 'Модели недоступны — проверь ключ в настройках'}
+            ? translate("Модели недоступны — запусти Ollama")
+            : translate("Модели недоступны — проверь ключ в настройках"))}
       </span>
     )
   }
@@ -230,31 +231,29 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       />
       {provider !== 'codex_cli' && models.length > 0 ? (
         <span className="model-picker__hint" title={modelMetadataHint(selectedDescriptor, use)}>
-          {modelMetadataHint(selectedDescriptor, use)}
+          {translate(modelMetadataHint(selectedDescriptor, use))}
         </span>
       ) : null}
       {provider !== 'codex_cli' && catalogStatus !== null ? (
         <>
           {catalogStatus.providerIdentity !== null ? (
             <span className="model-picker__catalog-status" role="status">
-              Профиль Core: {catalogStatus.providerIdentity}
+              {translate("Профиль Core:")}{translate(catalogStatus.providerIdentity)}
             </span>
           ) : null}
           <span className={`model-picker__catalog-status model-picker__catalog-status--${catalogStatus.state}`} role="status">
-            {catalogStatusLabel(catalogStatus)}
+            {translate(catalogStatusLabel(catalogStatus))}
           </span>
           {catalogStatus.configuredModelEligible === false ? (
             <span className="model-picker__catalog-status model-picker__catalog-status--unavailable" role="status">
-              Выбранная модель не подтверждена Core для этого маршрута
-            </span>
+              {translate("Выбранная модель не подтверждена Core для этого маршрута")}</span>
           ) : null}
         </>
       ) : null}
       {discoveryUnsupported && provider !== 'codex_cli' ? (
         <div className="model-picker__manual-model">
           <span className="model-picker__catalog-status" role="status">
-            Каталог не поддерживается; можно указать model ID вручную. Core отправит его выбранному провайдеру без подтверждения capabilities.
-          </span>
+            {translate("Каталог не поддерживается; можно указать model ID вручную. Core отправит его выбранному провайдеру без подтверждения capabilities.")}</span>
           <label>
             Model ID
             <input
@@ -267,11 +266,10 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
             />
           </label>
           <button type="button" onClick={() => void select(manualModelId)} disabled={disabled || !canSelectManualModel}>
-            Использовать эту модель
-          </button>
+            {translate("Использовать эту модель")}</button>
         </div>
       ) : null}
-      {provider === 'codex_cli' ? <CodexRateLimits rateLimits={codexRateLimits} compact /> : null}
+      {translate(provider === 'codex_cli' ? <CodexRateLimits rateLimits={codexRateLimits} compact /> : null)}
     </>
   )
 }
@@ -357,7 +355,7 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
       <button
         type="button"
         className="model-picker__button"
-        aria-label="Модель"
+        aria-label={translate("Модель")}
         aria-expanded={open}
         disabled={disabled || models.length === 0}
         onClick={() => {
@@ -365,18 +363,18 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
           setOpen((value) => !value)
         }}
       >
-        <span className="model-picker__value">{current || 'загрузка моделей…'}</span>
+        <span className="model-picker__value">{translate(current || translate("загрузка моделей…"))}</span>
         <span className="model-picker__chevron" aria-hidden="true">▾</span>
       </button>
 
       {open ? (
-        <div className="model-picker__menu" role="listbox" aria-label="Список моделей">
+        <div className="model-picker__menu" role="listbox" aria-label={translate("Список моделей")}>
           <input
             className="model-picker__search"
             value={query}
             autoFocus
-            placeholder="Поиск модели…"
-            aria-label="Поиск модели"
+            placeholder={translate("Поиск модели…")}
+            aria-label={translate("Поиск модели")}
             onChange={(event) => setQuery(event.target.value)}
           />
           {capabilityFilter ? (
@@ -387,12 +385,12 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
                 onChange={(event) => capabilityFilter.onChange(event.target.checked)}
                 disabled={disabled}
               />
-              {capabilityFilter.label}
+              {translate(capabilityFilter.label)}
             </label>
           ) : null}
           <ul>
             {visible.length === 0 ? (
-              <li className="model-picker__none">Ничего не найдено</li>
+              <li className="model-picker__none">{translate("Ничего не найдено")}</li>
             ) : (
               visible.map((model) => (
                 <li key={model.value}>
@@ -405,7 +403,7 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
                       setOpen(false)
                     }}
                   >
-                    {model.label}
+                    {translate(model.label)}
                   </button>
                 </li>
               ))

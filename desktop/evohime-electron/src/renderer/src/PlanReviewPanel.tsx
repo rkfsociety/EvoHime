@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ConnectionState, CoreEvent, ModelLimits, ModelTier, PlanFile, PlanReviewResult, PlanRevisionResult } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { formatNumber, translate } from './i18n'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import { MarkdownMessage } from './MarkdownMessage'
 
@@ -488,10 +489,10 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const progressStalled = running && progress !== null && silence >= SILENT_PROGRESS_SECONDS
 
   return (
-    <section className="review-panel" aria-label="Ревью планов">
+    <section className="review-panel" aria-label={translate("Ревью планов")}>
       <div
         role="group"
-        aria-label="Планы на ревью"
+        aria-label={translate("Планы на ревью")}
         className={`review-panel__dropzone${dragging ? ' review-panel__dropzone--active' : ''}`}
         onDragEnter={(event) => { event.preventDefault(); dragDepth.current += 1; setDragging(true) }}
         onDragOver={(event) => event.preventDefault()}
@@ -499,55 +500,55 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
         onDrop={(event) => { event.preventDefault(); dragDepth.current = 0; setDragging(false); if (!running) void drop(event.dataTransfer) }}
       >
         <div className="review-panel__toolbar">
-          <button type="button" onClick={() => void pick()}>Выбрать Markdown-планы</button>
-          {plans.length > 0 ? <button type="button" onClick={() => setPlans([])} disabled={running}>Очистить список</button> : null}
-          <span className="review-panel__hint">Можно выбрать несколько файлов сразу или перетащить их сюда.</span>
+          <button type="button" onClick={() => void pick()}>{translate("Выбрать Markdown-планы")}</button>
+          {plans.length > 0 ? <button type="button" onClick={() => setPlans([])} disabled={running}>{translate("Очистить список")}</button> : null}
+          <span className="review-panel__hint">{translate("Можно выбрать несколько файлов сразу или перетащить их сюда.")}</span>
         </div>
-        {plans.length === 0 ? <p className="review-panel__empty">Файлы не выбраны.</p> : (
+        {plans.length === 0 ? <p className="review-panel__empty">{translate("Файлы не выбраны.")}</p> : (
           <ul className="review-panel__files">
             {plans.map((plan, index) => (
               <li key={`${plan.fileName}-${index}`}>
-                <span className="review-panel__file">{plan.fileName}</span>
-                <small>{plan.sourceMarkdown.length} символов</small>
+                <span className="review-panel__file">{translate(plan.fileName)}</span>
+                <small>{translate(plan.sourceMarkdown.length)} {translate("символов")}</small>
                 <button type="button" aria-label={`Убрать ${plan.fileName}`} onClick={() => removePlan(index)} disabled={running}>×</button>
               </li>
             ))}
           </ul>
         )}
       </div>
-      {plans.length > 0 ? <p className="review-panel__source">Файлов: {plans.length} · загружено символов: {sourceMarkdown.length}</p> : null}
+      {plans.length > 0 ? <p className="review-panel__source">{translate("Файлов:")}{translate(plans.length)} {translate("· загружено символов:")}{translate(sourceMarkdown.length)}</p> : null}
 
       <div className="review-panel__controls">
-        <label>Режим каталога<select value={tier} onChange={(event) => setTier(event.target.value as ModelTier)} disabled={running}><option value="free">Бесплатные</option><option value="paid">Платные</option></select></label>
-        <label>Количество рецензентов<select value={reviewerCount} onChange={(event) => changeCount(Number(event.target.value))} disabled={running}>{Array.from({ length: MAX_REVIEWERS - MIN_REVIEWERS + 1 }, (_, index) => MIN_REVIEWERS + index).map((count) => <option key={count} value={count}>{count}</option>)}</select></label>
+        <label>{translate("Режим каталога")}<select value={tier} onChange={(event) => setTier(event.target.value as ModelTier)} disabled={running}><option value="free">{translate("Бесплатные")}</option><option value="paid">{translate("Платные")}</option></select></label>
+        <label>{translate("Количество рецензентов")}<select value={reviewerCount} onChange={(event) => changeCount(Number(event.target.value))} disabled={running}>{Array.from({ length: MAX_REVIEWERS - MIN_REVIEWERS + 1 }, (_, index) => MIN_REVIEWERS + index).map((count) => <option key={count} value={count}>{translate(count)}</option>)}</select></label>
       </div>
 
       <fieldset className="review-panel__models">
-        <legend>Модели-рецензенты · {reviewers.filter(Boolean).length} из {reviewerCount}</legend>
-        {catalog.error ? <p role="alert" className="review-panel__catalog-error">Каталог моделей не обновился: {catalogErrorMessage(catalog.error)}{models.length > 0 ? ' Показан прошлый список.' : ''}</p> : null}
-        {models.length === 0 ? <p>Каталог {tier === 'free' ? 'бесплатных' : 'платных'} моделей пуст.</p> : reviewers.map((model, index) => (
+        <legend>{translate("Модели-рецензенты ·")}{translate(reviewers.filter(Boolean).length)} {translate("из")}{translate(reviewerCount)}</legend>
+        {catalog.error ? <p role="alert" className="review-panel__catalog-error">{translate("Каталог моделей не обновился:")}{translate(catalogErrorMessage(catalog.error))}{translate(models.length > 0 ? translate(" Показан прошлый список.") : '')}</p> : null}
+        {models.length === 0 ? <p>{translate("Каталог")}{translate(tier === 'free' ? translate("бесплатных") : translate("платных"))} {translate("моделей пуст.")}</p> : reviewers.map((model, index) => (
           <label key={index} className="review-panel__model-row">
-            <span>Рецензент {index + 1}</span>
+            <span>{translate("Рецензент")}{translate(index + 1)}</span>
             <select aria-label={`Модель рецензента ${index + 1}`} value={model} onChange={(event) => setReviewerModel(index, event.target.value)} disabled={running}>
-              <option value="">Выбери модель</option>
-              {models.map((candidate) => <option key={candidate} value={candidate} disabled={reviewers.some((selected, selectedIndex) => selectedIndex !== index && selected === candidate)}>{candidate}</option>)}
+              <option value="">{translate("Выбери модель")}</option>
+              {models.map((candidate) => <option key={candidate} value={candidate} disabled={reviewers.some((selected, selectedIndex) => selectedIndex !== index && selected === candidate)}>{translate(candidate)}</option>)}
             </select>
           </label>
         ))}
       </fieldset>
 
-      <label className="review-panel__synthesis">Главная модель-синтезатор<select value={synthesisModel} onChange={(event) => setSynthesisModel(event.target.value)} disabled={running}><option value="">Выбери модель</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+      <label className="review-panel__synthesis">{translate("Главная модель-синтезатор")}<select value={synthesisModel} onChange={(event) => setSynthesisModel(event.target.value)} disabled={running}><option value="">{translate("Выбери модель")}</option>{models.map((model) => <option key={model} value={model}>{translate(model)}</option>)}</select></label>
 
-      {plans.length > 0 ? <LimitsCard checks={checks} /> : null}
-      <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{failure !== null || progress?.stage === 'failed' ? 'Повторить ревью' : reviewId && reviewFinished ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
-      {reviewId ? <ProgressCard roster={roster} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null}
-      {launchStalled ? <p role="alert" className="shell__reason">Ядро не подтвердило запуск за {elapsed} с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.</p> : null}
-      {progressStalled ? <p role="alert" className="shell__reason">Модели молчат уже {Math.floor(silence / 60)} мин. Бесплатные модели отвечают медленно — можно подождать или остановить ревью.</p> : null}
-      {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? 'Ревью остановлено.' : `Ревью завершилось ошибкой: ${failure.message}`}</p> : null}
-      {error ? <p role="alert" className="shell__reason">{error}</p> : null}
+      {translate(plans.length > 0 ? <LimitsCard checks={checks} /> : null)}
+      <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{translate(failure !== null || progress?.stage === 'failed' ? translate("Повторить ревью") : reviewId && reviewFinished ? translate("Запустить снова") : translate("Запустить ревью"))}</button><button type="button" onClick={() => void stop()} disabled={!running}>{translate("Остановить")}</button></div>
+      {translate(reviewId ? <ProgressCard roster={roster} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null)}
+      {launchStalled ? <p role="alert" className="shell__reason">{translate("Ядро не подтвердило запуск за")}{translate(elapsed)} {translate("с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.")}</p> : null}
+      {progressStalled ? <p role="alert" className="shell__reason">{translate("Модели молчат уже")}{translate(Math.floor(silence / 60))} {translate("мин. Бесплатные модели отвечают медленно — можно подождать или остановить ревью.")}</p> : null}
+      {failure ? <p role="alert" className="shell__reason">{translate(failure.kind === 'stopped' ? translate("Ревью остановлено.") : `Ревью завершилось ошибкой: ${failure.message}`)}</p> : null}
+      {error ? <p role="alert" className="shell__reason">{translate(error)}</p> : null}
 
-      {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>Итоговое ревью</h3><div className="review-panel__result-actions"><button type="button" onClick={() => void copyResult()}>{copied ? 'Скопировано' : 'Скопировать итоговый Markdown'}</button><button type="button" onClick={() => void exportResult()}>Экспортировать итоговый Markdown</button><button type="button" onClick={() => void revise()} disabled={!canRevise}>{revisionRunning ? 'Ева правит план…' : 'Исправить план по ревью'}</button></div></div>{reviseHint ? <p className="review-panel__hint">{reviseHint}</p> : null}<MarkdownMessage text={selectedResult.finalMarkdown} /><h3>Исходные ответы</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{review.model} · {review.status}</summary>{review.error ? <p>{reviewFailureMessage(review.error)}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
-      {revisionId ? (
+      {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>{translate("Итоговое ревью")}</h3><div className="review-panel__result-actions"><button type="button" onClick={() => void copyResult()}>{translate(copied ? translate("Скопировано") : translate("Скопировать итоговый Markdown"))}</button><button type="button" onClick={() => void exportResult()}>{translate("Экспортировать итоговый Markdown")}</button><button type="button" onClick={() => void revise()} disabled={!canRevise}>{translate(revisionRunning ? translate("Ева правит план…") : translate("Исправить план по ревью"))}</button></div></div>{reviseHint ? <p className="review-panel__hint">{translate(reviseHint)}</p> : null}<MarkdownMessage text={selectedResult.finalMarkdown} /><h3>{translate("Исходные ответы")}</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{translate(review.model)} · {translate(review.status)}</summary>{review.error ? <p>{translate(reviewFailureMessage(review.error))}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
+      {translate(revisionId ? (
         <RevisionCard
           revision={revision}
           running={revisionRunning}
@@ -563,7 +564,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
           onSaveAs={() => void saveRevision('')}
           onStop={() => void stopRevision()}
         />
-      ) : null}
+      ) : null)}
       <History events={events} onOpen={(id) => void openHistory(id)} onClear={() => void clearHistory()} />
     </section>
   )
@@ -578,26 +579,24 @@ function LimitsCard({ checks }: { readonly checks: Preflight }): React.JSX.Eleme
   const synthesisRisk = checks.synthesisContext !== null && checks.synthesisWorstTokens > checks.synthesisContext
   return (
     <div className="review-panel__limits">
-      <p>Объём запроса ≈ {formatTokens(checks.planTokens)} токенов на каждого рецензента.</p>
+      <p>{translate("Объём запроса ≈")}{translate(formatTokens(checks.planTokens))} {translate("токенов на каждого рецензента.")}</p>
       {checks.tooSmall.length > 0 ? (
         <p role="alert" className="review-panel__limit-error">
-          Не влезает в окно: {checks.tooSmall.map((item) => `${item.model} (${formatTokens(item.context)}${item.role === 'synthesis' ? ', синтезатор' : ''})`).join(', ')}. Убери часть файлов или выбери модель с бо́льшим окном.
-        </p>
+          {translate("Не влезает в окно:")}{translate(checks.tooSmall.map((item) => `${item.model} (${formatTokens(item.context)}${item.role === 'synthesis' ? translate(", синтезатор") : ''})`).join(', '))}{translate(". Убери часть файлов или выбери модель с бо́льшим окном.")}</p>
       ) : null}
       {checks.tooSmall.length === 0 && synthesisRisk ? (
         <p className="review-panel__limit-warning">
-          В худшем случае синтезатор получит ≈ {formatTokens(checks.synthesisWorstTokens)} токенов при окне {formatTokens(checks.synthesisContext ?? 0)}: столько выйдет, только если каждый рецензент упрётся в свой потолок ответа. Обычно ответы короче, но при длинных ревью синтез может не собраться.
-        </p>
+          {translate("В худшем случае синтезатор получит ≈")}{translate(formatTokens(checks.synthesisWorstTokens))} {translate("токенов при окне")}{translate(formatTokens(checks.synthesisContext ?? 0))}{translate(": столько выйдет, только если каждый рецензент упрётся в свой потолок ответа. Обычно ответы короче, но при длинных ревью синтез может не собраться.")}</p>
       ) : null}
       {checks.unknown.length > 0 ? (
-        <p className="review-panel__limit-warning">Провайдер не сообщил окно для {checks.unknown.join(', ')} — заранее проверить нельзя.</p>
+        <p className="review-panel__limit-warning">{translate("Провайдер не сообщил окно для")}{translate(checks.unknown.join(', '))} {translate("— заранее проверить нельзя.")}</p>
       ) : null}
     </div>
   )
 }
 
 function formatTokens(value: number): string {
-  return value.toLocaleString('ru-RU')
+  return formatNumber(value)
 }
 
 function ProgressCard({ roster, progress, status, reviewers, elapsed, accepted, failed }: { readonly roster: ReviewRoster; readonly progress: ReviewProgress | null; readonly status: string; readonly reviewers: readonly string[]; readonly elapsed: number | null; readonly accepted: boolean; readonly failed: boolean }): React.JSX.Element {
@@ -609,7 +608,7 @@ function ProgressCard({ roster, progress, status, reviewers, elapsed, accepted, 
   const total = progress?.total || queue.length
   const working = progress?.stage === 'reviewers' && progress.status === 'working' ? progress.model : null
   const hint = failed ? 'Запуск прерван, подробности ниже' : progress?.stage === 'synthesis' ? `Синтез результата · ${progress.model ?? 'модель'}` : working ? `Рецензенты отвечают по очереди · сейчас ${working}` : progress?.stage === 'reviewers' ? 'Рецензенты отвечают по очереди' : accepted ? 'Ядро приняло план, ждём первый ответ модели' : 'Отправляем план в ядро'
-  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{queue.map((model, index) => { const state = roster.statuses[model] ?? 'waiting'; const displayState = failed && (state === 'working' || state === 'waiting') ? 'cancelled' : state; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${displayState}`}>{reviewStatusLabel(displayState)}</span></li> })}</ul></div>
+  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{translate(status)}</strong>{elapsed === null ? null : <span className="review-panel__elapsed">{translate(elapsed)} {translate("с")}</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{translate(hint)}</p><ul>{queue.map((model, index) => { const state = roster.statuses[model] ?? 'waiting'; const displayState = failed && (state === 'working' || state === 'waiting') ? 'cancelled' : state; return <li key={`${model}-${index}`}><span>{translate(model || `Рецензент ${index + 1}`)}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${displayState}`}>{translate(reviewStatusLabel(displayState))}</span></li> })}</ul></div>
 }
 
 /**
@@ -645,30 +644,30 @@ function RevisionCard({ revision, running, failure, sourceLength, targetPath, sa
   return (
     <div className="review-panel__revision">
       <div className="review-panel__result-heading">
-        <h3>Исправленный план</h3>
+        <h3>{translate("Исправленный план")}</h3>
         <div className="review-panel__result-actions">
-          {running ? <button type="button" onClick={onStop}>Остановить правку</button> : null}
+          {running ? <button type="button" onClick={onStop}>{translate("Остановить правку")}</button> : null}
           {revision === null ? null : confirmReplace ? (
             <span className="review-panel__history-confirm">
-              <button type="button" onClick={onReplace}>Заменить</button>
-              <button type="button" onClick={onCancelReplace}>Отмена</button>
+              <button type="button" onClick={onReplace}>{translate("Заменить")}</button>
+              <button type="button" onClick={onCancelReplace}>{translate("Отмена")}</button>
             </span>
           ) : (
-            <button type="button" onClick={onConfirmReplace} disabled={targetPath.length === 0} title={targetPath.length === 0 ? 'Путь исходного файла неизвестен — доступно только «Сохранить как…».' : targetPath}>Заменить исходный файл</button>
+            <button type="button" onClick={onConfirmReplace} disabled={targetPath.length === 0} title={targetPath.length === 0 ? translate("Путь исходного файла неизвестен — доступно только «Сохранить как…».") : targetPath}>{translate("Заменить исходный файл")}</button>
           )}
-          {revision === null ? null : <button type="button" onClick={onSaveAs}>Сохранить как…</button>}
+          {revision === null ? null : <button type="button" onClick={onSaveAs}>{translate("Сохранить как…")}</button>}
         </div>
       </div>
-      {confirmReplace ? <p className="review-panel__history-note">Файл {targetPath} будет перезаписан целиком. Отменить это можно только средствами системы контроля версий.</p> : null}
-      {revision !== null && revision.contextFiles.length > 0 ? <p className="review-panel__hint">Сверено с соседними планами: {revision.contextFiles.join(', ')}.</p> : null}
-      {blind ? <p className="review-panel__hint">Соседние планы не читались: путь исходного файла неизвестен или в плане нет ссылок на них. Правка могла разойтись с соседним этапом — проверь текст до сохранения.</p> : null}
-      {truncated ? <p role="alert" className="shell__reason">Исправленный план более чем вдвое короче исходного — похоже, ответ модели оборвался. Проверь текст до сохранения.</p> : null}
-      {inflated ? <p role="alert" className="shell__reason">Исправленный план более чем вдвое длиннее исходного — модель дописала лишнее вместо точечной правки. Проверь текст до сохранения.</p> : null}
-      {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? failure.message : `Правка завершилась ошибкой: ${failure.message}`}</p> : null}
-      {saving ? <p className="review-panel__hint">Сохраняю…</p> : null}
-      {saveOutcome?.ok ? <p className="review-panel__hint">Сохранено: {saveOutcome.destinationPath}</p> : null}
-      {saveOutcome && !saveOutcome.ok ? <p role="alert" className="shell__reason">План не сохранён: {saveOutcome.error}</p> : null}
-      {revision === null ? (running ? <p>Ева переписывает план по замечаниям ревью. Это один запрос к модели-синтезатору, он может занять несколько минут.</p> : null) : <MarkdownMessage text={revision.revisedMarkdown} />}
+      {confirmReplace ? <p className="review-panel__history-note">{translate("Файл")}{translate(targetPath)} {translate("будет перезаписан целиком. Отменить это можно только средствами системы контроля версий.")}</p> : null}
+      {revision !== null && revision.contextFiles.length > 0 ? <p className="review-panel__hint">{translate("Сверено с соседними планами:")}{translate(revision.contextFiles.join(', '))}.</p> : null}
+      {blind ? <p className="review-panel__hint">{translate("Соседние планы не читались: путь исходного файла неизвестен или в плане нет ссылок на них. Правка могла разойтись с соседним этапом — проверь текст до сохранения.")}</p> : null}
+      {truncated ? <p role="alert" className="shell__reason">{translate("Исправленный план более чем вдвое короче исходного — похоже, ответ модели оборвался. Проверь текст до сохранения.")}</p> : null}
+      {inflated ? <p role="alert" className="shell__reason">{translate("Исправленный план более чем вдвое длиннее исходного — модель дописала лишнее вместо точечной правки. Проверь текст до сохранения.")}</p> : null}
+      {failure ? <p role="alert" className="shell__reason">{translate(failure.kind === 'stopped' ? failure.message : `Правка завершилась ошибкой: ${failure.message}`)}</p> : null}
+      {saving ? <p className="review-panel__hint">{translate("Сохраняю…")}</p> : null}
+      {saveOutcome?.ok ? <p className="review-panel__hint">{translate("Сохранено:")}{translate(saveOutcome.destinationPath)}</p> : null}
+      {saveOutcome && !saveOutcome.ok ? <p role="alert" className="shell__reason">{translate("План не сохранён:")}{translate(saveOutcome.error)}</p> : null}
+      {revision === null ? (running ? <p>{translate("Ева переписывает план по замечаниям ревью. Это один запрос к модели-синтезатору, он может занять несколько минут.")}</p> : null) : <MarkdownMessage text={revision.revisedMarkdown} />}
     </div>
   )
 }
@@ -677,7 +676,7 @@ function History({ events, onOpen, onClear }: { readonly events: readonly CoreEv
   const payload = latestPayload(events, 'review.list')
   const reviews = Array.isArray(payload?.reviews) ? payload.reviews : []
   const [confirming, setConfirming] = useState(false)
-  return <div className="review-panel__history"><div className="review-panel__history-heading"><h3>История запусков</h3>{reviews.length === 0 ? null : confirming ? <span className="review-panel__history-confirm"><button type="button" onClick={() => { setConfirming(false); onClear() }}>Очистить</button><button type="button" onClick={() => setConfirming(false)}>Отмена</button></span> : <button type="button" onClick={() => setConfirming(true)}>Очистить историю</button>}</div>{confirming ? <p className="review-panel__history-note">Список очистится, но сами ревью останутся в журнале и в экспортированных файлах.</p> : null}{reviews.length === 0 ? <p>Завершённых ревью пока нет.</p> : reviews.map((item) => { const value = item as Record<string, unknown>; const reviewers = Array.isArray(value.reviewers) ? value.reviewers : []; const completed = reviewers.filter((review) => (review as Record<string, unknown>).status === 'completed').length; return <button key={String(value.review_id)} type="button" onClick={() => onOpen(String(value.review_id))}><span>{String(value.file_name)}</span><small>{completed}/{reviewers.length} рецензентов · {String(value.review_id)}</small></button> })}</div>
+  return <div className="review-panel__history"><div className="review-panel__history-heading"><h3>{translate("История запусков")}</h3>{reviews.length === 0 ? null : confirming ? <span className="review-panel__history-confirm"><button type="button" onClick={() => { setConfirming(false); onClear() }}>{translate("Очистить")}</button><button type="button" onClick={() => setConfirming(false)}>{translate("Отмена")}</button></span> : <button type="button" onClick={() => setConfirming(true)}>{translate("Очистить историю")}</button>}</div>{confirming ? <p className="review-panel__history-note">{translate("Список очистится, но сами ревью останутся в журнале и в экспортированных файлах.")}</p> : null}{reviews.length === 0 ? <p>{translate("Завершённых ревью пока нет.")}</p> : reviews.map((item) => { const value = item as Record<string, unknown>; const reviewers = Array.isArray(value.reviewers) ? value.reviewers : []; const completed = reviewers.filter((review) => (review as Record<string, unknown>).status === 'completed').length; return <button key={String(value.review_id)} type="button" onClick={() => onOpen(String(value.review_id))}><span>{translate(String(value.file_name))}</span><small>{translate(completed)}/{translate(reviewers.length)} {translate("рецензентов ·")}{translate(String(value.review_id))}</small></button> })}</div>
 }
 
 interface ModelCatalog {

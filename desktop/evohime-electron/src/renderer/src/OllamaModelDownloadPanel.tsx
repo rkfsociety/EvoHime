@@ -12,6 +12,7 @@ import {
 
 import { useShellApi } from './shell-api'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
+import { useT, translate} from './i18n'
 
 interface DeviceProfile {
   readonly cpu_threads: number
@@ -55,6 +56,8 @@ export interface OllamaModelDownloadPanelProps {
 }
 
 export function OllamaModelDownloadPanel({ connection, events, baseUrl }: OllamaModelDownloadPanelProps): React.JSX.Element {
+  const t = useT()
+
   const api = useShellApi()
   const [message, setMessage] = useState('')
   const [pending, setPending] = useState<string | null>(null)
@@ -145,12 +148,12 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
   const installedOnly = [...installed].filter((model) => !recommendations.some((recommendation) => recommendation.id === model))
 
   return (
-    <section className="ollama-models" aria-label="Модели Ollama">
-      <div className="ollama-runtime" aria-label="Среда Ollama">
+    <section className="ollama-models" aria-label={t("Модели Ollama")}>
+      <div className="ollama-runtime" aria-label={t("Среда Ollama")}>
         <div className="ollama-models__heading">
           <div>
-            <h3>Среда Ollama</h3>
-            <p className="shell__empty">Если Ollama не установлена, Ева скачает официальный установщик и запустит его.</p>
+            <h3>{t("Среда Ollama")}</h3>
+            <p className="shell__empty">{t("Если Ollama не установлена, Ева скачает официальный установщик и запустит его.")}</p>
           </div>
           <span className={`ollama-runtime__state ollama-runtime__state--${runtime.state}`}>
             {ollamaStateLabel(runtime)}
@@ -162,41 +165,41 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
             className="ollama-runtime__progress"
             value={runtime.totalBytes ? runtime.downloadedBytes : undefined}
             max={runtime.totalBytes ?? undefined}
-            aria-label="Ход установки Ollama"
+            aria-label={t("Ход установки Ollama")}
           />
         ) : null}
         <div className="ollama-runtime__actions">
           <button type="button" disabled={!api || runtimeBusy || runtime.state === 'installing'} onClick={() => void checkOllama()}>
-            Проверить
+            {t("Проверить")}
           </button>
           {(runtime.state === 'missing' || runtime.state === 'failed') ? (
             <button type="button" disabled={!api || runtimeBusy} onClick={() => void installOllama()}>
-              {runtime.state === 'failed' ? 'Повторить установку' : 'Установить Ollama'}
+              {runtime.state === 'failed' ? translate("Повторить установку") : translate("Установить Ollama")}
             </button>
           ) : null}
         </div>
       </div>
       <div className="ollama-models__heading">
         <div>
-          <h3>Модели для Ollama</h3>
-          <p className="shell__empty">Показаны модели для скачивания, которые помещаются в CPU, ОЗУ, VRAM и свободное место, а также все уже установленные модели.</p>
+          <h3>{t("Модели для Ollama")}</h3>
+          <p className="shell__empty">{t("Показаны модели для скачивания, которые помещаются в CPU, ОЗУ, VRAM и свободное место, а также все уже установленные модели.")}</p>
         </div>
         {catalog.device ? <span className="ollama-models__device">{formatDevice(catalog.device)}</span> : null}
       </div>
-      {catalog.error ? <p className="shell__reason" role="status">{catalogErrorMessage(catalog.error, 'ollama')} Открой Ollama и обнови каталог.</p> : null}
+      {catalog.error ? <p className="shell__reason" role="status">{catalogErrorMessage(catalog.error, 'ollama')} {t("Открой Ollama и обнови каталог.")}</p> : null}
       {pullProgress ? (
         <div className="ollama-models__progress" role="status" aria-live="polite">
           <div>
-            <strong>Скачивание {pullProgress.model}</strong>
-            <span>{pullProgress.stage || (pullProgress.status === 'downloading' ? 'Загрузка' : 'Подготовка')}</span>
+            <strong>{t("Скачивание")} {pullProgress.model}</strong>
+            <span>{pullProgress.stage || (pullProgress.status === 'downloading' ? translate("Загрузка") : translate("Подготовка"))}</span>
           </div>
           {pullProgress.percent !== null ? (
             <>
               <progress max={100} value={pullProgress.percent} aria-label={`Скачивание ${pullProgress.model}`} />
-              <span>{pullProgress.percent}% · {formatOptionalBytes(pullProgress.completedBytes)} из {formatOptionalBytes(pullProgress.totalBytes)}</span>
+              <span>{pullProgress.percent}% · {formatOptionalBytes(pullProgress.completedBytes)} {t("из")} {formatOptionalBytes(pullProgress.totalBytes)}</span>
             </>
           ) : (
-            <span>Подготовка модели…</span>
+            <span>{t("Подготовка модели…")}</span>
           )}
         </div>
       ) : null}
@@ -215,7 +218,7 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
                   disabled={isInstalled || !model.fits_device || pending !== null}
                   onClick={() => void download(model)}
                 >
-                  {isInstalled ? 'Установлена' : pending === model.id ? 'Скачивается…' : 'Скачать'}
+                  {isInstalled ? translate("Установлена") : pending === model.id ? translate("Скачивается…") : translate("Скачать")}
                 </button>
               </div>
             )
@@ -223,23 +226,23 @@ export function OllamaModelDownloadPanel({ connection, events, baseUrl }: Ollama
         </div>
       ) : null}
       {installedOnly.length > 0 ? (
-        <div className="ollama-models__installed" aria-label="Установленные модели Ollama">
-          <strong>Установленные модели</strong>
+        <div className="ollama-models__installed" aria-label={t("Установленные модели Ollama")}>
+          <strong>{t("Установленные модели")}</strong>
           <div className="ollama-models__list">
             {installedOnly.map((model) => (
               <div className="ollama-models__item" key={model}>
                 <div>
                   <strong>{model}</strong>
-                  <span>установлена в Ollama · доступна в композиторе</span>
+                  <span>{t("установлена в Ollama · доступна в композиторе")}</span>
                 </div>
-                <span className="ollama-models__installed-badge">Установлена</span>
+                <span className="ollama-models__installed-badge">{t("Установлена")}</span>
               </div>
             ))}
           </div>
         </div>
       ) : null}
       {recommendations.length === 0 && installedOnly.length === 0 ? (
-        <p className="shell__empty">Нет моделей, которые безопасно помещаются на этом устройстве.</p>
+        <p className="shell__empty">{t("Нет моделей, которые безопасно помещаются на этом устройстве.")}</p>
       ) : null}
       {message ? <p className="ollama-models__message" role="status">{message}</p> : null}
     </section>

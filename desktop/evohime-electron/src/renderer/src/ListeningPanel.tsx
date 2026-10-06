@@ -22,6 +22,8 @@ import {
 } from '@shared/listener-runtime'
 
 import { useShellApi } from './shell-api'
+import { formatDateTime, translate} from './i18n'
+import { useT } from './i18n'
 
 /**
  * Панель «Слух» — полная пользовательская поверхность постоянного слушания
@@ -31,8 +33,8 @@ import { useShellApi } from './shell-api'
  * которое прислало ядро. Собственной копии состояния у неё нет — иначе трей,
  * хоткей и панель разошлись бы, и одна из трёх точек входа врала бы.
  *
- * Системы локализации в проекте нет: строки — русские литералы в
- * модуль-локальных константных картах, как `STATE_LABELS` в `App.tsx`.
+ * Подписи локализуются renderer-слоем; runtime-состояние остаётся владельцем
+ * Core и не зависит от выбранного языка интерфейса.
  */
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -141,7 +143,7 @@ export function clockToMinutes(value: string): number | null {
 
 function formatTime(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return 'время неизвестно'
-  return new Date(ms).toLocaleString('ru-RU')
+  return formatDateTime(ms)
 }
 
 function formatDuration(ms: number): string {
@@ -151,6 +153,8 @@ function formatDuration(ms: number): string {
 }
 
 export function ListeningPanel({ connection, events }: Props): React.JSX.Element {
+  const t = useT()
+
   const api = useShellApi()
   const connected = CONNECTED_STATES.includes(connection)
 
@@ -339,46 +343,46 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
   const active = state === 'listening' || state === 'starting'
 
   return (
-    <section className="listening" aria-label="Слух">
+    <section className="listening" aria-label={t("Слух")}>
       <header className="listening__header">
         <h3 className={`listening__state listening__state--${state ?? 'unknown'}`}>
           <span aria-hidden="true">{active ? '🎙' : state === null || state === 'engine_unavailable' ? '⚠️' : '⏸'}</span>{' '}
-          {state === null ? 'Слушание: проверка состояния…' : STATE_TITLES[state]}
+          {state === null ? t('Слушание: проверка состояния…') : t(STATE_TITLES[state])}
         </h3>
         <p className="listening__reason">
-          {reason === null ? 'Ядро ещё не сообщило состояние.' : REASON_TEXTS[reason]}
+          {reason === null ? t('Ядро ещё не сообщило состояние.') : t(REASON_TEXTS[reason])}
         </p>
       </header>
 
       <div className="listening__actions">
         <button type="button" disabled={!api || !connected} onClick={() => void setListening(true, false)}>
-          Включить слушание
+          {t("Включить слушание")}
         </button>
         <button type="button" disabled={!api || !connected || !active} onClick={() => void setListening(true, true)}>
-          Пауза
+          {t("Пауза")}
         </button>
         <button type="button" disabled={!api || !connected || !paused} onClick={() => void setListening(true, false)}>
-          Продолжить
+          {t("Продолжить")}
         </button>
         <button type="button" disabled={!api || !connected} onClick={() => void setListening(false, false)}>
-          Выключить
+          {t("Выключить")}
         </button>
         <button type="button" disabled={!api || !connected} onClick={refresh}>
-          Обновить состояние
+          {t("Обновить состояние")}
         </button>
       </div>
 
       <p className="listening__hotkey" role="status">
         {hotkey === null
-          ? 'Доступность глобального хоткея выясняется.'
+          ? t('Доступность глобального хоткея выясняется.')
           : hotkey.registered
-            ? `Глобальный хоткей паузы: ${hotkey.combination}.`
-            : `Глобальный хоткей ${hotkey.combination} занят другим приложением и недоступен. Пользуйся треем или этой панелью.`}
+            ? t(`Глобальный хоткей паузы: ${hotkey.combination}.`)
+            : t(`Глобальный хоткей ${hotkey.combination} занят другим приложением и недоступен. Пользуйся треем или этой панелью.`)}
       </p>
 
       {failure ? (
         <p className="listening__error" role="alert">
-          {errorText(failure)}
+          {t(errorText(failure))}
         </p>
       ) : null}
       {notice ? (
@@ -387,10 +391,10 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
         </p>
       ) : null}
 
-      <section className="listening__block" aria-label="Микрофон">
-        <h4>Микрофон</h4>
+      <section className="listening__block" aria-label={t("Микрофон")}>
+        <h4>{t("Микрофон")}</h4>
         {devices.length === 0 ? (
-          <p>Устройства захвата не найдены. Проверь, подключён ли микрофон.</p>
+          <p>{t("Устройства захвата не найдены. Проверь, подключён ли микрофон.")}</p>
         ) : (
           <ul className="listening__devices">
             {devices.map((device) => (
@@ -402,7 +406,7 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
                   onClick={() => void setListening(true, paused, device.device_id)}
                 >
                   <span aria-hidden="true">{device.is_active ? '●' : '○'}</span> {device.display_name}
-                  {device.is_default ? ' · по умолчанию' : ''}
+                  {device.is_default ? translate(" · по умолчанию") : ''}
                 </button>
               </li>
             ))}
@@ -410,97 +414,87 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
         )}
         {status && !status.watching_devices ? (
           <p className="listening__warning">
-            Подписка на смену устройств не поднялась: список не обновится сам, нажми «Обновить
-            состояние» после подключения микрофона.
+            {t("Подписка на смену устройств не поднялась: список не обновится сам, нажми «Обновить состояние» после подключения микрофона.")}
           </p>
         ) : null}
       </section>
 
-      <section className="listening__block" aria-label="Распознавание речи">
-        <h4>Движок распознавания</h4>
+      <section className="listening__block" aria-label={t("Распознавание речи")}>
+        <h4>{t("Движок распознавания")}</h4>
         <p>
-          Состояние набора: {RUNTIME_LABELS[runtime.state]}
-          {runtime.installedVersion ? ` (${runtime.installedVersion})` : ''}. Пока набор не
-          установлен, слушание не включится.
+          {t("Состояние набора:")} {t(RUNTIME_LABELS[runtime.state])}
+          {runtime.installedVersion ? ` (${runtime.installedVersion})` : ''}{t(". Пока набор не установлен, слушание не включится.")}
         </p>
-        <p role="status">{runtime.message}</p>
+        <p role="status">{t(runtime.message)}</p>
         {runtime.state === 'downloading' ? (
-          <progress value={runtime.progressPct} max={100} aria-label="Ход загрузки распознавания речи" />
+          <progress value={runtime.progressPct} max={100} aria-label={t("Ход загрузки распознавания речи")} />
         ) : null}
         {runtime.missingOptional.length > 0 ? (
           <p className="listening__warning">
-            Не установлено: {runtime.missingOptional.map(optionalFileLabel).join(', ')}. Обнаружение
-            речи остаётся энергетическим.
+            {t("Не установлено:")} {runtime.missingOptional.map(optionalFileLabel).join(', ')}{t(". Обнаружение речи остаётся энергетическим.")}
           </p>
         ) : null}
         <div className="listening__actions">
           <button type="button" disabled={!api || runtimeBusy} onClick={() => void runRuntime('listener.checkRuntime')}>
-            Проверить
+            {t("Проверить")}
           </button>
           <button
             type="button"
             disabled={!api || runtimeBusy || runtime.state === 'downloading' || runtime.state === 'ready'}
             onClick={() => void runRuntime('listener.downloadRuntime')}
           >
-            {runtime.state === 'update-available' ? 'Обновить' : 'Установить'}
+            {runtime.state === 'update-available' ? translate("Обновить") : translate("Установить")}
           </button>
         </div>
         {status ? (
           <p>
-            Движок в процессе слушателя: {status.engine_ready ? 'открыт' : 'не открыт'}
+            {t("Движок в процессе слушателя:")} {status.engine_ready ? translate("открыт") : translate("не открыт")}
             {status.engine_version ? ` · ${status.engine_version}` : ''}.
           </p>
         ) : null}
       </section>
 
-      <section className="listening__block" aria-label="Проактивность">
-        <h4>Предложения</h4>
+      <section className="listening__block" aria-label={t("Проактивность")}>
+        <h4>{t("Предложения")}</h4>
         <p>
-          По услышанному Ева может предложить задачу или напоминание — и больше ничего. Ни запуска
-          задач, ни вызова инструментов, ни записи файлов, ни сети без твоего клика: это инвариант
-          ядра, а не настройка на этой странице.
+          {t("По услышанному Ева может предложить задачу или напоминание — и больше ничего. Ни запуска задач, ни вызова инструментов, ни записи файлов, ни сети без твоего клика: это инвариант ядра, а не настройка на этой странице.")}
         </p>
         {proposalList ? (
           <p role="status">
-            Ждут решения: {proposalList.proposals.length}. Потолок — не больше{' '}
-            {proposalList.max_per_hour} в час и {proposalList.max_per_day} в сутки, не чаще одного
-            раз в {Math.round(proposalList.min_interval_ms / 60000)} минут. Сверх потолка
-            предложение отбрасывается, а не копится в очередь. Решать карточки — во вкладке «Память
-            и автоматизация».
+            {t("Ждут решения:")} {proposalList.proposals.length}{t(". Потолок — не больше")}{' '}
+            {proposalList.max_per_hour} {t("в час и")} {proposalList.max_per_day} {t("в сутки, не чаще одного раз в")} {Math.round(proposalList.min_interval_ms / 60000)} {t("минут. Сверх потолка предложение отбрасывается, а не копится в очередь. Решать карточки — во вкладке «Память и автоматизация».")}
           </p>
         ) : (
-          <p>Состояние предложений ещё не получено.</p>
+          <p>{t("Состояние предложений ещё не получено.")}</p>
         )}
       </section>
 
-      <section className="listening__block" aria-label="Услышанные команды">
-        <h4>Голосовые команды</h4>
+      <section className="listening__block" aria-label={t("Услышанные команды")}>
+        <h4>{t("Голосовые команды")}</h4>
         <p>
-          Обращение по имени и глагол: «Ева, открой хром». Без имени команды нет — разговор рядом с
-          микрофоном ничего не запускает. Открывается только приложение из каталога, и по умолчанию
-          — после клика: услышанное само по себе не является подтверждением.
+          {t("Обращение по имени и глагол: «Ева, открой хром». Без имени команды нет — разговор рядом с микрофоном ничего не запускает. Открывается только приложение из каталога, и по умолчанию — после клика: услышанное само по себе не является подтверждением.")}
         </p>
         {voiceCommands.length === 0 ? (
-          <p>Команд, ждущих решения, нет.</p>
+          <p>{t("Команд, ждущих решения, нет.")}</p>
         ) : (
           <ul className="listening__voice-commands">
             {voiceCommands.map((command) => (
               <li key={command.command_id}>
-                <span>Открыть {command.title}?</span>
+                <span>{t("Открыть")} {command.title}?</span>
                 <div className="listening__actions">
                   <button
                     type="button"
                     disabled={!api || !connected}
                     onClick={() => void resolveVoiceCommand(command.command_id, true)}
                   >
-                    Открыть
+                    {t("Открыть")}
                   </button>
                   <button
                     type="button"
                     disabled={!api || !connected}
                     onClick={() => void resolveVoiceCommand(command.command_id, false)}
                   >
-                    Не надо
+                    {t("Не надо")}
                   </button>
                 </div>
               </li>
@@ -509,24 +503,22 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
         )}
         {voiceCommandList && !voiceCommandList.requires_confirmation ? (
           <p role="status">
-            Автозапуск включён в политике: услышанная команда открывает приложение сразу, без
-            карточки.
+            {t("Автозапуск включён в политике: услышанная команда открывает приложение сразу, без карточки.")}
           </p>
         ) : null}
         {voiceResolved && voiceResolved.error_code === 'launch_failed' ? (
-          <p role="status">Не удалось открыть приложение. Подробности — в журнале ядра.</p>
+          <p role="status">{t("Не удалось открыть приложение. Подробности — в журнале ядра.")}</p>
         ) : null}
       </section>
 
-      <section className="listening__block" aria-label="Удаление записанного">
-        <h4>Удаление</h4>
+      <section className="listening__block" aria-label={t("Удаление записанного")}>
+        <h4>{t("Удаление")}</h4>
         <p>
-          Удаление необратимо. Текст исчезает из базы вместе со следами эпизода в журнале, но
-          остаётся внутри резервных копий, снятых до удаления, пока они не состарятся.
+          {t("Удаление необратимо. Текст исчезает из базы вместе со следами эпизода в журнале, но остаётся внутри резервных копий, снятых до удаления, пока они не состарятся.")}
         </p>
         <div className="listening__actions">
           <button type="button" disabled={!api || !connected} onClick={() => setConfirming('forget')}>
-            Забыть последние {FORGET_WINDOW_MINUTES} минут
+            {t("Забыть последние")} {FORGET_WINDOW_MINUTES} {t("минут")}
           </button>
           <button
             type="button"
@@ -534,28 +526,28 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
             disabled={!api || !connected}
             onClick={() => setConfirming('all')}
           >
-            Удалить все транскрипты
+            {t("Удалить все транскрипты")}
           </button>
         </div>
-        {deleted && !deleted.error_code ? <p role="status">Удалено высказываний: {deleted.deleted_count}.</p> : null}
+        {deleted && !deleted.error_code ? <p role="status">{t("Удалено высказываний:")} {deleted.deleted_count}.</p> : null}
         {forgotten && !forgotten.error_code ? (
-          <p role="status">Забыто высказываний: {forgotten.deleted_count}.</p>
+          <p role="status">{t("Забыто высказываний:")} {forgotten.deleted_count}.</p>
         ) : null}
       </section>
 
-      <section className="listening__block" aria-label="Эпизоды">
-        <h4>Эпизоды</h4>
+      <section className="listening__block" aria-label={t("Эпизоды")}>
+        <h4>{t("Эпизоды")}</h4>
         {episodes.length === 0 ? (
-          <p>Записанных эпизодов нет.</p>
+          <p>{t("Записанных эпизодов нет.")}</p>
         ) : (
           <ul className="listening__episodes">
             {episodes.map((episode) => (
               <li key={episode.episode_id}>
                 <div className="listening__episode-row">
                   <span>{formatTime(episode.started_at_ms)}</span>
-                  <span>речь {formatDuration(episode.speech_duration_ms)}</span>
-                  <span>высказываний: {episode.utterance_count}</span>
-                  <span>{EXTRACTION_LABELS[episode.extraction_state] ?? episode.extraction_state}</span>
+                  <span>{t("речь")} {formatDuration(episode.speech_duration_ms)}</span>
+                  <span>{t("высказываний:")} {episode.utterance_count}</span>
+                  <span>{t(EXTRACTION_LABELS[episode.extraction_state] ?? episode.extraction_state)}</span>
                   <button
                     type="button"
                     disabled={!api || !connected}
@@ -569,7 +561,7 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
                       void api?.invoke('ambient.getEpisode', { episodeId: episode.episode_id })
                     }}
                   >
-                    {expanded === episode.episode_id ? 'Скрыть текст' : 'Показать текст'}
+                    {expanded === episode.episode_id ? translate("Скрыть текст") : translate("Показать текст")}
                   </button>
                 </div>
                 {expanded === episode.episode_id && episodeDetail?.episode_id === episode.episode_id ? (
@@ -595,9 +587,9 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
           applied={policySaved?.applied === true}
         />
       ) : (
-        <section className="listening__block" aria-label="Политика слушания">
-          <h4>Политика</h4>
-          <p>Политика ещё не загружена.</p>
+        <section className="listening__block" aria-label={t("Политика слушания")}>
+          <h4>{t("Политика")}</h4>
+          <p>{t("Политика ещё не загружена.")}</p>
         </section>
       )}
 
@@ -607,17 +599,17 @@ export function ListeningPanel({ connection, events }: Props): React.JSX.Element
             <h4 id="listening-confirm">
               {confirming === 'forget'
                 ? `Забыть последние ${FORGET_WINDOW_MINUTES} минут?`
-                : 'Удалить все транскрипты?'}
+                : translate("Удалить все транскрипты?")}
             </h4>
             <p>
-              Действие необратимо. {confirming === 'all' ? 'Будут удалены все сохранённые эпизоды.' : ''}
+              {t("Действие необратимо.")} {confirming === 'all' ? translate("Будут удалены все сохранённые эпизоды.") : ''}
             </p>
             <div className="listening__actions">
               <button type="button" onClick={() => setConfirming(null)}>
-                Отмена
+                {t("Отмена")}
               </button>
               <button type="button" className="listening__danger" onClick={() => void confirmDestructive()}>
-                Удалить
+                {t("Удалить")}
               </button>
             </div>
           </div>
@@ -648,6 +640,7 @@ function PolicyEditor({
   onSave,
   onReset
 }: PolicyEditorProps): React.JSX.Element {
+  const t = useT()
   const setQuiet = (index: number, next: Partial<AmbientQuietHours>): void => {
     onChange({
       ...policy,
@@ -658,15 +651,15 @@ function PolicyEditor({
   }
 
   return (
-    <section className="listening__block" aria-label="Политика слушания">
-      <h4>Политика</h4>
+    <section className="listening__block" aria-label={t("Политика слушания")}>
+      <h4>{t("Политика")}</h4>
 
-      <p>Тихие часы: в эти окна поток микрофона закрывается целиком.</p>
+      <p>{t("Тихие часы: в эти окна поток микрофона закрывается целиком.")}</p>
       <ul className="listening__quiet">
         {policy.quiet_hours.map((window, index) => (
           <li key={`${window.start_minute}-${window.end_minute}-${index}`}>
             <label>
-              с
+              {t("с")}
               <input
                 type="time"
                 value={minutesToClock(window.start_minute)}
@@ -678,7 +671,7 @@ function PolicyEditor({
               />
             </label>
             <label>
-              до
+              {t("до")}
               <input
                 type="time"
                 value={minutesToClock(window.end_minute)}
@@ -699,7 +692,7 @@ function PolicyEditor({
                 })
               }
             >
-              Убрать
+              {t("Убрать")}
             </button>
           </li>
         ))}
@@ -714,11 +707,11 @@ function PolicyEditor({
           })
         }
       >
-        Добавить окно тишины
+        {t("Добавить окно тишины")}
       </button>
 
       <label className="listening__field">
-        Чёрный список процессов (по одному в строке)
+        {t("Чёрный список процессов (по одному в строке)")}
         <textarea
           rows={4}
           disabled={disabled}
@@ -736,7 +729,7 @@ function PolicyEditor({
       </label>
 
       <label className="listening__field">
-        Чёрный список заголовков окон (по одному в строке)
+        {t("Чёрный список заголовков окон (по одному в строке)")}
         <textarea
           rows={4}
           disabled={disabled}
@@ -760,7 +753,7 @@ function PolicyEditor({
           checked={policy.voice_commands}
           onChange={(event) => onChange({ ...policy, voice_commands: event.target.checked })}
         />
-        Распознавать обращения «Ева, открой …»
+        {t("Распознавать обращения «Ева, открой …»")}
       </label>
 
       <label className="listening__toggle">
@@ -772,11 +765,11 @@ function PolicyEditor({
             onChange({ ...policy, voice_commands_autorun: event.target.checked })
           }
         />
-        Открывать сразу, без подтверждения
+        {t("Открывать сразу, без подтверждения")}
       </label>
 
       <label className="listening__field">
-        Срок хранения текста, суток
+        {t("Срок хранения текста, суток")}
         <input
           type="number"
           min={1}
@@ -791,13 +784,13 @@ function PolicyEditor({
 
       <div className="listening__actions">
         <button type="button" disabled={disabled} onClick={onSave}>
-          Сохранить политику
+          {t("Сохранить политику")}
         </button>
         <button type="button" disabled={disabled} onClick={onReset}>
-          Отменить правки
+          {t("Отменить правки")}
         </button>
       </div>
-      {applied ? <p role="status">Политика сохранена и передана слушателю.</p> : null}
+      {applied ? <p role="status">{t("Политика сохранена и передана слушателю.")}</p> : null}
     </section>
   )
 }

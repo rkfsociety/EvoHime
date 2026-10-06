@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ChatSummary, ConnectionState, WorkspaceOption } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { translate, useT } from './i18n'
 
 /**
  * Chat workspace and its chats.
@@ -36,6 +37,7 @@ export function ProjectSidebar({
   onPlugins,
   revision
 }: ProjectSidebarProps): React.JSX.Element {
+  const t = useT()
   const api = useShellApi()
   const [projects, setProjects] = useState<readonly WorkspaceOption[]>([])
   const [chats, setChats] = useState<readonly ChatSummary[]>([])
@@ -86,46 +88,46 @@ export function ProjectSidebar({
 
   return (
     <div className="chat-rail">
-      <div className="chat-rail__actions" aria-label="Быстрые действия">
+      <div className="chat-rail__actions" aria-label={t('Быстрые действия')}>
         <button
           type="button"
           className="chat-rail__action chat-rail__action--primary"
           onClick={() => onChatChange(null)}
         >
           <span className="chat-rail__action-icon" aria-hidden="true">＋</span>
-          <span>Новый чат</span>
+          <span>{t('Новый чат')}</span>
           <kbd>Ctrl K</kbd>
         </button>
         <button type="button" className="chat-rail__action" onClick={onScheduled}>
           <span className="chat-rail__action-icon" aria-hidden="true">◷</span>
-          <span>Запланировано</span>
+          <span>{t('Запланировано')}</span>
         </button>
         <button type="button" className="chat-rail__action" onClick={onPlugins}>
           <span className="chat-rail__action-icon" aria-hidden="true">✦</span>
-          <span>Плагины</span>
+          <span>{t('Плагины')}</span>
         </button>
       </div>
 
-      {error ? <p role="alert" className="shell__reason">{error}</p> : null}
+      {error ? <p role="alert" className="shell__reason">{t(error)}</p> : null}
       {!connected ? (
-        <p className="shell__reason">Core недоступен, задачи не запускаются.</p>
+        <p className="shell__reason">{t('Core недоступен, задачи не запускаются.')}</p>
       ) : null}
 
       <div className="chat-rail__heading">
         <div>
-          <h2>Чаты</h2>
-          <small>{workspace ? basename(workspace) : 'Без проекта'}</small>
+          <h2>{t('Чаты')}</h2>
+          <small>{translate(workspace ? basename(workspace) : t('Без проекта'))}</small>
         </div>
       </div>
 
       {activeProject?.available === false ? (
         <p role="alert" className="chat-rail__warning">
-          Папка недоступна: её переименовали, удалили или диск не подключён.
+          {t('Папка недоступна: её переименовали, удалили или диск не подключён.')}
         </p>
       ) : null}
 
       {chats.length === 0 ? (
-        <p className="chat-rail__empty">Чатов пока нет. Начни с нового чата.</p>
+        <p className="chat-rail__empty">{t('Чатов пока нет. Начни с нового чата.')}</p>
       ) : (
         <ul className="chats__list">
           {chats.map((chat) => (
@@ -144,7 +146,7 @@ export function ProjectSidebar({
                 type="button"
                 className="chats__remove"
                 onClick={() => void removeChat(chat.id)}
-                aria-label={`Удалить чат ${chat.title}`}
+                aria-label={t('Удалить чат {title}').replace('{title}', chat.title)}
               >
                 ✕
               </button>

@@ -12,6 +12,9 @@ import type { UpdateStatus } from './update'
 export const API_NAMESPACE = 'evohime'
 export const API_VERSION = 1 as const
 
+/** Locale selected for user-facing desktop shell surfaces. */
+export type AppLocale = 'ru' | 'en'
+
 /** Renderer-visible lifecycle of the Core connection owned by the main process. */
 export type ConnectionState =
   | 'starting'
@@ -2701,6 +2704,8 @@ export interface EvoHimeApiV1 {
   writeClipboardText(text: string): Promise<boolean>
   /** Opens an https URL that passed the main-process allow-list. */
   openExternal(url: string): Promise<boolean>
+  /** Updates the native tray language using a validated locale value. */
+  setLocale(locale: AppLocale): void
   /**
    * Путь файла, брошенного в окно. Нужен ровно затем, чтобы следующий диалог
    * открылся в той же папке: у объекта `File` в renderer пути нет. Возвращает

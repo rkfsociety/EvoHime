@@ -1,3 +1,4 @@
+import { formatDateTime, translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ShellEvent } from '@shared/api'
@@ -228,43 +229,43 @@ export function EventTriggerRuntimePanel({ workspace }: { readonly workspace: st
 
   const selectedSourceState = sources?.[sourceKind] ?? 'unavailable'
 
-  return <section className="settings-info event-trigger-runtime" aria-label="Триггеры событий">
-    <h3>Триггеры событий</h3>
-    <p>Правило связывает событие с версией workflow и ограниченным mapping его входных данных. Каждое правило хранится в Core.</p>
-    <div className="settings-info__badge">{selectedSourceState === 'available' ? 'Выбранный источник подключён' : 'Выбранный источник недоступен'}</div>
-    <p role="status">{status}</p>
-    <p className="event-trigger-runtime__notice">Системные события задач Core и изменения файлов в Windows можно включить. Чтобы workflow не запускал сам себя по собственным изменениям, файловые события в рабочей области временно пропускаются, пока там выполняется запуск от триггера; пропуски отмечаются в истории. Webhook-провайдер не подключён.</p>
+  return <section className="settings-info event-trigger-runtime" aria-label={translate("Триггеры событий")}>
+    <h3>{translate("Триггеры событий")}</h3>
+    <p>{translate("Правило связывает событие с версией workflow и ограниченным mapping его входных данных. Каждое правило хранится в Core.")}</p>
+    <div className="settings-info__badge">{translate(selectedSourceState === 'available' ? translate("Выбранный источник подключён") : translate("Выбранный источник недоступен"))}</div>
+    <p role="status">{translate(status)}</p>
+    <p className="event-trigger-runtime__notice">{translate("Системные события задач Core и изменения файлов в Windows можно включить. Чтобы workflow не запускал сам себя по собственным изменениям, файловые события в рабочей области временно пропускаются, пока там выполняется запуск от триггера; пропуски отмечаются в истории. Webhook-провайдер не подключён.")}</p>
 
     <div className="event-trigger-runtime__toolbar">
-      <h4>Правила <span>({triggers.length})</span></h4>
-      <div><button type="button" onClick={() => void refresh()} disabled={busy}>Обновить</button><button type="button" onClick={beginNew} disabled={busy || templates.length === 0}>Новое правило</button></div>
+      <h4>{translate("Правила")}<span>({translate(triggers.length)})</span></h4>
+      <div><button type="button" onClick={() => void refresh()} disabled={busy}>{translate("Обновить")}</button><button type="button" onClick={beginNew} disabled={busy || templates.length === 0}>{translate("Новое правило")}</button></div>
     </div>
-    {triggers.length === 0 ? <p>Правил пока нет. Для файлового события укажи рабочую область; системные события приходят из журнала Core.</p> : (
+    {triggers.length === 0 ? <p>{translate("Правил пока нет. Для файлового события укажи рабочую область; системные события приходят из журнала Core.")}</p> : (
       <ul className="event-trigger-runtime__list">
         {triggers.map((stored) => <li key={stored.definition.trigger_id}>
-          <div><strong>{stored.definition.trigger_id}</strong><span>{stored.definition.source_kind} · {stored.definition.event_kind}</span><span>{templates.find((item) => item.template_id === stored.definition.workflow.workflow_id)?.display_name ?? stored.definition.workflow.workflow_id}</span></div>
-          <span>{stored.definition.state === 'draft' ? 'Черновик' : stored.definition.state === 'paused' ? 'Приостановлен' : stored.definition.state === 'active' ? 'Включён' : 'Недоступен'}</span>
-          <button type="button" onClick={() => edit(stored)} disabled={busy}>Изменить</button>
-          {stored.definition.state !== 'active' ? <button type="button" onClick={() => void send('resume', { trigger_id: stored.definition.trigger_id }, stored.version)} disabled={busy || sources?.[stored.definition.source_kind] !== 'available'}>Включить</button> : null}
-          {stored.definition.state === 'active' ? <button type="button" onClick={() => void send('pause', { trigger_id: stored.definition.trigger_id }, stored.version)} disabled={busy}>Приостановить</button> : null}
-          <button type="button" onClick={() => { if (window.confirm(`Удалить триггер «${stored.definition.trigger_id}»?`)) void send('delete', { trigger_id: stored.definition.trigger_id }, stored.version) }} disabled={busy}>Удалить</button>
+          <div><strong>{translate(stored.definition.trigger_id)}</strong><span>{translate(stored.definition.source_kind)} · {translate(stored.definition.event_kind)}</span><span>{translate(templates.find((item) => item.template_id === stored.definition.workflow.workflow_id)?.display_name ?? stored.definition.workflow.workflow_id)}</span></div>
+          <span>{translate(stored.definition.state === 'draft' ? translate("Черновик") : stored.definition.state === 'paused' ? translate("Приостановлен") : stored.definition.state === 'active' ? translate("Включён") : translate("Недоступен"))}</span>
+          <button type="button" onClick={() => edit(stored)} disabled={busy}>{translate("Изменить")}</button>
+          {stored.definition.state !== 'active' ? <button type="button" onClick={() => void send('resume', { trigger_id: stored.definition.trigger_id }, stored.version)} disabled={busy || sources?.[stored.definition.source_kind] !== 'available'}>{translate("Включить")}</button> : null}
+          {stored.definition.state === 'active' ? <button type="button" onClick={() => void send('pause', { trigger_id: stored.definition.trigger_id }, stored.version)} disabled={busy}>{translate("Приостановить")}</button> : null}
+          <button type="button" onClick={() => { if (window.confirm(translate('Удалить триггер «{id}»?').replace('{id}', stored.definition.trigger_id))) void send('delete', { trigger_id: stored.definition.trigger_id }, stored.version) }} disabled={busy}>{translate("Удалить")}</button>
         </li>)}
       </ul>
     )}
 
     {selectedId !== null || triggerId !== '' ? <form className="event-trigger-runtime__form" onSubmit={save}>
-      <h4>{selectedId ? 'Изменить правило' : 'Новое правило'}</h4>
-      <label>ID правила<input required maxLength={128} value={triggerId} onChange={(event) => setTriggerId(event.target.value)} /></label>
-      <label>Источник<select value={sourceKind} onChange={(event) => { const next: SourceKind = event.target.value === 'system_event' ? 'system_event' : 'local_workspace_event'; setSourceKind(next); setEventKind(EVENT_KINDS[next][0]?.value ?? '') }}><option value="local_workspace_event">Событие рабочей области</option><option value="system_event">Системное событие</option></select></label>
-      <label>Событие<select value={eventKind} onChange={(event) => setEventKind(event.target.value)}>{EVENT_KINDS[sourceKind].map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-      <label>Рабочая область<input required maxLength={32768} value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="C:\\Projects\\my-app" /></label>
-      <label>Workflow<select required value={templateId} onChange={(event) => setTemplateId(event.target.value)}><option value="">Выбери workflow</option>{templates.map((item) => <option key={item.template_id} value={item.template_id}>{item.display_name}</option>)}</select></label>
-      {selectedTemplate ? <small>Входы workflow: {selectedTemplate.inputs.map((input) => `${input.name}${input.required ? ' *' : ''}`).join(', ')}. Отметь обязательные поля в mapping.</small> : null}
-      <label>Mapping входов<textarea aria-label="Mapping входов workflow" value={mappingText} onChange={(event) => setMappingText(event.target.value)} maxLength={8192} placeholder={'{"scope": "path"}'} /></label>
-      <div><button type="submit" disabled={busy}>Сохранить черновик</button><button type="button" onClick={() => { setSelectedId(null); setTriggerId('') }} disabled={busy}>Отмена</button></div>
-      {selectedSourceState !== 'available' ? <small>Черновик можно подготовить сейчас; события не будут приниматься, пока Core не подключит этот источник.</small> : null}
+      <h4>{translate(selectedId ? translate("Изменить правило") : translate("Новое правило"))}</h4>
+      <label>{translate("ID правила")}<input required maxLength={128} value={triggerId} onChange={(event) => setTriggerId(event.target.value)} /></label>
+      <label>{translate("Источник")}<select value={sourceKind} onChange={(event) => { const next: SourceKind = event.target.value === 'system_event' ? 'system_event' : 'local_workspace_event'; setSourceKind(next); setEventKind(EVENT_KINDS[next][0]?.value ?? '') }}><option value="local_workspace_event">{translate("Событие рабочей области")}</option><option value="system_event">{translate("Системное событие")}</option></select></label>
+      <label>{translate("Событие")}<select value={eventKind} onChange={(event) => setEventKind(event.target.value)}>{EVENT_KINDS[sourceKind].map((item) => <option key={item.value} value={item.value}>{translate(item.label)}</option>)}</select></label>
+      <label>{translate("Рабочая область")}<input required maxLength={32768} value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="C:\\Projects\\my-app" /></label>
+      <label>Workflow<select required value={templateId} onChange={(event) => setTemplateId(event.target.value)}><option value="">{translate("Выбери workflow")}</option>{templates.map((item) => <option key={item.template_id} value={item.template_id}>{translate(item.display_name)}</option>)}</select></label>
+      {selectedTemplate ? <small>{translate("Входы workflow:")}{translate(selectedTemplate.inputs.map((input) => `${input.name}${input.required ? ' *' : ''}`).join(', '))}{translate(". Отметь обязательные поля в mapping.")}</small> : null}
+      <label>{translate("Mapping входов")}<textarea aria-label={translate("Mapping входов workflow")} value={mappingText} onChange={(event) => setMappingText(event.target.value)} maxLength={8192} placeholder={'{"scope": "path"}'} /></label>
+      <div><button type="submit" disabled={busy}>{translate("Сохранить черновик")}</button><button type="button" onClick={() => { setSelectedId(null); setTriggerId('') }} disabled={busy}>{translate("Отмена")}</button></div>
+      {selectedSourceState !== 'available' ? <small>{translate("Черновик можно подготовить сейчас; события не будут приниматься, пока Core не подключит этот источник.")}</small> : null}
     </form> : null}
 
-    {events.length > 0 ? <div className="event-trigger-runtime__history"><h4>Последние срабатывания</h4><ul>{events.map((item) => <li key={item.event_id}>{new Date(item.accepted_at_ms).toLocaleString()} · {item.outcome} · {item.correlation_id}</li>)}</ul></div> : null}
+    {events.length > 0 ? <div className="event-trigger-runtime__history"><h4>{translate("Последние срабатывания")}</h4><ul>{events.map((item) => <li key={item.event_id}>{formatDateTime(item.accepted_at_ms)} · {translate(item.outcome)} · {translate(item.correlation_id)}</li>)}</ul></div> : null}
   </section>
 }

@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -80,25 +81,25 @@ export function VisualWorkflowBuilderPanel({ connection, events, workspace, draf
     if (!outcome.ok) setNotice(outcome.message)
   }
 
-  return <section className="settings-info workflow-builder" aria-label="Визуальный конструктор workflow">
-    <h3>Визуальный конструктор</h3>
-    <p>Core проверяет typed workflow draft. Редактор не выполняет граф и не получает его полномочия.</p>
-    <p>Draft: <code>{draftId}</code> · revision {revision}</p>
+  return <section className="settings-info workflow-builder" aria-label={translate("Визуальный конструктор workflow")}>
+    <h3>{translate("Визуальный конструктор")}</h3>
+    <p>{translate("Core проверяет typed workflow draft. Редактор не выполняет граф и не получает его полномочия.")}</p>
+    <p>Draft: <code>{translate(draftId)}</code> · revision {translate(revision)}</p>
     <textarea aria-label="Workflow draft JSON" value={draft} onChange={(event) => setDraft(event.target.value)} rows={8} />
     <div className="workflow-builder__canvas" aria-label="Canvas typed workflow">
-      {nodes.length === 0 ? <p>Добавь узлы в typed draft JSON — они появятся на canvas.</p> : nodes.map((node) => <article className="workflow-builder__node" key={node.id}><strong>{node.id}</strong><small>{typeof node.node_type === 'string' ? node.node_type : 'typed block'}</small></article>)}
+      {nodes.length === 0 ? <p>{translate("Добавь узлы в typed draft JSON — они появятся на canvas.")}</p> : nodes.map((node) => <article className="workflow-builder__node" key={node.id}><strong>{translate(node.id)}</strong><small>{translate(typeof node.node_type === 'string' ? node.node_type : 'typed block')}</small></article>)}
     </div>
     <div>
-      <button type="button" disabled={!api || !['connected', 'replaying', 'resyncing'].includes(connection)} onClick={() => void validate()}>Проверить draft</button>{' '}
-      <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('save', draft)}>Сохранить draft</button>{' '}
-      <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('issue_handoff')}>Передать Composer</button>{' '}
-      <button type="button" disabled={!api || !draftOwnerScope || !matchingResult.handoff_handle} onClick={() => void command('publish', matchingResult.handoff_handle ?? '')}>Опубликовать</button>{' '}
-      <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('recover')}>Восстановить</button>
-      {' '}<button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('catalog')}>Каталог блоков</button>
-      {' '}<button type="button" disabled={!api || !runId} onClick={() => void command('inspect', runId)}>Инспекция запуска</button>
+      <button type="button" disabled={!api || !['connected', 'replaying', 'resyncing'].includes(connection)} onClick={() => void validate()}>{translate("Проверить draft")}</button>{translate(' ')}
+      <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('save', draft)}>{translate("Сохранить draft")}</button>{translate(' ')}
+      <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('issue_handoff')}>{translate("Передать Composer")}</button>{translate(' ')}
+      <button type="button" disabled={!api || !draftOwnerScope || !matchingResult.handoff_handle} onClick={() => void command('publish', matchingResult.handoff_handle ?? '')}>{translate("Опубликовать")}</button>{translate(' ')}
+      <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('recover')}>{translate("Восстановить")}</button>
+      {translate(' ')}<button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('catalog')}>{translate("Каталог блоков")}</button>
+      {translate(' ')}<button type="button" disabled={!api || !runId} onClick={() => void command('inspect', runId)}>{translate("Инспекция запуска")}</button>
     </div>
-    <label>Run ID для inspection <input value={runId} onChange={(event) => setRunId(event.target.value)} /></label>
-    {notice ? <p role="alert">{notice}</p> : null}
-    {last && matchingResult.status ? <p role="status">Core: {matchingResult.status}{matchingResult.error_code ? ` · ${matchingResult.error_code}` : ''}{matchingResult.execution_hash ? ` · graph ${matchingResult.execution_hash}` : ''}{matchingResult.layout_hash ? ` · layout ${matchingResult.layout_hash}` : ''}</p> : null}
+    <label>{translate("Run ID для inspection")}<input value={runId} onChange={(event) => setRunId(event.target.value)} /></label>
+    {notice ? <p role="alert">{translate(notice)}</p> : null}
+    {last && matchingResult.status ? <p role="status">Core: {translate(matchingResult.status)}{translate(matchingResult.error_code ? ` · ${matchingResult.error_code}` : '')}{translate(matchingResult.execution_hash ? ` · graph ${matchingResult.execution_hash}` : '')}{translate(matchingResult.layout_hash ? ` · layout ${matchingResult.layout_hash}` : '')}</p> : null}
   </section>
 }

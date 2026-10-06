@@ -5,8 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { SettingsModal } from '../src/renderer/src/SettingsModal'
 import { DEFAULT_APPEARANCE } from '../src/renderer/src/appearance'
+import { setAppLocale } from '../src/renderer/src/i18n'
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  setAppLocale('ru')
+})
 
 describe('settings modal', () => {
   it('does not show the redundant workspace tab', async () => {
@@ -35,5 +39,14 @@ describe('settings modal', () => {
     expect(screen.getByRole('combobox', { name: 'Тема' })).toHaveProperty('value', 'light')
     await userEvent.click(screen.getByRole('button', { name: 'Сбросить' }))
     expect(onAppearanceChange).toHaveBeenCalledWith(DEFAULT_APPEARANCE)
+  })
+
+  it('stores the selected interface language in appearance settings', async () => {
+    const onAppearanceChange = vi.fn()
+    render(<SettingsModal workspace={null} onClose={vi.fn()} initialTab="appearance" appearance={DEFAULT_APPEARANCE} onAppearanceChange={onAppearanceChange} />)
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Язык' }), 'en')
+
+    expect(onAppearanceChange).toHaveBeenCalledWith({ ...DEFAULT_APPEARANCE, locale: 'en' })
   })
 })

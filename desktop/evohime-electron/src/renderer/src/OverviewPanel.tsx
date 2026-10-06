@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -38,52 +39,52 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
   const currentErrors = errors.filter((event) => isCurrentSignal(event, events))
   const groups = [...IMPORTANT_EVENTS].map((eventType) => ({
     eventType,
-    label: LABELS[eventType],
+    label: translate(LABELS[eventType]),
     items: events.filter((event) => event.eventType === eventType)
   })).filter((group) => group.items.length > 0)
 
   return (
-    <section className="panel overview-panel" aria-label="Обзор состояния">
+    <section className="panel overview-panel" aria-label={translate("Обзор состояния")}>
       <GoalPanel connection={connection} events={events} workspace={workspace} />
       <HardwareFitEvidencePanel />
       <div className="panel__header overview-panel__heading">
         <div>
-          <h2>Обзор</h2>
-          <p>{workspace ? `Проект: ${projectName(workspace)}` : 'Проект не выбран'}</p>
+          <h2>{translate("Обзор")}</h2>
+          <p>{translate(workspace ? `Проект: ${projectName(workspace)}` : translate("Проект не выбран"))}</p>
         </div>
-        <span className={`status-pill status-pill--${connection}`}>{connectionLabel(connection)}</span>
+        <span className={`status-pill status-pill--${connection}`}>{translate(connectionLabel(connection))}</span>
       </div>
 
       <div className="overview-grid">
         <article className={`overview-card ${connection === 'connected' ? 'overview-card--ok' : 'overview-card--warning'}`}>
           <span>Core</span>
-          <strong>{connectionLabel(connection)}</strong>
-          <small>состояние подключения</small>
+          <strong>{translate(connectionLabel(connection))}</strong>
+          <small>{translate("состояние подключения")}</small>
         </article>
         <article className={`overview-card ${currentErrors.length > 0 ? 'overview-card--danger' : 'overview-card--ok'}`}>
-          <span>Ошибки</span>
-          <strong>{currentErrors.length}</strong>
-          <small>текущих задач · {errors.length} в журнале</small>
+          <span>{translate("Ошибки")}</span>
+          <strong>{translate(currentErrors.length)}</strong>
+          <small>{translate("текущих задач ·")}{translate(errors.length)} {translate("в журнале")}</small>
         </article>
         <article className={`overview-card ${currentAttention.length > 0 ? 'overview-card--warning' : 'overview-card--ok'}`}>
-          <span>Внимание</span>
-          <strong>{currentAttention.length}</strong>
-          <small>текущих сигналов · {attention.length} в журнале</small>
+          <span>{translate("Внимание")}</span>
+          <strong>{translate(currentAttention.length)}</strong>
+          <small>{translate("текущих сигналов ·")}{translate(attention.length)} {translate("в журнале")}</small>
         </article>
         <article className="overview-card">
-          <span>Лента</span>
-          <strong>{events.length}</strong>
-          <small>событий в памяти оболочки</small>
+          <span>{translate("Лента")}</span>
+          <strong>{translate(events.length)}</strong>
+          <small>{translate("событий в памяти оболочки")}</small>
         </article>
       </div>
 
-      <section className="overview-section" aria-label="Что требует внимания">
+      <section className="overview-section" aria-label={translate("Что требует внимания")}>
         <div className="overview-section__heading">
-          <h3>Что требует внимания</h3>
+          <h3>{translate("Что требует внимания")}</h3>
           <span>
-            {currentAttention.length === 0
-              ? `${attention.length > 0 ? 'Текущих проблем нет · ' : ''}${attention.length} записей журнала`
-              : `${currentAttention.length} текущих сигналов · ${attention.length} записей журнала`}
+            {translate(currentAttention.length === 0
+              ? `${attention.length > 0 ? translate("Текущих проблем нет · ") : ''}${attention.length} записей журнала`
+              : `${currentAttention.length} текущих сигналов · ${attention.length} записей журнала`)}
           </span>
         </div>
         {groups.length > 0 ? (
@@ -100,22 +101,22 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
                     aria-expanded={open}
                     onClick={() => setExpanded(open ? null : group.eventType)}
                   >
-                    <span className="overview-group__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
-                    <span>{group.label}</span>
-                    <code className="overview-group__type">{group.eventType}</code>
-                    <strong>{group.items.length}</strong>
+                    <span className="overview-group__chevron" aria-hidden="true">{translate(open ? '▾' : '▸')}</span>
+                    <span>{translate(group.label)}</span>
+                    <code className="overview-group__type">{translate(group.eventType)}</code>
+                    <strong>{translate(group.items.length)}</strong>
                   </button>
                   {open ? (
                     <ol className="overview-group__events">
                       {preview.map((event) => (
                         <li key={`${event.sequenceId}-${event.eventType}`} className={isCurrentSignal(event, events) ? 'overview-event--current' : 'overview-event--history'}>
-                          <span className="overview-group__sequence">#{event.sequenceId}</span>
-                          <span className="overview-group__detail">{summarize(event.payload)}</span>
-                          {event.taskId ? <small className="overview-group__task">task: {event.taskId}</small> : null}
-                          <span className="overview-group__state">{isCurrentSignal(event, events) ? 'текущее' : 'история'}</span>
+                          <span className="overview-group__sequence">#{translate(event.sequenceId)}</span>
+                          <span className="overview-group__detail">{translate(summarize(event.payload))}</span>
+                          {event.taskId ? <small className="overview-group__task">task: {translate(event.taskId)}</small> : null}
+                          <span className="overview-group__state">{translate(isCurrentSignal(event, events) ? translate("текущее") : translate("история"))}</span>
                           <span className="overview-group__actions">
                             <button type="button" onClick={() => setDetails(details === eventKey(event) ? null : eventKey(event))}>
-                              {details === eventKey(event) ? 'Скрыть' : 'Подробнее'}
+                              {translate(details === eventKey(event) ? translate("Скрыть") : translate("Подробнее"))}
                             </button>
                             <button type="button" onClick={() => {
                               if (!api) return
@@ -125,14 +126,14 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
                                 window.setTimeout(() => setCopied(null), 1400)
                               })
                             }}>
-                              {copied === eventKey(event) ? 'Скопировано' : 'Копировать'}
+                              {translate(copied === eventKey(event) ? translate("Скопировано") : translate("Копировать"))}
                             </button>
                           </span>
-                          {details === eventKey(event) ? <pre className="overview-group__payload">{formatPayload(event.payload)}</pre> : null}
+                          {details === eventKey(event) ? <pre className="overview-group__payload">{translate(formatPayload(event.payload))}</pre> : null}
                         </li>
                       ))}
                       {hidden > 0 ? (
-                        <li className="overview-group__more">Ещё {hidden} — остальные смотри в трейсе чата.</li>
+                        <li className="overview-group__more">{translate("Ещё")}{translate(hidden)} {translate("— остальные смотри в трейсе чата.")}</li>
                       ) : null}
                     </ol>
                   ) : null}
@@ -141,28 +142,28 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
             })}
           </ul>
         ) : (
-          <p className="empty-state">Ошибок, ожидающих решений, и проблем расписаний не обнаружено.</p>
+          <p className="empty-state">{translate("Ошибок, ожидающих решений, и проблем расписаний не обнаружено.")}</p>
         )}
       </section>
 
-      <section className="overview-section" aria-label="Последние события">
+      <section className="overview-section" aria-label={translate("Последние события")}>
         <div className="overview-section__heading">
-          <h3>Последние события</h3>
-          <span>новые сверху · журнал, не список активных ошибок</span>
+          <h3>{translate("Последние события")}</h3>
+          <span>{translate("новые сверху · журнал, не список активных ошибок")}</span>
         </div>
         {events.length > 0 ? (
           <ol className="overview-events">
             {events.slice(0, 8).map((event) => (
               <li key={`${event.sequenceId}-${event.eventType}`}>
                 <span className="overview-events__dot" aria-hidden="true" />
-                <code>{event.eventType}</code>
-                <span className="overview-events__detail">{summarize(event.payload)}</span>
-                <span className="overview-events__sequence">#{event.sequenceId}</span>
+                <code>{translate(event.eventType)}</code>
+                <span className="overview-events__detail">{translate(summarize(event.payload))}</span>
+                <span className="overview-events__sequence">#{translate(event.sequenceId)}</span>
               </li>
             ))}
           </ol>
         ) : (
-          <p className="empty-state">События появятся после подключения Core.</p>
+          <p className="empty-state">{translate("События появятся после подключения Core.")}</p>
         )}
       </section>
     </section>

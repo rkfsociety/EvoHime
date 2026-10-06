@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import type { ConnectionState, KnowledgeSourceRegistryProjection, ShellEvent } from '@shared/api'
 import { useShellApi } from './shell-api'
@@ -25,12 +26,12 @@ export function ResearchWorkspacePanel({ connection }: { readonly connection: Co
 
   return <section aria-label="Grounded Research Workspace">
     <h3>Grounded Research Workspace</h3>
-    <p>Collections, revisions, evidence, coverage и artifacts принадлежат Core; UI показывает только bounded projection.</p>
-    <label>Операция<select value={operation} onChange={event => setOperation(event.target.value as Operation)}>{OPERATIONS.map(item => <option key={item}>{item}</option>)}</select></label>
+    <p>{translate("Collections, revisions, evidence, coverage и artifacts принадлежат Core; UI показывает только bounded projection.")}</p>
+    <label>{translate("Операция")}<select value={operation} onChange={event => setOperation(event.target.value as Operation)}>{OPERATIONS.map(item => <option key={item}>{translate(item)}</option>)}</select></label>
     <label>Collection / artifact ID<input value={sourceId} onChange={event => setSourceId(event.target.value)} maxLength={128} /></label>
     <label>Payload JSON<textarea aria-label="Research payload JSON" value={payload} onChange={event => setPayload(event.target.value)} maxLength={32 * 1024} /></label>
-    <button type="button" onClick={() => void send()}>Отправить в Core</button>
-    {projection ? <pre>{JSON.stringify(projection, null, 2)}</pre> : null}
-    {message ? <p role="status">{message}</p> : null}
+    <button type="button" onClick={() => void send()}>{translate("Отправить в Core")}</button>
+    {projection ? <pre>{translate(JSON.stringify(projection, null, 2))}</pre> : null}
+    {message ? <p role="status">{translate(message)}</p> : null}
   </section>
 }

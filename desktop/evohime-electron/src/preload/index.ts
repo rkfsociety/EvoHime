@@ -5,6 +5,7 @@ import {
   API_VERSION,
   type CommandOutcome,
   type CommandPayloads,
+  type AppLocale,
   type EvoHimeApiV1,
   type RendererCommand,
   type ShellEvent
@@ -13,7 +14,8 @@ import {
   CLIPBOARD_CHANNEL,
   EVENT_CHANNEL,
   INVOKE_CHANNEL,
-  OPEN_EXTERNAL_CHANNEL
+  OPEN_EXTERNAL_CHANNEL,
+  SET_LOCALE_CHANNEL
 } from '@shared/channels'
 
 /**
@@ -50,6 +52,10 @@ const api: EvoHimeApiV1 = {
 
   openExternal(url: string): Promise<boolean> {
     return ipcRenderer.invoke(OPEN_EXTERNAL_CHANNEL, url) as Promise<boolean>
+  },
+
+  setLocale(locale: AppLocale): void {
+    ipcRenderer.send(SET_LOCALE_CHANNEL, locale)
   },
 
   // Единственное место, где renderer вообще узнаёт путь: имя папки нужно, чтобы

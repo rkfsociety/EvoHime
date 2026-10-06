@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -14,10 +15,10 @@ export function SensitiveDataGuardrailsPanel(): React.JSX.Element {
   }, [api])
 
   return <section className="panel" aria-label="Sensitive Data Guardrails">
-    <h2>Защита чувствительных данных</h2>
-    <p>{status}</p>
-    <p>Границы: model · tool · stream · trace</p>
-    <p>Действия: redact · mask · hash · block</p>
-    <p>Сырые prompt/output, credentials и тела правил не передаются в интерфейс.</p>
+    <h2>{translate("Защита чувствительных данных")}</h2>
+    <p>{translate(status)}</p>
+    <p>{translate("Границы: model · tool · stream · trace")}</p>
+    <p>{translate("Действия: redact · mask · hash · block")}</p>
+    <p>{translate("Сырые prompt/output, credentials и тела правил не передаются в интерфейс.")}</p>
   </section>
 }

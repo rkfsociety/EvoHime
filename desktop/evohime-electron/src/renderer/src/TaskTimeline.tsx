@@ -1,3 +1,4 @@
+import { formatTime, translate, useAppLocale } from './i18n'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEvent, WorkspaceOption } from '@shared/api'
@@ -36,11 +37,6 @@ const TIMELINE_ITEM_HEIGHT_ESTIMATE_PX = 72
 const TIMELINE_BOTTOM_THRESHOLD_PX = 48
 const MAX_COMPOSER_HEIGHT_PX = 200
 const NEW_PROJECT_OPTION_VALUE = 'evohime:new-project'
-const MESSAGE_TIME_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
-  hour: '2-digit',
-  minute: '2-digit'
-})
-
 interface ComposerAttachment {
   readonly name: string
   readonly relativePath: string
@@ -538,12 +534,11 @@ export function TaskTimeline({
           <div className="message__bubble">{message.prompt}</div>
           {delivery ? (
             <small className="message__delivery" role="status">
-              {delivery.status === 'sending' ? 'Отправляется…' : null}
-              {delivery.status === 'retry' ? 'Повторная отправка…' : null}
+              {translate(delivery.status === 'sending' ? translate("Отправляется…") : null)}
+              {translate(delivery.status === 'retry' ? translate("Повторная отправка…") : null)}
               {delivery.status === 'failed' ? (
                 <button type="button" onClick={() => void retryMessage(delivery.clientMessageId)}>
-                  Повторить отправку
-                </button>
+                  {translate("Повторить отправку")}</button>
               ) : null}
             </small>
           ) : null}
@@ -733,7 +728,7 @@ export function TaskTimeline({
     entries.length === 0 && sentPrompt === null && approval === null && conversation.length === 0
 
   return (
-    <section className="chat" aria-label="Ход задачи">
+    <section className="chat" aria-label={translate("Ход задачи")}>
       <RecoveryBanner
         connection={connection}
         events={taskEvents}
@@ -742,13 +737,13 @@ export function TaskTimeline({
       />
       <RoutingStatus events={taskEvents} connection={connection} />
       {conversationLog?.historyReady && conversationLog.sync.state === 'gap' ? (
-        <p role="alert" className="shell__reason">История неполна, восстанавливаю пропущенные события…</p>
+        <p role="alert" className="shell__reason">{translate("История неполна, восстанавливаю пропущенные события…")}</p>
       ) : null}
       {conversationLog?.sync.state === 'conflict' ? (
-        <p role="alert" className="shell__reason">Обнаружен конфликт последовательности истории.</p>
+        <p role="alert" className="shell__reason">{translate("Обнаружен конфликт последовательности истории.")}</p>
       ) : null}
       {conversationLog?.sync.state === 'cursor-expired' ? (
-        <p role="alert" className="shell__reason">Старая часть истории свёрнута; загружаю доступный диапазон…</p>
+        <p role="alert" className="shell__reason">{translate("Старая часть истории свёрнута; загружаю доступный диапазон…")}</p>
       ) : null}
       <div ref={scrollRef} className="chat__scroll" onScroll={handleTimelineScroll}>
         {empty ? (
@@ -764,23 +759,23 @@ export function TaskTimeline({
             {conversationLog && projectedConversationEvents[0]?.sequence && projectedConversationEvents[0].sequence > 1 ? (
               <div className="chat__history-controls">
                 <button type="button" onClick={loadOlderHistory} disabled={loadingOlderHistory}>
-                  {loadingOlderHistory ? 'Загружаю историю…' : 'Загрузить более старую историю'}
+                  {translate(loadingOlderHistory ? translate("Загружаю историю…") : translate("Загрузить более старую историю"))}
                 </button>
               </div>
             ) : null}
             <ol className="chat__stream">
-              {renderedTimelineStart > 0 ? (
+              {translate(renderedTimelineStart > 0 ? (
                 <li className="chat__window-spacer" aria-hidden="true" style={{ height: `${renderedTimelineStart * TIMELINE_ITEM_HEIGHT_ESTIMATE_PX}px` }} />
-              ) : null}
-              {renderedTimelineItems}
-              {renderedTimelineStart + renderedTimelineItems.length < timelineItems.length ? (
+              ) : null)}
+              {translate(renderedTimelineItems)}
+              {translate(renderedTimelineStart + renderedTimelineItems.length < timelineItems.length ? (
                 <li className="chat__window-spacer" aria-hidden="true" style={{ height: `${(timelineItems.length - renderedTimelineStart - renderedTimelineItems.length) * TIMELINE_ITEM_HEIGHT_ESTIMATE_PX}px` }} />
-              ) : null}
+              ) : null)}
 
               {conversation.length > 0 && running && !approval && !conversation.at(-1)?.transcript.entries.some(
                 (entry) => entry.kind === 'activity' && entry.running
               ) ? (
-                <li className="message message--working" role="status" aria-label="Агент формирует ответ">
+                <li className="message message--working" role="status" aria-label={translate("Агент формирует ответ")}>
                   <span className="working-indicator" aria-hidden="true">
                     <span />
                     <span />
@@ -791,18 +786,18 @@ export function TaskTimeline({
 
               {approval ? (
                 <li className="approval task-timeline__approval" role="alert">
-                  <strong>Нужно разрешение: {approval.toolName}</strong>
-                  <span>{approval.permission} · {approval.scope}</span>
+                  <strong>{translate("Нужно разрешение:")}{translate(approval.toolName)}</strong>
+                  <span>{translate(approval.permission)} · {translate(approval.scope)}</span>
                   <strong>{approval.preview.summary}</strong>
-                  {approval.preview.command ? <code>Команда: {approval.preview.command}</code> : null}
+                  {approval.preview.command ? <code>{translate("Команда:")}{approval.preview.command}</code> : null}
                   {approval.preview.cwd ? <code>cwd: {approval.preview.cwd}</code> : null}
-                  {approval.preview.path ? <code>Файл: {approval.preview.path}</code> : null}
+                  {approval.preview.path ? <code>{translate("Файл:")}{approval.preview.path}</code> : null}
                   {approval.preview.details ? <pre className="approval__details">{approval.preview.details}</pre> : null}
-                  {approval.preview.truncated ? <small>Preview ограничен по размеру.</small> : null}
+                  {approval.preview.truncated ? <small>{translate("Preview ограничен по размеру.")}</small> : null}
                   <div>
-                    <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>Разрешить</button>
-                    <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>Отклонить</button>
-                    <button type="button" onClick={() => void resolveApproval(false, true)} disabled={busy}>Отменить</button>
+                    <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>{translate("Разрешить")}</button>
+                    <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>{translate("Отклонить")}</button>
+                    <button type="button" onClick={() => void resolveApproval(false, true)} disabled={busy}>{translate("Отменить")}</button>
                   </div>
                 </li>
               ) : null}
@@ -813,12 +808,12 @@ export function TaskTimeline({
 
       <div className="composer">
         <div className="composer__inner">
-          <div className="composer__controls" aria-label="Параметры задачи">
-            <div className="composer__control-group composer__control-group--project" aria-label="Проект чата">
+          <div className="composer__controls" aria-label={translate("Параметры задачи")}>
+            <div className="composer__control-group composer__control-group--project" aria-label={translate("Проект чата")}>
               <ComposerIcon name="folder" className="composer__control-icon" />
-              <span className="composer__control-label">Проект</span>
+              <span className="composer__control-label">{translate("Проект")}</span>
               <select
-                aria-label="Проект"
+                aria-label={translate("Проект")}
                 value={workspace ?? ''}
                 onChange={(event) => {
                   const value = event.target.value
@@ -830,13 +825,13 @@ export function TaskTimeline({
                 }}
                 disabled={busy}
               >
-                <option value="">Без проекта</option>
+                <option value="">{translate("Без проекта")}</option>
                 {projects.map((project) => (
                   <option key={project.path} value={project.path}>
-                    {basename(project.path)}{project.available ? '' : ' · недоступен'}
+                    {basename(project.path)}{translate(project.available ? '' : translate(" · недоступен"))}
                   </option>
                 ))}
-                <option value={NEW_PROJECT_OPTION_VALUE} disabled={!onWorkspaceChange}>+ Новый проект…</option>
+                <option value={NEW_PROJECT_OPTION_VALUE} disabled={!onWorkspaceChange}>{translate("+ Новый проект…")}</option>
               </select>
             </div>
             {workspace !== null ? (
@@ -890,14 +885,14 @@ export function TaskTimeline({
               <button
                 type="button"
                 className="composer__action composer__action--icon"
-                aria-label="Прикрепить файлы"
+                aria-label={translate("Прикрепить файлы")}
                 disabled={!connected || busy || !workspace}
-                title={!workspace ? 'Сначала выбери проект' : 'Прикрепить файлы из проекта'}
+                title={!workspace ? translate("Сначала выбери проект") : translate("Прикрепить файлы из проекта")}
                 onClick={() => fileInputRef.current?.click()}
               >
                 <ComposerIcon name="plus" />
               </button>
-              <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
+              <label htmlFor="task-prompt" className="visually-hidden">{translate("Задача")}</label>
               <textarea
                 id="task-prompt"
                 ref={promptRef}
@@ -909,7 +904,7 @@ export function TaskTimeline({
                     if (canStart) void start()
                   }
                 }}
-                placeholder="Опиши задачу для агента…"
+                placeholder={translate("Опиши задачу для агента…")}
                 disabled={!connected || busy}
                 rows={1}
               />
@@ -917,9 +912,9 @@ export function TaskTimeline({
                 type="button"
                 className={`composer__action composer__action--icon${webSearchEnabled ? ' composer__action--active' : ''}`}
                 disabled={!connected || busy}
-                aria-label="Веб-поиск"
+                aria-label={translate("Веб-поиск")}
                 aria-pressed={webSearchEnabled}
-                title="Попросить Core использовать веб-поиск для этого запроса"
+                title={translate("Попросить Core использовать веб-поиск для этого запроса")}
                 onClick={() => setWebSearchEnabled((value) => !value)}
               >
                 <ComposerIcon name="globe" />
@@ -927,7 +922,7 @@ export function TaskTimeline({
               <button
                 type="button"
                 className={`composer__send${running ? ' composer__send--stop' : ''}`}
-                aria-label={running ? (stopRequested ? 'Остановка задачи' : 'Остановить задачу') : 'Запустить задачу'}
+                aria-label={running ? (stopRequested ? translate("Остановка задачи") : translate("Остановить задачу")) : translate("Запустить задачу")}
                 onClick={() => {
                   if (running) void stop()
                   else if (canStart) void start()
@@ -940,7 +935,7 @@ export function TaskTimeline({
           </div>
 
           {attachments.length > 0 ? (
-            <div className="composer__attachments" aria-label="Прикреплённые файлы">
+            <div className="composer__attachments" aria-label={translate("Прикреплённые файлы")}>
               {attachments.map((attachment) => (
                 <span className="composer__attachment" key={attachment.relativePath}>
                   <span title={attachment.relativePath}>{attachment.name}</span>
@@ -955,16 +950,16 @@ export function TaskTimeline({
               ))}
             </div>
           ) : null}
-          {webSearchEnabled ? <p className="composer__mode-hint" role="status">Веб-поиск включён для следующего запроса.</p> : null}
-          {composerNotice ? <p className="composer__mode-hint" role="status">{composerNotice}</p> : null}
+          {webSearchEnabled ? <p className="composer__mode-hint" role="status">{translate("Веб-поиск включён для следующего запроса.")}</p> : null}
+          {composerNotice ? <p className="composer__mode-hint" role="status">{translate(composerNotice)}</p> : null}
 
 
           <div className="composer__footer">
-            {!connected ? <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p> : <span />}
-            <span className="composer__shortcut"><kbd>Enter</kbd> — отправить · <kbd>Shift + Enter</kbd> — новая строка</span>
+            {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : <span />}
+            <span className="composer__shortcut"><kbd>Enter</kbd> {translate("— отправить ·")}<kbd>Shift + Enter</kbd> {translate("— новая строка")}</span>
           </div>
 
-          {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}
+          {commandError ? <p role="alert" className="shell__reason">{translate(commandError)}</p> : null}
         </div>
       </div>
     </section>
@@ -1041,7 +1036,7 @@ function renderTranscriptEntry(
   if (entry.kind === 'stopped') {
     return (
       <li key={`${entry.kind}-${entry.id}-${keySuffix}`} className="message message--note">
-        <span className="message__note">Задача остановлена</span>
+        <span className="message__note">{translate("Задача остановлена")}</span>
       </li>
     )
   }
@@ -1079,6 +1074,7 @@ const TranscriptMessage = memo(function TranscriptMessage({
   copied,
   onCopy
 }: TranscriptMessageProps): React.JSX.Element {
+  useAppLocale()
   return (
     <li
       className={`message message--agent${kind === 'result' && failed ? ' message--error' : ''}`}
@@ -1151,8 +1147,8 @@ function MessageActions({ id, text, atMs, copied, onCopy }: MessageActionsProps)
       <button
         type="button"
         className="message__copy"
-        aria-label={copied ? 'Сообщение скопировано' : 'Скопировать сообщение'}
-        title={copied ? 'Скопировано' : 'Скопировать'}
+        aria-label={copied ? translate("Сообщение скопировано") : translate("Скопировать сообщение")}
+        title={copied ? translate("Скопировано") : translate("Скопировать")}
         onClick={() => {
           if (!api) return
           void api.writeClipboardText(text).then((ok) => {
@@ -1166,15 +1162,15 @@ function MessageActions({ id, text, atMs, copied, onCopy }: MessageActionsProps)
           })
         }}
       >
-        {copied ? '✓' : '▣'}
+        {translate(copied ? '✓' : '▣')}
       </button>
-      {atMs !== null ? <time dateTime={new Date(atMs).toISOString()}>{formatMessageTime(atMs)}</time> : null}
+      {atMs !== null ? <time dateTime={new Date(atMs).toISOString()}>{translate(formatMessageTime(atMs))}</time> : null}
     </div>
   )
 }
 
 function formatMessageTime(atMs: number): string {
-  return MESSAGE_TIME_FORMATTER.format(atMs)
+  return formatTime(atMs)
 }
 
 function makeTaskId(): string {

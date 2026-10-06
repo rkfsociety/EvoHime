@@ -1,3 +1,4 @@
+import { formatNumber, translate } from './i18n'
 import type { CoreEvent } from '@shared/api'
 
 export interface ContextUsageProps {
@@ -20,8 +21,8 @@ export function ContextUsage({ events }: ContextUsageProps): React.JSX.Element |
   const ratio = snapshot === null ? 0 : Math.min(snapshot.used / snapshot.limit, 1)
   const percent = Math.round(ratio * 100)
   const label = snapshot === null
-    ? 'Текущий контекст: пока не рассчитан'
-    : `Текущий контекст: ${percent}% (${formatTokens(snapshot.used)} из ${formatTokens(snapshot.limit)} токенов)`
+    ? translate('Текущий контекст: пока не рассчитан')
+    : `${translate('Текущий контекст:')} ${formatNumber(percent)}% (${formatTokens(snapshot.used)} ${translate('из')} ${formatTokens(snapshot.limit)} ${translate('токенов')})`
 
   return (
     <span
@@ -32,7 +33,7 @@ export function ContextUsage({ events }: ContextUsageProps): React.JSX.Element |
       style={{ '--context-ratio': `${ratio * 360}deg` } as React.CSSProperties}
     >
       <span className="context-usage__ring" aria-hidden="true">
-        <span className="context-usage__value">{percent}</span>
+        <span className="context-usage__value">{formatNumber(percent)}</span>
       </span>
     </span>
   )
@@ -62,5 +63,5 @@ function numberValue(value: unknown): number | null {
 }
 
 function formatTokens(value: number): string {
-  return new Intl.NumberFormat('ru-RU').format(value)
+  return formatNumber(value)
 }

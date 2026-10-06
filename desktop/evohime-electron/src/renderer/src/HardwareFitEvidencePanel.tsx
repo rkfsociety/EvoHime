@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -19,9 +20,9 @@ export function HardwareFitEvidencePanel(): React.JSX.Element {
   }, [api])
   return <section className="panel" aria-label="Hardware Fit Evidence">
     <h2>Hardware Fit Evidence</h2>
-    <p role="status">Измерений: {projection?.sample_count ?? projection?.observation_count ?? 0} · confidence: {projection?.confidence ?? 'unknown'}</p>
-    <p>Runtime: {projection?.runtime_family ?? 'нет comparable evidence'} · Core contract v1 · IPC 276/121.</p>
-    <p>Показываются только Core-derived metadata; raw machine identifiers, prompts и credentials не передаются.</p>
-    {projection?.error_code ? <p role="alert">Ошибка: {projection.error_code}</p> : null}
+    <p role="status">{translate("Измерений:")}{translate(projection?.sample_count ?? projection?.observation_count ?? 0)} · confidence: {translate(projection?.confidence ?? 'unknown')}</p>
+    <p>Runtime: {translate(projection?.runtime_family ?? translate("нет comparable evidence"))} · Core contract v1 · IPC 276/121.</p>
+    <p>{translate("Показываются только Core-derived metadata; raw machine identifiers, prompts и credentials не передаются.")}</p>
+    {projection?.error_code ? <p role="alert">{translate("Ошибка:")}{translate(projection.error_code)}</p> : null}
   </section>
 }

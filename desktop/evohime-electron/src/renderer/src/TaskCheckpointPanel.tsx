@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, TaskCheckpointProjection } from '@shared/api'
@@ -101,37 +102,37 @@ export function TaskCheckpointPanel({
   const showAcknowledge = disposition === 'blocked' || disposition === 'terminal' || Boolean(projection.errorCode)
 
   return (
-    <section className={`task-checkpoint task-checkpoint--${disposition}`} aria-label="Checkpoint задачи">
+    <section className={`task-checkpoint task-checkpoint--${disposition}`} aria-label={translate("Checkpoint задачи")}>
       <div className="task-checkpoint__heading">
         <div>
           <span className="task-checkpoint__eyebrow">Core checkpoint</span>
-          <h3>{(STATUS_LABELS[projection.status] ?? projection.status) || 'Состояние задачи'}</h3>
+          <h3>{translate((STATUS_LABELS[projection.status] ?? projection.status) || translate("Состояние задачи"))}</h3>
         </div>
-        <code>seq {projection.sourceEventSeq}</code>
+        <code>seq {translate(projection.sourceEventSeq)}</code>
       </div>
 
       <dl className="task-checkpoint__summary">
-        <div><dt>Прогресс</dt><dd>{projection.completedCount} завершено · {projection.remainingCount} осталось</dd></div>
-        <div><dt>Recovery</dt><dd>{disposition}</dd></div>
-        <div><dt>Checkpoint</dt><dd>{projection.checkpointId}</dd></div>
+        <div><dt>{translate("Прогресс")}</dt><dd>{translate(projection.completedCount)} {translate("завершено ·")}{translate(projection.remainingCount)} {translate("осталось")}</dd></div>
+        <div><dt>Recovery</dt><dd>{translate(disposition)}</dd></div>
+        <div><dt>Checkpoint</dt><dd>{translate(projection.checkpointId)}</dd></div>
       </dl>
 
-      {warning ? <p className="task-checkpoint__warning" role="alert">{warning}</p> : null}
+      {warning ? <p className="task-checkpoint__warning" role="alert">{translate(warning)}</p> : null}
       {projection.blockers.length > 0 ? (
         <div className="task-checkpoint__group">
-          <strong>Блокеры</strong>
-          <ul>{projection.blockers.map((blocker, index) => <li key={`${blocker}-${index}`}>{blocker}</li>)}</ul>
+          <strong>{translate("Блокеры")}</strong>
+          <ul>{projection.blockers.map((blocker, index) => <li key={`${blocker}-${index}`}>{translate(blocker)}</li>)}</ul>
         </div>
       ) : null}
       {projection.refs.length > 0 ? (
         <details className="task-checkpoint__refs">
-          <summary>Ссылки и policy ({projection.refs.length})</summary>
+          <summary>{translate("Ссылки и policy (")}{translate(projection.refs.length)})</summary>
           <ul>
             {projection.refs.map((reference) => (
               <li key={`${reference.kind}-${reference.id}`}>
-                <span>{reference.kind}</span>
-                <code>{reference.id}</code>
-                {reference.contentHash ? <small>{reference.contentHash}</small> : null}
+                <span>{translate(reference.kind)}</span>
+                <code>{translate(reference.id)}</code>
+                {reference.contentHash ? <small>{translate(reference.contentHash)}</small> : null}
               </li>
             ))}
           </ul>
@@ -139,27 +140,25 @@ export function TaskCheckpointPanel({
       ) : null}
       {projection.replayedEventCount > 0 ? (
         <small className="task-checkpoint__replay">
-          Replay metadata: {projection.replayedEventCount} событий · {projection.replayedEventTypes.join(', ')}
+          Replay metadata: {translate(projection.replayedEventCount)} {translate("событий ·")}{translate(projection.replayedEventTypes.join(', '))}
         </small>
       ) : null}
 
       <div className="task-checkpoint__actions">
         {projection.canRequestResume ? (
           <button type="button" onClick={() => void requestAction('request_resume')} disabled={busy}>
-            Запросить reconciliation
-          </button>
+            {translate("Запросить reconciliation")}</button>
         ) : null}
         {showAcknowledge ? (
           <button type="button" onClick={() => void requestAction('acknowledge_recovery')} disabled={busy}>
-            Подтвердить состояние
-          </button>
+            {translate("Подтвердить состояние")}</button>
         ) : null}
       </div>
-      {actionMessage ? <p className="task-checkpoint__result" role="status">{actionMessage}</p> : null}
+      {actionMessage ? <p className="task-checkpoint__result" role="status">{translate(actionMessage)}</p> : null}
       {actionResult ? (
         <p className={`task-checkpoint__result${actionResult.applied ? '' : ' task-checkpoint__result--error'}`} role="status">
-          {actionResult.errorMessage || (actionResult.applied ? 'Действие применено Core.' : 'Core отклонил действие.')}
-          {actionResult.deduplicated ? ' Повтор запроса безопасно дедуплицирован.' : ''}
+          {translate(actionResult.errorMessage || (actionResult.applied ? translate("Действие применено Core.") : translate("Core отклонил действие.")))}
+          {translate(actionResult.deduplicated ? translate(" Повтор запроса безопасно дедуплицирован.") : '')}
         </p>
       ) : null}
     </section>

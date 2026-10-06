@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -82,7 +83,7 @@ export function RecoveryBanner({
       setStatus('Мост оболочки недоступен: перезапусти приложение.')
       return
     }
-    if (!window.confirm('Отправить redacted support bundle в публичный GitHub issue для анализа?')) return
+    if (!window.confirm(translate('Отправить redacted support bundle в публичный GitHub issue для анализа?'))) return
     setBusy(true)
     setStatus('Отправляю redacted support bundle…')
     const outcome = await api.invoke('shell.submitDiagnostics', {})
@@ -111,21 +112,21 @@ export function RecoveryBanner({
   return (
     <section className={`recovery-banner recovery-banner--${notice.state.toLowerCase()}`} role="status" aria-label={`Состояние восстановления: ${notice.state}`}>
       <div className="recovery-banner__body">
-        <strong>{notice.state}</strong>
-        <p>{notice.reason}</p>
-        <small>Операция: {notice.correlationId}{notice.phase ? ` · Фаза: ${notice.phase}` : ''}</small>
-        <small>Причина: {notice.reasonCode}</small>
-        {status ? <p className="recovery-banner__status" role="status">{status}</p> : null}
+        <strong>{translate(notice.state)}</strong>
+        <p>{translate(notice.reason)}</p>
+        <small>{translate("Операция:")}{translate(notice.correlationId)}{translate(notice.phase ? ` · Фаза: ${notice.phase}` : '')}</small>
+        <small>{translate("Причина:")}{translate(notice.reasonCode)}</small>
+        {status ? <p className="recovery-banner__status" role="status">{translate(status)}</p> : null}
         {detailsOpen ? (
           <dl className="recovery-banner__details">
-            <dt>Событие</dt>
-            <dd>{notice.eventType} · seq {notice.sequenceId}</dd>
-            <dt>Задача</dt>
-            <dd>{notice.taskId || '—'}</dd>
+            <dt>{translate("Событие")}</dt>
+            <dd>{translate(notice.eventType)} · seq {translate(notice.sequenceId)}</dd>
+            <dt>{translate("Задача")}</dt>
+            <dd>{translate(notice.taskId || '—')}</dd>
             {Object.entries(notice.details).map(([key, value]) => (
               <div key={key} className="recovery-banner__detail">
-                <dt>{key}</dt>
-                <dd>{formatValue(value)}</dd>
+                <dt>{translate(key)}</dt>
+                <dd>{translate(formatValue(value))}</dd>
               </div>
             ))}
           </dl>
@@ -133,28 +134,28 @@ export function RecoveryBanner({
       </div>
       <div className="recovery-banner__actions">
         {notice.state === 'WAITING_APPROVAL' && showOpenTask ? (
-          <button type="button" onClick={onOpenTask}>Открыть подтверждение</button>
+          <button type="button" onClick={onOpenTask}>{translate("Открыть подтверждение")}</button>
         ) : null}
         {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
-          <button type="button" onClick={() => void retry()} disabled={busy}>Перезапросить состояние</button>
+          <button type="button" onClick={() => void retry()} disabled={busy}>{translate("Перезапросить состояние")}</button>
         ) : null}
-        {notice.canCancel ? <button type="button" onClick={() => void cancel()} disabled={busy}>Отменить</button> : null}
+        {notice.canCancel ? <button type="button" onClick={() => void cancel()} disabled={busy}>{translate("Отменить")}</button> : null}
         {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
-          <button type="button" onClick={() => void exportDiagnostics()}>Сохранить диагностику</button>
+          <button type="button" onClick={() => void exportDiagnostics()}>{translate("Сохранить диагностику")}</button>
         ) : null}
         {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
-          <button type="button" onClick={() => void submitDiagnostics()} disabled={busy}>Отправить диагностику в issue</button>
+          <button type="button" onClick={() => void submitDiagnostics()} disabled={busy}>{translate("Отправить диагностику в issue")}</button>
         ) : null}
         {notice.state === 'FAILED' ? (
           <button type="button" aria-expanded={detailsOpen} onClick={openDetails}>
-            {detailsOpen ? 'Скрыть детали' : 'Открыть детали'}
+            {translate(detailsOpen ? translate("Скрыть детали") : translate("Открыть детали"))}
           </button>
         ) : null}
         {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (
           <button
             type="button"
             className="recovery-banner__dismiss"
-            aria-label="Скрыть уведомление"
+            aria-label={translate("Скрыть уведомление")}
             onClick={() => setDismissedId(notice.correlationId)}
           >
             ✕

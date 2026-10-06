@@ -1,17 +1,18 @@
 import type { CodexRateLimit } from '@shared/api'
+import { formatDateTime, translate } from './i18n'
 
 export function CodexRateLimits({ rateLimits, compact = false }: { readonly rateLimits: readonly CodexRateLimit[]; readonly compact?: boolean }): React.JSX.Element {
   return (
     <div className={`codex-rate-limits${compact ? ' codex-rate-limits--compact' : ''}`} data-testid="codex-composer-limits">
       {rateLimits.length === 0 ? (
-        <span className="codex-rate-limits__empty">Лимиты Codex пока недоступны</span>
+        <span className="codex-rate-limits__empty">{translate('Лимиты Codex пока недоступны')}</span>
       ) : rateLimits.map((limit) => (
         <div key={limit.limitId} className="codex-rate-limits__group">
-          {!compact ? <span>{limit.limitId}{limit.planType ? ` · ${limit.planType}` : ''}</span> : null}
-          {windowsFor(limit).length === 0 ? <small>данные о лимите не переданы</small> : windowsFor(limit).map((window) => (
+          {!compact ? <span>{translate(limit.limitId)}{translate(limit.planType ? ` · ${limit.planType}` : '')}</span> : null}
+          {windowsFor(limit).length === 0 ? <small>{translate('данные о лимите не переданы')}</small> : windowsFor(limit).map((window) => (
             <span key={window.label} className="codex-limit-window">
-              <strong>{window.label}: осталось {window.remaining}%</strong>
-              <small>{formatReset(window.resetsAt)}</small>
+              <strong>{translate(window.label)}: {translate('осталось')} {translate(window.remaining)}%</strong>
+              <small>{translate(formatReset(window.resetsAt))}</small>
             </span>
           ))}
         </div>
@@ -42,5 +43,5 @@ function windowLabel(durationMins: number | null, fallback: string): string {
 function formatReset(timestamp: number | null): string {
   if (timestamp === null) return 'время сброса не передано'
   const value = new Date(timestamp * 1000)
-  return Number.isNaN(value.getTime()) ? 'время сброса не передано' : `сброс ${value.toLocaleString('ru-RU')}`
+  return Number.isNaN(value.getTime()) ? translate('время сброса не передано') : `${translate('сброс')} ${formatDateTime(value)}`
 }

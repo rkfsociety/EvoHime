@@ -295,6 +295,7 @@ beforeEach(() => {
     listenerRuntime: listenerRuntime as never,
     ollamaRuntime: ollamaRuntime as never,
     ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
+    setLocale: () => undefined,
     exportDiagnostics: async () => ({ cancelled: false, path: 'C:\\diagnostics.json' }),
     submitDiagnostics: async () => ({ url: 'https://github.com/rkfsociety/EvoHime/issues/2' }),
     log: () => {}
@@ -324,6 +325,7 @@ describe('renderer command surface', () => {
       listenerRuntime: listenerRuntime as never,
       ollamaRuntime: ollamaRuntime as never,
       ambientHotkey: () => ({ combination: 'Control+Alt+M', registered: true }),
+      setLocale: () => undefined,
       exportDiagnostics: async () => ({ cancelled: false, path: '' }),
       log: () => {}
     })

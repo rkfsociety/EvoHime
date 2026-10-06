@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -20,7 +21,7 @@ export function AgentMiddlewarePipelinePanel(): React.JSX.Element {
   }
   return <section className="settings-info" aria-label="Agent Middleware Pipeline">
     <h3>Agent Middleware Pipeline</h3>
-    <p>{status}. Core возвращает только bounded metadata; authority, ordering и policy принадлежат Core.</p>
-    <button type="button" onClick={() => void start()} disabled={!api || busy}>{busy ? 'Запуск…' : 'Проверить pipeline'}</button>
+    <p>{translate(status)}{translate(". Core возвращает только bounded metadata; authority, ordering и policy принадлежат Core.")}</p>
+    <button type="button" onClick={() => void start()} disabled={!api || busy}>{translate(busy ? translate("Запуск…") : translate("Проверить pipeline"))}</button>
   </section>
 }

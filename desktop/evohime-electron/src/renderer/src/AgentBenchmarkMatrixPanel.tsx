@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 
 import { useShellApi } from './shell-api'
@@ -61,26 +62,25 @@ export function AgentBenchmarkMatrixPanel(): React.JSX.Element {
 
   return <section className="settings-info" aria-label="Agent Benchmark Matrix">
     <h3>Agent Benchmark Matrix</h3>
-    <p>{status}. Отображаются только bounded redacted metadata; verdict и baseline принадлежат Core.</p>
+    <p>{translate(status)}{translate(". Отображаются только bounded redacted metadata; verdict и baseline принадлежат Core.")}</p>
     <button type="button" onClick={() => void start()} disabled={!api || starting}>
-      {starting ? 'Запуск…' : 'Запустить deterministic matrix'}
+      {translate(starting ? translate("Запуск…") : translate("Запустить deterministic matrix"))}
     </button>
     <fieldset>
-      <legend>Явно утвердить baseline завершённого real run</legend>
+      <legend>{translate("Явно утвердить baseline завершённого real run")}</legend>
       {([
         ['runId', 'ID adaptation job / run'], ['challengeId', 'Challenge ID'],
         ['modelProfileId', 'Model profile ID'], ['agentProfileId', 'Agent profile ID'],
-        ['reportSha256', 'SHA-256 отчёта']
+        ['reportSha256', translate("SHA-256 отчёта")]
       ] as const).map(([key, label]) => <label key={key}>
-        {label}
+        {translate(label)}
         <input value={approval[key]} onChange={event => {
           setApproval(current => ({ ...current, [key]: event.target.value }))
           setApprovalIdempotencyKey('')
         }} />
       </label>)}
       <label>
-        Revision завершённой adaptation job
-        <input inputMode="numeric" value={approval.expectedVersion} onChange={event => {
+        {translate("Revision завершённой adaptation job")}<input inputMode="numeric" value={approval.expectedVersion} onChange={event => {
           setApproval(current => ({ ...current, expectedVersion: event.target.value }))
           setApprovalIdempotencyKey('')
         }} />
@@ -88,8 +88,7 @@ export function AgentBenchmarkMatrixPanel(): React.JSX.Element {
       <button type="button" onClick={() => void approveBaseline()} disabled={!api || starting
         || !approval.runId || !approval.challengeId || !approval.modelProfileId
         || !approval.agentProfileId || !/^[\da-f]{64}$/i.test(approval.reportSha256)}>
-        Явно утвердить baseline
-      </button>
+        {translate("Явно утвердить baseline")}</button>
     </fieldset>
   </section>
 }

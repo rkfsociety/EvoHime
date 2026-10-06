@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 
@@ -13,5 +14,5 @@ export function ArtifactHandoffRegistryPanel(): React.JSX.Element {
     return unsubscribe
   }, [api])
   const artifacts = projection?.projection_json?.artifacts ?? []
-  return <section className="panel" aria-label="Artifact Handoff Registry"><h2>Реестр передачи артефактов</h2><p role="status">Ревизий: {artifacts.length} · состояние: {projection?.status ?? 'ожидание Core'}</p><ul>{artifacts.map((item) => <li key={`${item.artifact_id}:${item.revision}`}>{item.artifact_id} · rev {item.revision} · {item.state} · {item.content_hash}</li>)}</ul><p>Показываются только bounded metadata/projection; bytes, prompts, outputs и credentials не передаются.</p>{projection && projection.status !== 'ok' && <p>Ошибка: {projection.error_code || projection.status}</p>}</section>
+  return <section className="panel" aria-label="Artifact Handoff Registry"><h2>{translate("Реестр передачи артефактов")}</h2><p role="status">{translate("Ревизий:")}{translate(artifacts.length)} {translate("· состояние:")}{translate(projection?.status ?? translate("ожидание Core"))}</p><ul>{artifacts.map((item) => <li key={`${item.artifact_id}:${item.revision}`}>{translate(item.artifact_id)} · rev {translate(item.revision)} · {translate(item.state)} · {translate(item.content_hash)}</li>)}</ul><p>{translate("Показываются только bounded metadata/projection; bytes, prompts, outputs и credentials не передаются.")}</p>{projection && projection.status !== 'ok' && <p>{translate("Ошибка:")}{translate(projection.error_code || projection.status)}</p>}</section>
 }

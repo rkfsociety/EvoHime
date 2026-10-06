@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type {
@@ -117,22 +118,18 @@ export function SafetyPanel({ connection, events }: Props): React.JSX.Element {
   const microphoneOn = state !== null && LIVE_STATES.includes(state)
 
   return (
-    <section className="settings-info safety" aria-label="Безопасность">
-      <h3>Безопасность</h3>
+    <section className="settings-info safety" aria-label={translate("Безопасность")}>
+      <h3>{translate("Безопасность")}</h3>
       <p>
-        Секреты провайдера шифруются средствами Windows и не возвращаются в интерфейс после
-        сохранения.
-      </p>
+        {translate("Секреты провайдера шифруются средствами Windows и не возвращаются в интерфейс после сохранения.")}</p>
 
-      <h4>Разрешения по отдельности</h4>
+      <h4>{translate("Разрешения по отдельности")}</h4>
       <ul className="safety__capabilities">
         <li className="safety__capability safety__capability--microphone">
           <span>
-            <strong>Постоянное слушание микрофона</strong>
+            <strong>{translate("Постоянное слушание микрофона")}</strong>
             <small>
-              Отдельное разрешение. Смена общего режима доступа его не трогает: включить микрофон
-              можно только здесь или в панели «Слух».
-            </small>
+              {translate("Отдельное разрешение. Смена общего режима доступа его не трогает: включить микрофон можно только здесь или в панели «Слух».")}</small>
           </span>
           <button
             type="button"
@@ -140,39 +137,36 @@ export function SafetyPanel({ connection, events }: Props): React.JSX.Element {
             disabled={!api || !connected}
             onClick={() => void setMicrophone(!microphoneOn)}
           >
-            {microphoneOn ? 'Выключить' : 'Включить'}
+            {translate(microphoneOn ? translate("Выключить") : translate("Включить"))}
           </button>
         </li>
         {SHARED_CAPABILITIES.map((capability) => (
           <li key={capability.id} className="safety__capability">
             <span>
-              <strong>{capability.label}</strong>
-              <small>следует общему режиму доступа над полем ввода</small>
+              <strong>{translate(capability.label)}</strong>
+              <small>{translate("следует общему режиму доступа над полем ввода")}</small>
             </span>
           </li>
         ))}
       </ul>
       {notice ? (
         <p className="listening__error" role="alert">
-          {notice}
+          {translate(notice)}
         </p>
       ) : null}
 
-      <h4>За последний час</h4>
+      <h4>{translate("За последний час")}</h4>
       <p role="status">
-        высказываний: {utterancesLastHour} · кандидатов памяти: не подключено · предложений:{' '}
-        {proposalsLastHour}
+        {translate("высказываний:")}{translate(utterancesLastHour)} {translate("· кандидатов памяти: не подключено · предложений:")}{translate(' ')}
+        {translate(proposalsLastHour)}
       </p>
       <p>
-        Кандидаты памяти из услышанного появятся вместе с мостом ambient-памяти; пока такого
-        источника нет, и показывать здесь ноль значило бы утверждать, что он работает и ничего не
-        нашёл.
-      </p>
-      <h4>Резервная копия данных</h4>
-      <p>Backup и restore выполняются Core: preview, checksum, approval, progress и rollback остаются обязательными.</p>
+        {translate("Кандидаты памяти из услышанного появятся вместе с мостом ambient-памяти; пока такого источника нет, и показывать здесь ноль значило бы утверждать, что он работает и ничего не нашёл.")}</p>
+      <h4>{translate("Резервная копия данных")}</h4>
+      <p>{translate("Backup и restore выполняются Core: preview, checksum, approval, progress и rollback остаются обязательными.")}</p>
       <div className="safety__actions">
-        <button type="button" disabled={!api || !connected} onClick={() => void databaseAction('core.createDatabaseBackup')}>Создать backup</button>
-        <button type="button" disabled={!api || !connected} onClick={() => void databaseAction('core.prepareDatabaseRestore')}>Проверить backup для restore</button>
+        <button type="button" disabled={!api || !connected} onClick={() => void databaseAction('core.createDatabaseBackup')}>{translate("Создать backup")}</button>
+        <button type="button" disabled={!api || !connected} onClick={() => void databaseAction('core.prepareDatabaseRestore')}>{translate("Проверить backup для restore")}</button>
       </div>
     </section>
   )

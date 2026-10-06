@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 
 import { useShellApi } from './shell-api'
@@ -24,18 +25,18 @@ export function WorkflowPackagePanel(): React.JSX.Element {
     <section className="panel" aria-label="Workflow Package">
       <div className="panel__header">
         <div>
-          <p className="eyebrow">Переносимый workflow</p>
+          <p className="eyebrow">{translate("Переносимый workflow")}</p>
           <h3>Workflow Package</h3>
         </div>
         <span className="status-chip">Core-owned</span>
       </div>
-      <p className="panel__hint">JSON-пакет проверяется и сохраняется Core. Renderer не читает SQLite и не получает credentials.</p>
+      <p className="panel__hint">{translate("JSON-пакет проверяется и сохраняется Core. Renderer не читает SQLite и не получает credentials.")}</p>
       <label className="field">
-        <span>Граф workflow/v1</span>
+        <span>{translate("Граф workflow/v1")}</span>
         <textarea value={graphJson} onChange={(event) => setGraphJson(event.target.value)} rows={5} />
       </label>
       <label className="field">
-        <span>Имя</span>
+        <span>{translate("Имя")}</span>
         <input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       <div className="panel__actions">
@@ -47,11 +48,11 @@ export function WorkflowPackagePanel(): React.JSX.Element {
         } as never)}>Export</button>
       </div>
       <label className="field">
-        <span>Путь export/import</span>
+        <span>{translate("Путь export/import")}</span>
         <input value={destinationPath} onChange={(event) => { setDestinationPath(event.target.value); setSourcePath(event.target.value) }} />
       </label>
       <label className="field">
-        <span>Package JSON для commit/rebind</span>
+        <span>{translate("Package JSON для commit/rebind")}</span>
         <textarea value={packageJson} onChange={(event) => setPackageJson(event.target.value)} rows={5} />
       </label>
       <div className="panel__actions">
@@ -62,7 +63,7 @@ export function WorkflowPackagePanel(): React.JSX.Element {
         <label className="field"><span>Slot id</span><input value={slotId} onChange={(event) => setSlotId(event.target.value)} /></label>
         <label className="field"><span>Opaque local reference</span><input value={credentialReference} onChange={(event) => setCredentialReference(event.target.value)} /></label>
       </div>
-      <p role="status" className="panel__hint">{status}</p>
+      <p role="status" className="panel__hint">{translate(status)}</p>
     </section>
   )
 }

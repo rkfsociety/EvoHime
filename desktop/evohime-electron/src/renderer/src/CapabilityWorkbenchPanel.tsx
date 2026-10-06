@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 import type { ConnectionState } from '@shared/api'
 import { useShellApi } from './shell-api'
@@ -18,5 +19,5 @@ export function CapabilityWorkbenchPanel({ connection }: { readonly connection: 
     setMessage(result.ok ? 'Запрос принят Core.' : result.message)
     if (result.ok && operation !== 'create') setRevision(value => value + 1)
   }
-  return <section aria-label="Capability Workbench"><h3>Capability Workbench</h3><p>Core-owned runtime instances, lifecycle, tools, resources and recovery. Authority и эффекты остаются в Core.</p><label>Операция <select value={operation} onChange={event => setOperation(event.target.value as Operation)}>{OPERATIONS.map(item => <option key={item}>{item}</option>)}</select></label><label>Payload JSON<textarea aria-label="Capability Workbench JSON" value={payload} onChange={event => setPayload(event.target.value)} maxLength={256 * 1024} /></label><button type="button" onClick={() => void send()}>Отправить в Core</button>{message ? <p role="status">{message}</p> : null}</section>
+  return <section aria-label="Capability Workbench"><h3>Capability Workbench</h3><p>{translate("Core-owned runtime instances, lifecycle, tools, resources and recovery. Authority и эффекты остаются в Core.")}</p><label>{translate("Операция")}<select value={operation} onChange={event => setOperation(event.target.value as Operation)}>{OPERATIONS.map(item => <option key={item}>{translate(item)}</option>)}</select></label><label>Payload JSON<textarea aria-label="Capability Workbench JSON" value={payload} onChange={event => setPayload(event.target.value)} maxLength={256 * 1024} /></label><button type="button" onClick={() => void send()}>{translate("Отправить в Core")}</button>{message ? <p role="status">{translate(message)}</p> : null}</section>
 }

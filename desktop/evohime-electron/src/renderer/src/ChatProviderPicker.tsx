@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useMemo, useState } from 'react'
 
 import { PROVIDER_KINDS, type ChatProviderMode, type CodexStatus, type ConnectionState } from '@shared/api'
@@ -80,15 +81,15 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
 
   return (
     <label className="composer__provider">
-      <span className="sr-only">Провайдер задачи</span>
+      <span className="sr-only">{translate("Провайдер задачи")}</span>
       <select
-        aria-label="Провайдер задачи"
+        aria-label={translate("Провайдер задачи")}
         value={options.some((option) => option.value === value) ? value : ''}
         disabled={disabled || !connected || options.length === 0}
         onChange={(event) => void select(event.target.value as ChatProviderMode)}
       >
-        {options.length === 0 ? <option value="">Настрой провайдера</option> : null}
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        {options.length === 0 ? <option value="">{translate("Настрой провайдера")}</option> : null}
+        {options.map((option) => <option key={option.value} value={option.value}>{translate(option.label)}</option>)}
       </select>
     </label>
   )

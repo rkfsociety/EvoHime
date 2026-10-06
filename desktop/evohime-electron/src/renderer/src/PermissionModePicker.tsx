@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useRef, useState } from 'react'
 
 import type { ConnectionState, PermissionMode as SharedPermissionMode } from '@shared/api'
@@ -107,19 +108,19 @@ export function PermissionModePicker({ connection, workspace = null, open: contr
       <button
         type="button"
         className={`permission-picker__button permission-picker__button--${mode}`}
-        aria-label="Режим доступа"
+        aria-label={translate("Режим доступа")}
         title={current.label}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
         <span aria-hidden="true">◉</span>
-        <span>{current.compactLabel}</span>
+        <span>{translate(current.compactLabel)}</span>
         <span className="permission-picker__chevron" aria-hidden="true">▾</span>
       </button>
 
       {open ? (
-        <div className="permission-picker__menu" role="menu" aria-label="Режим доступа агента">
-          <div className="permission-picker__title">Как подтверждать действия?</div>
+        <div className="permission-picker__menu" role="menu" aria-label={translate("Режим доступа агента")}>
+          <div className="permission-picker__title">{translate("Как подтверждать действия?")}</div>
           {MODES.map((item) => (
             <button
               key={item.value}
@@ -129,14 +130,14 @@ export function PermissionModePicker({ connection, workspace = null, open: contr
               className={`permission-picker__option${item.value === mode ? ' permission-picker__option--selected' : ''}`}
               onClick={() => void select(item.value)}
             >
-              <span className="permission-picker__option-icon" aria-hidden="true">{item.value === mode ? '✓' : '○'}</span>
+              <span className="permission-picker__option-icon" aria-hidden="true">{translate(item.value === mode ? '✓' : '○')}</span>
               <span>
-                <strong>{item.label}</strong>
-                <small>{item.description}</small>
+                <strong>{translate(item.label)}</strong>
+                <small>{translate(item.description)}</small>
               </span>
             </button>
           ))}
-          {error ? <p className="permission-picker__error" role="alert">{error}</p> : null}
+          {error ? <p className="permission-picker__error" role="alert">{translate(error)}</p> : null}
         </div>
       ) : null}
     </div>

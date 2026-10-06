@@ -16,6 +16,7 @@ import { PromptStrategyPanel } from './PromptStrategyPanel'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 import { DEFAULT_APPEARANCE, type AppearanceSettings } from './appearance'
+import { translate, useT } from './i18n'
 
 export type SettingsTab = 'provider' | 'agents' | 'integrations' | 'triggers' | 'speech' | 'skills' | 'tools' | 'diagnostics' | 'appearance' | 'security'
 
@@ -43,6 +44,7 @@ const TABS: readonly { readonly id: SettingsTab; readonly label: string }[] = [
 ]
 
 export function SettingsModal({ workspace, connection, events, appearance, onAppearanceChange, initialTab = 'provider', onClose }: SettingsModalProps): React.JSX.Element {
+  const t = useT()
   const [tab, setTab] = useState<SettingsTab>(initialTab)
   const [providerSurface, setProviderSurface] = useState<'api' | 'codex'>('api')
 
@@ -62,15 +64,15 @@ export function SettingsModal({ workspace, connection, events, appearance, onApp
         <header className="settings-modal__header">
           <div>
             <p className="settings-modal__eyebrow">EvoHime</p>
-            <h2 id="settings-title">Настройки</h2>
+            <h2 id="settings-title">{t('Настройки')}</h2>
           </div>
-          <button type="button" className="settings-modal__close" aria-label="Закрыть настройки" onClick={onClose}>
+          <button type="button" className="settings-modal__close" aria-label={t('Закрыть настройки')} onClick={onClose}>
             ×
           </button>
         </header>
 
         <div className="settings-modal__body">
-          <nav className="settings-tabs" aria-label="Разделы настроек">
+          <nav className="settings-tabs" aria-label={t('Разделы настроек')}>
             {TABS.map((item) => (
               <button
                 key={item.id}
@@ -80,34 +82,33 @@ export function SettingsModal({ workspace, connection, events, appearance, onApp
                 role="tab"
                 onClick={() => setTab(item.id)}
               >
-                {item.label}
+                {t(item.label)}
               </button>
             ))}
           </nav>
 
           <div className="settings-modal__content">
             {tab === 'provider' ? (
-              <section className="provider-hub" aria-label="Провайдер и модели">
-                <div className="provider-hub__tabs" role="tablist" aria-label="Источник моделей">
+              <section className="provider-hub" aria-label={translate("Провайдер и модели")}>
+                <div className="provider-hub__tabs" role="tablist" aria-label={translate("Источник моделей")}>
                   <button type="button" role="tab" aria-selected={providerSurface === 'api'} onClick={() => setProviderSurface('api')}>
-                    API-провайдеры
-                  </button>
+                    {translate("API-провайдеры")}</button>
                   <button type="button" role="tab" aria-selected={providerSurface === 'codex'} onClick={() => setProviderSurface('codex')}>
                     Codex CLI
                   </button>
                 </div>
-                {providerSurface === 'api' ? <ProviderForm connection={connection} events={events} /> : <CodexPanel />}
+                {translate(providerSurface === 'api' ? <ProviderForm connection={connection} events={events} /> : <CodexPanel />)}
               </section>
             ) : null}
             {tab === 'agents' ? <><ExternalCodingAgentAdapterPanel /><MultiReviewerEnsemblePanel connection={connection} /><LanguageIntelligencePanel connection={connection} /><PromptStrategyPanel events={events} /></> : null}
-            {tab === 'integrations' ? <IntegrationProviderPanel /> : null}
-            {tab === 'triggers' ? <EventTriggerRuntimePanel workspace={workspace} /> : null}
-            {tab === 'speech' ? <ListenerRuntimeSection /> : null}
-            {tab === 'skills' ? <SkillCatalogPanel workspace={workspace} connection={connection} events={events} /> : null}
-            {tab === 'tools' ? <AdaptiveToolCatalogPanel connection={connection} events={events} /> : null}
-            {tab === 'diagnostics' ? <DiagnosticsAndSupportBundlePanel connection={connection} events={events} /> : null}
-            {tab === 'appearance' ? <AppearanceSettingsPanel settings={appearance} onChange={onAppearanceChange} /> : null}
-            {tab === 'security' ? <SafetyPanel connection={connection} events={events} /> : null}
+            {translate(tab === 'integrations' ? <IntegrationProviderPanel /> : null)}
+            {translate(tab === 'triggers' ? <EventTriggerRuntimePanel workspace={workspace} /> : null)}
+            {translate(tab === 'speech' ? <ListenerRuntimeSection /> : null)}
+            {translate(tab === 'skills' ? <SkillCatalogPanel workspace={workspace} connection={connection} events={events} /> : null)}
+            {translate(tab === 'tools' ? <AdaptiveToolCatalogPanel connection={connection} events={events} /> : null)}
+            {translate(tab === 'diagnostics' ? <DiagnosticsAndSupportBundlePanel connection={connection} events={events} /> : null)}
+            {translate(tab === 'appearance' ? <AppearanceSettingsPanel settings={appearance} onChange={onAppearanceChange} /> : null)}
+            {translate(tab === 'security' ? <SafetyPanel connection={connection} events={events} /> : null)}
           </div>
         </div>
       </section>
@@ -116,20 +117,22 @@ export function SettingsModal({ workspace, connection, events, appearance, onApp
 }
 
 function AppearanceSettingsPanel({ settings, onChange }: { readonly settings: AppearanceSettings; readonly onChange: (settings: AppearanceSettings) => void }): React.JSX.Element {
+  const t = useT()
   return (
-    <section className="settings-info appearance-settings" aria-label="Внешний вид">
+    <section className="settings-info appearance-settings" aria-label={t('Внешний вид')}>
       <div className="appearance-settings__heading">
-        <div><h3>Внешний вид</h3><p>Настройте оформление и читаемость приложения. Изменения применяются сразу и сохраняются на этом компьютере.</p></div>
-        <button type="button" onClick={() => onChange(DEFAULT_APPEARANCE)}>Сбросить</button>
+        <div><h3>{t('Внешний вид')}</h3><p>{t('Настройте оформление и читаемость приложения. Изменения применяются сразу и сохраняются на этом компьютере.')}</p></div>
+        <button type="button" onClick={() => onChange({ ...DEFAULT_APPEARANCE, locale: settings.locale })}>{t('Сбросить')}</button>
       </div>
       <div className="appearance-settings__grid">
-        <label>Тема <select value={settings.theme} onChange={event => onChange({ ...settings, theme: event.target.value as AppearanceSettings['theme'] })}><option value="system">Как в Windows</option><option value="dark">Тёмная</option><option value="light">Светлая</option></select></label>
-        <label>Размер интерфейса <select value={settings.scale} onChange={event => onChange({ ...settings, scale: event.target.value as AppearanceSettings['scale'] })}><option value="90">Меньше</option><option value="100">Стандартный</option><option value="110">Крупнее</option></select></label>
-        <label>Плотность <select value={settings.density} onChange={event => onChange({ ...settings, density: event.target.value as AppearanceSettings['density'] })}><option value="comfortable">Комфортная</option><option value="compact">Компактная</option></select></label>
-        <label>Цвет акцента <select value={settings.accent} onChange={event => onChange({ ...settings, accent: event.target.value as AppearanceSettings['accent'] })}><option value="violet">Фиолетовый</option><option value="blue">Синий</option><option value="teal">Бирюзовый</option><option value="rose">Розовый</option></select></label>
+        <label>{t('Тема')} <select value={settings.theme} onChange={event => onChange({ ...settings, theme: event.target.value as AppearanceSettings['theme'] })}><option value="system">{t('Как в Windows')}</option><option value="dark">{t('Тёмная')}</option><option value="light">{t('Светлая')}</option></select></label>
+        <label>{t('Размер интерфейса')} <select value={settings.scale} onChange={event => onChange({ ...settings, scale: event.target.value as AppearanceSettings['scale'] })}><option value="90">{t('Меньше')}</option><option value="100">{t('Стандартный')}</option><option value="110">{t('Крупнее')}</option></select></label>
+        <label>{t('Плотность')} <select value={settings.density} onChange={event => onChange({ ...settings, density: event.target.value as AppearanceSettings['density'] })}><option value="comfortable">{t('Комфортная')}</option><option value="compact">{t('Компактная')}</option></select></label>
+        <label>{t('Цвет акцента')} <select value={settings.accent} onChange={event => onChange({ ...settings, accent: event.target.value as AppearanceSettings['accent'] })}><option value="violet">{t('Фиолетовый')}</option><option value="blue">{t('Синий')}</option><option value="teal">{t('Бирюзовый')}</option><option value="rose">{t('Розовый')}</option></select></label>
+        <label>{t('Язык')} <select value={settings.locale} onChange={event => onChange({ ...settings, locale: event.target.value as AppearanceSettings['locale'] })}><option value="ru">{t('Русский')}</option><option value="en">{t('Английский')}</option></select></label>
       </div>
-      <label className="appearance-settings__motion"><input type="checkbox" checked={settings.reduceMotion} onChange={event => onChange({ ...settings, reduceMotion: event.target.checked })} /> Уменьшить анимацию</label>
-      <p className="appearance-settings__note">Настройки относятся к основному окну EvoHime.</p>
+      <label className="appearance-settings__motion"><input type="checkbox" checked={settings.reduceMotion} onChange={event => onChange({ ...settings, reduceMotion: event.target.checked })} /> {t('Уменьшить анимацию')}</label>
+      <p className="appearance-settings__note">{t('Настройки относятся к основному окну EvoHime.')}</p>
     </section>
   )
 }

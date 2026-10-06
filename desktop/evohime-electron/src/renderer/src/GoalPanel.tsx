@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, GoalProjection } from '@shared/api'
@@ -117,36 +118,36 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
   }
 
   return (
-    <section className="goal-panel" aria-label="Постоянные цели">
+    <section className="goal-panel" aria-label={translate("Постоянные цели")}>
       <div className="goal-panel__header">
         <div>
           <span className="goal-panel__eyebrow">Core Goal v1</span>
-          <h3>Постоянные цели</h3>
+          <h3>{translate("Постоянные цели")}</h3>
         </div>
-        <span className="goal-panel__count">{goals.length || '—'}</span>
+        <span className="goal-panel__count">{translate(goals.length || '—')}</span>
       </div>
 
       {workspace ? (
         <form className="goal-create" onSubmit={(event) => void createGoal(event)}>
           <input
-            aria-label="Новая цель"
+            aria-label={translate("Новая цель")}
             value={objective}
             onChange={(event) => setObjective(event.target.value)}
-            placeholder="Что должно быть достигнуто?"
+            placeholder={translate("Что должно быть достигнуто?")}
             maxLength={4096}
           />
           <input
-            aria-label="Критерий успеха"
+            aria-label={translate("Критерий успеха")}
             value={criterion}
             onChange={(event) => setCriterion(event.target.value)}
-            placeholder="Как Core подтвердит результат?"
+            placeholder={translate("Как Core подтвердит результат?")}
             maxLength={4096}
           />
-          <button type="submit" disabled={busy || objective.trim() === '' || criterion.trim() === ''}>Создать цель</button>
+          <button type="submit" disabled={busy || objective.trim() === '' || criterion.trim() === ''}>{translate("Создать цель")}</button>
         </form>
-      ) : <p className="empty-state">Выбери workspace, чтобы создать или открыть цели.</p>}
+      ) : <p className="empty-state">{translate("Выбери workspace, чтобы создать или открыть цели.")}</p>}
 
-      {listProjection?.truncated ? <p className="goal-card__warning" role="status">Список целей ограничен размером IPC-проекции; открой цель отдельно для полного состояния.</p> : null}
+      {listProjection?.truncated ? <p className="goal-card__warning" role="status">{translate("Список целей ограничен размером IPC-проекции; открой цель отдельно для полного состояния.")}</p> : null}
 
       {goals.length > 0 ? (
         <div className="goal-list">
@@ -155,47 +156,47 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
               <div className="goal-card__heading">
                 <div>
                   <strong>{goal.objective}</strong>
-                  <small>{STATUS_LABELS[goal.status] ?? goal.status} · версия {goal.version}</small>
+                  <small>{translate(STATUS_LABELS[goal.status] ?? goal.status)} {translate("· версия")}{translate(goal.version)}</small>
                 </div>
-                <code>{goal.completedCriteria.length}/{goal.successCriteria.length}</code>
+                <code>{translate(goal.completedCriteria.length)}/{translate(goal.successCriteria.length)}</code>
               </div>
               <p className="goal-card__summary">{goal.progressSummary}</p>
-              {goal.recoveryWarning ? <p className="goal-card__warning" role="alert">{goal.recoveryWarning}</p> : null}
-              {goal.blockers.length > 0 ? <ul className="goal-card__blockers">{goal.blockers.map((item) => <li key={item}>{item}</li>)}</ul> : null}
+              {goal.recoveryWarning ? <p className="goal-card__warning" role="alert">{translate(goal.recoveryWarning)}</p> : null}
+              {goal.blockers.length > 0 ? <ul className="goal-card__blockers">{goal.blockers.map((item) => <li key={item}>{translate(item)}</li>)}</ul> : null}
               <ul className="goal-card__criteria">
                 {goal.successCriteria.map((item) => (
                   <li key={item.id} className={item.status === 'verified' ? 'goal-criterion--verified' : ''}>
-                    <span aria-hidden="true">{item.status === 'verified' ? '✓' : '○'}</span>
-                    <span>{item.statement}</span>
+                    <span aria-hidden="true">{translate(item.status === 'verified' ? '✓' : '○')}</span>
+                    <span>{translate(item.statement)}</span>
                     {item.status !== 'verified' && goal.status !== 'completed' && goal.status !== 'cancelled' ? (
-                      <button type="button" disabled={busy} onClick={() => void verify(goal, item.id)}>Подтвердить</button>
+                      <button type="button" disabled={busy} onClick={() => void verify(goal, item.id)}>{translate("Подтвердить")}</button>
                     ) : null}
                   </li>
                 ))}
               </ul>
               {goal.workflowRunIds.length > 0 || goal.childRunIds.length > 0 || goal.checkpointId || goal.successCriteria.some((item) => item.evidenceRef) ? (
                 <div className="goal-card__links">
-                  {goal.workflowRunIds.length > 0 ? <small>Workflow: {goal.workflowRunIds.join(', ')}</small> : null}
-                  {goal.childRunIds.length > 0 ? <small>Дочерние runs: {goal.childRunIds.join(', ')}</small> : null}
-                  {goal.checkpointId ? <small>Checkpoint: {goal.checkpointId}</small> : null}
-                  {goal.successCriteria.filter((item) => item.evidenceRef).map((item) => <small key={`evidence-${item.id}`}>Evidence {item.id}: {item.evidenceRef}</small>)}
+                  {goal.workflowRunIds.length > 0 ? <small>Workflow: {translate(goal.workflowRunIds.join(', '))}</small> : null}
+                  {goal.childRunIds.length > 0 ? <small>{translate("Дочерние runs:")}{translate(goal.childRunIds.join(', '))}</small> : null}
+                  {goal.checkpointId ? <small>Checkpoint: {translate(goal.checkpointId)}</small> : null}
+                  {goal.successCriteria.filter((item) => item.evidenceRef).map((item) => <small key={`evidence-${item.id}`}>Evidence {translate(item.id)}: {translate(item.evidenceRef)}</small>)}
                 </div>
               ) : null}
-              {goal.nextAction ? <small className="goal-card__next">Следующее действие: {goal.nextAction}</small> : null}
+              {goal.nextAction ? <small className="goal-card__next">{translate("Следующее действие:")}{translate(goal.nextAction)}</small> : null}
               <div className="goal-card__actions">
-                {goal.status === 'active' ? <button type="button" disabled={busy} onClick={() => void transition(goal, 'pauseGoal')}>Пауза</button> : null}
-                {goal.status === 'paused' || goal.status === 'blocked' || goal.status === 'budget_limited' ? <button type="button" disabled={busy} onClick={() => void transition(goal, 'resumeGoal')}>Продолжить</button> : null}
-                {!['completed', 'cancelled'].includes(goal.status) ? <button type="button" disabled={busy} onClick={() => void transition(goal, 'cancelGoal')}>Отменить</button> : null}
+                {goal.status === 'active' ? <button type="button" disabled={busy} onClick={() => void transition(goal, 'pauseGoal')}>{translate("Пауза")}</button> : null}
+                {goal.status === 'paused' || goal.status === 'blocked' || goal.status === 'budget_limited' ? <button type="button" disabled={busy} onClick={() => void transition(goal, 'resumeGoal')}>{translate("Продолжить")}</button> : null}
+                {!['completed', 'cancelled'].includes(goal.status) ? <button type="button" disabled={busy} onClick={() => void transition(goal, 'cancelGoal')}>{translate("Отменить")}</button> : null}
               </div>
               {goal.tokenBudget || goal.costBudgetMicros || goal.continuationBudget ? (
-                <small className="goal-card__budget">Бюджет: tokens {goal.tokenBudget || '—'} · cost {goal.costBudgetMicros || '—'} · продолжений {goal.continuationBudget || '—'}</small>
+                <small className="goal-card__budget">{translate("Бюджет: tokens")}{translate(goal.tokenBudget || '—')} · cost {translate(goal.costBudgetMicros || '—')} {translate("· продолжений")}{translate(goal.continuationBudget || '—')}</small>
               ) : null}
             </article>
           ))}
         </div>
-      ) : <p className="empty-state">Сохранённых целей пока нет.</p>}
+      ) : <p className="empty-state">{translate("Сохранённых целей пока нет.")}</p>}
 
-      {message ? <p className="goal-panel__message" role="status">{message}</p> : null}
+      {message ? <p className="goal-panel__message" role="status">{translate(message)}</p> : null}
     </section>
   )
 }

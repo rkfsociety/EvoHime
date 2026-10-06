@@ -38,6 +38,7 @@ import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 import { ProviderStateProvider } from './provider-state'
 import { EvaIcon } from './EvaIcon'
 import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
+import { setAppLocale, translate, useT } from './i18n'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -91,6 +92,7 @@ const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запла�
 const SETTINGS_LABEL = 'Настройки'
 
 export function App(): React.JSX.Element {
+  const t = useT()
   const [appearance, setAppearance] = useState<AppearanceSettings>(() => loadAppearance())
   const [state, setState] = useState<ShellState | null>(null)
   const [events, setEvents] = useState<readonly CoreEvent[]>([])
@@ -128,6 +130,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     applyAppearance(appearance)
     saveAppearance(appearance)
+    setAppLocale(appearance.locale)
   }, [appearance])
 
   useEffect(() => {
@@ -220,25 +223,25 @@ export function App(): React.JSX.Element {
   if (apiMissing) {
     return (
       <main className="shell shell--recovery">
-        <h1>Оболочка недоступна</h1>
-        <p>Мост preload не загрузился. Перезапусти приложение.</p>
+        <h1>{t('Оболочка недоступна')}</h1>
+        <p>{t('Мост preload не загрузился. Перезапусти приложение.')}</p>
       </main>
     )
   }
 
   const connection = state?.connection ?? 'starting'
-  const title = view === 'chat' ? 'Диалог' : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
+  const title = view === 'chat' ? t('Диалог') : t(VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 
   return (
     <ProviderStateProvider>
     <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
-      <nav className="sidebar" aria-label="Чаты и навигация">
+      <nav className="sidebar" aria-label={t('Чаты и навигация')}>
         <div className="sidebar__brand">
           <button
             type="button"
             className="sidebar__brand-toggle"
-            aria-label={sidebarCollapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'}
-            title={sidebarCollapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'}
+            aria-label={t('Развернуть боковую панель')}
+            title={sidebarCollapsed ? t('Развернуть боковую панель') : t('Свернуть боковую панель')}
             onClick={() => setSidebarCollapsed((value) => !value)}
           >
             <span className="sidebar__logo"><EvaIcon /></span>
@@ -282,17 +285,17 @@ export function App(): React.JSX.Element {
               {(identity?.name ?? '?').slice(0, 1).toUpperCase()}
             </span>
             <span className="account__copy">
-              <span className="account__name" title={identityTitle(identity)}>
+              <span className="account__name" title={identityTitle(identity, t)}>
                 {identity?.name ?? '…'}
               </span>
-              <small>Разделы и настройки</small>
+              <small>{t('Разделы и настройки')}</small>
             </span>
             <span className="account__chevron" aria-hidden="true">⌃</span>
           </button>
           <UpdateIndicator status={update} />
           {accountMenuOpen ? (
-            <div className="account__menu" role="menu" aria-label="Разделы и настройки">
-              {USER_VIEWS.map((item) => (
+            <div className="account__menu" role="menu" aria-label={t('Разделы и настройки')}>
+              {translate(USER_VIEWS.map((item) => (
                 <NavItem
                   key={item.id}
                   view={item}
@@ -302,7 +305,7 @@ export function App(): React.JSX.Element {
                     setAccountMenuOpen(false)
                   }}
                 />
-              ))}
+              )))}
               <button
                 type="button"
                 className="account__menu-item"
@@ -315,7 +318,7 @@ export function App(): React.JSX.Element {
                 }}
               >
                 <span aria-hidden="true">⚙</span>
-                {SETTINGS_LABEL}
+                {t(SETTINGS_LABEL)}
               </button>
             </div>
           ) : null}
@@ -324,30 +327,30 @@ export function App(): React.JSX.Element {
 
       <main className="main">
         <header className="topbar">
-          <h2 className="topbar__title">{title}</h2>
-          <span className="topbar__path" title={workspace ?? undefined}>{workspace ?? 'папка не выбрана'}</span>
+          <h2 className="topbar__title">{translate(title)}</h2>
+          <span className="topbar__path" title={workspace ?? undefined}>{workspace ?? t('папка не выбрана')}</span>
           <span className="topbar__spacer" />
           {!workbenchVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)}>
-              Рабочая панель
+              {t('Рабочая панель')}
             </button>
           ) : null}
           {!browserVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setBrowserVisible(true)}>
-              Открыть браузер
+              {t('Открыть браузер')}
             </button>
           ) : null}
           <button
             type="button"
             className={`topbar__trace${traceOpen ? ' topbar__trace--active' : ''}`}
-            aria-label={traceOpen ? 'Закрыть трейс' : 'Открыть трейс'}
+            aria-label={traceOpen ? t('Закрыть трейс') : t('Открыть трейс')}
             aria-pressed={traceOpen}
             onClick={() => setTraceOpen((value) => !value)}
           >
-            Трейс
+            {t('Трейс')}
           </button>
           <ListeningIndicator events={events} />
-          <span className={`status-pill status-pill--${connection}`}>{STATE_LABELS[connection]}</span>
+          <span className={`status-pill status-pill--${connection}`}>{t(STATE_LABELS[connection])}</span>
         </header>
 
         <RecoveryBanner
@@ -375,8 +378,8 @@ export function App(): React.JSX.Element {
                 chatRevision={chatRevision}
               />
               {workbenchVisible || browserVisible ? (
-                <aside className="conversation-side-panels" aria-label="Дополнительные панели">
-                  {workbenchVisible ? (
+                <aside className="conversation-side-panels" aria-label={t('Дополнительные панели')}>
+                  {translate(workbenchVisible ? (
                     <WorkbenchPanel
                       connection={connection}
                       chatId={chatId}
@@ -384,17 +387,17 @@ export function App(): React.JSX.Element {
                       events={events}
                       onClose={() => setWorkbenchVisible(false)}
                     />
-                  ) : null}
-                  {browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null}
+                  ) : null)}
+                  {translate(browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null)}
                 </aside>
               ) : null}
             </div>
           ) : (
             <div className="main__scroll">
-              {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
-              {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
-              {view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null}
-              {view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null}
+              {translate(view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null)}
+              {translate(view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null)}
+              {translate(view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null)}
+              {translate(view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null)}
               {view === 'workflows' ? (
                 <>
                   <WorkflowPanel connection={connection} events={events} workspace={workspace} />
@@ -403,16 +406,16 @@ export function App(): React.JSX.Element {
                   <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} draftId={builderDraftId} ownerScope={builderDraftOwnerScope} />
                 </>
               ) : null}
-              {view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null}
-              {view === 'kernels' ? <AnalysisKernelPanel connection={connection} events={events} /> : null}
-              {view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null}
-              {view === 'human-work-items' ? <HumanWorkItemsPanel /> : null}
+              {translate(view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null)}
+              {translate(view === 'kernels' ? <AnalysisKernelPanel connection={connection} events={events} /> : null)}
+              {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
+              {translate(view === 'human-work-items' ? <HumanWorkItemsPanel /> : null)}
             </div>
           )}
         </div>
       </main>
 
-      {settingsOpen ? (
+      {translate(settingsOpen ? (
         <SettingsModal
           workspace={workspace}
           connection={connection}
@@ -422,9 +425,9 @@ export function App(): React.JSX.Element {
           initialTab={settingsTab}
           onClose={() => setSettingsOpen(false)}
         />
-      ) : null}
+      ) : null)}
 
-      {traceOpen ? (
+      {translate(traceOpen ? (
         <TracePanel
           chatId={chatId}
           chatRevision={chatRevision}
@@ -435,21 +438,21 @@ export function App(): React.JSX.Element {
           workspace={workspace}
           onClose={() => setTraceOpen(false)}
         />
-      ) : null}
+      ) : null)}
 
       <footer className="statusbar">
-        <span>Протокол {state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</span>
+          <span>{t('Протокол')} {translate(state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—')}</span>
         <span title={state?.coreVersion ? `Версия runtime-пакета Core: ${state.coreVersion}` : undefined}>
-          Core модуль {update?.installedModules?.core ?? '—'}
+          {t('Core модуль')} {translate(update?.installedModules?.core ?? '—')}
         </span>
         {/* Сборка опознаётся commit: релизная версия модуля показана отдельно. */}
         {update && update.phase !== 'disabled' ? (
-          <span title={`Commit сборки, ветка ${update.branch}`}>сборка {shortCommit(update.installedCommit)}</span>
+          <span title={t(`Commit сборки, ветка ${update.branch}`)}>{t('сборка')} {translate(shortCommit(update.installedCommit))}</span>
         ) : null}
-        <span title="Последнее событие в журнале Core">seq {state?.lastSequence ?? 0}</span>
-        {(state?.reconnectAttempts ?? 0) > 0 ? <span>переподключений: {state?.reconnectAttempts}</span> : null}
+        <span title={t('Последнее событие в журнале Core')}>seq {translate(state?.lastSequence ?? 0)}</span>
+        {(state?.reconnectAttempts ?? 0) > 0 ? <span>{t('переподключений:')} {translate(state?.reconnectAttempts)}</span> : null}
         <span className="statusbar__spacer" />
-        {state?.reason ? <span className="statusbar__reason">{state.reason}</span> : null}
+        {state?.reason ? <span className="statusbar__reason">{translate(state.reason)}</span> : null}
       </footer>
 
     </div>
@@ -470,6 +473,7 @@ export function ListeningIndicator({
 }: {
   readonly events: readonly CoreEvent[]
 }): React.JSX.Element {
+  const t = useT()
   // `events` holds the newest event first (prepended on receipt below), so
   // the latest match is the FIRST one found — not the last.
   const payload = events.find(
@@ -488,29 +492,29 @@ export function ListeningIndicator({
   }
   const unknown = state === null || state === 'engine_unavailable'
   const live = state === 'listening' || state === 'starting'
-  const title = state === null ? 'Слушание: проверка состояния…' : STATE_TITLES[state]
-  const tooltip = reason === null ? title : `${title} — ${REASON_TEXTS[reason]}`
+  const title = state === null ? t('Слушание: проверка состояния…') : t(STATE_TITLES[state])
+  const tooltip = reason === null ? title : `${title} — ${t(REASON_TEXTS[reason])}`
   return (
     <span
       className={`listening-pill${live ? ' listening-pill--live' : ''}${unknown ? ' listening-pill--unknown' : ''}`}
       role="status"
       title={tooltip}
     >
-      <span aria-hidden="true">{live ? '🎙' : unknown ? '⚠️' : '⏸'}</span>
-      {title}
+      <span aria-hidden="true">{translate(live ? '🎙' : unknown ? '⚠️' : '⏸')}</span>
+      {translate(title)}
     </span>
   )
 }
 
 /** Says where the name came from, so an unexpected one is explainable. */
-function identityTitle(identity: UserIdentity | null): string {
+function identityTitle(identity: UserIdentity | null, t: (text: string) => string): string {
   if (!identity) return ''
   const source = {
     github: 'GitHub CLI',
     git: 'git config user.name',
     os: 'учётная запись Windows'
   }[identity.source]
-  return `${identity.name} · ${source}`
+  return `${identity.name} · ${t(source)}`
 }
 
 interface NavItemProps {
@@ -520,6 +524,7 @@ interface NavItemProps {
 }
 
 function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
+  const t = useT()
   return (
     <button
       type="button"
@@ -528,8 +533,8 @@ function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
       aria-current={active ? 'page' : undefined}
       onClick={() => onSelect(view.id)}
     >
-      <span className="nav-item__icon" aria-hidden="true">{view.icon}</span>
-      {view.label}
+      <span className="nav-item__icon" aria-hidden="true">{translate(view.icon)}</span>
+      {t(view.label)}
     </button>
   )
 }

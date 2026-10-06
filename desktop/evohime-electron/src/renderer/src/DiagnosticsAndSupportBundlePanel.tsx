@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -44,7 +45,7 @@ export function DiagnosticsAndSupportBundlePanel({ connection, events }: Props):
 
   async function submit(): Promise<void> {
     if (!api || sending) return
-    if (!window.confirm('Отправить redacted support bundle в публичный GitHub issue для анализа?')) return
+    if (!window.confirm(translate('Отправить redacted support bundle в публичный GitHub issue для анализа?'))) return
     setSending(true)
     setNotice('Отправляю redacted support bundle…')
     const result = await api.invoke('shell.submitDiagnostics', {})
@@ -60,24 +61,24 @@ export function DiagnosticsAndSupportBundlePanel({ connection, events }: Props):
   const health = Array.isArray(snapshot?.['health']) ? snapshot['health'] as readonly Record<string, unknown>[] : []
   const redaction = snapshot?.['redaction'] as Record<string, unknown> | undefined
   return (
-    <section className="settings-info" aria-label="Диагностика и support bundle">
-      <h3>Диагностика и support bundle</h3>
-      <p>Core собирает bounded health snapshot. Main делает финальный redaction scan. После живого падения задачи Ева автоматически отправляет redacted report при наличии авторизации GitHub; кнопку можно использовать для повторной ручной отправки.</p>
+    <section className="settings-info" aria-label={translate("Диагностика и support bundle")}>
+      <h3>{translate("Диагностика и support bundle")}</h3>
+      <p>{translate("Core собирает bounded health snapshot. Main делает финальный redaction scan. После живого падения задачи Ева автоматически отправляет redacted report при наличии авторизации GitHub; кнопку можно использовать для повторной ручной отправки.")}</p>
       <div className="safety__actions">
-        <input aria-label="Идентификатор conversation" placeholder="conversation id (необязательно)" value={conversationId} onChange={(event) => setConversationId(event.target.value)} />
-        <input aria-label="Идентификатор failed run" placeholder="failed run id (необязательно)" value={runId} onChange={(event) => setRunId(event.target.value)} />
-        <button type="button" disabled={!api || !connected} onClick={() => void refresh()}>Обновить preview</button>
-        <button type="button" disabled={!api || !connected || !snapshot} onClick={() => void save()}>Сохранить support bundle</button>
-        <button type="button" disabled={!api || !connected || !snapshot || sending} onClick={() => void submit()}>{sending ? 'Отправка…' : 'Отправить в GitHub issue'}</button>
-        <button type="button" disabled={!api || !snapshot} onClick={() => void copyDraft()}>Скопировать issue draft</button>
+        <input aria-label={translate("Идентификатор conversation")} placeholder={translate("conversation id (необязательно)")} value={conversationId} onChange={(event) => setConversationId(event.target.value)} />
+        <input aria-label={translate("Идентификатор failed run")} placeholder={translate("failed run id (необязательно)")} value={runId} onChange={(event) => setRunId(event.target.value)} />
+        <button type="button" disabled={!api || !connected} onClick={() => void refresh()}>{translate("Обновить preview")}</button>
+        <button type="button" disabled={!api || !connected || !snapshot} onClick={() => void save()}>{translate("Сохранить support bundle")}</button>
+        <button type="button" disabled={!api || !connected || !snapshot || sending} onClick={() => void submit()}>{translate(sending ? translate("Отправка…") : translate("Отправить в GitHub issue"))}</button>
+        <button type="button" disabled={!api || !snapshot} onClick={() => void copyDraft()}>{translate("Скопировать issue draft")}</button>
       </div>
       {snapshot ? <>
         <h4>Preview</h4>
-        <p role="status">schema v{String(snapshot['schema_version'] ?? '?')} · scope {String(snapshot['scope'] ?? 'unknown')} · duration {health[0] ? String(health[0]['duration_ms'] ?? 0) : '0'} ms · run {String((snapshot['selected_run'] as Record<string, unknown> | undefined)?.['run_status'] ?? 'не выбран')}</p>
-        <ul>{health.map((item) => <li key={String(item['id'])}>{String(item['id'])}: {String(item['status'])} — {String(item['reason_code'])}</li>)}</ul>
-        <p>Redaction: raw payloads {redaction?.['raw_payloads_included'] === false ? 'исключены' : 'не подтверждено'} · blocked sections {Array.isArray(redaction?.['blocked_sections']) ? redaction?.['blocked_sections'].length : 0}</p>
-      </> : <p role="status">Snapshot ещё не получен от Core.</p>}
-      {notice ? <p role="alert">{notice}</p> : null}
+        <p role="status">schema v{translate(String(snapshot['schema_version'] ?? '?'))} · scope {translate(String(snapshot['scope'] ?? 'unknown'))} · duration {translate(health[0] ? String(health[0]['duration_ms'] ?? 0) : '0')} ms · run {translate(String((snapshot['selected_run'] as Record<string, unknown> | undefined)?.['run_status'] ?? translate("не выбран")))}</p>
+        <ul>{health.map((item) => <li key={String(item['id'])}>{translate(String(item['id']))}: {translate(String(item['status']))} — {translate(String(item['reason_code']))}</li>)}</ul>
+        <p>Redaction: raw payloads {translate(redaction?.['raw_payloads_included'] === false ? translate("исключены") : translate("не подтверждено"))} · blocked sections {translate(Array.isArray(redaction?.['blocked_sections']) ? redaction?.['blocked_sections'].length : 0)}</p>
+      </> : <p role="status">{translate("Snapshot ещё не получен от Core.")}</p>}
+      {notice ? <p role="alert">{translate(notice)}</p> : null}
     </section>
   )
 }

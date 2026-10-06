@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 
 import type { UpdateStatus } from '@shared/update'
@@ -33,7 +34,7 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
       <button
         type="button"
         className={`update-indicator__button${failed ? ' update-indicator__button--failed' : ''}${ready ? ' update-indicator__button--ready' : ''}`}
-        aria-label={ready ? 'Подтвердить установку обновления' : available ? 'Открыть обновление' : 'Прогресс скачивания обновления'}
+        aria-label={ready ? translate("Подтвердить установку обновления") : available ? translate("Открыть обновление") : translate("Прогресс скачивания обновления")}
         aria-expanded={ready || available ? confirmOpen : undefined}
         title={status.message}
         onClick={() => {
@@ -45,16 +46,16 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
           style={percent === null ? undefined : { '--update-percent': `${percent}%` } as React.CSSProperties}
           aria-hidden="true"
         >
-          <span>{failed ? '!' : percent === null ? '…' : `${percent}%`}</span>
+          <span>{translate(failed ? '!' : percent === null ? '…' : `${percent}%`)}</span>
         </span>
       </button>
 
       {confirmOpen ? (
-        <section className="update-confirm" role="dialog" aria-label="Подтверждение обновления">
+        <section className="update-confirm" role="dialog" aria-label={translate("Подтверждение обновления")}>
           <div className="update-confirm__header">
             <div>
-              <h2>{ready ? 'Обновление готово' : 'Доступно обновление'}</h2>
-              <p>{ready ? 'Изменения проверены. Применить обновление сейчас?' : status.message}</p>
+              <h2>{translate(ready ? translate("Обновление готово") : translate("Доступно обновление"))}</h2>
+              <p>{translate(ready ? translate("Изменения проверены. Применить обновление сейчас?") : status.message)}</p>
             </div>
           </div>
           {status.availableModules && status.availableModules.length > 0 ? (
@@ -62,27 +63,26 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
               {status.availableModules.map((module) => (
                 <li key={module}>
                   <span>
-                    <strong>{module}</strong>
-                    {status.availableModuleSummaries?.[module] ? <small>{status.availableModuleSummaries[module]}</small> : null}
+                    <strong>{translate(module)}</strong>
+                    {status.availableModuleSummaries?.[module] ? <small>{translate(status.availableModuleSummaries[module])}</small> : null}
                     {status.availableModuleChanges?.[module]?.length ? (
-                      <small>{status.availableModuleChanges[module]!.join(' ')}</small>
+                      <small>{translate(status.availableModuleChanges[module]!.join(' '))}</small>
                     ) : null}
                   </span>
-                  <strong>{status.installedModules?.[module] ?? '—'} → {status.availableModuleVersions?.[module] ?? 'новая версия'}</strong>
+                  <strong>{translate(status.installedModules?.[module] ?? '—')} → {translate(status.availableModuleVersions?.[module] ?? translate("новая версия"))}</strong>
                 </li>
               ))}
             </ul>
           ) : null}
           <div className="update-confirm__actions">
-            <button type="button" onClick={() => setConfirmOpen(false)}>Закрыть</button>
-            {ready ? <button type="button" onClick={() => void api?.invoke('update.restart', {})}>Обновить</button> : null}
+            <button type="button" onClick={() => setConfirmOpen(false)}>{translate("Закрыть")}</button>
+            {ready ? <button type="button" onClick={() => void api?.invoke('update.restart', {})}>{translate("Обновить")}</button> : null}
             {available ? (
               <button
                 type="button"
                 onClick={() => void api?.invoke('update.prepareComponents', { selected: status.availableModules ?? [] })}
               >
-                Обновить сейчас
-              </button>
+                {translate("Обновить сейчас")}</button>
             ) : null}
           </div>
         </section>

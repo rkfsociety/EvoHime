@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
@@ -66,34 +67,33 @@ export function ScheduledPanel({ connection, events, workspace }: ScheduledPanel
   }, [api, connected, refresh])
 
   return (
-    <section className="panel scheduled-panel" aria-label="Запланированные задачи">
+    <section className="panel scheduled-panel" aria-label={translate("Запланированные задачи")}>
       <header className="scheduled-panel__header">
         <div>
           <p className="panel__eyebrow">Pulse / Automation</p>
-          <h2>Запланировано</h2>
-          <p>Сохранённые расписания запускаются Core с контролем состояния и повторов.</p>
+          <h2>{translate("Запланировано")}</h2>
+          <p>{translate("Сохранённые расписания запускаются Core с контролем состояния и повторов.")}</p>
         </div>
         <div className="scheduled-panel__header-actions">
-          <span className={`status-pill status-pill--${connection}`}>{connection}</span>
+          <span className={`status-pill status-pill--${connection}`}>{translate(connection)}</span>
           <button type="button" className="button" onClick={refresh} disabled={!connected}>
-            Обновить
-          </button>
+            {translate("Обновить")}</button>
         </div>
       </header>
 
       <div className="scheduled-panel__scope">
         <span className="scheduled-panel__scope-dot" aria-hidden="true" />
-        <span>Область расписаний</span>
-        <code title={ownerScope}>{workspace ? basename(workspace) : 'пользовательская'}</code>
+        <span>{translate("Область расписаний")}</span>
+        <code title={ownerScope}>{translate(workspace ? basename(workspace) : translate("пользовательская"))}</code>
       </div>
 
-      {!connected ? <p className="empty-state">Нет подключения к Core — расписания будут доступны после подключения.</p> : null}
-      {connected && projection?.error_code ? <p role="alert" className="shell__reason">Core: {projection.error_code}</p> : null}
+      {!connected ? <p className="empty-state">{translate("Нет подключения к Core — расписания будут доступны после подключения.")}</p> : null}
+      {connected && projection?.error_code ? <p role="alert" className="shell__reason">Core: {translate(projection.error_code)}</p> : null}
       {connected && requested && schedules.length === 0 && !projection?.error_code ? (
         <div className="scheduled-panel__empty">
           <span className="scheduled-panel__empty-icon" aria-hidden="true">◷</span>
-          <h3>Расписаний пока нет</h3>
-          <p>Создай расписание из составной задачи — здесь появится его состояние.</p>
+          <h3>{translate("Расписаний пока нет")}</h3>
+          <p>{translate("Создай расписание из составной задачи — здесь появится его состояние.")}</p>
         </div>
       ) : null}
 
@@ -104,23 +104,23 @@ export function ScheduledPanel({ connection, events, workspace }: ScheduledPanel
               <div className="scheduled-card__icon" aria-hidden="true">◷</div>
               <div className="scheduled-card__body">
                 <div className="scheduled-card__title-row">
-                  <h3>{schedule.definition_id}</h3>
+                  <h3>{translate(schedule.definition_id)}</h3>
                   <span className={`scheduled-card__state${schedule.enabled ? ' scheduled-card__state--active' : ''}`}>
-                    {schedule.enabled ? 'активно' : 'приостановлено'}
+                    {translate(schedule.enabled ? translate("активно") : translate("приостановлено"))}
                   </span>
                 </div>
-                <p>{formatTime(schedule.hour, schedule.minute)} · {formatTimezone(schedule.timezone_minutes)} · ревизия {schedule.revision}</p>
-                <small>{schedule.last_slot ? `Последний слот: ${schedule.last_slot}` : 'Ещё не запускалось'}</small>
+                <p>{translate(formatTime(schedule.hour, schedule.minute))} · {translate(formatTimezone(schedule.timezone_minutes))} {translate("· ревизия")}{translate(schedule.revision)}</p>
+                <small>{translate(schedule.last_slot ? `Последний слот: ${schedule.last_slot}` : translate("Ещё не запускалось"))}</small>
               </div>
               <button type="button" className="button" onClick={() => void setEnabled(schedule)}>
-                {schedule.enabled ? 'Пауза' : 'Включить'}
+                {translate(schedule.enabled ? translate("Пауза") : translate("Включить"))}
               </button>
             </article>
           ))}
         </div>
       ) : null}
 
-      {message ? <p className="scheduled-panel__message" role="status">{message}</p> : null}
+      {message ? <p className="scheduled-panel__message" role="status">{translate(message)}</p> : null}
     </section>
   )
 }

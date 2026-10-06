@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 
-import type { AmbientHotkeyStatus, ListeningState, ShellDiagnostic, ShellState } from '@shared/api'
+import type { AmbientHotkeyStatus, AppLocale, ListeningState, ShellDiagnostic, ShellState } from '@shared/api'
 
 import { ChatStore } from './chat-store'
 import { CodexService } from './codex-service'
@@ -74,6 +74,7 @@ const diagnosticSnapshotWaiters = new Set<{
 }>()
 const claimedAutomaticSupportReports = new Set<string>()
 let lastShellState: ShellState | null = null
+let shellLocale: AppLocale = 'ru'
 let lastRepairStatus: import('@shared/api').RepairStatus | null = null
 let lastUpdateStatus: import('@shared/update').UpdateStatus | null = null
 
@@ -118,6 +119,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
   })
 
   app.whenReady().then(async () => {
+  shellLocale = app.getLocale().toLowerCase().startsWith('en') ? 'en' : 'ru'
     hardenSession(hardening)
 
     providers = new ProviderStore(ProviderStore.defaultPath(dataDirectory()), {
@@ -218,6 +220,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
     tray = createTray({
       window: mainWindow,
       log,
+      initialLocale: shellLocale,
       onToggleListening: requestAmbientListening
     })
     overlay = createOverlay()
@@ -301,6 +304,10 @@ if (process.argv.includes('--evohime-browser-backend')) {
       listenerRuntime: listenerRuntime!,
       ollamaRuntime: ollamaRuntime!,
       ambientHotkey: ambientHotkeyStatus,
+      setLocale: (locale) => {
+        shellLocale = locale
+        tray?.setLocale(locale)
+      },
       exportDiagnostics: async () => {
         const window = BrowserWindow.getFocusedWindow()
         const save = window
@@ -788,11 +795,11 @@ function notifyWhenHidden(eventType: string): void {
     return
   }
   const message = eventType === 'task.completed'
-    ? 'Задача завершена'
+    ? (shellLocale === 'en' ? 'Task completed' : 'Задача завершена')
     : eventType === 'task.failed'
-      ? 'Задача завершилась с ошибкой'
+      ? (shellLocale === 'en' ? 'Task failed' : 'Задача завершилась с ошибкой')
       : eventType === 'approval.required'
-        ? 'Задаче требуется разрешение'
+        ? (shellLocale === 'en' ? 'Task requires approval' : 'Задаче требуется разрешение')
         : null
   if (message) new Notification({ title: 'EvoHime', body: message }).show()
 }

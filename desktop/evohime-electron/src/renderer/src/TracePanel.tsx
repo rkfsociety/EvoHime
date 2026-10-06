@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 
 import type { ChatRecord, CoreEvent, ShellDiagnostic, ShellState } from '@shared/api'
@@ -70,38 +71,38 @@ export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics 
   }
 
   return (
-    <aside className="trace-panel" aria-label="Трейс текущего чата" aria-live="polite">
+    <aside className="trace-panel" aria-label={translate("Трейс текущего чата")} aria-live="polite">
         <header className="trace-panel__header">
           <div>
-            <h2>Трейс</h2>
-            <p>{traceEvents.length} событий текущего чата · новые сверху</p>
+            <h2>{translate("Трейс")}</h2>
+            <p>{translate(traceEvents.length)} {translate("событий текущего чата · новые сверху")}</p>
           </div>
           <div className="trace-panel__actions">
-            <button type="button" onClick={() => void save()}>Сохранить .md</button>
-            <button type="button" className="trace-panel__close" aria-label="Закрыть трейс" onClick={onClose}>×</button>
+            <button type="button" onClick={() => void save()}>{translate("Сохранить .md")}</button>
+            <button type="button" className="trace-panel__close" aria-label={translate("Закрыть трейс")} onClick={onClose}>×</button>
           </div>
         </header>
         <dl className="trace-panel__summary">
-          <div><dt>Подключение</dt><dd>{state?.connection ?? 'неизвестно'}</dd></div>
-          <div><dt>Core модуль</dt><dd>{update?.installedModules?.core ?? '—'}</dd></div>
-          <div><dt>Core runtime</dt><dd>{state?.coreVersion ?? '—'}</dd></div>
-          <div><dt>Протокол</dt><dd>{state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</dd></div>
-          <div><dt>Последний sequence</dt><dd>{state?.lastSequence ?? 0}</dd></div>
-          <div><dt>Workspace</dt><dd title={workspace ?? undefined}>{workspace ?? 'не выбран'}</dd></div>
+          <div><dt>{translate("Подключение")}</dt><dd>{translate(state?.connection ?? translate("неизвестно"))}</dd></div>
+          <div><dt>{translate("Core модуль")}</dt><dd>{translate(update?.installedModules?.core ?? '—')}</dd></div>
+          <div><dt>Core runtime</dt><dd>{translate(state?.coreVersion ?? '—')}</dd></div>
+          <div><dt>{translate("Протокол")}</dt><dd>{translate(state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—')}</dd></div>
+          <div><dt>{translate("Последний sequence")}</dt><dd>{translate(state?.lastSequence ?? 0)}</dd></div>
+          <div><dt>Workspace</dt><dd title={workspace ?? undefined}>{workspace ?? translate("не выбран")}</dd></div>
         </dl>
-        {saveStatus ? <p className="trace-panel__reason" role="status">{saveStatus}</p> : null}
-        {state?.reason ? <p className="trace-panel__reason">Причина: {safeTraceReason(state.reason)}</p> : null}
+        {saveStatus ? <p className="trace-panel__reason" role="status">{translate(saveStatus)}</p> : null}
+        {state?.reason ? <p className="trace-panel__reason">{translate("Причина:")}{translate(safeTraceReason(state.reason))}</p> : null}
         <OllamaFallbackNotice events={traceEvents} shellDiagnostics={shellDiagnostics} />
         <ShellDiagnosticsView diagnostics={shellDiagnostics} />
         {chatId === null ? (
-          <p className="trace-panel__empty">Выбери чат, чтобы открыть его трейс.</p>
+          <p className="trace-panel__empty">{translate("Выбери чат, чтобы открыть его трейс.")}</p>
         ) : traceEvents.length === 0 ? (
-          <p className="trace-panel__empty">События появятся после запуска задачи в этом чате.</p>
+          <p className="trace-panel__empty">{translate("События появятся после запуска задачи в этом чате.")}</p>
         ) : (
           <ol className="trace-panel__events">
-            {traceEvents.map((event) => (
+            {translate(traceEvents.map((event) => (
               <TraceEventItem key={`${event.sequenceId}-${event.eventType}`} event={event} />
-            ))}
+            )))}
           </ol>
         )}
     </aside>
@@ -114,25 +115,25 @@ function TraceEventItem({ event }: { readonly event: CoreEvent }): React.JSX.Ele
   return (
     <li className="trace-event">
       <div className="trace-event__meta">
-        <code>{event.eventType}</code>
-        <span>#{event.sequenceId}</span>
+        <code>{translate(event.eventType)}</code>
+        <span>#{translate(event.sequenceId)}</span>
       </div>
-      {event.taskId ? <small className="trace-event__task">task: {event.taskId}</small> : null}
-      {diagnostics ? <TraceDiagnosticsView diagnostics={diagnostics} /> : null}
-      <pre>{payload}</pre>
+      {event.taskId ? <small className="trace-event__task">task: {translate(event.taskId)}</small> : null}
+      {translate(diagnostics ? <TraceDiagnosticsView diagnostics={diagnostics} /> : null)}
+      <pre>{translate(payload)}</pre>
     </li>
   )
 }
 
 function TraceDiagnosticsView({ diagnostics }: { readonly diagnostics: TraceDiagnostics }): React.JSX.Element {
   return (
-    <dl className="trace-event__diagnostics" aria-label="Диагностика ошибки">
-      <div><dt>Код ошибки</dt><dd><code>{diagnostics.errorCode}</code></dd></div>
-      <div><dt>Источник</dt><dd><code>{diagnostics.source}</code></dd></div>
-      <div><dt>Операция</dt><dd><code>{diagnostics.operation}</code></dd></div>
-      {diagnostics.pathForm ? <div><dt>Форма пути</dt><dd><code>{diagnostics.pathForm}</code></dd></div> : null}
-      {diagnostics.pathScope ? <div><dt>Область пути</dt><dd><code>{diagnostics.pathScope}</code></dd></div> : null}
-      {diagnostics.pathBoundaryReason ? <div><dt>Причина границы</dt><dd><code>{diagnostics.pathBoundaryReason}</code></dd></div> : null}
+    <dl className="trace-event__diagnostics" aria-label={translate("Диагностика ошибки")}>
+      <div><dt>{translate("Код ошибки")}</dt><dd><code>{translate(diagnostics.errorCode)}</code></dd></div>
+      <div><dt>{translate("Источник")}</dt><dd><code>{translate(diagnostics.source)}</code></dd></div>
+      <div><dt>{translate("Операция")}</dt><dd><code>{translate(diagnostics.operation)}</code></dd></div>
+      {diagnostics.pathForm ? <div><dt>{translate("Форма пути")}</dt><dd><code>{translate(diagnostics.pathForm)}</code></dd></div> : null}
+      {diagnostics.pathScope ? <div><dt>{translate("Область пути")}</dt><dd><code>{translate(diagnostics.pathScope)}</code></dd></div> : null}
+      {diagnostics.pathBoundaryReason ? <div><dt>{translate("Причина границы")}</dt><dd><code>{translate(diagnostics.pathBoundaryReason)}</code></dd></div> : null}
     </dl>
   )
 }
@@ -145,19 +146,19 @@ function OllamaFallbackNotice({ events, shellDiagnostics }: { readonly events: r
   })
   if (!ollamaFailure) return null
   const observed = shellDiagnostics.some((diagnostic) => diagnostic.event === 'shell.ollama_download_fallback')
-  return <p className="trace-panel__reason" role="status">Ollama download fallback: {observed ? 'подтверждён' : 'не подтверждён в shell-событиях'}</p>
+  return <p className="trace-panel__reason" role="status">Ollama download fallback: {translate(observed ? translate("подтверждён") : translate("не подтверждён в shell-событиях"))}</p>
 }
 
 function ShellDiagnosticsView({ diagnostics }: { readonly diagnostics: readonly ShellDiagnostic[] }): React.JSX.Element | null {
   if (diagnostics.length === 0) return null
   return (
-    <section className="trace-panel__shell-diagnostics" aria-label="События оболочки">
-      <h3>События оболочки</h3>
+    <section className="trace-panel__shell-diagnostics" aria-label={translate("События оболочки")}>
+      <h3>{translate("События оболочки")}</h3>
       <ul>
         {diagnostics.map((diagnostic) => (
           <li key={diagnostic.event}>
-            <code>{diagnostic.event}</code>
-            <span>error_code={diagnostic.errorCode} · source={diagnostic.source} · operation={diagnostic.operation}</span>
+            <code>{translate(diagnostic.event)}</code>
+            <span>error_code={translate(diagnostic.errorCode)} · source={translate(diagnostic.source)} · operation={translate(diagnostic.operation)}</span>
           </li>
         ))}
       </ul>

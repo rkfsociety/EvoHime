@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 import type { ConnectionState, LocalModelRuntimeManagerProjection, ShellEvent } from '@shared/api'
@@ -19,37 +20,37 @@ export function LocalModelRuntimeManagerPanel({ connection }: { readonly connect
   }
   return <section aria-label="Local Model Runtime Manager">
     <h3>Local Model Runtime Manager</h3>
-    <p>Hardware, catalog, artifact и health остаются Core-owned; запуск процесса возможен только через supervisor boundary.</p>
+    <p>{translate("Hardware, catalog, artifact и health остаются Core-owned; запуск процесса возможен только через supervisor boundary.")}</p>
     <textarea aria-label="Manager payload JSON" value={payload} onChange={event => setPayload(event.target.value)} maxLength={256 * 1024} />
     <div>
-      <button type="button" onClick={() => void request('adapter_status', '{}')}>Проверить llama.cpp adapter</button>
-      <button type="button" onClick={() => void request('install_adapter', '{}')}>Установить фиксированный llama.cpp adapter</button>
-      <button type="button" onClick={() => void request('adaptation_create')}>Создать задачу адаптации из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_start')}>Запустить quantization задачи из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_poll')}>Обновить состояние quantization из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_calibrate')}>Проверить streamed inference из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_benchmark')}>Запустить real benchmark по frozen suite из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_promote')}>Установить проверенную модель по revision и hash из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_get')}>Получить задачу адаптации из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_list', '{}')}>Список задач адаптации</button>
-      <button type="button" onClick={() => void request('adaptation_cancel')}>Отменить задачу адаптации из JSON</button>
-      <button type="button" onClick={() => void request('adaptation_reject')}>Отклонить задачу адаптации из JSON</button>
-      <button type="button" onClick={() => void request('inspect')}>Показать состояние</button>
-      <button type="button" onClick={() => void request('hardware')}>Снять hardware snapshot</button>
-      <button type="button" onClick={() => void request('fit')}>Рассчитать fit</button>
-      <button type="button" onClick={() => void request('download_artifact')}>Скачать artifact</button>
-      <button type="button" onClick={() => void request('save_policy')}>Сохранить policy</button>
-      <button type="button" onClick={() => void request('get_policy')}>Загрузить policy</button>
-      <button type="button" onClick={() => void request('start')}>Запустить runtime</button>
-      <button type="button" onClick={() => void request('probe')}>Проверить health</button>
-      <button type="button" onClick={() => void request('stop')}>Остановить runtime</button>
-      <button type="button" onClick={() => void request('verify_artifact')}>Проверить artifact</button>
-      <button type="button" onClick={() => void request('promote_artifact')}>Установить artifact</button>
-      <button type="button" onClick={() => void request('transition')}>Проверить переход</button>
-      <button type="button" onClick={() => void request('profile')}>Создать profile</button>
-      <button type="button" onClick={() => void request('recover')}>Восстановить состояние</button>
+      <button type="button" onClick={() => void request('adapter_status', '{}')}>{translate("Проверить llama.cpp adapter")}</button>
+      <button type="button" onClick={() => void request('install_adapter', '{}')}>{translate("Установить фиксированный llama.cpp adapter")}</button>
+      <button type="button" onClick={() => void request('adaptation_create')}>{translate("Создать задачу адаптации из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_start')}>{translate("Запустить quantization задачи из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_poll')}>{translate("Обновить состояние quantization из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_calibrate')}>{translate("Проверить streamed inference из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_benchmark')}>{translate("Запустить real benchmark по frozen suite из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_promote')}>{translate("Установить проверенную модель по revision и hash из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_get')}>{translate("Получить задачу адаптации из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_list', '{}')}>{translate("Список задач адаптации")}</button>
+      <button type="button" onClick={() => void request('adaptation_cancel')}>{translate("Отменить задачу адаптации из JSON")}</button>
+      <button type="button" onClick={() => void request('adaptation_reject')}>{translate("Отклонить задачу адаптации из JSON")}</button>
+      <button type="button" onClick={() => void request('inspect')}>{translate("Показать состояние")}</button>
+      <button type="button" onClick={() => void request('hardware')}>{translate("Снять hardware snapshot")}</button>
+      <button type="button" onClick={() => void request('fit')}>{translate("Рассчитать fit")}</button>
+      <button type="button" onClick={() => void request('download_artifact')}>{translate("Скачать artifact")}</button>
+      <button type="button" onClick={() => void request('save_policy')}>{translate("Сохранить policy")}</button>
+      <button type="button" onClick={() => void request('get_policy')}>{translate("Загрузить policy")}</button>
+      <button type="button" onClick={() => void request('start')}>{translate("Запустить runtime")}</button>
+      <button type="button" onClick={() => void request('probe')}>{translate("Проверить health")}</button>
+      <button type="button" onClick={() => void request('stop')}>{translate("Остановить runtime")}</button>
+      <button type="button" onClick={() => void request('verify_artifact')}>{translate("Проверить artifact")}</button>
+      <button type="button" onClick={() => void request('promote_artifact')}>{translate("Установить artifact")}</button>
+      <button type="button" onClick={() => void request('transition')}>{translate("Проверить переход")}</button>
+      <button type="button" onClick={() => void request('profile')}>{translate("Создать profile")}</button>
+      <button type="button" onClick={() => void request('recover')}>{translate("Восстановить состояние")}</button>
     </div>
-    {projection?.projection ? <pre>{JSON.stringify(projection.projection, null, 2)}</pre> : null}
-    {message ? <p role="status">{message}</p> : null}
+    {projection?.projection ? <pre>{translate(JSON.stringify(projection.projection, null, 2))}</pre> : null}
+    {message ? <p role="status">{translate(message)}</p> : null}
   </section>
 }

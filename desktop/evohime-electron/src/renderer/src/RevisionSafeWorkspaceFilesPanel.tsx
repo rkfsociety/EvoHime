@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 import type { ConnectionState } from '@shared/api'
@@ -15,5 +16,5 @@ export function RevisionSafeWorkspaceFilesPanel({ connection, events }: { readon
     const result = await api.invoke('core.revisionSafeWorkspaceFiles', { operation: 'read', projectId: projectId.trim(), logicalPath: logicalPath.trim(), expectedHash: hash.trim(), idempotencyKey: crypto.randomUUID() })
     if (!result.ok) setMessage(result.message)
   }
-  return <section aria-label="Revision-safe workspace files" className="revision-safe-files-panel"><h3>Revision-safe workspace files</h3><p>Core владеет namespace и hash; renderer показывает только bounded ref/preview. Изменения выполняются только через одобренные Core tools.</p><label>Project ID <input value={projectId} onChange={(event) => setProjectId(event.target.value)} maxLength={128} /></label><label>Logical path <input value={logicalPath} onChange={(event) => setLogicalPath(event.target.value)} maxLength={4096} /></label><label>Expected SHA-256 hash <input value={hash} onChange={(event) => setHash(event.target.value)} maxLength={128} /></label><button type="button" onClick={() => void send()}>Прочитать</button>{projection ? <pre>{JSON.stringify(projection, null, 2)}</pre> : null}{message ? <p role="status">{message}</p> : null}</section>
+  return <section aria-label="Revision-safe workspace files" className="revision-safe-files-panel"><h3>Revision-safe workspace files</h3><p>{translate("Core владеет namespace и hash; renderer показывает только bounded ref/preview. Изменения выполняются только через одобренные Core tools.")}</p><label>Project ID <input value={projectId} onChange={(event) => setProjectId(event.target.value)} maxLength={128} /></label><label>Logical path <input value={logicalPath} onChange={(event) => setLogicalPath(event.target.value)} maxLength={4096} /></label><label>Expected SHA-256 hash <input value={hash} onChange={(event) => setHash(event.target.value)} maxLength={128} /></label><button type="button" onClick={() => void send()}>{translate("Прочитать")}</button>{projection ? <pre>{translate(JSON.stringify(projection, null, 2))}</pre> : null}{message ? <p role="status">{translate(message)}</p> : null}</section>
 }

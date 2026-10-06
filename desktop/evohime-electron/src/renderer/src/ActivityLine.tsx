@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 
 import type { ToolCall } from './transcript'
@@ -28,24 +29,24 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
-        <span className="activity__icon" aria-hidden="true">{running ? '◐' : '✓'}</span>
+        <span className="activity__icon" aria-hidden="true">{translate(running ? '◐' : '✓')}</span>
         <span className="activity__label">
-          {running
+          {translate(running
             ? liveLabel(current)
-            : summarize(calls)}
+            : summarize(calls))}
         </span>
-        <span className="activity__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span className="activity__chevron" aria-hidden="true">{translate(open ? '▾' : '▸')}</span>
       </button>
 
       {open ? (
         <ol className="activity__calls">
           {calls.map((call, index) => (
             <li key={`${call.tool}-${index}`}>
-              <span className="activity__tool">{toolLabel(call.tool)}</span>
+              <span className="activity__tool">{translate(toolLabel(call.tool))}</span>
               {call.running ? (
-                <span className="activity__pending">выполняется…</span>
+                <span className="activity__pending">{translate("выполняется…")}</span>
               ) : (
-                <pre className="activity__output">{call.output || 'без вывода'}</pre>
+                <pre className="activity__output">{call.output || translate("без вывода")}</pre>
               )}
             </li>
           ))}

@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import type { ConnectionState, WorkspaceStateCheckpointProjection } from '@shared/api'
 import { useShellApi } from './shell-api'
@@ -83,41 +84,41 @@ export function WorkspaceStateCheckpointsPanel({ connection, events, workspace }
   const taskOptions = [...new Set(checkpoints.map((item) => item.task_id).filter((value): value is string => Boolean(value)))]
 
   return <section aria-label="Workspace State Checkpoints" className="plan-artifact-panel">
-    <h3>Контрольные точки проекта (Workspace Checkpoints)</h3>
-    <p className="plan-artifact-panel__intro">Это сохранённый снимок состояния файлов проекта. Он нужен, чтобы перед рискованными изменениями зафиксировать рабочее состояние, сравнить его с текущим и при необходимости безопасно вернуться назад.</p>
+    <h3>{translate("Контрольные точки проекта (Workspace Checkpoints)")}</h3>
+    <p className="plan-artifact-panel__intro">{translate("Это сохранённый снимок состояния файлов проекта. Он нужен, чтобы перед рискованными изменениями зафиксировать рабочее состояние, сравнить его с текущим и при необходимости безопасно вернуться назад.")}</p>
     <div className="plan-artifact-panel__guide">
-      <h4>Как это работает</h4>
+      <h4>{translate("Как это работает")}</h4>
       <ol>
-        <li>Укажите идентификатор проекта и нажмите «Создать контрольную точку».</li>
-        <li>После изменений укажите ID этой точки и нажмите «Сравнить с точкой».</li>
-        <li>Если нужно вернуться назад, выберите восстановление workspace, задачи или обоих состояний.</li>
+        <li>{translate("Укажите идентификатор проекта и нажмите «Создать контрольную точку».")}</li>
+        <li>{translate("После изменений укажите ID этой точки и нажмите «Сравнить с точкой».")}</li>
+        <li>{translate("Если нужно вернуться назад, выберите восстановление workspace, задачи или обоих состояний.")}</li>
       </ol>
-      <p className="plan-artifact-panel__hint">Сохраняются только ограниченные метаданные и состояние обычных файлов. `.git`, зависимости, build-кэши и ссылки не включаются.</p>
-      <p className="plan-artifact-panel__hint">Восстановление может изменить файлы. Если файл успел измениться после создания точки, Core остановит операцию и покажет конфликт вместо молчаливой перезаписи.</p>
+      <p className="plan-artifact-panel__hint">{translate("Сохраняются только ограниченные метаданные и состояние обычных файлов. `.git`, зависимости, build-кэши и ссылки не включаются.")}</p>
+      <p className="plan-artifact-panel__hint">{translate("Восстановление может изменить файлы. Если файл успел измениться после создания точки, Core остановит операцию и покажет конфликт вместо молчаливой перезаписи.")}</p>
     </div>
     <div className="plan-artifact-panel__lookup">
-      <label htmlFor="workspace-checkpoint-project">Рабочая папка проекта</label>
-      <input id="workspace-checkpoint-project" value={projectId} onChange={(event) => setProjectId(event.target.value)} maxLength={256} placeholder="Сначала выберите проект в боковой панели" readOnly={Boolean(workspace)} />
-      <label htmlFor="workspace-checkpoint-task">Задача <span className="plan-artifact-panel__hint">необязательно</span></label>
+      <label htmlFor="workspace-checkpoint-project">{translate("Рабочая папка проекта")}</label>
+      <input id="workspace-checkpoint-project" value={projectId} onChange={(event) => setProjectId(event.target.value)} maxLength={256} placeholder={translate("Сначала выберите проект в боковой панели")} readOnly={Boolean(workspace)} />
+      <label htmlFor="workspace-checkpoint-task">{translate("Задача")}<span className="plan-artifact-panel__hint">{translate("необязательно")}</span></label>
       <select id="workspace-checkpoint-task" value={taskId} onChange={(event) => setTaskId(event.target.value)}>
-        <option value="">Все задачи проекта</option>
-        {taskOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+        <option value="">{translate("Все задачи проекта")}</option>
+        {taskOptions.map((value) => <option key={value} value={value}>{translate(value)}</option>)}
       </select>
-      <label htmlFor="workspace-checkpoint-id">Контрольная точка</label>
+      <label htmlFor="workspace-checkpoint-id">{translate("Контрольная точка")}</label>
       <select id="workspace-checkpoint-id" value={checkpointId} onChange={(event) => setCheckpointId(event.target.value)} disabled={checkpoints.length === 0}>
-        <option value="">{checkpoints.length === 0 ? 'Контрольных точек пока нет' : 'Выберите контрольную точку'}</option>
-        {checkpoints.filter((item) => !taskId || item.task_id === taskId).map((item) => <option key={item.checkpoint_id} value={item.checkpoint_id}>{item.checkpoint_id.slice(0, 8)} · {item.task_id ?? 'весь проект'} · {item.snapshot_hash.slice(0, 8)}</option>)}
+        <option value="">{translate(checkpoints.length === 0 ? translate("Контрольных точек пока нет") : translate("Выберите контрольную точку"))}</option>
+        {checkpoints.filter((item) => !taskId || item.task_id === taskId).map((item) => <option key={item.checkpoint_id} value={item.checkpoint_id}>{translate(item.checkpoint_id.slice(0, 8))} · {translate(item.task_id ?? translate("весь проект"))} · {translate(item.snapshot_hash.slice(0, 8))}</option>)}
       </select>
     </div>
     <div className="plan-artifact-panel__lookup-row">
-      <button type="button" onClick={() => void invoke('create')}>Создать контрольную точку</button>
-      <button type="button" onClick={() => void invoke('compare')}>Сравнить с точкой</button>
-      <button type="button" onClick={() => void invoke('restore')}>Восстановить файлы проекта</button>
-      <button type="button" onClick={() => void invoke('restore_task')}>Восстановить состояние задачи</button>
-      <button type="button" onClick={() => void invoke('restore_both')}>Восстановить всё</button>
+      <button type="button" onClick={() => void invoke('create')}>{translate("Создать контрольную точку")}</button>
+      <button type="button" onClick={() => void invoke('compare')}>{translate("Сравнить с точкой")}</button>
+      <button type="button" onClick={() => void invoke('restore')}>{translate("Восстановить файлы проекта")}</button>
+      <button type="button" onClick={() => void invoke('restore_task')}>{translate("Восстановить состояние задачи")}</button>
+      <button type="button" onClick={() => void invoke('restore_both')}>{translate("Восстановить всё")}</button>
     </div>
-    {projection ? <p role="status">{projection.state} · файлов: {projection.fileCount} · конфликтов: {projection.conflictCount} · {projection.snapshotHash}</p> : null}
-    {projection?.errorCode ? <p role="alert">{projection.errorCode === 'workspace_checkpoint_file_too_large' ? 'Контрольная точка не создана: в проекте есть файл больше 1 МБ. Уберите его из рабочей папки или исключите большой/сгенерированный файл.' : projection.errorCode === 'workspace_checkpoint_snapshot_too_large' ? 'Контрольная точка не создана: снимок превышает общий лимит 64 МБ. Уберите большие/сгенерированные файлы или выберите меньшую папку.' : projection.errorCode === 'workspace_checkpoint_too_many_files' ? 'Контрольная точка не создана: в проекте больше 4096 файлов. Выберите меньшую папку или исключите сгенерированные файлы.' : projection.errorMessage || `Операция отклонена: ${projection.errorCode}`}</p> : null}
-    {message ? <p role="status">{message}</p> : null}
+    {projection ? <p role="status">{translate(projection.state)} {translate("· файлов:")}{translate(projection.fileCount)} {translate("· конфликтов:")}{translate(projection.conflictCount)} · {translate(projection.snapshotHash)}</p> : null}
+    {projection?.errorCode ? <p role="alert">{translate(projection.errorCode === 'workspace_checkpoint_file_too_large' ? translate("Контрольная точка не создана: в проекте есть файл больше 1 МБ. Уберите его из рабочей папки или исключите большой/сгенерированный файл.") : projection.errorCode === 'workspace_checkpoint_snapshot_too_large' ? translate("Контрольная точка не создана: снимок превышает общий лимит 64 МБ. Уберите большие/сгенерированные файлы или выберите меньшую папку.") : projection.errorCode === 'workspace_checkpoint_too_many_files' ? translate("Контрольная точка не создана: в проекте больше 4096 файлов. Выберите меньшую папку или исключите сгенерированные файлы.") : projection.errorMessage || `Операция отклонена: ${projection.errorCode}`)}</p> : null}
+    {message ? <p role="status">{translate(message)}</p> : null}
   </section>
 }

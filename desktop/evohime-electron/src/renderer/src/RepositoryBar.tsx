@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useCallback, useEffect, useState } from 'react'
 
 import type { RepositorySummary } from '@shared/api'
@@ -45,16 +46,16 @@ export function RepositoryBar({
 
   return (
     <div className="repobar">
-      <span className="repobar__project">{projectName(workspace)}</span>
-      <span className="repobar__branch">{repository.branch}</span>
+      <span className="repobar__project">{translate(projectName(workspace))}</span>
+      <span className="repobar__branch">{translate(repository.branch)}</span>
       <span className="repobar__spacer" />
       {changed ? (
-        <span className="repobar__diff" title="Незакоммиченные изменения">
-          <span className="repobar__added">+{repository.added}</span>
-          <span className="repobar__removed">−{repository.removed}</span>
+        <span className="repobar__diff" title={translate("Незакоммиченные изменения")}>
+          <span className="repobar__added">+{translate(repository.added)}</span>
+          <span className="repobar__removed">−{translate(repository.removed)}</span>
         </span>
       ) : (
-        <span className="repobar__clean">без изменений</span>
+        <span className="repobar__clean">{translate("без изменений")}</span>
       )}
     </div>
   )

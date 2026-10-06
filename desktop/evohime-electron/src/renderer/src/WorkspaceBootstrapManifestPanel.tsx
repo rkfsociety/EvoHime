@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 import type { ConnectionState } from '@shared/api'
@@ -27,14 +28,14 @@ export function WorkspaceBootstrapManifestPanel({ connection, events }: { readon
 
   return <section aria-label="Workspace Bootstrap Manifest">
     <h3>Workspace Bootstrap Manifest</h3>
-    <p>Core проверяет manifest, доверие, fingerprint и политику выполнения. Сырые команды и окружение не выводятся.</p>
+    <p>{translate("Core проверяет manifest, доверие, fingerprint и политику выполнения. Сырые команды и окружение не выводятся.")}</p>
     <label>Project ID <input value={projectId} onChange={(event) => setProjectId(event.target.value)} maxLength={128} /></label>
     <label>Workspace ID <input value={workspaceId} onChange={(event) => setWorkspaceId(event.target.value)} maxLength={128} /></label>
     <label>Manifest JSON <textarea value={payload} onChange={(event) => setPayload(event.target.value)} maxLength={64 * 1024} /></label>
     <div>
-      {(['discover', 'validate', 'save', 'approve', 'run'] as const).map((operation) => <button key={operation} type="button" onClick={() => void send(operation)}>{operation}</button>)}
+      {(['discover', 'validate', 'save', 'approve', 'run'] as const).map((operation) => <button key={operation} type="button" onClick={() => void send(operation)}>{translate(operation)}</button>)}
     </div>
-    {projection ? <pre>{JSON.stringify(projection, null, 2)}</pre> : null}
-    {message ? <p role="status">{message}</p> : null}
+    {projection ? <pre>{translate(JSON.stringify(projection, null, 2))}</pre> : null}
+    {message ? <p role="status">{translate(message)}</p> : null}
   </section>
 }

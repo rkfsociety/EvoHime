@@ -7,6 +7,7 @@ import {
 } from '@shared/listener-runtime'
 
 import { useShellApi } from './shell-api'
+import { useT, translate} from './i18n'
 
 /**
  * Экран рантайма распознавания речи.
@@ -30,6 +31,8 @@ const STATE_LABELS: Record<ListenerRuntimeStatus['state'], string> = {
 }
 
 export function ListenerRuntimeSection(): React.JSX.Element {
+  const t = useT()
+
   const api = useShellApi()
   const [status, setStatus] = useState<ListenerRuntimeStatus>(() => initialListenerRuntimeStatus(''))
   const [busy, setBusy] = useState(false)
@@ -61,23 +64,21 @@ export function ListenerRuntimeSection(): React.JSX.Element {
   const canInstall = status.state === 'missing' || status.state === 'update-available' || status.state === 'failed'
 
   return (
-    <section className="settings-info" aria-label="Распознавание речи">
-      <h3>Распознавание речи</h3>
+    <section className="settings-info" aria-label={t("Распознавание речи")}>
+      <h3>{t("Распознавание речи")}</h3>
       <p>
-        Локальный движок whisper.cpp и модели загружаются отдельно от приложения и проверяются по
-        SHA-256 из манифеста релиза. Пока набор не установлен, постоянное слушание остаётся
-        выключенным.
+        {t("Локальный движок whisper.cpp и модели загружаются отдельно от приложения и проверяются по SHA-256 из манифеста релиза. Пока набор не установлен, постоянное слушание остаётся выключенным.")}
       </p>
 
       <dl className="settings-info__details">
-        <dt>Состояние</dt>
-        <dd>{STATE_LABELS[status.state]}</dd>
-        <dt>Установлено</dt>
-        <dd>{status.installedVersion ?? 'нет'}</dd>
-        <dt>Доступно</dt>
-        <dd>{status.availableVersion ?? 'неизвестно'}</dd>
-        <dt>Каталог</dt>
-        <dd>{status.toolsDirectory || 'не определён'}</dd>
+        <dt>{t("Состояние")}</dt>
+        <dd>{t(STATE_LABELS[status.state])}</dd>
+        <dt>{t("Установлено")}</dt>
+        <dd>{status.installedVersion ?? translate("нет")}</dd>
+        <dt>{t("Доступно")}</dt>
+        <dd>{status.availableVersion ?? translate("неизвестно")}</dd>
+        <dt>{t("Каталог")}</dt>
+        <dd>{status.toolsDirectory || translate("не определён")}</dd>
       </dl>
 
       <p role="status">{status.message}</p>
@@ -87,27 +88,26 @@ export function ListenerRuntimeSection(): React.JSX.Element {
           className="listener-runtime__progress"
           value={status.progressPct}
           max={100}
-          aria-label="Ход загрузки распознавания речи"
+          aria-label={t("Ход загрузки распознавания речи")}
         />
       ) : null}
 
       {status.missingOptional.length > 0 ? (
         <p className="listener-runtime__warning">
-          Не установлено: {status.missingOptional.map(optionalFileLabel).join(', ')}. Распознавание
-          работает, но обнаружение речи остаётся энергетическим.
+          {t("Не установлено:")} {status.missingOptional.map(optionalFileLabel).join(', ')}{t(". Распознавание работает, но обнаружение речи остаётся энергетическим.")}
         </p>
       ) : null}
 
       <div className="listener-runtime__actions">
         <button type="button" disabled={!api || busy || downloading} onClick={() => void run('listener.checkRuntime')}>
-          Проверить
+          {t("Проверить")}
         </button>
         <button
           type="button"
           disabled={!api || busy || downloading || !canInstall}
           onClick={() => void run('listener.downloadRuntime')}
         >
-          {status.state === 'update-available' ? 'Обновить' : 'Установить'}
+          {status.state === 'update-available' ? translate("Обновить") : translate("Установить")}
         </button>
       </div>
     </section>

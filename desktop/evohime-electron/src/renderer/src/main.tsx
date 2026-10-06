@@ -3,9 +3,12 @@ import { createRoot } from 'react-dom/client'
 
 import { App } from './App'
 import { applyAppearance, loadAppearance } from './appearance'
+import { setAppLocale } from './i18n'
 import './styles.css'
 
-applyAppearance(loadAppearance())
+const appearance = loadAppearance()
+applyAppearance(appearance)
+setAppLocale(appearance.locale)
 
 const container = document.getElementById('root')
 if (!container) {

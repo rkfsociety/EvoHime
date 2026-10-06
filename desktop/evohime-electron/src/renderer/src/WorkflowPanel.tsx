@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
@@ -104,11 +105,11 @@ function latestPayload<T>(events: readonly CoreEvent[], eventType: string): T | 
 
 /** Неизвестное состояние называется словами, а не выдаётся за успех. */
 function runStateLabel(state: string): string {
-  return RUN_STATE_LABELS[state] ?? `неизвестное состояние (${state})`
+  return RUN_STATE_LABELS[state] ?? `${translate('Неизвестное состояние')} (${state})`
 }
 
 function nodeStateLabel(state: string): string {
-  return NODE_STATE_LABELS[state] ?? `неизвестно (${state})`
+  return NODE_STATE_LABELS[state] ?? `${translate('неизвестно')} (${state})`
 }
 
 export function WorkflowPanel({ connection, events, workspace }: Props): React.JSX.Element {
@@ -336,20 +337,18 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
   const waitingNodes = activeRun?.nodes.filter((node) => node.state === 'waiting_approval') ?? []
 
   return (
-    <section className="settings-info workflow" aria-label="Составные задачи">
-      <h3>Составные задачи</h3>
+    <section className="settings-info workflow" aria-label={translate("Составные задачи")}>
+      <h3>{translate("Составные задачи")}</h3>
       <p>
-        Шаблон принадлежит ядру: оболочка показывает его версию и входы, но не редактирует граф и не
-        решает, какой узел выполнить следующим.
-      </p>
+        {translate("Шаблон принадлежит ядру: оболочка показывает его версию и входы, но не редактирует граф и не решает, какой узел выполнить следующим.")}</p>
 
       {!connected ? (
-        <p role="status">Ядро недоступно — список шаблонов и состояние запуска не обновляются.</p>
+        <p role="status">{translate("Ядро недоступно — список шаблонов и состояние запуска не обновляются.")}</p>
       ) : null}
 
-      <h4>Шаблоны</h4>
+      <h4>{translate("Шаблоны")}</h4>
       {templates.length === 0 ? (
-        <p role="status">Шаблоны ещё не получены от ядра.</p>
+        <p role="status">{translate("Шаблоны ещё не получены от ядра.")}</p>
       ) : (
         <ul className="workflow__templates">
           {templates.map((item) => (
@@ -363,11 +362,11 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
                   setNotice(null)
                 }}
               >
-                {item.display_name}
+                {translate(item.display_name)}
               </button>
               <small>
-                версия {item.version} · узлов {item.node_count} ·{' '}
-                {SCHEDULE_LABELS[item.schedule_eligibility] ?? item.schedule_eligibility}
+                {translate("версия")}{translate(item.version)} {translate("· узлов")}{translate(item.node_count)} ·{translate(' ')}
+                {translate(SCHEDULE_LABELS[item.schedule_eligibility] ?? item.schedule_eligibility)}
               </small>
             </li>
           ))}
@@ -376,21 +375,21 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
 
       {template ? (
         <div className="workflow__template" aria-label={`Шаблон ${template.display_name}`}>
-          <h4>{template.display_name}</h4>
+          <h4>{translate(template.display_name)}</h4>
           <p>{template.description}</p>
           <ul className="workflow__preview">
             {template.preview.map((line) => (
-              <li key={line}>{line}</li>
+              <li key={line}>{translate(line)}</li>
             ))}
           </ul>
           <p>
-            <small>требуются возможности: {template.required_capabilities.join(', ')}</small>
+            <small>{translate("требуются возможности:")}{translate(template.required_capabilities.join(', '))}</small>
           </p>
           {template.inputs.map((input) => (
             <label key={input.name} className="workflow__input">
               <span>
                 {input.title}
-                {input.required ? ' *' : ''}
+                {translate(input.required ? ' *' : '')}
               </span>
               <input
                 type="text"
@@ -403,22 +402,19 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
             </label>
           ))}
           <button type="button" disabled={!api || !connected} onClick={() => void start()}>
-            Запустить
-          </button>
+            {translate("Запустить")}</button>
         </div>
       ) : null}
 
-      <h4>Пресеты запусков</h4>
+      <h4>{translate("Пресеты запусков")}</h4>
       <p>
-        Пресет сохраняет только проверенные значения и ссылки на credentials. Версия workflow и
-        revision остаются зафиксированы ядром.
-      </p>
+        {translate("Пресет сохраняет только проверенные значения и ссылки на credentials. Версия workflow и revision остаются зафиксированы ядром.")}</p>
       {presetResult?.presets?.length ? (
         <ul className="workflow__presets">
           {presetResult.presets.map((preset) => (
             <li key={`${preset.id}:${preset.revision}`}>
-              <strong>{preset.id}</strong> · revision {preset.revision} · {preset.state}
-              <small> · {preset.content_hash}</small>
+              <strong>{translate(preset.id)}</strong> · revision {translate(preset.revision)} · {translate(preset.state)}
+              <small> · {translate(preset.content_hash)}</small>
               <button
                 type="button"
                 disabled={!api || !connected || preset.state !== 'ready'}
@@ -437,13 +433,12 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
                   })
                 }
               >
-                Запустить
-              </button>
+                {translate("Запустить")}</button>
             </li>
           ))}
         </ul>
       ) : (
-        <p role="status">Сохранённых пресетов нет.</p>
+        <p role="status">{translate("Сохранённых пресетов нет.")}</p>
       )}
       {template && workspace && definition?.template_id === template.template_id ? (
         <button
@@ -479,55 +474,51 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
             })
           }}
         >
-          Сохранить текущие входы как пресет
-        </button>
+          {translate("Сохранить текущие входы как пресет")}</button>
       ) : null}
 
       {notice ? (
         <p className="listening__error" role="alert">
-          {notice}
+          {translate(notice)}
         </p>
       ) : null}
 
       {runId ? (
-        <div className="workflow__run" aria-label="Текущий запуск">
-          <h4>Запуск {runId}</h4>
+        <div className="workflow__run" aria-label={translate("Текущий запуск")}>
+          <h4>{translate("Запуск")}{translate(runId)}</h4>
           <p role="status">
-            состояние: {runStateLabel(activeRun?.state ?? 'unknown_state')}
-            {activeRun?.terminal_reason ? ` · ${activeRun.terminal_reason}` : ''}
+            {translate("состояние:")}{translate(runStateLabel(activeRun?.state ?? 'unknown_state'))}
+            {translate(activeRun?.terminal_reason ? ` · ${activeRun.terminal_reason}` : '')}
           </p>
           {waitingNodes.length > 0 ? (
             <p role="status">
-              Узел ждёт подтверждения: реши карточку подтверждения — отдельной кнопки у workflow
-              нет.
-            </p>
+              {translate("Узел ждёт подтверждения: реши карточку подтверждения — отдельной кнопки у workflow нет.")}</p>
           ) : null}
           <ol className="workflow__nodes">
             {(activeRun?.nodes ?? []).map((node) => (
               <li key={node.node_id}>
-                <strong>{node.node_id}</strong>
+                <strong>{translate(node.node_id)}</strong>
                 <span>
-                  {' '}
-                  · {node.action_kind}
-                  {node.role ? ` (${node.role})` : ''} · {nodeStateLabel(node.state)}
-                  {node.attempts > 0 ? ` · попыток: ${node.attempts}` : ''}
+                  {translate(' ')}
+                  · {translate(node.action_kind)}
+                  {translate(node.role ? ` (${node.role})` : '')} · {translate(nodeStateLabel(node.state))}
+                  {translate(node.attempts > 0 ? ` · попыток: ${node.attempts}` : '')}
                 </span>
                 {node.dependencies.length > 0 ? (
-                  <small> зависит от: {node.dependencies.join(', ')}</small>
+                  <small> {translate("зависит от:")}{translate(node.dependencies.join(', '))}</small>
                 ) : null}
-                {node.error_code ? <small> код: {node.error_code}</small> : null}
+                {node.error_code ? <small> {translate("код:")}{translate(node.error_code)}</small> : null}
               </li>
             ))}
           </ol>
           <button type="button" disabled={!api || !connected} onClick={() => void cancel()}>
-            Отменить запуск
-          </button>
-          <h4>События</h4>
+            {translate("Отменить запуск")}</button>
+          <h4>{translate("События")}</h4>
           <ul className="workflow__events">
             {workflowEvents.map((event) => (
               <li key={event.sequence}>
-                #{event.sequence} {event.event_type}
-                {event.node_id ? ` · ${event.node_id}` : ''}
+                #{translate(event.sequence)} {translate(event.event_type)}
+                {translate(event.node_id ? ` · ${event.node_id}` : '')}
               </li>
             ))}
           </ul>

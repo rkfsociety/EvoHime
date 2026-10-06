@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, SkillCatalog, SkillContentResult } from '@shared/api'
@@ -52,11 +53,11 @@ export function SkillCatalogPanel({ workspace, connection, events }: SkillCatalo
   return (
     <section className="settings-info skill-catalog" aria-label="Agent Skills">
       <h3>Agent Skills</h3>
-      <p>Core показывает только bounded metadata. Полный SKILL.md загружается отдельным явным действием.</p>
-      {!workspace ? <span className="settings-info__badge">Сначала выбери рабочую область</span> : null}
+      <p>{translate("Core показывает только bounded metadata. Полный SKILL.md загружается отдельным явным действием.")}</p>
+      {!workspace ? <span className="settings-info__badge">{translate("Сначала выбери рабочую область")}</span> : null}
       {catalog?.diagnostics.map((diagnostic) => (
         <p className="skill-catalog__diagnostic" role="alert" key={`${diagnostic.code}-${diagnostic.sourceRef}`}>
-          {diagnostic.code}: {diagnostic.skillId || diagnostic.sourceRef}
+          {translate(diagnostic.code)}: {translate(diagnostic.skillId || diagnostic.sourceRef)}
         </p>
       ))}
       <div className="skill-catalog__list">
@@ -64,27 +65,26 @@ export function SkillCatalogPanel({ workspace, connection, events }: SkillCatalo
           <article className={`skill-catalog__item skill-catalog__item--${skill.validationStatus}`} key={skill.skillId}>
             <div className="skill-catalog__heading">
               <strong>{skill.name || skill.skillId}</strong>
-              <code>{skill.version || 'invalid'}</code>
+              <code>{translate(skill.version || 'invalid')}</code>
             </div>
-            <p>{skill.description || `Ошибка: ${skill.validationErrorCode || 'invalid_skill'}`}</p>
-            <small>{skill.sourceKind} · {skill.scope} · {skill.contentHash.slice(0, 12)}…</small>
-            <small>Trust: {skill.trustDecision ?? 'scanning'} · риск: {skill.riskClass ?? 'blocked'} · findings: {skill.findingsCount ?? 0}</small>
-            {skill.allowedTools.length > 0 ? <small>Tools: {skill.allowedTools.join(', ')}</small> : null}
+            <p>{skill.description || translate(`Ошибка: ${skill.validationErrorCode || 'invalid_skill'}`)}</p>
+            <small>{translate(skill.sourceKind)} · {translate(skill.scope)} · {translate(skill.contentHash.slice(0, 12))}…</small>
+            <small>Trust: {translate(skill.trustDecision ?? 'scanning')} {translate("· риск:")}{translate(skill.riskClass ?? 'blocked')} · findings: {translate(skill.findingsCount ?? 0)}</small>
+            {skill.allowedTools.length > 0 ? <small>Tools: {translate(skill.allowedTools.join(', '))}</small> : null}
             <button
               type="button"
               onClick={() => requestSkill(skill.skillId)}
               disabled={skill.validationStatus !== 'valid' || !['trusted', 'enabled'].includes(skill.trustDecision ?? 'scanning') || !CONNECTED_STATES.includes(connection)}
             >
-              Загрузить skill явно
-            </button>
+              {translate("Загрузить skill явно")}</button>
           </article>
         ))}
       </div>
-      {catalog && catalog.skills.length === 0 ? <span className="settings-info__badge">В разрешённых roots skills не найдены</span> : null}
+      {catalog && catalog.skills.length === 0 ? <span className="settings-info__badge">{translate("В разрешённых roots skills не найдены")}</span> : null}
       {loaded ? (
         <details className="skill-catalog__loaded" open={loaded.errorCode === ''}>
-          <summary>{loaded.errorCode ? `Ошибка ${loaded.errorCode}` : `Загружен ${loaded.skillId} · ${loaded.version}`}</summary>
-          {loaded.errorCode ? <p role="alert">{loaded.errorMessage}</p> : <pre>{loaded.content}</pre>}
+          <summary>{translate(loaded.errorCode ? `Ошибка ${loaded.errorCode}` : `Загружен ${loaded.skillId} · ${loaded.version}`)}</summary>
+          {loaded.errorCode ? <p role="alert">{translate(loaded.errorMessage)}</p> : <pre>{loaded.content}</pre>}
         </details>
       ) : null}
     </section>

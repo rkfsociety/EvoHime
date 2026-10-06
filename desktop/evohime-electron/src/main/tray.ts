@@ -1,7 +1,7 @@
 import { app, Menu, nativeImage, Tray, type BrowserWindow } from 'electron'
 import { existsSync } from 'node:fs'
 
-import type { ListeningState } from '@shared/api'
+import type { AppLocale, ListeningState } from '@shared/api'
 
 import type { ShellLog } from './diagnostics/logger'
 import { resourcePath } from './paths'
@@ -26,12 +26,15 @@ export interface TrayController {
   forceQuit(): void
   /** Перерисовывает индикатор по состоянию, пришедшему от Core. */
   setListeningState(state: ListeningState | null): void
+  /** Applies the user-selected locale to native tray labels. */
+  setLocale(locale: AppLocale): void
   destroy(): void
 }
 
 export interface TrayOptions {
   readonly window: BrowserWindow
   readonly log: ShellLog
+  readonly initialLocale?: AppLocale
   /**
    * Просит Core сменить состояние слушания. Трей не меняет своё состояние
    * сам: он ждёт `ambient.state`, иначе трей, панель и хоткей разошлись бы.
@@ -42,45 +45,57 @@ export interface TrayOptions {
 /**
  * Подписи состояний слушания для трея.
  *
- * Системы локализации в проекте нет: строки — русские литералы в
- * модуль-локальной константной карте, как `STATE_LABELS` в `App.tsx`.
+ * All native tray text follows the same locale as the renderer appearance.
  */
-const TRAY_LABELS: Record<ListeningState, string> = {
-  stopped: 'Слушание выключено',
-  starting: 'Слушание запускается…',
-  listening: 'Ева слушает',
-  paused_by_user: 'Микрофон на паузе',
-  paused_by_policy: 'Микрофон на паузе по политике',
-  device_conflict: 'Микрофон занят другим приложением',
-  device_disconnected: 'Микрофон отключён',
-  engine_unavailable: 'Слушание: проверка состояния…',
-  denied: 'Слушание запрещено'
+const TRAY_LABELS: Record<AppLocale, Record<ListeningState, string>> = {
+  ru: {
+    stopped: 'Слушание выключено',
+    starting: 'Слушание запускается…',
+    listening: 'Ева слушает',
+    paused_by_user: 'Микрофон на паузе',
+    paused_by_policy: 'Микрофон на паузе по политике',
+    device_conflict: 'Микрофон занят другим приложением',
+    device_disconnected: 'Микрофон отключён',
+    engine_unavailable: 'Слушание: проверка состояния…',
+    denied: 'Слушание запрещено'
+  },
+  en: {
+    stopped: 'Listening is off',
+    starting: 'Starting listening…',
+    listening: 'Eva is listening',
+    paused_by_user: 'Microphone is paused',
+    paused_by_policy: 'Microphone paused by policy',
+    device_conflict: 'Microphone is in use by another app',
+    device_disconnected: 'Microphone disconnected',
+    engine_unavailable: 'Listening: checking status…',
+    denied: 'Listening is disabled'
+  }
 }
 
 /**
  * Заголовок трея. `null` означает «состояние ещё неизвестно» — и это
  * говорится прямо, а не подменяется словом «выключено».
  */
-export function trayTooltip(state: ListeningState | null): string {
-  if (state === null) return 'EvoHime · Слушание: проверка состояния…'
-  return `EvoHime · ${TRAY_LABELS[state]}`
+export function trayTooltip(state: ListeningState | null, locale: AppLocale = 'ru'): string {
+  if (state === null) return locale === 'en' ? 'EvoHime · Listening: checking status…' : 'EvoHime · Слушание: проверка состояния…'
+  return `EvoHime · ${TRAY_LABELS[locale][state]}`
 }
 
 /** Пункт меню паузы: подпись и то, во что перейдёт слушание по нажатию. */
-export function trayPauseItem(state: ListeningState | null): {
+export function trayPauseItem(state: ListeningState | null, locale: AppLocale = 'ru'): {
   readonly label: string
   readonly paused: boolean
   readonly enabled: boolean
 } {
   if (state === 'listening' || state === 'starting') {
-    return { label: 'Поставить микрофон на паузу', paused: true, enabled: true }
+    return { label: locale === 'en' ? 'Pause microphone' : 'Поставить микрофон на паузу', paused: true, enabled: true }
   }
   if (state === 'paused_by_user') {
-    return { label: 'Продолжить слушание', paused: false, enabled: true }
+    return { label: locale === 'en' ? 'Resume listening' : 'Продолжить слушание', paused: false, enabled: true }
   }
   // Во всех остальных состояниях микрофон и так закрыт: предлагать паузу
   // значило бы обещать действие, которое ничего не изменит.
-  return { label: 'Поставить микрофон на паузу', paused: true, enabled: false }
+  return { label: locale === 'en' ? 'Pause microphone' : 'Поставить микрофон на паузу', paused: true, enabled: false }
 }
 
 /** Брендовая иконка трея не меняется вместе со статусом слушания. */
@@ -93,14 +108,15 @@ export function createTray(options: TrayOptions): TrayController {
   let keepAlive = true
   let quitting = false
   let listening: ListeningState | null = null
+  let locale = options.initialLocale ?? 'ru'
 
   const render = (): void => {
-    const pause = trayPauseItem(listening)
+    const pause = trayPauseItem(listening, locale)
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: 'Показать EvoHime', click: () => focusWindow(options.window) },
+        { label: locale === 'en' ? 'Show EvoHime' : 'Показать EvoHime', click: () => focusWindow(options.window) },
         { type: 'separator' },
-        { label: trayTooltip(listening).replace('EvoHime · ', ''), enabled: false },
+        { label: trayTooltip(listening, locale).replace('EvoHime · ', ''), enabled: false },
         {
           label: pause.label,
           enabled: pause.enabled,
@@ -111,7 +127,7 @@ export function createTray(options: TrayOptions): TrayController {
         },
         { type: 'separator' },
         {
-          label: 'Держать сессию в фоне',
+          label: locale === 'en' ? 'Keep session running in background' : 'Держать сессию в фоне',
           type: 'checkbox',
           checked: keepAlive,
           click: () => {
@@ -122,7 +138,7 @@ export function createTray(options: TrayOptions): TrayController {
         },
         { type: 'separator' },
         {
-          label: 'Завершить',
+          label: locale === 'en' ? 'Quit' : 'Завершить',
           click: () => {
             quitting = true
             options.log('info', 'shell.force_quit', {})
@@ -131,7 +147,7 @@ export function createTray(options: TrayOptions): TrayController {
         }
       ])
     )
-    tray.setToolTip(trayTooltip(listening))
+    tray.setToolTip(trayTooltip(listening, locale))
     // Вариант иконки необязателен: если файла нет, остаётся обычная. Падать
     // из-за оформления трея нельзя.
     const iconPath = resourcePath(trayIconName(listening))
@@ -160,6 +176,11 @@ export function createTray(options: TrayOptions): TrayController {
     setListeningState: (state) => {
       if (state === listening) return
       listening = state
+      render()
+    },
+    setLocale: (nextLocale) => {
+      if (nextLocale === locale) return
+      locale = nextLocale
       render()
     },
     destroy: () => tray.destroy()

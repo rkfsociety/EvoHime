@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useState } from 'react'
 import type { ConnectionState } from '@shared/api'
 import { useShellApi } from './shell-api'
@@ -16,10 +17,10 @@ export function MultiReviewerEnsemblePanel({ connection }: { readonly connection
   }
   return <section className="panel" aria-label="Multi-Reviewer Ensemble">
     <h2>Multi-Reviewer Ensemble</h2>
-    <p>Core объединяет независимые reviewer slots и adjudication. Renderer не является authority и не получает raw review prose.</p>
+    <p>{translate("Core объединяет независимые reviewer slots и adjudication. Renderer не является authority и не получает raw review prose.")}</p>
     <label>Ensemble ID <input value={ensembleId} onChange={event => setEnsembleId(event.target.value)} maxLength={256} /></label>
     <label>Metadata JSON <textarea aria-label="Ensemble metadata JSON" value={payload} onChange={event => setPayload(event.target.value)} maxLength={512 * 1024} /></label>
-    <div>{OPERATIONS.map(operation => <button key={operation} type="button" onClick={() => void send(operation)}>{operation}</button>)}</div>
-    {message ? <p role="status">{message}</p> : null}
+    <div>{OPERATIONS.map(operation => <button key={operation} type="button" onClick={() => void send(operation)}>{translate(operation)}</button>)}</div>
+    {message ? <p role="status">{translate(message)}</p> : null}
   </section>
 }

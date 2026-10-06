@@ -14,6 +14,7 @@ import {
 } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { formatDateTime, translate } from './i18n'
 import type { ConnectionState, CoreEvent } from '@shared/api'
 import { OllamaModelDownloadPanel } from './OllamaModelDownloadPanel'
 import { useProviderState } from './provider-state'
@@ -228,7 +229,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const verifyFreeAccess = useCallback(async () => {
     if (!api || model.trim().length === 0) return
     const confirmed = window.confirm(
-      'Core отправит один короткий запрос выбранной модели. Проверь цену и лимиты у провайдера: возможен расход кредитов или денег. Продолжить?'
+      translate('Core отправит один короткий запрос выбранной модели. Проверь цену и лимиты у провайдера: возможен расход кредитов или денег. Продолжить?')
     )
     if (!confirmed) return
     setProbeStatus('Проверка выполняется. Core сначала проверит источник цены, затем отправит bounded synthetic completion.')
@@ -255,45 +256,43 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     : baseUrl
 
   return (
-    <section className="shell__panel provider-form" aria-label="Ключ провайдера">
+    <section className="shell__panel provider-form" aria-label={translate("Ключ провайдера")}>
       <div className="settings-panel__heading">
         <div>
-          <h2>Доступ к моделям</h2>
+          <h2>{translate("Доступ к моделям")}</h2>
           <p className="shell__empty">
-            {provider === 'ollama'
-              ? 'Ollama работает локально. Ключ не нужен, модель можно скачать ниже.'
-              : 'Ключ шифруется средствами Windows и хранится локально. Модель выбирается в чате.'}
+            {translate(provider === 'ollama'
+              ? translate("Ollama работает локально. Ключ не нужен, модель можно скачать ниже.")
+              : translate("Ключ шифруется средствами Windows и хранится локально. Модель выбирается в чате."))}
           </p>
         </div>
         <span
           className={`settings-panel__state settings-panel__state--${configured ? 'ready' : 'offline'}`}
         >
-          {provider === 'ollama' ? 'Локальный провайдер' : configured ? 'Ключ сохранён' : 'Ключ не задан'}
+          {translate(provider === 'ollama' ? translate("Локальный провайдер") : configured ? translate("Ключ сохранён") : translate("Ключ не задан"))}
         </span>
       </div>
 
-      {catalogStatus !== null ? <p className="provider-form__catalog-status" role="status">{catalogStatus}</p> : null}
-      {freeEvidenceStatus !== null ? <p className="provider-form__catalog-status" role="status">{freeEvidenceStatus}</p> : null}
+      {catalogStatus !== null ? <p className="provider-form__catalog-status" role="status">{translate(catalogStatus)}</p> : null}
+      {freeEvidenceStatus !== null ? <p className="provider-form__catalog-status" role="status">{translate(freeEvidenceStatus)}</p> : null}
 
       <div className="provider-form__grid">
         <label htmlFor="provider-kind">
-          Провайдер
-          <select
+          {translate("Провайдер")}<select
             id="provider-kind"
             value={provider}
             onChange={(event) => void selectProvider(event.target.value as ProviderKind)}
             disabled={busy}
           >
             {PROVIDER_KINDS.map((kind) => (
-              <option key={kind} value={kind}>{PROVIDER_LABELS[kind]}</option>
+              <option key={kind} value={kind}>{translate(PROVIDER_LABELS[kind])}</option>
             ))}
           </select>
         </label>
 
         {provider !== 'ollama' ? (
           <label className="provider-form__key" htmlFor="provider-key">
-            Ключ API
-            <input
+            {translate("Ключ API")}<input
               id="provider-key"
               type="password"
               value={apiKey}
@@ -303,7 +302,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
                 setApiKey(event.target.value)
                 setAcknowledgeProbePossibleCost(false)
               }}
-              placeholder={configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
+              placeholder={configured ? translate("сохранён — введи новый, чтобы заменить") : 'sk-…'}
               disabled={busy}
             />
           </label>
@@ -311,15 +310,14 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
         {provider === 'openai_compatible' ? (
           <label htmlFor="provider-profile">
-            Профиль провайдера
-            <select
+            {translate("Профиль провайдера")}<select
               id="provider-profile"
               value={profileId}
               onChange={(event) => selectProfile(event.target.value as ProviderProfileId)}
               disabled={busy}
             >
               {PROVIDER_PROFILE_IDS.map((id) => (
-                <option key={id} value={id}>{PROFILE_LABELS[id]}</option>
+                <option key={id} value={id}>{translate(PROFILE_LABELS[id])}</option>
               ))}
             </select>
           </label>
@@ -338,15 +336,14 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
                 setProbePolicy('disabled')
                 setAcknowledgeProbePossibleCost(false)
               }}
-              placeholder="32 шестнадцатеричных символа"
+              placeholder={translate("32 шестнадцатеричных символа")}
               disabled={busy}
             />
           </label>
         ) : null}
 
         <label htmlFor="provider-url">
-          Адрес API
-          <input
+          {translate("Адрес API")}<input
             id="provider-url"
             value={displayBaseUrl}
             autoComplete="off"
@@ -356,22 +353,22 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
               setProbePolicy('disabled')
               setAcknowledgeProbePossibleCost(false)
             }}
-            placeholder="по умолчанию провайдера"
+            placeholder={translate("по умолчанию провайдера")}
             disabled={busy || (provider === 'openai_compatible' && profileId !== 'custom')}
           />
         </label>
       </div>
 
       {provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? (
-        <p className="shell__empty">Нужен API token Cloudflare с разрешениями Workers AI Read и Workers AI Edit. Host и API path задаются профилем.</p>
+        <p className="shell__empty">{translate("Нужен API token Cloudflare с разрешениями Workers AI Read и Workers AI Edit. Host и API path задаются профилем.")}</p>
       ) : null}
 
-      {provider === 'ollama' ? (
+      {translate(provider === 'ollama' ? (
         <OllamaModelDownloadPanel connection={connection} events={events} baseUrl={baseUrl} />
-      ) : null}
+      ) : null)}
 
       {provider !== 'ollama' ? <fieldset className="provider-form__tier">
-        <legend>Какие модели показывать</legend>
+        <legend>{translate("Какие модели показывать")}</legend>
         {TIERS.map((item) => (
           <label key={item.id}>
             <input
@@ -382,17 +379,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
               onChange={() => setTier(item.id)}
               disabled={busy}
             />
-            <span>{item.label}</span>
-            <span className="provider-form__hint">{item.hint}</span>
+            <span>{translate(item.label)}</span>
+            <span className="provider-form__hint">{translate(item.hint)}</span>
           </label>
         ))}
       </fieldset> : null}
 
       <fieldset className="provider-form__tier">
-        <legend>Проверка бесплатного доступа</legend>
+        <legend>{translate("Проверка бесплатного доступа")}</legend>
         <label htmlFor="free-access-probe-policy">
-          Как собирать данные
-          <select
+          {translate("Как собирать данные")}<select
             id="free-access-probe-policy"
             value={probePolicy}
             onChange={(event) => {
@@ -401,16 +397,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
             }}
             disabled={busy}
           >
-            <option value="disabled">Выключена (ручную проверку можно запустить отдельно)</option>
-            <option value="manual_only">Только ручная проверка</option>
-            <option value="passive_only">Только наблюдать обычные запросы</option>
-            <option value="on_first_use" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>Авто (проверить при первом использовании)</option>
-            <option value="periodic_bounded" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>Повторять после истечения evidence</option>
+            <option value="disabled">{translate("Выключена (ручную проверку можно запустить отдельно)")}</option>
+            <option value="manual_only">{translate("Только ручная проверка")}</option>
+            <option value="passive_only">{translate("Только наблюдать обычные запросы")}</option>
+            <option value="on_first_use" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>{translate("Авто (проверить при первом использовании)")}</option>
+            <option value="periodic_bounded" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>{translate("Повторять после истечения evidence")}</option>
           </select>
         </label>
         {probePolicy === 'on_first_use' || probePolicy === 'periodic_bounded' ? (
           <>
-            <p className="provider-form__hint">Автоматическая проверка отправляет короткий synthetic запрос через OpenRouter. Возможен расход кредитов или денег.</p>
+            <p className="provider-form__hint">{translate("Автоматическая проверка отправляет короткий synthetic запрос через OpenRouter. Возможен расход кредитов или денег.")}</p>
             <label>
               <input
                 type="checkbox"
@@ -418,28 +414,26 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
                 onChange={(event) => setAcknowledgeProbePossibleCost(event.target.checked)}
                 disabled={busy}
               />
-              Я отдельно разрешаю автоматическую проверку с возможным расходом для этого профиля и ключа
-            </label>
+              {translate("Я отдельно разрешаю автоматическую проверку с возможным расходом для этого профиля и ключа")}</label>
           </>
         ) : null}
       </fieldset>
 
       <fieldset className="provider-form__tier">
-        <legend>Маршрутизация по evidence</legend>
+        <legend>{translate("Маршрутизация по evidence")}</legend>
         <label htmlFor="free-access-routing-mode">
-          Режим
-          <select
+          {translate("Режим")}<select
             id="free-access-routing-mode"
             value={routingMode}
             onChange={(event) => setRoutingMode(event.target.value as FreeAccessRoutingMode)}
             disabled={busy}
           >
-            <option value="any">Обычная маршрутизация</option>
-            <option value="prefer_free">Сначала подтверждённые бесплатные модели</option>
-            <option value="free_only">Только подтверждённые бесплатные модели</option>
+            <option value="any">{translate("Обычная маршрутизация")}</option>
+            <option value="prefer_free">{translate("Сначала подтверждённые бесплатные модели")}</option>
+            <option value="free_only">{translate("Только подтверждённые бесплатные модели")}</option>
           </select>
         </label>
-        <p className="provider-form__hint">Каталожная метка и суффикс :free не подтверждают доступ. FreeOnly блокирует неизвестные, устаревшие и платные маршруты.</p>
+        <p className="provider-form__hint">{translate("Каталожная метка и суффикс :free не подтверждают доступ. FreeOnly блокирует неизвестные, устаревшие и платные маршруты.")}</p>
         {routingMode === 'prefer_free' ? (
           <label>
             <input
@@ -448,45 +442,42 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
               onChange={(event) => setAllowPaidFallback(event.target.checked)}
               disabled={busy}
             />
-            Разрешить платный fallback, если подтверждённая бесплатная модель недоступна
-          </label>
+            {translate("Разрешить платный fallback, если подтверждённая бесплатная модель недоступна")}</label>
         ) : null}
       </fieldset>
 
       <div className="provider-form__actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
-          {provider === 'ollama' ? 'Сохранить параметры и применить' : 'Сохранить ключ и применить'}
+          {translate(provider === 'ollama' ? translate("Сохранить параметры и применить") : translate("Сохранить ключ и применить"))}
         </button>
         {configured && provider !== 'ollama' ? (
           <button type="button" onClick={() => void clearKey()} disabled={busy}>
-            Удалить ключ
-          </button>
+            {translate("Удалить ключ")}</button>
         ) : null}
       </div>
 
       {provider === 'openai_compatible' && profileId === 'openrouter' && configured ? (
-        <div className="provider-form__catalog-status" aria-label="Проверка бесплатного доступа">
-          <p>Разовая проверка OpenRouter: Core сверит цену модели и выполнит один короткий synthetic completion. Возможен расход.</p>
+        <div className="provider-form__catalog-status" aria-label={translate("Проверка бесплатного доступа")}>
+          <p>{translate("Разовая проверка OpenRouter: Core сверит цену модели и выполнит один короткий synthetic completion. Возможен расход.")}</p>
           <button type="button" onClick={() => void verifyFreeAccess()} disabled={busy || model.trim().length === 0}>
-            Проверить текущую модель
-          </button>
-          {probeStatus ? <p role="status">{probeStatus}</p> : null}
+            {translate("Проверить текущую модель")}</button>
+          {probeStatus ? <p role="status">{translate(probeStatus)}</p> : null}
         </div>
       ) : null}
 
       {status.kind === 'saved' ? (
         <p className={status.restarted ? 'provider-form__ok' : 'shell__reason'}>
-          {status.restarted
+          {translate(status.restarted
             ? status.action === 'provider'
-              ? 'Провайдер выбран и сохранён, Core перезапущен — подключение восстановится за пару секунд.'
-              : 'Сохранено, Core перезапущен — подключение восстановится за пару секунд.'
+              ? translate("Провайдер выбран и сохранён, Core перезапущен — подключение восстановится за пару секунд.")
+              : translate("Сохранено, Core перезапущен — подключение восстановится за пару секунд.")
             : status.action === 'provider'
-              ? 'Провайдер сохранён, но Core не перезапустился. Перезапусти приложение вручную.'
-              : 'Сохранено, но Core не перезапустился. Перезапусти приложение вручную.'}
+              ? translate("Провайдер сохранён, но Core не перезапустился. Перезапусти приложение вручную.")
+              : translate("Сохранено, но Core не перезапустился. Перезапусти приложение вручную."))}
         </p>
       ) : null}
       {status.kind === 'failed' ? (
-        <p role="alert" className="shell__reason">{status.message}</p>
+        <p role="alert" className="shell__reason">{translate(status.message)}</p>
       ) : null}
     </section>
   )
@@ -530,7 +521,7 @@ function freeAccessStatusLabel(value: Record<string, unknown>): string {
     ? `${(value['confidence_bps'] / 100).toFixed(1)}%`
     : 'не оценена'
   const observedAt = typeof value['observed_at_ms'] === 'number' && value['observed_at_ms'] > 0
-    ? new Date(value['observed_at_ms']).toLocaleString()
+    ? formatDateTime(value['observed_at_ms'])
     : 'нет'
   const limits = Array.isArray(value['limits'])
     ? value['limits'].slice(0, 16).map((item) => {

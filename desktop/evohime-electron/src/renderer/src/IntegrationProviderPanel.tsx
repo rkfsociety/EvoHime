@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
 import type { ShellEvent } from '@shared/api'
@@ -201,61 +202,61 @@ export function IntegrationProviderPanel(): React.JSX.Element {
 
   const removeRepository = (repository: SavedRepository) => {
     const id = `${repository.owner}/${repository.repo}`
-    if (!window.confirm(`Удалить ${id} из списка интеграций?`)) return
+    if (!window.confirm(translate('Удалить {id} из списка интеграций?').replace('{id}', id))) return
     void send('remove_repository', { owner: repository.owner, repo: repository.repo })
   }
 
-  return <section className="settings-info integration-provider" aria-label="Интеграции">
-    <h3>Интеграции</h3>
-    <p>Подключай публичные GitHub-репозитории, чтобы смотреть их описание, открытые issues и pull requests. EvoHime отправляет только owner/repo в GitHub API; вход в аккаунт не требуется. GitHub может ограничить частоту анонимных запросов.</p>
-    <span className="settings-info__badge">{catalogReady ? 'GitHub · только чтение' : 'Каталог загружается'}</span>
+  return <section className="settings-info integration-provider" aria-label={translate("Интеграции")}>
+    <h3>{translate("Интеграции")}</h3>
+    <p>{translate("Подключай публичные GitHub-репозитории, чтобы смотреть их описание, открытые issues и pull requests. EvoHime отправляет только owner/repo в GitHub API; вход в аккаунт не требуется. GitHub может ограничить частоту анонимных запросов.")}</p>
+    <span className="settings-info__badge">{translate(catalogReady ? translate("GitHub · только чтение") : translate("Каталог загружается"))}</span>
 
     <form className="integration-provider__form" onSubmit={addRepository}>
-      <label htmlFor="integration-github-repo">Публичный репозиторий</label>
+      <label htmlFor="integration-github-repo">{translate("Публичный репозиторий")}</label>
       <div className="integration-provider__add-row">
         <input
           id="integration-github-repo"
-          aria-label="Публичный репозиторий owner/repo"
+          aria-label={translate("Публичный репозиторий owner/repo")}
           placeholder="owner/repo"
           value={repositoryInput}
           onChange={(event) => setRepositoryInput(event.target.value)}
           maxLength={140}
         />
-        <button type="submit" disabled={busy || !catalogReady}>Добавить</button>
+        <button type="submit" disabled={busy || !catalogReady}>{translate("Добавить")}</button>
       </div>
     </form>
 
-    <p role="status" aria-live="polite">{status}</p>
-    {repositories.length === 0 ? <p>Пока нет подключённых репозиториев.</p> : (
+    <p role="status" aria-live="polite">{translate(status)}</p>
+    {repositories.length === 0 ? <p>{translate("Пока нет подключённых репозиториев.")}</p> : (
       <ul className="integration-provider__repos">
         {repositories.map((repository) => {
           const id = `${repository.owner}/${repository.repo}`
           return <li key={id}>
-            <button type="button" disabled={busy} onClick={() => openRepository(repository)}>{id}</button>
-            <button type="button" disabled={busy} aria-label={`Удалить ${id}`} onClick={() => removeRepository(repository)}>Удалить</button>
+            <button type="button" disabled={busy} onClick={() => openRepository(repository)}>{translate(id)}</button>
+            <button type="button" disabled={busy} aria-label={`Удалить ${id}`} onClick={() => removeRepository(repository)}>{translate("Удалить")}</button>
           </li>
         })}
       </ul>
     )}
 
     {selectedId && selected ? <div className="integration-provider__detail">
-      <h4><button className="integration-provider__link" type="button" onClick={() => { void api?.openExternal(`https://github.com/${encodeURIComponent(selected.full_name.split('/')[0] ?? '')}/${encodeURIComponent(selected.full_name.split('/')[1] ?? '')}`) }}>{selected.full_name}</button></h4>
+      <h4><button className="integration-provider__link" type="button" onClick={() => { void api?.openExternal(`https://github.com/${encodeURIComponent(selected.full_name.split('/')[0] ?? '')}/${encodeURIComponent(selected.full_name.split('/')[1] ?? '')}`) }}>{translate(selected.full_name)}</button></h4>
       {selected.description ? <p>{selected.description}</p> : null}
-      <p>{selected.language ?? 'Язык не указан'} · ★ {selected.stars} · forks {selected.forks}</p>
+      <p>{translate(selected.language ?? translate("Язык не указан"))} · ★ {translate(selected.stars)} · forks {translate(selected.forks)}</p>
       <div className="integration-provider__columns">
-        <section aria-label="Открытые issues">
-          <h4>Открытые issues</h4>
-          {selected.issues.length ? <ul>{selected.issues.map((item) => <li key={item.number}><button className="integration-provider__link" type="button" onClick={() => { void api?.openExternal(item.url) }}>#{item.number} {item.title}</button></li>)}</ul> : <p>Нет открытых issues.</p>}
+        <section aria-label={translate("Открытые issues")}>
+          <h4>{translate("Открытые issues")}</h4>
+          {selected.issues.length ? <ul>{selected.issues.map((item) => <li key={item.number}><button className="integration-provider__link" type="button" onClick={() => { void api?.openExternal(item.url) }}>#{translate(item.number)} {item.title}</button></li>)}</ul> : <p>{translate("Нет открытых issues.")}</p>}
         </section>
-        <section aria-label="Открытые pull requests">
-          <h4>Открытые pull requests</h4>
-          {selected.pull_requests.length ? <ul>{selected.pull_requests.map((item) => <li key={item.number}><button className="integration-provider__link" type="button" onClick={() => { void api?.openExternal(item.url) }}>#{item.number} {item.title}</button></li>)}</ul> : <p>Нет открытых pull requests.</p>}
+        <section aria-label={translate("Открытые pull requests")}>
+          <h4>{translate("Открытые pull requests")}</h4>
+          {selected.pull_requests.length ? <ul>{selected.pull_requests.map((item) => <li key={item.number}><button className="integration-provider__link" type="button" onClick={() => { void api?.openExternal(item.url) }}>#{translate(item.number)} {item.title}</button></li>)}</ul> : <p>{translate("Нет открытых pull requests.")}</p>}
         </section>
       </div>
       <button type="button" disabled={busy} onClick={() => {
         const [owner, repo] = selected.full_name.split('/')
         if (owner && repo) void send('refresh_repository', { owner, repo })
-      }}>Обновить</button>
+      }}>{translate("Обновить")}</button>
     </div> : null}
   </section>
 }

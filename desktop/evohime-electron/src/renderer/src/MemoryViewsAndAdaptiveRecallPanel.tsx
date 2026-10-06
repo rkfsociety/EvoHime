@@ -1,3 +1,4 @@
+import { translate } from './i18n'
 import { useEffect, useState } from 'react'
 import { useShellApi } from './shell-api'
 import type { ConnectionState } from '@shared/api'
@@ -19,5 +20,5 @@ export function MemoryViewsAndAdaptiveRecallPanel({ connection, events }: { read
     const response = await api.invoke('core.memoryViewsAndAdaptiveRecall', { operation, viewId: viewId.trim(), payload: payload.trim(), expectedVersion: 0, idempotencyKey: crypto.randomUUID() })
     if (!response.ok) setMessage(response.message)
   }
-  return <section aria-label="Memory Views and Adaptive Recall"><h3>Memory Views &amp; Adaptive Recall</h3><p>Core ограничивает scope, read/write права и глубину retrieval; renderer получает только metadata projection и причины решения.</p><label>View ID <input value={viewId} onChange={(event) => setViewId(event.target.value)} maxLength={128} /></label><label>View/recall JSON <textarea value={payload} onChange={(event) => setPayload(event.target.value)} maxLength={256 * 1024} /></label><div>{(['save_view', 'inspect', 'recall'] as const).map((operation) => <button key={operation} type="button" onClick={() => void send(operation)}>{operation}</button>)}</div>{result ? <pre>{JSON.stringify(result, null, 2)}</pre> : null}{message ? <p role="status">{message}</p> : null}</section>
+  return <section aria-label="Memory Views and Adaptive Recall"><h3>Memory Views &amp; Adaptive Recall</h3><p>{translate("Core ограничивает scope, read/write права и глубину retrieval; renderer получает только metadata projection и причины решения.")}</p><label>View ID <input value={viewId} onChange={(event) => setViewId(event.target.value)} maxLength={128} /></label><label>View/recall JSON <textarea value={payload} onChange={(event) => setPayload(event.target.value)} maxLength={256 * 1024} /></label><div>{(['save_view', 'inspect', 'recall'] as const).map((operation) => <button key={operation} type="button" onClick={() => void send(operation)}>{translate(operation)}</button>)}</div>{result ? <pre>{translate(JSON.stringify(result, null, 2))}</pre> : null}{message ? <p role="status">{translate(message)}</p> : null}</section>
 }

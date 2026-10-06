@@ -7,6 +7,7 @@ import {
   PROVIDER_KINDS,
   RENDERER_COMMANDS,
   type AmbientHotkeyStatus,
+  type AppLocale,
   type CommandFailure,
   type PermissionMode,
   type ProviderKind,
@@ -20,7 +21,8 @@ import {
   CLIPBOARD_CHANNEL,
   EVENT_CHANNEL,
   INVOKE_CHANNEL,
-  OPEN_EXTERNAL_CHANNEL
+  OPEN_EXTERNAL_CHANNEL,
+  SET_LOCALE_CHANNEL
 } from '@shared/channels'
 
 import type { ShellLog } from './diagnostics/logger'
@@ -88,6 +90,8 @@ export interface ShellBridgeOptions {
    * недоступной, а не изображается работающей.
    */
   readonly ambientHotkey: () => AmbientHotkeyStatus
+  /** Applies the renderer's validated appearance language to native shell UI. */
+  readonly setLocale: (locale: AppLocale) => void
   readonly exportDiagnostics: () => Promise<{ cancelled: boolean; path: string }>
   readonly submitDiagnostics?: () => Promise<{ url: string }>
   readonly log: ShellLog
@@ -119,6 +123,14 @@ export function registerShellBridge(options: ShellBridgeOptions): void {
     }
     await shell.openExternal(url)
     return true
+  })
+
+  ipcMain.on(SET_LOCALE_CHANNEL, (_event, locale: unknown) => {
+    if (locale !== 'ru' && locale !== 'en') {
+      log('warn', 'shell.invalid_locale', {})
+      return
+    }
+    options.setLocale(locale)
   })
 }
 
