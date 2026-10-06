@@ -19,7 +19,7 @@ upstream lazy JSX оптимизацию и измерить оставшуюс�
 | --- | --- | --- |
 | `TaskTimeline.tsx`, `buildCoreEventKey`, `eventCursorRef` | Ключ включает payload/страницу, Set растёт до смены чата или reconnect | 3 |
 | `WorkflowPanel.tsx`, polling effect | Каждые 2 секунды два запроса, `afterSequence: -1`; terminal state не завершает polling | 3 |
-| `main/diagnostics/logger.ts`, `write` | mkdir/stat/append и ротация синхронны на вызывающем потоке | 2 |
+| `main/diagnostics/logger.ts`, `write`; `main/index.ts`; `main/updater.ts` | mkdir/stat/append и ротация синхронны; две Electron entry points создают отдельные logger instances для одного `shell-main.jsonl`; общий logger входит в shell-host и updater packages | 2 |
 | `TaskTimeline.tsx`, `timelineItems` | Upstream уже выбирает descriptors до JSX; проверить оставшиеся затраты transcript | 3 |
 | `workspace_rag.rs`, `decode_text` | `String::from_utf8(bytes.to_vec())` копирует буфер до проверки UTF-8 | 1 |
 
@@ -68,5 +68,10 @@ Evidence хранить в `docs/release-evidence.md` только после ф
 Принято: bounded dedup, cursor polling, logger queue, проверка существующего lazy JSX, UTF-8 decode.
 Отклонено: обещание численного ускорения без baseline; полная замена системы
 виртуализации; изменение Core authority; массовая замена `Arc::clone`.
+Уточнено по коду: async logger должен сохранить корректность при двух
+entry points, разделяющих файл, и при shutdown обоих процессов; прямых
+unit-тестов `JsonlLogger` в Electron tests сейчас не найдено, поэтому этап 2
+должен добавить focused tests. Updater path filter также пока не включает
+`src/main/diagnostics/logger.ts`; этап 2 должен закрыть CI trigger gap.
 Внешних блокеров составления плана нет. Готовность реализации определяется
 этапом 4, а не наличием этого документа.

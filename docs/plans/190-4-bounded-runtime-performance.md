@@ -27,9 +27,11 @@ Blocking: [190-3](190-3-bounded-runtime-performance.md). Optional: 184/185
 - При изменении Rust API/docs — соответствующие documentation gates;
   Rust fmt/clippy/check и module tests по изменённой области.
 - `pwsh -NoProfile -File scripts/documentation.tests.ps1`, `git diff --check`.
-- Существующие module-router, module workflows и rustdoc CI после разрешённого
-  push; не создавать workflow ради этой задачи. Проверять exact commit SHA,
-  причины skipped/failed jobs и публикацию только реально изменённых модулей.
+- Существующие module-router, shell-host/updater workflows и rustdoc CI после
+  разрешённого push; не создавать workflow ради этой задачи. Для общего logger
+  подтвердить path-filter coverage обоих Electron packages. Проверять exact
+  commit SHA, причины skipped/failed jobs и публикацию только реально
+  изменённых модулей.
 - Версии повышать только для изменённых публикуемых sources; документационный
   план сам по себе не требует marker bump. Push implementation — по правилам
   `AGENTS.md`; план не даёт разрешения на deploy/обновление установленного продукта.
