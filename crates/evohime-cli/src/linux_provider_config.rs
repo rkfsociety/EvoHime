@@ -7,8 +7,13 @@ use std::path::{Path, PathBuf};
 const CONFIG_DIRECTORY: &str = "evohime";
 const CONFIG_FILE: &str = "provider.env";
 const MAX_CONFIG_BYTES: u64 = 16 * 1024;
-const CONFIG_TEMPLATE: &str =
-    "# EvoHime Linux CLI provider settings\nMODEL_PROVIDER=literouter\nLITEROUTER_API_KEY=\n";
+const CONFIG_TEMPLATE: &str = concat!(
+    "# EvoHime Linux CLI provider settings\n",
+    "MODEL_PROVIDER=literouter\n",
+    "LITEROUTER_API_KEY=\n",
+    "EVOHIME_MODEL_TIMEOUT_SECS=0\n",
+    "EVOHIME_TASK_TIMEOUT_SECONDS=0\n",
+);
 const ALLOWED_KEYS: &[&str] = &[
     "MODEL_PROVIDER",
     "LITEROUTER_API_KEY",
@@ -207,9 +212,16 @@ fn parse_value(raw: &str) -> Result<String, ()> {
 }
 
 fn values_to_apply(
-    values: BTreeMap<String, String>,
+    mut values: BTreeMap<String, String>,
     environment_names: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
+    values
+        .entry("EVOHIME_MODEL_TIMEOUT_SECS".to_owned())
+        .or_insert_with(|| "0".to_owned());
+    values
+        .entry("EVOHIME_TASK_TIMEOUT_SECONDS".to_owned())
+        .or_insert_with(|| "0".to_owned());
+
     values
         .into_iter()
         .filter(|(name, _)| !environment_names.contains(name))
@@ -254,16 +266,64 @@ mod tests {
         let values = BTreeMap::from([
             ("MODEL_PROVIDER".to_owned(), "literouter".to_owned()),
             ("LITEROUTER_API_KEY".to_owned(), "file-key".to_owned()),
+            ("EVOHIME_MODEL_TIMEOUT_SECS".to_owned(), "30".to_owned()),
         ]);
-        let present = BTreeSet::from(["LITEROUTER_API_KEY".to_owned()]);
+        let present = BTreeSet::from([
+            "LITEROUTER_API_KEY".to_owned(),
+            "EVOHIME_MODEL_TIMEOUT_SECS".to_owned(),
+        ]);
         let applied = values_to_apply(values, &present);
 
-        assert_eq!(applied.len(), 1);
+        assert_eq!(applied.len(), 2);
         assert_eq!(
             applied.get("MODEL_PROVIDER").map(String::as_str),
             Some("literouter")
         );
         assert!(!applied.contains_key("LITEROUTER_API_KEY"));
+        assert!(!applied.contains_key("EVOHIME_MODEL_TIMEOUT_SECS"));
+        assert_eq!(
+            applied
+                .get("EVOHIME_TASK_TIMEOUT_SECONDS")
+                .map(String::as_str),
+            Some("0")
+        );
+    }
+
+    #[test]
+    fn missing_timeout_values_default_to_unlimited() {
+        let applied = values_to_apply(BTreeMap::new(), &BTreeSet::new());
+
+        assert_eq!(
+            applied
+                .get("EVOHIME_MODEL_TIMEOUT_SECS")
+                .map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            applied
+                .get("EVOHIME_TASK_TIMEOUT_SECONDS")
+                .map(String::as_str),
+            Some("0")
+        );
+    }
+
+    #[test]
+    fn explicit_timeout_values_in_config_are_preserved() {
+        let values = BTreeMap::from([("EVOHIME_MODEL_TIMEOUT_SECS".to_owned(), "30".to_owned())]);
+        let applied = values_to_apply(values, &BTreeSet::new());
+
+        assert_eq!(
+            applied
+                .get("EVOHIME_MODEL_TIMEOUT_SECS")
+                .map(String::as_str),
+            Some("30")
+        );
+        assert_eq!(
+            applied
+                .get("EVOHIME_TASK_TIMEOUT_SECONDS")
+                .map(String::as_str),
+            Some("0")
+        );
     }
 
     #[test]
@@ -322,6 +382,16 @@ mod tests {
         assert_eq!(
             values.get("LITEROUTER_API_KEY").map(String::as_str),
             Some("")
+        );
+        assert_eq!(
+            values.get("EVOHIME_MODEL_TIMEOUT_SECS").map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            values
+                .get("EVOHIME_TASK_TIMEOUT_SECONDS")
+                .map(String::as_str),
+            Some("0")
         );
         assert_eq!(
             fs::metadata(&path).expect("template metadata").mode() & 0o777,
