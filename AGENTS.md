@@ -51,10 +51,14 @@ pwsh -File .\start-dev.ps1 -SkipBuild
 .\scripts\test-agent.ps1 -ListModels
 .\scripts\test-agent.ps1 -ReviewPlan docs\plans\181-4-core-sensitive-egress-guardrails.md -Reviewers 'модель-1,модель-2' -Synthesis 'модель-3' -Revise -Out C:\temp\plan.md
 
-# Официальный headless Core-клиент (Windows companion binary)
+# Официальный headless Core-клиент
 cargo run -p evohime-cli -- doctor --json
 cargo run -p evohime-cli -- run --json 'проверь репозиторий'
 cargo run -p evohime-cli -- status <run-id> --json
+
+# Linux: собери CLI вместе с Core, затем запусти eva; Core стартует автоматически
+cargo build --locked --release -p evohime-cli -p evohime-core
+./target/release/eva doctor --json
 
 # Поставка движка распознавания: whisper.dll, модели лестницы и манифест
 # (нужны CMake и MSVC Build Tools; самому продукту CMake не требуется)

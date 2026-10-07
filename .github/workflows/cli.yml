@@ -3,7 +3,15 @@ on:
   workflow_call:
   workflow_dispatch:
   pull_request:
-    paths: ['crates/evohime-cli/**', 'crates/evohime-cli-protocol/**', 'crates/evohime-cli-contract/**', 'release-versions/cli.txt', '.github/workflows/cli.yml', '.github/workflows/module-native.yml']
+    paths:
+      - 'crates/evohime-cli/**'
+      - 'crates/evohime-cli-protocol/**'
+      - 'crates/evohime-cli-contract/**'
+      - 'crates/desktop-ipc/**'
+      - 'crates/evohime-core/**'
+      - 'release-versions/cli.txt'
+      - '.github/workflows/cli.yml'
+      - '.github/workflows/module-native.yml'
 
 concurrency:
   group: evohime-module-${{ github.workflow }}
@@ -27,16 +35,21 @@ jobs:
       - run: cargo clippy --locked -p evohime-cli-protocol --all-targets -- -D warnings
       - run: cargo clippy --locked -p evohime-cli --all-targets -- -D warnings
       - run: cargo clippy --locked -p evohime-desktop-ipc --all-targets -- -D warnings
-      - run: cargo build --locked --release -p evohime-cli
-      - name: Verify unsupported production transport fails closed
+      - run: cargo build --locked --release -p evohime-cli -p evohime-core
+      - name: Verify Linux Core autostart and private IPC endpoint
         shell: bash
         run: |
-          set +e
-          ./target/release/eva doctor --json >stdout.log 2>stderr.log
-          status=$?
-          set -e
-          test "$status" -eq 7
-          grep -q '^core_unavailable:' stderr.log
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/evohime-runtime"
+          export EVOHIME_DATA_DIR="$RUNNER_TEMP/evohime-data"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          ./target/release/eva doctor --json >doctor.ndjson
+          grep -q '"kind":"core.ready"' doctor.ndjson
+          test -S "$XDG_RUNTIME_DIR/evohime/core.sock"
+          test "$(stat -c '%a' "$XDG_RUNTIME_DIR/evohime")" = 700
+          test "$(stat -c '%a' "$XDG_RUNTIME_DIR/evohime/core.sock")" = 600
+          test "$(stat -c '%a' "$XDG_RUNTIME_DIR/evohime/session.json")" = 600
       - name: Verify invalid invocation is bounded
         shell: bash
         run: |

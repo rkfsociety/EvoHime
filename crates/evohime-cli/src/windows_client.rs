@@ -1,8 +1,8 @@
 use evohime_cli::Command;
 use evohime_cli::ExitCode;
 
+use crate::endpoint::connect;
 use crate::windows_controls;
-use crate::windows_endpoint::connect;
 use crate::windows_output;
 use crate::windows_run::run_task;
 use crate::windows_watch::watch_events;

@@ -15,8 +15,5 @@ evohime-desktop-ipc = { path = "../desktop-ipc" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["io-util", "macros", "rt", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time"] }
 uuid = { version = "1", features = ["v4"] }
-
-[target.'cfg(windows)'.dependencies]
-tokio = { workspace = true, features = ["net", "io-util", "macros", "rt", "time"] }

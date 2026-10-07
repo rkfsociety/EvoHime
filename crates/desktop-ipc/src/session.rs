@@ -345,7 +345,23 @@ pub fn write_launch_context(
         .map_err(|error| std::io::Error::other(error.to_string()))?;
     let bytes =
         serde_json::to_vec(context).map_err(|error| std::io::Error::other(error.to_string()))?;
-    std::fs::write(path, bytes)
+    #[cfg(target_os = "linux")]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        file.write_all(&bytes)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        std::fs::write(path, bytes)
+    }
 }
 
 /// Identity of the connected client as observed by the operating system, not

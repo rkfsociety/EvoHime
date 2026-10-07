@@ -25,6 +25,9 @@ pub mod local_adapter_contract;
 pub mod session;
 /// Bounded frame encoding, decoding, and transport behavior.
 pub mod transport;
+/// Private runtime paths used by the Linux Core and headless CLI endpoints.
+#[cfg(target_os = "linux")]
+pub mod unix_runtime;
 /// Windows-specific IPC security and named-pipe helpers.
 #[cfg(windows)]
 pub mod windows_security;

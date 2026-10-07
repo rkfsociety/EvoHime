@@ -123,10 +123,14 @@ use routing_trace::{
 
 #[cfg(windows)]
 mod pipe_server;
+#[cfg(target_os = "linux")]
+mod unix_pipe_server;
 #[cfg(windows)]
 pub use listener_pipe::run_windows_listener_pipe;
 #[cfg(windows)]
 pub use pipe_server::{run_windows_pipe, PipeServerConfig};
+#[cfg(target_os = "linux")]
+pub use unix_pipe_server::{run_unix_pipe, UnixPipeServerConfig};
 impl CoreVersion {
     /// Returns the package version embedded at compile time.
     pub const fn current() -> &'static str {

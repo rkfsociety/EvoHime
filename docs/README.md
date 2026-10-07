@@ -51,6 +51,11 @@
 
 Продукт — один локальный Windows EXE-клиент. Пользователь скачивает `EvoHime-Setup.exe`, устанавливает приложение и запускает один ярлык `EvoHime`. Короткое имя агента — **Ева**. `evohime-core.exe` и `evohime-supervisor.exe` являются скрытыми внутренними компонентами runtime.
 
+Для Linux доступен headless Core CLI `eva`: соберите `evohime-cli` и
+`evohime-core` через Cargo и запустите `eva doctor` или `eva run`. CLI сам
+запускает Core и подключается к нему через защищённый пользовательский Unix
+socket. Electron desktop shell и supervisor остаются Windows-компонентами.
+
 ## Правило источника истины
 
 Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` → `development-plan.md` → `roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией. Release evidence хранится отдельно от статуса реализации.

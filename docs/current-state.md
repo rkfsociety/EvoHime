@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-10-06.
+Обновлено: 2026-10-07.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -213,6 +213,17 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 | Supervisor | mutex, Job Object, lifecycle и recovery | `crates/evohime-supervisor/` |
 | Native package | Electron shell `EvoHime.exe`, updater-модуль `updater\EvoHimeUpdater.exe` + Rust worker, Core, supervisor, `eva.exe`, analysis worker, listener, transaction и verifier | `scripts/build-windows-native.ps1` |
 | Installer | Маленький web `EvoHime-Setup.exe`, который после запуска получает полный комплект модулей | `installer/EvoHime.iss`, `.github/workflows/installer.yml` |
+
+## Headless CLI на Linux
+
+`eva` запускается на Linux и автоматически поднимает соседний `evohime-core`.
+Клиент использует существующие Core-команды через owner-only Unix socket и
+проверяет UID peer и HMAC session proof. Сборка из checkout:
+`cargo build --locked --release -p evohime-cli -p evohime-core`, запуск:
+`./target/release/eva doctor --json`. Для выполнения задач настройте провайдера
+переменными окружения; Ollama использует `MODEL_PROVIDER=ollama` и
+`OLLAMA_MODEL`. Electron shell, Windows supervisor и supervisor-dependent
+операции остаются Windows-only.
 
 Для разработки используется PowerShell 7+ и Node.js 22 LTS. В установленный
 клиент не вносятся изменения: диагностика и проверки выполняются в исходниках,

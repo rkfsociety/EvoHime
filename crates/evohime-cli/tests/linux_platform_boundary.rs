@@ -1,9 +1,9 @@
-#![cfg(not(windows))]
+#![cfg(not(any(windows, target_os = "linux")))]
 
 use std::process::Command;
 
 #[test]
-fn headless_commands_fail_closed_without_windows_core() {
+fn headless_commands_fail_closed_on_unsupported_platforms() {
     let binary = env!("CARGO_BIN_EXE_eva");
     let commands = [
         vec!["doctor", "--json"],

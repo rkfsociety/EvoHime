@@ -18,6 +18,46 @@ fn protected_storage_survives_rotation_with_history_fallback() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_key_material_is_restricted_to_the_current_user() {
+    use std::os::unix::fs::MetadataExt;
+
+    let root = std::env::temp_dir().join(format!("evohime-receipt-linux-{}", Uuid::now_v7()));
+    let manager = ReceiptKeyManager::new(&root);
+    manager.initialize().expect("initialize Linux keys");
+    let key_dir = manager.key_dir();
+    assert_eq!(
+        std::fs::metadata(key_dir).expect("key directory").mode() & 0o777,
+        0o700
+    );
+    assert_eq!(
+        std::fs::metadata(manager.active_path())
+            .expect("active key metadata")
+            .mode()
+            & 0o777,
+        0o600
+    );
+
+    let envelope = manager
+        .protect_storage(b"bounded recovery")
+        .expect("protect recovery data");
+    assert_eq!(
+        manager
+            .unprotect_storage(&envelope)
+            .expect("unprotect recovery data"),
+        b"bounded recovery"
+    );
+    assert_eq!(
+        std::fs::metadata(key_dir.join(STORAGE_KEY_FILE))
+            .expect("storage key metadata")
+            .mode()
+            & 0o777,
+        0o600
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
 fn genesis() -> KeyTransition {
     let pair = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();
     let signer = Ed25519KeyPair::from_pkcs8(pair.as_ref()).unwrap();

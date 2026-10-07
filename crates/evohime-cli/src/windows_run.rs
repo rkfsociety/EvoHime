@@ -1,6 +1,6 @@
 use evohime_cli::ExitCode;
 
-use crate::windows_endpoint::CoreClient;
+use crate::endpoint::CoreClient;
 use crate::windows_output;
 use crate::windows_watch::watch_events;
 

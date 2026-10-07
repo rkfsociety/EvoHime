@@ -1,16 +1,18 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+#[cfg(not(target_os = "linux"))]
 use std::io::Write;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 use std::process::ExitCode;
 
+#[cfg(not(target_os = "linux"))]
 macro_rules! console_line {
     ($($arg:tt)*) => {{
         let _ = writeln!(std::io::stdout(), $($arg)*);
     }};
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -51,10 +53,11 @@ fn main() -> ExitCode {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Console commands never create a pipe. Validate server launches before
     // opening storage or starting background work.
+    #[cfg(windows)]
     let pipe_config = if std::env::args().any(|arg| arg == "--console" || arg == "--list-models") {
         None
     } else {
@@ -63,7 +66,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Err(error) => return Err(format!("launch context failed: {error}").into()),
         }
     };
+    #[cfg(target_os = "linux")]
+    let unix_pipe_config = {
+        if !std::env::args().any(|arg| arg == "--cli-server") {
+            return Err("Linux Core must be started through `eva`".into());
+        }
+        let paths = evohime_desktop_ipc::unix_runtime::UnixRuntimePaths::current()?;
+        match evohime_core::UnixPipeServerConfig::bind(&paths).await? {
+            Some(config) => Some(config),
+            None => return Ok(()),
+        }
+    };
     let data_dir = evohime_core::get_data_directory();
+    #[cfg(target_os = "linux")]
+    prepare_linux_data_directory(&data_dir)?;
     let journal = match evohime_core::EventJournal::open(data_dir.join("events.db")) {
         Ok(journal) => journal,
         Err(error) => return Err(format!("storage failed: {error}").into()),
@@ -142,6 +158,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .recover_durable_background_execution(evohime_core::task_memory::now_millis() as i64)
         .await
         .map_err(|e| format!("durable background execution recovery failed: {e}"))?;
+    #[cfg(windows)]
     evohime_core::local_model_adaptation::recover_after_restart(&journal, &data_dir.join("models"))
         .await
         .map_err(|e| format!("local model adaptation recovery failed: {e}"))?;
@@ -277,6 +294,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .with_selected_model(selected_model.clone()),
             ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
+    #[cfg(windows)]
     if std::env::args().any(|arg| arg == "--list-models") {
         list_console_models(gateway_config).await?;
         heartbeat_task.abort();
@@ -285,6 +303,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ambient_retention_task.abort();
         return Ok(());
     }
+    #[cfg(windows)]
     if let Some(request) = console_review_request()? {
         run_console_review(request, gateway_config).await?;
         heartbeat_task.abort();
@@ -293,6 +312,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         ambient_retention_task.abort();
         return Ok(());
     }
+    #[cfg(windows)]
     if let Some((prompt, workspace_root, approve_writes)) = console_request()? {
         let Some(executor) = executor else {
             return Err("console: модель не настроена; проверьте .env".into());
@@ -423,13 +443,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => return Err(format!("logging failed: {error}").into()),
     };
-    let Some(config) = pipe_config else {
-        return Err("pipe configuration missing for a server launch".into());
-    };
-    if let Err(error) = probe_supervisor(config.context()).await {
-        tracing::error!("evohime-core supervisor lifecycle probe failed: {error}");
+    #[cfg(windows)]
+    let pipe_config = pipe_config.ok_or("pipe configuration missing for a server launch")?;
+    #[cfg(windows)]
+    {
+        if let Err(error) = probe_supervisor(pipe_config.context()).await {
+            tracing::error!("evohime-core supervisor lifecycle probe failed: {error}");
+        }
     }
-    let authenticated = config.context().is_authenticated();
+    #[cfg(windows)]
+    let authenticated = pipe_config.context().is_authenticated();
+    #[cfg(target_os = "linux")]
+    let unix_pipe_config = unix_pipe_config.ok_or("Linux IPC configuration is missing")?;
+    #[cfg(target_os = "linux")]
+    let authenticated = unix_pipe_config.context().is_authenticated();
     let _ = logger.write(
         "info",
         "core.started",
@@ -437,6 +464,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "protocol_major": 1,
             "protocol_minor": 0,
             "authenticated": authenticated,
+            "platform": if cfg!(target_os = "linux") { "linux" } else { "windows" },
         }),
     );
     let bridge = std::sync::Arc::new(bridge);
@@ -482,32 +510,44 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
-    let listener_bridge = std::sync::Arc::clone(&bridge);
-    let listener_context = config.context().clone();
-    let listener_logger = std::sync::Arc::clone(&logger);
     // All owned background tasks are aborted below after a normal IPC stop or
     // Ctrl+C. Returning the error lets the runtime thread unwind first, so
     // journal/logger guards can release their resources before main reports
-    // the failure to the supervisor.
+    // the failure to its launcher.
+    #[cfg(windows)]
+    let result = {
+        let listener_bridge = std::sync::Arc::clone(&bridge);
+        let listener_context = pipe_config.context().clone();
+        let listener_logger = std::sync::Arc::clone(&logger);
+        tokio::select! {
+            result = evohime_core::run_windows_pipe(pipe_config, bridge, logger) => result,
+            signal = tokio::signal::ctrl_c() => {
+                signal.map_err(|error| format!("Ctrl+C handler failed: {error}"))?;
+                tracing::info!("evohime-core shutdown requested");
+                Ok(())
+            },
+            _result = async move {
+                loop {
+                    match evohime_core::run_windows_listener_pipe(listener_context.clone(), std::sync::Arc::clone(&listener_bridge), std::sync::Arc::clone(&listener_logger)).await {
+                        Ok(()) => {}
+                        Err(error) => {
+                            tracing::error!("evohime-core listener pipe restarted: {error}");
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                    }
+                }
+            } => {
+                Err("listener supervision unexpectedly stopped".into())
+            },
+        }
+    };
+    #[cfg(target_os = "linux")]
     let result = tokio::select! {
-        result = evohime_core::run_windows_pipe(config, bridge, logger) => result,
+        result = evohime_core::run_unix_pipe(unix_pipe_config, bridge, logger) => result,
         signal = tokio::signal::ctrl_c() => {
             signal.map_err(|error| format!("Ctrl+C handler failed: {error}"))?;
             tracing::info!("evohime-core shutdown requested");
             Ok(())
-        },
-        _result = async move {
-            loop {
-                match evohime_core::run_windows_listener_pipe(listener_context.clone(), std::sync::Arc::clone(&listener_bridge), std::sync::Arc::clone(&listener_logger)).await {
-                    Ok(()) => {}
-                    Err(error) => {
-                        tracing::error!("evohime-core listener pipe restarted: {error}");
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    }
-                }
-            }
-        } => {
-            Err("listener supervision unexpectedly stopped".into())
         },
     };
     event_trigger_cancellation.cancel();
@@ -526,7 +566,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn handle_fatal_error(error: Box<dyn std::error::Error + Send + Sync>) -> ExitCode {
     tracing::error!("evohime-core terminated after fatal error: {error}");
     ExitCode::from(1)
@@ -589,7 +629,7 @@ async fn probe_supervisor(
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn spawn_heartbeat(path: std::path::PathBuf) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -600,7 +640,7 @@ fn spawn_heartbeat(path: std::path::PathBuf) -> tokio::task::JoinHandle<()> {
     })
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn heartbeat_timestamp() -> u128 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1178,7 +1218,22 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn prepare_linux_data_directory(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::create_dir_all(path)?;
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Linux Core data path must be a real directory",
+        ));
+    }
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn main() {
     console_line!("evohime-core {}", evohime_core::CoreVersion::current());
 }

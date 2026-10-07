@@ -1,8 +1,11 @@
 # Receipt key lifecycle v1
 
 Receipt signing keys belong to Rust Core. On Windows the PKCS#8 Ed25519
-private key is protected with DPAPI `CurrentUser` scope and is never passed by
-Electron, supervisor arguments, environment, IPC, logs, audit, or exports.
+private key is protected with DPAPI `CurrentUser` scope. On Linux the key is
+stored below a mode-`0700` directory in mode-`0600` files; the Linux mechanism
+enforces the current-user filesystem boundary but does not encrypt the key at
+rest. Key bytes are never passed by Electron, supervisor arguments,
+environment, IPC, logs, audit, or exports.
 
 The public transition chain is an append-only diagnostic/export snapshot. Its
 trust root is explicit: a valid signature without a pinned genesis is

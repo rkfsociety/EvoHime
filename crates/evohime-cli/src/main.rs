@@ -7,18 +7,22 @@
 use evohime_cli::{parse_args, ExitCode};
 
 #[cfg(windows)]
+#[path = "windows_endpoint.rs"]
+mod endpoint;
+#[cfg(target_os = "linux")]
+#[path = "linux_endpoint.rs"]
+mod endpoint;
+#[cfg(any(windows, target_os = "linux"))]
 mod windows_client;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod windows_controls;
-#[cfg(windows)]
-mod windows_endpoint;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod windows_event_output;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod windows_output;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod windows_run;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 mod windows_watch;
 
 #[tokio::main(flavor = "current_thread")]
@@ -31,12 +35,12 @@ async fn main() {
             std::process::exit(ExitCode::InvalidInvocation as i32);
         }
     };
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let code = windows_client::run(command).await;
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let code = {
         let _ = command;
-        eprintln!("core_unavailable: eva поддерживается только в Windows-сборке EvoHime");
+        eprintln!("core_unavailable: eva поддерживается в Windows и Linux-сборках EvoHime");
         ExitCode::CoreUnavailable
     };
     std::process::exit(code as i32);

@@ -514,7 +514,8 @@ JCS bytes, envelope `receipt_hash`, Ed25519, result domain, schema, limits,
 stable error codes и cross-language vectors находятся в
 `contracts/receipts/v1/`; подробное правило — `docs/security/receipt-canonical-v1.md`.
 Этап 01.1 фиксирует bytes и проверку контракта. Key lifecycle реализован в
-`crates/evohime-receipts`: Windows DPAPI CurrentUser, owner-only DACL,
+`crates/evohime-receipts`: Windows DPAPI CurrentUser and owner-only DACL;
+Linux owner-only directory/file modes,
 SQLite-источник переходов и audit, journaled rotation/recovery, explicit
 trusted genesis, signed checkpoint contract и `evohime-verify.exe`. Core
 публикует renderer только bounded status/key metadata; private material не
@@ -2291,25 +2292,31 @@ capabilities.
 
 ## Headless Core CLI v1 (план 77)
 
-Официальный Windows companion binary `eva.exe` является authenticated
-клиентом существующего Core, а не вторым agent runtime. Он читает только
-защищённый launch context, проходит named-pipe session proof с ролью `cli` и
-переиспользует существующие Core `StartTask`, `StartWorkflow`, status,
-cancel и event/replay contracts; SQLite и model/tool runtime CLI напрямую не
-открывает. Контракт `evohime.cli.event/v1` ограничивает prompt, workspace и
-event projections, отделяет stdout NDJSON от stderr diagnostics и redacts
-secrets, credentials, prompts, tokens, hidden reasoning и raw output.
-Поддерживаются human/one-shot, `--json` NDJSON, bounded stdin, detached
-acceptance, watch с reconnect от последнего sequence, status, cancel и
-`resume` безопасно возобновляет наблюдение за существующим run через тот же
-event cursor; он не перезапускает агент и не повторяет effect. Exit codes versioned (0–8),
-а `eva.exe` включён в Windows package без Node/Python runtime. Framing,
-HMAC-handshake и command envelopes CLI вынесены в отдельный
+Официальный `eva` — authenticated headless-клиент существующего Core, а не
+второй agent runtime. На Windows он подключается к supervisor-owned Core через
+named pipe; на Linux подключается к автоматически запущенному Core через
+owner-only Unix domain socket. Linux runtime-каталог находится в
+`$XDG_RUNTIME_DIR/evohime` или `$HOME/.cache/evohime`, имеет режим `0700`,
+сокет — `0600`, а handshake проверяет kernel peer UID и HMAC session proof с
+ролью `cli`. На обеих платформах CLI переиспользует Core `StartTask`,
+`StartWorkflow`, status, cancel и event/replay contracts; SQLite и model/tool
+runtime CLI напрямую не открывает.
+
+Контракт `evohime.cli.event/v1` ограничивает prompt, workspace и event
+projections, отделяет stdout NDJSON от stderr diagnostics и redacts secrets,
+credentials, prompts, tokens, hidden reasoning и raw output. Поддерживаются
+human/one-shot, `--json` NDJSON, bounded stdin, detached acceptance, watch с
+reconnect от последнего sequence, status, cancel и `resume`; последний
+безопасно продолжает наблюдение за существующим run через тот же event cursor,
+не перезапуская агент и не повторяя effect. Exit codes versioned (0–8), а
+Windows `eva.exe` включён в native package без Node/Python runtime. Linux CLI и
+Core собираются из исходников командами Cargo; desktop shell и
+supervisor-dependent Windows features от этого не становятся Linux-продуктом.
+
+Framing, HMAC-handshake и command envelopes CLI вынесены в отдельный
 платформенно-независимый crate `evohime-cli-protocol`, а bounded `RunRequest`
-и terminal-event contract живут в
-легковесном общем crate `evohime-cli-contract`; Linux CI проверяет их через
-in-memory duplex transport,
-но production endpoint и Core runtime по-прежнему остаются Windows-only.
+и terminal-event contract живут в лёгком общем crate
+`evohime-cli-contract`.
 
 ## Capability Workbench v1 (план 78)
 

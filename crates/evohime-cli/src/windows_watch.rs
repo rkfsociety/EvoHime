@@ -1,6 +1,6 @@
 use evohime_cli::{event_matches_run, terminal_exit_code, ExitCode};
 
-use crate::windows_endpoint::{connect, CoreClient};
+use crate::endpoint::{connect, CoreClient};
 use crate::windows_event_output;
 
 pub(crate) async fn watch_events(client: &mut CoreClient, run_id: &str, json: bool) -> ExitCode {

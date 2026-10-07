@@ -1213,10 +1213,15 @@ impl ReceiptKeyManager {
         if path.exists() {
             harden_path(&path)?;
         }
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let mut options = fs::OpenOptions::new();
+        options.create(true).append(true);
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&path)?;
+        harden_path(&path)?;
         file.write_all(&bytes)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
@@ -1491,6 +1496,12 @@ impl ReceiptKeyManager {
         &self,
         connection: &mut rusqlite::Connection,
     ) -> Result<(), KeyError> {
+        if self.root.exists() {
+            harden_path(&self.root)?;
+            for entry in fs::read_dir(&self.root)? {
+                harden_path(&entry?.path())?;
+            }
+        }
         let transition_count: i64 = connection
             .query_row("SELECT COUNT(*) FROM receipt_key_transitions", [], |row| {
                 row.get(0)
@@ -1858,6 +1869,16 @@ fn atomic_write_lines(path: &Path, lines: &[Vec<u8>]) -> Result<(), KeyError> {
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), KeyError> {
     let tmp = path.with_extension(format!("tmp-{}", Uuid::now_v7()));
     {
+        #[cfg(target_os = "linux")]
+        let mut file = {
+            use std::os::unix::fs::OpenOptionsExt;
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&tmp)?
+        };
+        #[cfg(not(target_os = "linux"))]
         let mut file = fs::File::create(&tmp)?;
         file.write_all(bytes)?;
         file.sync_all()?;
@@ -1961,7 +1982,22 @@ fn harden_path(path: &Path) -> Result<(), KeyError> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn harden_path(path: &Path) -> Result<(), KeyError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::symlink_metadata(path).map_err(|_| KeyError::DaclInvalid)?;
+    let mode = if metadata.file_type().is_dir() {
+        0o700
+    } else if metadata.file_type().is_file() {
+        0o600
+    } else {
+        return Err(KeyError::DaclInvalid);
+    };
+    fs::set_permissions(path, fs::Permissions::from_mode(mode)).map_err(|_| KeyError::DaclInvalid)
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn harden_path(_: &Path) -> Result<(), KeyError> {
     Ok(())
 }
@@ -1997,7 +2033,15 @@ fn protect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
     unsafe { LocalFree(output.pbData as _) };
     Ok(result)
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn protect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
+    // Linux stores key bytes only below an owner-only directory and as mode
+    // 0600 files. This is the per-user boundary corresponding to DPAPI's
+    // CurrentUser scope on Windows; it does not claim encryption at rest.
+    Ok(bytes.to_vec())
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn protect(_: &[u8]) -> Result<Vec<u8>, KeyError> {
     Err(KeyError::UnsupportedPlatform)
 }
@@ -2033,7 +2077,12 @@ fn unprotect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
     unsafe { LocalFree(output.pbData as _) };
     Ok(result)
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn unprotect(bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
+    Ok(bytes.to_vec())
+}
+
+#[cfg(all(not(windows), not(target_os = "linux")))]
 fn unprotect(_: &[u8]) -> Result<Vec<u8>, KeyError> {
     Err(KeyError::UnsupportedPlatform)
 }

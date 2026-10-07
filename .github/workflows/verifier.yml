@@ -10,7 +10,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  linux-key-protection:
+    name: Receipts — Linux key protection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo test --locked -p evohime-receipts
+      - run: cargo clippy --locked -p evohime-receipts --all-targets -- -D warnings
+
   module:
+    needs: linux-key-protection
     uses: ./.github/workflows/module-native.yml
     permissions: { contents: write }
     with: { module: verifier, package: evohime-receipts, artifact: evohime-verify.exe, version_file: release-versions/verifier.txt }
