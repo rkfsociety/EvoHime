@@ -578,17 +578,21 @@ pub(crate) fn requires_workspace_research_catalog(prompt: &str) -> bool {
     .any(|marker| prompt.contains(marker))
 }
 
-pub(crate) fn adaptive_catalog_query(prompt: &str) -> String {
+pub(crate) fn request_allows_mutation(prompt: &str) -> bool {
+    evohime_context_budget::loadout::route_intent(
+        &crate::context_budget::default_intent_rules(),
+        prompt,
+        &[],
+    )
+    .allows_mutation
+}
+
+pub(crate) fn adaptive_catalog_query(prompt: &str, mutation_intent: bool) -> String {
     let mut query = prompt.to_owned();
     if requires_workspace_research_catalog(prompt) {
         query.push_str(" filesystem.list filesystem.read filesystem.search");
     }
-    let decision = evohime_context_budget::loadout::route_intent(
-        &crate::context_budget::default_intent_rules(),
-        prompt,
-        &[],
-    );
-    if decision.allows_mutation {
+    if mutation_intent {
         query.push_str(" filesystem.write filesystem.patch filesystem.mkdir shell.execute");
     }
     query
