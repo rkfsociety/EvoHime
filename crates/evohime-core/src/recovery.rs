@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 pub enum DenialSource {
     /// The core tool policy denied the call.
     Policy,
+    /// A path escaped the selected workspace; no filesystem effect ran.
+    WorkspaceBoundary,
     /// The user explicitly denied approval.
     User,
     /// The runtime escalation guard denied the call.
@@ -36,6 +38,7 @@ pub fn failure_kind_name(kind: ToolFailureKind) -> &'static str {
         ToolFailureKind::NotFound => "not_found",
         ToolFailureKind::InvalidInput => "invalid_input",
         ToolFailureKind::Denied(DenialSource::Policy) => "denied_policy",
+        ToolFailureKind::Denied(DenialSource::WorkspaceBoundary) => "denied_workspace_boundary",
         ToolFailureKind::Denied(DenialSource::User) => "denied_user",
         ToolFailureKind::Denied(DenialSource::Escalation) => "denied_escalation",
         ToolFailureKind::Timeout => "timeout",
@@ -78,6 +81,9 @@ pub fn recovery_hint(
         }
         ToolFailureKind::Denied(DenialSource::Policy) => {
             "Вызов запрещён политикой; не повторяй тот же вызов, выбери разрешённый путь или сообщи хозяину о требуемом permission.".into()
+        }
+        ToolFailureKind::Denied(DenialSource::WorkspaceBoundary) => {
+            "Запрошенный путь вышел за выбранный workspace и не был прочитан или изменён. Продолжай только внутри выбранного workspace: используй workspace-relative путь, при необходимости начни с filesystem.list с {\"path\":\".\"}; не используй абсолютный путь или `..` и не пытайся обходить границу.".into()
         }
         ToolFailureKind::Denied(DenialSource::User) => {
             "Хозяин отклонил этот вызов; не повторяй его без изменения способа или явного нового разрешения.".into()
@@ -226,6 +232,9 @@ impl ToolOutcome {
             ToolError::NotFound { .. } => ToolFailureKind::NotFound,
             ToolError::InvalidInput { .. } => ToolFailureKind::InvalidInput,
             ToolError::PermissionDenied(_) => ToolFailureKind::Denied(DenialSource::Policy),
+            ToolError::WorkspaceBoundaryDenied(_) => {
+                ToolFailureKind::Denied(DenialSource::WorkspaceBoundary)
+            }
             ToolError::NeedsApproval(_) => ToolFailureKind::Denied(DenialSource::Policy),
             ToolError::ApprovalMismatch => ToolFailureKind::Denied(DenialSource::Policy),
             ToolError::ApprovalDenied => ToolFailureKind::Denied(DenialSource::User),
@@ -302,6 +311,9 @@ pub fn classify_tool_outcome(result: Result<ToolResult, ToolError>, output: Stri
                 ToolError::InvalidInput { .. } => ToolFailureKind::InvalidInput,
                 // Приоритет 3: PermissionDenied
                 ToolError::PermissionDenied(_) => ToolFailureKind::Denied(DenialSource::Policy),
+                ToolError::WorkspaceBoundaryDenied(_) => {
+                    ToolFailureKind::Denied(DenialSource::WorkspaceBoundary)
+                }
                 // Приоритет 4: TimedOut
                 ToolError::TimedOut(_) => ToolFailureKind::Timeout,
                 // Остальное: Execution или специфичные отказы

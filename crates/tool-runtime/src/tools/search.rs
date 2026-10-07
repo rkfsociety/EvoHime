@@ -542,7 +542,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            ToolError::PermissionDenied(Permission::FilesystemRead)
+            ToolError::WorkspaceBoundaryDenied(Permission::FilesystemRead)
         ));
     }
 

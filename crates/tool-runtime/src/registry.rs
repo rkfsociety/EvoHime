@@ -24,6 +24,9 @@ pub enum ToolError {
     /// The permission policy denied the requested operation.
     #[error("permission denied: {0:?}")]
     PermissionDenied(Permission),
+    /// A workspace path resolved outside the selected workspace boundary.
+    #[error("workspace boundary denied: {0:?}")]
+    WorkspaceBoundaryDenied(Permission),
     /// A referenced tool resource does not exist in the workspace.
     #[error("resource not found for {tool}: {path}{hint}")]
     NotFound {

@@ -10,6 +10,7 @@ mod tests {
         providers::{mock::MockProvider, ChatMessage, ChatRole},
         ChatResult, ModelGateway, NativeToolCall,
     };
+    use evohime_permissions::{PermissionEngine, PermissionMode};
     use evohime_tool_runtime::ToolRegistry;
     use futures_util::future::BoxFuture;
     use std::sync::Arc;
@@ -932,6 +933,124 @@ mod tests {
             .expect("task completion is observed");
         assert!(tool_started < tool_output && tool_output < completed);
         let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn recovers_from_workspace_boundary_denial_without_widening_access() {
+        std::thread::Builder::new()
+            .name("evohime-workspace-boundary-recovery-test".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(
+                        recovers_from_workspace_boundary_denial_without_widening_access_inner(),
+                    );
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn recovers_from_workspace_boundary_denial_without_widening_access_inner() {
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        std::fs::write(workspace.path().join("inside.txt"), "inside workspace")
+            .expect("fixture writes");
+
+        let provider = MockProvider::with_tool_call_sequence(
+            "mock",
+            vec![
+                ChatResult {
+                    content: String::new(),
+                    thinking: None,
+                    tool_calls: vec![NativeToolCall {
+                        id: "call-1".into(),
+                        name: "filesystem.list".into(),
+                        arguments: r#"{"path":"."}"#.into(),
+                    }],
+                    usage: None,
+                },
+                ChatResult {
+                    content: String::new(),
+                    thinking: None,
+                    tool_calls: vec![NativeToolCall {
+                        id: "call-2".into(),
+                        name: "filesystem_list".into(),
+                        arguments: r#"{"path":".."}"#.into(),
+                    }],
+                    usage: None,
+                },
+                ChatResult {
+                    content: String::new(),
+                    thinking: None,
+                    tool_calls: vec![NativeToolCall {
+                        id: "call-3".into(),
+                        name: "filesystem_read".into(),
+                        arguments: r#"{"path":"inside.txt"}"#.into(),
+                    }],
+                    usage: None,
+                },
+                ChatResult {
+                    content: "completed inside the workspace".into(),
+                    ..ChatResult::default()
+                },
+            ],
+        );
+        let permissions = PermissionEngine::new();
+        permissions.set_all_modes(PermissionMode::Allow).await;
+        let agent = ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(provider))),
+            Arc::new(ToolRegistry::bootstrap_with_permissions(permissions)),
+        );
+        let (event_tx, mut receiver) = tokio::sync::mpsc::channel(64);
+        let events = EventSink::new(event_tx);
+
+        let result = agent
+            .run_once(
+                "task-boundary-recovery",
+                "inspect the selected workspace",
+                workspace.path(),
+                &events,
+            )
+            .await
+            .expect("task recovers inside the workspace");
+
+        assert_eq!(result, "completed inside the workspace");
+        let mut observed = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            observed.push(event);
+        }
+        let boundary_rejection = observed
+            .iter()
+            .position(|event| matches!(
+                event,
+                CoreEvent::ToolOutput { tool_name, output, .. }
+                    if tool_name == "filesystem.list" && output.contains("workspace boundary denied")
+            ))
+            .expect("sandbox boundary rejection is reported");
+        let retry_success = observed
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    CoreEvent::ToolOutput { tool_name, output, .. }
+                        if tool_name == "filesystem.read" && output.contains("inside workspace")
+                )
+            })
+            .expect("model retries with an in-workspace file");
+        let completed = observed
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    CoreEvent::TaskCompleted { final_message, .. }
+                        if final_message == "completed inside the workspace"
+                )
+            })
+            .expect("task completes after safe retry");
+        assert!(boundary_rejection < retry_success && retry_success < completed);
     }
 
     /// Regression: the shell is fed by pushing the journal tail whenever an

@@ -350,7 +350,7 @@ async fn read_bounded(path: &Path) -> Result<Vec<u8>, RevisionError> {
 /// Maps a revision-boundary error to the public tool error contract.
 pub fn permission(error: RevisionError, tool: &str, permission: Permission) -> ToolError {
     match error {
-        RevisionError::Escape => ToolError::PermissionDenied(permission),
+        RevisionError::Escape => ToolError::WorkspaceBoundaryDenied(permission),
         RevisionError::Io(e) if e.kind() == std::io::ErrorKind::NotFound => ToolError::NotFound {
             tool: tool.into(),
             path: String::new(),
