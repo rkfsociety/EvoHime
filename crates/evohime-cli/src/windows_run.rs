@@ -2,7 +2,7 @@ use evohime_cli::ExitCode;
 
 use crate::endpoint::CoreClient;
 use crate::windows_output;
-use crate::windows_watch::watch_events;
+use crate::windows_watch::{approval_mode, watch_events};
 
 pub(crate) async fn run_task(
     client: &mut CoreClient,
@@ -21,7 +21,7 @@ pub(crate) async fn run_task(
         } else {
             evohime_cli_contract::OutputMode::Human
         },
-        approval_mode: evohime_cli_contract::ApprovalMode::DenyIfApprovalRequired,
+        approval_mode: approval_mode(),
         detach,
     };
     if evohime_cli_contract::validate_request(&request).is_err() {
@@ -43,5 +43,5 @@ pub(crate) async fn run_task(
     if detach {
         return windows_output::print_run_accepted(&run_id, json);
     }
-    watch_events(client, &run_id, json).await
+    watch_events(client, &run_id, json, request.approval_mode).await
 }

@@ -578,6 +578,22 @@ pub(crate) fn requires_workspace_research_catalog(prompt: &str) -> bool {
     .any(|marker| prompt.contains(marker))
 }
 
+pub(crate) fn adaptive_catalog_query(prompt: &str) -> String {
+    let mut query = prompt.to_owned();
+    if requires_workspace_research_catalog(prompt) {
+        query.push_str(" filesystem.list filesystem.read filesystem.search");
+    }
+    let decision = evohime_context_budget::loadout::route_intent(
+        &crate::context_budget::default_intent_rules(),
+        prompt,
+        &[],
+    );
+    if decision.allows_mutation {
+        query.push_str(" filesystem.write filesystem.patch filesystem.mkdir shell.execute");
+    }
+    query
+}
+
 /// Входные данные model-side MCP вызова. Разбор контракта происходит до
 /// обращения к registry, поэтому неизвестные или запрещённые поля не
 /// протекают дальше как неструктурированный JSON.

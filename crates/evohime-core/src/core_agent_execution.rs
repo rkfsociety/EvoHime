@@ -69,12 +69,11 @@ impl ToolAgent {
         let resilience_config = ProviderResilienceConfig::default();
         let mut authorized_manifests = Vec::new();
         for tool in self.tools.list() {
-            if matches!(
-                self.tools
-                    .preflight(&context, tool.name, &catalog_preflight_input(tool.name))
-                    .await,
-                Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { .. })
-            ) {
+            let decision = self
+                .tools
+                .preflight(&context, tool.name, &catalog_preflight_input(tool.name))
+                .await;
+            if tool_preflight_can_be_offered(decision) {
                 if let Some(manifest) = self.tools.manifest_for(tool.name) {
                     authorized_manifests.push(manifest);
                 }
@@ -87,11 +86,7 @@ impl ToolAgent {
         )
         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
         let selection_started = Instant::now();
-        let catalog_query = if requires_workspace_research_catalog(&prompt) {
-            format!("{prompt} filesystem.list filesystem.read filesystem.search")
-        } else {
-            prompt.clone()
-        };
+        let catalog_query = adaptive_catalog_query(&prompt);
         let selection = adaptive_tool_catalog::select_deterministic(
             &projection,
             &catalog_query,
@@ -1701,6 +1696,80 @@ impl ToolAgent {
             })
             .await;
         Ok(message)
+    }
+}
+
+fn tool_preflight_can_be_offered(
+    decision: Result<evohime_tool_runtime::ToolPreflightDecision, evohime_tool_runtime::ToolError>,
+) -> bool {
+    matches!(
+        decision,
+        Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { .. })
+            | Ok(evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. })
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{adaptive_catalog_query, tool_preflight_can_be_offered};
+    use evohime_permissions::{Permission, PermissionEngine};
+    use evohime_tool_runtime::{ToolContext, ToolPreflightDecision, ToolRegistry};
+
+    #[test]
+    fn russian_create_request_keeps_mutation_tools_in_the_catalog_query() {
+        let query = adaptive_catalog_query("Создай файл hello.py с одной строкой print hello.");
+
+        assert!(query.contains("filesystem.write"));
+        assert!(query.contains("filesystem.patch"));
+        assert!(query.contains("filesystem.mkdir"));
+        assert!(query.contains("shell.execute"));
+    }
+
+    #[tokio::test]
+    async fn mutation_tools_requiring_approval_remain_available_to_the_model() {
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        let context = ToolContext {
+            workspace_root: workspace.path().to_path_buf(),
+            task_id: uuid::Uuid::new_v4(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let registry = ToolRegistry::bootstrap();
+        let decision = registry
+            .preflight(
+                &context,
+                "filesystem.write",
+                &serde_json::json!({"path":"hello.py","content":"print(1)"}),
+            )
+            .await
+            .expect("preflight runs");
+
+        assert!(matches!(
+            decision,
+            ToolPreflightDecision::ApprovalRequired { .. }
+        ));
+        assert!(tool_preflight_can_be_offered(Ok(decision)));
+
+        let denied = ToolRegistry::bootstrap_with_permissions({
+            let permissions = PermissionEngine::new();
+            permissions
+                .set_mode(
+                    Permission::FilesystemWrite,
+                    evohime_permissions::PermissionMode::Deny,
+                )
+                .await;
+            permissions
+        });
+        let decision = denied
+            .preflight(
+                &context,
+                "filesystem.write",
+                &serde_json::json!({"path":"hello.py","content":"print(1)"}),
+            )
+            .await
+            .expect("denied preflight runs");
+        assert!(matches!(decision, ToolPreflightDecision::Denied(_)));
+        assert!(!tool_preflight_can_be_offered(Ok(decision)));
     }
 }
 

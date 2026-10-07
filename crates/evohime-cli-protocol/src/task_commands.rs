@@ -38,4 +38,28 @@ where
         )
         .await
     }
+
+    /// Resolves a Core tool approval from an interactive headless client.
+    pub async fn resolve_approval(
+        &mut self,
+        approval_id: String,
+        granted: bool,
+    ) -> Result<(), String> {
+        self.write(
+            self.command_envelope(generated::command_envelope::Command::ResolveApproval(
+                generated::ResolveApproval {
+                    approval_id,
+                    granted,
+                    idempotency_key: uuid::Uuid::new_v4().to_string(),
+                    rejection_reason: if granted {
+                        String::new()
+                    } else {
+                        "cli_user_denied".into()
+                    },
+                    cancel: false,
+                },
+            )),
+        )
+        .await
+    }
 }

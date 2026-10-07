@@ -229,6 +229,22 @@ async fn authenticates_and_sends_commands_over_duplex_transport() {
             &generated::EventEnvelope {
                 protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
                 sequence_id: 44,
+                task_id: "workflow-task".into(),
+                event_type: "approval.required".into(),
+                payload: Vec::new(),
+                core_instance_id: "core-test".into(),
+                session_epoch: 8,
+                event: None,
+            }
+            .encode_to_vec(),
+        )
+        .await
+        .expect("write approval event");
+        transport::write_frame(
+            &mut writer,
+            &generated::EventEnvelope {
+                protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+                sequence_id: 45,
                 task_id: "other-task".into(),
                 event_type: "task.snapshot".into(),
                 payload: Vec::new(),
@@ -244,7 +260,7 @@ async fn authenticates_and_sends_commands_over_duplex_transport() {
             &mut writer,
             &generated::EventEnvelope {
                 protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                sequence_id: 45,
+                sequence_id: 46,
                 task_id: "workflow-task".into(),
                 event_type: "task.progress".into(),
                 payload: Vec::new(),
@@ -260,7 +276,7 @@ async fn authenticates_and_sends_commands_over_duplex_transport() {
             &mut writer,
             &generated::EventEnvelope {
                 protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
-                sequence_id: 46,
+                sequence_id: 47,
                 task_id: "workflow-task".into(),
                 event_type: "task.snapshot".into(),
                 payload: Vec::new(),
@@ -272,6 +288,24 @@ async fn authenticates_and_sends_commands_over_duplex_transport() {
         )
         .await
         .expect("write snapshot");
+
+        let approval_payload = transport::read_frame(&mut reader)
+            .await
+            .expect("read approval decision");
+        let approval = generated::CommandEnvelope::decode(approval_payload.as_slice())
+            .expect("decode approval decision");
+        assert_eq!(approval.client_id, handshake.client_id);
+        assert_eq!(approval.core_instance_id, "core-test");
+        assert_eq!(approval.session_epoch, 8);
+        let generated::command_envelope::Command::ResolveApproval(approval) =
+            approval.command.expect("approval command")
+        else {
+            panic!("expected approval command");
+        };
+        assert_eq!(approval.approval_id, "4b67fc86-a06a-4ce6-b08a-4b856e1e4197");
+        assert!(approval.granted);
+        assert!(!approval.idempotency_key.is_empty());
+        assert!(!approval.cancel);
     });
 
     let mut client = CoreClient::connect(client_stream, &context, 40)
@@ -299,7 +333,11 @@ async fn authenticates_and_sends_commands_over_duplex_transport() {
         .await
         .expect("snapshot task");
     assert_eq!(snapshot.event_type, "task.snapshot");
-    assert_eq!(client.sequence(), 46);
+    assert_eq!(client.sequence(), 47);
+    client
+        .resolve_approval("4b67fc86-a06a-4ce6-b08a-4b856e1e4197".into(), true)
+        .await
+        .expect("resolve tool approval");
     server.await.expect("server task");
 }
 

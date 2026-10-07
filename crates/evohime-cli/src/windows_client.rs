@@ -5,7 +5,7 @@ use crate::endpoint::connect;
 use crate::windows_controls;
 use crate::windows_output;
 use crate::windows_run::run_task;
-use crate::windows_watch::watch_events;
+use crate::windows_watch::{approval_mode, watch_events};
 
 pub async fn run(command: Command) -> ExitCode {
     let mut client = match connect(0).await {
@@ -24,13 +24,17 @@ pub async fn run(command: Command) -> ExitCode {
             json,
             detach,
         } => run_task(&mut client, prompt, workspace, workflow, json, detach).await,
-        Command::Watch { task_id, json } => watch_events(&mut client, &task_id, json).await,
+        Command::Watch { task_id, json } => {
+            watch_events(&mut client, &task_id, json, approval_mode()).await
+        }
         Command::Status { task_id, json } => {
             windows_controls::status(&mut client, task_id, json).await
         }
         Command::Cancel { task_id, json } => {
             windows_controls::cancel(&mut client, task_id, json).await
         }
-        Command::Resume { task_id, json } => watch_events(&mut client, &task_id, json).await,
+        Command::Resume { task_id, json } => {
+            watch_events(&mut client, &task_id, json, approval_mode()).await
+        }
     }
 }
