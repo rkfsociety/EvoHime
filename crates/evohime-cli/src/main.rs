@@ -29,6 +29,15 @@ mod windows_watch;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = match parse_args(&args) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(ExitCode::InvalidInvocation as i32);
+        }
+    };
+
     #[cfg(target_os = "linux")]
     if let Err(error) = linux_provider_config::load() {
         eprintln!("{error}");
@@ -40,14 +49,6 @@ async fn main() {
         std::process::exit(ExitCode::InvalidInvocation as i32);
     }
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let command = match parse_args(&args) {
-        Ok(command) => command,
-        Err(error) => {
-            eprintln!("{error}");
-            std::process::exit(ExitCode::InvalidInvocation as i32);
-        }
-    };
     #[cfg(any(windows, target_os = "linux"))]
     let code = windows_client::run(command).await;
     #[cfg(not(any(windows, target_os = "linux")))]
