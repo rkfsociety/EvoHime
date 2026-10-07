@@ -42,9 +42,12 @@ jobs:
         run: |
           set -euo pipefail
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/evohime-runtime"
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/evohime-config"
           export EVOHIME_DATA_DIR="$RUNNER_TEMP/evohime-data"
-          mkdir -p "$XDG_RUNTIME_DIR"
-          chmod 700 "$XDG_RUNTIME_DIR"
+          mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME/evohime"
+          chmod 700 "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME/evohime"
+          printf '%s\n' 'MODEL_PROVIDER=literouter' 'LITEROUTER_API_KEY=ci-test-key-not-a-secret' > "$XDG_CONFIG_HOME/evohime/provider.env"
+          chmod 600 "$XDG_CONFIG_HOME/evohime/provider.env"
           ./target/release/eva doctor --json >doctor.ndjson
           grep -q '"kind":"core.ready"' doctor.ndjson
           test -S "$XDG_RUNTIME_DIR/evohime/core.sock"
