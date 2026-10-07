@@ -233,11 +233,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 });
                 // A task is a loop of model calls and tool runs, so its
                 // budget must exceed one model call (120 s by default).
-                // The old 60 s cut off agents that were working fine.
+                // Set the environment override to zero to disable this deadline.
                 let task_timeout_secs = std::env::var("EVOHIME_TASK_TIMEOUT_SECONDS")
                     .ok()
                     .and_then(|value| value.parse().ok())
                     .unwrap_or(DEFAULT_TASK_TIMEOUT_SECONDS);
+                let task_timeout = task_timeout_duration(task_timeout_secs);
                 let continuation_context = if let Some(journal) = &journal {
                     let database = journal.database().lock().await;
                     let run = evohime_local_storage::domains::runs::get_run_by_task(
@@ -327,9 +328,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         None
                     };
                     result = match executor.as_ref() {
-                        Some(executor) => match timeout(
-                            Duration::from_secs(task_timeout_secs),
-                            executor.execute_in_conversation(
+                        Some(executor) => {
+                            let execution = executor.execute_in_conversation(
                                 task_id.clone(),
                                 prompt.clone(),
                                 workspace_root.clone(),
@@ -339,13 +339,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 },
                                 cancellation.clone(),
                                 events.clone(),
-                            ),
-                        )
-                        .await
-                        {
-                            Ok(result) => result,
-                            Err(_) => Err(AgentRunError::Timeout(task_timeout_secs)),
-                        },
+                            );
+                            match await_with_optional_timeout(task_timeout, execution).await {
+                                Ok(result) => result,
+                                Err(()) => Err(AgentRunError::Timeout(task_timeout_secs)),
+                            }
+                        }
                         None => {
                             cancellation.cancelled().await;
                             Err(AgentRunError::Cancelled)
@@ -670,5 +669,50 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             }
         }
         _ => unreachable!("command routed to the wrong coordinator domain"),
+    }
+}
+
+async fn await_with_optional_timeout<F>(
+    timeout_duration: Option<Duration>,
+    future: F,
+) -> Result<F::Output, ()>
+where
+    F: std::future::Future,
+{
+    match timeout_duration {
+        Some(duration) => timeout(duration, future).await.map_err(|_| ()),
+        None => Ok(future.await),
+    }
+}
+
+fn task_timeout_duration(timeout_secs: u64) -> Option<Duration> {
+    (timeout_secs > 0).then(|| Duration::from_secs(timeout_secs))
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn zero_task_timeout_waits_for_execution_to_finish() {
+        let result = await_with_optional_timeout(task_timeout_duration(0), async {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            7
+        })
+        .await;
+
+        assert_eq!(result, Ok(7));
+    }
+
+    #[tokio::test]
+    async fn positive_task_timeout_still_applies() {
+        assert_eq!(task_timeout_duration(1), Some(Duration::from_secs(1)));
+        let result = await_with_optional_timeout(
+            Some(Duration::from_millis(1)),
+            tokio::time::sleep(Duration::from_millis(20)),
+        )
+        .await;
+
+        assert!(result.is_err());
     }
 }

@@ -15,7 +15,32 @@ LITEROUTER_BASE_URL=https://api.literouter.com/v1
 LITEROUTER_MODEL=
 ```
 
-В пользовательском приложении ключ вводится в настройках, шифруется ОС (DPAPI через Electron `safeStorage`) и хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json`; Core получает его окружением от supervisor. Прямые переменные окружения допустимы только для локальной разработки (`.env`) и CI secrets. Не записывайте ключ в Git, SQLite, task events или diagnostics.
+В пользовательском приложении ключ вводится в настройках, шифруется ОС (DPAPI через Electron `safeStorage`) и хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json`; Core получает его окружением от supervisor.
+
+В headless Linux CLI `eva` автоматически читает пользовательский файл
+`$XDG_CONFIG_HOME/evohime/provider.env`; если `XDG_CONFIG_HOME` не задан, путь
+по умолчанию — `~/.config/evohime/provider.env`. Пример содержимого:
+
+```env
+MODEL_PROVIDER=literouter
+LITEROUTER_API_KEY=lr_...
+LITEROUTER_MODEL=deepseek:free
+```
+
+Каталог и файл автоматически получают права `0700` и `0600`; ключ хранится в
+этом локальном текстовом файле. Переменные, заданные в окружении процесса,
+имеют приоритет над значениями файла. Core читает конфигурацию при запуске.
+Если файла нет, `eva` создаст закрытый шаблон, подскажет путь и дождётся ключа
+до запуска Core. Переменные окружения также поддерживаются для локальной
+разработки и CI secrets. Не записывайте ключ в Git, SQLite, task events или
+diagnostics.
+
+Общее время model request задаёт Core: `EVOHIME_MODEL_TIMEOUT_SECS` по
+умолчанию равен 120 секундам, а значение `0` отключает дедлайн; дедлайн задачи
+по умолчанию равен 900 секундам и отключается через
+`EVOHIME_TASK_TIMEOUT_SECONDS=0`. HTTP-клиент LiteRouter не задаёт отдельный
+общий дедлайн ответа и оставляет 15-секундный лимит только на установление
+соединения.
 
 Список моделей берётся динамически. Выбор API-модели из чата применяется к
 следующему запросу без перезапуска Core; переключение API-профиля или сохранение

@@ -57,6 +57,8 @@ cargo run -p evohime-cli -- run --json 'проверь репозиторий'
 cargo run -p evohime-cli -- status <run-id> --json
 
 # Linux: собери CLI вместе с Core, затем запусти eva; Core стартует автоматически
+# Настройки провайдера читаются из ~/.config/evohime/provider.env
+# (или $XDG_CONFIG_HOME/evohime/provider.env); формат ключа описан в docs/providers/literouter.md
 cargo build --locked --release -p evohime-cli -p evohime-core
 ./target/release/eva doctor --json
 

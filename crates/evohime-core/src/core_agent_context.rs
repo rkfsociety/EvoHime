@@ -994,7 +994,7 @@ impl ToolAgent {
             .loadout
             .as_ref()
             .map(|loadout| loadout.loadout_id.clone());
-        let timeout_duration = Duration::from_secs(config.model_timeout_secs);
+        let timeout_duration = model_timeout_duration(config.model_timeout_secs);
         let mut last_error: Option<String> = None;
         let logical_request_id = match sample_index {
             Some(index) => format!("{task_id}:{}:sample-{index}", ledger.model_call_id),
@@ -1164,28 +1164,26 @@ impl ToolAgent {
                 }),
                 _ => None,
             };
+            let selected_model = self.selected_model.get();
+            let model_request = self
+                .gateway
+                .chat_with_tools_with_policy_and_route_hook_options(
+                    RoutingMode::Balanced,
+                    &routing_request,
+                    selected_model.as_deref(),
+                    &provider_messages,
+                    effective_specs,
+                    strategy_hook
+                        .as_ref()
+                        .map(|hook| hook as &dyn RouteAttemptHook),
+                    evohime_model_gateway::ChatRequestOptions {
+                        max_output_tokens,
+                        max_retries: max_output_tokens.map(|_| 0),
+                    },
+                    route_pin,
+                );
             let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> =
-                match timeout(
-                    timeout_duration,
-                    self.gateway
-                        .chat_with_tools_with_policy_and_route_hook_options(
-                            RoutingMode::Balanced,
-                            &routing_request,
-                            self.selected_model.get().as_deref(),
-                            &provider_messages,
-                            effective_specs,
-                            strategy_hook
-                                .as_ref()
-                                .map(|hook| hook as &dyn RouteAttemptHook),
-                            evohime_model_gateway::ChatRequestOptions {
-                                max_output_tokens,
-                                max_retries: max_output_tokens.map(|_| 0),
-                            },
-                            route_pin,
-                        ),
-                )
-                .await
-                {
+                match await_with_optional_timeout(timeout_duration, model_request).await {
                     Ok(Ok(result)) => Ok(result),
                     Ok(Err(error)) => Err(error),
                     Err(_) => Err(ProviderError::Http(format!(
@@ -1296,6 +1294,23 @@ impl ToolAgent {
     }
 }
 
+async fn await_with_optional_timeout<F>(
+    timeout_duration: Option<Duration>,
+    future: F,
+) -> Result<F::Output, tokio::time::error::Elapsed>
+where
+    F: std::future::Future,
+{
+    match timeout_duration {
+        Some(duration) => timeout(duration, future).await,
+        None => Ok(future.await),
+    }
+}
+
+fn model_timeout_duration(timeout_secs: u64) -> Option<Duration> {
+    (timeout_secs > 0).then(|| Duration::from_secs(timeout_secs))
+}
+
 #[cfg(test)]
 mod prompt_strategy_fanout_tests {
     use super::*;
@@ -1332,5 +1347,27 @@ mod prompt_strategy_fanout_tests {
         assert_eq!(strategy_output_budget(100, 60, 50, 20), Some(20));
         assert_eq!(strategy_output_budget(100, 90, 50, 20), None);
         assert_eq!(strategy_output_budget(100, 0, 20, 20), None);
+    }
+
+    #[tokio::test]
+    async fn zero_model_timeout_allows_a_slow_request_to_finish() {
+        let result = await_with_optional_timeout(model_timeout_duration(0), async {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            7
+        })
+        .await;
+
+        assert_eq!(result, Ok(7));
+    }
+
+    #[tokio::test]
+    async fn positive_model_timeout_still_applies() {
+        let result = await_with_optional_timeout(
+            Some(Duration::from_millis(1)),
+            tokio::time::sleep(Duration::from_millis(20)),
+        )
+        .await;
+
+        assert!(result.is_err());
     }
 }

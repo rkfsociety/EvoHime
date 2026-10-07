@@ -4,7 +4,7 @@
 //! exponential backoff, and graceful fallbacks for unavailable components.
 //!
 //! Environment variables:
-//! - `EVOHIME_MODEL_TIMEOUT_SECS` (default 120) — model timeout in seconds
+//! - `EVOHIME_MODEL_TIMEOUT_SECS` (default 120, zero disables) — model timeout in seconds
 //! - `EVOHIME_PROVIDER_RETRY_MAX` (default 3) — maximum retry attempts
 //! - `EVOHIME_PROVIDER_BACKOFF_BASE_MS` (default 500) — base backoff in ms
 
@@ -15,7 +15,7 @@ use std::time::Duration;
 /// Configuration for provider error handling.
 #[derive(Clone, Debug)]
 pub struct ProviderResilienceConfig {
-    /// Maximum time allowed for one model request, in seconds.
+    /// Maximum time allowed for one model request, in seconds; zero disables the deadline.
     pub model_timeout_secs: u64,
     /// Maximum number of retries after the initial provider attempt.
     pub retry_max: u32,

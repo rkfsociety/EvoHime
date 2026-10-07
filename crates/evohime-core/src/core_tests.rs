@@ -637,6 +637,18 @@ mod tests {
     }
 
     #[test]
+    fn detects_project_creation_as_a_required_mutation() {
+        let requirements =
+            super::DeliveryRequirements::from_prompt("Создай проект и напиши main.py");
+
+        assert!(requirements.mutation);
+        assert_eq!(
+            requirements.missing(false, false, true, false),
+            vec!["внести изменение"]
+        );
+    }
+
+    #[test]
     fn detects_diff_check_as_a_commit_prerequisite() {
         let requirements = super::DeliveryRequirements::from_prompt(
             "добавь тест, выполни cargo test, git diff --check и создай commit",

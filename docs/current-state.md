@@ -7,6 +7,11 @@ release-gates и результаты отдельных завершённых 
 [`release-evidence.md`](release-evidence.md); пошаговые незавершённые работы — в
 [`plans/README.md`](plans/README.md).
 
+Headless Linux CLI `eva` автоматически читает настройки провайдера из
+`$XDG_CONFIG_HOME/evohime/provider.env` (по умолчанию
+`~/.config/evohime/provider.env`) перед запуском Core. Файл и каталог получают
+права `0600` и `0700`; явные переменные процесса имеют приоритет.
+
 ## Внешний вид оболочки
 
 Settings «Внешний вид» управляет темой (системная, светлая, тёмная), масштабом,
@@ -77,7 +82,7 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000086`, `core 0.0.000383`, `installer 0.0.000065`,
+0.0.000043`, `cli 0.0.000088`, `core 0.0.000388`, `installer 0.0.000065`,
 `listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000111`,
 `supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000132`,
 `updater 0.0.000132` и `verifier 0.0.000056`.

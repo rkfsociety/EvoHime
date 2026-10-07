@@ -12,6 +12,8 @@ mod endpoint;
 #[cfg(target_os = "linux")]
 #[path = "linux_endpoint.rs"]
 mod endpoint;
+#[cfg(target_os = "linux")]
+mod linux_provider_config;
 #[cfg(any(windows, target_os = "linux"))]
 mod windows_client;
 #[cfg(any(windows, target_os = "linux"))]
@@ -27,6 +29,17 @@ mod windows_watch;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    #[cfg(target_os = "linux")]
+    if let Err(error) = linux_provider_config::load() {
+        eprintln!("{error}");
+        std::process::exit(ExitCode::InvalidInvocation as i32);
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(hint) = linux_provider_config::setup_hint() {
+        eprintln!("{hint}");
+        std::process::exit(ExitCode::InvalidInvocation as i32);
+    }
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     let command = match parse_args(&args) {
         Ok(command) => command,
