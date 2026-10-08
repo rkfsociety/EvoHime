@@ -27,6 +27,7 @@ pub struct LiteRouterProvider {
     config: LiteRouterConfig,
     client: Client,
     retry: RetryPolicy,
+    reasoning_effort: Option<&'static str>,
     request_gate: Arc<Mutex<Option<Instant>>>,
 }
 
@@ -47,17 +48,22 @@ impl LiteRouterProvider {
             ));
         }
 
-        Self::build(config, retry)
+        Self::build(config, retry, None)
     }
 
-    pub(crate) fn without_auth(
+    pub(crate) fn without_auth_with_reasoning_effort(
         config: LiteRouterConfig,
         retry: RetryPolicy,
+        reasoning_effort: &'static str,
     ) -> Result<Self, ProviderError> {
-        Self::build(config, retry)
+        Self::build(config, retry, Some(reasoning_effort))
     }
 
-    fn build(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
+    fn build(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        reasoning_effort: Option<&'static str>,
+    ) -> Result<Self, ProviderError> {
         // Core owns the request/task deadlines. Keep only a bounded connection
         // setup so a refused or unreachable endpoint fails promptly.
         let client = Client::builder()
@@ -69,6 +75,7 @@ impl LiteRouterProvider {
             config,
             client,
             retry,
+            reasoning_effort,
             request_gate: Arc::new(Mutex::new(None)),
         })
     }
@@ -172,6 +179,7 @@ impl LiteRouterProvider {
                 None
             },
             thinking,
+            reasoning_effort: self.reasoning_effort,
             max_tokens: options.max_output_tokens,
         };
 
@@ -331,6 +339,7 @@ impl ModelProvider for LiteRouterProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
         };
         let request_messages = messages.to_vec();
@@ -387,6 +396,7 @@ impl ModelProvider for LiteRouterProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
         };
         let request_messages = messages.to_vec();
@@ -443,6 +453,7 @@ impl ModelProvider for LiteRouterProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
         };
         let model = model
@@ -483,6 +494,7 @@ impl ModelProvider for LiteRouterProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
         };
         let model = model
@@ -518,6 +530,8 @@ struct ChatCompletionRequest {
     tool_choice: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking: Option<crate::providers::ThinkingConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
 }
@@ -865,10 +879,12 @@ mod tests {
             tools: None,
             tool_choice: None,
             thinking: None,
+            reasoning_effort: Some("none"),
             max_tokens: Some(8),
         };
         let value = serde_json::to_value(request).expect("request serialization");
         assert_eq!(value["max_tokens"], 8);
+        assert_eq!(value["reasoning_effort"], "none");
         assert_eq!(value["stream"], false);
     }
 

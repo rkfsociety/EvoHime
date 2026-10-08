@@ -109,6 +109,10 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"query":string("Optional substring filter"),"limit":integer()}),
             &[],
         ),
+        "process.run" => object(
+            serde_json::json!({"command":string("Executable name; launched directly without a shell"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory inside the task workspace"),"timeout_ms":integer()}),
+            &["command"],
+        ),
         "shell.execute" | "process.spawn" => object(
             serde_json::json!({"program":string("Executable"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory"),"timeout_ms":integer()}),
             &["program"],
@@ -327,5 +331,16 @@ mod tests {
         let mut m = manifest();
         m.input_schema = serde_json::json!({"type":"object","additionalProperties":true});
         assert_eq!(m.validate(), Err(ManifestError::PermissiveSchema));
+    }
+
+    #[test]
+    fn process_run_schema_matches_the_direct_executor_input() {
+        let schema = builtin_input_schema("process.run");
+
+        assert_eq!(schema["required"], serde_json::json!(["command"]));
+        assert_eq!(schema["properties"]["command"]["type"], "string");
+        assert_eq!(schema["properties"]["args"]["type"], "array");
+        assert_eq!(schema["properties"]["cwd"]["type"], "string");
+        assert!(schema["properties"].get("input").is_none());
     }
 }

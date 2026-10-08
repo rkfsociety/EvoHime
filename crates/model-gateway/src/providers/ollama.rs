@@ -32,7 +32,11 @@ impl OllamaProvider {
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
         validate_loopback(&config.base_url)?;
         Ok(Self {
-            inner: LiteRouterProvider::without_auth(config, RetryPolicy::from_env())?,
+            inner: LiteRouterProvider::without_auth_with_reasoning_effort(
+                config,
+                RetryPolicy::from_env(),
+                "none",
+            )?,
         })
     }
 }
@@ -519,8 +523,9 @@ fn validate_model_id(model: &str) -> Result<(), ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::providers::ChatRole;
     use wiremock::{
-        matchers::{method, path},
+        matchers::{body_partial_json, method, path},
         Mock, MockServer, ResponseTemplate,
     };
 
@@ -592,6 +597,38 @@ mod tests {
         assert!(validate_loopback("http://10.0.0.2:11434/v1").is_err());
         assert!(validate_loopback(DEFAULT_BASE_URL).is_ok());
         assert!(validate_model_id("two words").is_err());
+    }
+
+    #[tokio::test]
+    async fn chat_requests_disable_extended_reasoning_for_local_models() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_partial_json(
+                serde_json::json!({"reasoning_effort": "none"}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{"message": {"content": "OK"}}]
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = OllamaProvider::new(LiteRouterConfig {
+            api_key: String::new(),
+            base_url: format!("{}/v1", server.uri()),
+            model: "qwen3:1.7b".into(),
+        })
+        .expect("loopback Ollama provider");
+        let response = provider
+            .chat_with_tools(
+                None,
+                &[ChatMessage::text(ChatRole::User, "Reply with exactly OK.")],
+                &[],
+            )
+            .await
+            .expect("Ollama chat response");
+
+        assert_eq!(response.content, "OK");
     }
 
     #[tokio::test]

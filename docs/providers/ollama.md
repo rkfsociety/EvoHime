@@ -22,6 +22,9 @@ EVOHIME_TASK_TIMEOUT_SECONDS=0
 Core читает настройки при запуске.
 При первом запуске без файла `eva` создаёт LiteRouter-шаблон; для Ollama
 установите в нём `MODEL_PROVIDER=ollama` и имя установленной модели.
+Для OpenAI-совместимого chat endpoint `eva` передаёт `reasoning_effort=none`,
+чтобы модели с extended-thinking возвращали пользовательский ответ, а не
+долго генерировали скрытое рассуждение. Этот параметр не отправляется в LiteRouter.
 
 В Linux CLI общий дедлайн model request и дедлайн задачи отключены по
 умолчанию. Их можно задать в `provider.env` или окружении, например
