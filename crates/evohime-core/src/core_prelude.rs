@@ -705,27 +705,30 @@ impl DeliveryRequirements {
     pub(crate) fn from_prompt(prompt: &str) -> Self {
         let prompt = prompt.to_lowercase();
         Self {
-            research: ["изучи", "исслед", "ознаком", "найди", "объясни"]
-                .iter()
-                .any(|marker| prompt.contains(marker)),
-            mutation: [
-                "исправ",
-                "измен",
-                "добав",
-                "созда",
-                "напиш",
-                "сгенер",
-                "реализ",
-                "сделай",
-                "улучш",
-                "удал",
-                "убер",
-            ]
-            .iter()
-            .any(|marker| prompt.contains(marker)),
-            verification: ["проверь", "провер", "тест", "test", "собери", "запусти"]
-                .iter()
-                .any(|marker| prompt.contains(marker)),
+            research: contains_unnegated_marker(
+                &prompt,
+                &["изучи", "исслед", "ознаком", "найди", "объясни"],
+            ),
+            mutation: contains_unnegated_marker(
+                &prompt,
+                &[
+                    "исправ",
+                    "измен",
+                    "добав",
+                    "созда",
+                    "напиш",
+                    "сгенер",
+                    "реализ",
+                    "сделай",
+                    "улучш",
+                    "удал",
+                    "убер",
+                ],
+            ),
+            verification: contains_unnegated_marker(
+                &prompt,
+                &["проверь", "провер", "тест", "test", "собери", "запусти"],
+            ),
             diff_check: prompt.contains("git diff --check"),
             commit: prompt.contains("коммит") || prompt.contains("commit"),
         }
@@ -753,6 +756,31 @@ impl DeliveryRequirements {
         }
         missing
     }
+}
+
+fn contains_unnegated_marker(prompt: &str, markers: &[&str]) -> bool {
+    markers.iter().any(|marker| {
+        prompt.match_indices(marker).any(|(start, _)| {
+            let mut preceding_words = prompt[..start]
+                .split_whitespace()
+                .rev()
+                .take(2)
+                .map(|word| word.trim_matches(|character: char| !character.is_alphanumeric()));
+            let nearest = preceding_words.next();
+            let earlier = preceding_words.next();
+            let is_negation = |word: Option<&str>| {
+                word.is_some_and(|word| {
+                    matches!(
+                        word,
+                        "не" | "без" | "not" | "never" | "no" | "without" | "don't" | "dont"
+                    )
+                })
+            };
+            let negated = is_negation(nearest)
+                || (matches!(nearest, Some("нужно" | "надо" | "need")) && is_negation(earlier));
+            !negated
+        })
+    })
 }
 
 pub(crate) fn strict_delivery_gate_enabled() -> bool {

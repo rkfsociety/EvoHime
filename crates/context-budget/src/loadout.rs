@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::ledger::LoadoutRecord;
 
 /// Версия таблицы правил intent router.
-pub const INTENT_RULES_VERSION: &str = "intent-rules-1";
+pub const INTENT_RULES_VERSION: &str = "intent-rules-2";
 
 /// Группа инструмента.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

@@ -1731,6 +1731,28 @@ mod tests {
         assert!(query.contains("shell.execute"));
     }
 
+    #[test]
+    fn explicit_command_execution_keeps_shell_tool_in_the_catalog_query() {
+        for prompt in [
+            "Выполни в текущем workspace команду python3 hello.py",
+            "Запусти команду python3 hello.py",
+            "Run python3 hello.py",
+            "Execute python3 hello.py",
+        ] {
+            let mutation_intent = request_allows_mutation(prompt);
+            assert!(
+                mutation_intent,
+                "command request was classified read-only: {prompt}"
+            );
+
+            let query = adaptive_catalog_query(prompt, mutation_intent);
+            assert!(
+                query.contains("shell.execute"),
+                "command tool missing: {query}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn mutation_tools_requiring_approval_remain_available_to_the_model() {
         let workspace = tempfile::tempdir().expect("workspace tempdir");

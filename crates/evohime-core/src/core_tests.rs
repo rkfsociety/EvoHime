@@ -649,6 +649,25 @@ mod tests {
     }
 
     #[test]
+    fn negated_change_and_verification_instructions_do_not_require_them() {
+        let requirements = super::DeliveryRequirements::from_prompt(
+            "Выполни команду python3 hello.py. Не изменяй файлы и не проверяй результат.",
+        );
+
+        assert!(!requirements.mutation);
+        assert!(!requirements.verification);
+    }
+
+    #[test]
+    fn negated_change_does_not_hide_a_later_positive_mutation() {
+        let requirements = super::DeliveryRequirements::from_prompt(
+            "Не изменяй существующие файлы, но создай новый hello.py.",
+        );
+
+        assert!(requirements.mutation);
+    }
+
+    #[test]
     fn detects_diff_check_as_a_commit_prerequisite() {
         let requirements = super::DeliveryRequirements::from_prompt(
             "добавь тест, выполни cargo test, git diff --check и создай commit",

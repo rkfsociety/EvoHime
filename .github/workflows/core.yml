@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'crates/evohime-core/**'
+      - 'crates/context-budget/**'
       - 'crates/evohime-cli-contract/**'
       - 'crates/model-gateway/**'
       - 'crates/permissions/**'
@@ -81,7 +82,7 @@ jobs:
             }
             if ($process.ExitCode -ne 0) { throw "Core tests failed for $package (exit code $($process.ExitCode))." }
           }
-          @('evohime-core', 'evohime-local-storage', 'evohime-model-gateway', 'evohime-permissions', 'evohime-tool-runtime') | ForEach-Object { Invoke-BoundedCargoTest $_ }
+          @('evohime-core', 'evohime-context-budget', 'evohime-local-storage', 'evohime-model-gateway', 'evohime-permissions', 'evohime-tool-runtime') | ForEach-Object { Invoke-BoundedCargoTest $_ }
       - name: Core lint
         run: cargo clippy --locked -p evohime-core --all-targets -- -D warnings
       - name: Core build
