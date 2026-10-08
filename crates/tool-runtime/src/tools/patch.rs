@@ -161,7 +161,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
     if original.ends_with('\n') && !result.ends_with('\n') {
         result.push('\n');
     }
-    crate::revision_safe_workspace_files::write(
+    let file_ref = crate::revision_safe_workspace_files::write(
         ctx,
         &input.path,
         result.as_bytes(),
@@ -173,7 +173,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
     })?;
     Ok(ToolResult {
         output: format!("applied {applied} hunk(s)"),
-        structured: json!({"path": input.path, "hunks_applied": applied, "bytes": result.len(), "change_set": {"status": "observed", "path": input.path}}),
+        structured: json!({"path": input.path, "hunks_applied": applied, "bytes": result.len(), "content_hash": file_ref.content_hash, "revision": file_ref.revision, "namespace": file_ref.namespace.as_str(), "change_set": {"status": "observed", "path": file_ref.path}}),
     })
 }
 

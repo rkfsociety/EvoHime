@@ -2054,6 +2054,12 @@ Existing-file mutations требуют expected hash; fuzzy patch fallback уд�
 uploads immutable. Внешнее изменение обнаруживается при следующей mediated
 operation и даёт stale outcome. UI surface показывает только bounded ref/preview
 по project scope; мутации остаются в approval-пути Core tools.
+После filesystem.read Core передаёт модели санитизированный preview и точные
+content_hash, ready-to-copy expected_hash и revision. Для filesystem.write и
+filesystem.patch Core подставляет хеш последнего успешного чтения того же
+логического пути, если модель пропустила поле; внешний конфликт всё равно
+отклоняется проверкой хеша на границе записи. Оба mutating-инструмента возвращают
+новый content_hash и revision после успешного изменения.
 
 ## Task Worktree Isolation v1 (план 61)
 

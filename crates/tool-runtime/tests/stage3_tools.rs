@@ -77,6 +77,50 @@ async fn patch_rejects_context_mismatch_without_mutation_inner() {
 }
 
 #[test]
+fn patch_returns_the_new_file_revision_metadata() {
+    run_async_test_with_large_stack(patch_returns_the_new_file_revision_metadata_inner());
+}
+
+async fn patch_returns_the_new_file_revision_metadata_inner() {
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "one\ntwo\n").unwrap();
+    let ctx = ToolContext {
+        workspace_root: dir.path().to_path_buf(),
+        task_id: Uuid::nil(),
+        session_id: None,
+        progress_tx: None,
+    };
+    let before = evohime_tool_runtime::filesystem::execute(&ctx, json!({"path":"a.txt"}))
+        .await
+        .unwrap();
+    let expected_hash = before.structured["content_hash"].as_str().unwrap();
+
+    let result = patch::execute(
+        &ctx,
+        json!({
+            "path":"a.txt",
+            "patch":"@@ -2,1 +2,1 @@\n-two\n+updated\n",
+            "expected_hash":expected_hash
+        }),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.structured["hunks_applied"], 1);
+    assert_eq!(result.structured["namespace"], "workspace");
+    assert!(result.structured["content_hash"]
+        .as_str()
+        .is_some_and(|hash| {
+            hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }));
+    assert!(result.structured["revision"].as_u64().is_some());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "one\nupdated\n"
+    );
+}
+
+#[test]
 fn registry_requires_approval_for_write() {
     run_async_test_with_large_stack(registry_requires_approval_for_write_inner());
 }

@@ -593,7 +593,9 @@ pub(crate) fn adaptive_catalog_query(prompt: &str, mutation_intent: bool) -> Str
         query.push_str(" filesystem.list filesystem.read filesystem.search");
     }
     if mutation_intent {
-        query.push_str(" filesystem.write filesystem.patch filesystem.mkdir shell.execute");
+        query.push_str(
+            " filesystem.read filesystem.write filesystem.patch filesystem.mkdir shell.execute",
+        );
     }
     query
 }
@@ -651,8 +653,9 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
 - Не утверждай, что изучила файл или выполнила действие, пока соответствующий инструмент не вернул результат.\n\
 - Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.\n\
 - Аргументы инструментов всегда передавай полным JSON-объектом: filesystem.list — {{\"path\":\".\"}}, filesystem.read — {{\"path\":\"README.md\"}}, filesystem.search — {{\"query\":\"pattern\",\"path\":\".\"}}; не вызывай их с пустым объектом и не передавай абсолютный путь вместо workspace-relative path.\n\
+- Результат успешного filesystem.read содержит content_hash и готовый к копированию expected_hash — это один и тот же точный хеш файла. При изменении существующего файла передавай expected_hash из последнего чтения этого файла; Core подставит его, если ты пропустишь поле, но только для того же логического пути. Никогда не выдумывай и не пересчитывай хеш.\n\
 - Если инструмент вернул ошибку, не завершай задачу: исправь аргументы по тексту ошибки и повтори вызов.\n\
-- filesystem.patch принимает только JSON {{\"path\":\"relative/file.rs\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}}; поля edits и patches недопустимы.\n\
+- filesystem.patch принимает только JSON с path, patch и expected_hash, например {{\"path\":\"relative/file.rs\",\"expected_hash\":\"точный content_hash из filesystem.read\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}}; поля edits и patches недопустимы.\n\
 - Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через filesystem.patch или filesystem.write; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git.commit. Не выдавай план за результат.\n\
 - Для Git используй специализированные инструменты: сначала git.status, затем git.diff для проверки изменений; git.commit — только с task-only сообщением и после успешной проверки; git.pull — для обновления checkout; git.push — только если пользователь явно попросил опубликовать изменения. Не заменяй эти вызовы shell.execute и не выполняй git-команды из неправильной директории.\n\
 - Все улучшения EvoHime выполняй самостоятельно через доступные инструменты Евы. Если попытка не удалась, не завершай задачу: зафиксируй причину в trace, дождись следующего шага настройки и повтори работу через инструменты до успешного результата.\n\

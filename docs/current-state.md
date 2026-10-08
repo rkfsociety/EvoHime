@@ -84,10 +84,10 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000089`, `core 0.0.000388`, `installer 0.0.000065`,
+0.0.000043`, `cli 0.0.000091`, `core 0.0.000392`, `installer 0.0.000065`,
 `listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000111`,
-`supervisor 0.0.000045`, `transaction 0.0.000069`, `ui-bundle 0.0.000132`,
-`updater 0.0.000132` и `verifier 0.0.000056`.
+`supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000132`,
+`updater 0.0.000132` и `verifier 0.0.000057`.
 
 Новые задания чата получают из Core conversation log последние 40 durable
 реплик пользователя и ассистента (до 64 KiB), сохранённые до текущего запроса.

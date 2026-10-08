@@ -1,5 +1,123 @@
 use super::*;
 
+fn model_tool_observation(
+    tool_name: &str,
+    succeeded: bool,
+    guarded_output: &str,
+    structured: &serde_json::Value,
+) -> String {
+    if !succeeded
+        || !matches!(
+            tool_name,
+            TOOL_FILESYSTEM_READ | "filesystem.write" | "filesystem.patch"
+        )
+    {
+        return guarded_output.to_owned();
+    }
+
+    let Some(content_hash) = structured
+        .get("content_hash")
+        .and_then(serde_json::Value::as_str)
+        .filter(|hash| hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+    else {
+        return guarded_output.to_owned();
+    };
+    let Some(revision) = structured
+        .get("revision")
+        .and_then(serde_json::Value::as_u64)
+    else {
+        return guarded_output.to_owned();
+    };
+
+    serde_json::json!({
+        "preview": guarded_output,
+        "content_hash": content_hash,
+        "expected_hash": content_hash,
+        "revision": revision,
+    })
+    .to_string()
+}
+
+fn workspace_file_revision_key(path: &str) -> Option<String> {
+    let (namespace, relative_path) =
+        evohime_tool_runtime::revision_safe_workspace_files::parse_logical_path(path).ok()?;
+    Some(format!("{}:{relative_path}", namespace.as_str()))
+}
+
+fn inject_observed_expected_hash(
+    tool_name: &str,
+    input: &mut serde_json::Value,
+    observed_revisions: &std::collections::HashMap<String, String>,
+) -> bool {
+    if !matches!(tool_name, "filesystem.write" | "filesystem.patch") {
+        return false;
+    }
+    let Some(object) = input.as_object_mut() else {
+        return false;
+    };
+    let missing_precondition = match object.get("expected_hash") {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::String(value)) => value.trim().is_empty(),
+        Some(_) => false,
+    };
+    if !missing_precondition {
+        return false;
+    }
+    let Some(path) = object.get("path").and_then(serde_json::Value::as_str) else {
+        return false;
+    };
+    let Some(key) = workspace_file_revision_key(path) else {
+        return false;
+    };
+    let Some(expected_hash) = observed_revisions.get(&key) else {
+        return false;
+    };
+    object.insert(
+        "expected_hash".into(),
+        serde_json::Value::String(expected_hash.clone()),
+    );
+    true
+}
+
+fn update_observed_file_revision(
+    tool_name: &str,
+    arguments: &str,
+    succeeded: bool,
+    structured: &serde_json::Value,
+    observed_revisions: &mut std::collections::HashMap<String, String>,
+) {
+    if !matches!(
+        tool_name,
+        TOOL_FILESYSTEM_READ | "filesystem.write" | "filesystem.patch"
+    ) {
+        return;
+    }
+    let path = serde_json::from_str::<serde_json::Value>(arguments)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        });
+    let Some(key) = path.as_deref().and_then(workspace_file_revision_key) else {
+        return;
+    };
+    if !succeeded {
+        observed_revisions.remove(&key);
+        return;
+    }
+    let content_hash = structured
+        .get("content_hash")
+        .and_then(serde_json::Value::as_str)
+        .filter(|hash| hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    if let Some(content_hash) = content_hash {
+        observed_revisions.insert(key, content_hash.to_owned());
+    } else {
+        observed_revisions.remove(&key);
+    }
+}
+
 impl ToolAgent {
     /// Runs one agent task to completion without an external cancellation signal.
     ///
@@ -477,6 +595,7 @@ impl ToolAgent {
         }
 
         let mut recent_tool_calls = recovery::RecentToolCalls::new(6);
+        let mut observed_file_revisions = std::collections::HashMap::<String, String>::new();
         let mut consecutive_failures = HashMap::<String, u32>::new();
         let mut escalation_remaining = HashMap::<String, u32>::new();
         let mut failures_without_success = 0u32;
@@ -1129,6 +1248,13 @@ impl ToolAgent {
                     evohime_context_budget::loadout::check_tool_call(&step_loadout, &call.name)
                         .err()
                 };
+                if !guardrail_blocked && loadout_miss.is_none() {
+                    let _ = inject_observed_expected_hash(
+                        &call.name,
+                        &mut input,
+                        &observed_file_revisions,
+                    );
+                }
                 let commit_blocked = call.name == "git.commit"
                     && delivery_requirements.commit
                     && (!verification_test_passed
@@ -1380,6 +1506,13 @@ impl ToolAgent {
                         Err(error) => recovery::ToolOutcome::from_error(error),
                     }
                 };
+                update_observed_file_revision(
+                    &call.name,
+                    &call.arguments,
+                    outcome.ok,
+                    &outcome.structured,
+                    &mut observed_file_revisions,
+                );
                 let guarded_output = match redact_boundary_text("tool", &outcome.output) {
                     Ok(value) => value,
                     Err(error) => {
@@ -1571,8 +1704,14 @@ impl ToolAgent {
                 // помещаются в `data_not_instructions` envelope и проверяются на
                 // prompt-injection перед извлечением в scratchpad; текст внутри
                 // envelope не разбирается как policy.
+                let model_output = model_tool_observation(
+                    &call.name,
+                    outcome.ok,
+                    &guarded_output,
+                    &outcome.structured,
+                );
                 let (wrapped_output, envelope) =
-                    evohime_context_budget::scratchpad::wrap_external_output(&guarded_output);
+                    evohime_context_budget::scratchpad::wrap_external_output(&model_output);
                 self.record_tool_finding(
                     &task_id,
                     &context_session_id,
@@ -1716,8 +1855,11 @@ fn tool_preflight_can_be_offered(
 
 #[cfg(test)]
 mod tests {
-    use super::{adaptive_catalog_query, request_allows_mutation, tool_preflight_can_be_offered};
-    use evohime_permissions::{Permission, PermissionEngine};
+    use super::{
+        adaptive_catalog_query, inject_observed_expected_hash, model_tool_observation,
+        request_allows_mutation, tool_preflight_can_be_offered, update_observed_file_revision,
+    };
+    use evohime_permissions::{Permission, PermissionEngine, PermissionMode};
     use evohime_tool_runtime::{ToolContext, ToolPreflightDecision, ToolRegistry};
 
     #[test]
@@ -1729,6 +1871,7 @@ mod tests {
         assert!(query.contains("filesystem.patch"));
         assert!(query.contains("filesystem.mkdir"));
         assert!(query.contains("shell.execute"));
+        assert!(query.contains("filesystem.read"));
     }
 
     #[test]
@@ -1751,6 +1894,186 @@ mod tests {
                 "command tool missing: {query}"
             );
         }
+    }
+
+    #[test]
+    fn filesystem_read_model_observation_includes_revision_metadata_and_guarded_preview() {
+        let hash = "9df4fb8b1493eb11ad820926c914c3e31ea7af3433dda2705870e2f1b2171f75";
+        let structured = serde_json::json!({
+            "content_hash": hash,
+            "revision": 42,
+            "preview": "raw structured preview must not be used",
+        });
+
+        let observation = model_tool_observation(
+            "filesystem.read",
+            true,
+            "<sensitive_data_blocked>",
+            &structured,
+        );
+        let observation: serde_json::Value =
+            serde_json::from_str(&observation).expect("structured read observation");
+
+        assert_eq!(observation["content_hash"], hash);
+        assert_eq!(observation["revision"], 42);
+        assert_eq!(observation["expected_hash"], hash);
+        assert_eq!(observation["preview"], "<sensitive_data_blocked>");
+        assert!(!observation
+            .to_string()
+            .contains("raw structured preview must not be used"));
+    }
+
+    #[test]
+    fn filesystem_read_metadata_is_omitted_when_failed_or_incomplete() {
+        let hash = "9df4fb8b1493eb11ad820926c914c3e31ea7af3433dda2705870e2f1b2171f75";
+        let complete = serde_json::json!({"content_hash": hash, "revision": 42});
+        let missing_hash = serde_json::json!({"revision": 42});
+
+        assert_eq!(
+            model_tool_observation("filesystem.read", false, "read failed", &complete),
+            "read failed"
+        );
+        assert_eq!(
+            model_tool_observation("filesystem.read", true, "read output", &missing_hash),
+            "read output"
+        );
+        assert_eq!(
+            model_tool_observation("filesystem.search", true, "search output", &complete),
+            "search output"
+        );
+    }
+
+    #[test]
+    fn observed_hash_is_supplied_only_for_the_same_logical_path() {
+        let hash = "9df4fb8b1493eb11ad820926c914c3e31ea7af3433dda2705870e2f1b2171f75";
+        let mut observed = std::collections::HashMap::new();
+        observed.insert("workspace:README.md".into(), hash.into());
+
+        let mut same_path = serde_json::json!({"path":"workspace/README.md","content":"updated"});
+        assert!(inject_observed_expected_hash(
+            "filesystem.write",
+            &mut same_path,
+            &observed
+        ));
+        assert_eq!(same_path["expected_hash"], hash);
+
+        let mut different_path = serde_json::json!({"path":"Cargo.toml","content":"updated"});
+        assert!(!inject_observed_expected_hash(
+            "filesystem.write",
+            &mut different_path,
+            &observed
+        ));
+        assert!(different_path.get("expected_hash").is_none());
+
+        let mut explicit_hash = serde_json::json!({
+            "path":"README.md",
+            "content":"updated",
+            "expected_hash":"caller-supplied"
+        });
+        assert!(!inject_observed_expected_hash(
+            "filesystem.write",
+            &mut explicit_hash,
+            &observed
+        ));
+        assert_eq!(explicit_hash["expected_hash"], "caller-supplied");
+    }
+
+    #[test]
+    fn successful_read_updates_revision_cache_and_failed_mutation_clears_it() {
+        let hash = "9df4fb8b1493eb11ad820926c914c3e31ea7af3433dda2705870e2f1b2171f75";
+        let mut observed = std::collections::HashMap::new();
+
+        update_observed_file_revision(
+            "filesystem.read",
+            r#"{"path":"README.md"}"#,
+            true,
+            &serde_json::json!({"content_hash":hash}),
+            &mut observed,
+        );
+        assert_eq!(observed.get("workspace:README.md"), Some(&hash.to_owned()));
+
+        update_observed_file_revision(
+            "filesystem.write",
+            r#"{"path":"README.md"}"#,
+            false,
+            &serde_json::Value::Null,
+            &mut observed,
+        );
+        assert!(!observed.contains_key("workspace:README.md"));
+    }
+
+    #[tokio::test]
+    async fn missing_write_precondition_uses_the_hash_from_a_successful_read() {
+        use evohime_model_gateway::{
+            providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
+        };
+        use std::sync::Arc;
+
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        std::fs::write(workspace.path().join("README.md"), "initial").expect("fixture writes");
+        let provider = MockProvider::with_tool_call_sequence(
+            "mock",
+            vec![
+                ChatResult {
+                    content: String::new(),
+                    thinking: None,
+                    tool_calls: vec![NativeToolCall {
+                        id: "read-1".into(),
+                        name: "filesystem.read".into(),
+                        arguments: r#"{"path":"README.md"}"#.into(),
+                    }],
+                    usage: None,
+                },
+                ChatResult {
+                    content: String::new(),
+                    thinking: None,
+                    tool_calls: vec![NativeToolCall {
+                        id: "write-1".into(),
+                        name: "filesystem.write".into(),
+                        arguments: r#"{"path":"README.md","content":"updated"}"#.into(),
+                    }],
+                    usage: None,
+                },
+                ChatResult {
+                    content: "updated the README".into(),
+                    ..ChatResult::default()
+                },
+            ],
+        );
+        let permissions = PermissionEngine::new();
+        permissions.set_all_modes(PermissionMode::Allow).await;
+        let agent = super::super::ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(provider))),
+            Arc::new(ToolRegistry::bootstrap_with_permissions(permissions)),
+        );
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(32);
+        let events = crate::EventSink::new(event_tx);
+
+        let result = agent
+            .run_once(
+                "task-revision-precondition",
+                "Измени содержимое существующего файла README.md.",
+                workspace.path(),
+                &events,
+            )
+            .await
+            .expect("task updates the existing file safely");
+
+        assert_eq!(result, "updated the README");
+        assert_eq!(
+            std::fs::read_to_string(workspace.path().join("README.md"))
+                .expect("updated README is readable"),
+            "updated"
+        );
+        let mut observed = Vec::new();
+        while let Ok(event) = event_rx.try_recv() {
+            observed.push(event);
+        }
+        assert!(observed.iter().any(|event| matches!(
+            event,
+            crate::CoreEvent::ToolOutput { tool_name, output, .. }
+                if tool_name == "filesystem.write" && output == "updated README.md"
+        )));
     }
 
     #[tokio::test]
