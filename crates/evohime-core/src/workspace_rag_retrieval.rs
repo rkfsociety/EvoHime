@@ -1236,6 +1236,7 @@ fn encode_vector(vector: &[f32]) -> Vec<u8> {
         .collect()
 }
 
+#[cfg(test)]
 fn decode_vector(bytes: &[u8]) -> Option<Vec<f32>> {
     if bytes.len() != VECTOR_DIMENSION * 4 {
         return None;
@@ -1250,6 +1251,21 @@ fn decode_vector(bytes: &[u8]) -> Option<Vec<f32>> {
         .iter()
         .all(|value| value.is_finite())
         .then_some(vector)
+}
+
+fn dot_encoded(left: &[f32], bytes: &[u8]) -> Option<f64> {
+    if bytes.len() != left.len() * 4 || !left.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    let mut score = 0.0;
+    for (left, right) in left.iter().zip(bytes.chunks_exact(4)) {
+        let right = f32::from_le_bytes([right[0], right[1], right[2], right[3]]);
+        if !right.is_finite() {
+            return None;
+        }
+        score += f64::from(*left) * f64::from(right);
+    }
+    Some(score)
 }
 
 #[derive(Debug)]
@@ -1400,13 +1416,10 @@ fn hybrid_retrieval(
         let mut top = std::collections::BinaryHeap::with_capacity(limits.max_retrieval_chunks);
         for row in rows {
             let (chunk_id, blob) = row?;
-            if let Some(vector) = decode_vector(&blob) {
+            if let Some(score) = dot_encoded(&query_vector, &blob) {
                 push_top_vector_score(
                     &mut top,
-                    ScoredVector {
-                        chunk_id,
-                        score: dot(&query_vector, &vector),
-                    },
+                    ScoredVector { chunk_id, score },
                     limits.max_retrieval_chunks,
                 );
             }
@@ -1433,20 +1446,20 @@ fn hybrid_retrieval(
         .iter()
         .map(|item| item.chunk_id.as_str())
         .collect::<HashSet<_>>();
-    for (chunk_id, _) in &vector_scores {
-        if !lexical_ids.contains(chunk_id.as_str()) {
-            if let Some(candidate) = load_vector_candidate(
-                connection,
-                workspace_root,
-                workspace_key,
-                generation,
-                chunk_id,
-                filters,
-            )? {
-                fused.push(candidate);
-            }
-        }
-    }
+    let vector_candidate_ids = vector_scores
+        .iter()
+        .filter_map(|(chunk_id, _)| {
+            (!lexical_ids.contains(chunk_id.as_str())).then_some(chunk_id.as_str())
+        })
+        .collect::<Vec<_>>();
+    fused.extend(load_vector_candidates(
+        connection,
+        workspace_root,
+        workspace_key,
+        generation,
+        &vector_candidate_ids,
+        filters,
+    )?);
     for item in &mut fused {
         let lexical_rank = lexical_ranks.get(&item.chunk_id).copied();
         let vector_rank = vector_ranks.get(&item.chunk_id).copied();
@@ -1479,119 +1492,156 @@ fn hybrid_retrieval(
     Ok(Some(fused))
 }
 
-fn load_vector_candidate(
+fn load_vector_candidates(
     connection: &Connection,
     workspace_root: &Path,
     workspace_key: &str,
     generation: i64,
-    chunk_id: &str,
+    chunk_ids: &[&str],
     filters: &QueryFilters,
-) -> Result<Option<RetrievedChunk>, RagError> {
-    let row = connection
-        .query_row(
-            "SELECT c.document_id, d.path, d.language, c.byte_start, c.byte_end,
-                    c.chunk_hash, d.file_hash, c.chunk_text, c.symbol,
-                    c.parent_context, d.redaction_status, d.size_bytes
-             FROM document_chunks c
-             JOIN workspace_documents d ON d.document_id = c.document_id
-             WHERE c.workspace_key = ?1 AND c.generation = ?2 AND c.chunk_id = ?3
-               AND d.status = 'active' AND d.redaction_status != 'full'
-               AND d.is_secret_path = 0
-               AND (?4 = '' OR d.path = ?4 OR d.path LIKE ?4 || '/%')
-               AND (?5 = '' OR d.language = ?5)",
-            params![
-                workspace_key,
-                generation,
-                chunk_id,
-                filters.path.as_deref().unwrap_or(""),
-                filters.language.as_deref().unwrap_or("")
-            ],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, i64>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
-                    row.get::<_, String>(7)?,
-                    row.get::<_, Option<String>>(8)?,
-                    row.get::<_, String>(9)?,
-                    row.get::<_, String>(10)?,
-                    row.get::<_, i64>(11)?,
-                ))
-            },
-        )
-        .optional()?;
-    let Some((
-        source_id,
-        path,
-        language,
-        byte_start,
-        byte_end,
-        chunk_hash,
-        file_hash,
-        indexed_content,
-        symbol,
-        parent_context,
-        redaction_status,
-        indexed_size,
-    )) = row
-    else {
-        return Ok(None);
-    };
-    let root = workspace_root.canonicalize()?;
-    let validation = validate_source(
-        &root,
-        &root.join(&path),
-        &file_hash,
-        indexed_size as u64,
-        byte_start as usize,
-        byte_end as usize,
+) -> Result<Vec<RetrievedChunk>, RagError> {
+    if chunk_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // The retrieval limit is at most 200, so this bounded VALUES query stays
+    // well below SQLite's parameter limit while replacing one query per hit.
+    let requested = chunk_ids
+        .iter()
+        .enumerate()
+        .map(|(index, _)| format!("(?{}, {})", index + 1, index))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let workspace_parameter = chunk_ids.len() + 1;
+    let generation_parameter = chunk_ids.len() + 2;
+    let path_parameter = chunk_ids.len() + 3;
+    let language_parameter = chunk_ids.len() + 4;
+    let sql = format!(
+        "WITH requested(chunk_id, vector_rank) AS (VALUES {requested})
+         SELECT c.chunk_id, c.document_id, d.path, d.language, c.byte_start,
+                c.byte_end, c.chunk_hash, d.file_hash, c.chunk_text, c.symbol,
+                c.parent_context, d.redaction_status, d.size_bytes
+         FROM requested r
+         JOIN document_chunks c ON c.chunk_id = r.chunk_id
+         JOIN workspace_documents d ON d.document_id = c.document_id
+         WHERE c.workspace_key = ?{workspace_parameter}
+           AND c.generation = ?{generation_parameter}
+           AND d.status = 'active' AND d.redaction_status != 'full'
+           AND d.is_secret_path = 0
+           AND (?{path_parameter} = '' OR d.path = ?{path_parameter} OR d.path LIKE ?{path_parameter} || '/%')
+           AND (?{language_parameter} = '' OR d.language = ?{language_parameter})
+         ORDER BY r.vector_rank",
     );
-    let (content, lines, stale) = match validation {
-        Ok(bytes) => match decode_source_range(&bytes, byte_start as usize, byte_end as usize) {
-            Ok((content, lines)) if content.trim() == indexed_content.trim() => {
-                (Some(content.trim().to_string()), Some(lines), false)
-            }
-            _ => (None, None, true),
-        },
-        Err(_) => (None, None, true),
-    };
-    Ok(Some(RetrievedChunk {
-        source_id,
-        chunk_id: chunk_id.to_string(),
-        relative_path: path,
-        language,
-        byte_start: byte_start as u64,
-        byte_end: byte_end as u64,
-        lines,
-        chunk_hash,
-        content_hash: file_hash,
-        content,
-        symbol,
-        parent_context,
-        score: 0.0,
-        score_explanation: ScoreExplanation {
-            algorithm: "vector".into(),
-            column_weights: BTreeMap::new(),
-            term_frequencies: BTreeMap::new(),
-            document_length: indexed_content.len(),
-            matched_filters: vec![format!("workspace_key={workspace_key}")],
-            excluded_by: Vec::new(),
-        },
-        ranking_explanation: RankingExplanation {
-            algorithm: "vector".into(),
-            lexical_rank: None,
-            vector_rank: None,
-            rrf_rank: 0,
-            sources: vec!["vector".into()],
-        },
-        stale,
-        redaction_status,
-        checker_confidence: 0.0,
-    }))
+    let mut statement = connection.prepare(&sql)?;
+    let mut query_parameters = chunk_ids
+        .iter()
+        .map(|chunk_id| rusqlite::types::Value::Text((*chunk_id).to_string()))
+        .collect::<Vec<_>>();
+    query_parameters.extend([
+        rusqlite::types::Value::Text(workspace_key.to_string()),
+        rusqlite::types::Value::Integer(generation),
+        rusqlite::types::Value::Text(filters.path.as_deref().unwrap_or("").to_string()),
+        rusqlite::types::Value::Text(filters.language.as_deref().unwrap_or("").to_string()),
+    ]);
+    let rows = statement
+        .query_map(params_from_iter(query_parameters.iter()), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, String>(11)?,
+                row.get::<_, i64>(12)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+
+    let canonical_root = workspace_root.canonicalize()?;
+    let mut source_cache = HashMap::<(String, String, i64), Option<Vec<u8>>>::new();
+    let mut candidates = Vec::with_capacity(chunk_ids.len());
+    for row in rows {
+        let (
+            chunk_id,
+            source_id,
+            path,
+            language,
+            byte_start,
+            byte_end,
+            chunk_hash,
+            file_hash,
+            indexed_content,
+            symbol,
+            parent_context,
+            redaction_status,
+            indexed_size,
+        ) = row;
+        let cache_key = (path.clone(), file_hash.clone(), indexed_size);
+        let bytes = source_cache.entry(cache_key).or_insert_with(|| {
+            let expected_size = u64::try_from(indexed_size).ok()?;
+            let byte_end = usize::try_from(expected_size).ok()?;
+            validate_source(
+                &canonical_root,
+                &canonical_root.join(&path),
+                &file_hash,
+                expected_size,
+                0,
+                byte_end,
+            )
+            .ok()
+        });
+        let (content, lines, stale) = match bytes {
+            Some(bytes) => match decode_source_range(bytes, byte_start as usize, byte_end as usize)
+            {
+                Ok((content, lines)) if content.trim() == indexed_content.trim() => {
+                    (Some(content.trim().to_string()), Some(lines), false)
+                }
+                _ => (None, None, true),
+            },
+            None => (None, None, true),
+        };
+        candidates.push(RetrievedChunk {
+            source_id,
+            chunk_id,
+            relative_path: path,
+            language,
+            byte_start: byte_start as u64,
+            byte_end: byte_end as u64,
+            lines,
+            chunk_hash,
+            content_hash: file_hash,
+            content,
+            symbol,
+            parent_context,
+            score: 0.0,
+            score_explanation: ScoreExplanation {
+                algorithm: "vector".into(),
+                column_weights: BTreeMap::new(),
+                term_frequencies: BTreeMap::new(),
+                document_length: indexed_content.len(),
+                matched_filters: vec![format!("workspace_key={workspace_key}")],
+                excluded_by: Vec::new(),
+            },
+            ranking_explanation: RankingExplanation {
+                algorithm: "vector".into(),
+                lexical_rank: None,
+                vector_rank: None,
+                rrf_rank: 0,
+                sources: vec!["vector".into()],
+            },
+            stale,
+            redaction_status,
+            checker_confidence: 0.0,
+        });
+    }
+    Ok(candidates)
 }
 
 #[cfg(test)]
@@ -1649,11 +1699,4 @@ mod tests {
         bytes[..4].copy_from_slice(&f32::NAN.to_le_bytes());
         assert!(decode_vector(&bytes).is_none());
     }
-}
-
-fn dot(left: &[f32], right: &[f32]) -> f64 {
-    left.iter()
-        .zip(right)
-        .map(|(a, b)| (*a as f64) * (*b as f64))
-        .sum()
 }

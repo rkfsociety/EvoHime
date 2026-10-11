@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   ConnectionState,
@@ -17,28 +17,30 @@ import { useShellApi } from './shell-api'
 import { UpdateIndicator } from './UpdateIndicator'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
-import { SettingsModal } from './SettingsModal'
 import type { SettingsTab } from './SettingsModal'
-import { ScheduledPanel } from './ScheduledPanel'
-import { OperationsPanel } from './OperationsPanel'
-import { PlanReviewPanel } from './PlanReviewPanel'
-import { WorkflowPanel } from './WorkflowPanel'
-import { CapabilityRecipePanel } from './CapabilityRecipePanel'
-import { OverviewPanel } from './OverviewPanel'
-import { ListeningPanel, REASON_TEXTS, STATE_TITLES } from './ListeningPanel'
-import { TracePanel } from './TracePanel'
 import { RecoveryBanner } from './RecoveryBanner'
-import { ContinuationPanel } from './ContinuationPanel'
-import { AnalysisKernelPanel } from './AnalysisKernelPanel'
-import { VisualWorkflowBuilderPanel } from './VisualWorkflowBuilderPanel'
-import { ConversationalWorkflowComposerPanel } from './ConversationalWorkflowComposerPanel'
-import { HumanWorkItemsPanel } from './HumanWorkItemsPanel'
-import { WorkbenchPanel } from './WorkbenchPanel'
-import { AgenticBrowserSessionPanel } from './AgenticBrowserSessionPanel'
 import { ProviderStateProvider } from './provider-state'
 import { EvaIcon } from './EvaIcon'
 import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
 import { setAppLocale, translate, useT } from './i18n'
+import { REASON_TEXTS, STATE_TITLES } from './listening-labels'
+
+const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ default: module.SettingsModal })))
+const ScheduledPanel = lazy(() => import('./ScheduledPanel').then((module) => ({ default: module.ScheduledPanel })))
+const OperationsPanel = lazy(() => import('./OperationsPanel').then((module) => ({ default: module.OperationsPanel })))
+const PlanReviewPanel = lazy(() => import('./PlanReviewPanel').then((module) => ({ default: module.PlanReviewPanel })))
+const WorkflowPanel = lazy(() => import('./WorkflowPanel').then((module) => ({ default: module.WorkflowPanel })))
+const CapabilityRecipePanel = lazy(() => import('./CapabilityRecipePanel').then((module) => ({ default: module.CapabilityRecipePanel })))
+const OverviewPanel = lazy(() => import('./OverviewPanel').then((module) => ({ default: module.OverviewPanel })))
+const ListeningPanel = lazy(() => import('./ListeningPanel').then((module) => ({ default: module.ListeningPanel })))
+const TracePanel = lazy(() => import('./TracePanel').then((module) => ({ default: module.TracePanel })))
+const ContinuationPanel = lazy(() => import('./ContinuationPanel').then((module) => ({ default: module.ContinuationPanel })))
+const AnalysisKernelPanel = lazy(() => import('./AnalysisKernelPanel').then((module) => ({ default: module.AnalysisKernelPanel })))
+const VisualWorkflowBuilderPanel = lazy(() => import('./VisualWorkflowBuilderPanel').then((module) => ({ default: module.VisualWorkflowBuilderPanel })))
+const ConversationalWorkflowComposerPanel = lazy(() => import('./ConversationalWorkflowComposerPanel').then((module) => ({ default: module.ConversationalWorkflowComposerPanel })))
+const HumanWorkItemsPanel = lazy(() => import('./HumanWorkItemsPanel').then((module) => ({ default: module.HumanWorkItemsPanel })))
+const WorkbenchPanel = lazy(() => import('./WorkbenchPanel').then((module) => ({ default: module.WorkbenchPanel })))
+const AgenticBrowserSessionPanel = lazy(() => import('./AgenticBrowserSessionPanel').then((module) => ({ default: module.AgenticBrowserSessionPanel })))
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -154,6 +156,15 @@ export function App(): React.JSX.Element {
       return
     }
 
+    const pendingCoreEvents: CoreEvent[] = []
+    let flushTimer: number | null = null
+    const flushCoreEvents = (): void => {
+      flushTimer = null
+      if (pendingCoreEvents.length === 0) return
+      const newestFirst = pendingCoreEvents.splice(0).reverse()
+      setEvents((current) => [...newestFirst, ...current].slice(0, MAX_VISIBLE_EVENTS))
+    }
+
     const unsubscribe = api.subscribe((event) => {
       if (event.kind === 'state') {
         setState(event.state)
@@ -176,7 +187,8 @@ export function App(): React.JSX.Element {
       if (event.kind !== 'core-event') {
         return
       }
-      setEvents((current) => [event.event, ...current].slice(0, MAX_VISIBLE_EVENTS))
+      pendingCoreEvents.push(event.event)
+      if (flushTimer === null) flushTimer = window.setTimeout(flushCoreEvents, 8)
     })
 
     void api.invoke('shell.getState', {}).then((outcome) => {
@@ -192,7 +204,11 @@ export function App(): React.JSX.Element {
       if (outcome.ok) setRepair(outcome.value)
     })
 
-    return unsubscribe
+    return () => {
+      if (flushTimer !== null) window.clearTimeout(flushTimer)
+      flushCoreEvents()
+      unsubscribe()
+    }
   }, [api])
 
   useEffect(() => {
@@ -361,6 +377,7 @@ export function App(): React.JSX.Element {
         />
 
         <div className="main__body">
+          <Suspense fallback={<p role="status">{t('Загрузка')}</p>}>
           {view === 'chat' ? (
             <div className={`conversation-layout${workbenchVisible || browserVisible ? '' : ' conversation-layout--chat-only'}`}>
               <TaskTimeline
@@ -412,9 +429,11 @@ export function App(): React.JSX.Element {
               {translate(view === 'human-work-items' ? <HumanWorkItemsPanel /> : null)}
             </div>
           )}
+          </Suspense>
         </div>
       </main>
 
+      <Suspense fallback={null}>
       {translate(settingsOpen ? (
         <SettingsModal
           workspace={workspace}
@@ -439,6 +458,7 @@ export function App(): React.JSX.Element {
           onClose={() => setTraceOpen(false)}
         />
       ) : null)}
+      </Suspense>
 
       <footer className="statusbar">
           <span>{t('Протокол')} {translate(state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—')}</span>

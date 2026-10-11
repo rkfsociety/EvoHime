@@ -46,6 +46,84 @@ type TimelineItemDescriptor =
   | { readonly key: string; readonly kind: 'user'; readonly message: ChatMessage; readonly delivery: OptimisticConversationMessage | null }
   | { readonly key: string; readonly kind: 'transcript'; readonly entry: ReturnType<typeof buildTranscript>['entries'][number]; readonly keySuffix: string }
 
+interface TaskEventIndexCache {
+  readonly scope: string
+  readonly events: readonly CoreEvent[]
+  readonly byTask: ReadonlyMap<string, readonly CoreEvent[]>
+}
+
+function updateTaskEventIndex(
+  events: readonly CoreEvent[],
+  scope: string,
+  previous: TaskEventIndexCache | null
+): TaskEventIndexCache {
+  if (previous?.scope === scope) {
+    if (previous.events === events) return previous
+
+    const appendOlderStart = previous.events.length
+    if (
+      previous.events.length > 0
+      && events.length > appendOlderStart
+      && events[0] === previous.events[0]
+      && events[appendOlderStart - 1] === previous.events[appendOlderStart - 1]
+    ) {
+      const byTask = new Map(previous.byTask)
+      const addedByTask = new Map<string, CoreEvent[]>()
+      for (const event of events.slice(appendOlderStart)) {
+        const added = addedByTask.get(event.taskId)
+        if (added) added.push(event)
+        else addedByTask.set(event.taskId, [event])
+      }
+      for (const [taskId, added] of addedByTask) {
+        byTask.set(taskId, [...(byTask.get(taskId) ?? []), ...added])
+      }
+      return { scope, events, byTask }
+    }
+
+    const previousHead = previous.events[0]
+    const newEventsEnd = previousHead ? events.findIndex((event) => event === previousHead) : -1
+    if (newEventsEnd > 0) {
+      const retainedPreviousCount = Math.min(previous.events.length, events.length - newEventsEnd)
+      const retainedPreviousTail = previous.events[retainedPreviousCount - 1]
+      if (retainedPreviousTail && events.at(-1) === retainedPreviousTail) {
+        const byTask = new Map(previous.byTask)
+        const droppedByTask = new Map<string, Set<CoreEvent>>()
+        for (const event of previous.events.slice(retainedPreviousCount)) {
+          const dropped = droppedByTask.get(event.taskId)
+          if (dropped) dropped.add(event)
+          else droppedByTask.set(event.taskId, new Set([event]))
+        }
+        for (const [taskId, dropped] of droppedByTask) {
+          const retained = (byTask.get(taskId) ?? []).filter((event) => !dropped.has(event))
+          if (retained.length > 0) byTask.set(taskId, retained)
+          else byTask.delete(taskId)
+        }
+
+        const addedByTask = new Map<string, CoreEvent[]>()
+        for (let index = newEventsEnd - 1; index >= 0; index -= 1) {
+          const event = events[index]
+          if (!event) continue
+          const added = addedByTask.get(event.taskId)
+          if (added) added.unshift(event)
+          else addedByTask.set(event.taskId, [event])
+        }
+        for (const [taskId, added] of addedByTask) {
+          byTask.set(taskId, [...added, ...(byTask.get(taskId) ?? [])])
+        }
+        return { scope, events, byTask }
+      }
+    }
+  }
+
+  const byTask = new Map<string, CoreEvent[]>()
+  for (const event of events) {
+    const grouped = byTask.get(event.taskId)
+    if (grouped) grouped.push(event)
+    else byTask.set(event.taskId, [event])
+  }
+  return { scope, events, byTask }
+}
+
 function buildCoreEventKey(event: CoreEvent): string | null {
   if (!Number.isSafeInteger(event.sequenceId) || event.sequenceId <= 0) return null
   return `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${event.sequenceId}:${event.taskId}:${event.eventType}`
@@ -122,6 +200,7 @@ export function TaskTimeline({
     chatId: string | null
     tasks: Map<string, { signature: string; transcript: ReturnType<typeof buildTranscript> }>
   }>({ chatId, tasks: new Map() })
+  const taskEventIndexRef = useRef<TaskEventIndexCache | null>(null)
   const cancelRequestedTaskId = useRef<string | null>(null)
   const eventCursorRef = useRef<{ firstKey: string | null; length: number }>({
     firstKey: null,
@@ -389,6 +468,17 @@ export function TaskTimeline({
     [taskEvents, taskId]
   )
 
+  const taskEventScope = JSON.stringify([
+    chatId,
+    projectedConversationEvents.length > 0,
+    [...new Set([...(chat?.taskIds ?? []), ...(taskId ? [taskId] : [])])].sort()
+  ])
+  const taskEventsByTask = useMemo(() => {
+    const nextIndex = updateTaskEventIndex(taskEvents, taskEventScope, taskEventIndexRef.current)
+    taskEventIndexRef.current = nextIndex
+    return nextIndex.byTask
+  }, [taskEventScope, taskEvents])
+
   // `taskId` is transient renderer state. After a reconnect or a renderer
   // reload Core may already be working while the component has not restored
   // that state yet. Recover the newest non-terminal task from Core events so
@@ -442,21 +532,12 @@ export function TaskTimeline({
     if (sentPrompt !== null && taskId !== null && !messages.some((message) => message.taskId === taskId)) {
       messages.push({ taskId, prompt: sentPrompt, atMs: sentPromptAtMs ?? Date.now() })
     }
-    // The event list is shared by every message in the open chat. Index it
-    // once so rendering a long conversation does not rescan the same events
-    // for each message.
-    const eventsByTask = new Map<string, CoreEvent[]>()
-    for (const event of taskEvents) {
-      const taskEventsForId = eventsByTask.get(event.taskId)
-      if (taskEventsForId) taskEventsForId.push(event)
-      else eventsByTask.set(event.taskId, [event])
-    }
     const retainedTasks = new Set(messages.map((message) => message.taskId))
     for (const cachedTaskId of transcriptCacheRef.current.tasks.keys()) {
       if (!retainedTasks.has(cachedTaskId)) transcriptCacheRef.current.tasks.delete(cachedTaskId)
     }
     return messages.map((message) => {
-      const taskEventsForMessage = eventsByTask.get(message.taskId) ?? []
+      const taskEventsForMessage = taskEventsByTask.get(message.taskId) ?? []
       const signature = `${taskEventsForMessage.length}:${taskEventsForMessage[0]?.sequenceId ?? ''}:${taskEventsForMessage.at(-1)?.sequenceId ?? ''}`
       const cached = transcriptCacheRef.current.tasks.get(message.taskId)
       const transcript = cached?.signature === signature
@@ -473,7 +554,7 @@ export function TaskTimeline({
         transcript
       }
     })
-  }, [chatId, chat?.messages, conversationLog?.optimistic, projectedConversationEvents, sentPrompt, sentPromptAtMs, taskId, taskEvents])
+  }, [chatId, chat?.messages, conversationLog?.optimistic, projectedConversationEvents, sentPrompt, sentPromptAtMs, taskId, taskEvents, taskEventsByTask])
 
   const retryMessage = useCallback(async (clientMessageId: string) => {
     if (!api || !conversationLog) return
