@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { memo } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 
 interface MarkdownMessageProps {
   readonly text: string
@@ -8,7 +8,13 @@ interface MarkdownMessageProps {
 
 /** Renders model output as safe, readable Markdown inside the transcript. */
 export const MarkdownMessage = memo(function MarkdownMessage({ text }: MarkdownMessageProps): React.JSX.Element {
-  const html = renderMarkdown(text)
+  const [renderedText, setRenderedText] = useState(text)
+  useEffect(() => {
+    if (text === renderedText) return
+    const frame = window.requestAnimationFrame(() => setRenderedText(text))
+    return () => window.cancelAnimationFrame(frame)
+  }, [text, renderedText])
+  const html = useMemo(() => renderMarkdown(renderedText), [renderedText])
   return <div className="markdown-message" dangerouslySetInnerHTML={{ __html: html }} />
 }, (previous, next) => previous.text === next.text)
 

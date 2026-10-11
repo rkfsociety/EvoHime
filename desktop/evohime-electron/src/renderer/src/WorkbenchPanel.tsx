@@ -1,11 +1,16 @@
 import { translate } from './i18n'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, ConversationWorkbenchProjection, WorkbenchPresentation } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 
 const TAB_IDS = ['files', 'diff', 'tasks', 'terminal', 'browser', 'usage'] as const
+
+interface WorkbenchRefreshQueue {
+  running: boolean
+  pending: (() => Promise<void>) | null
+}
 
 export function WorkbenchPanel({
   connection,
@@ -23,6 +28,7 @@ export function WorkbenchPanel({
   const api = useShellApi()
   const [projection, setProjection] = useState<ConversationWorkbenchProjection | null>(null)
   const [presentation, setPresentation] = useState<WorkbenchPresentation>({ activeTab: 'tasks', splitRatio: 0.5, collapsed: false })
+  const refreshQueue = useRef<WorkbenchRefreshQueue>({ running: false, pending: null })
   const latestConversationSequence = useMemo(() => events
     .map((event) => event.conversationEventLog)
     .filter((page) => page?.conversationId === chatId)
@@ -35,13 +41,28 @@ export function WorkbenchPanel({
     void api.invoke('chat.getWorkbenchPresentation', { chatId }).then((result) => {
       if (alive && result.ok) setPresentation(result.value)
     })
-    void api.invoke('core.getConversationWorkbench', { conversationId: chatId, workspaceId: workspace, limit: 100 }).catch(() => undefined)
     return () => { alive = false }
   }, [api, chatId, workspace])
 
   useEffect(() => {
-    if (!api || !chatId || !workspace || latestConversationSequence === 0) return
-    void api.invoke('core.getConversationWorkbench', { conversationId: chatId, workspaceId: workspace, afterSequence: 0, limit: 100 }).catch(() => undefined)
+    if (!api || !chatId || !workspace) return
+    let alive = true
+    const request = async (): Promise<void> => {
+      if (!alive) return
+      await api.invoke('core.getConversationWorkbench', {
+        conversationId: chatId,
+        workspaceId: workspace,
+        afterSequence: 0,
+        limit: 100
+      }).catch(() => undefined)
+    }
+    const timer = window.setTimeout(() => {
+      void enqueueWorkbenchRefresh(refreshQueue.current, request)
+    }, latestConversationSequence === 0 ? 0 : 80)
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
+    }
   }, [api, chatId, workspace, latestConversationSequence])
 
   useEffect(() => {
@@ -88,4 +109,22 @@ export function WorkbenchPanel({
       </> : null}
     </section>
   )
+}
+
+async function enqueueWorkbenchRefresh(queue: WorkbenchRefreshQueue, request: () => Promise<void>): Promise<void> {
+  if (queue.running) {
+    queue.pending = request
+    return
+  }
+  queue.running = true
+  let next: (() => Promise<void>) | null = request
+  try {
+    while (next) {
+      queue.pending = null
+      await next()
+      next = queue.pending
+    }
+  } finally {
+    queue.running = false
+  }
 }

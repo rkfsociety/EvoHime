@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{fs, io::ErrorKind, path::Path, process::Stdio, time::Duration};
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use unicode_normalization::UnicodeNormalization;
 
 /// Registry identifier for workspace text search.
@@ -147,6 +147,9 @@ async fn ripgrep_search(
     glob: Option<&str>,
     limit: usize,
 ) -> Result<Vec<Value>, RgFailure> {
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
     let mut command = Command::new("rg");
     command
         .args([
@@ -160,7 +163,8 @@ async fn ripgrep_search(
         .arg(base)
         .current_dir(workspace_root)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     if let Some(glob) = glob {
         command.args(["--glob", glob]);
     }
@@ -177,75 +181,131 @@ async fn ripgrep_search(
     ] {
         command.args(["--glob", pattern]);
     }
-    let output = match run_bounded_rg(&mut command).await {
-        Ok(output) => output,
+    let mut child = match command.spawn() {
+        Ok(child) => child,
         Err(error) if error.kind() == ErrorKind::NotFound => return Err(RgFailure::Missing),
         Err(error) => {
             return Err(RgFailure::Failed(format!("ripgrep failed: {error}")));
         }
     };
-    if output.stdout.len() > MAX_RG_STDOUT_BYTES {
-        return Err(RgFailure::Failed("ripgrep output exceeds 4 MiB".into()));
+    match read_rg_matches(&mut child, limit).await {
+        Ok(matches) => Ok(matches),
+        Err(message) => Err(RgFailure::Failed(message)),
     }
-    if !output.status.success() && output.status.code() != Some(1) {
-        return Err(RgFailure::Failed(
-            String::from_utf8_lossy(&output.stderr).to_string(),
-        ));
-    }
+}
+
+async fn read_rg_matches(child: &mut Child, limit: usize) -> Result<Vec<Value>, String> {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "ripgrep stdout unavailable".to_owned())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "ripgrep stderr unavailable".to_owned())?;
+    let stderr_task = tokio::spawn(async move {
+        let mut reader = tokio::io::BufReader::new(stderr);
+        read_bounded(&mut reader, MAX_RG_STDERR_BYTES).await
+    });
+    let mut reader = tokio::io::BufReader::new(stdout);
+    let mut chunk = [0_u8; 16 * 1024];
+    let mut pending = Vec::new();
+    let mut processed_bytes = 0_usize;
     let mut matches = Vec::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
-        if let Ok(item) = serde_json::from_str::<Value>(line) {
-            if item["type"] == "match" {
-                let reported = item["data"]["path"]["text"].as_str().unwrap_or("");
-                if is_hard_excluded(Path::new(reported)) {
-                    continue;
-                }
-                for sub in item["data"]["lines"]["text"].as_str().unwrap_or("").lines() {
-                    matches.push(json!({
-                        "path": item["data"]["path"]["text"],
-                        "line": item["data"]["line_number"],
-                        "text": sub
-                    }));
-                    if matches.len() >= limit {
-                        break;
-                    }
-                }
+    let mut reached_limit = false;
+    let mut failure = None;
+
+    loop {
+        let read = match reader.read(&mut chunk).await {
+            Ok(read) => read,
+            Err(error) => {
+                failure = Some(format!("ripgrep output read failed: {error}"));
+                break;
             }
-        }
-        if matches.len() >= limit {
+        };
+        if read == 0 {
+            if !pending.is_empty() {
+                if processed_bytes.saturating_add(pending.len()) > MAX_RG_STDOUT_BYTES {
+                    failure = Some("ripgrep output exceeds 4 MiB".into());
+                    break;
+                }
+                parse_rg_line(&pending, &mut matches, limit);
+            }
             break;
         }
+        pending.extend_from_slice(&chunk[..read]);
+
+        let mut consumed = 0;
+        while let Some(relative_newline) = pending[consumed..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+        {
+            let newline = consumed + relative_newline;
+            if processed_bytes.saturating_add(newline + 1) > MAX_RG_STDOUT_BYTES {
+                failure = Some("ripgrep output exceeds 4 MiB".into());
+                break;
+            }
+            parse_rg_line(&pending[consumed..newline], &mut matches, limit);
+            consumed = newline + 1;
+            if matches.len() >= limit {
+                reached_limit = true;
+                break;
+            }
+        }
+        if consumed > 0 {
+            pending.drain(..consumed);
+            processed_bytes += consumed;
+        }
+        if failure.is_some() || reached_limit {
+            break;
+        }
+        if processed_bytes.saturating_add(pending.len()) > MAX_RG_STDOUT_BYTES {
+            failure = Some("ripgrep output exceeds 4 MiB".into());
+            break;
+        }
+    }
+
+    if reached_limit || failure.is_some() {
+        let _ = child.kill().await;
+    }
+    let status = child
+        .wait()
+        .await
+        .map_err(|error| format!("ripgrep failed: {error}"))?;
+    let stderr = stderr_task
+        .await
+        .map_err(|error| format!("ripgrep stderr reader failed: {error}"))?
+        .map_err(|error| format!("ripgrep stderr read failed: {error}"))?;
+
+    if let Some(message) = failure {
+        return Err(message);
+    }
+    if !reached_limit && !status.success() && status.code() != Some(1) {
+        return Err(String::from_utf8_lossy(&stderr).to_string());
     }
     Ok(matches)
 }
 
-struct BoundedRgOutput {
-    status: std::process::ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-}
-
-async fn run_bounded_rg(command: &mut Command) -> std::io::Result<BoundedRgOutput> {
-    let mut child = command.spawn()?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| std::io::Error::other("ripgrep stdout unavailable"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| std::io::Error::other("ripgrep stderr unavailable"))?;
-    let mut stdout_reader = tokio::io::BufReader::new(stdout);
-    let mut stderr_reader = tokio::io::BufReader::new(stderr);
-    let stdout = read_bounded(&mut stdout_reader, MAX_RG_STDOUT_BYTES);
-    let stderr = read_bounded(&mut stderr_reader, MAX_RG_STDERR_BYTES);
-    let status = child.wait();
-    let (stdout, stderr, status) = tokio::join!(stdout, stderr, status);
-    Ok(BoundedRgOutput {
-        status: status?,
-        stdout: stdout?,
-        stderr: stderr?,
-    })
+fn parse_rg_line(line: &[u8], matches: &mut Vec<Value>, limit: usize) {
+    if let Ok(item) = serde_json::from_slice::<Value>(line) {
+        if item["type"] != "match" {
+            return;
+        }
+        let reported = item["data"]["path"]["text"].as_str().unwrap_or("");
+        if is_hard_excluded(Path::new(reported)) {
+            return;
+        }
+        for sub in item["data"]["lines"]["text"].as_str().unwrap_or("").lines() {
+            matches.push(json!({
+                "path": item["data"]["path"]["text"],
+                "line": item["data"]["line_number"],
+                "text": sub
+            }));
+            if matches.len() >= limit {
+                break;
+            }
+        }
+    }
 }
 
 async fn read_bounded<R: tokio::io::AsyncRead + Unpin>(

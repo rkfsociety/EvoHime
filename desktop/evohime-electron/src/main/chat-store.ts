@@ -21,6 +21,7 @@ export const MAX_MESSAGES_PER_CHAT = 500
 export const MAX_PROMPT_CHARS = 4_096
 export const MAX_TITLE_CHARS = 80
 const STORE_VERSION = 1
+const WORKBENCH_STORE_VERSION = 1
 
 interface StoredDocument {
   readonly chats: readonly ChatRecord[]
@@ -158,7 +159,18 @@ export class ChatStore {
         splitRatio: Number.isFinite(value.splitRatio) ? Math.min(0.8, Math.max(0.2, value.splitRatio)) : 0.5,
         collapsed: Boolean(value.collapsed)
       }
-      await this.write({ chats: current.map((item) => item.id === chatId ? { ...item, workbenchPresentation: presentation } : item) })
+      if (
+        chat.workbenchPresentation.activeTab === presentation.activeTab &&
+        chat.workbenchPresentation.splitRatio === presentation.splitRatio &&
+        chat.workbenchPresentation.collapsed === presentation.collapsed
+      ) {
+        return presentation
+      }
+      const chats = current.map((item) =>
+        item.id === chatId ? { ...item, workbenchPresentation: presentation } : item
+      )
+      await this.writeWorkbenchPresentations(chats)
+      this.cached = { chats }
       return presentation
     })
   }
@@ -222,7 +234,46 @@ export class ChatStore {
       const chat = parseChat(item)
       if (chat) chats.push(chat)
     }
-    return { chats }
+    const workbenchPresentations = await this.readWorkbenchPresentations()
+    if (!workbenchPresentations) return { chats }
+    return {
+      chats: chats.map((chat) => ({
+        ...chat,
+        workbenchPresentation: workbenchPresentations[chat.id] ?? chat.workbenchPresentation
+      }))
+    }
+  }
+
+  private async readWorkbenchPresentations(): Promise<Record<string, WorkbenchPresentation> | null> {
+    const filePath = this.workbenchFilePath()
+    let raw: string
+    try {
+      raw = await readFile(filePath, 'utf8')
+    } catch (error: unknown) {
+      if (isNodeError(error) && error.code === 'ENOENT') return null
+      throw new ChatStoreError('read-failed', 'Unable to read Workbench presentation settings.')
+    }
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('invalid document')
+      const record = parsed as Record<string, unknown>
+      const entries = record['presentations']
+      if (
+        record['version'] !== WORKBENCH_STORE_VERSION ||
+        typeof entries !== 'object' ||
+        entries === null ||
+        Array.isArray(entries)
+      ) {
+        throw new Error('invalid document')
+      }
+      const presentations = Object.create(null) as Record<string, WorkbenchPresentation>
+      for (const [chatId, value] of Object.entries(entries)) {
+        presentations[chatId] = parseWorkbenchPresentation(value)
+      }
+      return presentations
+    } catch {
+      throw await this.corruptFileError(filePath)
+    }
   }
 
   private write(document: StoredDocument): Promise<void> {
@@ -248,10 +299,28 @@ export class ChatStore {
     }
   }
 
-  private async corruptFileError(): Promise<ChatStoreError> {
-    const recoveryPath = `${this.filePath}.corrupt-${this.now()}-${randomUUID()}`
+  private async writeWorkbenchPresentations(chats: readonly ChatRecord[]): Promise<void> {
+    const presentations = Object.fromEntries(chats.map((chat) => [chat.id, chat.workbenchPresentation]))
+    const filePath = this.workbenchFilePath()
+    const temporary = `${filePath}.${randomUUID()}.tmp`
     try {
-      await copyFile(this.filePath, recoveryPath, constants.COPYFILE_EXCL)
+      await mkdir(dirname(filePath), { recursive: true })
+      await writeFile(temporary, JSON.stringify({ version: WORKBENCH_STORE_VERSION, presentations }), 'utf8')
+      await rename(temporary, filePath)
+    } catch {
+      await unlink(temporary).catch(() => undefined)
+      throw new ChatStoreError('write-failed', 'Unable to write Workbench presentation settings.')
+    }
+  }
+
+  private workbenchFilePath(): string {
+    return `${this.filePath}.workbench.json`
+  }
+
+  private async corruptFileError(filePath = this.filePath): Promise<ChatStoreError> {
+    const recoveryPath = `${filePath}.corrupt-${this.now()}-${randomUUID()}`
+    try {
+      await copyFile(filePath, recoveryPath, constants.COPYFILE_EXCL)
       return new ChatStoreError('corrupt', 'The chat store is corrupt.', recoveryPath)
     } catch {
       return new ChatStoreError('corrupt', 'The chat store is corrupt.')
