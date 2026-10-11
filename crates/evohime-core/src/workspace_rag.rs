@@ -15,7 +15,7 @@ use std::{
 };
 
 use ring::digest::{digest, SHA256};
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 

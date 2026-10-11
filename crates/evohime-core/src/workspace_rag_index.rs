@@ -1,5 +1,9 @@
 use super::*;
 
+// Bound write-lock duration while amortizing transaction setup for reused files.
+const UNCHANGED_DOCUMENT_BATCH_SIZE: usize = 32;
+const UNCHANGED_DOCUMENT_BATCH_CHUNK_LIMIT: usize = 2_048;
+
 pub fn index_workspace(
     connection: &mut Connection,
     workspace_root: &Path,
@@ -60,6 +64,8 @@ pub fn index_workspace(
         let mut chunks = 0usize;
         let mut excluded = initial_excluded;
         let mut errors = Vec::new();
+        let mut unchanged_batch = Vec::with_capacity(UNCHANGED_DOCUMENT_BATCH_SIZE);
+        let mut unchanged_batch_chunks = 0usize;
         let mut last_progress = Instant::now()
             .checked_sub(Duration::from_millis(config.progress_interval_ms))
             .unwrap_or_else(Instant::now);
@@ -99,27 +105,34 @@ pub fn index_workspace(
                 continue;
             }
             let file_hash = sha256_hex(&snapshot.bytes);
-            let reused_document = if !rebuild {
+            let reusable_chunks = if !rebuild {
                 if let Some(active) = active_generation {
-                    copy_unchanged_document(
-                        connection,
-                        &key,
-                        active,
-                        generation,
-                        &relative,
-                        &file_hash,
-                        snapshot.modified_ms,
-                    )?
+                    unchanged_document_chunk_count(connection, &key, active, &relative, &file_hash)?
                 } else {
                     None
                 }
             } else {
                 None
             };
-            if let Some(reused_chunks) = reused_document {
-                indexed += 1;
-                reused += 1;
-                chunks += reused_chunks;
+            if let Some(reused_chunks) = reusable_chunks {
+                unchanged_batch.push((relative.clone(), file_hash, snapshot.modified_ms));
+                unchanged_batch_chunks += reused_chunks;
+                if unchanged_batch.len() >= UNCHANGED_DOCUMENT_BATCH_SIZE
+                    || unchanged_batch_chunks >= UNCHANGED_DOCUMENT_BATCH_CHUNK_LIMIT
+                {
+                    copy_unchanged_document_batch(
+                        connection,
+                        &key,
+                        active_generation.ok_or(RagError::IndexUnavailable)?,
+                        generation,
+                        &unchanged_batch,
+                    )?;
+                    indexed += unchanged_batch.len();
+                    reused += unchanged_batch.len();
+                    chunks += unchanged_batch_chunks;
+                    unchanged_batch.clear();
+                    unchanged_batch_chunks = 0;
+                }
             } else {
                 let pending = PendingDocument {
                     relative_path: relative.clone(),
@@ -132,7 +145,9 @@ pub fn index_workspace(
                     last_modified: snapshot.modified_ms,
                     chunks: chunk_document(path, language, &snapshot, config),
                 };
-                if chunks + pending.chunks.len() > config.max_chunks_per_run {
+                if chunks + unchanged_batch_chunks + pending.chunks.len()
+                    > config.max_chunks_per_run
+                {
                     return Err(RagError::InvalidConfig(
                         "index run chunk budget exceeded".into(),
                     ));
@@ -154,6 +169,19 @@ pub fn index_workspace(
                 });
                 last_progress = Instant::now();
             }
+        }
+
+        if !unchanged_batch.is_empty() {
+            copy_unchanged_document_batch(
+                connection,
+                &key,
+                active_generation.ok_or(RagError::IndexUnavailable)?,
+                generation,
+                &unchanged_batch,
+            )?;
+            indexed += unchanged_batch.len();
+            reused += unchanged_batch.len();
+            chunks += unchanged_batch_chunks;
         }
 
         assert_generation_consistent(connection, &key, generation)?;
@@ -230,8 +258,56 @@ pub fn active_generation(
         .optional()?)
 }
 
-fn copy_unchanged_document(
+fn unchanged_document_chunk_count(
+    connection: &Connection,
+    workspace_key: &str,
+    old_generation: i64,
+    path: &str,
+    file_hash: &str,
+) -> Result<Option<usize>, RagError> {
+    let chunk_count = connection
+        .query_row(
+            "SELECT (SELECT COUNT(*) FROM document_chunks WHERE document_id = workspace_documents.document_id)
+             FROM workspace_documents
+             WHERE workspace_key = ?1 AND generation = ?2 AND path = ?3
+               AND file_hash = ?4 AND status = 'active'",
+            params![workspace_key, old_generation, path, file_hash],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+    Ok(chunk_count.map(|count| count as usize))
+}
+
+fn copy_unchanged_document_batch(
     connection: &mut Connection,
+    workspace_key: &str,
+    old_generation: i64,
+    new_generation: i64,
+    documents: &[(String, String, i64)],
+) -> Result<(), RagError> {
+    let transaction = connection.transaction()?;
+    for (path, file_hash, modified_ms) in documents {
+        let copied = copy_unchanged_document_into(
+            &transaction,
+            workspace_key,
+            old_generation,
+            new_generation,
+            path,
+            file_hash,
+            *modified_ms,
+        )?;
+        if copied.is_none() {
+            return Err(RagError::InvalidConfig(
+                "unchanged workspace document disappeared during indexing".into(),
+            ));
+        }
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn copy_unchanged_document_into(
+    transaction: &Transaction<'_>,
     workspace_key: &str,
     old_generation: i64,
     new_generation: i64,
@@ -239,7 +315,7 @@ fn copy_unchanged_document(
     file_hash: &str,
     modified_ms: i64,
 ) -> Result<Option<usize>, RagError> {
-    let document = connection
+    let document = transaction
         .query_row(
             "SELECT document_id, language, mime, size_bytes, encoding, decode_status,
                     last_modified, redaction_status, is_secret_path
@@ -276,7 +352,6 @@ fn copy_unchanged_document(
     else {
         return Ok(None);
     };
-    let transaction = connection.transaction()?;
     let new_id = stable_id(workspace_key, new_generation, path, "document");
     transaction
         .prepare_cached(
@@ -382,7 +457,6 @@ fn copy_unchanged_document(
     let reused_chunks = rows.len();
     drop(chunk_insert);
     drop(fts_insert);
-    transaction.commit()?;
     Ok(Some(reused_chunks))
 }
 

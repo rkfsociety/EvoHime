@@ -499,14 +499,25 @@ export function TaskTimeline({
 
   const activeTaskId = taskId ?? startingTaskId ?? inferredRunningTaskId
 
-  const { entries, approval, finished } = useMemo(
-    () => buildTranscript(activeTaskId === null ? activeTaskEvents : activeTaskEvents.filter((event) => event.taskId === activeTaskId)),
-    [activeTaskEvents, activeTaskId]
-  )
-
   if (transcriptCacheRef.current.chatId !== chatId) {
     transcriptCacheRef.current = { chatId, tasks: new Map() }
   }
+
+  const transcriptForTask = useCallback((id: string, taskEventsForMessage: readonly CoreEvent[]) => {
+    const signature = `${taskEventsForMessage.length}:${taskEventsForMessage[0]?.sequenceId ?? ''}:${taskEventsForMessage.at(-1)?.sequenceId ?? ''}`
+    const cached = transcriptCacheRef.current.tasks.get(id)
+    if (cached?.signature === signature) return cached.transcript
+    const transcript = buildTranscript(taskEventsForMessage)
+    transcriptCacheRef.current.tasks.set(id, { signature, transcript })
+    return transcript
+  }, [])
+
+  const { entries, approval, finished } = useMemo(
+    () => activeTaskId === null
+      ? buildTranscript(activeTaskEvents)
+      : transcriptForTask(activeTaskId, activeTaskEvents.filter((event) => event.taskId === activeTaskId)),
+    [activeTaskEvents, activeTaskId, transcriptForTask]
+  )
 
   const conversation = useMemo(() => {
     const authoritativeMessages = projectedConversationEvents
@@ -538,23 +549,15 @@ export function TaskTimeline({
     }
     return messages.map((message) => {
       const taskEventsForMessage = taskEventsByTask.get(message.taskId) ?? []
-      const signature = `${taskEventsForMessage.length}:${taskEventsForMessage[0]?.sequenceId ?? ''}:${taskEventsForMessage.at(-1)?.sequenceId ?? ''}`
-      const cached = transcriptCacheRef.current.tasks.get(message.taskId)
-      const transcript = cached?.signature === signature
-        ? cached.transcript
-        : buildTranscript(taskEventsForMessage)
-      if (cached?.signature !== signature) {
-        transcriptCacheRef.current.tasks.set(message.taskId, { signature, transcript })
-      }
       return {
         message,
         delivery: conversationLog?.optimistic.find(
           (item) => item.clientMessageId === message.clientMessageId
         ) ?? null,
-        transcript
+        transcript: transcriptForTask(message.taskId, taskEventsForMessage)
       }
     })
-  }, [chatId, chat?.messages, conversationLog?.optimistic, projectedConversationEvents, sentPrompt, sentPromptAtMs, taskId, taskEvents, taskEventsByTask])
+  }, [chatId, chat?.messages, conversationLog?.optimistic, projectedConversationEvents, sentPrompt, sentPromptAtMs, taskId, taskEvents, taskEventsByTask, transcriptForTask])
 
   const retryMessage = useCallback(async (clientMessageId: string) => {
     if (!api || !conversationLog) return

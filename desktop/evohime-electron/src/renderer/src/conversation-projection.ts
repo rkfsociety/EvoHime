@@ -3,6 +3,17 @@ import type { ConversationEventProjection, CoreEvent } from '@shared/api'
 const MAX_LIVE_EVENTS = 400
 const coreEventProjectionCache = new WeakMap<ConversationEventProjection, CoreEvent | null>()
 const conversationEventsCache = new WeakMap<ConversationProjectionState, readonly ConversationEventProjection[]>()
+// Event pages append immutably; index deltas reuse prior history without mutating older React states.
+const conversationEventIndexCache = new WeakMap<ConversationProjectionState, ConversationEventIndex>()
+const MAX_EVENT_INDEX_DEPTH = 32
+
+interface ConversationEventIndex {
+  readonly parent: ConversationEventIndex | null
+  readonly byId: Map<string, ConversationEventProjection | null>
+  readonly bySequence: Map<number, ConversationEventProjection | null>
+  readonly historyIds: Set<string>
+  readonly depth: number
+}
 
 export interface OptimisticConversationMessage {
   readonly clientMessageId: string
@@ -74,13 +85,12 @@ function mergeSortedEvents<T extends { readonly sequence: number }>(
   return merged
 }
 
-function indexConversationEvents(state: ConversationProjectionState): {
-  readonly byId: Map<string, ConversationEventProjection>
-  readonly bySequence: Map<number, ConversationEventProjection>
-  readonly historyIds: Set<string>
-} {
-  const byId = new Map<string, ConversationEventProjection>()
-  const bySequence = new Map<number, ConversationEventProjection>()
+function indexConversationEvents(state: ConversationProjectionState): ConversationEventIndex {
+  const cached = conversationEventIndexCache.get(state)
+  if (cached) return cached
+
+  const byId = new Map<string, ConversationEventProjection | null>()
+  const bySequence = new Map<number, ConversationEventProjection | null>()
   const historyIds = new Set<string>()
   for (const event of state.historyEvents) {
     if (!byId.has(event.eventId)) byId.set(event.eventId, event)
@@ -91,48 +101,132 @@ function indexConversationEvents(state: ConversationProjectionState): {
     if (!byId.has(event.eventId)) byId.set(event.eventId, event)
     if (!bySequence.has(event.sequence)) bySequence.set(event.sequence, event)
   }
-  return { byId, bySequence, historyIds }
+  const index: ConversationEventIndex = {
+    parent: null,
+    byId,
+    bySequence,
+    historyIds,
+    depth: 0
+  }
+  conversationEventIndexCache.set(state, index)
+  return index
+}
+
+function emptyConversationEventIndex(): ConversationEventIndex {
+  return {
+    parent: null,
+    byId: new Map(),
+    bySequence: new Map(),
+    historyIds: new Set(),
+    depth: 0
+  }
+}
+
+function forkConversationEventIndex(state: ConversationProjectionState): ConversationEventIndex {
+  let current = indexConversationEvents(state)
+  if (current.depth >= MAX_EVENT_INDEX_DEPTH) {
+    conversationEventIndexCache.delete(state)
+    current = indexConversationEvents(state)
+  }
+  return {
+    parent: current,
+    byId: new Map(),
+    bySequence: new Map(),
+    historyIds: new Set(),
+    depth: current.depth + 1
+  }
+}
+
+function indexedById(index: ConversationEventIndex, eventId: string): ConversationEventProjection | undefined {
+  for (let layer: ConversationEventIndex | null = index; layer; layer = layer.parent) {
+    if (layer.byId.has(eventId)) return layer.byId.get(eventId) ?? undefined
+  }
+  return undefined
+}
+
+function indexedBySequence(index: ConversationEventIndex, sequence: number): ConversationEventProjection | undefined {
+  for (let layer: ConversationEventIndex | null = index; layer; layer = layer.parent) {
+    if (layer.bySequence.has(sequence)) return layer.bySequence.get(sequence) ?? undefined
+  }
+  return undefined
+}
+
+function indexedHasHistoryId(index: ConversationEventIndex, eventId: string): boolean {
+  for (let layer: ConversationEventIndex | null = index; layer; layer = layer.parent) {
+    if (layer.historyIds.has(eventId)) return true
+  }
+  return false
+}
+
+function setIndexedEvent(index: ConversationEventIndex, event: ConversationEventProjection, history = false): void {
+  index.byId.set(event.eventId, event)
+  index.bySequence.set(event.sequence, event)
+  if (history) index.historyIds.add(event.eventId)
+}
+
+function removeIndexedEvent(index: ConversationEventIndex, event: ConversationEventProjection): void {
+  index.byId.set(event.eventId, null)
+  index.bySequence.set(event.sequence, null)
+}
+
+function incomingInSequenceOrder(
+  incoming: readonly ConversationEventProjection[]
+): readonly ConversationEventProjection[] {
+  for (let index = 1; index < incoming.length; index += 1) {
+    if ((incoming[index]?.sequence ?? 0) < (incoming[index - 1]?.sequence ?? 0)) {
+      return [...incoming].sort((left, right) => left.sequence - right.sequence)
+    }
+  }
+  return incoming
+}
+
+function inheritConversationEventIndex(
+  previous: ConversationProjectionState,
+  next: ConversationProjectionState
+): ConversationProjectionState {
+  conversationEventIndexCache.set(next, indexConversationEvents(previous))
+  return next
 }
 
 export function addOptimisticMessage(
   state: ConversationProjectionState,
   message: OptimisticConversationMessage
 ): ConversationProjectionState {
-  return {
+  return inheritConversationEventIndex(state, {
     ...state,
     optimistic: [...state.optimistic.filter((item) => item.clientMessageId !== message.clientMessageId), message]
-  }
+  })
 }
 
 export function markOptimisticFailed(
   state: ConversationProjectionState,
   clientMessageId: string
 ): ConversationProjectionState {
-  return {
+  return inheritConversationEventIndex(state, {
     ...state,
     optimistic: state.optimistic.map((message) =>
       message.clientMessageId === clientMessageId ? { ...message, status: 'failed' } : message
     )
-  }
+  })
 }
 
 export function markOptimisticRetry(
   state: ConversationProjectionState,
   clientMessageId: string
 ): ConversationProjectionState {
-  return {
+  return inheritConversationEventIndex(state, {
     ...state,
     optimistic: state.optimistic.map((message) =>
       message.clientMessageId === clientMessageId ? { ...message, status: 'retry' } : message
     )
-  }
+  })
 }
 
 export function resumeAtRetainedBoundary(
   state: ConversationProjectionState,
   earliestAvailableSequence: number
 ): ConversationProjectionState {
-  return {
+  const resumed: ConversationProjectionState = {
     ...state,
     historyEvents: [],
     liveEvents: [],
@@ -140,21 +234,23 @@ export function resumeAtRetainedBoundary(
     historyReady: true,
     sync: { state: 'complete' }
   }
+  conversationEventIndexCache.set(resumed, emptyConversationEventIndex())
+  return resumed
 }
 
 export function applyConversationEvents(
   state: ConversationProjectionState,
   incoming: readonly ConversationEventProjection[]
 ): ConversationProjectionState {
-  const indexed = indexConversationEvents(state)
+  const indexed = forkConversationEventIndex(state)
   let liveEvents: ConversationEventProjection[] | null = null
   let optimistic = state.optimistic
   let lastSequence = state.lastSequence
   let historyReady = state.historyReady
   let sync = state.sync
-  for (const event of [...incoming].sort((left, right) => left.sequence - right.sequence)) {
+  for (const event of incomingInSequenceOrder(incoming)) {
     if (event.conversationId !== state.conversationId || event.schemaVersion !== 1) continue
-    const byId = indexed.byId.get(event.eventId)
+    const byId = indexedById(indexed, event.eventId)
     if (byId) {
       if (!sameConversationEvent(byId, event)) {
         sync = { state: 'conflict', sequence: event.sequence }
@@ -162,7 +258,7 @@ export function applyConversationEvents(
       optimistic = reconcileOptimisticMessages(optimistic, event)
       continue
     }
-    const atSequence = indexed.bySequence.get(event.sequence)
+    const atSequence = indexedBySequence(indexed, event.sequence)
     if (atSequence) {
       sync = { state: 'conflict', sequence: event.sequence }
       continue
@@ -175,13 +271,11 @@ export function applyConversationEvents(
     }
     liveEvents ??= [...state.liveEvents]
     liveEvents.push(event)
-    indexed.byId.set(event.eventId, event)
-    indexed.bySequence.set(event.sequence, event)
+    setIndexedEvent(indexed, event)
     if (liveEvents.length > MAX_LIVE_EVENTS) {
       const removed = liveEvents.shift()
-      if (removed && !indexed.historyIds.has(removed.eventId)) {
-        if (indexed.byId.get(removed.eventId) === removed) indexed.byId.delete(removed.eventId)
-        if (indexed.bySequence.get(removed.sequence) === removed) indexed.bySequence.delete(removed.sequence)
+      if (removed && !indexedHasHistoryId(indexed, removed.eventId)) {
+        if (indexedById(indexed, removed.eventId) === removed) removeIndexedEvent(indexed, removed)
       }
     }
     optimistic = reconcileOptimisticMessages(optimistic, event)
@@ -190,13 +284,21 @@ export function applyConversationEvents(
     sync = { state: 'complete' }
   }
   const nextLiveEvents = liveEvents ?? state.liveEvents
-  return nextLiveEvents === state.liveEvents
+  if (nextLiveEvents === state.liveEvents
     && optimistic === state.optimistic
     && lastSequence === state.lastSequence
     && historyReady === state.historyReady
-    && sync === state.sync
-    ? state
-    : { ...state, liveEvents: nextLiveEvents, optimistic, lastSequence, historyReady, sync }
+    && sync === state.sync) return state
+  const next: ConversationProjectionState = {
+    ...state,
+    liveEvents: nextLiveEvents,
+    optimistic,
+    lastSequence,
+    historyReady,
+    sync
+  }
+  conversationEventIndexCache.set(next, indexed)
+  return next
 }
 
 /** Adds a history page without moving the live cursor. */
@@ -204,7 +306,7 @@ export function prependConversationEvents(
   state: ConversationProjectionState,
   incoming: readonly ConversationEventProjection[]
 ): ConversationProjectionState {
-  const indexed = indexConversationEvents(state)
+  const indexed = forkConversationEventIndex(state)
   const additions: ConversationEventProjection[] = []
   let optimistic = state.optimistic
   let sync = state.sync
@@ -212,7 +314,7 @@ export function prependConversationEvents(
     .filter((event) => event.conversationId === state.conversationId && event.schemaVersion === 1)
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of older) {
-    const byId = indexed.byId.get(event.eventId)
+    const byId = indexedById(indexed, event.eventId)
     if (byId) {
       if (!sameConversationEvent(byId, event)) {
         sync = { state: 'conflict', sequence: event.sequence }
@@ -220,7 +322,7 @@ export function prependConversationEvents(
       optimistic = reconcileOptimisticMessages(optimistic, event)
       continue
     }
-    const atSequence = indexed.bySequence.get(event.sequence)
+    const atSequence = indexedBySequence(indexed, event.sequence)
     if (atSequence) {
       if (!sameConversationEvent(atSequence, event)) {
         sync = { state: 'conflict', sequence: event.sequence }
@@ -229,17 +331,18 @@ export function prependConversationEvents(
       continue
     }
     additions.push(event)
-    indexed.byId.set(event.eventId, event)
-    indexed.bySequence.set(event.sequence, event)
+    setIndexedEvent(indexed, event, true)
     optimistic = reconcileOptimisticMessages(optimistic, event)
   }
   if (additions.length === 0 && optimistic === state.optimistic && sync === state.sync) return state
-  return {
+  const next: ConversationProjectionState = {
     ...state,
     historyEvents: additions.length === 0 ? state.historyEvents : mergeSortedEvents(state.historyEvents, additions),
     optimistic,
     sync
   }
+  conversationEventIndexCache.set(next, indexed)
+  return next
 }
 
 function reconcileOptimisticMessages(
@@ -265,7 +368,9 @@ export function applyInitialConversationHistory(
   const sync = next.sync.state === 'gap' && coversGap(conversationEvents(next), next.sync)
     ? { state: 'complete' as const }
     : next.sync
-  return { ...next, lastSequence: newestSequence, historyReady: true, sync }
+  const initial: ConversationProjectionState = { ...next, lastSequence: newestSequence, historyReady: true, sync }
+  conversationEventIndexCache.set(initial, indexConversationEvents(next))
+  return initial
 }
 
 function coversGap(

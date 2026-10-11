@@ -371,10 +371,15 @@ impl ModelProvider for LiteRouterProvider {
 
                 buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                while let Some(line) = take_sse_line(&mut buffer) {
-                    if let Some(result) = parse_sse_line(&line) {
+                let mut consumed = 0usize;
+                while let Some((next, parsed)) = take_sse_line(&buffer, consumed) {
+                    consumed = next;
+                    if let Some(result) = parsed {
                         yield result;
                     }
+                }
+                if consumed > 0 {
+                    buffer.drain(..consumed);
                 }
             }
 
@@ -428,10 +433,15 @@ impl ModelProvider for LiteRouterProvider {
 
                 buffer.push_str(&String::from_utf8_lossy(&chunk));
 
-                while let Some(line) = take_sse_line(&mut buffer) {
-                    if let Some(result) = parse_sse_line(&line) {
+                let mut consumed = 0usize;
+                while let Some((next, parsed)) = take_sse_line(&buffer, consumed) {
+                    consumed = next;
+                    if let Some(result) = parsed {
                         yield result;
                     }
+                }
+                if consumed > 0 {
+                    buffer.drain(..consumed);
                 }
             }
 
@@ -717,12 +727,14 @@ impl CompletionResponse {
     }
 }
 
-fn take_sse_line(buffer: &mut String) -> Option<String> {
-    if let Some(index) = buffer.find('\n') {
-        let line = buffer.drain(..=index).collect::<String>();
-        return Some(line.trim_end_matches(['\r', '\n']).to_string());
-    }
-    None
+fn take_sse_line(
+    buffer: &str,
+    start: usize,
+) -> Option<(usize, Option<Result<ChatStreamItem, ProviderError>>)> {
+    let end = start + buffer.get(start..)?.find('\n')?;
+    let next = end + 1;
+    let line = buffer.get(start..end)?.trim_end_matches('\r');
+    Some((next, parse_sse_line(line)))
 }
 
 fn parse_sse_line(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {
