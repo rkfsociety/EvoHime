@@ -587,6 +587,23 @@ fn bounded_lexical_retrieval(
     }
 }
 
+struct LexicalCandidate {
+    chunk_id: String,
+    document_id: String,
+    path: String,
+    language: String,
+    byte_start: i64,
+    byte_end: i64,
+    chunk_hash: String,
+    file_hash: String,
+    indexed_content: String,
+    symbol: Option<String>,
+    parent_context: String,
+    redaction: String,
+    indexed_size: i64,
+    bm25: f64,
+}
+
 fn lexical_retrieval(
     connection: &Connection,
     workspace_root: &Path,
@@ -654,120 +671,121 @@ fn lexical_retrieval(
                 limits.max_retrieval_chunks as i64
             ],
             |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, i64>(4)?,
-                    row.get::<_, i64>(5)?,
-                    row.get::<_, String>(6)?,
-                    row.get::<_, String>(7)?,
-                    row.get::<_, String>(8)?,
-                    row.get::<_, Option<String>>(9)?,
-                    row.get::<_, String>(10)?,
-                    row.get::<_, String>(11)?,
-                    row.get::<_, i64>(12)?,
-                    row.get::<_, f64>(13)?,
-                ))
+                Ok(LexicalCandidate {
+                    chunk_id: row.get(0)?,
+                    document_id: row.get(1)?,
+                    path: row.get(2)?,
+                    language: row.get(3)?,
+                    byte_start: row.get(4)?,
+                    byte_end: row.get(5)?,
+                    chunk_hash: row.get(6)?,
+                    file_hash: row.get(7)?,
+                    indexed_content: row.get(8)?,
+                    symbol: row.get(9)?,
+                    parent_context: row.get(10)?,
+                    redaction: row.get(11)?,
+                    indexed_size: row.get(12)?,
+                    bm25: row.get(13)?,
+                })
             },
         )?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
     let canonical_root = workspace_root.canonicalize()?;
-    let mut output = Vec::new();
+    let mut candidates_by_path = BTreeMap::<String, Vec<(usize, LexicalCandidate)>>::new();
     for (rank, candidate) in candidates.into_iter().enumerate() {
-        let (
-            chunk_id,
-            document_id,
-            path,
-            language,
-            byte_start,
-            byte_end,
-            chunk_hash,
-            file_hash,
-            indexed_content,
-            symbol,
-            parent_context,
-            redaction,
-            indexed_size,
-            bm25,
-        ) = candidate;
-        let mut matched_filters = vec![format!("workspace_key={workspace_key}")];
-        if !path_filter.is_empty() {
-            matched_filters.push(format!("path={path_filter}"));
-        }
-        if !language_filter.is_empty() {
-            matched_filters.push(format!("language={language_filter}"));
-        }
-        let score = -bm25;
-        let current_path = canonical_root.join(&path);
+        candidates_by_path
+            .entry(candidate.path.clone())
+            .or_default()
+            .push((rank, candidate));
+    }
+    let mut output = Vec::new();
+    for (path, candidates) in candidates_by_path {
+        let Some((_, first)) = candidates.first() else {
+            continue;
+        };
         let validation = validate_source(
             &canonical_root,
-            &current_path,
-            &file_hash,
-            indexed_size as u64,
-            byte_start as usize,
-            byte_end as usize,
+            &canonical_root.join(&path),
+            &first.file_hash,
+            first.indexed_size as u64,
+            0,
+            first.indexed_size as usize,
         );
-        let (content, lines, stale) = match validation {
-            Ok(bytes) if redaction != "full" => {
-                match decode_source_range(&bytes, byte_start as usize, byte_end as usize) {
-                    Ok((content, lines)) if content.trim() == indexed_content.trim() => {
-                        (Some(content.trim().to_string()), Some(lines), false)
-                    }
-                    _ => (None, None, true),
-                }
+        for (rank, candidate) in candidates {
+            let mut matched_filters = vec![format!("workspace_key={workspace_key}")];
+            if !path_filter.is_empty() {
+                matched_filters.push(format!("path={path_filter}"));
             }
-            Ok(_) => (None, None, false),
-            Err(_) => (None, None, true),
-        };
-        let indexed_lower = indexed_content.to_lowercase();
-        let term_frequencies = terms
-            .iter()
-            .zip(&normalized_terms)
-            .map(|(term, normalized_term)| {
-                let count = indexed_lower.matches(normalized_term).count();
-                (term.clone(), count)
-            })
-            .collect::<BTreeMap<_, _>>();
-        output.push(RetrievedChunk {
-            source_id: document_id,
-            chunk_id,
-            relative_path: path,
-            language,
-            byte_start: byte_start as u64,
-            byte_end: byte_end as u64,
-            lines,
-            chunk_hash,
-            content_hash: file_hash,
-            content,
-            symbol,
-            parent_context,
-            score,
-            score_explanation: ScoreExplanation {
-                algorithm: "bm25".into(),
-                column_weights: BTreeMap::from([
-                    ("content".into(), 1.0),
-                    ("symbol_normalized".into(), 2.0),
-                    ("canonical_path".into(), 0.5),
-                ]),
-                term_frequencies,
-                document_length: indexed_content.len(),
-                matched_filters,
-                excluded_by: Vec::new(),
-            },
-            ranking_explanation: RankingExplanation {
-                algorithm: "fts5".into(),
-                lexical_rank: Some(rank + 1),
-                vector_rank: None,
-                rrf_rank: rank + 1,
-                sources: vec!["lexical".into()],
-            },
-            stale,
-            redaction_status: redaction,
-            checker_confidence: 0.0,
-        });
+            if !language_filter.is_empty() {
+                matched_filters.push(format!("language={language_filter}"));
+            }
+            let score = -candidate.bm25;
+            let (content, lines, stale) = match validation.as_ref() {
+                Ok(bytes) if candidate.redaction != "full" => {
+                    match decode_source_range(
+                        bytes,
+                        candidate.byte_start as usize,
+                        candidate.byte_end as usize,
+                    ) {
+                        Ok((content, lines))
+                            if content.trim() == candidate.indexed_content.trim() =>
+                        {
+                            (Some(content.trim().to_string()), Some(lines), false)
+                        }
+                        _ => (None, None, true),
+                    }
+                }
+                Ok(_) => (None, None, false),
+                Err(_) => (None, None, true),
+            };
+            let indexed_lower = candidate.indexed_content.to_lowercase();
+            let term_frequencies = terms
+                .iter()
+                .zip(&normalized_terms)
+                .map(|(term, normalized_term)| {
+                    let count = indexed_lower.matches(normalized_term).count();
+                    (term.clone(), count)
+                })
+                .collect::<BTreeMap<_, _>>();
+            output.push(RetrievedChunk {
+                source_id: candidate.document_id,
+                chunk_id: candidate.chunk_id,
+                relative_path: candidate.path,
+                language: candidate.language,
+                byte_start: candidate.byte_start as u64,
+                byte_end: candidate.byte_end as u64,
+                lines,
+                chunk_hash: candidate.chunk_hash,
+                content_hash: candidate.file_hash,
+                content,
+                symbol: candidate.symbol,
+                parent_context: candidate.parent_context,
+                score,
+                score_explanation: ScoreExplanation {
+                    algorithm: "bm25".into(),
+                    column_weights: BTreeMap::from([
+                        ("content".into(), 1.0),
+                        ("symbol_normalized".into(), 2.0),
+                        ("canonical_path".into(), 0.5),
+                    ]),
+                    term_frequencies,
+                    document_length: candidate.indexed_content.len(),
+                    matched_filters,
+                    excluded_by: Vec::new(),
+                },
+                ranking_explanation: RankingExplanation {
+                    algorithm: "fts5".into(),
+                    lexical_rank: Some(rank + 1),
+                    vector_rank: None,
+                    rrf_rank: rank + 1,
+                    sources: vec!["lexical".into()],
+                },
+                stale,
+                redaction_status: candidate.redaction,
+                checker_confidence: 0.0,
+            });
+        }
     }
     output.sort_by(deterministic_rank);
     output.truncate(limits.max_retrieval_chunks);
@@ -831,38 +849,64 @@ fn decode_source_range(
             "invalid source byte range".into(),
         ));
     }
-    let (content, prefix) = if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff])
-    {
-        let little_endian = bytes.starts_with(&[0xff, 0xfe]);
-        let decode = |slice: &[u8]| -> Result<String, RagError> {
-            if !slice.len().is_multiple_of(2) {
-                return Err(RagError::InvalidWorkspace(
-                    "unaligned UTF-16 byte range".into(),
-                ));
-            }
-            let units = slice.as_chunks::<2>().0.iter().map(|pair| {
-                if little_endian {
-                    u16::from_le_bytes(*pair)
-                } else {
-                    u16::from_be_bytes(*pair)
+    let (content, preceding_newlines) =
+        if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
+            let little_endian = bytes.starts_with(&[0xff, 0xfe]);
+            let decode = |slice: &[u8]| -> Result<String, RagError> {
+                if !slice.len().is_multiple_of(2) {
+                    return Err(RagError::InvalidWorkspace(
+                        "unaligned UTF-16 byte range".into(),
+                    ));
                 }
-            });
-            char::decode_utf16(units)
-                .collect::<Result<String, _>>()
-                .map_err(|_| RagError::InvalidWorkspace("invalid UTF-16 source range".into()))
+                let units = slice.as_chunks::<2>().0.iter().map(|pair| {
+                    if little_endian {
+                        u16::from_le_bytes(*pair)
+                    } else {
+                        u16::from_be_bytes(*pair)
+                    }
+                });
+                char::decode_utf16(units)
+                    .collect::<Result<String, _>>()
+                    .map_err(|_| RagError::InvalidWorkspace("invalid UTF-16 source range".into()))
+            };
+            let start = byte_start.max(2);
+            let end = byte_end.max(2);
+            (
+                decode(&bytes[start..end])?,
+                count_utf16_newlines(&bytes[2..start], little_endian)? as u64,
+            )
+        } else {
+            (
+                String::from_utf8_lossy(&bytes[byte_start..byte_end]).into_owned(),
+                bytes[..byte_start]
+                    .iter()
+                    .filter(|byte| **byte == b'\n')
+                    .count() as u64,
+            )
         };
-        let start = byte_start.max(2);
-        let end = byte_end.max(2);
-        (decode(&bytes[start..end])?, decode(&bytes[2..start])?)
-    } else {
-        (
-            String::from_utf8_lossy(&bytes[byte_start..byte_end]).into_owned(),
-            String::from_utf8_lossy(&bytes[..byte_start]).into_owned(),
-        )
-    };
-    let start_line = prefix.bytes().filter(|byte| *byte == b'\n').count() as u64 + 1;
+    let start_line = preceding_newlines + 1;
     let end_line = start_line + content.bytes().filter(|byte| *byte == b'\n').count() as u64;
     Ok((content, [start_line, end_line]))
+}
+
+fn count_utf16_newlines(bytes: &[u8], little_endian: bool) -> Result<usize, RagError> {
+    if !bytes.len().is_multiple_of(2) {
+        return Err(RagError::InvalidWorkspace(
+            "unaligned UTF-16 byte range".into(),
+        ));
+    }
+    let units = bytes.as_chunks::<2>().0.iter().map(|pair| {
+        if little_endian {
+            u16::from_le_bytes(*pair)
+        } else {
+            u16::from_be_bytes(*pair)
+        }
+    });
+    char::decode_utf16(units).try_fold(0usize, |count, decoded| {
+        decoded
+            .map(|character| count + usize::from(character == '\n'))
+            .map_err(|_| RagError::InvalidWorkspace("invalid UTF-16 source range".into()))
+    })
 }
 
 fn deterministic_rank(left: &RetrievedChunk, right: &RetrievedChunk) -> Ordering {
@@ -991,6 +1035,7 @@ pub fn build_vector_index(
     config: &HybridConfig,
     cancelled: impl Fn() -> bool,
 ) -> Result<Option<String>, RagError> {
+    const VECTOR_BUILD_BATCH_ROWS: usize = 128;
     if !config.enabled {
         return Ok(None);
     }
@@ -1030,28 +1075,10 @@ pub fn build_vector_index(
         "DELETE FROM workspace_chunk_vectors WHERE index_id = ?1",
         [&index_id],
     )?;
-    let rows = {
-        let mut statement = connection.prepare(
-            "SELECT c.chunk_id, c.chunk_text, d.language, d.path
-             FROM document_chunks c JOIN workspace_documents d ON d.document_id = c.document_id
-             WHERE c.workspace_key = ?1 AND c.generation = ?2 AND d.status = 'active'
-               AND d.redaction_status != 'full' AND d.is_secret_path = 0
-             ORDER BY d.path, c.ordinal",
-        )?;
-        let collected = statement
-            .query_map(params![key, generation], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        collected
-    };
+    let mut last_path: Option<String> = None;
+    let mut last_ordinal = -1i64;
     let mut bytes = 0u64;
-    for (chunk_id, text, language, path) in &rows {
+    loop {
         if cancelled() {
             fail_vector_build(connection, &index_id, "cancelled")?;
             return Err(RagError::Cancelled);
@@ -1060,30 +1087,90 @@ pub fn build_vector_index(
             fail_vector_build(connection, &index_id, "failed")?;
             return Err(RagError::Timeout);
         }
-        if !config.allowed_languages.is_empty() && !config.allowed_languages.contains(language) {
-            continue;
+        let rows = {
+            let mut statement = connection.prepare(
+                "SELECT c.chunk_id, c.chunk_text, d.language, d.path, c.ordinal
+                 FROM document_chunks c
+                 JOIN workspace_documents d ON d.document_id = c.document_id
+                 WHERE c.workspace_key = ?1 AND c.generation = ?2 AND d.status = 'active'
+                   AND d.redaction_status != 'full' AND d.is_secret_path = 0
+                   AND (?3 IS NULL OR d.path > ?3 OR (d.path = ?3 AND c.ordinal > ?4))
+                 ORDER BY d.path, c.ordinal
+                 LIMIT ?5",
+            )?;
+            let rows = statement
+                .query_map(
+                    params![
+                        key,
+                        generation,
+                        last_path,
+                        last_ordinal,
+                        VECTOR_BUILD_BATCH_ROWS as i64
+                    ],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                            row.get::<_, i64>(4)?,
+                        ))
+                    },
+                )?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        let Some((_, _, _, final_path, final_ordinal)) = rows.last() else {
+            break;
+        };
+        last_path = Some(final_path.clone());
+        last_ordinal = *final_ordinal;
+
+        let mut vectors = Vec::with_capacity(rows.len());
+        for (chunk_id, text, language, path, _) in &rows {
+            if cancelled() {
+                fail_vector_build(connection, &index_id, "cancelled")?;
+                return Err(RagError::Cancelled);
+            }
+            if started.elapsed() > Duration::from_millis(config.build_timeout_ms) {
+                fail_vector_build(connection, &index_id, "failed")?;
+                return Err(RagError::Timeout);
+            }
+            if !config.allowed_languages.is_empty() && !config.allowed_languages.contains(language)
+            {
+                continue;
+            }
+            if !config.allowed_path_prefixes.is_empty()
+                && !config
+                    .allowed_path_prefixes
+                    .iter()
+                    .any(|prefix| path.starts_with(prefix))
+            {
+                continue;
+            }
+            let blob = encode_vector(&embed_local(text));
+            bytes += blob.len() as u64;
+            if bytes > config.max_build_bytes {
+                fail_vector_build(connection, &index_id, "failed")?;
+                return Err(RagError::InvalidConfig(
+                    "vector build memory budget exceeded".into(),
+                ));
+            }
+            vectors.push((chunk_id, blob));
         }
-        if !config.allowed_path_prefixes.is_empty()
-            && !config
-                .allowed_path_prefixes
-                .iter()
-                .any(|prefix| path.starts_with(prefix))
-        {
-            continue;
+        if !vectors.is_empty() {
+            let transaction = connection.transaction()?;
+            {
+                let mut insert = transaction.prepare_cached(
+                    "INSERT INTO workspace_chunk_vectors(index_id, chunk_id, vector)
+                     VALUES (?1, ?2, ?3)",
+                )?;
+                for (chunk_id, blob) in vectors {
+                    insert.execute(params![index_id, chunk_id, blob])?;
+                }
+            }
+            transaction.commit()?;
         }
-        let vector = embed_local(text);
-        let blob = encode_vector(&vector);
-        bytes += blob.len() as u64;
-        if bytes > config.max_build_bytes {
-            fail_vector_build(connection, &index_id, "failed")?;
-            return Err(RagError::InvalidConfig(
-                "vector build memory budget exceeded".into(),
-            ));
-        }
-        connection.execute(
-            "INSERT INTO workspace_chunk_vectors(index_id, chunk_id, vector) VALUES (?1, ?2, ?3)",
-            params![index_id, chunk_id, blob],
-        )?;
     }
     let count: i64 = connection.query_row(
         "SELECT COUNT(*) FROM workspace_chunk_vectors WHERE index_id = ?1",
@@ -1153,14 +1240,70 @@ fn decode_vector(bytes: &[u8]) -> Option<Vec<f32>> {
     if bytes.len() != VECTOR_DIMENSION * 4 {
         return None;
     }
-    Some(
-        bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|chunk| f32::from_le_bytes(*chunk))
-            .collect(),
-    )
+    let vector = bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
+        .collect::<Vec<_>>();
+    vector
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(vector)
+}
+
+#[derive(Debug)]
+struct ScoredVector {
+    chunk_id: String,
+    score: f64,
+}
+
+impl PartialEq for ScoredVector {
+    fn eq(&self, other: &Self) -> bool {
+        self.chunk_id == other.chunk_id && self.score.total_cmp(&other.score) == Ordering::Equal
+    }
+}
+
+impl Eq for ScoredVector {}
+
+impl PartialOrd for ScoredVector {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ScoredVector {
+    fn cmp(&self, other: &Self) -> Ordering {
+        vector_score_order(self, other)
+    }
+}
+
+fn vector_score_order(left: &ScoredVector, right: &ScoredVector) -> Ordering {
+    right
+        .score
+        .total_cmp(&left.score)
+        .then_with(|| left.chunk_id.cmp(&right.chunk_id))
+}
+
+fn push_top_vector_score(
+    heap: &mut std::collections::BinaryHeap<ScoredVector>,
+    candidate: ScoredVector,
+    limit: usize,
+) {
+    if limit == 0 {
+        return;
+    }
+    if heap.len() < limit {
+        heap.push(candidate);
+        return;
+    }
+    if heap
+        .peek()
+        .is_some_and(|worst| vector_score_order(&candidate, worst) == Ordering::Less)
+    {
+        let _ = heap.pop();
+        heap.push(candidate);
+    }
 }
 
 struct HybridRetrievalInput<'a> {
@@ -1232,19 +1375,19 @@ fn hybrid_retrieval(
         return Err(RagError::InvalidConfig("vector_index_incompatible".into()));
     }
     let query_vector = embed_local(query);
-    let mut statement = connection.prepare(
-        "SELECT v.chunk_id, v.vector FROM workspace_chunk_vectors v
-         JOIN document_chunks c ON c.chunk_id = v.chunk_id
-         JOIN workspace_documents d ON d.document_id = c.document_id
-         WHERE v.index_id = ?1 AND c.workspace_key = ?2 AND c.generation = ?3
-           AND d.status = 'active' AND d.redaction_status != 'full' AND d.is_secret_path = 0
-           AND (?4 = '' OR d.path = ?4 OR d.path LIKE ?4 || '/%')
-           AND (?5 = '' OR d.language = ?5)",
-    )?;
     let path_filter = filters.path.as_deref().unwrap_or("");
     let language_filter = filters.language.as_deref().unwrap_or("");
-    let mut vector_scores = statement
-        .query_map(
+    let vector_scores = {
+        let mut statement = connection.prepare(
+            "SELECT v.chunk_id, v.vector FROM workspace_chunk_vectors v
+             JOIN document_chunks c ON c.chunk_id = v.chunk_id
+             JOIN workspace_documents d ON d.document_id = c.document_id
+             WHERE v.index_id = ?1 AND c.workspace_key = ?2 AND c.generation = ?3
+               AND d.status = 'active' AND d.redaction_status != 'full' AND d.is_secret_path = 0
+               AND (?4 = '' OR d.path = ?4 OR d.path LIKE ?4 || '/%')
+               AND (?5 = '' OR d.language = ?5)",
+        )?;
+        let rows = statement.query_map(
             params![
                 index_id,
                 workspace_key,
@@ -1253,20 +1396,28 @@ fn hybrid_retrieval(
                 language_filter
             ],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )?
-        .filter_map(Result::ok)
-        .filter_map(|(id, blob)| {
-            decode_vector(&blob).map(|vector| (id, dot(&query_vector, &vector)))
-        })
-        .collect::<Vec<_>>();
-    vector_scores.sort_by(|left, right| {
-        right
-            .1
-            .partial_cmp(&left.1)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| left.0.cmp(&right.0))
-    });
-    vector_scores.truncate(limits.max_retrieval_chunks);
+        )?;
+        let mut top = std::collections::BinaryHeap::with_capacity(limits.max_retrieval_chunks);
+        for row in rows {
+            let (chunk_id, blob) = row?;
+            if let Some(vector) = decode_vector(&blob) {
+                push_top_vector_score(
+                    &mut top,
+                    ScoredVector {
+                        chunk_id,
+                        score: dot(&query_vector, &vector),
+                    },
+                    limits.max_retrieval_chunks,
+                );
+            }
+        }
+        let mut scores = top.into_vec();
+        scores.sort_by(vector_score_order);
+        scores
+            .into_iter()
+            .map(|scored| (scored.chunk_id, scored.score))
+            .collect::<Vec<_>>()
+    };
     let vector_ranks = vector_scores
         .iter()
         .enumerate()
@@ -1441,6 +1592,63 @@ fn load_vector_candidate(
         redaction_status,
         checker_confidence: 0.0,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_line_ranges_count_prefix_without_decoding_utf8_text() {
+        let bytes = "a\nb\nc\n".as_bytes();
+        assert_eq!(
+            decode_source_range(bytes, 4, 6).unwrap(),
+            ("c\n".into(), [3, 4])
+        );
+    }
+
+    #[test]
+    fn source_line_ranges_count_utf16_prefix_and_reject_invalid_surrogates() {
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend("a\nb\nc\n".encode_utf16().flat_map(u16::to_le_bytes));
+        assert_eq!(
+            decode_source_range(&bytes, 10, 14).unwrap(),
+            ("c\n".into(), [3, 4])
+        );
+
+        let invalid_prefix = [0xff, 0xfe, b'a', 0, 0x00, 0xd8, b'b', 0];
+        assert!(decode_source_range(&invalid_prefix, 6, 8).is_err());
+    }
+
+    #[test]
+    fn vector_top_k_keeps_highest_scores_with_deterministic_ties() {
+        let mut top = std::collections::BinaryHeap::new();
+        for (chunk_id, score) in [("z", 0.2), ("b", 0.9), ("a", 0.9), ("c", 0.4)] {
+            push_top_vector_score(
+                &mut top,
+                ScoredVector {
+                    chunk_id: chunk_id.into(),
+                    score,
+                },
+                3,
+            );
+        }
+        let mut top = top.into_vec();
+        top.sort_by(vector_score_order);
+        assert_eq!(
+            top.into_iter()
+                .map(|item| item.chunk_id)
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
+    }
+
+    #[test]
+    fn vector_decoder_rejects_non_finite_values() {
+        let mut bytes = vec![0; VECTOR_DIMENSION * 4];
+        bytes[..4].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(decode_vector(&bytes).is_none());
+    }
 }
 
 fn dot(left: &[f32], right: &[f32]) -> f64 {

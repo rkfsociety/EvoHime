@@ -100,20 +100,19 @@ pub fn index_workspace(
             }
             let file_hash = sha256_hex(&snapshot.bytes);
             let reused_document = if !rebuild {
-                active_generation
-                    .and_then(|active| {
-                        copy_unchanged_document(
-                            connection,
-                            &key,
-                            active,
-                            generation,
-                            &relative,
-                            &file_hash,
-                            snapshot.modified_ms,
-                        )
-                        .transpose()
-                    })
-                    .transpose()?
+                if let Some(active) = active_generation {
+                    copy_unchanged_document(
+                        connection,
+                        &key,
+                        active,
+                        generation,
+                        &relative,
+                        &file_hash,
+                        snapshot.modified_ms,
+                    )?
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -139,7 +138,9 @@ pub fn index_workspace(
                     ));
                 }
                 chunks += pending.chunks.len();
-                insert_document(connection, &key, generation, &pending)?;
+                let transaction = connection.transaction()?;
+                insert_document(&transaction, &key, generation, &pending)?;
+                transaction.commit()?;
                 indexed += 1;
             }
             if last_progress.elapsed() >= Duration::from_millis(config.progress_interval_ms) {
@@ -230,7 +231,7 @@ pub fn active_generation(
 }
 
 fn copy_unchanged_document(
-    connection: &Connection,
+    connection: &mut Connection,
     workspace_key: &str,
     old_generation: i64,
     new_generation: i64,
@@ -275,15 +276,18 @@ fn copy_unchanged_document(
     else {
         return Ok(None);
     };
+    let transaction = connection.transaction()?;
     let new_id = stable_id(workspace_key, new_generation, path, "document");
-    connection.execute(
-        "INSERT INTO workspace_documents
+    transaction
+        .prepare_cached(
+            "INSERT INTO workspace_documents
          (document_id, workspace_key, path, generation, language, mime, file_hash,
           size_bytes, encoding, decode_status, last_modified, indexed_at, status,
           redaction_status, is_secret_path)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                  'active', ?13, ?14)",
-        params![
+        )?
+        .execute(params![
             new_id,
             workspace_key,
             path,
@@ -298,9 +302,8 @@ fn copy_unchanged_document(
             now_ms(),
             redaction,
             secret
-        ],
-    )?;
-    let mut statement = connection.prepare(
+        ])?;
+    let mut statement = transaction.prepare_cached(
         "SELECT ordinal, chunk_hash, byte_start, byte_end, line_start, line_end,
                 parent_context, chunk_text, symbol, symbol_normalized, token_count,
                 byte_count, strategy_version
@@ -326,6 +329,19 @@ fn copy_unchanged_document(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     drop(statement);
+    let mut chunk_insert = transaction.prepare_cached(
+        "INSERT INTO document_chunks
+         (chunk_id, document_id, workspace_key, generation, ordinal, chunk_hash,
+          byte_start, byte_end, line_start, line_end, parent_context, chunk_text,
+          symbol, symbol_normalized, token_count, byte_count, strategy_version)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                 ?13, ?14, ?15, ?16, ?17)",
+    )?;
+    let mut fts_insert = transaction.prepare_cached(
+        "INSERT INTO workspace_chunks_fts
+         (chunk_text, symbol_normalized, path, parent_context, chunk_id, workspace_key, generation)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    )?;
     for row in &rows {
         let chunk_id = stable_id(
             workspace_key,
@@ -333,35 +349,27 @@ fn copy_unchanged_document(
             &format!("{path}:{}", row.0),
             "chunk",
         );
-        connection.execute(
-            "INSERT INTO document_chunks
-             (chunk_id, document_id, workspace_key, generation, ordinal, chunk_hash,
-              byte_start, byte_end, line_start, line_end, parent_context, chunk_text,
-              symbol, symbol_normalized, token_count, byte_count, strategy_version)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                     ?13, ?14, ?15, ?16, ?17)",
-            params![
-                chunk_id,
-                new_id,
-                workspace_key,
-                new_generation,
-                row.0,
-                row.1,
-                row.2,
-                row.3,
-                row.4,
-                row.5,
-                row.6,
-                row.7,
-                row.8,
-                row.9,
-                row.10,
-                row.11,
-                row.12
-            ],
-        )?;
+        chunk_insert.execute(params![
+            chunk_id,
+            new_id,
+            workspace_key,
+            new_generation,
+            row.0,
+            row.1,
+            row.2,
+            row.3,
+            row.4,
+            row.5,
+            row.6,
+            row.7,
+            row.8,
+            row.9,
+            row.10,
+            row.11,
+            row.12
+        ])?;
         insert_fts(FtsInsertInput {
-            connection,
+            statement: &mut fts_insert,
             chunk_id: &chunk_id,
             workspace_key,
             generation: new_generation,
@@ -371,7 +379,11 @@ fn copy_unchanged_document(
             parent: &row.6,
         })?;
     }
-    Ok(Some(rows.len()))
+    let reused_chunks = rows.len();
+    drop(chunk_insert);
+    drop(fts_insert);
+    transaction.commit()?;
+    Ok(Some(reused_chunks))
 }
 
 fn insert_document(
@@ -386,14 +398,16 @@ fn insert_document(
         &document.relative_path,
         "document",
     );
-    connection.execute(
-        "INSERT INTO workspace_documents
+    connection
+        .prepare_cached(
+            "INSERT INTO workspace_documents
          (document_id, workspace_key, path, generation, language, mime, file_hash,
           size_bytes, encoding, decode_status, last_modified, indexed_at, status,
           redaction_status, is_secret_path)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                  'active', 'none', 0)",
-        params![
+        )?
+        .execute(params![
             document_id,
             workspace_key,
             document.relative_path,
@@ -406,7 +420,19 @@ fn insert_document(
             document.decode_status,
             document.last_modified,
             now_ms()
-        ],
+        ])?;
+    let mut chunk_insert = connection.prepare_cached(
+        "INSERT INTO document_chunks
+         (chunk_id, document_id, workspace_key, generation, ordinal, chunk_hash,
+          byte_start, byte_end, line_start, line_end, parent_context, chunk_text,
+          symbol, symbol_normalized, token_count, byte_count, strategy_version)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                 ?13, ?14, ?15, ?16, ?17)",
+    )?;
+    let mut fts_insert = connection.prepare_cached(
+        "INSERT INTO workspace_chunks_fts
+         (chunk_text, symbol_normalized, path, parent_context, chunk_id, workspace_key, generation)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
     )?;
     for chunk in &document.chunks {
         let chunk_id = stable_id(
@@ -415,35 +441,27 @@ fn insert_document(
             &format!("{}:{}", document.relative_path, chunk.ordinal),
             "chunk",
         );
-        connection.execute(
-            "INSERT INTO document_chunks
-             (chunk_id, document_id, workspace_key, generation, ordinal, chunk_hash,
-              byte_start, byte_end, line_start, line_end, parent_context, chunk_text,
-              symbol, symbol_normalized, token_count, byte_count, strategy_version)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                     ?13, ?14, ?15, ?16, ?17)",
-            params![
-                chunk_id,
-                document_id,
-                workspace_key,
-                generation,
-                chunk.ordinal as i64,
-                chunk.chunk_hash,
-                chunk.byte_start as i64,
-                chunk.byte_end as i64,
-                chunk.line_start as i64,
-                chunk.line_end as i64,
-                chunk.parent_context,
-                chunk.text,
-                chunk.symbol,
-                chunk.symbol_normalized,
-                estimate_tokens(&chunk.text) as i64,
-                chunk.text.len() as i64,
-                CHUNKER_VERSION
-            ],
-        )?;
+        chunk_insert.execute(params![
+            chunk_id,
+            document_id,
+            workspace_key,
+            generation,
+            chunk.ordinal as i64,
+            chunk.chunk_hash,
+            chunk.byte_start as i64,
+            chunk.byte_end as i64,
+            chunk.line_start as i64,
+            chunk.line_end as i64,
+            chunk.parent_context,
+            chunk.text,
+            chunk.symbol,
+            chunk.symbol_normalized,
+            estimate_tokens(&chunk.text) as i64,
+            chunk.text.len() as i64,
+            CHUNKER_VERSION
+        ])?;
         insert_fts(FtsInsertInput {
-            connection,
+            statement: &mut fts_insert,
             chunk_id: &chunk_id,
             workspace_key,
             generation,
@@ -456,8 +474,8 @@ fn insert_document(
     Ok(())
 }
 
-struct FtsInsertInput<'a> {
-    connection: &'a Connection,
+struct FtsInsertInput<'a, 'connection> {
+    statement: &'a mut rusqlite::CachedStatement<'connection>,
     chunk_id: &'a str,
     workspace_key: &'a str,
     generation: i64,
@@ -467,9 +485,9 @@ struct FtsInsertInput<'a> {
     parent: &'a str,
 }
 
-fn insert_fts(input: FtsInsertInput<'_>) -> Result<(), RagError> {
+fn insert_fts(input: FtsInsertInput<'_, '_>) -> Result<(), RagError> {
     let FtsInsertInput {
-        connection,
+        statement,
         chunk_id,
         workspace_key,
         generation,
@@ -478,20 +496,15 @@ fn insert_fts(input: FtsInsertInput<'_>) -> Result<(), RagError> {
         path,
         parent,
     } = input;
-    connection.execute(
-        "INSERT INTO workspace_chunks_fts
-         (chunk_text, symbol_normalized, path, parent_context, chunk_id, workspace_key, generation)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            text,
-            symbol,
-            path,
-            parent,
-            chunk_id,
-            workspace_key,
-            generation
-        ],
-    )?;
+    statement.execute(params![
+        text,
+        symbol,
+        path,
+        parent,
+        chunk_id,
+        workspace_key,
+        generation
+    ])?;
     Ok(())
 }
 

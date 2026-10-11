@@ -445,6 +445,39 @@ fn vector_publication_is_atomic_and_hybrid_has_bounded_rrf_explanation() {
 }
 
 #[test]
+fn vector_build_paginates_chunks_without_skipping_rows() {
+    let mut fixture = Fixture::new("hybrid-pagination");
+    for index in 0..130 {
+        fixture.write(
+            &format!("src/generated/file-{index:03}.rs"),
+            &format!("pub fn function_{index}() {{}}\n"),
+        );
+    }
+    fixture.index();
+    let index_id = build_vector_index(
+        fixture.database.connection_mut(),
+        &fixture.root,
+        &HybridConfig {
+            enabled: true,
+            ..HybridConfig::default()
+        },
+        || false,
+    )
+    .unwrap()
+    .unwrap();
+    let vector_count: i64 = fixture
+        .database
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM workspace_chunk_vectors WHERE index_id = ?1",
+            [&index_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(vector_count, 130);
+}
+
+#[test]
 fn repeated_chunks_keep_their_persisted_byte_ranges() {
     let mut fixture = Fixture::new("repeated-range");
     fixture.write(

@@ -5,6 +5,7 @@ import {
   applyInitialConversationHistory,
   applyConversationEvents,
   batchAssistantDeltas,
+  conversationEvents,
   createConversationProjection,
   prependConversationEvents,
   projectUsage,
@@ -43,6 +44,16 @@ describe('conversation projection', () => {
       state: 'gap', expectedSequence: 2, receivedSequence: 3
     })
     expect(applyConversationEvents(state, [event(1, 'corrupt', 'task_started')]).sync.state).toBe('conflict')
+  })
+
+  it('indexes events within a page before checking duplicate IDs and sequences', () => {
+    const projected = applyConversationEvents(createConversationProjection('conversation-1'), [
+      event(1, 'event-1', 'task_started'),
+      event(2, 'event-2', 'task_progress'),
+      event(2, 'corrupt-event-2', 'task_progress')
+    ])
+    expect(projected.liveEvents.map((item) => item.sequence)).toEqual([1, 2])
+    expect(projected.sync).toEqual({ state: 'conflict', sequence: 2 })
   })
 
   it('keeps startup gaps quiet until initial history arrives, then clears a recovered gap', () => {
@@ -133,6 +144,22 @@ describe('conversation projection', () => {
     expect(projected.historyEvents.map((item) => item.sequence)).toEqual([0])
     expect(projected.liveEvents.map((item) => item.sequence)).toEqual([1])
     expect(projected.lastSequence).toBe(1)
+  })
+
+  it('merges paged history and live events in sequence order', () => {
+    let state = applyInitialConversationHistory(createConversationProjection('conversation-1'), [
+      event(3, 'event-3', 'task_progress'),
+      event(4, 'event-4', 'task_progress')
+    ])
+    state = applyConversationEvents(state, [event(5, 'event-5', 'task_progress')])
+    state = prependConversationEvents(state, [
+      event(1, 'event-1', 'task_started'),
+      event(2, 'event-2', 'task_progress')
+    ])
+    const events = conversationEvents(state)
+    expect(events.map((item) => item.sequence)).toEqual([1, 2, 3, 4, 5])
+    expect(conversationEvents(state)).toBe(events)
+    expect(state.lastSequence).toBe(5)
   })
 
   it('keeps loaded history when live events arrive and isolates Core generations in the cache key', () => {
