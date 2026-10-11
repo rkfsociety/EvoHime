@@ -411,6 +411,12 @@ pub struct ContextBuildResult {
 }
 
 #[derive(Debug, Clone)]
+struct StableFile {
+    bytes: Vec<u8>,
+    modified_ms: i64,
+}
+
+#[derive(Debug, Clone)]
 struct DecodedFile {
     bytes: Vec<u8>,
     text: String,
@@ -835,11 +841,11 @@ fn collect_files(root: &Path, config: &IndexConfig) -> Result<(Vec<PathBuf>, usi
     Ok((files, excluded))
 }
 
-fn stable_read(
+fn stable_read_bytes(
     root: &Path,
     path: &Path,
     config: &IndexConfig,
-) -> Result<Option<DecodedFile>, RagError> {
+) -> Result<Option<StableFile>, RagError> {
     for _ in 0..=config.stable_read_retries {
         let before_path = path.canonicalize()?;
         if !before_path.starts_with(root) || before_path != path.canonicalize()? {
@@ -867,18 +873,8 @@ fn stable_read(
             {
                 return Ok(None);
             }
-            let (text, encoding, decode_status) = decode_text(&bytes);
-            if text.lines().any(|line| line.len() > config.max_line_bytes) {
-                return Ok(None);
-            }
-            if contains_secret_content(&text) {
-                return Ok(None);
-            }
-            return Ok(Some(DecodedFile {
+            return Ok(Some(StableFile {
                 bytes,
-                text,
-                encoding,
-                decode_status,
                 modified_ms: file_modified_ms(&after),
             }));
         }
@@ -886,6 +882,36 @@ fn stable_read(
     Err(RagError::InvalidWorkspace(
         "unstable source snapshot after bounded retries".into(),
     ))
+}
+
+fn validate_reusable_bytes(bytes: &[u8], config: &IndexConfig) -> Option<&'static str> {
+    if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
+        let (text, _, status) = decode_text(bytes);
+        return index_text_is_allowed(&text, config).then_some(status);
+    }
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return index_text_is_allowed(text, config).then_some("valid");
+    }
+    let (text, _, status) = decode_text(bytes);
+    index_text_is_allowed(&text, config).then_some(status)
+}
+
+fn decode_stable_file(snapshot: StableFile, config: &IndexConfig) -> Option<DecodedFile> {
+    let (text, encoding, decode_status) = decode_text(&snapshot.bytes);
+    if !index_text_is_allowed(&text, config) {
+        return None;
+    }
+    Some(DecodedFile {
+        bytes: snapshot.bytes,
+        text,
+        encoding,
+        decode_status,
+        modified_ms: snapshot.modified_ms,
+    })
+}
+
+fn index_text_is_allowed(text: &str, config: &IndexConfig) -> bool {
+    !text.lines().any(|line| line.len() > config.max_line_bytes) && !contains_secret_content(text)
 }
 
 fn contains_secret_content(text: &str) -> bool {

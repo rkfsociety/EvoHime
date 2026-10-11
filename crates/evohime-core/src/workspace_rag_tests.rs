@@ -266,6 +266,39 @@ fn generation_publication_retrieval_and_incremental_reuse_work() {
 }
 
 #[test]
+fn new_documents_are_indexed_in_bounded_batches_and_reused_incrementally() {
+    let mut fixture = Fixture::new("index-batches");
+    for index in 0..20 {
+        fixture.write(&format!("docs/{index:02}.md"), "batched evidence\n");
+    }
+
+    let first = fixture.index();
+    assert_eq!(first.indexed_files, 20);
+    assert_eq!(first.reused_files, 0);
+    assert!(first.chunks >= 20);
+
+    let second = fixture.index();
+    assert_eq!(second.indexed_files, 20);
+    assert_eq!(second.reused_files, 20);
+    assert_eq!(second.chunks, first.chunks);
+}
+
+#[test]
+fn reusable_source_still_checks_secret_and_line_limits() {
+    let config = IndexConfig::default();
+    assert_eq!(
+        validate_reusable_bytes(b"public evidence\n", &config),
+        Some("valid")
+    );
+    assert_eq!(
+        validate_reusable_bytes(b"api_key = 'must-not-be-indexed'", &config),
+        None
+    );
+    let long_line = vec![b'x'; config.max_line_bytes + 1];
+    assert_eq!(validate_reusable_bytes(&long_line, &config), None);
+}
+
+#[test]
 fn cancelled_run_keeps_old_published_generation() {
     let mut fixture = Fixture::new("cancel");
     fixture.write("README.md", "# One\nold evidence\n");

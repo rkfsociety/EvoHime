@@ -236,9 +236,8 @@ async fn read_rg_matches(child: &mut Child, limit: usize) -> Result<Vec<Value>, 
         pending.extend_from_slice(&chunk[..read]);
 
         let mut consumed = 0;
-        while let Some(relative_newline) = pending[consumed..]
-            .iter()
-            .position(|byte| *byte == b'\n')
+        while let Some(relative_newline) =
+            pending[consumed..].iter().position(|byte| *byte == b'\n')
         {
             let newline = consumed + relative_newline;
             if processed_bytes.saturating_add(newline + 1) > MAX_RG_STDOUT_BYTES {
@@ -490,28 +489,36 @@ fn path_matches_glob(path: &Path, pattern: &str) -> bool {
 }
 
 fn wildcard_match(text: &str, pattern: &str) -> bool {
-    let mut text_chars = text.chars();
-    let mut pattern_chars = pattern.chars().peekable();
-    while let Some(expected) = pattern_chars.next() {
-        if expected == '*' {
-            if pattern_chars.peek().is_none() {
-                return true;
-            }
-            let rest: String = pattern_chars.collect();
-            let remainder: String = text_chars.collect();
-            for index in 0..=remainder.len() {
-                if remainder.is_char_boundary(index) && wildcard_match(&remainder[index..], &rest) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        match text_chars.next() {
-            Some(actual) if actual == expected => {}
-            _ => return false,
-        }
+    if !pattern.contains('*') {
+        return text == pattern;
     }
-    text_chars.next().is_none()
+
+    let starts_wildcard = pattern.starts_with('*');
+    let ends_wildcard = pattern.ends_with('*');
+    let segments = pattern
+        .split('*')
+        .filter(|segment| !segment.is_empty())
+        .collect::<Vec<_>>();
+    if segments.is_empty() {
+        return true;
+    }
+
+    let mut cursor = 0;
+    for (index, segment) in segments.iter().enumerate() {
+        let remaining = &text[cursor..];
+        if index == 0 && !starts_wildcard {
+            if !remaining.starts_with(segment) {
+                return false;
+            }
+            cursor += segment.len();
+            continue;
+        }
+        let Some(offset) = remaining.find(segment) else {
+            return false;
+        };
+        cursor += offset + segment.len();
+    }
+    ends_wildcard || cursor == text.len()
 }
 
 fn search_result(matches: Vec<Value>, engine: &str) -> ToolResult {
@@ -636,6 +643,12 @@ mod tests {
         assert!(path_matches_glob(Path::new("foo.rs"), "foo.*"));
         assert!(wildcard_match("readme.md", "read*.md"));
         assert!(!wildcard_match("readme.txt", "read*.md"));
+        assert!(wildcard_match("日本語.md", "日*語.md"));
+        assert!(wildcard_match("read?e.md", "read?e.md"));
+        assert!(!wildcard_match("readme.md", "read?e.md"));
+        let text = "a".repeat(1_000) + "b";
+        let pattern = "*a".repeat(80) + "c";
+        assert!(!wildcard_match(&text, &pattern));
     }
 
     #[test]

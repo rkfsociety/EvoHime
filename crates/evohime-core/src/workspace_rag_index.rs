@@ -3,6 +3,18 @@ use super::*;
 // Bound write-lock duration while amortizing transaction setup for reused files.
 const UNCHANGED_DOCUMENT_BATCH_SIZE: usize = 32;
 const UNCHANGED_DOCUMENT_BATCH_CHUNK_LIMIT: usize = 2_048;
+const NEW_DOCUMENT_BATCH_SIZE: usize = 8;
+const NEW_DOCUMENT_BATCH_CHUNK_LIMIT: usize = 512;
+
+struct PendingIndexBatches<'a> {
+    unchanged: &'a mut Vec<(String, String, i64)>,
+    unchanged_chunks: &'a mut usize,
+    new: &'a mut Vec<PendingDocument>,
+    new_chunks: &'a mut usize,
+    indexed: &'a mut usize,
+    reused: &'a mut usize,
+    chunks: &'a mut usize,
+}
 
 pub fn index_workspace(
     connection: &mut Connection,
@@ -66,6 +78,8 @@ pub fn index_workspace(
         let mut errors = Vec::new();
         let mut unchanged_batch = Vec::with_capacity(UNCHANGED_DOCUMENT_BATCH_SIZE);
         let mut unchanged_batch_chunks = 0usize;
+        let mut new_batch = Vec::with_capacity(NEW_DOCUMENT_BATCH_SIZE);
+        let mut new_batch_chunks = 0usize;
         let mut last_progress = Instant::now()
             .checked_sub(Duration::from_millis(config.progress_interval_ms))
             .unwrap_or_else(Instant::now);
@@ -86,7 +100,7 @@ pub fn index_workspace(
                 excluded += 1;
                 continue;
             };
-            let snapshot = match stable_read(&canonical_root, path, config) {
+            let snapshot = match stable_read_bytes(&canonical_root, path, config) {
                 Ok(Some(snapshot)) => snapshot,
                 Ok(None) => {
                     excluded += 1;
@@ -94,16 +108,6 @@ pub fn index_workspace(
                 }
                 Err(error) => return Err(error),
             };
-            if snapshot.decode_status == "lossy"
-                && matches!(
-                    language,
-                    "rust" | "typescript" | "javascript" | "json" | "toml" | "yaml"
-                )
-            {
-                errors.push(format!("{relative}:invalid_structured_encoding"));
-                excluded += 1;
-                continue;
-            }
             let file_hash = sha256_hex(&snapshot.bytes);
             let reusable_chunks = if !rebuild {
                 if let Some(active) = active_generation {
@@ -115,6 +119,20 @@ pub fn index_workspace(
                 None
             };
             if let Some(reused_chunks) = reusable_chunks {
+                let Some(decode_status) = validate_reusable_bytes(&snapshot.bytes, config) else {
+                    excluded += 1;
+                    continue;
+                };
+                if decode_status == "lossy"
+                    && matches!(
+                        language,
+                        "rust" | "typescript" | "javascript" | "json" | "toml" | "yaml"
+                    )
+                {
+                    errors.push(format!("{relative}:invalid_structured_encoding"));
+                    excluded += 1;
+                    continue;
+                }
                 unchanged_batch.push((relative.clone(), file_hash, snapshot.modified_ms));
                 unchanged_batch_chunks += reused_chunks;
                 if unchanged_batch.len() >= UNCHANGED_DOCUMENT_BATCH_SIZE
@@ -134,6 +152,20 @@ pub fn index_workspace(
                     unchanged_batch_chunks = 0;
                 }
             } else {
+                let Some(snapshot) = decode_stable_file(snapshot, config) else {
+                    excluded += 1;
+                    continue;
+                };
+                if snapshot.decode_status == "lossy"
+                    && matches!(
+                        language,
+                        "rust" | "typescript" | "javascript" | "json" | "toml" | "yaml"
+                    )
+                {
+                    errors.push(format!("{relative}:invalid_structured_encoding"));
+                    excluded += 1;
+                    continue;
+                }
                 let pending = PendingDocument {
                     relative_path: relative.clone(),
                     language: language.into(),
@@ -145,20 +177,41 @@ pub fn index_workspace(
                     last_modified: snapshot.modified_ms,
                     chunks: chunk_document(path, language, &snapshot, config),
                 };
-                if chunks + unchanged_batch_chunks + pending.chunks.len()
+                if chunks + unchanged_batch_chunks + new_batch_chunks + pending.chunks.len()
                     > config.max_chunks_per_run
                 {
                     return Err(RagError::InvalidConfig(
                         "index run chunk budget exceeded".into(),
                     ));
                 }
-                chunks += pending.chunks.len();
-                let transaction = connection.transaction()?;
-                insert_document(&transaction, &key, generation, &pending)?;
-                transaction.commit()?;
-                indexed += 1;
+                new_batch_chunks += pending.chunks.len();
+                new_batch.push(pending);
+                if new_batch.len() >= NEW_DOCUMENT_BATCH_SIZE
+                    || new_batch_chunks >= NEW_DOCUMENT_BATCH_CHUNK_LIMIT
+                {
+                    insert_document_batch(connection, &key, generation, &new_batch)?;
+                    indexed += new_batch.len();
+                    chunks += new_batch_chunks;
+                    new_batch.clear();
+                    new_batch_chunks = 0;
+                }
             }
             if last_progress.elapsed() >= Duration::from_millis(config.progress_interval_ms) {
+                flush_index_batches(
+                    connection,
+                    &key,
+                    generation,
+                    active_generation,
+                    PendingIndexBatches {
+                        unchanged: &mut unchanged_batch,
+                        unchanged_chunks: &mut unchanged_batch_chunks,
+                        new: &mut new_batch,
+                        new_chunks: &mut new_batch_chunks,
+                        indexed: &mut indexed,
+                        reused: &mut reused,
+                        chunks: &mut chunks,
+                    },
+                )?;
                 progress(IndexProgress {
                     run_id: run_id.clone(),
                     phase: "indexing".into(),
@@ -171,18 +224,21 @@ pub fn index_workspace(
             }
         }
 
-        if !unchanged_batch.is_empty() {
-            copy_unchanged_document_batch(
-                connection,
-                &key,
-                active_generation.ok_or(RagError::IndexUnavailable)?,
-                generation,
-                &unchanged_batch,
-            )?;
-            indexed += unchanged_batch.len();
-            reused += unchanged_batch.len();
-            chunks += unchanged_batch_chunks;
-        }
+        flush_index_batches(
+            connection,
+            &key,
+            generation,
+            active_generation,
+            PendingIndexBatches {
+                unchanged: &mut unchanged_batch,
+                unchanged_chunks: &mut unchanged_batch_chunks,
+                new: &mut new_batch,
+                new_chunks: &mut new_batch_chunks,
+                indexed: &mut indexed,
+                reused: &mut reused,
+                chunks: &mut chunks,
+            },
+        )?;
 
         assert_generation_consistent(connection, &key, generation)?;
         publish_generation(PublishGenerationInput {
@@ -303,6 +359,51 @@ fn copy_unchanged_document_batch(
         }
     }
     transaction.commit()?;
+    Ok(())
+}
+
+fn insert_document_batch(
+    connection: &mut Connection,
+    workspace_key: &str,
+    generation: i64,
+    documents: &[PendingDocument],
+) -> Result<(), RagError> {
+    let transaction = connection.transaction()?;
+    for document in documents {
+        insert_document(&transaction, workspace_key, generation, document)?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+fn flush_index_batches(
+    connection: &mut Connection,
+    workspace_key: &str,
+    generation: i64,
+    active_generation: Option<i64>,
+    batches: PendingIndexBatches<'_>,
+) -> Result<(), RagError> {
+    if !batches.unchanged.is_empty() {
+        copy_unchanged_document_batch(
+            connection,
+            workspace_key,
+            active_generation.ok_or(RagError::IndexUnavailable)?,
+            generation,
+            batches.unchanged,
+        )?;
+        *batches.indexed += batches.unchanged.len();
+        *batches.reused += batches.unchanged.len();
+        *batches.chunks += *batches.unchanged_chunks;
+        batches.unchanged.clear();
+        *batches.unchanged_chunks = 0;
+    }
+    if !batches.new.is_empty() {
+        insert_document_batch(connection, workspace_key, generation, batches.new)?;
+        *batches.indexed += batches.new.len();
+        *batches.chunks += *batches.new_chunks;
+        batches.new.clear();
+        *batches.new_chunks = 0;
+    }
     Ok(())
 }
 

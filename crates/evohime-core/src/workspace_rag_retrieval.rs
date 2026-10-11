@@ -712,6 +712,11 @@ fn lexical_retrieval(
             0,
             first.indexed_size as usize,
         );
+        let line_index = validation
+            .as_ref()
+            .ok()
+            .map(|bytes| source_line_breaks(bytes))
+            .unwrap_or_default();
         for (rank, candidate) in candidates {
             let mut matched_filters = vec![format!("workspace_key={workspace_key}")];
             if !path_filter.is_empty() {
@@ -723,10 +728,11 @@ fn lexical_retrieval(
             let score = -candidate.bm25;
             let (content, lines, stale) = match validation.as_ref() {
                 Ok(bytes) if candidate.redaction != "full" => {
-                    match decode_source_range(
+                    match decode_source_range_with_line_breaks(
                         bytes,
                         candidate.byte_start as usize,
                         candidate.byte_end as usize,
+                        &line_index,
                     ) {
                         Ok((content, lines))
                             if content.trim() == candidate.indexed_content.trim() =>
@@ -839,10 +845,172 @@ pub fn read_bounded_source(path: &Path) -> Result<Vec<u8>, RagError> {
     Ok(fs::read(path)?)
 }
 
+#[cfg(test)]
 fn decode_source_range(
     bytes: &[u8],
     byte_start: usize,
     byte_end: usize,
+) -> Result<(String, [u64; 2]), RagError> {
+    let line_breaks = source_line_breaks(bytes);
+    decode_source_range_with_line_breaks(bytes, byte_start, byte_end, &line_breaks)
+}
+
+#[derive(Default)]
+struct SourceLineIndex {
+    utf16: bool,
+    line_counts: Vec<usize>,
+    invalid_counts: Vec<usize>,
+}
+
+fn source_line_breaks(bytes: &[u8]) -> SourceLineIndex {
+    if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
+        let little_endian = bytes.starts_with(&[0xff, 0xfe]);
+        let unit_count = (bytes.len() - 2) / 2;
+        let mut line_counts = vec![0];
+        let mut invalid_counts = vec![0];
+        let mut line_count = 0usize;
+        let mut invalid_count = 0usize;
+        let mut index = 0;
+        let mut next_checkpoint = 2 + 256;
+        while index < unit_count {
+            let byte_start = 2 + index * 2;
+            while byte_start >= next_checkpoint {
+                line_counts.push(line_count);
+                invalid_counts.push(invalid_count);
+                next_checkpoint += 256;
+            }
+            let unit = utf16_unit(bytes, byte_start, little_endian);
+            if (0xd800..=0xdbff).contains(&unit) {
+                if index + 1 < unit_count
+                    && (0xdc00..=0xdfff).contains(&utf16_unit(bytes, byte_start + 2, little_endian))
+                {
+                    index += 2;
+                    continue;
+                }
+                invalid_count += 1;
+            } else if (0xdc00..=0xdfff).contains(&unit) {
+                invalid_count += 1;
+            }
+            if unit == b'\n' as u16 {
+                line_count += 1;
+            }
+            index += 1;
+        }
+        while next_checkpoint <= bytes.len() {
+            line_counts.push(line_count);
+            invalid_counts.push(invalid_count);
+            next_checkpoint += 256;
+        }
+        return SourceLineIndex {
+            utf16: true,
+            line_counts,
+            invalid_counts,
+        };
+    }
+    let mut line_counts = vec![0];
+    let mut line_count = 0usize;
+    for block in bytes.chunks(256) {
+        line_count += block.iter().filter(|byte| **byte == b'\n').count();
+        line_counts.push(line_count);
+    }
+    SourceLineIndex {
+        utf16: false,
+        line_counts,
+        invalid_counts: Vec::new(),
+    }
+}
+
+fn utf16_unit(bytes: &[u8], offset: usize, little_endian: bool) -> u16 {
+    if little_endian {
+        u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+    } else {
+        u16::from_be_bytes([bytes[offset], bytes[offset + 1]])
+    }
+}
+
+fn indexed_count_to(bytes: &[u8], line_index: &SourceLineIndex, offset: usize) -> usize {
+    if line_index.utf16 {
+        let offset = offset.max(2);
+        let block = (offset - 2) / 256;
+        let block_start = 2 + block * 256;
+        let mut count = line_index
+            .line_counts
+            .get(block)
+            .copied()
+            .unwrap_or_default();
+        for pair in bytes[block_start..offset].as_chunks::<2>().0 {
+            if *pair == [b'\n', 0] || *pair == [0, b'\n'] {
+                count += 1;
+            }
+        }
+        count
+    } else {
+        let block = offset / 256;
+        let block_start = block * 256;
+        line_index
+            .line_counts
+            .get(block)
+            .copied()
+            .unwrap_or_default()
+            + bytes[block_start..offset]
+                .iter()
+                .filter(|byte| **byte == b'\n')
+                .count()
+    }
+}
+
+fn indexed_invalid_utf16_count_to(
+    bytes: &[u8],
+    line_index: &SourceLineIndex,
+    offset: usize,
+    little_endian: bool,
+) -> usize {
+    let offset = offset.max(2);
+    let block = (offset - 2) / 256;
+    let block_start = 2 + block * 256;
+    let mut invalid = line_index
+        .invalid_counts
+        .get(block)
+        .copied()
+        .unwrap_or_default();
+    let mut byte_start = block_start;
+    if byte_start >= 4
+        && byte_start + 1 < offset
+        && (0xd800..=0xdbff).contains(&utf16_unit(bytes, byte_start - 2, little_endian))
+        && (0xdc00..=0xdfff).contains(&utf16_unit(bytes, byte_start, little_endian))
+    {
+        byte_start += 2;
+    }
+    while byte_start + 1 < offset {
+        let unit = utf16_unit(bytes, byte_start, little_endian);
+        if (0xd800..=0xdbff).contains(&unit) {
+            if byte_start + 3 < offset
+                && (0xdc00..=0xdfff).contains(&utf16_unit(bytes, byte_start + 2, little_endian))
+            {
+                byte_start += 4;
+                continue;
+            }
+            invalid += 1;
+        } else if (0xdc00..=0xdfff).contains(&unit) {
+            invalid += 1;
+        }
+        byte_start += 2;
+    }
+    invalid
+}
+
+fn utf16_boundary_splits_pair(bytes: &[u8], boundary: usize, little_endian: bool) -> bool {
+    boundary >= 4
+        && boundary + 1 < bytes.len()
+        && (0xd800..=0xdbff).contains(&utf16_unit(bytes, boundary - 2, little_endian))
+        && (0xdc00..=0xdfff).contains(&utf16_unit(bytes, boundary, little_endian))
+}
+
+fn decode_source_range_with_line_breaks(
+    bytes: &[u8],
+    byte_start: usize,
+    byte_end: usize,
+    line_index: &SourceLineIndex,
 ) -> Result<(String, [u64; 2]), RagError> {
     if byte_start > byte_end || byte_end > bytes.len() {
         return Err(RagError::InvalidWorkspace(
@@ -871,42 +1039,36 @@ fn decode_source_range(
             };
             let start = byte_start.max(2);
             let end = byte_end.max(2);
+            let invalid_before_start =
+                indexed_invalid_utf16_count_to(bytes, line_index, start, little_endian) > 0;
+            let invalid_in_range =
+                indexed_invalid_utf16_count_to(bytes, line_index, end, little_endian)
+                    > indexed_invalid_utf16_count_to(bytes, line_index, start, little_endian);
+            if !(start - 2).is_multiple_of(2)
+                || invalid_before_start
+                || invalid_in_range
+                || utf16_boundary_splits_pair(bytes, start, little_endian)
+                || utf16_boundary_splits_pair(bytes, end, little_endian)
+            {
+                return Err(RagError::InvalidWorkspace(
+                    "invalid UTF-16 source range".into(),
+                ));
+            }
             (
                 decode(&bytes[start..end])?,
-                count_utf16_newlines(&bytes[2..start], little_endian)? as u64,
+                indexed_count_to(bytes, line_index, byte_start) as u64,
             )
         } else {
             (
                 String::from_utf8_lossy(&bytes[byte_start..byte_end]).into_owned(),
-                bytes[..byte_start]
-                    .iter()
-                    .filter(|byte| **byte == b'\n')
-                    .count() as u64,
+                indexed_count_to(bytes, line_index, byte_start) as u64,
             )
         };
     let start_line = preceding_newlines + 1;
-    let end_line = start_line + content.bytes().filter(|byte| *byte == b'\n').count() as u64;
+    let newlines_in_range = indexed_count_to(bytes, line_index, byte_end)
+        .saturating_sub(indexed_count_to(bytes, line_index, byte_start));
+    let end_line = start_line + newlines_in_range as u64;
     Ok((content, [start_line, end_line]))
-}
-
-fn count_utf16_newlines(bytes: &[u8], little_endian: bool) -> Result<usize, RagError> {
-    if !bytes.len().is_multiple_of(2) {
-        return Err(RagError::InvalidWorkspace(
-            "unaligned UTF-16 byte range".into(),
-        ));
-    }
-    let units = bytes.as_chunks::<2>().0.iter().map(|pair| {
-        if little_endian {
-            u16::from_le_bytes(*pair)
-        } else {
-            u16::from_be_bytes(*pair)
-        }
-    });
-    char::decode_utf16(units).try_fold(0usize, |count, decoded| {
-        decoded
-            .map(|character| count + usize::from(character == '\n'))
-            .map_err(|_| RagError::InvalidWorkspace("invalid UTF-16 source range".into()))
-    })
 }
 
 fn deterministic_rank(left: &RetrievedChunk, right: &RetrievedChunk) -> Ordering {
@@ -1258,8 +1420,8 @@ fn dot_encoded(left: &[f32], bytes: &[u8]) -> Option<f64> {
         return None;
     }
     let mut score = 0.0;
-    for (left, right) in left.iter().zip(bytes.chunks_exact(4)) {
-        let right = f32::from_le_bytes([right[0], right[1], right[2], right[3]]);
+    for (left, right) in left.iter().zip(bytes.as_chunks::<4>().0) {
+        let right = f32::from_le_bytes(*right);
         if !right.is_finite() {
             return None;
         }
@@ -1303,22 +1465,31 @@ fn vector_score_order(left: &ScoredVector, right: &ScoredVector) -> Ordering {
 
 fn push_top_vector_score(
     heap: &mut std::collections::BinaryHeap<ScoredVector>,
-    candidate: ScoredVector,
+    chunk_id: &str,
+    score: f64,
     limit: usize,
 ) {
     if limit == 0 {
         return;
     }
     if heap.len() < limit {
-        heap.push(candidate);
+        heap.push(ScoredVector {
+            chunk_id: chunk_id.to_owned(),
+            score,
+        });
         return;
     }
-    if heap
-        .peek()
-        .is_some_and(|worst| vector_score_order(&candidate, worst) == Ordering::Less)
-    {
+    let belongs_in_top = heap.peek().is_some_and(|worst| {
+        score.total_cmp(&worst.score) == Ordering::Greater
+            || (score.total_cmp(&worst.score) == Ordering::Equal
+                && chunk_id.cmp(worst.chunk_id.as_str()) == Ordering::Less)
+    });
+    if belongs_in_top {
         let _ = heap.pop();
-        heap.push(candidate);
+        heap.push(ScoredVector {
+            chunk_id: chunk_id.to_owned(),
+            score,
+        });
     }
 }
 
@@ -1403,25 +1574,31 @@ fn hybrid_retrieval(
                AND (?4 = '' OR d.path = ?4 OR d.path LIKE ?4 || '/%')
                AND (?5 = '' OR d.language = ?5)",
         )?;
-        let rows = statement.query_map(
-            params![
-                index_id,
-                workspace_key,
-                generation,
-                path_filter,
-                language_filter
-            ],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )?;
+        let mut rows = statement.query(params![
+            index_id,
+            workspace_key,
+            generation,
+            path_filter,
+            language_filter
+        ])?;
         let mut top = std::collections::BinaryHeap::with_capacity(limits.max_retrieval_chunks);
-        for row in rows {
-            let (chunk_id, blob) = row?;
-            if let Some(score) = dot_encoded(&query_vector, &blob) {
-                push_top_vector_score(
-                    &mut top,
-                    ScoredVector { chunk_id, score },
-                    limits.max_retrieval_chunks,
-                );
+        while let Some(row) = rows.next()? {
+            let chunk_id = row.get_ref(0)?.as_str().map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            let blob = row.get_ref(1)?.as_blob().map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Blob,
+                    Box::new(error),
+                )
+            })?;
+            if let Some(score) = dot_encoded(&query_vector, blob) {
+                push_top_vector_score(&mut top, chunk_id, score, limits.max_retrieval_chunks);
             }
         }
         let mut scores = top.into_vec();
@@ -1565,7 +1742,8 @@ fn load_vector_candidates(
     drop(statement);
 
     let canonical_root = workspace_root.canonicalize()?;
-    let mut source_cache = HashMap::<(String, String, i64), Option<Vec<u8>>>::new();
+    let mut source_cache =
+        HashMap::<(String, String, i64), Option<(Vec<u8>, SourceLineIndex)>>::new();
     let mut candidates = Vec::with_capacity(chunk_ids.len());
     for row in rows {
         let (
@@ -1584,10 +1762,10 @@ fn load_vector_candidates(
             indexed_size,
         ) = row;
         let cache_key = (path.clone(), file_hash.clone(), indexed_size);
-        let bytes = source_cache.entry(cache_key).or_insert_with(|| {
+        let source = source_cache.entry(cache_key).or_insert_with(|| {
             let expected_size = u64::try_from(indexed_size).ok()?;
             let byte_end = usize::try_from(expected_size).ok()?;
-            validate_source(
+            let bytes = validate_source(
                 &canonical_root,
                 &canonical_root.join(&path),
                 &file_hash,
@@ -1595,11 +1773,17 @@ fn load_vector_candidates(
                 0,
                 byte_end,
             )
-            .ok()
+            .ok()?;
+            let line_index = source_line_breaks(&bytes);
+            Some((bytes, line_index))
         });
-        let (content, lines, stale) = match bytes {
-            Some(bytes) => match decode_source_range(bytes, byte_start as usize, byte_end as usize)
-            {
+        let (content, lines, stale) = match source {
+            Some((bytes, line_index)) => match decode_source_range_with_line_breaks(
+                bytes,
+                byte_start as usize,
+                byte_end as usize,
+                line_index,
+            ) {
                 Ok((content, lines)) if content.trim() == indexed_content.trim() => {
                     (Some(content.trim().to_string()), Some(lines), false)
                 }
@@ -1651,9 +1835,22 @@ mod tests {
     #[test]
     fn source_line_ranges_count_prefix_without_decoding_utf8_text() {
         let bytes = "a\nb\nc\n".as_bytes();
+        let line_index = source_line_breaks(bytes);
         assert_eq!(
-            decode_source_range(bytes, 4, 6).unwrap(),
+            decode_source_range_with_line_breaks(bytes, 4, 6, &line_index).unwrap(),
             ("c\n".into(), [3, 4])
+        );
+        assert_eq!(
+            decode_source_range_with_line_breaks(bytes, 0, 2, &line_index).unwrap(),
+            ("a\n".into(), [1, 2])
+        );
+
+        let dense = vec![b'\n'; 16 * 1024];
+        let dense_index = source_line_breaks(&dense);
+        assert!(dense_index.line_counts.len() <= dense.len() / 256 + 1);
+        assert_eq!(
+            indexed_count_to(&dense, &dense_index, dense.len()),
+            dense.len()
         );
     }
 
@@ -1661,10 +1858,35 @@ mod tests {
     fn source_line_ranges_count_utf16_prefix_and_reject_invalid_surrogates() {
         let mut bytes = vec![0xff, 0xfe];
         bytes.extend("a\nb\nc\n".encode_utf16().flat_map(u16::to_le_bytes));
+        let line_index = source_line_breaks(&bytes);
         assert_eq!(
-            decode_source_range(&bytes, 10, 14).unwrap(),
+            decode_source_range_with_line_breaks(&bytes, 10, 14, &line_index).unwrap(),
             ("c\n".into(), [3, 4])
         );
+
+        let mut checkpointed = vec![0xff, 0xfe];
+        checkpointed.extend("a\n".repeat(96).encode_utf16().flat_map(u16::to_le_bytes));
+        let line_index = source_line_breaks(&checkpointed);
+        assert_eq!(
+            decode_source_range_with_line_breaks(&checkpointed, 258, 262, &line_index).unwrap(),
+            ("a\n".into(), [65, 66])
+        );
+
+        let mut checkpointed_pair = vec![0xff, 0xfe];
+        checkpointed_pair.extend("a".repeat(127).encode_utf16().flat_map(u16::to_le_bytes));
+        checkpointed_pair.extend("𝄞b\nc".encode_utf16().flat_map(u16::to_le_bytes));
+        let line_index = source_line_breaks(&checkpointed_pair);
+        assert_eq!(
+            decode_source_range_with_line_breaks(&checkpointed_pair, 260, 264, &line_index)
+                .unwrap(),
+            ("b\n".into(), [1, 2])
+        );
+
+        let mut supplementary = vec![0xff, 0xfe];
+        supplementary.extend("A𝄞Z".encode_utf16().flat_map(u16::to_le_bytes));
+        let line_index = source_line_breaks(&supplementary);
+        assert!(decode_source_range_with_line_breaks(&supplementary, 4, 6, &line_index).is_err());
+        assert!(decode_source_range_with_line_breaks(&supplementary, 6, 8, &line_index).is_err());
 
         let invalid_prefix = [0xff, 0xfe, b'a', 0, 0x00, 0xd8, b'b', 0];
         assert!(decode_source_range(&invalid_prefix, 6, 8).is_err());
@@ -1674,14 +1896,7 @@ mod tests {
     fn vector_top_k_keeps_highest_scores_with_deterministic_ties() {
         let mut top = std::collections::BinaryHeap::new();
         for (chunk_id, score) in [("z", 0.2), ("b", 0.9), ("a", 0.9), ("c", 0.4)] {
-            push_top_vector_score(
-                &mut top,
-                ScoredVector {
-                    chunk_id: chunk_id.into(),
-                    score,
-                },
-                3,
-            );
+            push_top_vector_score(&mut top, chunk_id, score, 3);
         }
         let mut top = top.into_vec();
         top.sort_by(vector_score_order);
