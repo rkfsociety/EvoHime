@@ -1488,9 +1488,12 @@ mod prompt_strategy_fanout_tests {
 
     #[tokio::test]
     async fn positive_model_timeout_still_applies() {
+        // The inner sleep must stay far beyond the timeout: on a loaded machine
+        // the runtime can poll the future only after it already elapsed, and an
+        // already-ready future wins over an expired timeout.
         let result = await_with_optional_timeout(
-            Some(Duration::from_millis(1)),
-            tokio::time::sleep(Duration::from_millis(20)),
+            Some(Duration::from_millis(50)),
+            tokio::time::sleep(Duration::from_secs(5)),
         )
         .await;
 
