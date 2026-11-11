@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-11.
+Обновлено: 2026-11-12.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -84,9 +84,9 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000091`, `core 0.0.000392`, `installer 0.0.000065`,
-`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000111`,
-`supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000132`,
+0.0.000043`, `cli 0.0.000091`, `core 0.0.000402`, `installer 0.0.000065`,
+`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000113`,
+`supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000139`,
 `updater 0.0.000132` и `verifier 0.0.000057`.
 
 Новые задания чата получают из Core conversation log последние 40 durable

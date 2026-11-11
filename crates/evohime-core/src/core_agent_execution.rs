@@ -694,6 +694,7 @@ impl ToolAgent {
                     iteration,
                     messages: &messages,
                     specs: &specs,
+                    intent_prompt: &user_prompt,
                     selected_model: selected_model.as_deref(),
                 })
                 .await;
@@ -1245,14 +1246,18 @@ impl ToolAgent {
                     };
                 }
                 // План 01.4: вызов инструмента вне loadout отклоняется до
-                // эффекта с bounded diagnostic `loadout_miss`.
-                let loadout_miss = if step_loadout.allows(&call.name) {
+                // эффекта с bounded diagnostic `loadout_miss`. Инструмент,
+                // которого нет в наборе текущей сессии, — это ошибка выбора
+                // инструмента, а не отказ политики: Core даёт модели
+                // исправимый ответ со списком доступных инструментов.
+                let session_miss = session_tool_miss(&call.name, &tool_names);
+                let loadout_miss = if session_miss.is_some() || step_loadout.allows(&call.name) {
                     None
                 } else {
                     evohime_context_budget::loadout::check_tool_call(&step_loadout, &call.name)
                         .err()
                 };
-                if !guardrail_blocked && loadout_miss.is_none() {
+                if !guardrail_blocked && loadout_miss.is_none() && session_miss.is_none() {
                     let _ = inject_observed_expected_hash(
                         &call.name,
                         &mut input,
@@ -1263,7 +1268,17 @@ impl ToolAgent {
                     && delivery_requirements.commit
                     && (!verification_test_passed
                         || (delivery_requirements.diff_check && !diff_check_passed));
-                let outcome = if guardrail_blocked {
+                let outcome = if let Some(session_miss) = session_miss {
+                    write_model_trace(
+                        "tool.session_miss",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_id": call.name,
+                            "available_count": tool_names.len()
+                        }),
+                    );
+                    session_miss
+                } else if guardrail_blocked {
                     recovery::ToolOutcome {
                         ok: false,
                         kind: Some(recovery::ToolFailureKind::Denied(
@@ -1273,6 +1288,13 @@ impl ToolAgent {
                         structured: serde_json::json!({"error_code":"sensitive_data_blocked"}),
                     }
                 } else if let Some(miss) = loadout_miss {
+                    // Бюджетное вытеснение инструмента не является решением
+                    // политики: модель может выбрать другой доступный
+                    // инструмент, поэтому задача не останавливается.
+                    let omitted_by_budget = step_loadout
+                        .omitted_tool_ids
+                        .iter()
+                        .any(|id| id == &call.name);
                     write_model_trace(
                         "loadout.miss",
                         serde_json::json!({
@@ -1281,19 +1303,36 @@ impl ToolAgent {
                             "intent": miss.intent,
                             "loadout_id": miss.loadout_id,
                             "matched_rule": miss.matched_rule,
-                            "policy_reason": miss.policy_reason
+                            "policy_reason": miss.policy_reason,
+                            "omitted_by_budget": omitted_by_budget
                         }),
                     );
                     recovery::ToolOutcome {
                         ok: false,
-                        kind: Some(recovery::ToolFailureKind::Denied(
-                            recovery::DenialSource::Policy,
-                        )),
-                        output: format!(
-                            "{} вне текущего loadout ({}): {}",
-                            miss.tool_id, miss.intent, miss.policy_reason
-                        ),
-                        structured: serde_json::Value::Null,
+                        kind: Some(if omitted_by_budget {
+                            recovery::ToolFailureKind::InvalidInput
+                        } else {
+                            recovery::ToolFailureKind::Denied(recovery::DenialSource::Policy)
+                        }),
+                        output: if omitted_by_budget {
+                            format!(
+                                "{} не помещается в tool_schema_reserve текущего шага ({}). Выбери другой доступный инструмент.",
+                                miss.tool_id, miss.intent
+                            )
+                        } else {
+                            format!(
+                                "{} вне текущего loadout ({}): {}",
+                                miss.tool_id, miss.intent, miss.policy_reason
+                            )
+                        },
+                        structured: if omitted_by_budget {
+                            serde_json::json!({
+                                "error_code": "tool_omitted_by_budget",
+                                "tool_name": miss.tool_id
+                            })
+                        } else {
+                            serde_json::Value::Null
+                        },
                     }
                 } else if escalation_remaining.get(&call.name).copied().unwrap_or(0) > 0
                     && !matches!(
@@ -1760,11 +1799,31 @@ impl ToolAgent {
                     if patch_context_mismatch {
                         recovery.push_str(" Сначала вызови git.diff или filesystem.read для актуального файла, затем сформируй новый patch по фактическому содержимому.");
                     }
+                    let mut retry_examples: Vec<String> = Vec::new();
+                    if tool_names.iter().any(|name| name == TOOL_FILESYSTEM_LIST) {
+                        retry_examples.push("filesystem.list={\"path\":\".\"}".into());
+                    }
+                    if tool_names.iter().any(|name| name == TOOL_FILESYSTEM_READ) {
+                        retry_examples.push("filesystem.read={\"path\":\"README.md\"}".into());
+                    }
+                    if tool_names.iter().any(|name| name == TOOL_FILESYSTEM_SEARCH) {
+                        retry_examples.push(
+                            "filesystem.search={\"query\":\"нужный текст\",\"path\":\".\"}".into(),
+                        );
+                    }
+                    let retry_hint = if retry_examples.is_empty() {
+                        "Для другого инструмента укажи все его обязательные поля.".to_string()
+                    } else {
+                        format!(
+                            "Сделай следующий исправляющий вызов с полным workspace-relative JSON: {}. Для другого инструмента укажи все его обязательные поля.",
+                            retry_examples.join("; ")
+                        )
+                    };
                     messages.push(ChatMessage::text(
                         ChatRole::User,
                         format!(
-                            "Инструмент {} завершился ошибкой. Не завершай задачу и не повторяй тот же неработающий вызов.{} Сделай следующий исправляющий вызов с полным workspace-relative JSON: filesystem.list={{\"path\":\".\"}}; filesystem.read={{\"path\":\"README.md\"}}; filesystem.search={{\"query\":\"нужный текст\",\"path\":\".\"}}. Для другого инструмента укажи все его обязательные поля. Если recovery-подсказка выше запрещает повтор, она имеет приоритет: сначала устрани указанную причину.",
-                            call.name, recovery
+                            "Инструмент {} завершился ошибкой. Не завершай задачу и не повторяй тот же неработающий вызов.{} {} Если recovery-подсказка выше запрещает повтор, она имеет приоритет: сначала устрани указанную причину.",
+                            call.name, recovery, retry_hint
                         ),
                     ));
                 }
@@ -1841,6 +1900,28 @@ impl ToolAgent {
             .await;
         Ok(message)
     }
+}
+
+/// Возвращает исправимый отказ, если вызванный инструмент не входит в набор
+/// текущей сессии. Такой вызов не является отказом политики: модель должна
+/// увидеть доступные инструменты и продолжить задачу другим способом.
+fn session_tool_miss(tool_name: &str, available: &[String]) -> Option<recovery::ToolOutcome> {
+    if available.iter().any(|name| name == tool_name) {
+        return None;
+    }
+    let listed = available.join(", ");
+    Some(recovery::ToolOutcome {
+        ok: false,
+        kind: Some(recovery::ToolFailureKind::InvalidInput),
+        output: format!(
+            "Инструмент {tool_name} не входит в набор этой сессии. Доступны: {listed}. Выполни следующий шаг только одним из доступных инструментов; если нужного действия нет, сообщи об ограничении."
+        ),
+        structured: serde_json::json!({
+            "error_code": "tool_not_in_session",
+            "tool_name": tool_name,
+            "available_tools": available
+        }),
+    })
 }
 
 fn tool_preflight_can_be_offered(
@@ -2147,6 +2228,21 @@ fn initial_agent_messages(
 #[cfg(test)]
 mod conversation_history_tests {
     use super::*;
+
+    #[test]
+    fn tools_outside_the_session_catalog_produce_a_recoverable_hint() {
+        let available = vec![
+            "filesystem.read".to_string(),
+            "filesystem.write".to_string(),
+        ];
+        assert!(session_tool_miss("filesystem.read", &available).is_none());
+        let miss = session_tool_miss("filesystem.list", &available).expect("missing tool");
+        assert!(!miss.ok);
+        assert_eq!(miss.kind, Some(recovery::ToolFailureKind::InvalidInput));
+        assert!(miss.output.contains("filesystem.list"));
+        assert!(miss.output.contains("filesystem.read, filesystem.write"));
+        assert_eq!(miss.structured["error_code"], "tool_not_in_session");
+    }
 
     #[test]
     fn initial_messages_keep_history_roles_and_current_prompt_last() {

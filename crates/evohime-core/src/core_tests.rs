@@ -236,6 +236,27 @@ mod tests {
     }
 
     #[test]
+    fn agent_system_prompt_only_names_tools_available_in_the_session() {
+        let prompt = super::build_agent_system_prompt(&[
+            "filesystem.read".into(),
+            "filesystem.write".into(),
+        ]);
+        assert!(prompt.contains("Используй только инструменты из списка ниже"));
+        assert!(prompt.contains("filesystem.read — {\"path\":\"README.md\"}"));
+        assert!(!prompt.contains("filesystem.list"));
+        assert!(!prompt.contains("filesystem.search"));
+        assert!(prompt.contains("Git-инструментов в этой сессии нет"));
+
+        let research = super::build_agent_system_prompt(&[
+            "filesystem.list".into(),
+            "filesystem.read".into(),
+            "filesystem.search".into(),
+        ]);
+        assert!(research.contains("сначала вызови filesystem.list"));
+        assert!(research.contains("filesystem.search — {\"query\":\"pattern\",\"path\":\".\"}"));
+    }
+
+    #[test]
     fn catalog_preflight_uses_safe_workspace_arguments_for_filesystem_tools() {
         assert_eq!(
             super::catalog_preflight_input("filesystem.list"),

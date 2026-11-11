@@ -676,6 +676,7 @@ impl ToolAgent {
             iteration,
             messages,
             specs,
+            intent_prompt,
             selected_model,
         } = input;
         let model_call_id = format!("{task_id}-{iteration}");
@@ -810,6 +811,7 @@ impl ToolAgent {
                     now,
                     messages,
                     specs,
+                    intent_prompt,
                     open_questions: &open_questions,
                     scratchpad: &scratchpad,
                     pinned_ids: &pinned,
@@ -829,6 +831,7 @@ impl ToolAgent {
                     now,
                     messages,
                     specs,
+                    intent_prompt,
                     open_questions: &[],
                     scratchpad: &[],
                     pinned_ids: &[],

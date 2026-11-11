@@ -862,6 +862,8 @@ struct AssembleModelContextInput<'a> {
     iteration: usize,
     messages: &'a [ChatMessage],
     specs: &'a [ToolSpec],
+    /// Prompt текущей задачи для intent router; история диалога его не заменяет.
+    intent_prompt: &'a str,
     selected_model: Option<&'a str>,
 }
 

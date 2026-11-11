@@ -563,8 +563,8 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
 }
 
 pub(crate) fn requires_workspace_research_catalog(prompt: &str) -> bool {
-    let prompt = prompt.to_lowercase();
-    [
+    let prompt_lower = prompt.to_lowercase();
+    let explicit = [
         "изучи",
         "исследуй",
         "ознаком",
@@ -575,7 +575,18 @@ pub(crate) fn requires_workspace_research_catalog(prompt: &str) -> bool {
         "inspect the project",
     ]
     .iter()
-    .any(|marker| prompt.contains(marker))
+    .any(|marker| prompt_lower.contains(marker));
+    // Intent router и catalog query должны согласованно считать research
+    // read-only исследованием: иначе модель получает research-intent без
+    // filesystem.list/search и вынуждена вызывать недоступные инструменты.
+    explicit
+        || evohime_context_budget::loadout::route_intent(
+            &crate::context_budget::default_intent_rules(),
+            prompt,
+            &[],
+        )
+        .intent
+            == "research"
 }
 
 pub(crate) fn request_allows_mutation(prompt: &str) -> bool {
@@ -638,29 +649,125 @@ pub(crate) fn model_is_waiting_instead_of_reporting(content: &str) -> bool {
 }
 
 pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
+    let has = |name: &str| tool_names.iter().any(|tool| tool == name);
+    let mut rules: Vec<String> = vec![
+        "- Выполняй задачу самостоятельно и используй инструменты, когда они нужны для фактической проверки.".into(),
+        "- Используй только инструменты из списка ниже. Если подходящего инструмента в списке нет, не вызывай его: выполни задачу доступными средствами и явно сообщи об ограничении.".into(),
+        "- Если пользователь не сформулировал конкретное поручение, не исследуй workspace и не имитируй выполненную работу: задай один короткий уточняющий вопрос и дождись задачи.".into(),
+        "- За один ответ вызывай только один инструмент и жди его результата перед следующим вызовом.".into(),
+    ];
+    if has("filesystem.list") {
+        rules.push(
+            "- Если пользователь просит изучить, проверить, найти или объяснить проект, сначала вызови filesystem.list с path точкой (.).".into(),
+        );
+    }
+    if has("filesystem.read") || has("filesystem.search") {
+        let reader = if has("filesystem.read") {
+            "прочитай подходящие manifest-файлы и документацию (например Cargo.toml, package.json, README и архитектурные документы)"
+        } else {
+            "прочитай подходящие файлы доступным инструментом"
+        };
+        let search = if has("filesystem.search") {
+            ", а для поиска по коду используй filesystem.search"
+        } else {
+            ""
+        };
+        rules.push(format!("- Затем {reader}{search}."));
+    }
+    if has("shell.execute") && (has("filesystem.list") || has("filesystem.search")) {
+        rules.push(
+            "- Для изучения проекта не используй shell.execute: read-only filesystem-инструменты безопаснее и достаточно информативны.".into(),
+        );
+    }
+    rules.push("- Не проси пользователя прислать структуру проекта, путь или команды, если workspace уже указан.".into());
+    rules.push("- Не утверждай, что изучила файл или выполнила действие, пока соответствующий инструмент не вернул результат.".into());
+    rules.push("- Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.".into());
+    let mut examples: Vec<String> = Vec::new();
+    if has("filesystem.list") {
+        examples.push("filesystem.list — {\"path\":\".\"}".into());
+    }
+    if has("filesystem.read") {
+        examples.push("filesystem.read — {\"path\":\"README.md\"}".into());
+    }
+    if has("filesystem.search") {
+        examples.push("filesystem.search — {\"query\":\"pattern\",\"path\":\".\"}".into());
+    }
+    if examples.is_empty() {
+        rules.push(
+            "- Аргументы инструментов всегда передавай полным JSON-объектом по схеме инструмента; не вызывай инструмент с пустым объектом.".into(),
+        );
+    } else {
+        rules.push(format!(
+            "- Аргументы инструментов всегда передавай полным JSON-объектом: {}; не вызывай их с пустым объектом и не передавай абсолютный путь вместо workspace-relative path.",
+            examples.join("; ")
+        ));
+    }
+    if has("filesystem.read") {
+        rules.push(
+            "- Результат успешного filesystem.read содержит content_hash и готовый к копированию expected_hash — это один и тот же точный хеш файла. При изменении существующего файла передавай expected_hash из последнего чтения этого файла; Core подставит его, если ты пропустишь поле, но только для того же логического пути. Никогда не выдумывай и не пересчитывай хеш.".into(),
+        );
+    }
+    rules.push("- Если инструмент вернул ошибку, не завершай задачу: исправь аргументы по тексту ошибки и повтори вызов.".into());
+    if has("filesystem.patch") {
+        rules.push(
+            "- filesystem.patch принимает только JSON с path, patch и expected_hash, например {\"path\":\"relative/file.rs\",\"expected_hash\":\"точный content_hash из filesystem.read\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}; поля edits и patches недопустимы.".into(),
+        );
+    }
+    let mutation_tools: Vec<&str> = ["filesystem.patch", "filesystem.write", "git.commit"]
+        .into_iter()
+        .filter(|name| has(name))
+        .collect();
+    if mutation_tools.is_empty() {
+        rules.push(
+            "- Если пользователь просит исправить, изменить или реализовать код, а mutation-инструментов в сессии нет, не выдавай план за результат: выполни доступные read-only проверки и сообщи, что для изменения нужен режим доступа с правом записи.".into(),
+        );
+    } else {
+        rules.push(format!(
+            "- Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через {}; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git.commit. Не выдавай план за результат.",
+            mutation_tools.join(" или ")
+        ));
+    }
+    if has("git.status")
+        || has("git.diff")
+        || has("git.commit")
+        || has("git.pull")
+        || has("git.push")
+    {
+        let mut git = Vec::new();
+        if has("git.status") {
+            git.push("сначала git.status");
+        }
+        if has("git.diff") {
+            git.push("затем git.diff для проверки изменений");
+        }
+        if has("git.commit") {
+            git.push("git.commit — только с task-only сообщением и после успешной проверки");
+        }
+        if has("git.pull") {
+            git.push("git.pull — для обновления checkout");
+        }
+        if has("git.push") {
+            git.push("git.push — только если пользователь явно попросил опубликовать изменения");
+        }
+        rules.push(format!(
+            "- Для Git используй специализированные инструменты: {}. Не заменяй эти вызовы shell.execute и не выполняй git-команды из неправильной директории.",
+            git.join("; ")
+        ));
+    } else {
+        rules.push(
+            "- Git-инструментов в этой сессии нет: не вызывай git.* и не выполняй git-команды через shell.execute.".into(),
+        );
+    }
+    rules.push("- Все улучшения EvoHime выполняй самостоятельно через доступные инструменты Евы. Если попытка не удалась, не завершай задачу: зафиксируй причину в trace, дождись следующего шага настройки и повтори работу через инструменты до успешного результата.".into());
+    rules.push("- После исследования дай отчёт: что обнаружено, какие файлы проверены, какие проблемы найдены и что предлагается сделать дальше.".into());
+
     format!(
         "{AGENT_IDENTITY_PROMPT}\n\n\
 Ты работаешь автономно внутри уже выбранного рабочего пространства.\n\
 Корень workspace уже выбран и доступен инструментам; не проси пользователя сообщать его повторно.\n\n\
-Правила выполнения:\n\
-- Выполняй задачу самостоятельно и используй инструменты, когда они нужны для фактической проверки.\n\
-- Если пользователь не сформулировал конкретное поручение, не исследуй workspace и не имитируй выполненную работу: задай один короткий уточняющий вопрос и дождись задачи.\n\
-- За один ответ вызывай только один инструмент и жди его результата перед следующим вызовом.\n\
-- Если пользователь просит изучить, проверить, найти или объяснить проект, сначала вызови filesystem.list с path точкой (.).\n\
-- Затем прочитай подходящие manifest-файлы и документацию (например Cargo.toml, package.json, README и архитектурные документы), а для поиска по коду используй filesystem.search.\n\
-- Для изучения проекта не используй shell.execute: filesystem.list, filesystem.read и filesystem.search безопаснее и достаточно информативны.\n\
-- Не проси пользователя прислать структуру проекта, путь или команды, если workspace уже указан.\n\
-- Не утверждай, что изучила файл или выполнила действие, пока соответствующий инструмент не вернул результат.\n\
-- Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.\n\
-- Аргументы инструментов всегда передавай полным JSON-объектом: filesystem.list — {{\"path\":\".\"}}, filesystem.read — {{\"path\":\"README.md\"}}, filesystem.search — {{\"query\":\"pattern\",\"path\":\".\"}}; не вызывай их с пустым объектом и не передавай абсолютный путь вместо workspace-relative path.\n\
-- Результат успешного filesystem.read содержит content_hash и готовый к копированию expected_hash — это один и тот же точный хеш файла. При изменении существующего файла передавай expected_hash из последнего чтения этого файла; Core подставит его, если ты пропустишь поле, но только для того же логического пути. Никогда не выдумывай и не пересчитывай хеш.\n\
-- Если инструмент вернул ошибку, не завершай задачу: исправь аргументы по тексту ошибки и повтори вызов.\n\
-- filesystem.patch принимает только JSON с path, patch и expected_hash, например {{\"path\":\"relative/file.rs\",\"expected_hash\":\"точный content_hash из filesystem.read\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}}; поля edits и patches недопустимы.\n\
-- Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через filesystem.patch или filesystem.write; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git.commit. Не выдавай план за результат.\n\
-- Для Git используй специализированные инструменты: сначала git.status, затем git.diff для проверки изменений; git.commit — только с task-only сообщением и после успешной проверки; git.pull — для обновления checkout; git.push — только если пользователь явно попросил опубликовать изменения. Не заменяй эти вызовы shell.execute и не выполняй git-команды из неправильной директории.\n\
-- Все улучшения EvoHime выполняй самостоятельно через доступные инструменты Евы. Если попытка не удалась, не завершай задачу: зафиксируй причину в trace, дождись следующего шага настройки и повтори работу через инструменты до успешного результата.\n\
-- После исследования дай отчёт: что обнаружено, какие файлы проверены, какие проблемы найдены и что предлагается сделать дальше.\n\n\
+Правила выполнения:\n{}\n\n\
 Доступные инструменты в этой сессии:\n{}",
+        rules.join("\n"),
         tool_names
             .iter()
             .map(|name| format!("- {name}"))

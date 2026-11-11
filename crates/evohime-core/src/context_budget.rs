@@ -273,6 +273,10 @@ pub struct ContextAssembleInput<'a> {
     pub now: i64,
     pub messages: &'a [ChatMessage],
     pub specs: &'a [ToolSpec],
+    /// Задача текущего запуска. Intent router классифицирует именно её, а не
+    /// первое user-сообщение собранного контекста: история диалога не должна
+    /// понижать loadout текущего запроса до read-only.
+    pub intent_prompt: &'a str,
     pub open_questions: &'a [String],
     pub scratchpad: &'a [ScratchpadEntry],
     pub pinned_ids: &'a [String],
@@ -337,6 +341,7 @@ impl ContextRuntime {
             now,
             messages,
             specs,
+            intent_prompt,
             open_questions,
             // Подтверждённые записи scratchpad задачи (01.2). После restart в
             // рабочий контекст возвращаются только они.
@@ -348,16 +353,10 @@ impl ContextRuntime {
             offload,
             summarizer,
         } = input;
-        let user_prompt = messages
-            .iter()
-            .find(|message| message.role == ChatRole::User)
-            .map(|message| message.content.clone())
-            .unwrap_or_default();
-
         // 1. Tool loadout: только релевантный набор schemas, полный registry
-        //    остаётся в Core.
+        //    остаётся в Core. Intent берётся из текущей задачи, а не из истории.
         let registry = registry_from_specs(specs);
-        let decision = route_intent(&self.rules, &user_prompt, open_questions);
+        let decision = route_intent(&self.rules, intent_prompt, open_questions);
         let schema_estimator = |schema: &str| (schema.len() as u32).div_ceil(3) + 16;
         let provider_window = self.model_window(model);
         let profile = self
@@ -1024,6 +1023,14 @@ mod tests {
         }
     }
 
+    fn task_prompt(messages: &[ChatMessage]) -> &str {
+        messages
+            .iter()
+            .find(|message| message.role == ChatRole::User)
+            .map(|message| message.content.as_str())
+            .unwrap_or_default()
+    }
+
     fn assemble(
         runtime: &mut ContextRuntime,
         messages: &[ChatMessage],
@@ -1038,6 +1045,7 @@ mod tests {
             now: 1_000_000,
             messages,
             specs,
+            intent_prompt: task_prompt(messages),
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1240,6 +1248,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[spec("filesystem.read")],
+            intent_prompt: task_prompt(&messages),
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1279,6 +1288,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[],
+            intent_prompt: task_prompt(&messages),
             open_questions: &[],
             scratchpad: &entries,
             pinned_ids: &[],
@@ -1531,6 +1541,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[],
+            intent_prompt: task_prompt(&messages),
             open_questions: &[],
             scratchpad: &entries,
             pinned_ids: &[],
@@ -1586,6 +1597,36 @@ mod tests {
     }
 
     #[test]
+    fn intent_routing_uses_the_current_prompt_and_not_older_history() {
+        let mut runtime = runtime();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "изучи проект и сравни документацию"),
+            ChatMessage::text(ChatRole::Assistant, "проект изучен"),
+            ChatMessage::text(ChatRole::User, "поработай над интерфейсом и создай скилы"),
+        ];
+        let assembled = runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages: &messages,
+            specs: &[spec("filesystem.read"), spec("filesystem.write")],
+            intent_prompt: "поработай над интерфейсом и создай скилы",
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        });
+        assert_eq!(assembled.loadout.decision.intent, "edit");
+        assert!(assembled.check_tool_call("filesystem.write").is_ok());
+    }
+
+    #[test]
     fn open_questions_from_the_scratchpad_reach_the_intent_router() {
         let mut runtime = runtime();
         let messages = vec![
@@ -1601,6 +1642,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[spec("filesystem.read"), spec("filesystem.write")],
+            intent_prompt: task_prompt(&messages),
             open_questions: &["нужно исправь конфигурацию".to_string()],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1633,6 +1675,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[],
+            intent_prompt: task_prompt(&messages),
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: std::slice::from_ref(&pinned),
@@ -1679,6 +1722,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[],
+            intent_prompt: task_prompt(&messages),
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1723,6 +1767,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[],
+            intent_prompt: task_prompt(&messages),
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1765,6 +1810,7 @@ mod tests {
             now: 1_000_000,
             messages: &messages,
             specs: &[],
+            intent_prompt: task_prompt(&messages),
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
