@@ -1665,6 +1665,26 @@ regression — hard failure независимо от среднего score; ba
 metadata-only `AgentBenchmarkMatrixPanel`, а deterministic PR gate
 `cargo eval --mode deterministic` остаётся отдельным от nightly/manual matrix.
 
+### Core-Owned A2A Remote-Agent Bridge v1 (plan 180, stage 1)
+
+`crates/evohime-core/src/external_agent_a2a.rs` реализует Core‑owned outbound A2A remote‑agent backend как protocol/backend extension существующего external‑agent owner (`external_coding_agent_adapter`). Он определяет bounded untrusted profile/card/delegation/capsule/task‑binding contracts с deterministic validation, SHA‑256 хэшированием и детерминированными переходами состояний. Card claims никогда не дают локальных capability; сырые карты, заголовки, куки, транскрипты, токены и сырые цели никогда не попадают в persistent или projected структуры — сохраняются только id, ссылки, хэши и типизированное состояние.
+
+Contracts:
+- `RemoteAgentProfile` – версионированный, явно зарегистрированный профиль с endpoint boundary, auth‑profile reference, skill/capability allowlists, privacy ceiling и concurrency limit.
+- `RemoteAgentCardSnapshot` – bounded, untrusted, хэш‑ограниченный снимок карты удалённого агента; сохраняет только хэши, bounded claims и типизированные флаги.
+- `DelegationRequest` – детерминированная делегация, привязанная к точным хэшам профиля/карты, parent‑grant reference, capability, хэшированной цели, idempotency key и artifact budget.
+- `ContextCapsule` – неизменяемая капсула делегации, содержащая только ссылки на context‑namespace/loadout, никогда сырые данные workspace.
+- `RemoteTaskBinding` – durable binding между локальной делегацией и удалённой задачей, с состояниями жизненного цикла (`Registered`, `Submitting`, `Submitted`, `InputRequired`, `AuthRequired`, `Running`, `Completed`, `Rejected`, `Failed`, `CancelRequested`, `Cancelled`, `UnknownOutcome`, `Unavailable`) и reconciliation disposition (`Pending`, `ReconciledSameTask`, `Abandoned`).
+- `A2aError` – ошибки валидации для контрактов профилей/карт/делегаций/капсул/задач.
+
+Инварианты: remote card claims никогда не дают локальной authority; профиль, карта, делегация, капсула и binding контентно‑хэшированы; производный от контента privacy может только повышаться, никогда не понижаться; неоднозначная отправка становится `UnknownOutcome` и никогда не возвращается к слепой повторной отправке (`UnknownOutcome` может быть reconciliated только к известному исходу той же задачи).
+
+`crates/evohime-local-storage/src/external_agent_a2a_store.rs` предоставляет metadata‑only persistence для профилей, хэшей снимков карт и bindings задач; полные карты, тела ответов, заголовки, куки, транскрипты, цели и токены никогда не хранятся. Store устанавливает schema v181 и является additive к существующему external‑agent owner. Миграция `v181.rs` создаёт три таблицы (`a2a_remote_profiles`, `a2a_card_snapshots`, `a2a_task_bindings`) и индексы.
+
+`crates/evohime-core/src/external_coding_agent_adapter.rs` расширен версионированным A2A backend kind (`ExternalAgentProtocolKind::A2a { protocol_version: u32 }`) и валидацией preset, которая отклоняет неправильные версии протокола и несоответствующие метки протокола.
+
+Все юнит‑тесты проходят; fmt/clippy clean. Никакой inbound HTTP/webhook listener не вводится, не создаётся второго runtime, scheduler, storage или team‑roster authority.
+
 ### Agent Middleware Pipeline v1
 
 `crates/evohime-core/src/agent_middleware_pipeline.rs` содержит versioned

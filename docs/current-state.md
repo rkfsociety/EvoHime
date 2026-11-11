@@ -48,7 +48,7 @@ Webhook-провайдер не подключён.
 
 `evohime-local-storage` сейчас имеет внутреннюю migration boundary
 `src/migrations.rs` с numbered installers для v001–v026, v032–v039,
-v042–v116 и v149–v180, а также
+v042–v116 и v149–v181, а также
 bounded-context фасады в `src/domains.rs`. Все исторические installers теперь
 вынесены из `lib.rs`; старые store-модули сохраняются только там, где они
 ещё являются совместимым публичным контрактом, а новые доменные вызовы
@@ -60,6 +60,27 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 дальнейшее
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
+
+## Core-owned A2A remote-agent bridge (plan 180, stage 1)
+
+`crates/evohime-core/src/external_agent_a2a.rs` добавляет bounded Core-owned
+contract для outbound A2A remote-agent backend как protocol/backend extension
+существующего external-agent owner. Профили, untrusted card snapshots,
+delegation requests, context capsules и task bindings детерминированно
+валидируются, хэшируются SHA-256 и имеют типизированные переходы состояний.
+Card claims не дают локальных capability; сырые карты, заголовки, куки,
+транскрипты, токены и сырые цели не сохраняются и не проецируются — только
+id, ссылки, хэши и типизированное состояние. Неоднозначная отправка становится
+`UnknownOutcome` и не может превратиться в слепой повторный submit.
+
+`crates/evohime-local-storage/src/external_agent_a2a_store.rs` даёт
+metadata-only persistence (schema v181) для профилей, хэшей card snapshots и
+task bindings; миграция `v181.rs` создаёт `a2a_remote_profiles`,
+`a2a_card_snapshots` и `a2a_task_bindings`. `ExternalAgentProtocolKind`
+расширен версионированным `A2a` backend kind с проверкой версии протокола в
+`validate_preset`. Сетевого доступа, discovery, inbound listener и второго
+runtime/scheduler/storage authority на этом этапе нет — они относятся к
+этапам 180.2–180.3.
 
 ## Image generation and editing
 

@@ -33,7 +33,7 @@ ambiguous submit.
 
 ## Этапы
 
-- [Этап 1 — profile/card contract и storage](./180-1-core-a2a-bridge.md)
+- [x] [Этап 1 — profile/card contract и storage](./180-1-core-a2a-bridge.md) — реализовано 2026-11-11
 - [Этап 2 — network lifecycle, capsule и recovery](./180-2-core-a2a-bridge.md)
 - [Этап 3 — workflow/IPC integration](./180-3-core-a2a-bridge.md)
 - [Этап 4 — verification и closure](./180-4-core-a2a-bridge.md)

@@ -3467,7 +3467,6 @@ workflow already covers `src/main/**`. Task-only implementation commit
 `99413adf8b671158afc98993e1e0accbd7f0f281` is local on `main` and has not been
 pushed. Exact-SHA GitHub CI and module publication remain pending that push.
 
-
 ## Verified main baseline — 2026-11-11
 
 На опубликованном main commit
@@ -3504,3 +3503,9 @@ GitHub Actions результаты:
 в доступном снимке его запуск оставался queued, поэтому rustdoc/doc-tests
 здесь не отмечены как пройденные. Локальные проверки в этой сессии не
 выполнялись.
+
+## Core-owned A2A remote-agent bridge v1 - stage 1 (plan 180.1)
+
+Implemented locally on `main`: bounded Core-owned A2A profile/card/delegation/capsule/task-binding contracts in `crates/evohime-core/src/external_agent_a2a.rs` with deterministic validation, SHA-256 hashing and typed state transitions, plus metadata-only persistence in `crates/evohime-local-storage/src/external_agent_a2a_store.rs` and migration `v181.rs` (schema v181). `ExternalAgentProtocolKind` gained a versioned `A2a` backend and `validate_preset` rejects wrong protocol versions or labels. Card claims never grant local capability; raw cards, headers, cookies, transcripts, tokens and raw objectives are never persisted or projected; ambiguous submit becomes `UnknownOutcome` with reconciliation only against the same task. No network access, discovery, inbound listener, second runtime or scheduler was introduced; those belong to stages 180.2-180.3.
+
+Local verification on Windows passed: `cargo test -p evohime-core --lib external_agent_a2a` (9/9), `cargo test -p evohime-local-storage --lib a2a` (6/6, including migration v181), `cargo fmt --all -- --check` and `cargo clippy -p evohime-core -p evohime-local-storage --all-targets -- -D warnings`. Source changes advanced the Core module patch marker to `0.0.000403`. Task-only implementation commit is local on `main` and has not been pushed; exact-SHA GitHub CI and module publication remain pending that push.
