@@ -13,12 +13,14 @@ pub const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub const MAX_CAPABILITIES: usize = 32;
 pub const MAX_CREDENTIAL_SLOTS: usize = 16;
 pub const ACP_PROTOCOL_VERSION: u32 = 1;
+pub const A2A_PROTOCOL_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ExternalAgentProtocolKind {
     EvoHimeV1,
     Acp { protocol_version: u32 },
+    A2a { protocol_version: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -387,6 +389,9 @@ pub fn validate_preset(mut preset: AdapterPreset) -> Result<AdapterPreset, Adapt
     let protocol_valid = match preset.protocol_kind {
         ExternalAgentProtocolKind::EvoHimeV1 => preset.protocol == CONTRACT_ID,
         ExternalAgentProtocolKind::Acp { .. } => preset.protocol == "acp",
+        ExternalAgentProtocolKind::A2a { .. } => {
+            preset.protocol == crate::external_agent_a2a::A2A_PROTOCOL_LABEL
+        }
     };
     if !valid_id(&preset.id)
         || !protocol_valid
@@ -396,6 +401,7 @@ pub fn validate_preset(mut preset: AdapterPreset) -> Result<AdapterPreset, Adapt
         return Err(AdapterError::Invalid("preset"));
     }
     if matches!(preset.protocol_kind, ExternalAgentProtocolKind::Acp { protocol_version } if protocol_version != ACP_PROTOCOL_VERSION)
+        || matches!(preset.protocol_kind, ExternalAgentProtocolKind::A2a { protocol_version } if protocol_version != A2A_PROTOCOL_VERSION)
         || matches!(
             preset.auth_mode,
             ExternalAgentAuthMode::ExistingLocalSession
@@ -607,5 +613,24 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(legacy.protocol_kind, ExternalAgentProtocolKind::EvoHimeV1);
+    }
+
+    #[test]
+    fn a2a_preset_is_typed_and_rejects_wrong_protocol_version() {
+        let mut p = preset();
+        p.protocol = crate::external_agent_a2a::A2A_PROTOCOL_LABEL.into();
+        p.protocol_kind = ExternalAgentProtocolKind::A2a {
+            protocol_version: A2A_PROTOCOL_VERSION,
+        };
+        p.auth_mode = ExternalAgentAuthMode::ExistingLocalSession;
+        p.credential_slots.clear();
+        assert!(validate_preset(p.clone()).is_ok());
+        p.protocol_kind = ExternalAgentProtocolKind::A2a {
+            protocol_version: A2A_PROTOCOL_VERSION + 1,
+        };
+        assert_eq!(
+            validate_preset(p),
+            Err(AdapterError::Invalid("protocol_or_auth_mode"))
+        );
     }
 }

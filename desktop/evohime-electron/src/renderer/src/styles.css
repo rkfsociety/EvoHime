@@ -39,6 +39,15 @@
 
   --sidebar-width: 260px;
   --mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  
+  /* Дополнительные переменные для совместимости */
+  --bg-base: var(--bg);
+  --muted: var(--fg-muted);
+  --text: var(--fg);
+  --panel: var(--bg-raised);
+  --surface: var(--bg-sunken);
+  --surface-muted: var(--bg-active);
+  --context-ratio: 0;
 }
 
 :root[data-theme='light'] {
@@ -149,6 +158,10 @@ body {
     'sidebar main'
     'status  status';
   height: calc(100vh / var(--ui-zoom, 1));
+  min-height: 640px;
+  min-width: 960px;
+  position: relative;
+  overflow: hidden;
 }
 
 .shell--trace-open {

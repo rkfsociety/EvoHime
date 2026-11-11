@@ -128,6 +128,8 @@ pub mod execution_ledger;
 pub(crate) mod execution_policy_profiles_store;
 /// Persistence for experience replay examples.
 pub mod experience_replay_library_store;
+/// Persistence for the Core-owned A2A remote-agent bridge metadata.
+pub mod external_agent_a2a_store;
 /// Persistence for external coding agent adapter configuration.
 pub mod external_coding_agent_adapter_store;
 /// Runtime persistence for external source acquisition.
@@ -314,7 +316,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 180;
+pub const SCHEMA_VERSION: u32 = 181;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,
