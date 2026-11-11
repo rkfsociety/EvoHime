@@ -12,7 +12,8 @@ import type { OllamaRuntimeStatus } from '../src/shared/ollama-runtime'
 import {
   CLIPBOARD_CHANNEL,
   INVOKE_CHANNEL,
-  OPEN_EXTERNAL_CHANNEL
+  OPEN_EXTERNAL_CHANNEL,
+  SET_LOCALE_CHANNEL
 } from '../src/shared/channels'
 
 /**
@@ -31,7 +32,8 @@ const openedUrls: string[] = []
 
 vi.mock('electron', () => ({
   ipcMain: {
-    handle: (channel: string, handler: Handler) => handlers.set(channel, handler)
+    handle: (channel: string, handler: Handler) => handlers.set(channel, handler),
+    on: (channel: string, handler: Handler) => handlers.set(channel, handler)
   },
   clipboard: {
     writeText: (text: string) => clipboardWrites.push(text)
@@ -353,7 +355,7 @@ describe('renderer command surface', () => {
 
   it('exposes only the documented channels', () => {
     expect([...handlers.keys()].sort()).toEqual(
-      [CLIPBOARD_CHANNEL, INVOKE_CHANNEL, OPEN_EXTERNAL_CHANNEL].sort()
+      [CLIPBOARD_CHANNEL, INVOKE_CHANNEL, OPEN_EXTERNAL_CHANNEL, SET_LOCALE_CHANNEL].sort()
     )
   })
 

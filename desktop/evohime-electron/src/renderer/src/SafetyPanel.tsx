@@ -157,7 +157,7 @@ export function SafetyPanel({ connection, events }: Props): React.JSX.Element {
 
       <h4>{translate("За последний час")}</h4>
       <p role="status">
-        {translate("высказываний:")}{translate(utterancesLastHour)} {translate("· кандидатов памяти: не подключено · предложений:")}{translate(' ')}
+        {translate("высказываний:")} {translate(utterancesLastHour)} {translate("· кандидатов памяти: не подключено · предложений:")}{translate(' ')}
         {translate(proposalsLastHour)}
       </p>
       <p>

@@ -111,6 +111,13 @@ $components = foreach ($module in $moduleIds) {
 
 $updaterVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\release-versions\updater.txt') -Raw).Trim()
 if ($updaterVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Некорректная минимальная версия updater: $updaterVersion" }
+$updaterModules = @($components | Where-Object { $_.id -eq 'updater' })
+$requiredUpdaterVersion = Parse-Version $updaterVersion
+$publishedUpdaterVersion = if ($updaterModules.Count -eq 1) { Parse-Version ([string]$updaterModules[0].version) } else { $null }
+if ($null -eq $publishedUpdaterVersion -or $publishedUpdaterVersion -lt $requiredUpdaterVersion) {
+    $publishedVersion = if ($updaterModules.Count -eq 1) { [string]$updaterModules[0].version } else { 'отсутствует' }
+    throw "Compatible manifest не опубликован: версия updater $publishedVersion ниже обязательной $updaterVersion."
+}
 $manifest = [ordered]@{
     schema = 'evohime.compatible-set.v1'
     product = 'EvoHime'

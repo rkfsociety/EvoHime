@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { describe, expect, it, vi } from 'vitest'
@@ -34,7 +34,7 @@ describe('markdown message', () => {
     expect(screen.getByText('Безопасный текст')).toBeTruthy()
   })
 
-  it('does not re-parse or re-sanitize unchanged text', () => {
+  it('does not re-parse or re-sanitize unchanged text', async () => {
     const parse = vi.spyOn(marked, 'parse')
     const sanitize = vi.spyOn(DOMPurify, 'sanitize')
     const { rerender } = render(<MarkdownMessage text="Один и тот же ответ" />)
@@ -43,8 +43,10 @@ describe('markdown message', () => {
     expect(parse).toHaveBeenCalledTimes(1)
     expect(sanitize).toHaveBeenCalledTimes(1)
 
+    // Обновление текста откладывается на requestAnimationFrame, чтобы
+    // перерендер не блокировал ввод: парсинг нового текста ждём явно.
     rerender(<MarkdownMessage text="Обновлённый ответ" />)
-    expect(parse).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(parse).toHaveBeenCalledTimes(2))
     expect(sanitize).toHaveBeenCalledTimes(2)
   })
 })

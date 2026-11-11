@@ -282,7 +282,7 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
         <>
           <p>{translate(selected.description)}</p>
           {selected.availability.status === 'unsupported' ? (
-            <p role="status">{translate("Запуск недоступен:")}{translate(selected.availability.reason_code)}</p>
+            <p role="status">{translate("Запуск недоступен:")} {translate(selected.availability.reason_code)}</p>
           ) : (
             <p>Binding: {translate(selected.workflow_binding?.template_id)} {translate("· версия")}{translate(selected.workflow_binding?.template_version)}</p>
           )}
@@ -315,7 +315,7 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
 
       {preflight && confirmedSignature === signature ? (
         <div aria-label={translate("Результат проверки сценария")}>
-          <h4>{translate("Проверка Core:")}{translate(statusLabel(preflight.state))}</h4>
+          <h4>{translate("Проверка Core:")} {translate(statusLabel(preflight.state))}</h4>
           {preflight.preview.length > 0 ? <ol>{preflight.preview.map((line) => <li key={line}>{translate(line)}</li>)}</ol> : null}
           {preflight.reason_codes.length > 0 ? <p>{translate("Коды:")}{translate(preflight.reason_codes.join(', '))}</p> : null}
           {preflight.required_capabilities.length > 0 ? <p>{translate("Требуются:")}{translate(preflight.required_capabilities.join(', '))}</p> : null}

@@ -516,7 +516,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
           </ul>
         )}
       </div>
-      {plans.length > 0 ? <p className="review-panel__source">{translate("Файлов:")}{translate(plans.length)} {translate("· загружено символов:")}{translate(sourceMarkdown.length)}</p> : null}
+      {plans.length > 0 ? <p className="review-panel__source">{translate("Файлов:")} {translate(plans.length)} {translate("· загружено символов:")} {translate(sourceMarkdown.length)}</p> : null}
 
       <div className="review-panel__controls">
         <label>{translate("Режим каталога")}<select value={tier} onChange={(event) => setTier(event.target.value as ModelTier)} disabled={running}><option value="free">{translate("Бесплатные")}</option><option value="paid">{translate("Платные")}</option></select></label>
@@ -658,15 +658,15 @@ function RevisionCard({ revision, running, failure, sourceLength, targetPath, sa
           {revision === null ? null : <button type="button" onClick={onSaveAs}>{translate("Сохранить как…")}</button>}
         </div>
       </div>
-      {confirmReplace ? <p className="review-panel__history-note">{translate("Файл")}{translate(targetPath)} {translate("будет перезаписан целиком. Отменить это можно только средствами системы контроля версий.")}</p> : null}
-      {revision !== null && revision.contextFiles.length > 0 ? <p className="review-panel__hint">{translate("Сверено с соседними планами:")}{translate(revision.contextFiles.join(', '))}.</p> : null}
+      {confirmReplace ? <p className="review-panel__history-note">{translate("Файл")} {translate(targetPath)} {translate("будет перезаписан целиком. Отменить это можно только средствами системы контроля версий.")}</p> : null}
+      {revision !== null && revision.contextFiles.length > 0 ? <p className="review-panel__hint">{translate("Сверено с соседними планами:")} {translate(revision.contextFiles.join(', '))}.</p> : null}
       {blind ? <p className="review-panel__hint">{translate("Соседние планы не читались: путь исходного файла неизвестен или в плане нет ссылок на них. Правка могла разойтись с соседним этапом — проверь текст до сохранения.")}</p> : null}
       {truncated ? <p role="alert" className="shell__reason">{translate("Исправленный план более чем вдвое короче исходного — похоже, ответ модели оборвался. Проверь текст до сохранения.")}</p> : null}
       {inflated ? <p role="alert" className="shell__reason">{translate("Исправленный план более чем вдвое длиннее исходного — модель дописала лишнее вместо точечной правки. Проверь текст до сохранения.")}</p> : null}
       {failure ? <p role="alert" className="shell__reason">{translate(failure.kind === 'stopped' ? failure.message : `Правка завершилась ошибкой: ${failure.message}`)}</p> : null}
       {saving ? <p className="review-panel__hint">{translate("Сохраняю…")}</p> : null}
-      {saveOutcome?.ok ? <p className="review-panel__hint">{translate("Сохранено:")}{translate(saveOutcome.destinationPath)}</p> : null}
-      {saveOutcome && !saveOutcome.ok ? <p role="alert" className="shell__reason">{translate("План не сохранён:")}{translate(saveOutcome.error)}</p> : null}
+      {saveOutcome?.ok ? <p className="review-panel__hint">{translate("Сохранено:")} {translate(saveOutcome.destinationPath)}</p> : null}
+      {saveOutcome && !saveOutcome.ok ? <p role="alert" className="shell__reason">{translate("План не сохранён:")} {translate(saveOutcome.error)}</p> : null}
       {revision === null ? (running ? <p>{translate("Ева переписывает план по замечаниям ревью. Это один запрос к модели-синтезатору, он может занять несколько минут.")}</p> : null) : <MarkdownMessage text={revision.revisedMarkdown} />}
     </div>
   )

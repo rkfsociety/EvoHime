@@ -365,7 +365,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
                 {translate(item.display_name)}
               </button>
               <small>
-                {translate("версия")}{translate(item.version)} {translate("· узлов")}{translate(item.node_count)} ·{translate(' ')}
+                {translate("версия")} {translate(item.version)} {translate("· узлов")} {translate(item.node_count)} ·{translate(' ')}
                 {translate(SCHEDULE_LABELS[item.schedule_eligibility] ?? item.schedule_eligibility)}
               </small>
             </li>
@@ -487,7 +487,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
         <div className="workflow__run" aria-label={translate("Текущий запуск")}>
           <h4>{translate("Запуск")}{translate(runId)}</h4>
           <p role="status">
-            {translate("состояние:")}{translate(runStateLabel(activeRun?.state ?? 'unknown_state'))}
+            {translate("состояние:")} {translate(runStateLabel(activeRun?.state ?? 'unknown_state'))}
             {translate(activeRun?.terminal_reason ? ` · ${activeRun.terminal_reason}` : '')}
           </p>
           {waitingNodes.length > 0 ? (
@@ -505,7 +505,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
                   {translate(node.attempts > 0 ? ` · попыток: ${node.attempts}` : '')}
                 </span>
                 {node.dependencies.length > 0 ? (
-                  <small> {translate("зависит от:")}{translate(node.dependencies.join(', '))}</small>
+                  <small> {translate("зависит от:")} {translate(node.dependencies.join(', '))}</small>
                 ) : null}
                 {node.error_code ? <small> {translate("код:")}{translate(node.error_code)}</small> : null}
               </li>

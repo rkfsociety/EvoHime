@@ -656,7 +656,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           <strong>{translate(projectionReady ? (latestExtraction ? MEMORY_EXTRACTION_STATUS_LABELS[latestExtraction.status] : '—') : '—')}</strong>
           <span>{translate(projectionReady ? (latestExtraction ? `${latestExtraction.stage} · ${latestExtraction.origin}` : translate("состояние ещё не получено")) : translate("состояние не подтверждено"))}</span>
           <small>{translate(projectionReady && latestExtraction ? `${latestExtraction.backlog} в очереди восстановления · ${latestExtraction.conflict_count} конфликтов в последнем проходе · ${observedReentries} подавлено как повторный запуск` : translate("Core недоступен — ожидается актуальная проекция"))}</small>
-          {projectionReady && lastExtractionFailure ? <small>{translate("Последний сбой:")}{translate(lastExtractionFailure.reason_code ?? 'unknown')} · {translate(lastExtractionFailure.stage)}</small> : null}
+          {projectionReady && lastExtractionFailure ? <small>{translate("Последний сбой:")} {translate(lastExtractionFailure.reason_code ?? 'unknown')} · {translate(lastExtractionFailure.stage)}</small> : null}
         </article>
         <article className="operations-card">
           <h3>Child jobs</h3>

@@ -177,7 +177,7 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
               {goal.workflowRunIds.length > 0 || goal.childRunIds.length > 0 || goal.checkpointId || goal.successCriteria.some((item) => item.evidenceRef) ? (
                 <div className="goal-card__links">
                   {goal.workflowRunIds.length > 0 ? <small>Workflow: {translate(goal.workflowRunIds.join(', '))}</small> : null}
-                  {goal.childRunIds.length > 0 ? <small>{translate("Дочерние runs:")}{translate(goal.childRunIds.join(', '))}</small> : null}
+                  {goal.childRunIds.length > 0 ? <small>{translate("Дочерние runs:")} {translate(goal.childRunIds.join(', '))}</small> : null}
                   {goal.checkpointId ? <small>Checkpoint: {translate(goal.checkpointId)}</small> : null}
                   {goal.successCriteria.filter((item) => item.evidenceRef).map((item) => <small key={`evidence-${item.id}`}>Evidence {translate(item.id)}: {translate(item.evidenceRef)}</small>)}
                 </div>
@@ -189,7 +189,7 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
                 {!['completed', 'cancelled'].includes(goal.status) ? <button type="button" disabled={busy} onClick={() => void transition(goal, 'cancelGoal')}>{translate("Отменить")}</button> : null}
               </div>
               {goal.tokenBudget || goal.costBudgetMicros || goal.continuationBudget ? (
-                <small className="goal-card__budget">{translate("Бюджет: tokens")}{translate(goal.tokenBudget || '—')} · cost {translate(goal.costBudgetMicros || '—')} {translate("· продолжений")}{translate(goal.continuationBudget || '—')}</small>
+                <small className="goal-card__budget">{translate("Бюджет: tokens")} {translate(goal.tokenBudget || '—')} · cost {translate(goal.costBudgetMicros || '—')} {translate("· продолжений")} {translate(goal.continuationBudget || '—')}</small>
               ) : null}
             </article>
           ))}

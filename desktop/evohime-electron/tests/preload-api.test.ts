@@ -59,6 +59,7 @@ describe('preload bridge', () => {
       'invoke',
       'openExternal',
       'pathForFile',
+      'setLocale',
       'subscribe',
       'writeClipboardText'
     ])

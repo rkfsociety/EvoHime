@@ -117,7 +117,7 @@ export function WorkspaceStateCheckpointsPanel({ connection, events, workspace }
       <button type="button" onClick={() => void invoke('restore_task')}>{translate("Восстановить состояние задачи")}</button>
       <button type="button" onClick={() => void invoke('restore_both')}>{translate("Восстановить всё")}</button>
     </div>
-    {projection ? <p role="status">{translate(projection.state)} {translate("· файлов:")}{translate(projection.fileCount)} {translate("· конфликтов:")}{translate(projection.conflictCount)} · {translate(projection.snapshotHash)}</p> : null}
+    {projection ? <p role="status">{translate(projection.state)} {translate("· файлов:")} {translate(projection.fileCount)} {translate("· конфликтов:")} {translate(projection.conflictCount)} · {translate(projection.snapshotHash)}</p> : null}
     {projection?.errorCode ? <p role="alert">{translate(projection.errorCode === 'workspace_checkpoint_file_too_large' ? translate("Контрольная точка не создана: в проекте есть файл больше 1 МБ. Уберите его из рабочей папки или исключите большой/сгенерированный файл.") : projection.errorCode === 'workspace_checkpoint_snapshot_too_large' ? translate("Контрольная точка не создана: снимок превышает общий лимит 64 МБ. Уберите большие/сгенерированные файлы или выберите меньшую папку.") : projection.errorCode === 'workspace_checkpoint_too_many_files' ? translate("Контрольная точка не создана: в проекте больше 4096 файлов. Выберите меньшую папку или исключите сгенерированные файлы.") : projection.errorMessage || `Операция отклонена: ${projection.errorCode}`)}</p> : null}
     {message ? <p role="status">{translate(message)}</p> : null}
   </section>

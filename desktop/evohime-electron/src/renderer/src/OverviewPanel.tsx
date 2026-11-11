@@ -133,7 +133,7 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
                         </li>
                       ))}
                       {hidden > 0 ? (
-                        <li className="overview-group__more">{translate("Ещё")}{translate(hidden)} {translate("— остальные смотри в трейсе чата.")}</li>
+                        <li className="overview-group__more">{translate("Ещё")} {translate(hidden)} {translate("— остальные смотри в трейсе чата.")}</li>
                       ) : null}
                     </ol>
                   ) : null}

@@ -870,7 +870,7 @@ export function TaskTimeline({
 
               {approval ? (
                 <li className="approval task-timeline__approval" role="alert">
-                  <strong>{translate("Нужно разрешение:")}{translate(approval.toolName)}</strong>
+                  <strong>{translate("Нужно разрешение:")} {translate(approval.toolName)}</strong>
                   <span>{translate(approval.permission)} · {translate(approval.scope)}</span>
                   <strong>{approval.preview.summary}</strong>
                   {approval.preview.command ? <code>{translate("Команда:")}{approval.preview.command}</code> : null}

@@ -238,7 +238,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         <>
           {catalogStatus.providerIdentity !== null ? (
             <span className="model-picker__catalog-status" role="status">
-              {translate("Профиль Core:")}{translate(catalogStatus.providerIdentity)}
+              {translate("Профиль Core:")} {translate(catalogStatus.providerIdentity)}
             </span>
           ) : null}
           <span className={`model-picker__catalog-status model-picker__catalog-status--${catalogStatus.state}`} role="status">

@@ -109,7 +109,7 @@ export function ScheduledPanel({ connection, events, workspace }: ScheduledPanel
                     {translate(schedule.enabled ? translate("активно") : translate("приостановлено"))}
                   </span>
                 </div>
-                <p>{translate(formatTime(schedule.hour, schedule.minute))} · {translate(formatTimezone(schedule.timezone_minutes))} {translate("· ревизия")}{translate(schedule.revision)}</p>
+                <p>{translate(formatTime(schedule.hour, schedule.minute))} · {translate(formatTimezone(schedule.timezone_minutes))} {translate("· ревизия")} {translate(schedule.revision)}</p>
                 <small>{translate(schedule.last_slot ? `Последний слот: ${schedule.last_slot}` : translate("Ещё не запускалось"))}</small>
               </div>
               <button type="button" className="button" onClick={() => void setEnabled(schedule)}>
