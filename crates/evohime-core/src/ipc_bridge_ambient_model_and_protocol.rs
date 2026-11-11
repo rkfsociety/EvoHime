@@ -272,9 +272,24 @@ impl IpcBridge {
                     .await?;
                     return Ok(());
                 };
-                let available = evohime_model_gateway::fetch_model_catalog(route)
-                    .await
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let available = match evohime_model_gateway::fetch_model_catalog(route).await {
+                    Ok(entries) => entries,
+                    Err(error) => {
+                        // A provider failure while validating a selection is a
+                        // command outcome, not a transport failure: closing the
+                        // connection here made the shell reconnect, retry the
+                        // same selection and loop forever.
+                        let reason = safe_model_catalog_error_code(&error);
+                        self.write_response(
+                            writer,
+                            "model.select.rejected",
+                            serde_json::to_vec(&serde_json::json!({ "reason": reason }))
+                                .unwrap_or_default(),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                };
                 if !available.iter().any(|entry| entry.id == model) {
                     self.write_response(
                         writer,

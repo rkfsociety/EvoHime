@@ -303,6 +303,11 @@ provider health остаются `Unknown`. Bounded redacted `provider_catalog`
 ModelPicker отображают Core-owned profile, lifecycle и capability state.
 Полный контракт находится в [`architecture.md`](architecture.md), проверки —
 в [`release-evidence.md`](release-evidence.md).
+Каталог моделей провайдера принимается в пределах 4 MiB и 2048 записей: этот
+предел вмещает реальные ответы OpenAI-совместимых агрегаторов вроде LiteRouter.
+Ошибка каталога при выборе модели больше не закрывает IPC-соединение: Core
+отвечает типизированным `model.select.rejected` с безопасным кодом причины, а
+ModelPicker показывает отказ и не повторяет автоматический выбор модели.
 Новое состояние трассы выпускается как `routing.trace` schema v2; renderer
 сохраняет чтение ранее сохранённых v1 событий.
 Staging marker updater теперь всегда записывается как полный

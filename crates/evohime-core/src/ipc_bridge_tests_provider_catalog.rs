@@ -478,3 +478,85 @@ async fn hydrates_configured_catalog_and_uses_it_after_refresh_failure() {
 
     let _ = std::fs::remove_file(journal_path);
 }
+
+#[tokio::test]
+async fn rejected_model_selection_keeps_the_ipc_connection_open() {
+    use prost::Message;
+    use tokio::io::duplex;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    // A provider catalogue that fails its size/entry guards used to turn
+    // `core.selectModel` into a transport error. The shell then reconnected,
+    // replayed the catalogue, auto-selected the first model and failed again,
+    // forever. The command must answer with a typed rejection instead.
+    let server = MockServer::start().await;
+    let entries = (0..=evohime_model_gateway::MAX_MODEL_CATALOG_ENTRIES)
+        .map(|index| serde_json::json!({ "id": format!("model-{index}") }))
+        .collect::<Vec<_>>();
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": entries })),
+        )
+        .mount(&server)
+        .await;
+
+    let journal_path = std::env::temp_dir().join(format!(
+        "evohime-ipc-model-select-rejected-{}-{}.db",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let journal = EventJournal::open(&journal_path).expect("journal opens");
+    let route =
+        ModelRouteConfig::openai_compatible("test-key", format!("{}/v1", server.uri()), "model-0");
+    let route_name = "default".to_string();
+    let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+    let bridge = IpcBridge::with_coordinator_and_approvals(
+        journal.clone(),
+        coordinator,
+        ApprovalCoordinator::default(),
+        Arc::new(ToolRegistry::bootstrap()),
+        None,
+        Some(ModelGatewayConfig {
+            default_route: route_name.clone(),
+            routes: HashMap::from([(route_name, route)]),
+        }),
+    );
+
+    let (mut client, server) = duplex(64 * 1024);
+    let (mut server_reader, mut server_writer) = tokio::io::split(server);
+    let envelope = generated::CommandEnvelope {
+        protocol: Some(protocol()),
+        request_id: "select-model-1".into(),
+        client_id: "shell".into(),
+        core_instance_id: String::new(),
+        session_epoch: 1,
+        command: Some(generated::command_envelope::Command::SelectModel(
+            generated::SelectModelRequest {
+                model: "model-0".into(),
+            },
+        )),
+    };
+    transport::write_frame(&mut client, &envelope.encode_to_vec())
+        .await
+        .expect("request writes");
+    bridge
+        .process_once(&mut server_reader, &mut server_writer)
+        .await
+        .expect("selection rejection must not close the connection");
+    let response = transport::read_frame(&mut client)
+        .await
+        .expect("response reads");
+    let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+    assert_eq!(event.event_type, "model.select.rejected");
+    let payload: serde_json::Value =
+        serde_json::from_slice(&event.payload).expect("payload decodes");
+    assert_eq!(payload["reason"], "catalog_too_many_entries");
+
+    drop(bridge);
+    drop(journal);
+    let _ = std::fs::remove_file(journal_path);
+}

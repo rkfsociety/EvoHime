@@ -5,6 +5,7 @@ import type { ChatProviderMode, ConnectionState, CoreEvent, CodexModel, CodexRat
 
 import { useShellApi } from './shell-api'
 import { CodexRateLimits } from './CodexRateLimits'
+import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import {
   modelMetadataHint,
   parseCoreModelDescriptor,
@@ -46,7 +47,10 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [hideConfirmedUnsupported, setHideConfirmedUnsupported] = useState(false)
   const [manualModel, setManualModel] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null)
+  const pendingSelection = useRef<string | null>(null)
+  const autoSelectionBlocked = useRef(false)
 
   useEffect(() => {
     setFallbackTier(null)
@@ -58,7 +62,10 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setHideConfirmedUnsupported(false)
     setManualModel('')
     setError(null)
+    setSelectionError(null)
     setCatalogStatus(null)
+    pendingSelection.current = null
+    autoSelectionBlocked.current = false
     onModelChange?.('')
   }, [onModelChange, provider])
 
@@ -94,6 +101,26 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
 
   const catalog = useMemo(() => latest(events, 'model.catalog'), [events])
   const config = useMemo(() => latest(events, 'model.config'), [events])
+  const selectionRejection = useMemo(() => latest(events, 'model.select.rejected'), [events])
+
+  // Core answers a rejected selection with a typed event instead of closing the
+  // IPC connection. Only react to it while this picker is waiting for its own
+  // selection: replayed history must not surface a stale rejection as a fresh
+  // error, and it must not let the automatic first-model choice run again.
+  useEffect(() => {
+    if (!selectionRejection || pendingSelection.current === null) return
+    pendingSelection.current = null
+    autoSelectionBlocked.current = true
+    setCurrent('')
+    const parsed = parseJson(selectionRejection.payload)
+    const reason = typeof parsed['reason'] === 'string' ? parsed['reason'] : ''
+    const code = safeCatalogErrorCode(reason)
+    setSelectionError(
+      code === null || code === 'catalog_unavailable'
+        ? 'Core отклонил выбранную модель — возможно, она недоступна у провайдера.'
+        : `Не удалось выбрать модель. ${catalogErrorMessage(code, provider === 'ollama' ? 'ollama' : 'provider')}`
+    )
+  }, [provider, selectionRejection])
 
   useEffect(() => {
     if (provider === 'codex_cli') return
@@ -143,6 +170,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     if (!config) return
     const parsed = parseJson(config.payload)
     if (typeof parsed['model'] === 'string') {
+      if (pendingSelection.current === parsed['model']) pendingSelection.current = null
       setCurrent(parsed['model'])
       onModelChange?.(parsed['model'])
     }
@@ -153,11 +181,16 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       if (!api) return
       setCurrent(model)
       setError(null)
+      setSelectionError(null)
+      pendingSelection.current = model
+      autoSelectionBlocked.current = false
       const outcome = provider === 'codex_cli'
         ? await api.invoke('codex.selectModel', { model })
         : await api.invoke('core.selectModel', { model })
-      if (!outcome.ok) setError(outcome.message)
-      else onModelChange?.(model)
+      if (!outcome.ok) {
+        pendingSelection.current = null
+        setSelectionError(outcome.message)
+      } else onModelChange?.(model)
     },
     [api, onModelChange, provider]
   )
@@ -180,7 +213,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   // default, which need not even exist in this tier. Commit to what is shown.
   useEffect(() => {
     const available = visibleModels.map((model) => model.value)
-    if (disabled || available.length === 0) return
+    if (disabled || autoSelectionBlocked.current || available.length === 0) return
     if (current !== '' && catalogModels.some((model) => model.value === current)) return
     const first = available[0]
     if (first !== undefined) void select(first)
@@ -229,6 +262,9 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
             }
           : {})}
       />
+      {selectionError !== null ? (
+        <span className="model-picker__hint" role="alert">{translate(selectionError)}</span>
+      ) : null}
       {provider !== 'codex_cli' && models.length > 0 ? (
         <span className="model-picker__hint" title={modelMetadataHint(selectedDescriptor, use)}>
           {translate(modelMetadataHint(selectedDescriptor, use))}

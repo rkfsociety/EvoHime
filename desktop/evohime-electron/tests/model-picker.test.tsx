@@ -214,6 +214,30 @@ describe('model picker', () => {
     )
   })
 
+  it('reports a rejected selection without retrying it automatically', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['first:free', 'second:free'] })
+    const view = render(<ModelPicker connection="connected" events={[]} />)
+
+    view.rerender(<ModelPicker connection="connected" events={[catalog]} />)
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        command: 'core.selectModel',
+        payload: { model: 'first:free' }
+      })
+    )
+    const attempts = calls.filter((call) => call.command === 'core.selectModel').length
+
+    view.rerender(
+      <ModelPicker
+        connection="connected"
+        events={[catalog, event('model.select.rejected', { reason: 'catalog_response_too_large' })]}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/Не удалось выбрать модель/))
+    expect(calls.filter((call) => call.command === 'core.selectModel')).toHaveLength(attempts)
+  })
+
   it('keeps all provider models visible when Core has not confirmed capabilities', async () => {
     render(
       <ModelPicker

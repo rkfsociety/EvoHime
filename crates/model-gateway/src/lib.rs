@@ -87,7 +87,13 @@ use std::{
 };
 
 /// Maximum response bytes accepted when fetching a provider model catalog.
-pub const MAX_MODEL_CATALOG_BYTES: usize = 512 * 1024;
+///
+/// OpenAI-compatible aggregators publish large catalogues: OpenRouter's
+/// `/models` response is already around 0.8 MiB, and metadata-heavy
+/// aggregators such as LiteRouter can be larger. The bound still rejects
+/// unbounded or accidental stream responses, but it must leave room for the
+/// real catalogues users configure.
+pub const MAX_MODEL_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum number of model entries accepted from one provider catalog.
 pub const MAX_MODEL_CATALOG_ENTRIES: usize = 2_048;
 /// Maximum model identifier length accepted from catalog responses.

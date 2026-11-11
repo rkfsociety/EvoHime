@@ -9,7 +9,13 @@ use rusqlite::{params, Connection, OptionalExtension};
 /// Maximum serialized provider profile size.
 pub const MAX_PROFILE_JSON_BYTES: usize = 16 * 1024;
 /// Maximum serialized provider catalog size.
-pub const MAX_CATALOG_JSON_BYTES: usize = 512 * 1024;
+///
+/// Must be large enough for normalized snapshots of the catalogues accepted by
+/// `evohime-model-gateway` (`MAX_MODEL_CATALOG_BYTES`): a fresh snapshot stores
+/// one full descriptor per model, so a metadata-heavy provider catalogue can be
+/// larger than the raw response. Rejecting it would silently disable the
+/// durable cache that keeps model selection and limits available offline.
+pub const MAX_CATALOG_JSON_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum number of profile/catalog rows held in the store.
 pub const MAX_PROVIDER_PROFILE_ROWS: u32 = 256;
 /// Maximum entries in one provider catalog snapshot.
