@@ -41,7 +41,7 @@ pub const MAX_FREE_ACCESS_TTL_MS: u64 = 31 * 24 * 60 * 60 * 1_000;
 /// Maximum advertised capability flags for one model.
 pub const MAX_PROVIDER_MODEL_CAPABILITIES: usize = 16;
 /// Maximum entries accepted from one provider catalog response.
-pub const MAX_PROVIDER_CATALOG_ENTRIES: usize = 2_048;
+pub const MAX_PROVIDER_CATALOG_ENTRIES: usize = 4_096;
 /// Schema version for provider catalog snapshots.
 pub const PROVIDER_CATALOG_SCHEMA_VERSION: u16 = 1;
 /// Maximum lifetime of a provider catalog snapshot in milliseconds.
