@@ -63,6 +63,8 @@ pub struct OffloadOutcome {
     /// Locator артефакта.
     pub locator: String,
     /// Bounded summary, остающийся в контексте вместо содержимого.
+    pub summary: String,
+    /// Estimated tokens of the bounded summary.
     pub summary_tokens: u32,
     /// Сколько байт ушло в store.
     pub offloaded_bytes: u64,
@@ -453,6 +455,7 @@ fn apply_l4(
                 if let Some(slot) = selection.items.iter_mut().find(|slot| slot.id == id) {
                     slot.estimated_tokens = result.summary_tokens;
                     slot.artifact_locator = Some(result.locator.clone());
+                    slot.artifact_summary = Some(result.summary.clone());
                     slot.drop_reason = Some(DropReason::Offloaded);
                 }
                 outcome.offloaded_bytes = outcome
@@ -810,6 +813,7 @@ mod tests {
         fn offload(&mut self, item: &ContextItem) -> Result<OffloadOutcome, String> {
             Ok(OffloadOutcome {
                 locator: format!("artifact://{}", item.id),
+                summary: "bounded summary".into(),
                 summary_tokens: 32,
                 offloaded_bytes: item.bytes,
             })
@@ -838,6 +842,7 @@ mod tests {
         assert_eq!(item.estimated_tokens, 32);
         assert_eq!(item.drop_reason, Some(DropReason::Offloaded));
         assert_eq!(item.artifact_locator.as_deref(), Some("artifact://big"));
+        assert_eq!(item.artifact_summary.as_deref(), Some("bounded summary"));
         assert_eq!(outcome.offloaded_bytes, 1_000_000);
     }
 

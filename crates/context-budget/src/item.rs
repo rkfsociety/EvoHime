@@ -334,6 +334,10 @@ pub struct ContextItem {
     /// Locator артефакта, если содержимое выгружено в artifact store (01.2).
     #[serde(default)]
     pub artifact_locator: Option<String>,
+    /// Bounded summary выгруженного содержимого. Остаётся в контексте, чтобы
+    /// модель видела, что именно вернул инструмент, а не только locator.
+    #[serde(default)]
+    pub artifact_summary: Option<String>,
     /// Завершена ли пара tool-call/result. Незавершённые пары не отбрасываются
     /// уровнем L3 лестницы.
     #[serde(default = "default_true")]
@@ -438,6 +442,7 @@ impl ContextItemBuilder {
                 scratchpad_status: None,
                 conflict_key: None,
                 artifact_locator: None,
+                artifact_summary: None,
                 tool_pair_complete: true,
             },
         }

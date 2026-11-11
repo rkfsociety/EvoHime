@@ -1117,6 +1117,7 @@ mod tests {
             self.calls += 1;
             Ok(OffloadOutcome {
                 locator: format!("artifact://{}", item.id),
+                summary: "bounded summary".into(),
                 summary_tokens: 64,
                 offloaded_bytes: item.bytes,
             })

@@ -686,7 +686,7 @@ impl ToolAgent {
             }
             // Сборка контекста: selection -> compress/offload -> финальная
             // проверка бюджета -> ModelContext event -> model call.
-            let assembled = self
+            let mut assembled = self
                 .assemble_model_context(AssembleModelContextInput {
                     runtime: &mut context_runtime,
                     task_id: &task_id,
@@ -745,7 +745,11 @@ impl ToolAgent {
                 // model call не выполняется и не повторяется автоматически.
                 return Err(AgentRunError::from_budget_unavailable(refusal));
             }
-            messages = assembled.messages.clone();
+            // Сжатый контекст — это представление для одного вызова модели, а
+            // не новая история задачи. Раньше `messages` заменялись собранным
+            // контекстом, поэтому вытесненные tool outputs исчезали навсегда и
+            // модель к концу исследования не видела уже прочитанные файлы.
+            let request_messages = std::mem::take(&mut assembled.messages);
             if !assembled.tool_specs.is_empty() {
                 specs = assembled.tool_specs.clone();
             }
@@ -755,7 +759,7 @@ impl ToolAgent {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                 result = self.call_model_with_strategy(CallModelInput {
                     task_id: &task_id,
-                    messages: &messages,
+                    messages: &request_messages,
                     specs: &specs,
                     source_refs: &provenance_source_refs,
                     workspace_root: &context.workspace_root,
