@@ -173,6 +173,30 @@ describe('transcript', () => {
     expect(entries[0]).toMatchObject({ kind: 'agent', text: 'Готово.' })
   })
 
+  it('does not repeat a streamed final answer when task.completed carries the same text', () => {
+    const answer = `## Отчёт\n\n${'Подробности исследования. '.repeat(120)}`
+    const { entries, finished } = buildTranscript(
+      stream(
+        event('AssistantDelta', { content: answer }),
+        event('TaskCompleted', { final_message: answer })
+      )
+    )
+
+    expect(finished).toBe(true)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ kind: 'agent', text: answer })
+  })
+
+  it('keeps a completion that was not streamed as the visible answer', () => {
+    const answer = 'Итог задачи без потоковой передачи.'
+    const { entries } = buildTranscript(
+      stream(event('TaskCompleted', { final_message: answer }))
+    )
+
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ kind: 'result', text: answer, failed: false })
+  })
+
   it('surfaces a pending approval and clears it once the task ends', () => {
     const pending = buildTranscript(
       stream(

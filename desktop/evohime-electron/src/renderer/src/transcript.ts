@@ -59,8 +59,7 @@ export interface Transcript {
 }
 
 /** `events` is newest-first, the way the shell keeps them. */
-export function buildTranscript(events: readonly CoreEvent[]): Transcript {
-  const entries: TranscriptEntry[] = []
+export function buildTranscript(events: readonly CoreEvent[]): Transcript {  const entries: TranscriptEntry[] = []
   let approval: Approval | null = null
   let finished = false
 
@@ -157,8 +156,12 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
         finished = true
         finishActivities(entries)
         const text = clamp(text_(payload, 'final_message'))
-        // An empty completion adds nothing over the answer already shown.
-        if (text.length > 0) entries.push({ kind: 'result', id, text, failed: false })
+        // Core emits the final answer as a streamed delta and repeats the same
+        // text in TaskCompleted. Rendering both showed every answer twice.
+        const alreadyStreamed = text.length > 0 && streamedAnswerMatches(entries, text)
+        if (text.length > 0 && !alreadyStreamed) {
+          entries.push({ kind: 'result', id, text, failed: false })
+        }
         break
       }
 
@@ -190,6 +193,21 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
   if (finished) approval = null
 
   return { entries, approval, finished }
+}
+
+/**
+ * True when the answer shown just before completion is exactly the text Core
+ * repeats in `task.completed`. The streamed deltas are the message the user
+ * already sees, so the completion must not append a second copy.
+ */
+function streamedAnswerMatches(entries: readonly TranscriptEntry[], text: string): boolean {
+  let gathered = ''
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index]
+    if (entry?.kind !== 'agent') break
+    gathered = entry.text + gathered
+  }
+  return gathered === text
 }
 
 function finishActivities(entries: TranscriptEntry[]): void {
