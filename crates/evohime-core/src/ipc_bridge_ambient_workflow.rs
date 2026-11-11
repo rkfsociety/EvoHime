@@ -14,11 +14,11 @@ impl IpcBridge {
     ///
     /// Returns an IPC error if frame I/O, request decoding, authorization, or
     /// workflow processing fails.
-    pub fn process_once<'a, R: AsyncRead + Unpin + 'a, W: AsyncWrite + Unpin + 'a>(
+    pub fn process_once<'a, R: AsyncRead + Unpin + Send + 'a, W: AsyncWrite + Unpin + Send + 'a>(
         &'a self,
         reader: &'a mut R,
         writer: &'a mut W,
-    ) -> Pin<Box<dyn Future<Output = Result<(), IpcBridgeError>> + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(), IpcBridgeError>> + Send + 'a>> {
         Box::pin(async move {
             let payload = transport::read_frame(reader).await?;
             let command = generated::CommandEnvelope::decode(payload.as_slice())?;

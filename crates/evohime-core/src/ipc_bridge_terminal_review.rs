@@ -1213,21 +1213,23 @@ impl IpcBridge {
                 return analysis_kernel_projection_error("worker_unavailable");
             }
         }
-        let database = self.journal.database().lock().await;
-        let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
-        if store.create_session(&session).is_err() {
-            return analysis_kernel_projection_error("storage_failed");
-        }
-        if store
-            .set_status(
-                &session.id,
-                session.revision,
-                crate::analysis_kernel::KernelStatus::Running,
-                now,
-            )
-            .is_err()
         {
-            return analysis_kernel_projection_error("runtime_unavailable");
+            let database = self.journal.database().lock().await;
+            let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+            if store.create_session(&session).is_err() {
+                return analysis_kernel_projection_error("storage_failed");
+            }
+            if store
+                .set_status(
+                    &session.id,
+                    session.revision,
+                    crate::analysis_kernel::KernelStatus::Running,
+                    now,
+                )
+                .is_err()
+            {
+                return analysis_kernel_projection_error("runtime_unavailable");
+            }
         }
         let mut session = session;
         session.status = crate::analysis_kernel::KernelStatus::Running;

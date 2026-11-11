@@ -201,7 +201,10 @@ describe('model picker', () => {
     render(
       <ModelPicker
         connection="connected"
-        events={[event('model.catalog', { mode: 'free', models: ['first:free', 'second:free'] })]}
+        events={[
+          event('model.catalog', { mode: 'free', models: ['first:free', 'second:free'] }),
+          event('model.config', { model: '' })
+        ]}
         use="text"
       />
     )
@@ -216,9 +219,10 @@ describe('model picker', () => {
 
   it('reports a rejected selection without retrying it automatically', async () => {
     const catalog = event('model.catalog', { mode: 'free', models: ['first:free', 'second:free'] })
-    const view = render(<ModelPicker connection="connected" events={[]} />)
+    const config = event('model.config', { model: '' })
+    const view = render(<ModelPicker connection="connected" events={[config]} />)
 
-    view.rerender(<ModelPicker connection="connected" events={[catalog]} />)
+    view.rerender(<ModelPicker connection="connected" events={[catalog, config]} />)
     await waitFor(() =>
       expect(calls).toContainEqual({
         command: 'core.selectModel',
@@ -230,7 +234,7 @@ describe('model picker', () => {
     view.rerender(
       <ModelPicker
         connection="connected"
-        events={[catalog, event('model.select.rejected', { reason: 'catalog_response_too_large' })]}
+        events={[catalog, config, event('model.select.rejected', { reason: 'catalog_response_too_large' })]}
       />
     )
 
@@ -262,19 +266,22 @@ describe('model picker', () => {
     render(
       <ModelPicker
         connection="connected"
-        events={[event('model.catalog', {
-          mode: 'free',
-          models: ['core-model'],
-          provider_catalog: {
-            models: [{
-              id: 'core-model',
-              limits: { context_tokens: 128000, max_output_tokens: 8192 },
-              capabilities: [{ capability: 'tool_calls', state: 'supported', provenance: 'observed' }],
-              privacy: 'provider_controlled',
-              lifecycle: 'active'
-            }]
-          }
-        })]}
+        events={[
+          event('model.catalog', {
+            mode: 'free',
+            models: ['core-model'],
+            provider_catalog: {
+              models: [{
+                id: 'core-model',
+                limits: { context_tokens: 128000, max_output_tokens: 8192 },
+                capabilities: [{ capability: 'tool_calls', state: 'supported', provenance: 'observed' }],
+                privacy: 'provider_controlled',
+                lifecycle: 'active'
+              }]
+            }
+          }),
+          event('model.config', { model: '' })
+        ]}
       />
     )
 

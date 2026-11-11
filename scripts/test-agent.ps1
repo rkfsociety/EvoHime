@@ -13,7 +13,11 @@ param(
     [string]$Synthesis,
     [switch]$Revise,
     [string]$Out,
-    [switch]$ListModels
+    [switch]$ListModels,
+    # Source-built Core for fast CLI checks; skips the release build.
+    [string]$CorePath,
+    # Isolated Core data directory for a test run.
+    [string]$DataDir
 )
 
 if (-not $Prompt -and -not $ReviewPlan -and -not $ListModels) {
@@ -22,8 +26,16 @@ if (-not $Prompt -and -not $ReviewPlan -and -not $ListModels) {
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$dataPath = Join-Path $root '.evohime-native\data'
-$corePath = Join-Path $root 'target\release\evohime-core.exe'
+$dataPath = if ($DataDir) {
+    [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($DataDir)) { $DataDir } else { Join-Path $root $DataDir }))
+} else {
+    Join-Path $root '.evohime-native\data'
+}
+$corePath = if ($CorePath) {
+    [IO.Path]::GetFullPath($(if ([IO.Path]::IsPathRooted($CorePath)) { $CorePath } else { Join-Path $root $CorePath }))
+} else {
+    Join-Path $root 'target\release\evohime-core.exe'
+}
 
 if (Test-Path (Join-Path $root '.env')) {
     $allowedKeys = @(
@@ -76,14 +88,14 @@ $env:EVOHIME_DEV_MODE = '1'
 
 Push-Location $root
 try {
-    if (-not $NoBuild) {
+    if (-not $NoBuild -and -not $CorePath) {
         cargo build --locked --release -p evohime-core
         if ($LASTEXITCODE -ne 0) {
             throw "Сборка evohime-core завершилась с кодом $LASTEXITCODE"
         }
     }
     if (-not (Test-Path -LiteralPath $corePath)) {
-        throw "Core не найден: $corePath. Запустите без -NoBuild."
+        throw "Core не найден: $corePath. Соберите его или укажите -CorePath."
     }
     if ($ListModels) {
         $coreArgs = @('--console', '--list-models')

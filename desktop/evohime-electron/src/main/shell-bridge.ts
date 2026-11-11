@@ -1314,6 +1314,12 @@ function dispatch(
       if (model === null) {
         return failure('invalid-payload', 'Некорректный идентификатор модели.')
       }
+      try {
+        providers.saveSelectedModel(model)
+      } catch (error) {
+        // A read-only provider store must not block the in-memory selection.
+        log('warn', 'shell.model_selection_persist_failed', { error })
+      }
       return accepted(client.send({ selectModel: { model } }))
     }
 

@@ -1718,6 +1718,14 @@ fn canonical_hash<T: Serialize + Clone>(
     Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
 }
 
+/// Hashes a prepared provider request without treating the request content as a
+/// stored strategy contract. The 64 KiB contract bound protects persisted
+/// profiles; the prompt itself legitimately grows with the model context.
+fn prepared_request_hash<T: Serialize>(value: &T) -> Result<String, PromptStrategyError> {
+    let bytes = serde_json::to_vec(value).map_err(|_| PromptStrategyError::Serialization)?;
+    Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
+}
+
 /// Calculates the deterministic digest of a profile definition.
 pub fn profile_hash(profile: &PromptStrategyProfile) -> Result<String, PromptStrategyError> {
     canonical_hash(profile, |value| value.content_hash.clear())
@@ -1977,8 +1985,8 @@ pub(crate) fn prepared_request_hashes(
         "tools": tools,
     });
     Ok((
-        canonical_hash(&messages_contract, |_| {})?,
-        canonical_hash(&tools_contract, |_| {})?,
+        prepared_request_hash(&messages_contract)?,
+        prepared_request_hash(&tools_contract)?,
     ))
 }
 
@@ -2473,6 +2481,18 @@ mod tests {
             validate_snapshot(&snapshot),
             Err(PromptStrategyError::Invalid("snapshot_identity"))
         );
+    }
+
+    #[test]
+    fn prepared_request_hashes_are_not_limited_by_contract_byte_bound() {
+        let messages = vec![evohime_model_gateway::providers::ChatMessage::text(
+            evohime_model_gateway::providers::ChatRole::User,
+            "x".repeat(70 * 1024),
+        )];
+        let (messages_hash, tools_hash) =
+            prepared_request_hashes(&messages, &[]).expect("large prompt hashes");
+        assert!(messages_hash.starts_with("sha256:"));
+        assert!(tools_hash.starts_with("sha256:"));
     }
 
     #[test]

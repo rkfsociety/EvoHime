@@ -304,6 +304,28 @@ export class ProviderStore {
     return this.readDocument().codexModel
   }
 
+  /**
+   * Persists the model chosen for the active provider without touching the
+   * credential. Core gets it back through {@link environment} on the next
+   * restart, so a selected model survives the application restart instead of
+   * falling back to the first catalogue entry.
+   */
+  saveSelectedModel(model: string): void {
+    const normalized = normalizeModel(model)
+    if (normalized === null || normalized.length === 0) return
+    const current = this.readDocument()
+    const profile = profileFor(current, current.provider)
+    if (normalized === profile.model) return
+    const next: StoredDocument = {
+      ...current,
+      profiles: {
+        ...current.profiles,
+        [current.provider]: { ...profile, model: normalized }
+      }
+    }
+    this.write(next)
+  }
+
   saveCodexModel(model: string): void {
     const current = this.readDocument()
     this.write({ ...current, codexModel: model })

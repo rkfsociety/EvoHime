@@ -146,10 +146,9 @@ pub async fn run_windows_pipe(
     logger: Arc<StructuredLogger>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Shared so the event pump can outlive one command loop iteration.
-    let pipe_name = config.context.pipe_name.clone();
+    let context = config.context;
+    let pipe_name = context.pipe_name.clone();
     let enforce = config.enforce_authentication;
-    let mut verifier = HandshakeVerifier::new(config.context, DEFAULT_NONCE_TTL_MS)
-        .map_err(|error| std::io::Error::other(error.to_string()))?;
     let user_sid = current_user_sid()?;
 
     let _ = logger.write(
@@ -174,6 +173,8 @@ pub async fn run_windows_pipe(
         let handle = server.as_raw_handle();
 
         let (mut reader, mut writer) = split(server);
+        let mut verifier = HandshakeVerifier::new(context.clone(), DEFAULT_NONCE_TTL_MS)
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
         match authenticate(
             &mut verifier,
             &bridge,
@@ -197,53 +198,77 @@ pub async fn run_windows_pipe(
             }
         }
 
-        // Task progress is pushed rather than polled: without this the shell
-        // only ever saw events when it happened to ask for a replay. Frames go
-        // through one channel so the command loop and the event pump never
-        // interleave a half-written frame, and reading a command is never
-        // cancelled mid-frame by an event arriving.
-        let (frames, mut outbound) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTBOUND_FRAME_CAPACITY);
-        let writer_task = tokio::spawn(async move {
-            while let Some(bytes) = outbound.recv().await {
-                if tokio::io::AsyncWriteExt::write_all(&mut writer, &bytes)
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
+        // Each authenticated client gets its own task. The accept loop must
+        // keep a second pipe instance listening while the shell holds its
+        // long-lived connection, otherwise the CLI and listener can never
+        // connect to a running desktop session.
+        let connection_bridge = Arc::clone(&bridge);
+        let connection_logger = Arc::clone(&logger);
+        tokio::spawn(serve_connection(
+            connection_bridge,
+            connection_logger,
+            reader,
+            writer,
+        ));
+    }
+}
 
-        let pump = bridge.journalled().map(|mut journalled| {
-            let bridge = Arc::clone(&bridge);
-            let mut sink = ChannelWriter::new(frames.clone());
-            tokio::spawn(async move {
-                let mut pushed = bridge.latest_sequence().await;
-                while journalled.changed().await.is_ok() {
-                    match bridge.push_journal_tail(&mut sink, pushed).await {
-                        Ok(sequence) => pushed = sequence,
-                        Err(_) => break,
-                    }
-                }
-            })
-        });
-
-        let mut sink = ChannelWriter::new(frames);
-        loop {
-            if let Err(error) = bridge.process_once(&mut reader, &mut sink).await {
-                let _ = logger.write(
-                    "warn",
-                    "ipc.connection_closed",
-                    serde_json::json!({"error": error.to_string()}),
-                );
+/// Serves one authenticated client until its command loop ends.
+async fn serve_connection<R, W>(
+    bridge: Arc<IpcBridge>,
+    logger: Arc<StructuredLogger>,
+    mut reader: R,
+    mut writer: W,
+) where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    // Task progress is pushed rather than polled: without this the shell
+    // only ever saw events when it happened to ask for a replay. Frames go
+    // through one channel so the command loop and the event pump never
+    // interleave a half-written frame, and reading a command is never
+    // cancelled mid-frame by an event arriving.
+    let (frames, mut outbound) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTBOUND_FRAME_CAPACITY);
+    let writer_task = tokio::spawn(async move {
+        while let Some(bytes) = outbound.recv().await {
+            if tokio::io::AsyncWriteExt::write_all(&mut writer, &bytes)
+                .await
+                .is_err()
+            {
                 break;
             }
         }
-        if let Some(pump) = pump {
-            pump.abort();
+    });
+
+    let pump = bridge.journalled().map(|mut journalled| {
+        let bridge = Arc::clone(&bridge);
+        let mut sink = ChannelWriter::new(frames.clone());
+        tokio::spawn(async move {
+            let mut pushed = bridge.latest_sequence().await;
+            while journalled.changed().await.is_ok() {
+                match bridge.push_journal_tail(&mut sink, pushed).await {
+                    Ok(sequence) => pushed = sequence,
+                    Err(_) => break,
+                }
+            }
+        })
+    });
+
+    let mut sink = ChannelWriter::new(frames);
+    loop {
+        if let Err(error) = bridge.process_once(&mut reader, &mut sink).await {
+            let _ = logger.write(
+                "warn",
+                "ipc.connection_closed",
+                serde_json::json!({"error": error.to_string()}),
+            );
+            break;
         }
-        writer_task.abort();
     }
+    if let Some(pump) = pump {
+        pump.abort();
+    }
+    writer_task.abort();
 }
 
 /// Runs the challenge/response exchange for one connection.

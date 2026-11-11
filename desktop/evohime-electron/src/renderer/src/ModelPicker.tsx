@@ -49,6 +49,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [error, setError] = useState<string | null>(null)
   const [selectionError, setSelectionError] = useState<string | null>(null)
   const [catalogStatus, setCatalogStatus] = useState<CatalogStatus | null>(null)
+  const [configLoaded, setConfigLoaded] = useState(false)
   const pendingSelection = useRef<string | null>(null)
   const autoSelectionBlocked = useRef(false)
 
@@ -64,6 +65,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setError(null)
     setSelectionError(null)
     setCatalogStatus(null)
+    setConfigLoaded(false)
     pendingSelection.current = null
     autoSelectionBlocked.current = false
     onModelChange?.('')
@@ -147,6 +149,16 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setError(typeof catalogError === 'string' ? catalogError : null)
     const catalogProjection = asRecord(projection?.['catalog'])
     const providerProjection = asRecord(projection?.['provider'])
+    const configuredModel = typeof catalogProjection?.['configured_model'] === 'string'
+      ? catalogProjection['configured_model']
+      : ''
+    // Core reports the persisted route model in the catalogue projection. Use
+    // it before the automatic first-model choice so a restart keeps the model
+    // the user selected instead of silently picking the first entry.
+    if (current === '' && configuredModel.length > 0 && catalogModels.includes(configuredModel)) {
+      setCurrent(configuredModel)
+      onModelChange?.(configuredModel)
+    }
     const state = typeof catalogProjection?.['state'] === 'string' ? catalogProjection['state'] : null
     const failureCode = typeof catalogProjection?.['failure_code'] === 'string'
       ? catalogProjection['failure_code']
@@ -174,6 +186,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       setCurrent(parsed['model'])
       onModelChange?.(parsed['model'])
     }
+    setConfigLoaded(true)
   }, [config, onModelChange, provider])
 
   const select = useCallback(
@@ -213,11 +226,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   // default, which need not even exist in this tier. Commit to what is shown.
   useEffect(() => {
     const available = visibleModels.map((model) => model.value)
-    if (disabled || autoSelectionBlocked.current || available.length === 0) return
+    if (!configLoaded || disabled || autoSelectionBlocked.current || available.length === 0) return
     if (current !== '' && catalogModels.some((model) => model.value === current)) return
     const first = available[0]
     if (first !== undefined) void select(first)
-  }, [catalogModels, current, disabled, select, visibleModels])
+  }, [catalogModels, configLoaded, current, disabled, select, visibleModels])
 
   if (!connected) {
     return null

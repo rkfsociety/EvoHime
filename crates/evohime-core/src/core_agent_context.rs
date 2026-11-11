@@ -12,6 +12,51 @@ fn provider_error_code(error: &ProviderError) -> &'static str {
     }
 }
 
+/// Safe, bounded classification for a terminal configuration failure. The raw
+/// provider error can contain paths or credentials, so only stable reason codes
+/// are written to the trace.
+fn provider_error_reason(error: &ProviderError) -> &'static str {
+    let ProviderError::Config(message) = error else {
+        return "provider_error";
+    };
+    match message.as_str() {
+        "provider_route_not_configured" => "provider_route_not_configured",
+        "provider_credential_not_configured" => "provider_credential_not_configured",
+        "provider_profile_invalid" => "provider_profile_invalid",
+        "provider_model_not_configured" => "provider_model_not_configured",
+        "provider_catalog_lock_failed" => "provider_catalog_lock_failed",
+        "provider_model_capability_unsupported" => "provider_model_capability_unsupported",
+        "provider_catalog_expired" => "provider_catalog_expired",
+        "provider_model_not_found" => "provider_model_not_found",
+        "provider_catalog_stale" => "provider_catalog_stale",
+        "provider_credential_rejected" => "provider_credential_rejected",
+        "provider_catalog_unavailable" => "provider_catalog_unavailable",
+        "free_access_not_verified" => "free_access_not_verified",
+        "free_access_fallback_not_allowed" => "free_access_fallback_not_allowed",
+        "sensitive_data_blocked" => "sensitive_data_blocked",
+        other => {
+            let lower = other.to_ascii_lowercase();
+            if lower.contains("locked") || lower.contains("busy") {
+                "storage_busy"
+            } else if lower.contains("storage") || lower.contains("database") {
+                "storage_error"
+            } else if lower.contains("revision conflict") {
+                "revision_conflict"
+            } else if lower.contains("limit") {
+                "limit_exceeded"
+            } else if lower.contains("snapshot unavailable") {
+                "snapshot_unavailable"
+            } else if lower.contains("structured output") {
+                "structured_output_contract"
+            } else if lower.contains("profile") || lower.contains("strategy") {
+                "prompt_strategy"
+            } else {
+                "configuration"
+            }
+        }
+    }
+}
+
 fn aggregate_sample_usage(
     samples: &[ProvenancedModelResult],
 ) -> Option<evohime_model_gateway::LlmUsage> {
@@ -193,12 +238,24 @@ impl RouteAttemptHook for CorePromptStrategyRouteHook {
                 .iter()
                 .map(|(profile, lifecycle)| (profile, *lifecycle))
                 .collect();
-            let fresh_evidence_hashes = crate::prompt_strategy::fresh_profile_evidence_hashes(
+            let fresh_evidence_hashes = match crate::prompt_strategy::fresh_profile_evidence_hashes(
                 connection,
                 &profile_refs,
                 task_memory::now_millis() as i64,
-            )
-            .map_err(|error| ProviderError::Config(error.to_string()))?;
+            ) {
+                Ok(hashes) => hashes,
+                Err(error) => {
+                    // Evidence hashes are advisory for strategy selection. A
+                    // storage hiccup must not turn a model call into a terminal
+                    // provider configuration failure.
+                    tracing::warn!(
+                        target: "prompt.strategy",
+                        error = %error,
+                        "fresh profile evidence hashes are unavailable"
+                    );
+                    std::collections::HashSet::new()
+                }
+            };
             let available_tool_ids: Vec<_> = tools
                 .iter()
                 .map(|tool| tool.function.name.clone())
@@ -285,22 +342,37 @@ impl RouteAttemptHook for CorePromptStrategyRouteHook {
             snapshot.content_hash.clear();
             snapshot.content_hash = crate::prompt_strategy::snapshot_hash(&snapshot)
                 .map_err(|error| ProviderError::Config(error.to_string()))?;
-            crate::prompt_strategy::persist_selection(
+            if let Err(error) = crate::prompt_strategy::persist_selection(
                 connection,
                 &snapshot,
                 &self.request_id,
                 task_memory::now_millis() as i64,
-            )
-            .map_err(|error| ProviderError::Config(error.to_string()))?;
+            ) {
+                // Selection persistence is a recovery aid, not a precondition
+                // for the model call. A storage error here used to surface as
+                // terminal `provider_configuration` after several tool rounds.
+                tracing::warn!(
+                    target: "prompt.strategy",
+                    error = %error,
+                    "prompt strategy selection was not persisted"
+                );
+            }
             drop(database);
             if !self
                 .dispatch_marked
                 .swap(true, std::sync::atomic::Ordering::SeqCst)
             {
-                self.journal
+                if let Err(error) = self
+                    .journal
                     .mark_model_dispatch(&self.request_id, task_memory::now_millis() as i64)
                     .await
-                    .map_err(|error| ProviderError::Config(error.to_string()))?;
+                {
+                    tracing::warn!(
+                        target: "prompt.strategy",
+                        error = %error,
+                        "model dispatch marker was not recorded"
+                    );
+                }
             }
             Ok(PreparedRouteAttempt {
                 messages: messages.to_vec(),
@@ -623,7 +695,7 @@ impl ToolAgent {
 
         // Подтверждённые записи scratchpad участвуют в сборке; их
         // `open_questions` дополнительно питают intent router (01.4).
-        let scratchpad = match &self.journal {
+        let mut scratchpad = match &self.journal {
             Some(journal) => {
                 let entries = journal
                     .confirmed_scratchpad(task_id, 100)
@@ -656,6 +728,31 @@ impl ToolAgent {
             }
             None => Vec::new(),
         };
+        // Scratchpad entries offloaded above keep only a locator in SQLite. For
+        // the prompt, replace it with the artifact's bounded summary so the
+        // model sees actual tool findings instead of an opaque hash.
+        if let Some(journal) = &self.journal {
+            let database = journal.database().lock().await;
+            let artifacts =
+                evohime_local_storage::domains::workflow::ArtifactStore::new(database.connection());
+            for entry in &mut scratchpad {
+                let Some(locator) = entry.artifact_locator.clone() else {
+                    continue;
+                };
+                let summary = artifacts
+                    .get_ref(&locator)
+                    .ok()
+                    .flatten()
+                    .map(|reference| reference.summary)
+                    .unwrap_or_default();
+                entry.content = if summary.is_empty() {
+                    format!("[artifact {locator}]")
+                } else {
+                    format!("[artifact {locator}]\n{summary}")
+                };
+                entry.artifact_locator = None;
+            }
+        }
         let open_questions: Vec<String> = scratchpad
             .iter()
             .filter(|entry| {
@@ -1227,6 +1324,7 @@ impl ToolAgent {
                             serde_json::json!({
                                 "task_id": task_id,
                                 "error_code": error_code,
+                                "reason": provider_error_reason(&error),
                             }),
                         );
                         return Err(AgentRunError::Provider(ProviderError::Api(
@@ -1339,6 +1437,31 @@ mod prompt_strategy_fanout_tests {
             },
             2,
         ));
+    }
+
+    #[test]
+    fn configuration_errors_expose_only_safe_reasons() {
+        let cases = [
+            (
+                ProviderError::Config("provider_catalog_stale".into()),
+                "provider_catalog_stale",
+            ),
+            (
+                ProviderError::Config("database is locked at C:\\Users\\roman".into()),
+                "storage_busy",
+            ),
+            (
+                ProviderError::Config("structured output contract unavailable".into()),
+                "structured_output_contract",
+            ),
+            (
+                ProviderError::Config("https://provider.test?token=secret".into()),
+                "configuration",
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(provider_error_reason(&error), expected);
+        }
     }
 
     #[test]

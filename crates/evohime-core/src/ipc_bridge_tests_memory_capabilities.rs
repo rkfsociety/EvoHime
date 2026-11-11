@@ -13,8 +13,8 @@ async fn memory_create_list_search_archive_forget_round_trip_against_real_storag
     async fn send(
         bridge: &IpcBridge,
         client: &mut tokio::io::DuplexStream,
-        server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
-        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+        server_reader: &mut (impl tokio::io::AsyncRead + Unpin + Send),
+        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin + Send),
         request_id: &str,
         command: generated::command_envelope::Command,
     ) -> generated::EventEnvelope {
@@ -335,8 +335,8 @@ async fn memory_pending_conflict_confirm_reject_supersede_round_trip() {
     async fn send(
         bridge: &IpcBridge,
         client: &mut tokio::io::DuplexStream,
-        server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
-        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+        server_reader: &mut (impl tokio::io::AsyncRead + Unpin + Send),
+        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin + Send),
         request_id: &str,
         command: generated::command_envelope::Command,
     ) -> generated::EventEnvelope {
@@ -818,8 +818,8 @@ async fn capability_install_list_match_remove_round_trip_against_real_storage() 
     async fn send(
         bridge: &IpcBridge,
         client: &mut tokio::io::DuplexStream,
-        server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
-        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+        server_reader: &mut (impl tokio::io::AsyncRead + Unpin + Send),
+        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin + Send),
         request_id: &str,
         command: generated::command_envelope::Command,
     ) -> generated::EventEnvelope {
@@ -1066,8 +1066,8 @@ async fn capability_selection_get_pin_replace_round_trip_against_real_storage() 
     async fn send(
         bridge: &IpcBridge,
         client: &mut tokio::io::DuplexStream,
-        server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
-        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+        server_reader: &mut (impl tokio::io::AsyncRead + Unpin + Send),
+        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin + Send),
         request_id: &str,
         command: generated::command_envelope::Command,
     ) -> generated::EventEnvelope {
@@ -1275,8 +1275,8 @@ async fn child_handoff_request_report_security_boundary_against_real_storage() {
     async fn send(
         bridge: &IpcBridge,
         client: &mut tokio::io::DuplexStream,
-        server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
-        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+        server_reader: &mut (impl tokio::io::AsyncRead + Unpin + Send),
+        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin + Send),
         request_id: &str,
         command: generated::command_envelope::Command,
     ) -> generated::EventEnvelope {
@@ -1537,8 +1537,8 @@ async fn list_verify_and_export_receipts_over_ipc() {
     async fn send(
         bridge: &IpcBridge,
         client: &mut tokio::io::DuplexStream,
-        server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
-        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+        server_reader: &mut (impl tokio::io::AsyncRead + Unpin + Send),
+        server_writer: &mut (impl tokio::io::AsyncWrite + Unpin + Send),
         request_id: &str,
         command: generated::command_envelope::Command,
     ) -> generated::EventEnvelope {

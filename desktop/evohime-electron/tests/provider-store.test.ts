@@ -70,6 +70,26 @@ describe('provider store', () => {
     expect(JSON.stringify(store.summary())).not.toContain('sk-secret-value')
   })
 
+  it('keeps the selected model across restarts without touching the key', () => {
+    const path = storePath()
+    const store = new ProviderStore(path, reversibleCipher())
+    store.save({
+      provider: 'literouter',
+      apiKey: 'sk-secret-value',
+      model: 'first:free',
+      baseUrl: '',
+      tier: 'free'
+    })
+
+    store.saveSelectedModel('second:free')
+
+    const reopened = new ProviderStore(path, reversibleCipher())
+    expect(reopened.summary().model).toBe('second:free')
+    expect(reopened.environment()['LITEROUTER_MODEL']).toBe('second:free')
+    expect(reopened.environment()['LITEROUTER_API_KEY']).toBe('sk-secret-value')
+    expect(readFileSync(path, 'utf8')).not.toContain('sk-secret-value')
+  })
+
   it('exports only the selected provider variables', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
     store.save({ provider: 'openai_compatible', apiKey: 'sk-openai', model: 'gpt-4o-mini', baseUrl: '', tier: 'paid' })
