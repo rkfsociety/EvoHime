@@ -36,14 +36,15 @@
 | 186 | [Core-owned Local Typed-Decision Fast Path](186-0-core-local-typed-decision-fast-path.md) | active; исторический источник issue #162 |
 | 187 | [Core-owned Windows Native Computer Use](187-0-core-windows-native-computer-use.md) | active; исторический источник issue #163; blocking dependencies 184–185 |
 | 188 | [Core-owned Research Experiment Tree](188-0-core-research-experiment-tree.md) | active; исторический источник issue #164 |
+| 191 | [Core-owned tool surface hardening и доставка skills агенту](191-0-core-tool-surface-and-skill-delivery.md) | active; выведен из аудита checkout, без исходного issue |
 
-Незавершённые numbered plans: 180–181 и 184–188.
+Незавершённые numbered plans: 180–181, 184–188 и 191.
 
 Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая работа
 получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `191`, текущий active catalog — `180–181` и
-`184–188`.
+зависимостей; следующий номер — `192`, текущий active catalog — `180–181`,
+`184–188` и `191`.
 Номера issues в активных планах — исторические идентификаторы постановок и не
 являются текущим источником статуса или критерием закрытия.
 
