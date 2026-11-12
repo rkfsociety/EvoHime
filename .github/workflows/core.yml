@@ -26,6 +26,14 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Cached target directories behave better without incremental fingerprints,
+  # and CI never benefits from reusing a partially written incremental cache.
+  CARGO_INCREMENTAL: '0'
+  # Debug info is irrelevant for test execution but dominates test binary
+  # linking time; line tables keep actionable backtraces.
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
 jobs:
   linux-cli-runtime:
     name: Core — Linux headless CLI runtime
@@ -35,6 +43,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: core-linux-release
+          cache-on-failure: true
       - run: cargo fmt --all -- --check
       - run: cargo test --locked -p evohime-desktop-ipc
       - run: cargo build --locked --release -p evohime-core -p evohime-cli
@@ -57,7 +70,7 @@ jobs:
           test "$(stat -c '%a' "$XDG_RUNTIME_DIR/evohime/session.json")" = 600
 
   core:
-    name: Core — tests, lint and build
+    name: Core — tests and lint
     runs-on: windows-latest
     timeout-minutes: 60
     env:
@@ -68,11 +81,16 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt, clippy
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: core-windows-test
+          cache-on-failure: true
       - name: Core format
         run: cargo fmt --all -- --check
       - name: Core test build
         run: >-
-          cargo test --locked --no-run
+          cargo test --locked --no-run --lib --bins --tests --examples
           -p evohime-core
           -p evohime-context-budget
           -p evohime-local-storage
@@ -80,26 +98,41 @@ jobs:
           -p evohime-permissions
           -p evohime-tool-runtime
       - name: Core tests
-        shell: pwsh
-        run: |
-          # Compilation happens in the previous step, so these limits bound test
-          # execution only. Counting a cold 15-minute build against a single
-          # package used to abort evohime-core mid-run, and the killed process
-          # reported the still-running doc-tests as failures.
-          function Invoke-BoundedCargoTest([string]$package, [int]$timeoutMinutes) {
-            Write-Host "Testing package: $package"
-            $process = Start-Process -FilePath 'cargo.exe' -ArgumentList @('test', '--locked', '-p', $package) -NoNewWindow -PassThru
-            if (-not $process.WaitForExit($timeoutMinutes * 60 * 1000)) {
-              taskkill.exe /PID $process.Id /T /F
-              throw "Core tests exceeded the $timeoutMinutes-minute limit for $package."
-            }
-            if ($process.ExitCode -ne 0) { throw "Core tests failed for $package (exit code $($process.ExitCode))." }
-          }
-          Invoke-BoundedCargoTest 'evohime-core' 20
-          @('evohime-context-budget', 'evohime-local-storage', 'evohime-model-gateway', 'evohime-permissions', 'evohime-tool-runtime') | ForEach-Object { Invoke-BoundedCargoTest $_ 8 }
+        # Compilation happens in the previous step, so the step timeout bounds
+        # test execution only. Running the same -p set and target selection as
+        # the build keeps Cargo's feature unification identical and avoids
+        # rebuilding packages. Target selection also skips doc-tests, which the
+        # separate rustdoc workflow already runs for the workspace.
+        timeout-minutes: 30
+        run: >-
+          cargo test --locked --lib --bins --tests --no-fail-fast
+          -p evohime-core
+          -p evohime-context-budget
+          -p evohime-local-storage
+          -p evohime-model-gateway
+          -p evohime-permissions
+          -p evohime-tool-runtime
       - name: Core lint
         run: cargo clippy --locked -p evohime-core --all-targets -- -D warnings
-      - name: Core build
+
+  release:
+    name: Core — release build
+    # The release binary is only consumed by the publish job, so pull requests
+    # do not pay for a separate release-profile build of the whole graph.
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: core-windows-release
+          cache-on-failure: true
+      - name: Core release build
         run: cargo build --locked --release -p evohime-core
       - uses: actions/upload-artifact@v7
         with:
@@ -109,7 +142,7 @@ jobs:
 
   publish:
     name: Core — stable module release
-    needs: [core, linux-cli-runtime]
+    needs: [core, release, linux-cli-runtime]
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: windows-latest
     permissions:
