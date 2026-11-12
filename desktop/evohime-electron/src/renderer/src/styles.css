@@ -2712,12 +2712,25 @@ select:focus {
   background: none;
   color: var(--fg-faint);
   font-size: 11px;
-  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease, color 140ms ease, background 140ms ease;
 }
 
 .projects__row:hover .projects__forget,
-.chats__list li:hover .chats__remove {
-  visibility: visible;
+.projects__row:focus-within .projects__forget,
+.chats__list li:hover .chats__remove,
+.chats__list li:focus-within .chats__remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .projects__forget,
+  .chats__remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .projects__item--missing .projects__name {

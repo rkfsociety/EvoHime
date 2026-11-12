@@ -29,6 +29,13 @@ describe('responsive shell layout contract', () => {
     expect(stylesheet).toContain('.statusbar {\n    height: auto;\n    min-height: 26px;\n    flex-wrap: wrap;')
   })
 
+  it('keeps row actions reachable by keyboard and touch', () => {
+    expect(stylesheet).toContain('.projects__row:focus-within .projects__forget')
+    expect(stylesheet).toContain('.chats__list li:focus-within .chats__remove')
+    expect(stylesheet).toContain('@media (hover: none)')
+    expect(stylesheet).toContain('pointer-events: auto;')
+  })
+
   it('provides a visible focus indicator for keyboard navigation', () => {
     expect(stylesheet).toContain(':where(button, a, input, select, textarea, summary, [tabindex]):focus-visible')
     expect(stylesheet).toContain('outline: 2px solid var(--accent);')

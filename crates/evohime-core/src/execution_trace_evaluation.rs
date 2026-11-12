@@ -319,7 +319,10 @@ impl ExecutionTrace {
                 }
             }
             if event.evidence_refs.len() > MAX_ASSERTION_ITEMS
-                || event.evidence_refs.iter().any(|value| !valid_identifier(value))
+                || event
+                    .evidence_refs
+                    .iter()
+                    .any(|value| !valid_identifier(value))
             {
                 return Err(TraceEvaluationError::InvalidEventShape);
             }
@@ -364,7 +367,9 @@ impl ExecutionTrace {
                         || event.tool_id.is_some()
                         || event.args_digest.is_some()
                         || event.retry_of.is_some()
-                        || approvals.get(approval_id).is_none_or(|sequence| *sequence >= event.sequence)
+                        || approvals
+                            .get(approval_id)
+                            .is_none_or(|sequence| *sequence >= event.sequence)
                     {
                         return Err(TraceEvaluationError::ApprovalEffectOrderViolation);
                     }
@@ -448,7 +453,8 @@ impl TraceEvaluationContract {
                         return Err(TraceEvaluationError::InvalidAssertions);
                     }
                 }
-                TraceAssertionRule::ApprovalBeforeEffect | TraceAssertionRule::RequiresEvidence => {}
+                TraceAssertionRule::ApprovalBeforeEffect | TraceAssertionRule::RequiresEvidence => {
+                }
             }
         }
         Ok(())
