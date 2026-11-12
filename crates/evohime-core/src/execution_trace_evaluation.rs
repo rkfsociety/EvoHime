@@ -120,17 +120,29 @@ pub struct ExecutionTrace {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TraceAssertionRule {
     /// Require the complete observed tool-call sequence to match exactly.
-    ExactToolSequence { tool_ids: Vec<String> },
+    ExactToolSequence {
+        /// Expected stable tool identifiers in observed order.
+        tool_ids: Vec<String>,
+    },
     /// Require the listed tool calls to occur in order; other calls may intervene.
-    ToolSubsequence { tool_ids: Vec<String> },
+    ToolSubsequence {
+        /// Expected stable tool identifiers in observed order.
+        tool_ids: Vec<String>,
+    },
     /// Fail if any listed tool is observed.
-    ForbiddenTools { tool_ids: Vec<String> },
+    ForbiddenTools {
+        /// Stable tool identifiers that must not appear.
+        tool_ids: Vec<String>,
+    },
     /// Require every committed effect to follow its matching approval event.
     ApprovalBeforeEffect,
     /// Require at least one attached reference from the existing evidence ledger.
     RequiresEvidence,
     /// Require the observed event count not to exceed this bound.
-    MaxEvents { maximum: usize },
+    MaxEvents {
+        /// Maximum permitted number of events.
+        maximum: usize,
+    },
     /// Require a retry to preserve the original tool identity and argument digest.
     RetryEquivalent {
         /// Event identifier of the original tool call.
@@ -386,8 +398,7 @@ impl ExecutionTrace {
     /// Returns the canonical SHA-256 digest of this validated redacted trace.
     pub fn canonical_hash(&self) -> Result<String, TraceEvaluationError> {
         self.validate()?;
-        let bytes =
-            serde_json::to_vec(self).map_err(|_| TraceEvaluationError::Serialization)?;
+        let bytes = serde_json::to_vec(self).map_err(|_| TraceEvaluationError::Serialization)?;
         Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
     }
 }
@@ -460,10 +471,7 @@ fn tool_calls(trace: &ExecutionTrace) -> Vec<&ExecutionTraceEvent> {
         .collect()
 }
 
-fn evaluate_assertion(
-    trace: &ExecutionTrace,
-    assertion: &TraceAssertion,
-) -> TraceAssertionResult {
+fn evaluate_assertion(trace: &ExecutionTrace, assertion: &TraceAssertion) -> TraceAssertionResult {
     let reason = match &assertion.rule {
         TraceAssertionRule::ExactToolSequence { tool_ids } => {
             let actual = tool_calls(trace)
@@ -505,7 +513,11 @@ fn evaluate_assertion(
         }
         TraceAssertionRule::ApprovalBeforeEffect => TraceAssertionReason::Passed,
         TraceAssertionRule::RequiresEvidence => {
-            if trace.events.iter().any(|event| !event.evidence_refs.is_empty()) {
+            if trace
+                .events
+                .iter()
+                .any(|event| !event.evidence_refs.is_empty())
+            {
                 TraceAssertionReason::Passed
             } else {
                 TraceAssertionReason::EvidenceMissing
@@ -522,8 +534,14 @@ fn evaluate_assertion(
             original_event_id,
             retry_event_id,
         } => {
-            let original = trace.events.iter().find(|event| event.event_id == *original_event_id);
-            let retry = trace.events.iter().find(|event| event.event_id == *retry_event_id);
+            let original = trace
+                .events
+                .iter()
+                .find(|event| event.event_id == *original_event_id);
+            let retry = trace
+                .events
+                .iter()
+                .find(|event| event.event_id == *retry_event_id);
             match (original, retry) {
                 (Some(original), Some(retry))
                     if retry.kind == TraceEventKind::RetryStarted
@@ -670,7 +688,10 @@ mod tests {
     #[test]
     fn canonical_hash_is_stable_for_same_redacted_trace() {
         let value = trace();
-        assert_eq!(value.canonical_hash().unwrap(), value.canonical_hash().unwrap());
+        assert_eq!(
+            value.canonical_hash().unwrap(),
+            value.canonical_hash().unwrap()
+        );
         assert!(value.canonical_hash().unwrap().starts_with("sha256:"));
     }
 
