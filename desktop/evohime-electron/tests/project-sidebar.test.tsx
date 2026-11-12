@@ -43,7 +43,7 @@ afterEach(() => cleanup())
 function renderSidebar(overrides: Partial<Parameters<typeof ProjectSidebar>[0]> = {}) {
   const props = {
     connection: 'connected' as const, workspace: 'C:\\work\\repo' as string | null, chatId: null as string | null,
-    onWorkspaceChange: vi.fn(), onChatChange: vi.fn(), onScheduled: vi.fn(), onPlugins: vi.fn(), revision: 0, ...overrides
+    onWorkspaceChange: vi.fn(), onChatChange: vi.fn(), revision: 0, ...overrides
   }
   return { props, ...render(<ProjectSidebar {...props} />) }
 }
@@ -56,18 +56,14 @@ describe('project sidebar', () => {
     expect(props.onChatChange).toHaveBeenCalledWith(null)
   })
 
-  it('keeps one new-chat action and leaves project selection to the composer', async () => {
-    const { props } = renderSidebar()
+  it('keeps one new-chat action and owns workspace selection in the context rail', async () => {
+    renderSidebar()
     expect(screen.getAllByRole('button', { name: /Новый чат/ })).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Запланировано' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Плагины' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Запланировано' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Плагины' })).toBeNull()
     expect(screen.getByRole('heading', { name: 'Чаты' })).toBeTruthy()
-    expect(screen.queryByRole('combobox', { name: 'Рабочая папка' })).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Рабочая папка' })).toBeTruthy()
     await waitFor(() => expect(screen.getByRole('button', { name: 'Изучи проект' })).toBeTruthy())
-    await userEvent.click(screen.getByRole('button', { name: 'Запланировано' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Плагины' }))
-    expect(props.onScheduled).toHaveBeenCalledOnce()
-    expect(props.onPlugins).toHaveBeenCalledOnce()
   })
 
   it('opens a project-scoped empty chat without creating it yet', async () => {
