@@ -21,8 +21,6 @@ export interface ProjectSidebarProps {
   readonly chatId: string | null
   readonly onWorkspaceChange: (workspace: string | null) => void
   readonly onChatChange: (chatId: string | null) => void
-  readonly onScheduled: () => void
-  readonly onPlugins: () => void
   /** Bumped by the chat surface when a prompt renames or reorders a chat. */
   readonly revision: number
 }
@@ -33,8 +31,6 @@ export function ProjectSidebar({
   chatId,
   onWorkspaceChange,
   onChatChange,
-  onScheduled,
-  onPlugins,
   revision
 }: ProjectSidebarProps): React.JSX.Element {
   const t = useT()
@@ -97,14 +93,6 @@ export function ProjectSidebar({
           <span className="chat-rail__action-icon" aria-hidden="true">＋</span>
           <span>{t('Новый чат')}</span>
           <kbd>Ctrl K</kbd>
-        </button>
-        <button type="button" className="chat-rail__action" onClick={onScheduled}>
-          <span className="chat-rail__action-icon" aria-hidden="true">◷</span>
-          <span>{t('Запланировано')}</span>
-        </button>
-        <button type="button" className="chat-rail__action" onClick={onPlugins}>
-          <span className="chat-rail__action-icon" aria-hidden="true">✦</span>
-          <span>{t('Плагины')}</span>
         </button>
       </div>
 

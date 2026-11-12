@@ -89,8 +89,9 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
 ]
 
 const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запланировано', icon: '◷' }, ...USER_VIEWS]
+const PRIMARY_VIEWS: readonly ViewDescriptor[] = [{ id: 'chat', label: 'Чат', icon: '✦' }, ...VIEWS]
 
-/** Not a nav row: reached through the gear next to the account. */
+/** Settings remain under the account menu to keep the main navigation focused. */
 const SETTINGS_LABEL = 'Настройки'
 
 export function App(): React.JSX.Element {
@@ -265,6 +266,20 @@ export function App(): React.JSX.Element {
           <h1 className="sidebar__title">EvoHime</h1>
         </div>
 
+        <nav className="sidebar__nav" aria-label={t('Основная навигация')}>
+          {translate(PRIMARY_VIEWS.map((item) => (
+            <NavItem
+              key={item.id}
+              view={item}
+              active={item.id === view}
+              onSelect={(id) => {
+                setView(id)
+                setAccountMenuOpen(false)
+              }}
+            />
+          )))}
+        </nav>
+
         <div className="sidebar__projects">
           <ProjectSidebar
             connection={connection}
@@ -275,15 +290,6 @@ export function App(): React.JSX.Element {
               setChatId(id)
               // Starting or picking a chat means going back to the conversation.
               setView('chat')
-            }}
-            onScheduled={() => {
-              setView('scheduled')
-              setAccountMenuOpen(false)
-            }}
-            onPlugins={() => {
-              setSettingsTab('skills')
-              setSettingsOpen(true)
-              setAccountMenuOpen(false)
             }}
             revision={chatRevision}
           />
@@ -311,17 +317,6 @@ export function App(): React.JSX.Element {
           <UpdateIndicator status={update} />
           {accountMenuOpen ? (
             <div className="account__menu" role="menu" aria-label={t('Разделы и настройки')}>
-              {translate(USER_VIEWS.map((item) => (
-                <NavItem
-                  key={item.id}
-                  view={item}
-                  active={item.id === view}
-                  onSelect={(id) => {
-                    setView(id)
-                    setAccountMenuOpen(false)
-                  }}
-                />
-              )))}
               <button
                 type="button"
                 className="account__menu-item"
@@ -549,12 +544,13 @@ function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
     <button
       type="button"
       className="nav-item"
-      role="menuitem"
       aria-current={active ? 'page' : undefined}
+      aria-label={t(view.label)}
+      title={t(view.label)}
       onClick={() => onSelect(view.id)}
     >
       <span className="nav-item__icon" aria-hidden="true">{translate(view.icon)}</span>
-      {t(view.label)}
+      <span className="nav-item__label">{t(view.label)}</span>
     </button>
   )
 }
