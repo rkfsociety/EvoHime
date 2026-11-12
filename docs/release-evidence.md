@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-09-26.
+Обновлено: 2026-11-11.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -3466,3 +3466,41 @@ shell-host `0.0.000110`, updater `0.0.000131`, and UI bundle `0.0.000131`.
 workflow already covers `src/main/**`. Task-only implementation commit
 `99413adf8b671158afc98993e1e0accbd7f0f281` is local on `main` and has not been
 pushed. Exact-SHA GitHub CI and module publication remain pending that push.
+
+
+## Verified main baseline — 2026-11-11
+
+На опубликованном main commit
+`00d7980e8577c4ebb99d472745ffdd914fe976b4` подтверждены следующие exact-SHA
+GitHub Actions результаты:
+
+- Core workflow
+  [43109221013](https://github.com/rkfsociety/EvoHime/actions/runs/43109221013)
+  завершился `success`: прошли Windows format, tests для
+  `evohime-core`, `evohime-context-budget`, `evohime-local-storage`,
+  `evohime-model-gateway`, `evohime-permissions` и `evohime-tool-runtime`,
+  Core clippy, release build и artifact upload. Linux headless CLI job также
+  прошёл format, desktop IPC tests, release build, Core autostart и проверки
+  private IPC endpoint. Публикация Core-модуля завершилась успешно.
+- Module router
+  [43109131847](https://github.com/rkfsociety/EvoHime/actions/runs/43109131847)
+  завершился `success`; regression checks updater recovery и module router
+  прошли, dispatch выбранных module workflows завершился успешно.
+- UI bundle
+  [43109217601](https://github.com/rkfsociety/EvoHime/actions/runs/43109217601)
+  прошёл protocol check, typecheck, полный npm test, production build,
+  packaging и публикацию.
+- Shell host
+  [43109213462](https://github.com/rkfsociety/EvoHime/actions/runs/43109213462)
+  прошёл protocol check, typecheck, полный npm test, production build,
+  package-from-build и публикацию.
+- Совместимый release manifest
+  [43113653996](https://github.com/rkfsociety/EvoHime/actions/runs/43113653996)
+  завершился `success` и опубликовал fixed compatible set manifest.
+
+Эти результаты подтверждают перечисленные CI gates для указанного commit;
+они не являются доказательством реализации активных планов 180–181 и
+184–188. Rust documentation workflow для этого SHA отдельно не засчитывается:
+в доступном снимке его запуск оставался queued, поэтому rustdoc/doc-tests
+здесь не отмечены как пройденные. Локальные проверки в этой сессии не
+выполнялись.
