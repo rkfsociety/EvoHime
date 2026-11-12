@@ -4,12 +4,41 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-const stylesheet = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), '../src/renderer/src/styles.css'),
-  'utf8'
-)
+const testDirectory = dirname(fileURLToPath(import.meta.url))
+const stylesheet = readFileSync(resolve(testDirectory, '../src/renderer/src/styles.css'), 'utf8')
+const projectSidebar = readFileSync(resolve(testDirectory, '../src/renderer/src/ProjectSidebar.tsx'), 'utf8')
+const taskTimeline = readFileSync(resolve(testDirectory, '../src/renderer/src/TaskTimeline.tsx'), 'utf8')
+const appSource = readFileSync(resolve(testDirectory, '../src/renderer/src/App.tsx'), 'utf8')
 
 describe('responsive shell layout contract', () => {
+  it('uses a dedicated icon rail and a separate workspace/chat column', () => {
+    expect(stylesheet).toContain('grid-template-columns: 68px minmax(0, 1fr);')
+    expect(stylesheet).toContain('.sidebar__nav {')
+    expect(stylesheet).toContain('.sidebar__projects {')
+    expect(stylesheet).toContain('.sidebar__nav .nav-item__label')
+  })
+
+  it('moves workspace selection into the context rail and removes duplicate composer controls', () => {
+    expect(projectSidebar).toContain("api.invoke('workspace.select'")
+    expect(projectSidebar).toContain("api.invoke('workspace.pick'")
+    expect(projectSidebar).toContain('chat-rail__workspace-switcher')
+    expect(taskTimeline).toContain('composer__scope')
+    expect(taskTimeline).not.toContain('composer__control-group--project')
+  })
+
+  it('provides functional new-chat and settings keyboard shortcuts', () => {
+    expect(appSource).toContain("event.key.toLowerCase() === 'k'")
+    expect(appSource).toContain("event.code === 'Comma'")
+    expect(appSource).toContain("document.getElementById('task-prompt')?.focus()")
+  })
+
+  it('keeps settings tabs keyboard-operable and exposes their panel relationship', () => {
+    const source = readFileSync(resolve(testDirectory, '../src/renderer/src/SettingsModal.tsx'), 'utf8')
+    expect(source).toContain('role="tablist"')
+    expect(source).toContain('aria-controls="settings-panel"')
+    expect(source).toContain('role="tabpanel"')
+    expect(source).toContain("event.key === 'ArrowDown'")
+  })
   it('uses the actual viewport as the layout boundary without CSS zoom overflow', () => {
     expect(stylesheet).toContain('width: 100%;\n  height: 100%;\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;')
     expect(stylesheet).toContain('width: 100%;\n  height: 100%;\n  min-height: 0;\n  min-width: 0;')

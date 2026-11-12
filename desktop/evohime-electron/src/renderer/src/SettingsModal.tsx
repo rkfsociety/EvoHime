@@ -72,22 +72,40 @@ export function SettingsModal({ workspace, connection, events, appearance, onApp
         </header>
 
         <div className="settings-modal__body">
-          <nav className="settings-tabs" aria-label={t('Разделы настроек')}>
-            {TABS.map((item) => (
+          <nav className="settings-tabs" aria-label={t('Разделы настроек')} role="tablist" aria-orientation="vertical">
+            {TABS.map((item, index) => (
               <button
                 key={item.id}
+                id={`settings-tab-${item.id}`}
                 type="button"
                 className="settings-tabs__item"
                 aria-selected={tab === item.id}
+                aria-controls="settings-panel"
+                tabIndex={tab === item.id ? 0 : -1}
                 role="tab"
                 onClick={() => setTab(item.id)}
+                onKeyDown={(event) => {
+                  const direction = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0
+                  if (direction === 0) return
+                  event.preventDefault()
+                  const nextTab = TABS[(index + direction + TABS.length) % TABS.length]
+                  if (!nextTab) return
+                  setTab(nextTab.id)
+                  document.getElementById(`settings-tab-${nextTab.id}`)?.focus()
+                }}
               >
                 {t(item.label)}
               </button>
             ))}
           </nav>
 
-          <div className="settings-modal__content">
+          <div
+            id="settings-panel"
+            className="settings-modal__content"
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${tab}`}
+            tabIndex={0}
+          >
             {tab === 'provider' ? (
               <section className="provider-hub" aria-label={translate("Провайдер и модели")}>
                 <div className="provider-hub__tabs" role="tablist" aria-label={translate("Источник моделей")}>

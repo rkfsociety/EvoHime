@@ -19,10 +19,12 @@ export interface WindowOptions extends HardeningOptions {
 
 export function createMainWindow(options: WindowOptions): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1_280,
-    height: 800,
+    width: 1_360,
+    height: 860,
     minWidth: 960,
     minHeight: 640,
+    useContentSize: true,
+    center: true,
     show: false,
     backgroundColor: '#101014',
     icon: resourcePath('evohime-agent.ico'),

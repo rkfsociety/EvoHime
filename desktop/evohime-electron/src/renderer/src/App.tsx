@@ -74,8 +74,8 @@ interface ViewDescriptor {
 }
 
 /**
- * Tool sections only. The conversation is not a nav row: it is reached by
- * opening a chat, which is where the user already looks for it.
+ * Secondary destinations are specialist tools and work surfaces. Chat and
+ * scheduled work appear first in the persistent primary navigation.
  */
 const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: '◉' },
@@ -122,6 +122,25 @@ export function App(): React.JSX.Element {
   const [workbenchVisible, setWorkbenchVisible] = useState(false)
   const [browserVisible, setBrowserVisible] = useState(false)
   const accountMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return
+      if (event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        setView('chat')
+        setChatId(null)
+        setAccountMenuOpen(false)
+        window.requestAnimationFrame(() => document.getElementById('task-prompt')?.focus())
+      } else if (event.code === 'Comma') {
+        event.preventDefault()
+        setSettingsTab('provider')
+        setSettingsOpen(true)
+        setAccountMenuOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
   const openRecipeDraft = useCallback((draftId: string, ownerScope: string) => {
     if (!sameWorkspacePath(workspaceRef.current, ownerScope)) return
     setBuilderDraftId(draftId)
@@ -342,13 +361,13 @@ export function App(): React.JSX.Element {
           <span className="topbar__path" title={workspace ?? undefined}>{workspace ?? t('папка не выбрана')}</span>
           <span className="topbar__spacer" />
           {!workbenchVisible ? (
-            <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)}>
-              {t('Рабочая панель')}
+            <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)} title={t('Рабочая панель')}>
+              <span aria-hidden="true">▤</span>{t('Рабочая панель')}
             </button>
           ) : null}
           {!browserVisible ? (
-            <button type="button" className="topbar__panel-toggle" onClick={() => setBrowserVisible(true)}>
-              {t('Открыть браузер')}
+            <button type="button" className="topbar__panel-toggle" onClick={() => setBrowserVisible(true)} title={t('Открыть браузер')}>
+              <span aria-hidden="true">◎</span>{t('Открыть браузер')}
             </button>
           ) : null}
           <button
@@ -379,7 +398,6 @@ export function App(): React.JSX.Element {
                 connection={connection}
                 events={events}
                 workspace={workspace}
-                onWorkspaceChange={changeWorkspace}
                 chatId={chatId}
                 onChatTouched={() => setChatRevision((value) => value + 1)}
                 onChatOpened={(id) => {

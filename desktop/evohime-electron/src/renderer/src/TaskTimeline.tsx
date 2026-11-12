@@ -1,7 +1,7 @@
 import { formatTime, translate, useAppLocale } from './i18n'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEvent, WorkspaceOption } from '@shared/api'
+import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -36,7 +36,6 @@ const TIMELINE_WINDOW_OVERSCAN = 16
 const TIMELINE_ITEM_HEIGHT_ESTIMATE_PX = 72
 const TIMELINE_BOTTOM_THRESHOLD_PX = 48
 const MAX_COMPOSER_HEIGHT_PX = 200
-const NEW_PROJECT_OPTION_VALUE = 'evohime:new-project'
 interface ComposerAttachment {
   readonly name: string
   readonly relativePath: string
@@ -138,8 +137,6 @@ export interface TaskTimelineProps {
    * immediately.
    */
   readonly workspace: string | null
-  /** Project selection belongs to the composer, not the chat rail. */
-  readonly onWorkspaceChange?: (workspace: string | null) => void
   /** Open conversation; null means the user has not picked one yet. */
   readonly chatId: string | null
   /** Told when a prompt changed a chat, so the sidebar reloads its list. */
@@ -154,7 +151,6 @@ export function TaskTimeline({
   connection,
   events,
   workspace,
-  onWorkspaceChange,
   chatId,
   onChatTouched,
   onChatOpened,
@@ -182,7 +178,6 @@ export function TaskTimeline({
       : 'literouter'
   })
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
-  const [projects, setProjects] = useState<readonly WorkspaceOption[]>([])
   const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
   const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement | null>(null)
@@ -217,35 +212,6 @@ export function TaskTimeline({
       return next
     })
   }, [])
-
-  useEffect(() => {
-    if (!api) return
-    void api.invoke('workspace.list', {}).then((outcome) => {
-      if (outcome.ok && !Array.isArray(outcome.value)) setProjects(outcome.value.options)
-    })
-  }, [api])
-
-  const changeWorkspace = useCallback(async (path: string) => {
-    if (!api || !onWorkspaceChange) return
-    if (path.length === 0) {
-      onWorkspaceChange(null)
-      return
-    }
-    const outcome = await api.invoke('workspace.select', { path })
-    if (outcome.ok && !Array.isArray(outcome.value)) {
-      setProjects(outcome.value.options)
-      onWorkspaceChange(outcome.value.selected)
-    }
-  }, [api, onWorkspaceChange])
-
-  const pickWorkspace = useCallback(async () => {
-    if (!api || !onWorkspaceChange) return
-    const outcome = await api.invoke('workspace.pick', {})
-    if (outcome.ok && !outcome.value.cancelled) {
-      setProjects(outcome.value.selection.options)
-      onWorkspaceChange(outcome.value.selection.selected)
-    }
-  }, [api, onWorkspaceChange])
 
   useEffect(() => {
     // Chat-local transient state must not leak into another conversation.
@@ -893,30 +859,10 @@ export function TaskTimeline({
       <div className="composer">
         <div className="composer__inner">
           <div className="composer__controls" aria-label={translate("Параметры задачи")}>
-            <div className="composer__control-group composer__control-group--project" aria-label={translate("Проект чата")}>
+            <div className="composer__scope" title={workspace ?? translate("Без проекта")}>
               <ComposerIcon name="folder" className="composer__control-icon" />
-              <span className="composer__control-label">{translate("Проект")}</span>
-              <select
-                aria-label={translate("Проект")}
-                value={workspace ?? ''}
-                onChange={(event) => {
-                  const value = event.target.value
-                  if (value === NEW_PROJECT_OPTION_VALUE) {
-                    void pickWorkspace()
-                    return
-                  }
-                  void changeWorkspace(value)
-                }}
-                disabled={busy}
-              >
-                <option value="">{translate("Без проекта")}</option>
-                {projects.map((project) => (
-                  <option key={project.path} value={project.path}>
-                    {basename(project.path)}{translate(project.available ? '' : translate(" · недоступен"))}
-                  </option>
-                ))}
-                <option value={NEW_PROJECT_OPTION_VALUE} disabled={!onWorkspaceChange}>{translate("+ Новый проект…")}</option>
-              </select>
+              <span>{translate("Папка")}</span>
+              <strong>{translate(workspace ? basename(workspace) : translate("Без проекта"))}</strong>
             </div>
             {workspace !== null ? (
               <div className="composer__repository">

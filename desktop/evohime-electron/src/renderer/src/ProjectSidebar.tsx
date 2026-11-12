@@ -9,8 +9,8 @@ import { translate, useT } from './i18n'
  * Chat workspace and its chats.
  *
  * A project is a workspace the user picked; its chats live under it and are
- * loaded only for the open workspace. Project selection happens in the chat
- * composer; this component keeps the rail focused on navigation and chats.
+ * loaded only for the open workspace. The context rail owns workspace selection
+ * and the chat list; global destinations stay in the adjacent icon rail.
  */
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -68,6 +68,34 @@ export function ProjectSidebar({
     void loadChats()
   }, [loadChats, revision])
 
+  const selectWorkspace = useCallback(async (path: string) => {
+    if (!api) return
+    if (path.length === 0) {
+      onWorkspaceChange(null)
+      return
+    }
+    const outcome = await api.invoke('workspace.select', { path })
+    if (outcome.ok && !Array.isArray(outcome.value)) {
+      setProjects(outcome.value.options)
+      onWorkspaceChange(outcome.value.selected)
+      setError(null)
+    } else if (!outcome.ok) {
+      setError(outcome.message)
+    }
+  }, [api, onWorkspaceChange])
+
+  const pickWorkspace = useCallback(async () => {
+    if (!api) return
+    const outcome = await api.invoke('workspace.pick', {})
+    if (outcome.ok && !outcome.value.cancelled) {
+      setProjects(outcome.value.selection.options)
+      onWorkspaceChange(outcome.value.selection.selected)
+      setError(null)
+    } else if (!outcome.ok) {
+      setError(outcome.message)
+    }
+  }, [api, onWorkspaceChange])
+
   const removeChat = useCallback(
     async (id: string) => {
       if (!api) return
@@ -98,8 +126,37 @@ export function ProjectSidebar({
 
       {error ? <p role="alert" className="shell__reason">{t(error)}</p> : null}
       {!connected ? (
-        <p className="shell__reason">{t('Core недоступен, задачи не запускаются.')}</p>
+        <p className="chat-rail__connection" role="status">{t('Core недоступен, задачи не запускаются.')}</p>
       ) : null}
+
+      <section className="chat-rail__workspace-switcher" aria-label={t('Рабочая папка')}>
+        <label htmlFor="workspace-select">{t('Рабочая папка')}</label>
+        <div className="chat-rail__workspace-row">
+          <select
+            id="workspace-select"
+            value={workspace ?? ''}
+            onChange={(event) => void selectWorkspace(event.target.value)}
+            aria-label={t('Рабочая папка')}
+            title={workspace ?? t('Без проекта')}
+          >
+            <option value="">{t('Без проекта')}</option>
+            {projects.map((project) => (
+              <option key={project.path} value={project.path}>
+                {basename(project.path)}{project.available ? '' : t(' · недоступен')}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="chat-rail__workspace-pick"
+            aria-label={t('Выбрать папку')}
+            title={t('Выбрать папку')}
+            onClick={() => void pickWorkspace()}
+          >
+            <span aria-hidden="true">＋</span>
+          </button>
+        </div>
+      </section>
 
       <div className="chat-rail__heading">
         <div>

@@ -8,7 +8,11 @@ const fakeElectron = vi.hoisted(() => {
     private minimized = false
     private visible = false
 
-    constructor(_options: unknown) {}
+    readonly options: unknown
+
+    constructor(options: unknown) {
+      this.options = options
+    }
 
     once(event: string, listener: () => void): void {
       this.listeners.set(event, listener)
@@ -70,6 +74,14 @@ describe('основное окно', () => {
       onRendererFailure: () => undefined
     }) as unknown as InstanceType<typeof fakeElectron.FakeBrowserWindow>
 
+    expect(window.options).toMatchObject({
+      width: 1_360,
+      height: 860,
+      minWidth: 960,
+      minHeight: 640,
+      useContentSize: true,
+      center: true
+    })
     window.setMinimized(true)
     window.emit('ready-to-show')
 
