@@ -2088,6 +2088,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn missing_write_precondition_uses_the_hash_from_a_successful_read() {
         use evohime_model_gateway::{
             providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,

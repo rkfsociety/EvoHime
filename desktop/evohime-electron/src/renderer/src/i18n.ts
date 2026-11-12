@@ -50,7 +50,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Рабочая папка': 'Workspace folder',
   'Выбрать папку': 'Choose folder',
   'Папка': 'Folder',
-  ' · недоступен': ' · unavailable',
+
   'Закрыть трейс': 'Close trace',
   'Открыть трейс': 'Open trace',
   'Трейс': 'Trace',
@@ -1023,7 +1023,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'не передаются': 'not sent',
   'Проверить pipeline': 'Check pipeline',
   'ожидание Core': 'waiting for Core',
-  ' · недоступен': ' · unavailable',
+
   'Обновление…': 'Updating…',
   'Проверяем вход в Codex…': 'Checking Codex sign-in…',
   'Установка Codex CLI…': 'Installing Codex CLI…',
