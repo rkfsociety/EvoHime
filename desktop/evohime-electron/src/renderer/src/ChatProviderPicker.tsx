@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { PROVIDER_KINDS, type ChatProviderMode, type CodexStatus, type ConnectionState } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { PROVIDER_PROFILE_LABELS } from './provider-labels'
 import { useProviderState } from './provider-state'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -40,7 +41,12 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   const options = useMemo(() => {
     const apiOptions = PROVIDER_KINDS.filter((provider) => summary?.profiles?.[provider]?.configured === true)
     return [
-      ...apiOptions.map((provider) => ({ value: provider as ChatProviderMode, label: LABELS[provider] })),
+      ...apiOptions.map((provider) => ({
+        value: provider as ChatProviderMode,
+        label: provider === 'openai_compatible'
+          ? PROVIDER_PROFILE_LABELS[summary?.profiles?.openai_compatible?.profileId ?? 'custom']
+          : LABELS[provider]
+      })),
       // Installation and readiness are different states. Keep an installed
       // CLI selectable even after a transient app-server/auth failure; the
       // model picker performs a fresh refresh when this route is selected.

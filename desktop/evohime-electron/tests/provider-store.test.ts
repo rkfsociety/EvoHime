@@ -11,6 +11,7 @@ import {
   normalizeModel,
   type SecretCipher
 } from '../src/main/provider-store'
+import { PROVIDER_PROFILE_ENDPOINTS, PROVIDER_PROFILE_IDS } from '../src/shared/api'
 
 /**
  * The credential store is the only place a provider key is written. These tests
@@ -395,6 +396,28 @@ describe('provider store', () => {
     expect(store.environment()['MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY']).toBe('disabled')
     expect(store.environment()['MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING']).toBe('')
     expect(store.environment()['MODEL_PROVIDER_REVOKED_CREDENTIAL_BINDINGS']?.split(',')).toContain(replacementBinding)
+  })
+})
+
+describe('provider profile endpoints', () => {
+  it('stores every fixed vendor profile with its trusted endpoint', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    const fixedProfiles = PROVIDER_PROFILE_IDS.filter(
+      (profileId) => profileId !== 'custom' && profileId !== 'cloudflare_workers_ai'
+    )
+
+    for (const profileId of fixedProfiles) {
+      const summary = store.save({
+        provider: 'openai_compatible',
+        apiKey: 'sk-test',
+        model: 'provider-model',
+        baseUrl: '',
+        tier: 'paid',
+        profileId
+      })
+      expect(summary?.profiles.openai_compatible.profileId).toBe(profileId)
+      expect(summary?.profiles.openai_compatible.baseUrl).toBe(PROVIDER_PROFILE_ENDPOINTS[profileId])
+    }
   })
 })
 

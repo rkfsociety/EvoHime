@@ -1,11 +1,13 @@
 # OpenAI-compatible provider profiles
 
-`openai_compatible` is the shared chat transport. In provider settings choose
-an explicit profile for OpenAI, OpenRouter, Groq, Google Gemini, Mistral,
-Cloudflare Workers AI, NVIDIA NIM, Cerebras or Hugging Face Inference Providers.
-The profile identifies the vendor independently from the transport. Fixed
-profiles use their trusted base URL; only the `custom` profile accepts a
-user-supplied HTTPS or loopback URL.
+`openai_compatible` is the shared chat transport. In provider settings every
+vendor is a separate entry in one provider list: OpenAI, OpenRouter, Groq,
+Google Gemini, Mistral, Cloudflare Workers AI, NVIDIA NIM, Cerebras, Hugging
+Face Inference Providers, DeepSeek, xAI, Together AI, Fireworks AI, Moonshot
+(Kimi), Z.AI (GLM), SambaNova and Nebius Token Factory. Picking a vendor sets
+its OpenAI-compatible profile internally: the profile identifies the vendor
+independently from the transport. Fixed profiles use their trusted base URL;
+only the `custom` entry accepts a user-supplied HTTPS or loopback URL.
 
 | Profile | Base URL |
 | --- | --- |
@@ -18,6 +20,14 @@ user-supplied HTTPS or loopback URL.
 | NVIDIA NIM | `https://integrate.api.nvidia.com/v1` |
 | Cerebras | `https://api.cerebras.ai/v1` |
 | Hugging Face Inference Providers | `https://router.huggingface.co/v1` |
+| DeepSeek | `https://api.deepseek.com/v1` |
+| xAI (Grok) | `https://api.x.ai/v1` |
+| Together AI | `https://api.together.ai/v1` |
+| Fireworks AI | `https://api.fireworks.ai/inference/v1` |
+| Moonshot (Kimi) | `https://api.moonshot.ai/v1` |
+| Z.AI (GLM) | `https://api.z.ai/api/paas/v4` |
+| SambaNova | `https://api.sambanova.ai/v1` |
+| Nebius Token Factory | `https://api.tokenfactory.nebius.com/v1` |
 
 For Cloudflare, enter the 32-character hexadecimal Account ID separately from
 the API token. EvoHime builds the account-scoped base URL and model-discovery

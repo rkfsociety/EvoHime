@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import { PROVIDER_PROFILE_IDS } from '../src/shared/api'
 import { ProviderForm } from '../src/renderer/src/ProviderForm'
 import { ProviderStateProvider } from '../src/renderer/src/provider-state'
 
@@ -178,6 +179,15 @@ describe('provider form', () => {
     expect(screen.queryByLabelText('Движок coding-задач')).toBeNull()
   })
 
+  it('lists every vendor directly in one provider selector', async () => {
+    renderProviderForm()
+
+    const provider = (await screen.findByLabelText('Провайдер')) as HTMLSelectElement
+    const values = Array.from(provider.options, (option) => option.value)
+    expect(values).toEqual(['literouter', ...PROVIDER_PROFILE_IDS, 'openai_responses', 'ollama'])
+    expect(screen.queryByLabelText('Профиль провайдера')).toBeNull()
+  })
+
   it('automatically selects, persists and applies a configured provider', async () => {
     renderProviderForm()
 
@@ -209,9 +219,7 @@ describe('provider form', () => {
     })
     renderProviderForm()
 
-    await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'openai_compatible')
-    const profile = await screen.findByLabelText('Профиль провайдера')
-    await userEvent.selectOptions(profile, 'cloudflare_workers_ai')
+    await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'cloudflare_workers_ai')
     await userEvent.type(await screen.findByLabelText('Cloudflare Account ID'), '0123456789abcdef0123456789abcdef')
     expect((screen.getByLabelText('Адрес API') as HTMLInputElement).disabled).toBe(true)
     await userEvent.type(screen.getByLabelText('Ключ API'), 'cf-token')
@@ -255,7 +263,7 @@ describe('provider form', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderProviderForm()
 
-    await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'openai_compatible')
+    await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'openrouter')
     const probe = await screen.findByRole('button', { name: 'Проверить текущую модель' })
     await userEvent.click(probe)
 
@@ -292,10 +300,11 @@ describe('provider form', () => {
       restarted: true
     })
     renderProviderForm()
-    await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'openai_compatible')
-    await userEvent.selectOptions(await screen.findByLabelText('Профиль провайдера'), 'openrouter')
+    await userEvent.selectOptions(await screen.findByLabelText('Провайдер'), 'openrouter')
     expect((screen.getByLabelText('Как собирать данные') as HTMLSelectElement).value).toBe('on_first_use')
     const save = screen.getByRole('button', { name: 'Сохранить ключ и применить' })
+    expect((save as HTMLButtonElement).disabled).toBe(true)
+    await userEvent.type(screen.getByLabelText('Ключ API'), 'sk-openrouter')
     expect((save as HTMLButtonElement).disabled).toBe(true)
     await userEvent.click(screen.getByLabelText(/отдельно разрешаю автоматическую проверку/i))
     expect((save as HTMLButtonElement).disabled).toBe(false)
@@ -327,7 +336,7 @@ describe('provider form', () => {
     }
     renderProviderForm()
 
-    const profile = await screen.findByLabelText('Профиль провайдера')
+    const profile = await screen.findByLabelText('Провайдер')
     await userEvent.selectOptions(profile, 'openai')
     await userEvent.selectOptions(profile, 'openrouter')
 

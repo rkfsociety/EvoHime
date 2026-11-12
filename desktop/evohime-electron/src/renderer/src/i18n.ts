@@ -449,7 +449,6 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Профили содержат только bounded refs. Проверка совместимости, safe boundary и activation выполняются исключительно Core; credentials и owner-конфигурации не отображаются.': 'Profiles contain only bounded references. Core alone checks compatibility and safe boundaries and activates them; credentials and owner configuration are not shown.',
   'Профиль Core:': 'Core profile:',
   'Профиль выполнения процессов': 'Process execution profile',
-  'Профиль провайдера': 'Provider profile',
   'Профиль:': 'Profile:',
   'Прочитать': 'Read',
   'Прошлые эпизоды — bounded untrusted advice, не Memory и не authority; Write Gate требует evidence.': 'Past episodes are bounded, untrusted advice, not Memory or authority. The Write Gate requires evidence.',

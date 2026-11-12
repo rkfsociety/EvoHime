@@ -657,7 +657,9 @@ export const OLLAMA_DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1'
 /** Vendor identities available through the OpenAI-compatible transport. */
 export const PROVIDER_PROFILE_IDS = [
   'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'cloudflare_workers_ai',
-  'nvidia_nim', 'cerebras', 'hugging_face', 'custom'
+  'nvidia_nim', 'cerebras', 'hugging_face',
+  'deepseek', 'xai', 'together_ai', 'fireworks_ai', 'moonshot', 'zai', 'sambanova', 'nebius',
+  'custom'
 ] as const
 
 /** Default base URLs for fixed-endpoint vendor profiles. */
@@ -669,7 +671,15 @@ export const PROVIDER_PROFILE_ENDPOINTS: Readonly<Partial<Record<ProviderProfile
   mistral: 'https://api.mistral.ai/v1',
   nvidia_nim: 'https://integrate.api.nvidia.com/v1',
   cerebras: 'https://api.cerebras.ai/v1',
-  hugging_face: 'https://router.huggingface.co/v1'
+  hugging_face: 'https://router.huggingface.co/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  xai: 'https://api.x.ai/v1',
+  together_ai: 'https://api.together.ai/v1',
+  fireworks_ai: 'https://api.fireworks.ai/inference/v1',
+  moonshot: 'https://api.moonshot.ai/v1',
+  zai: 'https://api.z.ai/api/paas/v4',
+  sambanova: 'https://api.sambanova.ai/v1',
+  nebius: 'https://api.tokenfactory.nebius.com/v1'
 }
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]

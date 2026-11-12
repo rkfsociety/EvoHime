@@ -83,6 +83,22 @@ pub enum ProviderFamily {
     Cerebras,
     /// Hugging Face provider.
     HuggingFace,
+    /// DeepSeek hosted provider.
+    DeepSeek,
+    /// xAI (Grok) hosted provider.
+    XAi,
+    /// Together AI hosted provider.
+    TogetherAi,
+    /// Fireworks AI hosted provider.
+    FireworksAi,
+    /// Moonshot (Kimi) hosted provider.
+    Moonshot,
+    /// Z.AI (GLM) hosted provider.
+    ZAi,
+    /// SambaNova hosted provider.
+    SambaNova,
+    /// Nebius Token Factory hosted provider.
+    Nebius,
     /// LiteRouter provider.
     LiteRouter,
     /// OpenAI hosted provider.
@@ -109,6 +125,14 @@ impl ProviderFamily {
             Self::NvidiaNim => "nvidia_nim",
             Self::Cerebras => "cerebras",
             Self::HuggingFace => "hugging_face",
+            Self::DeepSeek => "deepseek",
+            Self::XAi => "xai",
+            Self::TogetherAi => "together_ai",
+            Self::FireworksAi => "fireworks_ai",
+            Self::Moonshot => "moonshot",
+            Self::ZAi => "zai",
+            Self::SambaNova => "sambanova",
+            Self::Nebius => "nebius",
             Self::LiteRouter => "literouter",
             Self::OpenAi => "open_ai",
             Self::Ollama => "ollama",
@@ -1992,6 +2016,38 @@ pub fn builtin_provider_profiles() -> Vec<ProviderProfile> {
             "hugging_face",
             ProviderFamily::HuggingFace,
             "https://router.huggingface.co/v1",
+        ),
+        (
+            "deepseek",
+            ProviderFamily::DeepSeek,
+            "https://api.deepseek.com/v1",
+        ),
+        ("xai", ProviderFamily::XAi, "https://api.x.ai/v1"),
+        (
+            "together_ai",
+            ProviderFamily::TogetherAi,
+            "https://api.together.ai/v1",
+        ),
+        (
+            "fireworks_ai",
+            ProviderFamily::FireworksAi,
+            "https://api.fireworks.ai/inference/v1",
+        ),
+        (
+            "moonshot",
+            ProviderFamily::Moonshot,
+            "https://api.moonshot.ai/v1",
+        ),
+        ("zai", ProviderFamily::ZAi, "https://api.z.ai/api/paas/v4"),
+        (
+            "sambanova",
+            ProviderFamily::SambaNova,
+            "https://api.sambanova.ai/v1",
+        ),
+        (
+            "nebius",
+            ProviderFamily::Nebius,
+            "https://api.tokenfactory.nebius.com/v1",
         ),
     ]
     .into_iter()

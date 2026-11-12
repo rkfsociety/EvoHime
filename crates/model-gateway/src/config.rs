@@ -20,29 +20,62 @@ pub const OLLAMA_DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434/v1";
 
 /// Stable provider identity selected independently from the wire transport.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub enum ProviderProfileId {
     /// Custom OpenAI-compatible endpoint without a known vendor profile.
     #[default]
+    #[serde(rename = "custom")]
     Custom,
     /// OpenAI hosted API profile.
+    #[serde(rename = "openai", alias = "open_ai")]
     OpenAi,
     /// OpenRouter hosted API profile.
+    #[serde(rename = "openrouter", alias = "open_router")]
     OpenRouter,
     /// Groq hosted API profile.
+    #[serde(rename = "groq")]
     Groq,
     /// Google Gemini OpenAI-compatible API profile.
+    #[serde(rename = "gemini")]
     Gemini,
     /// Mistral hosted API profile.
+    #[serde(rename = "mistral")]
     Mistral,
     /// Cloudflare Workers AI account-scoped API profile.
+    #[serde(rename = "cloudflare_workers_ai")]
     CloudflareWorkersAi,
     /// NVIDIA NIM hosted API profile.
+    #[serde(rename = "nvidia_nim")]
     NvidiaNim,
     /// Cerebras hosted API profile.
+    #[serde(rename = "cerebras")]
     Cerebras,
     /// Hugging Face Inference Providers profile.
+    #[serde(rename = "hugging_face")]
     HuggingFace,
+    /// DeepSeek hosted API profile.
+    #[serde(rename = "deepseek")]
+    DeepSeek,
+    /// xAI (Grok) hosted API profile.
+    #[serde(rename = "xai")]
+    XAi,
+    /// Together AI hosted API profile.
+    #[serde(rename = "together_ai")]
+    TogetherAi,
+    /// Fireworks AI hosted API profile.
+    #[serde(rename = "fireworks_ai")]
+    FireworksAi,
+    /// Moonshot (Kimi) hosted API profile.
+    #[serde(rename = "moonshot")]
+    Moonshot,
+    /// Z.AI (GLM) hosted API profile.
+    #[serde(rename = "zai")]
+    ZAi,
+    /// SambaNova hosted API profile.
+    #[serde(rename = "sambanova")]
+    SambaNova,
+    /// Nebius Token Factory hosted API profile.
+    #[serde(rename = "nebius")]
+    Nebius,
 }
 
 impl ProviderProfileId {
@@ -59,6 +92,14 @@ impl ProviderProfileId {
             Self::NvidiaNim => "nvidia_nim",
             Self::Cerebras => "cerebras",
             Self::HuggingFace => "hugging_face",
+            Self::DeepSeek => "deepseek",
+            Self::XAi => "xai",
+            Self::TogetherAi => "together_ai",
+            Self::FireworksAi => "fireworks_ai",
+            Self::Moonshot => "moonshot",
+            Self::ZAi => "zai",
+            Self::SambaNova => "sambanova",
+            Self::Nebius => "nebius",
         }
     }
 
@@ -75,6 +116,14 @@ impl ProviderProfileId {
             "nvidia_nim" => Self::NvidiaNim,
             "cerebras" => Self::Cerebras,
             "hugging_face" => Self::HuggingFace,
+            "deepseek" => Self::DeepSeek,
+            "xai" => Self::XAi,
+            "together_ai" => Self::TogetherAi,
+            "fireworks_ai" => Self::FireworksAi,
+            "moonshot" => Self::Moonshot,
+            "zai" => Self::ZAi,
+            "sambanova" => Self::SambaNova,
+            "nebius" => Self::Nebius,
             _ => return None,
         })
     }
@@ -92,6 +141,14 @@ impl ProviderProfileId {
             Self::NvidiaNim => Some("https://integrate.api.nvidia.com/v1"),
             Self::Cerebras => Some("https://api.cerebras.ai/v1"),
             Self::HuggingFace => Some("https://router.huggingface.co/v1"),
+            Self::DeepSeek => Some("https://api.deepseek.com/v1"),
+            Self::XAi => Some("https://api.x.ai/v1"),
+            Self::TogetherAi => Some("https://api.together.ai/v1"),
+            Self::FireworksAi => Some("https://api.fireworks.ai/inference/v1"),
+            Self::Moonshot => Some("https://api.moonshot.ai/v1"),
+            Self::ZAi => Some("https://api.z.ai/api/paas/v4"),
+            Self::SambaNova => Some("https://api.sambanova.ai/v1"),
+            Self::Nebius => Some("https://api.tokenfactory.nebius.com/v1"),
         }
     }
 
@@ -610,6 +667,97 @@ mod tests {
             ModelRouteConfig::openai_compatible("test-token", "https://custom.example/v1", "model")
                 .with_provider_profile(ProviderProfileId::Groq, None);
         assert!(mismatched.validate_provider_profile().is_err());
+    }
+
+    #[test]
+    fn provider_profile_serde_uses_stable_identifiers() {
+        let profiles = [
+            ProviderProfileId::Custom,
+            ProviderProfileId::OpenAi,
+            ProviderProfileId::OpenRouter,
+            ProviderProfileId::Groq,
+            ProviderProfileId::Gemini,
+            ProviderProfileId::Mistral,
+            ProviderProfileId::CloudflareWorkersAi,
+            ProviderProfileId::NvidiaNim,
+            ProviderProfileId::Cerebras,
+            ProviderProfileId::HuggingFace,
+            ProviderProfileId::DeepSeek,
+            ProviderProfileId::XAi,
+            ProviderProfileId::TogetherAi,
+            ProviderProfileId::FireworksAi,
+            ProviderProfileId::Moonshot,
+            ProviderProfileId::ZAi,
+            ProviderProfileId::SambaNova,
+            ProviderProfileId::Nebius,
+        ];
+
+        for profile in profiles {
+            let encoded = serde_json::to_string(&profile).expect("profile serializes");
+            assert_eq!(encoded, format!("\"{}\"", profile.as_str()));
+            let decoded: ProviderProfileId =
+                serde_json::from_str(&encoded).expect("profile deserializes");
+            assert_eq!(decoded, profile);
+        }
+        assert_eq!(
+            serde_json::from_str::<ProviderProfileId>("\"open_ai\"").expect("legacy alias"),
+            ProviderProfileId::OpenAi
+        );
+        assert_eq!(
+            serde_json::from_str::<ProviderProfileId>("\"open_router\"").expect("legacy alias"),
+            ProviderProfileId::OpenRouter
+        );
+    }
+
+    #[test]
+    fn added_vendor_profiles_round_trip_with_trusted_endpoints() {
+        let profiles = [
+            (
+                ProviderProfileId::DeepSeek,
+                "deepseek",
+                "https://api.deepseek.com/v1",
+            ),
+            (ProviderProfileId::XAi, "xai", "https://api.x.ai/v1"),
+            (
+                ProviderProfileId::TogetherAi,
+                "together_ai",
+                "https://api.together.ai/v1",
+            ),
+            (
+                ProviderProfileId::FireworksAi,
+                "fireworks_ai",
+                "https://api.fireworks.ai/inference/v1",
+            ),
+            (
+                ProviderProfileId::Moonshot,
+                "moonshot",
+                "https://api.moonshot.ai/v1",
+            ),
+            (
+                ProviderProfileId::ZAi,
+                "zai",
+                "https://api.z.ai/api/paas/v4",
+            ),
+            (
+                ProviderProfileId::SambaNova,
+                "sambanova",
+                "https://api.sambanova.ai/v1",
+            ),
+            (
+                ProviderProfileId::Nebius,
+                "nebius",
+                "https://api.tokenfactory.nebius.com/v1",
+            ),
+        ];
+
+        for (profile, id, endpoint) in profiles {
+            assert_eq!(profile.as_str(), id);
+            assert_eq!(ProviderProfileId::parse(id), Some(profile));
+            assert_eq!(profile.default_base_url(), Some(endpoint));
+            let route = ModelRouteConfig::openai_compatible("test-token", endpoint, "model")
+                .with_provider_profile(profile, None);
+            assert!(route.validate_provider_profile().is_ok(), "{id}");
+        }
     }
 
     #[test]

@@ -428,9 +428,11 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 
 Поддерживаются LiteRouter, OpenAI Responses API, Ollama и OpenAI-compatible
 транспорт с явными профилями OpenAI, OpenRouter, Groq, Gemini, Mistral,
-Cloudflare Workers AI, NVIDIA NIM, Cerebras, Hugging Face и generic custom;
-`mock` используется только в тестах. Ollama не требует ключа и
-ограничен loopback endpoint.
+Cloudflare Workers AI, NVIDIA NIM, Cerebras, Hugging Face, DeepSeek, xAI,
+Together AI, Fireworks AI, Moonshot, Z.AI, SambaNova, Nebius и generic custom;
+`mock` используется только в тестах. В настройках все вендоры выбираются одним
+списком, а профиль OpenAI-compatible применяется внутри выбранного пункта.
+Ollama не требует ключа и ограничен loopback endpoint.
 Профили и зашифрованные ключи хранятся в
 `%LOCALAPPDATA%\EvoHime\shell\provider.json`; ключ доступен Core только через
 окружение supervisor.

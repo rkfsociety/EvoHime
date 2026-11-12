@@ -471,7 +471,7 @@ fn cloudflare_catalog_scope_isolated_by_account_id() {
 #[test]
 fn builtin_profiles_are_bounded_and_versioned() {
     let profiles = builtin_provider_profiles();
-    assert_eq!(profiles.len(), 8);
+    assert_eq!(profiles.len(), 16);
     assert!(profiles.iter().all(|profile| profile.validate().is_ok()));
     assert!(profiles
         .iter()
@@ -483,6 +483,18 @@ fn builtin_profiles_are_bounded_and_versioned() {
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), profiles.len());
+    for expected in [
+        "deepseek",
+        "xai",
+        "together_ai",
+        "fireworks_ai",
+        "moonshot",
+        "zai",
+        "sambanova",
+        "nebius",
+    ] {
+        assert!(ids.contains(&expected), "{expected}");
+    }
 }
 
 #[test]

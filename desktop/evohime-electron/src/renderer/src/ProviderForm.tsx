@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   PROVIDER_KINDS,
@@ -17,6 +17,7 @@ import { useShellApi } from './shell-api'
 import { formatDateTime, translate } from './i18n'
 import type { ConnectionState, CoreEvent } from '@shared/api'
 import { OllamaModelDownloadPanel } from './OllamaModelDownloadPanel'
+import { PROVIDER_PROFILE_LABELS } from './provider-labels'
 import { useProviderState } from './provider-state'
 
 /**
@@ -28,24 +29,21 @@ import { useProviderState } from './provider-state'
  * main process, which encrypts it with the OS key store and hands it to Core.
  */
 
-const PROVIDER_LABELS: Record<ProviderKind, string> = {
-  literouter: 'LiteRouter',
-  openai_compatible: 'OpenAI API (Chat Completions)',
-  openai_responses: 'OpenAI Responses API',
-  ollama: 'Ollama (локально)'
-}
+/** A single provider choice: transport-level provider or fixed vendor profile. */
+type ProviderChoice = Exclude<ProviderKind, 'openai_compatible'> | ProviderProfileId
 
-const PROFILE_LABELS: Record<ProviderProfileId, string> = {
-  openai: 'OpenAI',
-  openrouter: 'OpenRouter',
-  groq: 'Groq',
-  gemini: 'Google Gemini',
-  mistral: 'Mistral',
-  cloudflare_workers_ai: 'Cloudflare Workers AI',
-  nvidia_nim: 'NVIDIA NIM',
-  cerebras: 'Cerebras',
-  hugging_face: 'Hugging Face Inference Providers',
-  custom: 'Другой OpenAI-compatible API'
+const PROVIDER_CHOICES: readonly { readonly value: ProviderChoice; readonly label: string }[] = [
+  { value: 'literouter', label: 'LiteRouter' },
+  ...PROVIDER_PROFILE_IDS.map((profileId) => ({
+    value: profileId,
+    label: PROVIDER_PROFILE_LABELS[profileId]
+  })),
+  { value: 'openai_responses', label: 'OpenAI Responses API' },
+  { value: 'ollama', label: 'Ollama (локально)' }
+]
+
+function isProviderProfileChoice(choice: ProviderChoice): choice is ProviderProfileId {
+  return (PROVIDER_PROFILE_IDS as readonly string[]).includes(choice)
 }
 
 const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly hint: string }[] = [
@@ -86,6 +84,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [catalogStatus, setCatalogStatus] = useState<string | null>(null)
   const [freeEvidenceStatus, setFreeEvidenceStatus] = useState<string | null>(null)
   const [probeStatus, setProbeStatus] = useState<string | null>(null)
+  // A vendor choice is local until the user saves its key. While it differs
+  // from the stored profile, incoming snapshots must not overwrite the form.
+  const pendingSelection = useRef(false)
 
   // Fields stay controlled even if a summary arrives with a missing member.
   const apply = useCallback((value: ProviderSummary) => {
@@ -104,7 +105,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   }, [])
 
   useEffect(() => {
-    if (summary) apply(summary)
+    if (summary && !pendingSelection.current) apply(summary)
   }, [apply, summary])
 
   useEffect(() => {
@@ -144,46 +145,59 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     }
   }, [events])
 
-  const selectProvider = useCallback(async (nextProvider: ProviderKind) => {
-    if (!api || nextProvider === provider) return
-    setProvider(nextProvider)
-    setApiKey('')
-    const profile = summary?.profiles?.[nextProvider]
-    setModel(profile?.model ?? '')
-    setTier(profile?.tier ?? 'free')
-    setBaseUrl(profile?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
-    setProfileId(nextProvider === 'openai_compatible' ? (profile?.profileId ?? 'openai') : 'custom')
-    setAccountId(profile?.accountId ?? '')
-    const nextProfileId = nextProvider === 'openai_compatible' ? (profile?.profileId ?? 'openai') : 'custom'
-    setProbePolicy(profile?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
-    setAcknowledgeProbePossibleCost(false)
-    setStatus({ kind: 'saving' })
+  const selectChoice = useCallback(async (choice: ProviderChoice) => {
+    if (!api) return
+    const nextProvider: ProviderKind = isProviderProfileChoice(choice) ? 'openai_compatible' : choice
+    const nextProfileId: ProviderProfileId = isProviderProfileChoice(choice) ? choice : 'custom'
+    if (nextProvider === provider && nextProfileId === profileId) return
 
+    const saved = summary?.profiles?.[nextProvider]
+    const savedMatches = nextProvider !== 'openai_compatible' || saved?.profileId === nextProfileId
+    pendingSelection.current = true
+
+    setProvider(nextProvider)
+    setProfileId(nextProfileId)
+    setApiKey('')
+    setModel(savedMatches ? (saved?.model ?? '') : '')
+    setTier(savedMatches ? (saved?.tier ?? 'free') : 'free')
+    setBaseUrl(
+      savedMatches
+        ? (saved?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
+        : (PROVIDER_PROFILE_ENDPOINTS[nextProfileId] ?? '')
+    )
+    setAccountId(savedMatches ? (saved?.accountId ?? '') : '')
+    setProbePolicy(
+      savedMatches
+        ? (saved?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
+        : defaultProbePolicy(nextProvider, nextProfileId)
+    )
+    setAcknowledgeProbePossibleCost(false)
+
+    // Changing only the vendor inside the OpenAI-compatible transport is a
+    // local draft until "Save" persists the profile and its credential.
+    if (nextProvider === provider) {
+      if (savedMatches) pendingSelection.current = false
+      return
+    }
+
+    setStatus({ kind: 'saving' })
     const outcome = await api.invoke('provider.select', { provider: nextProvider })
     if (!outcome.ok) {
+      pendingSelection.current = false
+      if (summary) apply(summary)
       setStatus({ kind: 'failed', message: outcome.message })
       return
     }
     applySummary(outcome.value.summary)
-    apply(outcome.value.summary)
-    setApiKey('')
-    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
-  }, [api, apply, applySummary, provider, summary])
-
-  const selectProfile = useCallback((nextProfile: ProviderProfileId) => {
-    setProfileId(nextProfile)
-    const savedProfile = summary?.profiles?.openai_compatible
-    const savedPolicy = savedProfile?.profileId === nextProfile ? savedProfile.freeAccessProbePolicy : undefined
-    setProbePolicy(savedPolicy ?? defaultProbePolicy('openai_compatible', nextProfile))
-    setAcknowledgeProbePossibleCost(false)
-    if (nextProfile === 'cloudflare_workers_ai') {
-      setAccountId('')
-      setBaseUrl('')
-      return
+    const activeProfileId = nextProvider === 'openai_compatible'
+      ? outcome.value.summary.profileId
+      : nextProfileId
+    if (activeProfileId === nextProfileId) {
+      pendingSelection.current = false
+      apply(outcome.value.summary)
     }
-    setAccountId('')
-    setBaseUrl(PROVIDER_PROFILE_ENDPOINTS[nextProfile] ?? '')
-  }, [summary])
+    setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
+  }, [api, apply, applySummary, profileId, provider, summary])
 
   const save = useCallback(async () => {
     if (!api) return
@@ -206,6 +220,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       setStatus({ kind: 'failed', message: outcome.message })
       return
     }
+    pendingSelection.current = false
     applySummary(outcome.value.summary)
     apply(outcome.value.summary)
     setApiKey('')
@@ -220,6 +235,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       setStatus({ kind: 'failed', message: outcome.message })
       return
     }
+    pendingSelection.current = false
     applySummary(outcome.value.summary)
     apply(outcome.value.summary)
     setApiKey('')
@@ -241,8 +257,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   }, [api, model])
 
   const busy = status.kind === 'saving'
+  const selection: ProviderChoice = provider === 'openai_compatible' ? profileId : provider
   const selectedProfile = summary?.profiles?.[provider]
-  const configured = selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured)
+  const profileMatches = provider !== 'openai_compatible'
+    || selectedProfile === undefined
+    || selectedProfile.profileId === profileId
+  const configured = profileMatches && (selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured))
   const cloudflareAccountValid = /^[a-fA-F0-9]{32}$/.test(accountId.trim())
   const canSave = !busy
     && (provider === 'ollama' || apiKey.trim().length > 0 || configured)
@@ -280,12 +300,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         <label htmlFor="provider-kind">
           {translate("Провайдер")}<select
             id="provider-kind"
-            value={provider}
-            onChange={(event) => void selectProvider(event.target.value as ProviderKind)}
+            value={selection}
+            onChange={(event) => void selectChoice(event.target.value as ProviderChoice)}
             disabled={busy}
           >
-            {PROVIDER_KINDS.map((kind) => (
-              <option key={kind} value={kind}>{translate(PROVIDER_LABELS[kind])}</option>
+            {PROVIDER_CHOICES.map((choice) => (
+              <option key={choice.value} value={choice.value}>{translate(choice.label)}</option>
             ))}
           </select>
         </label>
@@ -305,21 +325,6 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
               placeholder={configured ? translate("сохранён — введи новый, чтобы заменить") : 'sk-…'}
               disabled={busy}
             />
-          </label>
-        ) : null}
-
-        {provider === 'openai_compatible' ? (
-          <label htmlFor="provider-profile">
-            {translate("Профиль провайдера")}<select
-              id="provider-profile"
-              value={profileId}
-              onChange={(event) => selectProfile(event.target.value as ProviderProfileId)}
-              disabled={busy}
-            >
-              {PROVIDER_PROFILE_IDS.map((id) => (
-                <option key={id} value={id}>{translate(PROFILE_LABELS[id])}</option>
-              ))}
-            </select>
           </label>
         ) : null}
 
