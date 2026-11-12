@@ -10,6 +10,17 @@ const stylesheet = readFileSync(
 )
 
 describe('responsive shell layout contract', () => {
+  it('uses the actual viewport as the layout boundary without CSS zoom overflow', () => {
+    expect(stylesheet).toContain('width: 100%;\n  height: 100%;\n  min-width: 0;\n  min-height: 0;\n  overflow: hidden;')
+    expect(stylesheet).toContain('width: 100%;\n  height: 100%;\n  min-height: 0;\n  min-width: 0;')
+    expect(stylesheet).not.toContain('zoom: var(--ui-zoom, 1);')
+    expect(stylesheet).not.toContain('min-width: 960px;')
+  })
+
+  it('reduces sidebar pressure at the supported minimum window width', () => {
+    expect(stylesheet).toContain('@media (max-width: 1080px) {\n  :root {\n    --sidebar-width: 200px;')
+  })
+
   it('keeps the trace panel from compressing the primary workspace', () => {
     expect(stylesheet).toContain('@media (max-width: 1180px)')
     expect(stylesheet).toContain("grid-template-areas:\n      'sidebar main'\n      'status status'")
