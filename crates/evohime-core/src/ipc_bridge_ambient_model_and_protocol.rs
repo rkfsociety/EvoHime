@@ -567,7 +567,7 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
 #[cfg(test)]
 mod tests {
     use super::*;
-use evohime_desktop_ipc::MAX_FRAME_BYTES;
+    use evohime_desktop_ipc::MAX_FRAME_BYTES;
 
     #[test]
     fn model_catalog_error_projection_is_bounded_and_does_not_include_details() {
