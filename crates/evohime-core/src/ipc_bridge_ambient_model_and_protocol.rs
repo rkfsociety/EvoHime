@@ -396,6 +396,7 @@ impl IpcBridge {
 let mut entries = catalog.installed.clone();
 // Serialize to check size against MAX_FRAME_BYTES
 if let Ok(serialized) = serde_json::to_vec(&entries) {
+                tracing::info!("Model catalog serialized size: {} bytes, entries count: {}", serialized.len(), entries.len());
     if serialized.len() > crate::desktop_ipc::MAX_FRAME_BYTES {
         // Simple hard cap to avoid oversized frames
         const HARD_CAP: usize = 200;
