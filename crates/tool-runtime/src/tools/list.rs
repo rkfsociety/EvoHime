@@ -45,46 +45,70 @@ pub async fn execute(ctx: &ToolContext, value: serde_json::Value) -> Result<Tool
             },
             _ => ToolError::Execution(format!("list failed: {error}")),
         })?;
-    let mut names = Vec::new();
+    let mut items: Vec<(String, &'static str, Option<u64>)> = Vec::new();
     let mut output_bytes = 0;
+    let mut truncated = false;
     while let Some(entry) = entries
         .next_entry()
         .await
         .map_err(|error| ToolError::Execution(format!("list failed: {error}")))?
     {
         let name = entry.file_name().to_string_lossy().into_owned();
-        ensure_capacity(names.len(), output_bytes, name.len())?;
-        output_bytes += name.len() + 1;
-        names.push(name);
+        if !has_capacity(items.len(), output_bytes, name.len()) {
+            truncated = true;
+            break;
+        }
+        output_bytes += name.len() + 2;
+        let (kind, size) = match entry.file_type().await {
+            Ok(file_type) if file_type.is_symlink() => ("symlink", None),
+            Ok(file_type) if file_type.is_dir() => ("dir", None),
+            Ok(_) => (
+                "file",
+                entry.metadata().await.ok().map(|metadata| metadata.len()),
+            ),
+            Err(_) => ("other", None),
+        };
+        items.push((name, kind, size));
     }
-    names.sort();
+    items.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut output = items
+        .iter()
+        .map(|(name, kind, _)| match *kind {
+            "dir" => format!("{name}/"),
+            _ => name.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if truncated {
+        output.push_str("\n... [listing truncated]");
+    }
+    let names = items
+        .iter()
+        .map(|(name, _, _)| name.clone())
+        .collect::<Vec<_>>();
+    let details = items
+        .iter()
+        .map(|(name, kind, size)| json!({ "name": name, "type": kind, "size": size }))
+        .collect::<Vec<_>>();
 
     Ok(ToolResult {
-        output: names.join("\n"),
-        structured: json!({ "path": input.path, "entries": names }),
+        output,
+        structured: json!({
+            "path": input.path,
+            "entries": names,
+            "details": details,
+            "truncated": truncated,
+        }),
     })
 }
 
-fn ensure_capacity(
-    entries: usize,
-    output_bytes: usize,
-    next_name_bytes: usize,
-) -> Result<(), ToolError> {
-    if entries >= MAX_ENTRIES {
-        return Err(ToolError::Execution(
-            "directory contains too many entries".into(),
-        ));
-    }
-    if output_bytes
-        .saturating_add(next_name_bytes)
-        .saturating_add(1)
-        > MAX_OUTPUT_BYTES
-    {
-        return Err(ToolError::Execution(
-            "directory listing exceeds 1 MiB".into(),
-        ));
-    }
-    Ok(())
+fn has_capacity(entries: usize, output_bytes: usize, next_name_bytes: usize) -> bool {
+    entries < MAX_ENTRIES
+        && output_bytes
+            .saturating_add(next_name_bytes)
+            .saturating_add(2)
+            <= MAX_OUTPUT_BYTES
 }
 
 #[cfg(test)]
@@ -115,8 +139,8 @@ mod tests {
 
     #[test]
     fn listing_capacity_is_bounded() {
-        assert!(ensure_capacity(MAX_ENTRIES - 1, 0, 4).is_ok());
-        assert!(ensure_capacity(MAX_ENTRIES, 0, 4).is_err());
-        assert!(ensure_capacity(0, MAX_OUTPUT_BYTES, 1).is_err());
+        assert!(has_capacity(MAX_ENTRIES - 1, 0, 4));
+        assert!(!has_capacity(MAX_ENTRIES, 0, 4));
+        assert!(!has_capacity(0, MAX_OUTPUT_BYTES, 1));
     }
 }

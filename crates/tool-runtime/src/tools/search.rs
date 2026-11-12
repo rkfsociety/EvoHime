@@ -54,6 +54,13 @@ struct Input {
     path: Option<String>,
     glob: Option<String>,
     limit: Option<usize>,
+    /// Treat `query` as a ripgrep regular expression. Defaults to a literal
+    /// substring match, which behaves identically with and without ripgrep.
+    #[serde(default)]
+    regex: bool,
+    /// Match case-insensitively.
+    #[serde(default)]
+    ignore_case: bool,
 }
 
 /// Searches workspace text using ripgrep when available and a local walker as
@@ -108,6 +115,8 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
             &input.query,
             input.glob.as_deref(),
             limit,
+            input.regex,
+            input.ignore_case,
         )
         .await
         {
@@ -122,12 +131,19 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
             }
         }
     }
+    if input.regex {
+        return Err(ToolError::InvalidInput {
+            tool: NAME.into(),
+            message: "regex search requires ripgrep, which is not available".into(),
+        });
+    }
 
     let query = input.query.clone();
     let glob = input.glob.clone();
     let root = sandbox.root().to_path_buf();
+    let ignore_case = input.ignore_case;
     let matches = tokio::task::spawn_blocking(move || {
-        fallback_search(&root, &base, &query, glob.as_deref(), limit)
+        fallback_search(&root, &base, &query, glob.as_deref(), limit, ignore_case)
     })
     .await
     .map_err(|error| ToolError::Execution(format!("search worker failed: {error}")))?;
@@ -146,20 +162,31 @@ async fn ripgrep_search(
     query: &str,
     glob: Option<&str>,
     limit: usize,
+    regex: bool,
+    ignore_case: bool,
 ) -> Result<Vec<Value>, RgFailure> {
     if limit == 0 {
         return Ok(Vec::new());
     }
     let mut command = Command::new("rg");
+    command.args([
+        "--json",
+        "--no-heading",
+        "--color",
+        "never",
+        "--no-follow",
+        "--max-filesize",
+        "4M",
+    ]);
+    if !regex {
+        command.arg("--fixed-strings");
+    }
+    if ignore_case {
+        command.arg("--ignore-case");
+    }
+    // `-e` keeps queries that start with `-` from being parsed as flags.
     command
-        .args([
-            "--json",
-            "--no-heading",
-            "--color",
-            "never",
-            "--no-follow",
-            query,
-        ])
+        .args(["-e", query])
         .arg(base)
         .current_dir(workspace_root)
         .stdout(Stdio::piped())
@@ -172,14 +199,16 @@ async fn ripgrep_search(
         "!.env*",
         "!*.pem",
         "!*.key",
-        "!**/.git/**",
-        "!**/.svn/**",
         "!**/id_rsa",
         "!**/id_ed25519",
         "!**/secrets.yml",
         "!**/secrets.yaml",
     ] {
         command.args(["--glob", pattern]);
+    }
+    for dir in HARD_SKIP_DIR_NAMES {
+        let pattern = format!("!**/{dir}/**");
+        command.args(["--glob", pattern.as_str()]);
     }
     let mut child = match command.spawn() {
         Ok(child) => child,
@@ -188,13 +217,17 @@ async fn ripgrep_search(
             return Err(RgFailure::Failed(format!("ripgrep failed: {error}")));
         }
     };
-    match read_rg_matches(&mut child, limit).await {
+    match read_rg_matches(&mut child, workspace_root, limit).await {
         Ok(matches) => Ok(matches),
         Err(message) => Err(RgFailure::Failed(message)),
     }
 }
 
-async fn read_rg_matches(child: &mut Child, limit: usize) -> Result<Vec<Value>, String> {
+async fn read_rg_matches(
+    child: &mut Child,
+    workspace_root: &Path,
+    limit: usize,
+) -> Result<Vec<Value>, String> {
     let stdout = child
         .stdout
         .take()
@@ -229,7 +262,7 @@ async fn read_rg_matches(child: &mut Child, limit: usize) -> Result<Vec<Value>, 
                     failure = Some("ripgrep output exceeds 4 MiB".into());
                     break;
                 }
-                parse_rg_line(&pending, &mut matches, limit);
+                parse_rg_line(&pending, workspace_root, &mut matches, limit);
             }
             break;
         }
@@ -244,7 +277,12 @@ async fn read_rg_matches(child: &mut Child, limit: usize) -> Result<Vec<Value>, 
                 failure = Some("ripgrep output exceeds 4 MiB".into());
                 break;
             }
-            parse_rg_line(&pending[consumed..newline], &mut matches, limit);
+            parse_rg_line(
+                &pending[consumed..newline],
+                workspace_root,
+                &mut matches,
+                limit,
+            );
             consumed = newline + 1;
             if matches.len() >= limit {
                 reached_limit = true;
@@ -285,7 +323,7 @@ async fn read_rg_matches(child: &mut Child, limit: usize) -> Result<Vec<Value>, 
     Ok(matches)
 }
 
-fn parse_rg_line(line: &[u8], matches: &mut Vec<Value>, limit: usize) {
+fn parse_rg_line(line: &[u8], workspace_root: &Path, matches: &mut Vec<Value>, limit: usize) {
     if let Ok(item) = serde_json::from_slice::<Value>(line) {
         if item["type"] != "match" {
             return;
@@ -294,11 +332,16 @@ fn parse_rg_line(line: &[u8], matches: &mut Vec<Value>, limit: usize) {
         if is_hard_excluded(Path::new(reported)) {
             return;
         }
+        let relative = Path::new(reported)
+            .strip_prefix(workspace_root)
+            .unwrap_or_else(|_| Path::new(reported))
+            .to_string_lossy()
+            .replace('\\', "/");
         for sub in item["data"]["lines"]["text"].as_str().unwrap_or("").lines() {
             matches.push(json!({
-                "path": item["data"]["path"]["text"],
+                "path": relative,
                 "line": item["data"]["line_number"],
-                "text": sub
+                "text": sub.chars().take(MAX_FALLBACK_LINE_CHARS).collect::<String>()
             }));
             if matches.len() >= limit {
                 break;
@@ -331,6 +374,7 @@ fn fallback_search(
     query: &str,
     glob: Option<&str>,
     limit: usize,
+    ignore_case: bool,
 ) -> Vec<Value> {
     let mut matches = Vec::new();
     let mut stack = vec![base.to_path_buf()];
@@ -363,9 +407,13 @@ fn fallback_search(
                     continue;
                 }
             }
-            if let Some(file_matches) =
-                scan_file(workspace_root, &path, query, limit - matches.len())
-            {
+            if let Some(file_matches) = scan_file(
+                workspace_root,
+                &path,
+                query,
+                limit - matches.len(),
+                ignore_case,
+            ) {
                 matches.extend(file_matches);
                 if matches.len() >= limit {
                     return matches;
@@ -381,6 +429,7 @@ fn scan_file(
     path: &Path,
     query: &str,
     remaining: usize,
+    ignore_case: bool,
 ) -> Option<Vec<Value>> {
     if remaining == 0 || is_hard_excluded(path) {
         return None;
@@ -399,8 +448,18 @@ fn scan_file(
         .to_string_lossy()
         .replace('\\', "/");
     let mut out = Vec::new();
+    let needle = if ignore_case {
+        query.to_lowercase()
+    } else {
+        query.to_owned()
+    };
     for (index, line) in text.lines().enumerate() {
-        if line.contains(query) {
+        let hit = if ignore_case {
+            line.to_lowercase().contains(&needle)
+        } else {
+            line.contains(&needle)
+        };
+        if hit {
             out.push(json!({
                 "path": rel,
                 "line": index + 1,
@@ -621,10 +680,32 @@ mod tests {
         std::fs::write(dir.path().join("nested").join("b.md"), "needle two").expect("write b");
         std::fs::write(dir.path().join("skip.bin"), b"needle\0binary").expect("binary");
 
-        let matches = fallback_search(dir.path(), dir.path(), "needle", Some("*.md"), 10);
+        let matches = fallback_search(dir.path(), dir.path(), "needle", Some("*.md"), 10, false);
         assert_eq!(matches.len(), 1);
         assert!(matches[0]["path"].as_str().unwrap().ends_with("b.md"));
         assert_eq!(matches[0]["line"], 1);
+    }
+
+    #[test]
+    fn fallback_search_can_ignore_case() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.txt"), "Needle One").expect("write a");
+
+        assert!(fallback_search(dir.path(), dir.path(), "needle", None, 10, false).is_empty());
+        assert_eq!(
+            fallback_search(dir.path(), dir.path(), "needle", None, 10, true).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn rg_matches_are_workspace_relative_and_bounded() {
+        let root = Path::new("/ws");
+        let line = br#"{"type":"match","data":{"path":{"text":"/ws/src/a.rs"},"lines":{"text":"hit\n"},"line_number":3}}"#;
+        let mut matches = Vec::new();
+        parse_rg_line(line, root, &mut matches, 10);
+        assert_eq!(matches[0]["path"], "src/a.rs");
+        assert_eq!(matches[0]["line"], 3);
     }
 
     #[test]
@@ -633,7 +714,7 @@ mod tests {
         let file = dir.path().join("large.txt");
         std::fs::write(&file, vec![b'n'; MAX_FALLBACK_FILE_BYTES as usize + 1]).expect("write");
 
-        assert!(scan_file(dir.path(), &file, "n", 10).is_none());
+        assert!(scan_file(dir.path(), &file, "n", 10, false).is_none());
     }
 
     #[test]
@@ -687,7 +768,7 @@ mod tests {
         std::fs::write(dir.path().join("credentials.json"), "needle").expect("credential file");
         std::fs::write(dir.path().join("safe.txt"), "needle").expect("safe file");
 
-        let matches = fallback_search(dir.path(), dir.path(), "needle", None, 10);
+        let matches = fallback_search(dir.path(), dir.path(), "needle", None, 10, false);
         assert_eq!(matches.len(), 1);
         assert!(matches[0]["path"].as_str().unwrap().ends_with("safe.txt"));
     }

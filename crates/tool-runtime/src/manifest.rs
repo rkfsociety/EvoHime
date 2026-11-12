@@ -34,7 +34,7 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             &["text"],
         ),
         "filesystem.read" => object(
-            serde_json::json!({"path":string("Workspace-relative file path")}),
+            serde_json::json!({"path":string("Workspace-relative file path"),"offset":{"type":"integer","minimum":1,"description":"1-based first line to return (default 1)"},"limit":{"type":"integer","minimum":1,"maximum":2000,"description":"Maximum lines to return (default 200)"}}),
             &["path"],
         ),
         "filesystem.write" => object(
@@ -66,7 +66,7 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             &["from", "to"],
         ),
         "filesystem.search" => object(
-            serde_json::json!({"query":string("Text or pattern"),"path":string("Optional workspace path"),"glob":string("Optional glob"),"limit":integer()}),
+            serde_json::json!({"query":string("Literal text (or ripgrep regex when regex=true)"),"path":string("Optional workspace path"),"glob":string("Optional glob"),"limit":integer(),"regex":{"type":"boolean","description":"Treat query as a regular expression (requires ripgrep); default false"},"ignore_case":{"type":"boolean","description":"Case-insensitive match; default false"}}),
             &["query"],
         ),
         "filesystem.list" => object(

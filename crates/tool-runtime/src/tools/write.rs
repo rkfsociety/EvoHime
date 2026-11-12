@@ -31,9 +31,19 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         tool: NAME.into(),
         message: e.to_string(),
     })?;
-    let existed = crate::revision_safe_workspace_files::read(ctx, &input.path)
-        .await
-        .is_ok();
+    let existed = {
+        let (_, _, resolved) =
+            crate::revision_safe_workspace_files::resolve_logical(ctx, &input.path, true).map_err(
+                |error| {
+                    crate::revision_safe_workspace_files::permission(
+                        error,
+                        NAME,
+                        Permission::FilesystemWrite,
+                    )
+                },
+            )?;
+        tokio::fs::try_exists(&resolved).await.unwrap_or(false)
+    };
     let file_ref = crate::revision_safe_workspace_files::write(
         ctx,
         &input.path,
