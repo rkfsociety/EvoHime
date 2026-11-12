@@ -463,8 +463,7 @@ impl TraceEvaluationContract {
     /// Returns the canonical SHA-256 digest of this validated evaluation contract.
     pub fn canonical_hash(&self) -> Result<String, TraceEvaluationError> {
         self.validate()?;
-        let bytes =
-            serde_json::to_vec(self).map_err(|_| TraceEvaluationError::Serialization)?;
+        let bytes = serde_json::to_vec(self).map_err(|_| TraceEvaluationError::Serialization)?;
         Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
     }
 }
