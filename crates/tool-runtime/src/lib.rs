@@ -15,6 +15,8 @@ pub mod app_catalog;
 pub mod developer_utilities;
 /// Named execution policy profiles and their resolution.
 pub mod execution_policy_profiles;
+/// Core-owned kernel host contract used by the `analysis.run` tool.
+pub mod kernel_host;
 /// Tool manifest schema and validation contracts.
 pub mod manifest;
 /// Network access capability and host allow-list controls.
@@ -39,6 +41,11 @@ pub use app_catalog::{AppCatalog, AppEntry, Resolution as AppResolution, CATALOG
 /// Execution policy profile types and errors.
 pub use execution_policy_profiles::{
     ExecutionPolicyError, ExecutionPolicyProfile, ResolvedExecutionProfile,
+};
+/// Kernel host contract for the declared `analysis.run` tool.
+pub use kernel_host::{
+    AnalysisOperation, AnalysisSensitivity, KernelHost, KernelTaskBinding, KernelToolError,
+    KernelToolObjectRef, KernelToolRequest, KernelToolResult,
 };
 /// Manifest validation, side effect, and origin contracts.
 pub use manifest::{
@@ -65,6 +72,8 @@ pub use telemetry::{TelemetryBuffer, TelemetrySummary, ToolLifecycle, ToolTeleme
 pub use toolkit::{ToolkitCatalog, ToolkitEntry, ToolkitError, ToolkitStatus};
 /// Built-in agent tool adapter.
 pub use tools::agent;
+/// Declared analysis kernel tool adapter.
+pub use tools::analysis;
 /// Built-in archive tool adapter.
 pub use tools::archive;
 /// Built-in browser tool adapter.

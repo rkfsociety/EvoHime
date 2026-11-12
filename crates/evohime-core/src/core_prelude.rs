@@ -558,6 +558,12 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
             "path": ".evohime-catalog-probe",
             "patch": "--- a/.evohime-catalog-probe\n+++ b/.evohime-catalog-probe\n@@\n"
         }),
+        // Probe input must satisfy the declared `analysis.run` schema, otherwise
+        // the side-effect-free kernel tool drops out of the authorized snapshot.
+        "analysis.run" => serde_json::json!({
+            "operation": "json_parse",
+            "args": "{}"
+        }),
         _ => serde_json::json!({}),
     }
 }

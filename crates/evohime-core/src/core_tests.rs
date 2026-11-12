@@ -270,6 +270,20 @@ mod tests {
             super::catalog_preflight_input("filesystem.search"),
             serde_json::json!({ "query": "EvoHime", "path": "." })
         );
+        // The declared kernel tool must stay in the authorized snapshot: its
+        // probe input has to satisfy the same schema the model sees.
+        let analysis_probe = super::catalog_preflight_input("analysis.run");
+        assert_eq!(
+            analysis_probe,
+            serde_json::json!({ "operation": "json_parse", "args": "{}" })
+        );
+        let schema = evohime_tool_runtime::builtin_input_schema("analysis.run");
+        let compiled =
+            jsonschema::JSONSchema::compile(&schema).expect("analysis.run schema compiles");
+        assert!(
+            compiled.validate(&analysis_probe).is_ok(),
+            "catalog probe must satisfy the declared analysis.run schema"
+        );
         assert!(super::requires_workspace_research_catalog(
             "Изучи проект и расскажи, как он устроен"
         ));

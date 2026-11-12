@@ -45,6 +45,10 @@ pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
         | "browser.session.screenshot"
         | "memory.search"
         | "app.list"
+        // `analysis.run` лишь считает по уже переданным аргументам: у него нет
+        // ни файловых, ни сетевых, ни shell-прав, а объекты остаются внутри
+        // task-scoped kernel-сессии.
+        | "analysis.run"
         | "http.fetch" => ToolRiskLevel::None,
 
         "git.pull" | "browser.session.navigate" => ToolRiskLevel::Low,
@@ -85,6 +89,7 @@ mod tests {
             "browser.session.read",
             "browser.session.screenshot",
             "memory.search",
+            "analysis.run",
         ] {
             assert_eq!(
                 classify_call_risk(tool, &json!({})),

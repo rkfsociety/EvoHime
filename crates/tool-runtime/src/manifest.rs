@@ -15,6 +15,9 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
     let integer = || serde_json::json!({"type":"integer","minimum":1});
     let object = |properties: Value, required: &[&str]| serde_json::json!({"type":"object","properties":properties,"required":required,"additionalProperties":false});
     match tool_id {
+        // Declared kernel surface keeps one source of truth: the tool module
+        // owns the schema, and the manifest derives it instead of a stub.
+        "analysis.run" => crate::tools::analysis::input_schema(),
         "utility.base64.encode"
         | "utility.base64.decode"
         | "utility.hash.sha256"

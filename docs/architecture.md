@@ -1409,11 +1409,49 @@ authority: Core владеет `AnalysisKernelSessionV1`, лимитами, obje
 дублируются и должны адресоваться существующим ArtifactStore. Migration v38
 добавляет эту схему транзакционно поверх текущей v37.
 
-`KernelRuntime` поддерживает только `json_parse`, `json_select` и
-`csv_summary`; `filesystem`, `network`, `shell`, `credentials`, raw tool и
+`KernelRuntime` поддерживает только `json_parse`, `json_select`, `csv_summary` и
+`object_put`; `filesystem`, `network`, `shell`, `credentials`, raw tool и
 прямое чтение artifact отклоняются typed error до эффекта. Runtime state
 ephemeral и не сериализуется. Лимиты включают lifetime/idle timeout, request
 rate и output budget; чувствительные inline markers fail-closed.
+
+### Declared agent surface: `analysis.run`
+
+Агент не получает доступ к `KernelRuntime` напрямую. Единственный путь —
+объявленный инструмент `analysis.run` в `crates/tool-runtime`, чья схема и
+host-контракт описаны ниже; второй dispatch в Core не создаётся.
+
+- **Декларация.** `crates/tool-runtime/src/tools/analysis.rs` владеет id,
+  описанием, пустым списком `Permission`, таймаутом и canonical input schema;
+  `builtin_input_schema` отдаёт эту схему без заглушки `{"input":{...}}`.
+  Обязательные поля — `operation` и `args`; `args` принимает bounded text
+  (`json_parse`, `csv_summary`, не более 16 KiB) либо закрытый объект с
+  `value`/`path` (`json_select`, `object_put`). `logical_name`, `type_hint` и
+  `sensitivity` опциональны, `secret` среди sensitivity отсутствует. Схема
+  намеренно не использует `allOf`/`if`/`then`/`oneOf`: провайдерские
+  трансляторы объявлений их вырезают или отвергают, а несовпадение
+  `operation`/`args` всё равно проверяет адаптер до эффекта.
+- **Классификация.** `capability_class = "local_computation"`,
+  `side_effect = ReadOnly`, `approval = Never` (прав нет),
+  `workspace_scope = "task"`, `output_size_limit` = bounded inline размер,
+  `retry_class = "bounded"`. Риск-классификатор относит вызов к `None`.
+- **Host.** `crates/tool-runtime/src/kernel_host.rs` объявляет трейт
+  `KernelHost` с единственным методом `execute(task, request)` и типы
+  `KernelTaskBinding` (`task_id`, `session_id`, `workspace_root`),
+  `KernelToolRequest`, `KernelToolResult`, `KernelToolObjectRef` и
+  `KernelToolError` с stable typed кодами
+  (`analysis_kernel_unavailable`, `..._limit_exceeded`,
+  `..._forbidden_capability`, `..._crashed`, `..._sensitive_inline_payload`,
+  `..._invalid_input`, `..._output_too_large`, `..._storage_failed`).
+- **Отсутствие host.** `ToolRegistry` хранит `Option<Arc<dyn KernelHost>>` и
+  builder `with_kernel_host`; без host инструмент зарегистрирован, но каждый
+  вызов возвращает `ToolError::Execution("analysis_kernel_unavailable")`.
+  In-process fallback, обходящий supervisor worker, отсутствует. `Clone`
+  сохраняет host, потому что копируется `Arc`.
+- **Каталог.** `catalog_preflight_input("analysis.run")` возвращает
+  `{"operation":"json_parse","args":"{}"}`, поэтому side-effect-free
+  инструмент проходит preflight и остаётся в авторизованном snapshot; probe
+  проверяется той же схемой в Core tests.
 
 Supervisor имеет allowlisted `evohime-analysis-worker` launch contract и
 аутентифицированный Core command channel для `kernel_launch`, `kernel_execute`

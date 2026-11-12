@@ -37,7 +37,7 @@
 | 187 | [Core-owned Windows Native Computer Use](187-0-core-windows-native-computer-use.md) | active; исторический источник issue #163; blocking dependencies 184–185 |
 | 188 | [Core-owned Research Experiment Tree](188-0-core-research-experiment-tree.md) | active; исторический источник issue #164 |
 | 191 | [Core-owned tool surface hardening и доставка skills агенту](191-0-core-tool-surface-and-skill-delivery.md) | active; выведен из аудита checkout, без исходного issue |
-| 192 | [Agent-facing доступ к Persistent Analysis Kernel](192-0-core-analysis-kernel-agent-access.md) | active; выведен из аудита вкладки «Анализ», без исходного issue |
+| 192 | [Agent-facing доступ к Persistent Analysis Kernel](192-0-core-analysis-kernel-agent-access.md) | active; этап 192.1 реализован, 192.2–192.4 впереди; без исходного issue |
 
 Незавершённые numbered plans: 180–181, 184–188 и 191–192.
 

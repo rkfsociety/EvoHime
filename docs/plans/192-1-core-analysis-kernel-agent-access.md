@@ -1,6 +1,8 @@
 # План 192.1 — декларация инструментов и host-контракт
 
-Статус: active implementation contract. Этап следует после overview 192.0.
+Статус: реализован в checkout (этап 1). Контракт перенесён в
+[`../architecture.md`](../architecture.md), фактическое состояние — в
+[`../current-state.md`](../current-state.md). Файл удаляется на этапе 192.4.
 
 ## Scope и изменяемые контракты
 
@@ -12,7 +14,9 @@ Core-owned kernel host, не заводя вторую реализацию disp
    `operation` (`json_parse` | `json_select` | `csv_summary` | `object_put`),
    `args` (bounded string для `csv_summary`/`json_parse` либо объект для
    `json_select`/`object_put`), опциональные `logical_name`, `type_hint`,
-   `sensitivity`. `additionalProperties: false`, `required: ["operation"]`.
+   `sensitivity`. `additionalProperties: false`, `required: ["operation",
+   "args"]` (kernel не имеет неявного payload, поэтому отсутствие `args`
+   отвергается и схемой, и адаптером).
    Схема обязана проходить `ToolManifest::validate` и не содержать заглушки
    `{"input":{...}}`.
 2. При необходимости отдельные узкие id (`analysis.json.select` и т.п.) не
@@ -84,6 +88,13 @@ Unit: объявленная схема проходит `validate`, не явл
 сохраняет host; существующие тесты `registry_tests.rs` не фиксируют литерал
 числа инструментов.
 
+Ограничение JSON Schema: схема использует `anyOf` для двух форм `args`, но не
+`allOf`/`if`/`then`/`oneOf`, потому что провайдерские трансляторы объявлений
+(например, Gemini-путь LiteRouter) вырезают или отвергают такие ключевые слова.
+Пары `operation`/`args`, которые схема допускает формально, но kernel не
+исполняет, отвергает `parse_input` с `InvalidInput` до вызова host; это
+закреплено тестом `operation_args_pairing_is_enforced_by_the_adapter`.
+
 Static: ссылки на `analysis.run` присутствуют в декларации, в
 `catalog_preflight_input` и в проекции каталога; в
 `core_agent_execution.rs` нет нового `if call.name == "analysis.run"`.
@@ -95,11 +106,55 @@ Static: ссылки на `analysis.run` присутствуют в декла�
 новых permission-значений и изменений схемы SQLite. Плановые проверки не
 выдавать за выполненные.
 
+### Этап 1 — фактическое evidence
+
+- Инструмент: `analysis.run`, manifest `version = "1.0.0"`,
+  `capability_class = "local_computation"`, `side_effect = read_only`,
+  `approval = never`, `workspace_scope = "task"`, `required_permissions = []`,
+  `network_domains = []`, `secret_references = []`. Exact canonical hash
+  закреплён тестом (`manifest.canonical_hash()` не пуст) и меняется вместе со
+  схемой, поэтому здесь не дублируется.
+- Mapping `operation → kernel operation` один-к-одному через
+  `AnalysisOperation::parse`: `json_parse`, `json_select`, `csv_summary`,
+  `object_put`. `artifact_read`, `tool_request`, `filesystem`, `network`,
+  `shell`, `credentials` отсутствуют в enum декларации и отвергаются
+  `InvalidInput` до вызова host.
+- Проверка схемы: `jsonschema` компилирует объявленную схему в
+  `evohime-tool-runtime` и `evohime-core`; probe
+  `{"operation":"json_parse","args":"{}"}` проходит её.
+- Schema/CI: изменений SQLite нет, новых `Permission` нет.
+- Локальные проверки: `cargo test --locked -p evohime-tool-runtime`,
+  `cargo clippy --locked -p evohime-tool-runtime --all-targets -D warnings`,
+  `cargo doc -p evohime-tool-runtime --lib` с `-D missing_docs`,
+  `cargo fmt --all -- --check`, `git diff --check`,
+  `cargo test --locked -p evohime-core --lib` под `RUST_MIN_STACK=33554432`
+  (1100 тестов) и `cargo clippy --locked -p evohime-core --all-targets --
+  -D warnings` — все PASS. Exact-SHA прогон GitHub Actions ожидает push.
+
+
 ## Критерии выхода
 
-- [ ] `analysis.run` объявлен в единственном месте и валиден.
-- [ ] Схема совпадает с полями, которые реально разбирает адаптер.
-- [ ] При отсутствии host — typed `unavailable`, без fallback.
-- [ ] В `core_agent_execution.rs` нет нового дублирующего dispatch.
-- [ ] `catalog_preflight_input` проходит схему инструмента.
-- [ ] Внутренние ссылки разрешаются, `git diff --check` проходит.
+- [x] `analysis.run` объявлен в единственном месте и валиден.
+      `crates/tool-runtime/src/tools/analysis.rs` — единственный источник
+      id/схемы; `ToolDefinition::manifest` и `builtin_input_schema` только
+      делегируют. `registry_tests::analysis_run_is_declared_once_with_a_closed_manifest`
+      подтверждает единственную регистрацию и валидный manifest.
+- [x] Схема совпадает с полями, которые реально разбирает адаптер.
+      `tools::analysis::tests::schema_is_explicit_and_closed` и
+      `declared_schema_accepts_only_the_shapes_the_adapter_parses` проверяют
+      принятые и отвергнутые формы.
+- [x] При отсутствии host — typed `unavailable`, без fallback.
+      `registry_without_kernel_host_fails_closed`.
+- [x] В `core_agent_execution.rs` нет нового дублирующего dispatch.
+      Изменения этапа ограничены `catalog_preflight_input` в `core_prelude.rs`.
+- [x] `catalog_preflight_input` проходит схему инструмента.
+      `core_tests::catalog_preflight_uses_safe_workspace_arguments_for_filesystem_tools`
+      компилирует объявленную схему и валидирует probe.
+- [x] Внутренние ссылки разрешаются, `git diff --check` проходит.
+
+## Открытые пункты после этапа 1
+
+Реализация host внутри Core (сессии, admission, worker, recovery) — этап 192.2;
+IPC-команда списка и вкладка «Анализ» — этап 192.3. До них `analysis.run`
+виден модели в авторизованном snapshot, но любой вызов завершается typed
+`analysis_kernel_unavailable`, а не скрытым исполнением в процессе Core.

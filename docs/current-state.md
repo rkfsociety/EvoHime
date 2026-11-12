@@ -538,6 +538,31 @@ diagnostics обязательны для опасных операций. По�
 runtime переиспользует canonical hash, ограничивает глубину графа 64 узлами и
 публикует bounded dispatch metrics.
 
+## Declared analysis kernel tool (план 192, этап 1)
+
+Kernel уже существовал как Core-owned runtime, но не был объявлен ни одним
+инструментом, поэтому агент не мог его вызвать. Этап 192.1 добавляет
+декларацию и host-контракт без второй реализации dispatch:
+
+- `crates/tool-runtime/src/tools/analysis.rs` объявляет `analysis.run`
+  (canonical schema, пустые permissions, `ReadOnly`, `approval = Never`,
+  `workspace_scope = "task"`, bounded inline размер), а
+  `builtin_input_schema` возвращает эту схему вместо заглушки;
+- `crates/tool-runtime/src/kernel_host.rs` объявляет трейт `KernelHost` и
+  bounded типы запроса/результата с stable typed кодами ошибок;
+- `ToolRegistry` получает `Option<Arc<dyn KernelHost>>`, builder
+  `with_kernel_host` и accessor; без host `analysis.run` зарегистрирован, но
+  каждый вызов возвращает `analysis_kernel_unavailable` — in-process fallback
+  отсутствует;
+- `catalog_preflight_input("analysis.run")` проходит объявленную схему, поэтому
+  инструмент остаётся в авторизованном snapshot;
+- `classify_call_risk("analysis.run")` = `None`.
+
+Этап не создаёт Core-side host-реализацию, IPC-проекцию и вкладку «Анализ»:
+они остаются этапами 192.2–192.4, и до их реализации вызов из агента
+завершается typed `unavailable`. Значения объектов, inline result и абсолютные
+пути в декларацию, каталог и логи не попадают.
+
 ## Подтверждённые проверки checkout
 
 Текущая задача реализована локально в `main`; task-only commit создан после
@@ -567,8 +592,12 @@ exact-SHA прогоном GitHub Actions.
 | Проверка | Результат |
 | --- | --- |
 | Workspace RAG decode regression | PASS; valid/invalid/empty UTF-8 и UTF-16LE/BE |
-| `cargo check --locked -p evohime-core` и `cargo fmt --all -- --check` | PASS |
-| `cargo clippy --locked -p evohime-core --all-targets -- -D warnings` | PASS |
+| `cargo test --locked -p evohime-tool-runtime` (локально, после этапа 192.1) | PASS: 172/6/8/3 теста, 2 ignored (worker/network smoke) |
+| `cargo test --locked -p evohime-core --lib` с `RUST_MIN_STACK=33554432` | PASS: 1100 тестов, 0 failed; на дефолтном стеке libtest бинарник падает `STATUS_STACK_OVERFLOW`, поэтому локально нужен тот же стек, что в CI |
+| `cargo fmt --all -- --check` и `git diff --check` | PASS |
+| `cargo clippy --locked -p evohime-core --all-targets -- -D warnings` | PASS (после этапа 192.1) |
+| `cargo clippy --locked -p evohime-tool-runtime --all-targets -- -D warnings` и `cargo doc -p evohime-tool-runtime --lib` с `-D missing_docs` | PASS |
+| `scripts/documentation.tests.ps1` | PASS: 117 tracked text files |
 | Узкие прогоны `evohime-core`: revision-precondition unit test и doc-tests `prompt_cache_planner`/`research` | PASS |
 | `scripts/module-router.tests.ps1` и `scripts/ci-selection.tests.ps1` | PASS |
 | Electron `npx vitest run tests/project-sidebar.test.tsx` | PASS: 3 теста |

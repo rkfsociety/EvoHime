@@ -143,6 +143,11 @@ impl ToolDefinition {
     /// схема при этом всегда явная и fail-closed.
     pub fn manifest(&self) -> crate::ToolManifest {
         let is_utility = self.name.starts_with("utility.");
+        // The declared kernel tool grants no filesystem, network or shell
+        // authority: it is local computation scoped to the task, and its
+        // object writes stay inside the Core-owned kernel session.
+        let is_analysis_kernel = self.name == crate::tools::analysis::NAME;
+        let is_local_computation = is_utility || is_analysis_kernel;
         crate::ToolManifest {
             kind: crate::MANIFEST_KIND.into(),
             tool_id: self.name.into(),
@@ -151,7 +156,7 @@ impl ToolDefinition {
             description: self.description.into(),
             input_schema: crate::builtin_input_schema(self.name),
             output_schema: serde_json::json!({"type":"object"}),
-            capability_class: if is_utility {
+            capability_class: if is_local_computation {
                 "local_computation".into()
             } else {
                 self.permissions
@@ -176,12 +181,18 @@ impl ToolDefinition {
             } else {
                 crate::ApprovalMode::OnPermission
             },
-            workspace_scope: "workspace".into(),
+            workspace_scope: if is_analysis_kernel {
+                "task".into()
+            } else {
+                "workspace".into()
+            },
             network_domains: vec![],
             secret_references: vec![],
             timeout_ms: self.timeout.as_millis().min(u64::MAX as u128) as u64,
             output_size_limit: if is_utility {
                 crate::developer_utilities::MAX_OUTPUT_BYTES as u64
+            } else if is_analysis_kernel {
+                crate::tools::analysis::MAX_INLINE_RESULT_BYTES as u64
             } else {
                 512 * 1024
             },
@@ -226,6 +237,10 @@ pub struct ToolRegistry {
     tools: HashMap<&'static str, ToolDefinition>,
     manifest_cache: HashMap<&'static str, crate::ToolManifest>,
     permissions: PermissionEngine,
+    /// Optional Core-owned kernel host. Absent means the declared kernel tool
+    /// fails closed with `analysis_kernel_unavailable`; there is no in-process
+    /// fallback that would bypass the supervisor worker.
+    kernel_host: Option<std::sync::Arc<dyn crate::KernelHost>>,
 }
 
 impl ToolRegistry {
@@ -606,6 +621,12 @@ impl ToolRegistry {
                 timeout: crate::developer_utilities::TIMEOUT,
             });
         }
+        registry.register(ToolDefinition {
+            name: tools::analysis::NAME,
+            description: tools::analysis::DESCRIPTION,
+            permissions: tools::analysis::PERMISSIONS,
+            timeout: tools::analysis::TIMEOUT,
+        });
 
         registry
     }
@@ -621,7 +642,24 @@ impl ToolRegistry {
             tools: HashMap::new(),
             manifest_cache: HashMap::new(),
             permissions,
+            kernel_host: None,
         }
+    }
+
+    /// Attaches the Core-owned analysis kernel host to this registry.
+    ///
+    /// The builder keeps existing constructors source-compatible: a registry
+    /// without a host still registers `analysis.run`, but every call fails
+    /// closed with `analysis_kernel_unavailable` instead of executing in
+    /// process. `Clone` preserves the host because it is an `Arc`.
+    pub fn with_kernel_host(mut self, host: std::sync::Arc<dyn crate::KernelHost>) -> Self {
+        self.kernel_host = Some(host);
+        self
+    }
+
+    /// Returns the attached kernel host, if any.
+    pub fn kernel_host(&self) -> Option<&std::sync::Arc<dyn crate::KernelHost>> {
+        self.kernel_host.as_ref()
     }
 
     /// Adds or replaces a registration and its derived manifest.
@@ -784,6 +822,9 @@ impl ToolRegistry {
                 name if crate::developer_utilities::ALL_NAMES.contains(&name) => {
                     crate::developer_utilities::execute(ctx, name, input).await
                 }
+                tools::analysis::NAME => {
+                    tools::analysis::execute(ctx, input, self.kernel_host.as_ref()).await
+                }
                 tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
                 tools::write::NAME => tools::write::execute(ctx, input).await,
                 tools::patch::NAME => tools::patch::execute(ctx, input).await,
@@ -938,6 +979,9 @@ impl ToolRegistry {
             match name {
                 name if crate::developer_utilities::ALL_NAMES.contains(&name) => {
                     crate::developer_utilities::execute(ctx, name, input).await
+                }
+                tools::analysis::NAME => {
+                    tools::analysis::execute(ctx, input, self.kernel_host.as_ref()).await
                 }
                 tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
                 tools::write::NAME => tools::write::execute(ctx, input).await,

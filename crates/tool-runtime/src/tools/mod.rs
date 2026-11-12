@@ -1,5 +1,7 @@
 /// Agent task lifecycle and handoff tools.
 pub mod agent;
+/// Declared access to the Core-owned Persistent Analysis Kernel.
+pub mod analysis;
 /// Application catalog inspection and interaction tools.
 pub mod app;
 /// Bounded archive listing and extraction tools.

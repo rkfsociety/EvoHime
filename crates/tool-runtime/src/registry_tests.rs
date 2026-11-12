@@ -23,9 +23,12 @@ where
 fn bootstrap_registers_filesystem_read() {
     let registry = ToolRegistry::bootstrap();
     let tools = registry.list();
-    assert_eq!(tools.len(), 66);
+    // Bound instead of an exact literal: adding a declared tool must not churn
+    // this assertion, while a shrinking surface still fails the test.
+    assert!(tools.len() >= 67, "declared tool surface shrank");
     for name in [
         "agent.run",
+        "analysis.run",
         "app.list",
         "app.open",
         "archive.create",
@@ -845,4 +848,165 @@ fn every_registered_tool_has_a_valid_non_permissive_manifest() {
         );
         assert!(!manifest.canonical_hash().unwrap().is_empty());
     }
+}
+
+struct StubKernelHost {
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+impl crate::KernelHost for StubKernelHost {
+    fn execute<'a>(
+        &'a self,
+        _task: crate::KernelTaskBinding,
+        request: crate::KernelToolRequest,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<crate::KernelToolResult, crate::KernelToolError>,
+                > + Send
+                + 'a,
+        >,
+    > {
+        let calls = &self.calls;
+        Box::pin(async move {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(crate::KernelToolResult {
+                kernel_id: "kernel-test".into(),
+                inline_result: Some(
+                    format!("{{\"op\":\"{}\"}}", request.operation.as_str()).into_bytes(),
+                ),
+                object_ref: None,
+                sensitivity: "public".into(),
+                provenance: "test".into(),
+            })
+        })
+    }
+}
+
+#[test]
+fn analysis_run_is_declared_once_with_a_closed_manifest() {
+    let registry = ToolRegistry::bootstrap();
+    let registered = registry
+        .list()
+        .into_iter()
+        .filter(|tool| tool.name == "analysis.run")
+        .count();
+    assert_eq!(registered, 1, "analysis.run must be declared exactly once");
+
+    let manifest = registry
+        .manifest_for("analysis.run")
+        .expect("analysis.run has a manifest");
+    manifest
+        .validate()
+        .expect("analysis.run manifest validates");
+    assert_eq!(manifest.capability_class, "local_computation");
+    assert_eq!(manifest.side_effect, crate::SideEffectClass::ReadOnly);
+    assert_eq!(manifest.approval, crate::ApprovalMode::Never);
+    assert_eq!(manifest.workspace_scope, "task");
+    assert!(manifest.required_permissions.is_empty());
+    assert!(manifest.network_domains.is_empty());
+    assert!(manifest.secret_references.is_empty());
+    assert_eq!(
+        manifest.input_schema.get("additionalProperties"),
+        Some(&serde_json::Value::Bool(false))
+    );
+    let properties = manifest.input_schema["properties"]
+        .as_object()
+        .expect("analysis.run schema declares properties");
+    assert!(
+        !properties.contains_key("input"),
+        "analysis.run must not fall back to the generic input stub"
+    );
+}
+
+#[test]
+fn registry_without_kernel_host_fails_closed() {
+    run_async_test_with_large_stack(async {
+        let registry = ToolRegistry::bootstrap();
+        assert!(registry.kernel_host().is_none());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let error = registry
+            .execute(
+                &context,
+                "analysis.run",
+                serde_json::json!({"operation": "json_parse", "args": "{}"}),
+            )
+            .await
+            .expect_err("call without a kernel host must fail closed");
+        match error {
+            ToolError::Execution(message) => {
+                assert_eq!(message, crate::kernel_host::KERNEL_UNAVAILABLE)
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    });
+}
+
+#[test]
+fn kernel_host_survives_clone_and_receives_task_binding() {
+    run_async_test_with_large_stack(async {
+        let host = std::sync::Arc::new(StubKernelHost {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let registry = ToolRegistry::bootstrap().with_kernel_host(host.clone());
+        let cloned = registry.clone();
+        assert!(cloned.kernel_host().is_some());
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let task_id = Uuid::new_v4();
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id,
+            session_id: None,
+            progress_tx: None,
+        };
+        let result = cloned
+            .execute(
+                &context,
+                "analysis.run",
+                serde_json::json!({"operation": "csv_summary", "args": "a,b\n1,2\n"}),
+            )
+            .await
+            .expect("delegated kernel call succeeds");
+        assert_eq!(result.structured["kernel_id"], "kernel-test");
+        assert_eq!(result.structured["operation"], "csv_summary");
+        assert_eq!(
+            host.calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the cloned registry must keep sharing the same host"
+        );
+    });
+}
+
+#[test]
+fn analysis_run_rejects_invalid_shape_before_reaching_the_host() {
+    run_async_test_with_large_stack(async {
+        let host = std::sync::Arc::new(StubKernelHost {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let registry = ToolRegistry::bootstrap().with_kernel_host(host.clone());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let error = registry
+            .execute(
+                &context,
+                "analysis.run",
+                serde_json::json!({"operation": "filesystem"}),
+            )
+            .await
+            .expect_err("unknown operation is rejected");
+        assert!(matches!(error, ToolError::InvalidInput { .. }));
+        assert_eq!(host.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    });
 }

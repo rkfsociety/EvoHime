@@ -131,8 +131,10 @@ in-process исполнение в обход worker.
 
 ## Критерии готовности
 
-- [ ] Агент видит `analysis.run` в авторизованном snapshot и получает
-      осмысленный typed результат `json_parse`/`json_select`/`csv_summary`.
+- [x] Этап 192.1: агент видит `analysis.run` в авторизованном snapshot;
+      вызов без Core-owned host даёт typed `analysis_kernel_unavailable`.
+- [ ] Агент получает осмысленный typed результат
+      `json_parse`/`json_select`/`csv_summary` (этап 192.2).
 - [ ] Ни один вызов kernel не проходит мимо `ToolRegistry`: в
       `core_agent_execution.rs` не появляется новый `if call.name == ...`.
 - [ ] Инструмент не даёт файловых, сетевых, shell- или credential-возможностей;

@@ -9,6 +9,7 @@
 
 const TOOL_LABELS: Record<string, string> = {
   'agent.run': 'Запускаю подзадачу',
+  'analysis.run': 'Считаю во встроенном вычислителе',
   'browser.extract': 'Извлекаю данные со страницы',
   'browser.open': 'Открываю страницу',
   'browser.session.click': 'Нажимаю на странице',
