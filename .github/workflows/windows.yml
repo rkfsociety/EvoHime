@@ -187,20 +187,41 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
           components: rustfmt, clippy
+      - name: Сборка тестовых бинарников Rust-инфраструктуры
+        run: >-
+          cargo test --locked --no-run
+          -p evohime-permissions
+          -p evohime-tool-runtime
+          -p evohime-model-gateway
+          -p evohime-core
+          -p evohime-local-storage
+          -p evohime-desktop-ipc
+          -p evohime-updater
+          -p evohime-receipts
+          -p evohime-listener-contract
+          -p evohime-listener-audio
+          -p evohime-listener-ipc
+          -p evohime-listener
       - name: Тесты основной Rust-инфраструктуры
         shell: pwsh
         run: |
-          function Invoke-BoundedCargoTest([string]$package) {
+          # Compilation is a separate step, so these limits bound test execution
+          # only; counting a cold build against one package made the bounded
+          # wrapper kill evohime-core mid-run.
+          function Invoke-BoundedCargoTest([string]$package, [int]$timeoutMinutes) {
             Write-Host "Testing package: $package"
             $process = Start-Process -FilePath 'cargo.exe' -ArgumentList @('test', '--locked', '-p', $package) -NoNewWindow -PassThru
-            $timeoutMinutes = if ($package -eq 'evohime-core') { 15 } else { 8 }
             if (-not $process.WaitForExit($timeoutMinutes * 60 * 1000)) {
               taskkill.exe /PID $process.Id /T /F
               throw "Rust tests exceeded the $timeoutMinutes-minute limit for $package."
             }
             if ($process.ExitCode -ne 0) { throw "Rust tests failed for $package (exit code $($process.ExitCode))." }
           }
-          @('evohime-permissions', 'evohime-tool-runtime', 'evohime-model-gateway', 'evohime-core', 'evohime-local-storage', 'evohime-desktop-ipc', 'evohime-updater', 'evohime-receipts', 'evohime-listener-contract', 'evohime-listener-audio', 'evohime-listener-ipc', 'evohime-listener') | ForEach-Object { Invoke-BoundedCargoTest $_ }
+          Invoke-BoundedCargoTest 'evohime-permissions' 8
+          Invoke-BoundedCargoTest 'evohime-tool-runtime' 8
+          Invoke-BoundedCargoTest 'evohime-model-gateway' 8
+          Invoke-BoundedCargoTest 'evohime-core' 20
+          @('evohime-local-storage', 'evohime-desktop-ipc', 'evohime-updater', 'evohime-receipts', 'evohime-listener-contract', 'evohime-listener-audio', 'evohime-listener-ipc', 'evohime-listener') | ForEach-Object { Invoke-BoundedCargoTest $_ 8 }
       - name: Privacy gate фонового аудио
         shell: pwsh
         run: ./scripts/ambient-privacy.tests.ps1

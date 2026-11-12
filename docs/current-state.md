@@ -117,7 +117,7 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000091`, `core 0.0.000402`, `installer 0.0.000065`,
+0.0.000043`, `cli 0.0.000091`, `core 0.0.000405`, `installer 0.0.000065`,
 `listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000113`,
 `supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000142`,
 `updater 0.0.000132` и `verifier 0.0.000057`.
@@ -543,10 +543,22 @@ runtime переиспользует canonical hash, ограничивает г
 module releases ожидают разрешённого push. Исторические baseline и результаты
 сохранены в [`release-evidence.md`](release-evidence.md).
 
+Bounded-таймаут модульных Rust-тестов измеряет только исполнение: `core.yml` и
+`windows.yml` сначала собирают тестовые бинарники отдельным шагом
+`cargo test --locked --no-run`, а затем запускают пакеты через
+`Invoke-BoundedCargoTest` с явным лимитом. Раньше холодная сборка `evohime-core`
+(~16 минут) входила в 20-минутный лимит того же процесса, поэтому пакет
+обрывался через `taskkill` посреди doc-tests, а убитые примеры попадали в отчёт
+как `FAILED`. Контракт закреплён проверкой в `scripts/module-router.tests.ps1`.
+
 | Проверка | Результат |
 | --- | --- |
 | Workspace RAG decode regression | PASS; valid/invalid/empty UTF-8 и UTF-16LE/BE |
 | `cargo check --locked -p evohime-core` и `cargo fmt --all -- --check` | PASS |
+| `cargo clippy --locked -p evohime-core --all-targets -- -D warnings` | PASS |
+| Узкие прогоны `evohime-core`: revision-precondition unit test и doc-tests `prompt_cache_planner`/`research` | PASS |
+| `scripts/module-router.tests.ps1` и `scripts/ci-selection.tests.ps1` | PASS |
+| Electron `npx vitest run tests/project-sidebar.test.tsx` | PASS: 3 теста |
 | Electron полный `npm test` | PASS: 140 файлов, 702 теста; 1 файл и 4 теста skipped |
 | Electron `npm run typecheck`, `npm run check:protocol` | PASS |
 | Electron shell/updater production builds и `npm run check:bundle` | PASS |

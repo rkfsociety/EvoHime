@@ -59,7 +59,7 @@ jobs:
   core:
     name: Core — tests, lint and build
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       RUST_MIN_STACK: 33554432
     steps:
@@ -70,19 +70,33 @@ jobs:
           components: rustfmt, clippy
       - name: Core format
         run: cargo fmt --all -- --check
+      - name: Core test build
+        run: >-
+          cargo test --locked --no-run
+          -p evohime-core
+          -p evohime-context-budget
+          -p evohime-local-storage
+          -p evohime-model-gateway
+          -p evohime-permissions
+          -p evohime-tool-runtime
       - name: Core tests
         shell: pwsh
         run: |
-          function Invoke-BoundedCargoTest([string]$package) {
+          # Compilation happens in the previous step, so these limits bound test
+          # execution only. Counting a cold 15-minute build against a single
+          # package used to abort evohime-core mid-run, and the killed process
+          # reported the still-running doc-tests as failures.
+          function Invoke-BoundedCargoTest([string]$package, [int]$timeoutMinutes) {
             Write-Host "Testing package: $package"
             $process = Start-Process -FilePath 'cargo.exe' -ArgumentList @('test', '--locked', '-p', $package) -NoNewWindow -PassThru
-            if (-not $process.WaitForExit(20 * 60 * 1000)) {
+            if (-not $process.WaitForExit($timeoutMinutes * 60 * 1000)) {
               taskkill.exe /PID $process.Id /T /F
-              throw "Core tests exceeded the 20-minute limit for $package."
+              throw "Core tests exceeded the $timeoutMinutes-minute limit for $package."
             }
             if ($process.ExitCode -ne 0) { throw "Core tests failed for $package (exit code $($process.ExitCode))." }
           }
-          @('evohime-core', 'evohime-context-budget', 'evohime-local-storage', 'evohime-model-gateway', 'evohime-permissions', 'evohime-tool-runtime') | ForEach-Object { Invoke-BoundedCargoTest $_ }
+          Invoke-BoundedCargoTest 'evohime-core' 20
+          @('evohime-context-budget', 'evohime-local-storage', 'evohime-model-gateway', 'evohime-permissions', 'evohime-tool-runtime') | ForEach-Object { Invoke-BoundedCargoTest $_ 8 }
       - name: Core lint
         run: cargo clippy --locked -p evohime-core --all-targets -- -D warnings
       - name: Core build

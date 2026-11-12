@@ -32,6 +32,15 @@ $coreWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\cor
 if ($coreWorkflow -notmatch "crates/model-gateway/\*\*") { throw 'Core workflow does not watch the model-gateway crate.' }
 if ($coreWorkflow -notmatch "crates/permissions/\*\*") { throw 'Core workflow does not watch the permissions crate.' }
 if ($coreWorkflow -match 'crates/evohime-model-gateway|crates/evohime-permissions') { throw 'Core workflow contains stale crate paths.' }
+$compiledTestBinaries = '(?ms)cargo test --locked --no-run\r?\n(?:\s+-p \S+\r?\n)+'
+foreach ($workflowName in @('core.yml', 'windows.yml')) {
+    $text = Get-Content -LiteralPath (Join-Path $root ".github\workflows\$workflowName") -Raw
+    if ($text -notmatch $compiledTestBinaries) { throw "$workflowName does not build its test binaries in a separate step." }
+    if ($text -notmatch 'function Invoke-BoundedCargoTest\(\[string\]\$package, \[int\]\$timeoutMinutes\)') { throw "$workflowName hides the bounded test timeout behind an implicit default." }
+    $buildIndex = [regex]::Match($text, $compiledTestBinaries).Index
+    $testIndex = $text.IndexOf("Invoke-BoundedCargoTest 'evohime-core'", [StringComparison]::Ordinal)
+    if ($testIndex -lt $buildIndex) { throw "$workflowName can time out a cargo test run that still compiles." }
+}
 $moduleRelease = Get-Content -LiteralPath (Join-Path $root 'scripts\module-release.ps1') -Raw
 if ($moduleRelease -notmatch "'crates/model-gateway'") { throw 'Core module release routing does not include model-gateway.' }
 if ($moduleRelease -notmatch "'crates/permissions'") { throw 'Core module release routing does not include permissions.' }

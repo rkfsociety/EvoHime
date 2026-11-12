@@ -2087,9 +2087,30 @@ mod tests {
         assert!(!observed.contains_key("workspace:README.md"));
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn missing_write_precondition_uses_the_hash_from_a_successful_read() {
+    // `ToolAgent::run_once` compiles into a large future; the default 2 MiB
+    // libtest thread aborts with STATUS_STACK_OVERFLOW before the bounded loop
+    // runs. Give this integration-shaped test an explicit stack, matching
+    // `core_tests::executes_a_safe_filesystem_tool_and_returns_to_the_model`.
+    #[test]
+    fn missing_write_precondition_uses_the_hash_from_a_successful_read() {
+        std::thread::Builder::new()
+            .name("evohime-revision-precondition-test".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(
+                        missing_write_precondition_uses_the_hash_from_a_successful_read_inner(),
+                    );
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn missing_write_precondition_uses_the_hash_from_a_successful_read_inner() {
         use evohime_model_gateway::{
             providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
         };
