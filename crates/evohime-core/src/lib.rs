@@ -209,6 +209,8 @@ pub mod evals;
 pub(crate) mod event_trigger_runtime;
 pub(crate) mod execution_backend_registry;
 pub mod execution_environment_profiles;
+/// Defines redacted execution traces and deterministic regression assertions.
+pub mod execution_trace_evaluation;
 pub(crate) mod export;
 pub mod extension_conformance_kit;
 pub(crate) mod external_coding_agent_adapter;
