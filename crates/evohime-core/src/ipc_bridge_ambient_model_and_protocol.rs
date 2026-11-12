@@ -1,4 +1,5 @@
 use super::*;
+use evohime_desktop_ipc::MAX_FRAME_BYTES;
 
 fn safe_model_catalog_error_code(
     error: &evohime_model_gateway::providers::ProviderError,
@@ -397,13 +398,13 @@ let mut entries = catalog.installed.clone();
 // Serialize to check size against MAX_FRAME_BYTES
 if let Ok(serialized) = serde_json::to_vec(&entries) {
                 tracing::info!("Model catalog serialized size: {} bytes, entries count: {}", serialized.len(), entries.len());
-    if serialized.len() > crate::desktop_ipc::MAX_FRAME_BYTES {
+    if serialized.len() > evohime_desktop_ipc::MAX_FRAME_BYTES {
         // Simple hard cap to avoid oversized frames
         const HARD_CAP: usize = 200;
         entries.truncate(HARD_CAP);
         // If still too big, iteratively shrink
         while let Ok(s) = serde_json::to_vec(&entries) {
-            if s.len() <= crate::desktop_ipc::MAX_FRAME_BYTES { break; }
+            if s.len() <= evohime_desktop_ipc::MAX_FRAME_BYTES { break; }
             if entries.is_empty() { break; }
             entries.truncate(entries.len().saturating_sub(10));
         }
@@ -566,6 +567,7 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
 #[cfg(test)]
 mod tests {
     use super::*;
+use evohime_desktop_ipc::MAX_FRAME_BYTES;
 
     #[test]
     fn model_catalog_error_projection_is_bounded_and_does_not_include_details() {
