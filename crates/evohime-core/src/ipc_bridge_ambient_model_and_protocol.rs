@@ -392,7 +392,22 @@ impl IpcBridge {
                                 .await
                                 {
                                     Ok(catalog) => {
-                                        let entries = catalog.installed.clone();
+                                        // Collect entries and enforce IPC frame size limits
+let mut entries = catalog.installed.clone();
+// Serialize to check size against MAX_FRAME_BYTES
+if let Ok(serialized) = serde_json::to_vec(&entries) {
+    if serialized.len() > crate::desktop_ipc::MAX_FRAME_BYTES {
+        // Simple hard cap to avoid oversized frames
+        const HARD_CAP: usize = 200;
+        entries.truncate(HARD_CAP);
+        // If still too big, iteratively shrink
+        while let Ok(s) = serde_json::to_vec(&entries) {
+            if s.len() <= crate::desktop_ipc::MAX_FRAME_BYTES { break; }
+            if entries.is_empty() { break; }
+            entries.truncate(entries.len().saturating_sub(10));
+        }
+    }
+}
                                         let projection = serde_json::json!({
                                             "device": catalog.device,
                                             "recommendations": catalog.recommendations,
