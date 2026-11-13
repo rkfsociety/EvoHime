@@ -3,7 +3,6 @@
 Обновлено: 2026-11-13.
 
 ## Цель
-
 Сохранять стабильный локальный Windows AI-agent: пользователь запускает один
 desktop-клиент, выбирает workspace и модель, выполняет задачу и получает поток
 событий через authenticated versioned named pipe. Core остаётся владельцем
@@ -16,7 +15,6 @@ restart подтверждаются отдельно. Автоматическ�
 новые версионные релизы в текущий scope не входят.
 
 ## Источник текущего состояния
-
 Факты о checkout находятся в [`current-state.md`](current-state.md).
 Архитектурные контракты — в [`architecture.md`](architecture.md), security
 границы — в [`../SECURITY.md`](../SECURITY.md), release evidence — в
@@ -24,11 +22,9 @@ restart подтверждаются отдельно. Автоматическ�
 этапов — в [`plans/README.md`](plans/README.md).
 
 ## Исполняемая очередь
-
 Незавершённые планы выполняются по графу зависимостей и по этапам `0 → 4`.
-Текущий активный каталог содержит планы `180–181`, `184–188` и `191–192`; точные темы,
-статусы и зависимости новых направлений находятся в
-[`plans/README.md`](plans/README.md).
+Текущий активный каталог содержит планы `180–181`, `184–188` и `191–195`;
+точные темы, статусы и зависимости находятся в [`plans/README.md`](plans/README.md).
 Планы 01–179 перенесены в канонические документы, а закрытые MVP-планы
 `127–130` не входят в очередь повторно.
 
@@ -63,6 +59,9 @@ restart подтверждаются отдельно. Автоматическ�
 | 172 | self-healing updater и recovery без нового модуля | закрыт 2026-09-15 |
 | 173 | Cloud Provider Profiles | закрыт 2026-09-25 |
 | 189 | GitHub Public Repository Integration v1 | реализован в checkout 2026-09-27; CI и публикация ожидают push |
+| 193 | Agent Coordination, Loop Guards и Session Recall | active implementation contract |
+| 194 | Background Jobs Control Center | active implementation contract |
+| 195 | Capability Extensions и Workflow Composition | active implementation contract |
 
 Планы 01–173 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым
@@ -76,7 +75,6 @@ recovery, IPC/UI при наличии, focused tests, release evidence и об�
 незавершённые планы.
 
 ## Правила реализации
-
 - работать в текущей ветке `main`, не создавать новую ветку без прямого запроса;
 - перед работой проверять sync, `.codex`, проектные правила и чистоту дерева;
 - не выносить runtime-состояние или бизнес-логику из Rust Core в renderer;
@@ -84,13 +82,10 @@ recovery, IPC/UI при наличии, focused tests, release evidence и об�
 - новые Rust-функции и исправления покрывать тестами;
 - сохранять sandbox, timeout, cancellation, approval и bounded resource limits;
 - после изменений запускать быстрые релевантные checks и `git diff --check`;
-- изменения коммитить task-only; push выполнять по правилам корневого
-  `AGENTS.md`.
+- изменения коммитить task-only; push выполнять по правилам корневого `AGENTS.md`.
 
 ## Gate для каждого этапа
-
 Перед переходом к следующему этапу должны быть подтверждены:
-
 1. contract/schema и миграция совместимы с предыдущей версией;
 2. runtime владеет состоянием, recovery и cancellation;
 3. IPC projection typed и authenticated, UI не получает лишних полномочий;
@@ -100,7 +95,6 @@ recovery, IPC/UI при наличии, focused tests, release evidence и об�
    `release-evidence.md` обновлены, а закрытые plan-файлы удалены.
 
 ## Команды проверки
-
 Полный список команд находится в [`../AGENTS.md`](../AGENTS.md). На рабочей
 машине по умолчанию используются быстрые проверки, а полный набор
 предпочтительно запускается через GitHub Actions workflow:
@@ -108,18 +102,3 @@ recovery, IPC/UI при наличии, focused tests, release evidence и об�
 ```powershell
 pwsh -File .\scripts\documentation.tests.ps1
 ```
-
-Для изменённого Electron/IPC-модуля дополнительно допустимы только узкие
-`npm run check:protocol` и `npm run typecheck`; для изменённого Rust-crate —
-точечные `cargo check` или тесты этого crate. Команды полного набора ниже в
-`AGENTS.md` предназначены для GitHub Actions и не являются локальным smoke
-прогоном.
-
-Windows native package acceptance workflow запускается только вручную через
-`workflow_dispatch`. Он не подписан на `push`/PR, не вызывается центральным
-`module-router` и не входит в release path. Центральный `module-router`
-dispatch’ит только затронутые module workflows, compatibility manifest и
-единственный web-installer workflow. Полный локальный прогон не требуется по
-умолчанию, но не запрещён: объём локальной проверки выбирается по риску и
-области изменения. Описание workflow
-находится в [`.github/workflows/`](../.github/workflows/).
