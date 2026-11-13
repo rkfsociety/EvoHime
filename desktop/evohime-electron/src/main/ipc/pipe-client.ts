@@ -282,7 +282,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
    * [`MAX_REPLAY_GAP_RECOVERIES`] consecutive attempts the shell stays in the
    * explicit recovery state and waits for the user or a reconnect.
    */
-  private recoverFromReplayGap(gap: evohime.desktop.v1.ReplayGap): void {
+  private recoverFromReplayGap(gap: evohime.desktop.v1.IReplayGap): void {
     const earliest = Number(gap.earliestAvailableSequence ?? 0)
     if (earliest > 0 && this.lastSequence < earliest - 1) {
       this.lastSequence = earliest - 1
