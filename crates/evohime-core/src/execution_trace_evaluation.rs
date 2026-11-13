@@ -764,12 +764,18 @@ mod tests {
         let cases = [
             (TraceAssertionReason::Passed, "passed"),
             (TraceAssertionReason::ConditionFailed, "condition_failed"),
-            (TraceAssertionReason::EventLimitExceeded, "event_limit_exceeded"),
+            (
+                TraceAssertionReason::EventLimitExceeded,
+                "event_limit_exceeded",
+            ),
             (
                 TraceAssertionReason::ApprovalEffectOrderViolation,
                 "approval_effect_order_violation",
             ),
-            (TraceAssertionReason::RetryNotEquivalent, "retry_not_equivalent"),
+            (
+                TraceAssertionReason::RetryNotEquivalent,
+                "retry_not_equivalent",
+            ),
             (TraceAssertionReason::EvidenceMissing, "evidence_missing"),
         ];
         for (reason, expected) in cases {
