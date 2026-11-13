@@ -75,6 +75,20 @@ describe('recovery contract', () => {
     })
   })
 
+  it('maps stable failure codes to an actionable reason', () => {
+    const notice = latestRecoveryNotice([event('task.failed', {
+      error_code: 'tool_iteration_limit',
+      operation: 'task.execute',
+      source: 'core'
+    })])
+    expect(notice?.state).toBe('FAILED')
+    expect(notice?.reason).toContain('лимит шагов')
+    expect(notice?.reasonCode).toBe('task.failed')
+
+    const unknown = latestRecoveryNotice([event('task.failed', { error_code: 'future_code' })])
+    expect(unknown?.reason).toBe('future_code')
+  })
+
   it('keeps only bounded safe fields in recovery details', () => {
     const notice = latestRecoveryNotice([event('task.failed', {
       request_id: 'request-1',

@@ -740,6 +740,34 @@ mod tests {
             ),
             (None, Some(false))
         );
+        assert_eq!(
+            super::classify_shell_verification(
+                r#"{"program":".\\gradlew.bat","args":["testDebugUnitTest"]}"#,
+                &success,
+            ),
+            (Some(true), None)
+        );
+        assert_eq!(
+            super::classify_shell_verification(
+                r#"{"program":"npm","args":["run","build"]}"#,
+                &success,
+            ),
+            (Some(true), None)
+        );
+        assert_eq!(
+            super::classify_shell_verification(
+                r#"{"program":"npm","args":["run","lint"]}"#,
+                &success,
+            ),
+            (None, None)
+        );
+        assert_eq!(
+            super::classify_shell_verification(
+                r#"{"program":"python3","args":["-m","pytest","-q"]}"#,
+                &failed,
+            ),
+            (Some(false), None)
+        );
     }
 
     #[test]
@@ -761,6 +789,7 @@ mod tests {
             verification: true,
             diff_check: true,
             commit: true,
+            verification_command: false,
         };
         assert!(super::delivery_next_step(
             requirements,
@@ -807,6 +836,142 @@ mod tests {
             },
         )
         .contains("Cargo.toml"));
+    }
+
+    #[test]
+    fn reported_composer_request_counts_as_a_required_mutation() {
+        // Regression: this prompt requested an edit but the intent router saw
+        // more inspection keywords than the edit marker, so the delivery gate
+        // demanded filesystem.write from a read-only loadout.
+        let requirements = super::DeliveryRequirements::from_prompt(
+            "Изучи исходный код EvoHime. Найди композер и конфигурацию моделей. \
+             Проверь, есть ли в API параметр thinking, покажи отчёт и добавь \
+             в композер элемент выбора режима thinking.",
+        );
+
+        assert!(requirements.research);
+        assert!(requirements.mutation);
+        assert!(requirements.verification);
+    }
+
+    #[test]
+    fn a_read_only_intent_drops_an_unsupported_mutation_requirement() {
+        let mut requirements = super::DeliveryRequirements {
+            mutation: true,
+            ..Default::default()
+        };
+        let reconciliation = super::reconcile_delivery_requirements(&mut requirements, false);
+        assert!(reconciliation.mutation_skipped);
+        assert!(!requirements.mutation);
+        assert!(!reconciliation.verification_promoted);
+
+        let mut supported = super::DeliveryRequirements {
+            mutation: true,
+            ..Default::default()
+        };
+        let reconciliation = super::reconcile_delivery_requirements(&mut supported, true);
+        assert!(!reconciliation.mutation_skipped);
+        assert!(supported.mutation);
+    }
+
+    #[test]
+    fn a_required_commit_promotes_verification() {
+        let mut requirements = super::DeliveryRequirements {
+            commit: true,
+            ..Default::default()
+        };
+        let reconciliation = super::reconcile_delivery_requirements(&mut requirements, false);
+        assert!(reconciliation.verification_promoted);
+        assert!(requirements.verification);
+    }
+
+    #[test]
+    fn inspection_without_a_change_or_test_command_keeps_verification_off() {
+        let cases = [
+            ("проверь репозиторий", false, false),
+            ("проверь, проходят ли тесты", true, false),
+            ("изучи проект", false, false),
+            ("проверь и исправь код", true, true),
+        ];
+        for (prompt, expected_verification, router_mutation) in cases {
+            let mut requirements = super::DeliveryRequirements::from_prompt(prompt);
+            super::reconcile_delivery_requirements(&mut requirements, router_mutation);
+            assert_eq!(requirements.verification, expected_verification, "{prompt}");
+        }
+    }
+
+    #[test]
+    fn unavailable_requirements_are_dropped_instead_of_failing_the_task() {
+        let mut requirements = super::DeliveryRequirements {
+            mutation: true,
+            verification: true,
+            ..Default::default()
+        };
+        let dropped = requirements.degrade_unavailable(&[
+            "filesystem.read".to_string(),
+            "filesystem.search".to_string(),
+        ]);
+        assert!(dropped.contains(&"mutation"));
+        assert!(dropped.contains(&"verification"));
+        assert!(!requirements.mutation);
+        assert!(!requirements.verification);
+
+        let mut supported = super::DeliveryRequirements {
+            mutation: true,
+            ..Default::default()
+        };
+        assert!(supported
+            .degrade_unavailable(&["filesystem.write".to_string()])
+            .is_empty());
+        assert!(supported.mutation);
+    }
+
+    #[test]
+    fn verification_without_a_command_runner_is_dropped() {
+        let mut requirements = super::DeliveryRequirements {
+            verification: true,
+            diff_check: true,
+            verification_command: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            requirements.degrade_unavailable(&["filesystem.read".to_string()]),
+            vec!["verification"]
+        );
+        assert!(!requirements.verification);
+        assert!(!requirements.diff_check);
+
+        let mut supported = super::DeliveryRequirements {
+            verification: true,
+            diff_check: false,
+            ..Default::default()
+        };
+        assert!(supported
+            .degrade_unavailable(&["shell.execute".to_string()])
+            .is_empty());
+        assert!(supported.verification);
+    }
+
+    #[test]
+    fn commit_requires_both_commit_and_verification_tools() {
+        let mut requirements = super::DeliveryRequirements {
+            commit: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            requirements.degrade_unavailable(&["git.commit".to_string()]),
+            vec!["commit"]
+        );
+        assert!(!requirements.commit);
+
+        let mut supported = super::DeliveryRequirements {
+            commit: true,
+            ..Default::default()
+        };
+        assert!(supported
+            .degrade_unavailable(&["git.commit".to_string(), "shell.execute".to_string()])
+            .is_empty());
+        assert!(supported.commit);
     }
 
     #[test]

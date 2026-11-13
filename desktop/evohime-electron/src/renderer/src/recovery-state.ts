@@ -89,10 +89,11 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
       }
     }
     if (event.eventType === 'task.failed') {
+      const errorCode = stringField(payload, 'error_code')
       return {
         ...common,
         state: 'FAILED',
-        reason: stringField(payload, 'error_code') ?? 'Операция завершилась ошибкой.',
+        reason: (errorCode ? FAILURE_REASON_TEXT[errorCode] : undefined) ?? errorCode ?? 'Операция завершилась ошибкой.',
         correlationId: stringField(payload, 'request_id') ?? event.taskId
       }
     }
@@ -102,6 +103,16 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
 
 const SAFE_DETAIL_KEYS = new Set(['operation_id', 'run_id', 'request_id', 'reason_code', 'phase', 'can_cancel', 'status'])
 const MAX_DETAIL_CHARS = 512
+
+/**
+ * Human-readable reason for the stable failure codes Core publishes in
+ * `error_code`. Unknown codes fall back to the code itself so a new Core class
+ * is still visible instead of being hidden behind a generic message.
+ */
+const FAILURE_REASON_TEXT: Readonly<Record<string, string>> = {
+  task_failed: 'Операция завершилась ошибкой.',
+  tool_iteration_limit: 'Задача исчерпала лимит шагов: модель не смогла продвинуть выполнение.'
+}
 
 function projectDetails(payload: Record<string, unknown>): Record<string, unknown> {
   const details: Record<string, unknown> = {}

@@ -59,6 +59,30 @@ pub(crate) const TOOL_FILESYSTEM_LIST: &str = "filesystem.list";
 pub(crate) const TOOL_FILESYSTEM_READ: &str = "filesystem.read";
 /// Read-only filesystem tool used to search workspace content.
 pub(crate) const TOOL_FILESYSTEM_SEARCH: &str = "filesystem.search";
+/// Tools that can perform a required workspace mutation. The delivery gate
+/// drops a mutation requirement when none of them is in the active loadout.
+pub(crate) const DELIVERY_MUTATION_TOOLS: &[&str] = &["filesystem.write", "filesystem.patch"];
+/// Tool that runs the required verification command (tests, build, diff check).
+pub(crate) const DELIVERY_VERIFICATION_TOOL: &str = "shell.execute";
+/// Tool that records the required commit after a successful verification.
+pub(crate) const DELIVERY_COMMIT_TOOL: &str = "git.commit";
+/// Рабочий набор агента для режима полного доступа. Каждый id добавляется в
+/// loadout только если permission preflight уже разрешил его без approval, так
+/// что список не расширяет authority. Полный доступ в композере означает, что
+/// модель не должна угадывать, какие её инструменты «разрешены по словам».
+pub(crate) const FULL_ACCESS_WORKING_SET: &[&str] = &[
+    "filesystem.list",
+    "filesystem.read",
+    "filesystem.search",
+    "filesystem.write",
+    "filesystem.patch",
+    "filesystem.mkdir",
+    "filesystem.stat",
+    "shell.execute",
+    "git.status",
+    "git.diff",
+    "git.commit",
+];
 
 /// Идентификатор встроенной политики разрешений Core.
 pub(crate) const PERMISSION_POLICY_ID: &str = "permission-v1";
@@ -815,6 +839,9 @@ pub(crate) struct DeliveryRequirements {
     pub(crate) verification: bool,
     pub(crate) diff_check: bool,
     pub(crate) commit: bool,
+    /// Prompt named an explicit test/build command, so verification is a real
+    /// delivery requirement even when the task does not change anything.
+    pub(crate) verification_command: bool,
 }
 
 impl DeliveryRequirements {
@@ -845,6 +872,23 @@ impl DeliveryRequirements {
                 &prompt,
                 &["проверь", "провер", "тест", "test", "собери", "запусти"],
             ),
+            verification_command: contains_unnegated_marker(
+                &prompt,
+                &[
+                    "тест",
+                    "test",
+                    "собери",
+                    "сборк",
+                    "прогон",
+                    "cargo",
+                    "npm",
+                    "pytest",
+                    "gradle",
+                    "dotnet",
+                    "ctest",
+                    "git diff --check",
+                ],
+            ),
             diff_check: prompt.contains("git diff --check"),
             commit: prompt.contains("коммит") || prompt.contains("commit"),
         }
@@ -872,31 +916,102 @@ impl DeliveryRequirements {
         }
         missing
     }
+
+    /// Drops delivery requirements that the active loadout cannot satisfy at all.
+    ///
+    /// Core never fails a task because a tool is missing: the model keeps the
+    /// session it was granted and answers with what it can actually do. The
+    /// returned requirement names go to the bounded trace, not to the user.
+    pub(crate) fn degrade_unavailable(&mut self, tool_names: &[String]) -> Vec<&'static str> {
+        let available = |id: &str| tool_names.iter().any(|name| name == id);
+        let mut dropped = Vec::new();
+        if self.mutation && !DELIVERY_MUTATION_TOOLS.iter().any(|id| available(id)) {
+            self.mutation = false;
+            dropped.push("mutation");
+        }
+        // A commit is only allowed after verification, so it needs both tools.
+        if self.commit
+            && (!available(DELIVERY_COMMIT_TOOL) || !available(DELIVERY_VERIFICATION_TOOL))
+        {
+            self.commit = false;
+            self.diff_check = false;
+            dropped.push("commit");
+        }
+        if self.verification && !available(DELIVERY_VERIFICATION_TOOL) {
+            self.verification = false;
+            self.diff_check = false;
+            dropped.push("verification");
+        }
+        dropped
+    }
+}
+
+/// Tools that must stay in the model loadout so the delivery gate can be
+/// satisfied. The caller only admits ids that are already authorized by
+/// permission preflight; this list never widens authority.
+pub(crate) fn delivery_required_tool_ids(requirements: DeliveryRequirements) -> Vec<&'static str> {
+    let mut ids = Vec::new();
+    if requirements.mutation {
+        ids.extend_from_slice(DELIVERY_MUTATION_TOOLS);
+    }
+    if requirements.verification || requirements.commit {
+        ids.push(DELIVERY_VERIFICATION_TOOL);
+    }
+    if requirements.commit {
+        ids.push(DELIVERY_COMMIT_TOOL);
+    }
+    ids
+}
+
+/// Изменения, которые согласование требований с intent router внесло в набор
+/// требований. Флаги нужны для bounded диагностики, а не для решения.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DeliveryReconciliation {
+    /// Требование изменения снято: router не разрешил mutation intent.
+    pub(crate) mutation_skipped: bool,
+    /// Проверка добавлена как предусловие обязательного commit.
+    pub(crate) verification_promoted: bool,
+    /// Проверка снята: это осмотр без изменения и без явной команды тестов.
+    pub(crate) verification_skipped_inspection: bool,
+}
+
+/// Согласует требования поставки с решением intent router.
+///
+/// Read-only loadout отклоняет write-вызов как policy denial, поэтому
+/// требование изменения без mutation intent превращало бы задачу в
+/// недостижимый gate. Обязательный commit, наоборот, всегда требует проверки:
+/// `git.commit` блокируется до успешного verification. Проверка без изменения
+/// и без явной команды тестов — это обычный исследовательский запрос «проверь»,
+/// а не обязательство прогнать сборку.
+pub(crate) fn reconcile_delivery_requirements(
+    requirements: &mut DeliveryRequirements,
+    router_mutation: bool,
+) -> DeliveryReconciliation {
+    let mut result = DeliveryReconciliation::default();
+    if requirements.commit && !requirements.verification {
+        requirements.verification = true;
+        result.verification_promoted = true;
+    }
+    if requirements.mutation && !router_mutation {
+        requirements.mutation = false;
+        result.mutation_skipped = true;
+    }
+    if requirements.verification
+        && !requirements.mutation
+        && !requirements.commit
+        && !requirements.verification_command
+    {
+        requirements.verification = false;
+        requirements.diff_check = false;
+        result.verification_skipped_inspection = true;
+    }
+    result
 }
 
 fn contains_unnegated_marker(prompt: &str, markers: &[&str]) -> bool {
-    markers.iter().any(|marker| {
-        prompt.match_indices(marker).any(|(start, _)| {
-            let mut preceding_words = prompt[..start]
-                .split_whitespace()
-                .rev()
-                .take(2)
-                .map(|word| word.trim_matches(|character: char| !character.is_alphanumeric()));
-            let nearest = preceding_words.next();
-            let earlier = preceding_words.next();
-            let is_negation = |word: Option<&str>| {
-                word.is_some_and(|word| {
-                    matches!(
-                        word,
-                        "не" | "без" | "not" | "never" | "no" | "without" | "don't" | "dont"
-                    )
-                })
-            };
-            let negated = is_negation(nearest)
-                || (matches!(nearest, Some("нужно" | "надо" | "need")) && is_negation(earlier));
-            !negated
-        })
-    })
+    markers
+        .iter()
+        .any(|marker| evohime_context_budget::loadout::contains_unnegated_keyword(prompt, marker))
 }
 
 pub(crate) fn strict_delivery_gate_enabled() -> bool {
@@ -923,7 +1038,7 @@ pub(crate) fn classify_shell_verification(
     else {
         return (None, None);
     };
-    let program = program.to_ascii_lowercase();
+    let program = normalized_program_name(&program);
     let args = args
         .iter()
         .map(|arg| arg.to_ascii_lowercase())
@@ -942,14 +1057,49 @@ pub(crate) fn classify_shell_verification(
     let diff_check = program == "git"
         && args.first().map(String::as_str) == Some("diff")
         && args.iter().any(|arg| arg == "--check");
-    let verification = matches!(program.as_str(), "cargo" | "dotnet" | "ctest")
-        && args
+    let verification = match program.as_str() {
+        "cargo" => args
             .first()
-            .is_some_and(|arg| matches!(arg.as_str(), "test" | "check" | "build" | "clippy"));
+            .is_some_and(|arg| matches!(arg.as_str(), "test" | "check" | "build" | "clippy")),
+        "dotnet" => args
+            .first()
+            .is_some_and(|arg| matches!(arg.as_str(), "test" | "build")),
+        "ctest" | "pytest" => true,
+        "npm" | "pnpm" | "yarn" => match args.first().map(String::as_str) {
+            Some("test") => true,
+            Some("run") => args
+                .get(1)
+                .is_some_and(|arg| matches!(arg.as_str(), "test" | "build")),
+            _ => false,
+        },
+        "mvn" | "mvnw" | "gradle" | "gradlew" | "go" => args.first().is_some_and(|arg| {
+            matches!(
+                arg.as_str(),
+                "test" | "verify" | "package" | "check" | "build" | "assemble"
+            ) || arg.starts_with("test")
+        }),
+        "python" | "python3" => args
+            .windows(2)
+            .any(|window| window[0] == "-m" && window[1] == "pytest"),
+        _ => false,
+    };
     (
         verification.then_some(status_ok),
         diff_check.then_some(status_ok),
     )
+}
+
+/// Program basename without a Windows executable suffix, lowercased, so
+/// `.\gradlew.bat`, `C:\repo\gradlew.bat` and `gradlew` classify the same way.
+fn normalized_program_name(program: &str) -> String {
+    program
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(program)
+        .trim_end_matches(".exe")
+        .trim_end_matches(".cmd")
+        .trim_end_matches(".bat")
+        .to_ascii_lowercase()
 }
 
 // Аргументы — признаки выполненных требований поставки, по одному булеву на требование.

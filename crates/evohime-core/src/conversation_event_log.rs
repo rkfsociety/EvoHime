@@ -514,6 +514,8 @@ fn classify_failure_error(error: &str) -> &'static str {
         "permission_denied"
     } else if lower.contains("cancel") || lower.contains("стоп") {
         "cancelled"
+    } else if lower.contains("iteration limit") {
+        "tool_iteration_limit"
     } else {
         "task_failed"
     }
@@ -616,6 +618,28 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("sk-12345678901234567890"));
+    }
+
+    #[test]
+    fn iteration_limit_failures_keep_a_stable_error_code_in_the_redacted_projection() {
+        let cases = [
+            (
+                "agent exceeded the tool iteration limit",
+                "tool_iteration_limit",
+            ),
+            ("provider timeout", "timeout"),
+            ("some other failure", "task_failed"),
+        ];
+        for (error, expected) in cases {
+            let projection = failure_projection(&serde_json::json!({ "error": error }));
+            assert_eq!(projection["error_code"], expected, "{error}");
+            assert_eq!(projection["source"], "core");
+            assert_eq!(projection["operation"], "task.execute");
+            assert!(
+                !serde_json::to_string(&projection).unwrap().contains(error),
+                "raw error text must stay out of the durable projection"
+            );
+        }
     }
 
     #[test]

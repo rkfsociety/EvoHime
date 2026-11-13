@@ -217,6 +217,9 @@ pub fn default_intent_rules() -> IntentRules {
                     "почини".to_string(),
                     "выполни".to_string(),
                     "запусти".to_string(),
+                    "сделай".to_string(),
+                    "улучш".to_string(),
+                    "сгенер".to_string(),
                     "run".to_string(),
                     "execute".to_string(),
                 ],
@@ -277,6 +280,10 @@ pub struct ContextAssembleInput<'a> {
     /// первое user-сообщение собранного контекста: история диалога не должна
     /// понижать loadout текущего запроса до read-only.
     pub intent_prompt: &'a str,
+    /// Permission preflight разрешил mutation-инструменты без approval (режим
+    /// полного доступа). Флаг поднимает `allows_mutation` в решении router, и
+    /// шаг получает write-инструменты независимо от формулировки prompt.
+    pub mutation_authorized: bool,
     pub open_questions: &'a [String],
     pub scratchpad: &'a [ScratchpadEntry],
     pub pinned_ids: &'a [String],
@@ -342,6 +349,7 @@ impl ContextRuntime {
             messages,
             specs,
             intent_prompt,
+            mutation_authorized,
             open_questions,
             // Подтверждённые записи scratchpad задачи (01.2). После restart в
             // рабочий контекст возвращаются только они.
@@ -356,7 +364,12 @@ impl ContextRuntime {
         // 1. Tool loadout: только релевантный набор schemas, полный registry
         //    остаётся в Core. Intent берётся из текущей задачи, а не из истории.
         let registry = registry_from_specs(specs);
-        let decision = route_intent(&self.rules, intent_prompt, open_questions);
+        let mut decision = route_intent(&self.rules, intent_prompt, open_questions);
+        // Полный доступ — это разрешение, а не повод угадывать намерение по
+        // словам: preflight уже подтвердил write-инструменты без approval.
+        if mutation_authorized {
+            decision.allows_mutation = true;
+        }
         let schema_estimator = |schema: &str| (schema.len() as u32).div_ceil(3) + 16;
         let provider_window = self.model_window(model);
         let profile = self
@@ -1046,6 +1059,32 @@ mod tests {
             messages,
             specs,
             intent_prompt: task_prompt(messages),
+            mutation_authorized: false,
+            open_questions: &[],
+            scratchpad: &[],
+            pinned_ids: &[],
+            force_reduction: false,
+            offload: &mut NoOffloadSink,
+            summarizer: &mut NoSummarizer,
+        })
+    }
+
+    fn assemble_with_full_access(
+        runtime: &mut ContextRuntime,
+        messages: &[ChatMessage],
+        specs: &[ToolSpec],
+    ) -> AssembledContext {
+        runtime.assemble(ContextAssembleInput {
+            task_id: "task",
+            session_id: "session",
+            model_call_id: "call-1",
+            provider: "literouter",
+            model: "gpt-4o-mini",
+            now: 1_000_000,
+            messages,
+            specs,
+            intent_prompt: task_prompt(messages),
+            mutation_authorized: true,
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1249,6 +1288,7 @@ mod tests {
             messages: &messages,
             specs: &[spec("filesystem.read")],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1289,6 +1329,7 @@ mod tests {
             messages: &messages,
             specs: &[],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &entries,
             pinned_ids: &[],
@@ -1349,6 +1390,30 @@ mod tests {
         assert_eq!(miss.tool_id, "filesystem.write");
         assert!(!miss.policy_reason.is_empty());
         assert!(assembled.check_tool_call("filesystem.read").is_ok());
+    }
+
+    #[test]
+    fn full_access_admits_write_tools_for_a_research_prompt() {
+        let mut runtime = runtime();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+        ];
+        let assembled = assemble_with_full_access(
+            &mut runtime,
+            &messages,
+            &[spec("filesystem.read"), spec("filesystem.write")],
+        );
+        let names: Vec<&str> = assembled
+            .tool_specs
+            .iter()
+            .map(|spec| spec.function.name.as_str())
+            .collect();
+        assert!(
+            names.contains(&"filesystem.write"),
+            "полный доступ не должен зависеть от формулировки prompt"
+        );
+        assert!(assembled.check_tool_call("filesystem.write").is_ok());
     }
 
     #[test]
@@ -1542,6 +1607,7 @@ mod tests {
             messages: &messages,
             specs: &[],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &entries,
             pinned_ids: &[],
@@ -1615,6 +1681,7 @@ mod tests {
             messages: &messages,
             specs: &[spec("filesystem.read"), spec("filesystem.write")],
             intent_prompt: "поработай над интерфейсом и создай скилы",
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1643,6 +1710,7 @@ mod tests {
             messages: &messages,
             specs: &[spec("filesystem.read"), spec("filesystem.write")],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &["нужно исправь конфигурацию".to_string()],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1676,6 +1744,7 @@ mod tests {
             messages: &messages,
             specs: &[],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: std::slice::from_ref(&pinned),
@@ -1723,6 +1792,7 @@ mod tests {
             messages: &messages,
             specs: &[],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1768,6 +1838,7 @@ mod tests {
             messages: &messages,
             specs: &[],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],
@@ -1811,6 +1882,7 @@ mod tests {
             messages: &messages,
             specs: &[],
             intent_prompt: task_prompt(&messages),
+            mutation_authorized: false,
             open_questions: &[],
             scratchpad: &[],
             pinned_ids: &[],

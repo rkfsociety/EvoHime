@@ -185,15 +185,36 @@ impl ToolAgent {
             .compile_project_instruction_context(&context.workspace_root, &task_id)
             .await?;
         let resilience_config = ProviderResilienceConfig::default();
-        let mutation_intent = request_allows_mutation(&prompt);
-        let mut authorized_manifests = Vec::new();
+        // Requirements are derived once: the adaptive catalog, the delivery
+        // gate and the final eligibility check must agree on what the task
+        // owes, otherwise the gate can demand a tool that was never offered.
+        let router_mutation_intent = request_allows_mutation(&prompt);
+        let mut delivery_requirements = DeliveryRequirements::from_prompt(&prompt);
+        let reconciliation =
+            reconcile_delivery_requirements(&mut delivery_requirements, router_mutation_intent);
+        // Permission preflight is the authority for mutation availability: in
+        // full access the write tools are allowed without approval, so the model
+        // must get them regardless of how the prompt is phrased.
+        let mut preflight = Vec::new();
         for tool in self.tools.list() {
             let decision = self
                 .tools
                 .preflight(&context, tool.name, &catalog_preflight_input(tool.name))
                 .await;
-            if tool_preflight_can_be_offered(&decision, mutation_intent) {
-                if let Some(manifest) = self.tools.manifest_for(tool.name) {
+            preflight.push((tool.name, decision));
+        }
+        let mutation_authorized = preflight.iter().any(|(name, decision)| {
+            DELIVERY_MUTATION_TOOLS.contains(name)
+                && matches!(
+                    decision,
+                    Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { .. })
+                )
+        });
+        let mutation_intent = router_mutation_intent || mutation_authorized;
+        let mut authorized_manifests = Vec::new();
+        for (name, decision) in &preflight {
+            if tool_preflight_can_be_offered(decision, mutation_intent) {
+                if let Some(manifest) = self.tools.manifest_for(name) {
                     authorized_manifests.push(manifest);
                 }
             }
@@ -212,11 +233,33 @@ impl ToolAgent {
             adaptive_tool_catalog::DEFAULT_MAX_TOOLS,
         )
         .map_err(|error| AgentRunError::Internal(error.to_string()))?;
-        let selected = selection
+        let mut selected = selection
             .selected_ids
             .iter()
             .filter_map(|id| self.tools.manifest_for(id))
             .collect::<Vec<_>>();
+        // A lexical top-N must never remove the only tool that can perform a
+        // required mutation, verification or commit. In full access the model
+        // also keeps the agent working set, so the composer choice is not
+        // narrowed by prompt wording. Only manifests that already passed
+        // permission preflight can be appended here.
+        let mut appended_tool_ids = Vec::new();
+        let mut required_ids = delivery_required_tool_ids(delivery_requirements);
+        if mutation_authorized {
+            required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
+        }
+        for required in required_ids {
+            if selected.iter().any(|manifest| manifest.tool_id == required) {
+                continue;
+            }
+            if let Some(manifest) = authorized_manifests
+                .iter()
+                .find(|manifest| manifest.tool_id == required)
+            {
+                appended_tool_ids.push(required);
+                selected.push(manifest.clone());
+            }
+        }
         let mut specs = selected
             .into_iter()
             .map(|manifest| {
@@ -241,6 +284,8 @@ impl ToolAgent {
                 "selector_elapsed_ms": selection_started.elapsed().as_millis().min(u64::MAX as u128),
                 "selected_count": selection.selected_ids.len(),
                 "selected_ids": selection.selected_ids,
+                "appended_tool_ids": appended_tool_ids,
+                "full_access": mutation_authorized,
                 "selector": selection.selector,
                 "fallback": selection.fallback,
                 "cache_key": selection.cache_key,
@@ -256,6 +301,50 @@ impl ToolAgent {
             .iter()
             .map(|spec| spec.function.name.clone())
             .collect::<Vec<_>>();
+        if reconciliation.mutation_skipped {
+            write_model_trace(
+                "task.delivery_mutation_skipped",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "reason": "intent_read_only",
+                    "hint": "explicit mutation action word is required for write tools"
+                }),
+            );
+        }
+        if reconciliation.verification_promoted {
+            write_model_trace(
+                "task.delivery_verification_promoted",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "reason": "required_commit_needs_verification"
+                }),
+            );
+        }
+        if reconciliation.verification_skipped_inspection {
+            write_model_trace(
+                "task.delivery_verification_skipped",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "reason": "inspection_without_change",
+                    "hint": "explicit test/build command is required for a verification gate"
+                }),
+            );
+        }
+        // Core never refuses a task because a tool is missing: requirements that
+        // the granted session cannot satisfy are dropped, the model keeps the
+        // tools it actually has, and the drop is visible in the trace.
+        let dropped_requirements = delivery_requirements.degrade_unavailable(&tool_names);
+        if !dropped_requirements.is_empty() {
+            write_model_trace(
+                "task.delivery_requirements_degraded",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "dropped": dropped_requirements,
+                    "available_count": tool_names.len(),
+                    "mutation_authorized": mutation_authorized
+                }),
+            );
+        }
         let system_prompt = format!(
             "{}\n\n{}\nProject instruction snapshot: {}",
             build_agent_system_prompt(&tool_names),
@@ -540,7 +629,6 @@ impl ToolAgent {
         // Kept for post-turn memory extraction, which needs the original user
         // message to detect an explicit "запомни"-style trigger.
         let extraction_user_prompt = user_prompt.clone();
-        let delivery_requirements = DeliveryRequirements::from_prompt(&user_prompt);
         let _ = context_text;
 
         // План 01: контекст каждого шага собирается планировщиком под bounded
@@ -602,6 +690,8 @@ impl ToolAgent {
         let mut mutation_done = false;
         let mut verification_done = false;
         let mut commit_done = false;
+        let mut delivery_gate_repeats = 0u32;
+        let mut last_delivery_missing: Option<Vec<&'static str>> = None;
         let mut verification_test_passed = false;
         let mut diff_check_passed = false;
         let mut research_observations = 0usize;
@@ -695,6 +785,7 @@ impl ToolAgent {
                     messages: &messages,
                     specs: &specs,
                     intent_prompt: &user_prompt,
+                    mutation_authorized,
                     selected_model: selected_model.as_deref(),
                 })
                 .await;
@@ -1044,48 +1135,55 @@ impl ToolAgent {
                     commit_done,
                 );
                 if !missing.is_empty() && iteration + 1 < self.max_iterations {
-                    let next_step = delivery_next_step(
-                        delivery_requirements,
-                        DeliveryProgress {
-                            research_done,
-                            mutation_done,
-                            verification_done,
-                            commit_done,
-                            research_observations,
-                            research_has_overview,
-                            research_has_content,
-                            research_has_search,
-                        },
-                    );
-                    let continuation = format!(
-                        "Задача ещё не завершена. Не выполнены: {}. {next_step}",
-                        missing.join(", ")
-                    );
-                    write_model_trace(
-                        "task.delivery_gate",
-                        serde_json::json!({
-                            "task_id": task_id,
-                            "missing": missing,
-                            "continuation": continuation
-                        }),
-                    );
-                    messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
-                    messages.push(ChatMessage::text(ChatRole::User, continuation));
-                    continue;
-                }
-                if !missing.is_empty() {
-                    let message = format!(
-                        "Задача не завершена: не выполнены обязательные результаты: {}.",
-                        missing.join(", ")
-                    );
-                    self.persist_lesson(&task_id, &context.workspace_root).await;
-                    let _ = events
-                        .send(CoreEvent::TaskFailed {
-                            task_id,
-                            error: message.clone(),
-                        })
-                        .await;
-                    return Ok(message);
+                    let repeated = last_delivery_missing.as_deref() == Some(missing.as_slice());
+                    delivery_gate_repeats = if repeated {
+                        delivery_gate_repeats + 1
+                    } else {
+                        0
+                    };
+                    last_delivery_missing = Some(missing.clone());
+                    if delivery_gate_repeats >= 2 {
+                        // Не отказываем и не ждём лимита итераций: отдаём
+                        // пользователю ответ модели, а невыполненные требования
+                        // фиксируем только в bounded trace.
+                        write_model_trace(
+                            "task.delivery_gate.stalled",
+                            serde_json::json!({
+                                "task_id": task_id,
+                                "missing": missing,
+                                "repeats": delivery_gate_repeats
+                            }),
+                        );
+                    } else {
+                        let next_step = delivery_next_step(
+                            delivery_requirements,
+                            DeliveryProgress {
+                                research_done,
+                                mutation_done,
+                                verification_done,
+                                commit_done,
+                                research_observations,
+                                research_has_overview,
+                                research_has_content,
+                                research_has_search,
+                            },
+                        );
+                        let continuation = format!(
+                            "Задача ещё не завершена. Не выполнены: {}. {next_step}",
+                            missing.join(", ")
+                        );
+                        write_model_trace(
+                            "task.delivery_gate",
+                            serde_json::json!({
+                                "task_id": task_id,
+                                "missing": missing,
+                                "continuation": continuation
+                            }),
+                        );
+                        messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
+                        messages.push(ChatMessage::text(ChatRole::User, continuation));
+                        continue;
+                    }
                 }
                 let mut final_message = strip_legacy_function_blocks(&result.content);
                 if final_message.trim().is_empty() && iteration + 1 < self.max_iterations {
@@ -1646,10 +1744,10 @@ impl ToolAgent {
                         escalation_remaining.insert(call.name.clone(), 2);
                     }
                 }
-                mutation_done |= outcome.ok
-                    && matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
+                mutation_done |=
+                    outcome.ok && DELIVERY_MUTATION_TOOLS.contains(&call.name.as_str());
                 commit_done |= outcome.ok
-                    && call.name == "git.commit"
+                    && call.name == DELIVERY_COMMIT_TOOL
                     && outcome
                         .structured
                         .get("status")

@@ -864,6 +864,9 @@ struct AssembleModelContextInput<'a> {
     specs: &'a [ToolSpec],
     /// Prompt текущей задачи для intent router; история диалога его не заменяет.
     intent_prompt: &'a str,
+    /// Permission preflight разрешил mutation-инструменты без approval: шаг
+    /// обязан принять их в loadout независимо от формулировки prompt.
+    mutation_authorized: bool,
     selected_model: Option<&'a str>,
 }
 

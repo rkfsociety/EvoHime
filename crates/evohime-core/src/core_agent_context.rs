@@ -677,6 +677,7 @@ impl ToolAgent {
             messages,
             specs,
             intent_prompt,
+            mutation_authorized,
             selected_model,
         } = input;
         let model_call_id = format!("{task_id}-{iteration}");
@@ -812,6 +813,7 @@ impl ToolAgent {
                     messages,
                     specs,
                     intent_prompt,
+                    mutation_authorized,
                     open_questions: &open_questions,
                     scratchpad: &scratchpad,
                     pinned_ids: &pinned,
@@ -832,6 +834,7 @@ impl ToolAgent {
                     messages,
                     specs,
                     intent_prompt,
+                    mutation_authorized,
                     open_questions: &[],
                     scratchpad: &[],
                     pinned_ids: &[],

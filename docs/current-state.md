@@ -591,6 +591,37 @@ Kernel уже существовал как Core-owned runtime, но не был
 завершается typed `unavailable`. Значения объектов, inline result и абсолютные
 пути в декларацию, каталог и логи не попадают.
 
+## Delivery requirements и tool loadout
+
+Задача `d2aeef9c-cb8f-4d08-b253-f0bb664b012c` в установленной версии показала
+блокер: intent router классифицировал смешанный запрос как `inspect` (слова
+«проверь/найди/покажи» перевесили «добавь»), adaptive catalog выдал только
+read-only инструменты, а delivery gate продолжал требовать
+`filesystem.write`, пока не исчерпались 32 итерации; в UI оставался общий
+`task_failed`.
+
+Исправлено в исходниках:
+
+- explicit mutation keyword побеждает read-only этап независимо от числа
+  совпадений; отрицание распознаёт общий предикат
+  `evohime_context_budget::loadout::contains_unnegated_keyword`, который
+  используют и router, и `DeliveryRequirements`;
+- adaptive catalog добавляет к лексическому top-N только уже авторизованные
+  инструменты, без которых требование поставки невыполнимо; permission
+  preflight является источником истины по mutation, поэтому в режиме полного
+  доступа модель получает write-инструменты независимо от формулировки
+  prompt, а в режиме подтверждения — при явном mutation-слове; в полном
+  доступе каталог сохраняет и рабочий набор агента (filesystem, shell, git
+  status/diff/commit), поэтому лексический top-N не сужает выбор из композера;
+- невыполнимые требования не превращаются в отказ: Core снимает их с
+  bounded trace `task.delivery_requirements_degraded`, осмотр без изменения и
+  без явной команды тестов не требует сборки, а три одинаковых gate-запроса
+  подряд означают остановку требований с возвратом ответа модели;
+- redacted `task.failed` projection различает `tool_iteration_limit` и
+  общий `task_failed`, renderer показывает причину по коду.
+
+Exact-SHA CI по этому изменению ожидает результата.
+
 ## Подтверждённые проверки checkout
 
 Этап 192.1 опубликован в `origin/main` коммитом

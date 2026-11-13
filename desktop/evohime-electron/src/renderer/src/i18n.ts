@@ -1383,6 +1383,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Ожидает подтверждения': 'Awaiting approval',
   'Ожидают разрешения': 'Awaiting permission',
   'Операция завершилась ошибкой.': 'The operation failed.',
+  'Задача исчерпала лимит шагов: модель не смогла продвинуть выполнение.': 'The task exhausted its step limit: the model could not make progress.',
   'Операция передана Core. Дождись preview и подтверждения.': 'Operation sent to Core. Wait for the preview and approval.',
   'Операция требует разрешения': 'Operation requires approval',
   'операция Core': 'Core operation',

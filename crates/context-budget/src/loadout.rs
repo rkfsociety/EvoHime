@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::ledger::LoadoutRecord;
 
 /// Версия таблицы правил intent router.
-pub const INTENT_RULES_VERSION: &str = "intent-rules-2";
+pub const INTENT_RULES_VERSION: &str = "intent-rules-3";
 
 /// Группа инструмента.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -132,10 +132,45 @@ fn normalize_query(text: &str) -> String {
         .join(" ")
 }
 
+/// Returns true when `keyword` occurs in `haystack` at least once without a
+/// preceding negation word.
+///
+/// Both arguments are expected to be already lowercased. Intent routing and the
+/// delivery-requirement detector share this predicate so that negation of an
+/// action word is read the same way by both.
+pub fn contains_unnegated_keyword(haystack: &str, keyword: &str) -> bool {
+    haystack.match_indices(keyword).any(|(start, _)| {
+        let mut preceding_words = haystack[..start]
+            .split_whitespace()
+            .rev()
+            .take(2)
+            .map(|word| word.trim_matches(|character: char| !character.is_alphanumeric()));
+        let nearest = preceding_words.next();
+        let earlier = preceding_words.next();
+        let is_negation = |word: Option<&str>| {
+            word.is_some_and(|word| {
+                matches!(
+                    word,
+                    "не" | "без" | "not" | "never" | "no" | "without" | "don't" | "dont"
+                )
+            })
+        };
+        let negated = is_negation(nearest)
+            || (matches!(nearest, Some("нужно" | "надо" | "need")) && is_negation(earlier));
+        !negated
+    })
+}
+
 /// Deterministic intent router: нормализует prompt и активные `open_questions`,
 /// сопоставляет их с versioned таблицей capability keywords и применяет
-/// deny/approval rules. При конфликте правил выбирается более безопасный
-/// read-only результат.
+/// deny/approval rules.
+///
+/// Explicit mutation action word (unnegated keyword unique to a mutation rule)
+/// wins over a read-only research/inspection stage even when the read-only
+/// keywords matched more often: a loadout without `filesystem.write` or
+/// `shell.execute` cannot satisfy a request that asks for an edit. Without such
+/// an action word the previous policy applies and conflicting rules resolve to
+/// the safer read-only result.
 pub fn route_intent(
     rules: &IntentRules,
     prompt: &str,
@@ -187,7 +222,7 @@ pub fn route_intent(
         rule.allows_mutation
             && rule.keywords.iter().any(|keyword| {
                 !non_mutation_keywords.contains(keyword.as_str())
-                    && haystack.contains(keyword.as_str())
+                    && contains_unnegated_keyword(&haystack, keyword)
             })
     });
 
@@ -201,8 +236,15 @@ pub fn route_intent(
             .then_with(|| left.0.id.cmp(&right.0.id))
     });
 
-    let best_hits = matches[0].1;
-    let top: Vec<&IntentRule> = matches
+    // Кандидаты выбираются после того, как explicit mutation отделён от
+    // read-only этапа; прежняя сортировка сохраняет детерминированный порядок.
+    let candidates: Vec<(&IntentRule, usize)> = matches
+        .iter()
+        .copied()
+        .filter(|(rule, _)| !explicit_mutation || rule.allows_mutation)
+        .collect();
+    let best_hits = candidates[0].1;
+    let top: Vec<&IntentRule> = candidates
         .iter()
         .filter(|(_, hits)| *hits == best_hits)
         .map(|(rule, _)| *rule)
@@ -580,6 +622,78 @@ mod tests {
         let decision = route_intent(&intent_rules, "изучи проект и создай файл", &[]);
         assert_eq!(decision.intent, "edit");
         assert!(decision.allows_mutation);
+    }
+
+    /// Правила, повторяющие встроенную таблицу: у inspect больше ключевых
+    /// слов, поэтому смешанный запрос набирал больше совпадений по проверке.
+    fn inspection_heavy_rules() -> IntentRules {
+        IntentRules {
+            version: INTENT_RULES_VERSION.to_string(),
+            rules: vec![
+                IntentRule {
+                    id: "inspect".to_string(),
+                    intent: "inspect".to_string(),
+                    keywords: vec![
+                        "проверь".to_string(),
+                        "найди".to_string(),
+                        "покажи".to_string(),
+                    ],
+                    allows_mutation: false,
+                    capabilities: vec!["filesystem".to_string()],
+                },
+                IntentRule {
+                    id: "edit".to_string(),
+                    intent: "edit".to_string(),
+                    keywords: vec!["добавь".to_string()],
+                    allows_mutation: true,
+                    capabilities: vec!["filesystem".to_string()],
+                },
+            ],
+            deny: vec![],
+        }
+    }
+
+    #[test]
+    fn explicit_mutation_wins_even_when_inspection_matches_more_keywords() {
+        let decision = route_intent(
+            &inspection_heavy_rules(),
+            "найди ошибку, проверь поведение, покажи отчёт и добавь переключатель в композер",
+            &[],
+        );
+
+        assert_eq!(decision.intent, "edit");
+        assert!(decision.allows_mutation);
+        let loadout = build_loadout(
+            &registry(),
+            &inspection_heavy_rules(),
+            decision,
+            limits(),
+            &estimator(),
+        );
+        assert!(loadout.allows("fs.write"));
+    }
+
+    #[test]
+    fn negated_mutation_does_not_override_an_inspection_request() {
+        let decision = route_intent(
+            &inspection_heavy_rules(),
+            "проверь поведение и покажи отчёт, не добавляй ничего",
+            &[],
+        );
+
+        assert_eq!(decision.intent, "inspect");
+        assert!(!decision.allows_mutation);
+    }
+
+    #[test]
+    fn shared_negation_detector_matches_the_delivery_classifier() {
+        assert!(contains_unnegated_keyword("добавь кнопку", "добав"));
+        assert!(!contains_unnegated_keyword("не добавь пока", "добав"));
+        assert!(!contains_unnegated_keyword("не нужно добавлять", "добав"));
+        assert!(contains_unnegated_keyword(
+            "не изменяй файл, но добавь тест",
+            "добав"
+        ));
     }
 
     #[test]
