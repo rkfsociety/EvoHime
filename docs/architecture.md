@@ -420,6 +420,15 @@ automation boundary and release evidence gates.
 локальные hard limits. `core_instance_id + session_epoch` — Core generation,
 `sequence_id` — journal revision, `target_generation` — target revision.
 
+`sequence_id` монотонен, но не непрерывен: retention удаляет истёкшие
+`ambient.%` строки и оставляет дырки в нумерации, поэтому дырка — не признак
+потери состояния. `ReplayGap` означает только одно: запрошенный курсор старше
+самого раннего сохранённого события. Оболочка не входит в `state-gap` из-за
+дырки, а на `ReplayGap` сдвигает курсор на `earliest_available_sequence - 1` и
+запрашивает `FullSnapshot`; повторные одинаковые gap-ответы ограничены, после
+чего UI показывает явное состояние восстановления вместо бесконечного цикла
+resync.
+
 Core-owned provider/worker вызовы проходят через внутренний Rust-only
 `adapter/v1` contract (`crates/evohime-core/src/adapter_contract.rs`):
 descriptor, immutable session, bounded request/result, typed status и opaque

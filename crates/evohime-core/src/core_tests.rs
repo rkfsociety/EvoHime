@@ -1376,6 +1376,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replay_gap_ignores_numbering_holes_inside_the_retained_window() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-core-journal-gap-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let first = journal
+            .record(&CoreEvent::TaskStarted {
+                task_id: "task-gap".into(),
+                prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
+            })
+            .await
+            .expect("first event records");
+        let second = journal
+            .record(&CoreEvent::TaskCompleted {
+                task_id: "task-gap".into(),
+                final_message: "done".into(),
+            })
+            .await
+            .expect("second event records");
+        {
+            // Retention removes expired ambient rows and leaves a hole behind.
+            let database = journal.database().lock().await;
+            database
+                .connection()
+                .execute("DELETE FROM events WHERE sequence_id = ?1", [first])
+                .expect("retention delete");
+        }
+
+        let at_hole = journal
+            .replay_bounded(first, 16)
+            .await
+            .expect("hole replay reads");
+        assert!(
+            !at_hole.gap_detected,
+            "a retention hole must not be reported as lost history"
+        );
+        assert_eq!(at_hole.first_available_sequence, Some(second));
+        assert_eq!(at_hole.events.len(), 1);
+
+        let inside_retained = journal
+            .replay_bounded(second, 16)
+            .await
+            .expect("inside replay reads");
+        assert!(!inside_retained.gap_detected);
+
+        let lost_start = journal
+            .replay_bounded(0, 16)
+            .await
+            .expect("lost start replay reads");
+        assert!(lost_start.gap_detected, "a cursor below retention is a gap");
+        assert_eq!(lost_start.first_available_sequence, Some(second));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
     async fn persists_permission_audit_through_runtime_sink() {
         let path = std::env::temp_dir().join(format!(
             "evohime-core-permission-audit-{}.db",

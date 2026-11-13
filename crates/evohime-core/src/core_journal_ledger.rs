@@ -479,6 +479,13 @@ impl EventJournal {
     /// At most 512 events are returned regardless of the requested limit. The
     /// batch includes first/last sequence information for reconnect recovery.
     ///
+    /// `gap_detected` means the requested cursor predates the *retained*
+    /// journal, not merely that the next sequence number is missing. Sequence
+    /// numbers are monotonic but not contiguous (`ambient.%` rows expire and
+    /// leave holes), so comparing the cursor with the first row of this page
+    /// would report a false replay gap on every hole and force the client into
+    /// an endless resync loop.
+    ///
     /// # Errors
     ///
     /// Returns [`StorageError`] if a read lease or query fails.
@@ -488,16 +495,19 @@ impl EventJournal {
         limit: usize,
     ) -> Result<DurableReplayBatch, StorageError> {
         const MAX_DURABLE_REPLAY_EVENTS: usize = 512;
-        let records = {
+        let (records, earliest_retained) = {
             let lease = self.checkout_read_database()?;
             let database = lease
                 .database()
                 .ok_or_else(|| StorageError::InvalidInput("journal read lease is empty".into()))?;
-            database.read_events_after(after_sequence, limit.min(MAX_DURABLE_REPLAY_EVENTS))?
+            let earliest = database.earliest_event_sequence()?;
+            let records =
+                database.read_events_after(after_sequence, limit.min(MAX_DURABLE_REPLAY_EVENTS))?;
+            (records, earliest)
         };
-        let first_available_sequence = records.first().map(|record| record.sequence_id);
+        let first_available_sequence = (earliest_retained > 0).then_some(earliest_retained);
         let gap_detected =
-            first_available_sequence.is_some_and(|first| after_sequence.saturating_add(1) < first);
+            earliest_retained > 0 && after_sequence.saturating_add(1) < earliest_retained;
         let last_sequence = records
             .last()
             .map(|record| record.sequence_id)

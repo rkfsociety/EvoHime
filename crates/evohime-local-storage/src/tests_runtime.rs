@@ -26,6 +26,40 @@ fn appends_and_replays_events_by_sequence() {
 }
 
 #[test]
+fn earliest_sequence_tracks_the_retained_journal() {
+    let path = temp_database_path("earliest-sequence");
+    let _ = std::fs::remove_file(&path);
+    let database = LocalDatabase::open(&path).expect("database opens");
+    let first = database
+        .append_event("task-1", "ambient.state", b"one")
+        .expect("first event");
+    let second = database
+        .append_event("task-1", "task.started", b"two")
+        .expect("second event");
+    let third = database
+        .append_event("task-1", "task.completed", b"three")
+        .expect("third event");
+    assert_eq!(
+        database.earliest_event_sequence().expect("earliest reads"),
+        first
+    );
+    database
+        .connection()
+        .execute("DELETE FROM events WHERE sequence_id = ?1", [first])
+        .expect("retention delete");
+    assert_eq!(
+        database.earliest_event_sequence().expect("earliest reads"),
+        second
+    );
+    assert_eq!(
+        database.latest_event_sequence().expect("latest reads"),
+        third
+    );
+    drop(database);
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
 fn exports_events_as_jsonl() {
     let path = temp_database_path("export");
     let output = path.with_extension("jsonl");

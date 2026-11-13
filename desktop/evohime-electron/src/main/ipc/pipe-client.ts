@@ -90,6 +90,12 @@ export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
 
 export const MAX_AUTH_REJECTIONS = 3
 
+/**
+ * How many consecutive `ReplayGap` answers the shell follows with a fresh
+ * snapshot request before it stops and shows the explicit recovery state.
+ */
+export const MAX_REPLAY_GAP_RECOVERIES = 3
+
 export interface PipeClientOptions {
   readonly launch: LaunchContext
   /**
@@ -149,6 +155,13 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
    * genuinely moved on since the in-flight request was sent.
    */
   private resyncPendingAfter: number | null = null
+  /**
+   * Consecutive `ReplayGap` recoveries that have not produced a snapshot or a
+   * caught-up page yet. A gap carries no sequence of its own, so the client
+   * has to ask again explicitly; the counter keeps a Core that keeps reporting
+   * the same gap from turning that into an endless request loop.
+   */
+  private replayGapRecoveries = 0
   /**
    * Durable across a session-epoch change on purpose: `event_id` is stable
    * between Core generations, unlike `sequence_id` (plan 08-3).
@@ -254,6 +267,38 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     if (this.resyncPendingAfter === this.lastSequence) return
     this.resyncPendingAfter = this.lastSequence
     this.requestResync(includeFullSnapshot)
+  }
+
+  /**
+   * Recovers from a typed `ReplayGap` (the requested cursor predates Core's
+   * retained journal). The gap envelope carries no sequence of its own, so
+   * `lastSequence` would stay exactly where the in-flight resync guard expects
+   * it, and every follow-up request would be dropped as a duplicate. Moving
+   * the cursor to `earliest - 1` both releases that guard and lets the events
+   * Core ships right after the gap apply instead of being discarded as yet
+   * another break; the missing state itself is rebuilt from the snapshot.
+   *
+   * A Core that keeps answering with the same gap is not asked forever: after
+   * [`MAX_REPLAY_GAP_RECOVERIES`] consecutive attempts the shell stays in the
+   * explicit recovery state and waits for the user or a reconnect.
+   */
+  private recoverFromReplayGap(gap: evohime.desktop.v1.ReplayGap): void {
+    const earliest = Number(gap.earliestAvailableSequence ?? 0)
+    if (earliest > 0 && this.lastSequence < earliest - 1) {
+      this.lastSequence = earliest - 1
+    }
+    this.resyncPendingAfter = null
+    this.replayGapRecoveries += 1
+    if (this.replayGapRecoveries > MAX_REPLAY_GAP_RECOVERIES) {
+      this.log('warn', 'ipc.replay_gap_unrecoverable', {
+        attempts: this.replayGapRecoveries,
+        earliest,
+        latest: Number(gap.latestAvailableSequence ?? 0)
+      })
+      this.setState('state-gap', 'replay-gap-unrecoverable')
+      return
+    }
+    this.autoResync(true)
   }
 
   private openConnection(): void {
@@ -414,11 +459,12 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         reason: event.replayGap.reason || 'unspecified'
       })
       this.setState('state-gap', event.replayGap.reason || 'replay-gap')
-      this.autoResync(true)
+      this.recoverFromReplayGap(event.replayGap)
       return
     }
     if (event.fullSnapshot) {
       this.resyncPendingAfter = null
+      this.replayGapRecoveries = 0
       this.lastSequence = Number(event.fullSnapshot.sequenceId ?? this.lastSequence)
       this.setState('connected', null)
       this.emitCoreEvent(event)
@@ -440,12 +486,17 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     const sequence = Number(event.sequenceId ?? 0)
     let sequenceAdvanced = false
     if (sequence > 0) {
-      if (sequence > this.lastSequence + 1 && this.lastSequence > 0) {
-        // A skipped sequence is never treated as a successful recovery.
-        this.log('warn', 'ipc.sequence_skipped', { expected: this.lastSequence + 1, sequence })
-        this.setState('state-gap', 'sequence-skipped')
-        this.autoResync(true)
-        return
+      if (sequence > this.lastSequence + 1) {
+        // `sequence_id` is a monotonic cursor, not a counter: retention deletes
+        // old ambient rows and leaves holes in the numbering. A hole carries
+        // no lost state, so it must not be treated as a break — doing that
+        // dropped every event of the page and left the shell in `state-gap`
+        // forever on the first expired row. A genuinely lost history is
+        // reported by Core as a typed `ReplayGap`.
+        this.log('info', 'ipc.sequence_hole', {
+          previous: this.lastSequence,
+          sequence
+        })
       }
       const previousSequence = this.lastSequence
       this.lastSequence = Math.max(this.lastSequence, sequence)
@@ -457,6 +508,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         this.setState('resyncing', 'catching-up')
         this.autoResync(true)
       } else {
+        this.replayGapRecoveries = 0
         this.setState('connected', null)
       }
     }
@@ -472,8 +524,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   /**
    * Suppresses a repeat delivery of the same typed ledger event, identified
    * by its durable `event_id` (plan 08-3). Generic (non-typed) rows have no
-   * `event_id` and are always emitted — the existing sequence/gap checks
-   * above are what guards them.
+   * `event_id` and are always emitted — the monotonic cursor and the typed
+   * `ReplayGap` above are what guard those.
    */
   private shouldEmit(event: evohime.desktop.v1.EventEnvelope): boolean {
     // Conversation pages may overlap by design. Suppressing an entire page by
@@ -562,6 +614,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     this.coreInstanceId = event.coreInstanceId ?? ''
     this.sessionEpoch = Number(event.sessionEpoch ?? 0)
     this.lastSequence = 0
+    this.resyncPendingAfter = null
+    this.replayGapRecoveries = 0
     for (const dropped of this.queue.drain()) {
       this.log('warn', 'ipc.command_dropped_on_epoch_change', { requestId: dropped.requestId })
     }

@@ -8,7 +8,7 @@ import { encodeFrame } from '../src/main/ipc/frame-codec'
 import { FrameReader } from '../src/main/ipc/frame-reader'
 import { evohime } from '../src/main/ipc/generated/protocol.js'
 import type { LaunchContext } from '../src/main/ipc/launch-context'
-import { CorePipeClient } from '../src/main/ipc/pipe-client'
+import { CorePipeClient, MAX_REPLAY_GAP_RECOVERIES } from '../src/main/ipc/pipe-client'
 
 /**
  * Contract tests for the named-pipe adapter against a stub Core that speaks the
@@ -134,6 +134,45 @@ function resyncEndFrame(sequenceId: number, moreAvailable: boolean): Uint8Array 
       ),
       coreInstanceId: CORE_INSTANCE,
       sessionEpoch: SESSION_EPOCH
+    }).finish()
+  )
+}
+
+function replayGapFrame(
+  sequenceId: number,
+  earliest: number,
+  latest: number,
+  reason: string
+): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      sequenceId,
+      eventType: 'replay.gap',
+      coreInstanceId: CORE_INSTANCE,
+      sessionEpoch: SESSION_EPOCH,
+      replayGap: {
+        requestedAfterSequence: Math.max(0, earliest - 1),
+        earliestAvailableSequence: earliest,
+        latestAvailableSequence: latest,
+        reason
+      }
+    }).finish()
+  )
+}
+
+function fullSnapshotFrame(sequenceId: number): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      sequenceId,
+      eventType: 'replay.full_snapshot',
+      coreInstanceId: CORE_INSTANCE,
+      sessionEpoch: SESSION_EPOCH,
+      fullSnapshot: {
+        sequenceId,
+        snapshotJson: new TextEncoder().encode('{"schema_version":1}')
+      }
     }).finish()
   )
 }
@@ -639,67 +678,100 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     expect(connections).toBeGreaterThanOrEqual(2)
   })
 
-  it('requests a resync when a sequence is skipped', async () => {
+  it('treats a hole in the sequence numbering as normal and keeps streaming', async () => {
     const pipeName = uniquePipeName()
-    const resyncRequests: number[] = []
     server = await startStubCore(pipeName, {
       onCommand: (command) => {
         if (command.handshake) {
+          // Retention deletes expired ambient rows, so 2..4 never come back.
+          // That is a numbering hole, not lost state: it must not park the
+          // client in `state-gap` and drop everything that follows.
           return [readyFrame(), eventFrame(1, 'task.started'), eventFrame(5, 'task.progress')]
         }
-        if (command.resyncRequest) {
-          resyncRequests.push(Number(command.resyncRequest.afterSequence ?? 0))
-        }
         return []
       }
     })
 
     const target = createClient(pipeName)
-    const gap = waitForState(target, (state) => state.connection === 'state-gap')
+    const progress = waitForEvent(target, (event) => event.eventType === 'task.progress')
     target.start()
-    const state = await gap
+    await progress
 
-    expect(state.reason).toBe('sequence-skipped')
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(resyncRequests).toContain(1)
+    expect(target.state.lastSequence).toBe(5)
+    expect(target.state.connection).not.toBe('state-gap')
   })
 
-  it('does not queue a second auto-resync for the same afterSequence while one is in flight', async () => {
+  it('aligns the cursor with the retained journal and applies events after a replay gap', async () => {
     const pipeName = uniquePipeName()
-    const resyncRequests: number[] = []
+    const resyncRequests: Array<{ after: number; snapshot: boolean }> = []
     server = await startStubCore(pipeName, {
       onCommand: (command) => {
         if (command.handshake) {
-          // event(1) establishes a lastSequence baseline first — a fresh
-          // client (lastSequence 0) never treats its very first event as a
-          // gap. events(10,11,12) then land in the same data chunk, all far
-          // ahead of that baseline: each independently detects a gap, but
-          // only the first should turn into a fresh resync request — the
-          // other two share its still-unanswered afterSequence.
-          return [
-            readyFrame(),
-            eventFrame(1, 'task.a'),
-            eventFrame(10, 'task.b'),
-            eventFrame(11, 'task.c'),
-            eventFrame(12, 'task.d')
-          ]
+          return [readyFrame()]
         }
         if (command.resyncRequest) {
-          resyncRequests.push(Number(command.resyncRequest.afterSequence ?? 0))
+          const after = Number(command.resyncRequest.afterSequence ?? 0)
+          resyncRequests.push({
+            after,
+            snapshot: Boolean(command.resyncRequest.includeFullSnapshot)
+          })
+          if (after === 0) {
+            // Core ships the gap first, then the retained page.
+            return [
+              replayGapFrame(11, 10, 11, 'sequence_retention_exceeded'),
+              eventFrame(10, 'task.progress'),
+              eventFrame(11, 'task.completed'),
+              resyncEndFrame(11, false)
+            ]
+          }
+          // Without the cursor move this follow-up never happens, because the
+          // gap leaves `lastSequence` untouched and the guard drops it.
+          return [fullSnapshotFrame(11)]
         }
         return []
       }
     })
 
     const target = createClient(pipeName)
-    const gap = waitForState(target, (state) => state.connection === 'state-gap')
+    const completed = waitForEvent(target, (event) => event.eventType === 'task.completed')
+    const connected = waitForState(
+      target,
+      (state) => state.connection === 'connected' && state.lastSequence === 11
+    )
     target.start()
-    await gap
+    await Promise.all([completed, connected])
 
+    expect(target.state.lastSequence).toBe(11)
+    expect(resyncRequests).toEqual([
+      { after: 0, snapshot: false },
+      { after: 9, snapshot: true }
+    ])
+  })
+
+  it('stops asking after repeated replay gaps instead of looping forever', async () => {
+    const pipeName = uniquePipeName()
+    let gapAnswers = 0
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => {
+        if (command.handshake) {
+          return [readyFrame()]
+        }
+        if (command.resyncRequest) {
+          gapAnswers += 1
+          return [replayGapFrame(40, 10, 40, 'sequence_retention_exceeded')]
+        }
+        return []
+      }
+    })
+
+    const target = createClient(pipeName)
+    const unrecoverable = waitForState(target, (state) => state.reason === 'replay-gap-unrecoverable')
+    target.start()
+    const state = await unrecoverable
+
+    expect(state.connection).toBe('state-gap')
     await new Promise((resolve) => setTimeout(resolve, 50))
-    // [0] is the unrelated resync issued right after connect (plan 0);
-    // [1] is the one gap-triggered request all three skipped events share.
-    expect(resyncRequests).toEqual([0, 1])
+    expect(gapAnswers).toBe(MAX_REPLAY_GAP_RECOVERIES + 1)
   })
 
   it('chains resync pages while Core reports more history, then settles once caught up', async () => {

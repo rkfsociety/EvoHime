@@ -129,6 +129,19 @@ impl LocalDatabase {
         Ok(statement.query_row([], |row| row.get(0))?)
     }
 
+    /// Lowest sequence still retained in the journal, or zero when it is empty.
+    ///
+    /// Sequence numbers are not contiguous: retention deletes old `ambient.%`
+    /// rows, so a gap between two retained events is normal and carries no
+    /// lost state. Only [`Self::read_events_after`] against a cursor *below*
+    /// this value means the requested history is genuinely gone.
+    pub fn earliest_event_sequence(&self) -> Result<i64, StorageError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT COALESCE(MIN(sequence_id), 0) FROM events")?;
+        Ok(statement.query_row([], |row| row.get(0))?)
+    }
+
     /// Reads journal events after `after_sequence` in ascending sequence order.
     pub fn read_events_after(
         &self,
