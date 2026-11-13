@@ -4,8 +4,8 @@ use crate::providers::{
     ThinkingConfig, TokenStream,
 };
 use crate::retry::{
-    classify_rate_limit, compute_backoff, is_retryable_status, parse_retry_after_seconds,
-    read_bounded_rate_limit_body, RateLimitClass, RetryPolicy,
+    classify_rate_limit, compute_backoff, is_retryable_status, parse_rate_limit_delay,
+    parse_retry_after_seconds, read_bounded_rate_limit_body, RateLimitClass, RetryPolicy,
 };
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
@@ -19,6 +19,15 @@ use std::{
 };
 use tokio::sync::Mutex;
 
+/// Serializes requests and remembers the pacing interval the provider demands.
+#[derive(Debug, Default)]
+struct RequestGate {
+    /// Start time of the most recent request.
+    last_request: Option<Instant>,
+    /// Interval learned from a provider rate-limit reply.
+    min_interval: Option<Duration>,
+}
+
 /// LiteRouter — OpenAI-compatible provider.
 ///
 /// API docs: `docs/providers/literouter.md`
@@ -28,12 +37,22 @@ pub struct LiteRouterProvider {
     client: Client,
     retry: RetryPolicy,
     reasoning_effort: Option<&'static str>,
-    request_gate: Arc<Mutex<Option<Instant>>>,
+    request_gate: Arc<Mutex<RequestGate>>,
 }
 
 impl LiteRouterProvider {
-    const PAID_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
+    /// Minimum spacing for models without a `:free` suffix.
+    ///
+    /// LiteRouter rejects requests sent closer than its tier window (for
+    /// example "7 seconds between messages"), so the default keeps a margin
+    /// above that window for the tiers this client is used with.
+    const PAID_REQUEST_INTERVAL: Duration = Duration::from_secs(8);
+    /// Minimum spacing for `:free` models (190 requests per hour).
     const FREE_REQUEST_INTERVAL: Duration = Duration::from_millis(18_948);
+    /// Extra room added to a pacing hint reported by the provider.
+    const RATE_LIMIT_INTERVAL_MARGIN: Duration = Duration::from_millis(250);
+    /// Delay for a rate-limit reply that carries no hint and no `Retry-After`.
+    const RATE_LIMIT_FALLBACK_DELAY: Duration = Duration::from_secs(8);
 
     /// Creates a LiteRouter adapter using retry defaults from the environment.
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
@@ -76,7 +95,7 @@ impl LiteRouterProvider {
             client,
             retry,
             reasoning_effort,
-            request_gate: Arc::new(Mutex::new(None)),
+            request_gate: Arc::new(Mutex::new(RequestGate::default())),
         })
     }
 
@@ -215,6 +234,12 @@ impl LiteRouterProvider {
                             status.as_u16()
                         )));
                     }
+                    // The provider may state how long its tier needs between
+                    // messages; both this retry and later requests honor it.
+                    let pacing_hint = parse_rate_limit_delay(&text);
+                    if let Some(hint) = pacing_hint {
+                        self.learn_request_interval(hint).await;
+                    }
                     let rate_limit_retryable = matches!(
                         rate_limit,
                         Some(RateLimitClass::Transient | RateLimitClass::Unknown)
@@ -227,10 +252,25 @@ impl LiteRouterProvider {
                     if (is_retryable_status(status) || rate_limit_retryable)
                         && attempt < rate_limit_cap
                     {
-                        let delay = compute_backoff(attempt, &self.retry, retry_after);
+                        let delay = if let Some(hint) = pacing_hint {
+                            hint
+                        } else {
+                            let backoff = compute_backoff(attempt, &self.retry, retry_after);
+                            if rate_limit_retryable && retry_after.is_none() {
+                                backoff.max(Self::RATE_LIMIT_FALLBACK_DELAY)
+                            } else {
+                                backoff
+                            }
+                        };
                         tokio::time::sleep(delay).await;
                         attempt = attempt.saturating_add(1);
                         continue;
+                    }
+                    if rate_limit.is_some() {
+                        return Err(ProviderError::Api(format!(
+                            "{}: rate limit",
+                            status.as_u16()
+                        )));
                     }
                     return Err(ProviderError::Api(format!(
                         "{}: provider request failed",
@@ -251,15 +291,30 @@ impl LiteRouterProvider {
     }
 
     async fn wait_for_request_slot(&self, model: &str) {
-        let interval = request_interval_for_model(model);
-        let mut last_request = self.request_gate.lock().await;
-        if let Some(previous) = *last_request {
+        let base_interval = request_interval_for_model(model);
+        let mut gate = self.request_gate.lock().await;
+        let interval = gate
+            .min_interval
+            .map_or(base_interval, |learned| learned.max(base_interval));
+        if let Some(previous) = gate.last_request {
             let elapsed = previous.elapsed();
             if elapsed < interval {
                 tokio::time::sleep(interval - elapsed).await;
             }
         }
-        *last_request = Some(Instant::now());
+        gate.last_request = Some(Instant::now());
+    }
+
+    /// Widens the request pacing after the provider reports the interval its
+    /// tier requires, so models without a `:free` suffix stop colliding with
+    /// the tier window.
+    async fn learn_request_interval(&self, hint: Duration) {
+        let interval = hint.saturating_add(Self::RATE_LIMIT_INTERVAL_MARGIN);
+        let mut gate = self.request_gate.lock().await;
+        gate.min_interval = Some(
+            gate.min_interval
+                .map_or(interval, |current| current.max(interval)),
+        );
     }
 }
 
@@ -1003,14 +1058,14 @@ mod tests {
     }
 
     #[test]
-    fn spreads_free_models_across_190_requests_per_hour() {
+    fn paces_free_and_paid_models() {
         assert_eq!(
             request_interval_for_model("some-model:free"),
             Duration::from_millis(18_948)
         );
         assert_eq!(
             request_interval_for_model("gemini-3.1-flash-lite-thinking"),
-            Duration::from_secs(5)
+            Duration::from_secs(8)
         );
     }
 }

@@ -77,6 +77,22 @@ EvoHime.exe → named pipe → evohime-core.exe
 
 Реализация находится в `crates/model-gateway/src/providers/literouter.rs`. Поддерживаются streaming, native tool calls, ошибки API и bounded retry/backoff. Список моделей определяется самим LiteRouter и может меняться.
 
+## Pace и rate limit
+
+Перед каждым запросом, включая повторы, провайдер выдерживает минимальный интервал
+между стартами: не менее 18,948 с для моделей с суффиксом `:free` (≈190 запросов
+в час) и не менее 8 с для остальных моделей. Интервал общий для всех потоков
+одного экземпляра провайдера.
+
+LiteRouter сообщает о превышении лимита тарифа ответом HTTP `403` с текстом
+`[LiteRouter] Rate limit exceeded for your tier (N seconds between messages)`.
+Такой ответ считается временным rate limit, а не исчерпанной квотой: Core ждёт
+указанные `N` секунд плюс запас 250 мс, повторяет запрос и запоминает интервал,
+поэтому следующие запросы уже не попадают в то же окно. Если в ответе нет
+подсказки и заголовка `Retry-After`, используется пауза не меньше 8 с.
+Исчерпанная квота (`quota`, `daily limit`, `billing` и подобные маркеры)
+по-прежнему сразу возвращает `provider quota exhausted` без повторов.
+
 ## Retry-параметры
 
 | Переменная | По умолчанию | Назначение |
@@ -85,4 +101,9 @@ EvoHime.exe → named pipe → evohime-core.exe
 | `EVOHIME_LLM_RETRY_BASE_MS` | `250` | база exponential backoff |
 | `EVOHIME_LLM_RETRY_MAX_MS` | `5000` | верхняя граница backoff |
 
-Повторяются transport errors и HTTP `408/429/500/502/503/504`; mid-stream запрос после начала токенов не повторяется.
+Повторяются transport errors, HTTP `408/429/500/502/503/504` и временный rate limit
+LiteRouter (`403` с `rate limit` в теле); для rate limit пауза берётся из подсказки
+провайдера и перекрывает backoff. Mid-stream запрос после начала токенов не
+повторяется. Если повторы исчерпаны, ошибка rate limit сохраняет классификацию
+`rate limit`, поэтому Core применяет cooldown к маршруту, а не завершает задачу
+как фатальную.

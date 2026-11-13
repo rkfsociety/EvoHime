@@ -37,6 +37,38 @@ pub enum RateLimitClass {
     Unknown,
 }
 
+/// Markers that identify an exhausted quota or billing limit.
+///
+/// `"limit exceeded"` is intentionally absent: providers also describe a
+/// temporary pacing limit as "rate limit exceeded", and treating that phrase
+/// as an exhausted quota disables the retry that would recover from it.
+const QUOTA_MARKERS: &[&str] = &[
+    "quota",
+    "daily limit",
+    "monthly limit",
+    "hourly limit",
+    "billing",
+    "insufficient credit",
+    "out of credit",
+    "credit balance",
+    "credit limit",
+    "exhausted",
+];
+
+/// Markers that identify a temporary pacing limit which retry may clear.
+const TRANSIENT_MARKERS: &[&str] = &[
+    "retry",
+    "temporar",
+    "second",
+    "minute",
+    "cooldown",
+    "wait",
+    "slow down",
+];
+
+/// Upper bound applied to a provider-supplied pacing hint.
+const MAX_RATE_LIMIT_DELAY_SECS: u64 = 300;
+
 /// Classifies a provider status/body as a known rate limit, when applicable.
 pub fn classify_rate_limit(status: StatusCode, body: &str) -> Option<RateLimitClass> {
     let lower = body.to_ascii_lowercase();
@@ -45,24 +77,46 @@ pub fn classify_rate_limit(status: StatusCode, body: &str) -> Option<RateLimitCl
     if !rate_limited {
         return None;
     }
-    if [
-        "quota exceeded",
-        "quota_exceeded",
-        "daily limit",
-        "monthly limit",
-        "hourly limit",
-        "limit exceeded",
-        "billing",
-    ]
-    .iter()
-    .any(|marker| lower.contains(marker))
-    {
+    if QUOTA_MARKERS.iter().any(|marker| lower.contains(marker)) {
         Some(RateLimitClass::Exhausted)
-    } else if lower.contains("retry") || lower.contains("temporar") {
+    } else if TRANSIENT_MARKERS
+        .iter()
+        .any(|marker| lower.contains(marker))
+    {
         Some(RateLimitClass::Transient)
     } else {
         Some(RateLimitClass::Unknown)
     }
+}
+
+/// Extracts the provider's own pacing hint from a rate-limit body.
+///
+/// LiteRouter answers an over-eager client with
+/// `"Rate limit exceeded for your tier (7 seconds between messages)"`, so the
+/// minimum delay between requests is taken from the message when present.
+pub fn parse_rate_limit_delay(body: &str) -> Option<Duration> {
+    let lower = body.to_ascii_lowercase();
+    let tokens: Vec<&str> = lower
+        .split(|c: char| !(c.is_ascii_alphanumeric() || c == '.'))
+        .filter(|token| !token.is_empty())
+        .collect();
+    for (index, token) in tokens.iter().enumerate() {
+        let Ok(value) = token.parse::<u64>() else {
+            continue;
+        };
+        let Some(unit) = tokens.get(index + 1) else {
+            continue;
+        };
+        let seconds = if unit.starts_with("second") {
+            value
+        } else if unit.starts_with("minute") {
+            value.saturating_mul(60)
+        } else {
+            continue;
+        };
+        return Some(Duration::from_secs(seconds.min(MAX_RATE_LIMIT_DELAY_SECS)));
+    }
+    None
 }
 
 /// Read only a small prefix used to classify a rate-limit response.
@@ -203,6 +257,48 @@ mod tests {
             classify_rate_limit(StatusCode::TOO_MANY_REQUESTS, "rate limit"),
             Some(RateLimitClass::Unknown)
         );
+    }
+
+    #[test]
+    fn classifies_tier_pacing_limit_as_transient() {
+        assert_eq!(
+            classify_rate_limit(
+                StatusCode::FORBIDDEN,
+                "[LiteRouter] Rate limit exceeded for your tier (7 seconds between messages). \
+                 You can upgrade your tier to reduce the cooldown period.",
+            ),
+            Some(RateLimitClass::Transient)
+        );
+    }
+
+    #[test]
+    fn keeps_real_quota_limits_exhausted() {
+        assert_eq!(
+            classify_rate_limit(
+                StatusCode::TOO_MANY_REQUESTS,
+                "quota exceeded for this billing period",
+            ),
+            Some(RateLimitClass::Exhausted)
+        );
+        assert_eq!(
+            classify_rate_limit(StatusCode::TOO_MANY_REQUESTS, "daily limit reached"),
+            Some(RateLimitClass::Exhausted)
+        );
+    }
+
+    #[test]
+    fn parses_provider_pacing_hint() {
+        assert_eq!(
+            parse_rate_limit_delay(
+                "[LiteRouter] Rate limit exceeded for your tier (7 seconds between messages)"
+            ),
+            Some(Duration::from_secs(7))
+        );
+        assert_eq!(
+            parse_rate_limit_delay("try again in 2 minutes"),
+            Some(Duration::from_secs(120))
+        );
+        assert_eq!(parse_rate_limit_delay("slow down"), None);
     }
 
     #[test]

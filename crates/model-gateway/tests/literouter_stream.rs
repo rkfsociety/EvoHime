@@ -213,3 +213,85 @@ async fn literouter_quota_error_does_not_include_provider_body() {
     assert!(!err.to_string().contains("provider.test"));
     assert!(!err.to_string().contains("secret-provider-body"));
 }
+
+#[tokio::test]
+async fn literouter_retries_tier_rate_limit_403_then_streams() {
+    let server = MockServer::start().await;
+    let sse_body = concat!(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(
+            "[LiteRouter] Rate limit exceeded for your tier (0 seconds between messages). \
+             You can upgrade your tier to reduce the cooldown period.",
+        ))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(sse_body)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let provider = LiteRouterProvider::with_retry(
+        LiteRouterConfig {
+            api_key: "lr_test".to_string(),
+            base_url: format!("{}/v1", server.uri()),
+            model: "test-paid-model".to_string(),
+        },
+        RetryPolicy::for_tests(2),
+    )
+    .expect("provider");
+
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
+
+    let mut output = String::new();
+    while let Some(chunk) = stream.next().await {
+        push_delta(&mut output, chunk.expect("chunk"));
+    }
+    assert_eq!(output, "ok");
+}
+
+#[tokio::test]
+async fn literouter_rate_limit_error_keeps_rate_limit_classification() {
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(
+            "[LiteRouter] Rate limit exceeded for your tier (7 seconds between messages).",
+        ))
+        .mount(&server)
+        .await;
+
+    let provider = LiteRouterProvider::with_retry(
+        LiteRouterConfig {
+            api_key: "lr_test".to_string(),
+            base_url: format!("{}/v1", server.uri()),
+            model: "test-paid-model".to_string(),
+        },
+        RetryPolicy::none(),
+    )
+    .expect("provider");
+
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
+    let err = stream
+        .next()
+        .await
+        .expect("error item")
+        .expect_err("rate limit failure should be returned");
+
+    let message = err.to_string();
+    assert!(message.contains("rate limit"), "{message}");
+    assert!(!message.contains("quota exhausted"), "{message}");
+    assert!(!message.contains("provider.test"), "{message}");
+}
