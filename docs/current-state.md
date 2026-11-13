@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-12.
+Обновлено: 2026-11-13.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -538,6 +538,25 @@ diagnostics обязательны для опасных операций. По�
 runtime переиспользует canonical hash, ограничивает глубину графа 64 узлами и
 публикует bounded dispatch metrics.
 
+## Execution trace contract (план 184, этап 1)
+
+Core содержит versioned redacted contract в
+`crates/evohime-core/src/execution_trace_evaluation.rs`: trace schema v1,
+evaluation contract v1, максимум 4096 events, 128 assertions и 128 символов
+на identifier. Raw prompts, tool arguments, provider output и reasoning не
+являются полями trace. Canonical hash имеет вид `sha256:<64 lowercase hex>`;
+`ExecutionTrace::legacy_tool_trace_digest()` возвращает те же digest bytes в
+прежнем 64-hex формате поля `AttemptResult::tool_trace_digest`, без второго
+trace store.
+
+Validation требует непрерывную event sequence, уникальные event ids,
+предшествующий ToolCall для RetryStarted, согласованные outcome для
+нормализованных событий и matching approval до EffectCommitted. Unknown event
+kinds и дополнительные payload-поля отвергаются serde-контрактом. Runtime
+capture, partition по run/attempt, persistence и lifecycle ещё не подключены:
+это следующий этап 184.2. Regression tests добавлены; exact-SHA CI для
+изменения ожидает результата.
+
 ## Declared analysis kernel tool (план 192, этап 1)
 
 Kernel уже существовал как Core-owned runtime, но не был объявлен ни одним
@@ -565,10 +584,13 @@ Kernel уже существовал как Core-owned runtime, но не был
 
 ## Подтверждённые проверки checkout
 
-Текущая задача реализована локально в `main`; task-only commit создан после
-проверок. Изменения ещё не опубликованы, поэтому exact-SHA GitHub workflows и
-module releases ожидают разрешённого push. Исторические baseline и результаты
-сохранены в [`release-evidence.md`](release-evidence.md).
+Этап 192.1 опубликован в `origin/main` коммитом
+`51c6860484c9b25196f53add11e24477565e11d9`. Exact-SHA проверки завершились
+успешно: Core workflow `43327009208`, Rust documentation `43326924666`,
+module router `43326924778` и compatible release manifest `43329493376`.
+Эти результаты подтверждают этап 192.1, но не заменяют runtime integration и
+recovery этапа 192.2. Исторические baseline и результаты сохранены в
+[`release-evidence.md`](release-evidence.md).
 
 Bounded-таймаут модульных Rust-тестов измеряет только исполнение: `core.yml` и
 `windows.yml` сначала собирают тестовые бинарники отдельным шагом

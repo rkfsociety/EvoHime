@@ -726,7 +726,10 @@ pub struct AttemptResult {
     pub cost_micros: u64,
     /// Digest of the bounded output, not raw output text.
     pub output_digest: String,
-    /// Digest of the tool trace, not raw tool contents.
+    /// Digest of the tool trace, not raw tool contents. For an
+    /// `ExecutionTrace`, use
+    /// [`crate::execution_trace_evaluation::ExecutionTrace::legacy_tool_trace_digest`]
+    /// to preserve this 64-character hexadecimal format.
     pub tool_trace_digest: String,
 }
 

@@ -280,7 +280,10 @@ fn valid_identifier(value: &str) -> bool {
 }
 
 fn valid_digest(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 impl ExecutionTrace {
@@ -298,6 +301,7 @@ impl ExecutionTrace {
 
         let mut event_ids = BTreeSet::new();
         let mut approvals = BTreeMap::<String, u64>::new();
+        let mut tool_call_ids = BTreeSet::new();
         for (index, event) in self.events.iter().enumerate() {
             if event.sequence != index as u64 + 1
                 || !valid_identifier(&event.event_id)
@@ -338,10 +342,13 @@ impl ExecutionTrace {
                         || event.args_digest.is_none()
                         || event.approval_id.is_some()
                         || event.effect_id.is_some()
+                        || !event.evidence_refs.is_empty()
                         || event.retry_of.is_some()
+                        || event.outcome == TraceEventOutcome::Unknown
                     {
                         return Err(TraceEvaluationError::InvalidEventShape);
                     }
+                    tool_call_ids.insert(event.event_id.as_str());
                 }
                 TraceEventKind::ApprovalGranted => {
                     let id = event
@@ -351,6 +358,7 @@ impl ExecutionTrace {
                     if event.tool_id.is_some()
                         || event.args_digest.is_some()
                         || event.effect_id.is_some()
+                        || !event.evidence_refs.is_empty()
                         || event.retry_of.is_some()
                         || event.outcome != TraceEventOutcome::Succeeded
                         || approvals.insert(id.to_owned(), event.sequence).is_some()
@@ -366,10 +374,15 @@ impl ExecutionTrace {
                     if event.effect_id.is_none()
                         || event.tool_id.is_some()
                         || event.args_digest.is_some()
+                        || !event.evidence_refs.is_empty()
                         || event.retry_of.is_some()
-                        || approvals
-                            .get(approval_id)
-                            .is_none_or(|sequence| *sequence >= event.sequence)
+                        || event.outcome != TraceEventOutcome::Succeeded
+                    {
+                        return Err(TraceEvaluationError::InvalidEventShape);
+                    }
+                    if approvals
+                        .get(approval_id)
+                        .is_none_or(|sequence| *sequence >= event.sequence)
                     {
                         return Err(TraceEvaluationError::ApprovalEffectOrderViolation);
                     }
@@ -381,6 +394,7 @@ impl ExecutionTrace {
                         || event.approval_id.is_some()
                         || event.effect_id.is_some()
                         || event.retry_of.is_some()
+                        || event.outcome != TraceEventOutcome::Succeeded
                     {
                         return Err(TraceEvaluationError::InvalidEventShape);
                     }
@@ -391,7 +405,16 @@ impl ExecutionTrace {
                         || event.args_digest.is_none()
                         || event.approval_id.is_some()
                         || event.effect_id.is_some()
+                        || !event.evidence_refs.is_empty()
+                        || event.outcome != TraceEventOutcome::Unknown
                     {
+                        return Err(TraceEvaluationError::InvalidEventShape);
+                    }
+                    let original_id = event
+                        .retry_of
+                        .as_deref()
+                        .ok_or(TraceEvaluationError::InvalidEventShape)?;
+                    if !tool_call_ids.contains(original_id) {
                         return Err(TraceEvaluationError::InvalidEventShape);
                     }
                 }
@@ -400,11 +423,21 @@ impl ExecutionTrace {
         Ok(())
     }
 
-    /// Returns the canonical SHA-256 digest of this validated redacted trace.
-    pub fn canonical_hash(&self) -> Result<String, TraceEvaluationError> {
+    /// Returns the legacy 64-character digest accepted by
+    /// [`crate::agent_benchmark_matrix::AttemptResult::tool_trace_digest`].
+    ///
+    /// The digest bytes are identical to [`Self::canonical_hash`]; this method
+    /// omits its `sha256:` prefix to preserve the existing benchmark field
+    /// format. It does not create or persist a second trace.
+    pub fn legacy_tool_trace_digest(&self) -> Result<String, TraceEvaluationError> {
         self.validate()?;
         let bytes = serde_json::to_vec(self).map_err(|_| TraceEvaluationError::Serialization)?;
-        Ok(format!("sha256:{}", hex::encode(Sha256::digest(bytes))))
+        Ok(hex::encode(Sha256::digest(bytes)))
+    }
+
+    /// Returns the canonical SHA-256 digest of this validated redacted trace.
+    pub fn canonical_hash(&self) -> Result<String, TraceEvaluationError> {
+        Ok(format!("sha256:{}", self.legacy_tool_trace_digest()?))
     }
 }
 
@@ -666,6 +699,21 @@ mod tests {
         }
     }
 
+    fn retry_event(retry_of: &str) -> ExecutionTraceEvent {
+        ExecutionTraceEvent {
+            sequence: 5,
+            event_id: "retry-1".into(),
+            kind: TraceEventKind::RetryStarted,
+            tool_id: Some("workspace.write".into()),
+            args_digest: Some("a".repeat(64)),
+            approval_id: None,
+            effect_id: None,
+            evidence_refs: vec![],
+            retry_of: Some(retry_of.into()),
+            outcome: TraceEventOutcome::Unknown,
+        }
+    }
+
     fn contract() -> TraceEvaluationContract {
         TraceEvaluationContract {
             version: EVALUATION_CONTRACT_VERSION,
@@ -698,6 +746,38 @@ mod tests {
             value.canonical_hash().unwrap()
         );
         assert!(value.canonical_hash().unwrap().starts_with("sha256:"));
+    }
+
+    #[test]
+    fn legacy_tool_trace_digest_preserves_benchmark_field_compatibility() {
+        let value = trace();
+        let legacy = value.legacy_tool_trace_digest().unwrap();
+        assert_eq!(legacy.len(), 64);
+        assert!(legacy
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+        assert_eq!(value.canonical_hash().unwrap(), format!("sha256:{legacy}"));
+    }
+
+    #[test]
+    fn assertion_reason_codes_have_stable_serialized_names() {
+        let cases = [
+            (TraceAssertionReason::Passed, "passed"),
+            (TraceAssertionReason::ConditionFailed, "condition_failed"),
+            (TraceAssertionReason::EventLimitExceeded, "event_limit_exceeded"),
+            (
+                TraceAssertionReason::ApprovalEffectOrderViolation,
+                "approval_effect_order_violation",
+            ),
+            (TraceAssertionReason::RetryNotEquivalent, "retry_not_equivalent"),
+            (TraceAssertionReason::EvidenceMissing, "evidence_missing"),
+        ];
+        for (reason, expected) in cases {
+            assert_eq!(
+                serde_json::to_string(&reason).unwrap(),
+                format!("\"{expected}\"")
+            );
+        }
     }
 
     #[test]
@@ -742,9 +822,32 @@ mod tests {
     }
 
     #[test]
+    fn unknown_event_kinds_and_extra_fields_fail_deserialization() {
+        let mut value = serde_json::to_value(trace()).unwrap();
+        value["events"][0]["kind"] = serde_json::json!("future_event");
+        assert!(serde_json::from_value::<ExecutionTrace>(value).is_err());
+
+        let mut value = serde_json::to_value(trace()).unwrap();
+        value["events"][0]["raw_payload"] = serde_json::json!("must not enter a trace");
+        assert!(serde_json::from_value::<ExecutionTrace>(value).is_err());
+    }
+
+    #[test]
     fn malformed_digest_and_non_contiguous_sequence_are_rejected() {
         let mut value = trace();
         value.events[1].args_digest = Some("not-a-digest".into());
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+        let mut value = trace();
+        value.events[1].args_digest = Some("A".repeat(64));
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+        let mut value = trace();
+        value.events[1].evidence_refs.push("orphan-evidence".into());
         assert_eq!(
             value.validate().unwrap_err(),
             TraceEvaluationError::InvalidEventShape
@@ -790,18 +893,7 @@ mod tests {
     #[test]
     fn retry_must_match_original_tool_and_argument_digest() {
         let mut value = trace();
-        value.events.push(ExecutionTraceEvent {
-            sequence: 5,
-            event_id: "retry-1".into(),
-            kind: TraceEventKind::RetryStarted,
-            tool_id: Some("workspace.write".into()),
-            args_digest: Some("a".repeat(64)),
-            approval_id: None,
-            effect_id: None,
-            evidence_refs: vec![],
-            retry_of: Some("tool-1".into()),
-            outcome: TraceEventOutcome::Unknown,
-        });
+        value.events.push(retry_event("tool-1"));
         let mut policy = contract();
         policy.assertions.push(TraceAssertion {
             id: "retry".into(),
@@ -815,6 +907,55 @@ mod tests {
         assert_eq!(
             evaluate_trace(&value, &policy).unwrap().assertions[3].reason,
             TraceAssertionReason::RetryNotEquivalent
+        );
+    }
+
+    #[test]
+    fn retry_must_reference_a_preceding_tool_call() {
+        let mut value = trace();
+        value.events.push(retry_event("approval-1"));
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+
+        let mut value = trace();
+        value.events.push(retry_event("missing-tool-call"));
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+    }
+
+    #[test]
+    fn completed_trace_rejects_unknown_or_inconsistent_event_outcomes() {
+        let mut value = trace();
+        value.events[1].outcome = TraceEventOutcome::Unknown;
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+
+        let mut value = trace();
+        value.events[2].outcome = TraceEventOutcome::Failed;
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+
+        let mut value = trace();
+        value.events[3].outcome = TraceEventOutcome::Denied;
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+
+        let mut value = trace();
+        value.events.push(retry_event("tool-1"));
+        value.events[4].outcome = TraceEventOutcome::Succeeded;
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
         );
     }
 

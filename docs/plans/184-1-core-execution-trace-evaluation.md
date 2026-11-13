@@ -6,6 +6,11 @@
 
 Структурировать ExecutionTrace, event/run/attempt identity, terminal state, evaluator contract, assertions/results и canonical hash. Exact/subsequence, forbidden tools, canonical args, approval/effect, evidence, retry equivalence и bounds; raw content исключить до hash.
 
+Совместимость: существующий `AttemptResult::tool_trace_digest` сохраняет
+64-символьный lowercase hex формат. `ExecutionTrace::legacy_tool_trace_digest`
+возвращает те же SHA-256 bytes, что `canonical_hash`, но без префикса
+`sha256:`; отдельное поле, журнал или trace store не создаётся.
+
 ## Зависимости
 
 ### Блокирующие
@@ -24,7 +29,10 @@ Rollback/disable сохраняет действующие policy и ранее 
 
 ## Verification
 
-Unit: normalization/hash, args, order, approval binding, bounds, unknown fields/status, incompatible versions.
+Unit: normalization/hash, legacy digest format and byte compatibility, args,
+order, approval binding, retry target linkage, terminal outcome consistency,
+bounds, unknown fields/status, stable reason-code serialization and incompatible
+versions.
 
 ## Release evidence
 
