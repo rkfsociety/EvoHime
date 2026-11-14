@@ -1107,11 +1107,14 @@ mod timeout_tests {
         assert!(rendered.contains("Цель: Finish task\nКритерии выполнения:\n- [verified] c1 (First step)\n- [pending] c2 (Second step)\n"));
         assert!(rendered.ends_with("</active_goal>\n\nBase prompt"));
 
-        let first = format_goal_continuation_prompt("Base prompt", &goal, 1, 3, Some("Attempt 1 output"));
+        let first =
+            format_goal_continuation_prompt("Base prompt", &goal, 1, 3, Some("Attempt 1 output"));
         assert!(!first.contains("<previous_attempt_summary>"));
 
-        let second = format_goal_continuation_prompt("Base prompt", &goal, 2, 3, Some("Attempt 1 output"));
-        assert!(second.contains("<previous_attempt_summary>\nAttempt 1 output\n</previous_attempt_summary>"));
+        let second =
+            format_goal_continuation_prompt("Base prompt", &goal, 2, 3, Some("Attempt 1 output"));
+        assert!(second
+            .contains("<previous_attempt_summary>\nAttempt 1 output\n</previous_attempt_summary>"));
     }
 
     #[test]
@@ -1133,8 +1136,8 @@ mod timeout_tests {
             .expect("test thread completes");
     }
 
-    async fn goal_continuation_completes_second_attempt_without_ledger_or_request_collisions_inner(
-    ) {
+    async fn goal_continuation_completes_second_attempt_without_ledger_or_request_collisions_inner()
+    {
         use evohime_model_gateway::{
             providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
         };
@@ -1241,9 +1244,7 @@ mod timeout_tests {
         }
         let agent = crate::ToolAgent::new(
             Arc::new(ModelGateway::from_provider(Arc::new(provider))),
-            Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(
-                permissions,
-            )),
+            Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions)),
         )
         .with_journal(journal.clone())
         .with_receipt_keys(receipt_keys);
@@ -1325,7 +1326,9 @@ mod timeout_tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("collect model_requests");
         assert!(
-            request_ids.iter().any(|id| id == &format!("{task_id}:{task_id}-0")),
+            request_ids
+                .iter()
+                .any(|id| id == &format!("{task_id}:{task_id}-0")),
             "request_ids={request_ids:?}"
         );
         assert!(
@@ -1403,7 +1406,9 @@ mod timeout_tests {
                         Ok("first attempt partial".into())
                     } else {
                         assert!(prompt.contains("first attempt partial"));
-                        Err(crate::AgentRunError::Internal("repeated failure on attempt 2".into()))
+                        Err(crate::AgentRunError::Internal(
+                            "repeated failure on attempt 2".into(),
+                        ))
                     }
                 })
             }

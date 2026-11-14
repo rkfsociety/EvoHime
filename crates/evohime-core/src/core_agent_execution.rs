@@ -1199,9 +1199,8 @@ impl ToolAgent {
                         continue;
                     }
                 }
-                let goal_verify_available = specs
-                    .iter()
-                    .any(|spec| spec.function.name == "goal.verify");
+                let goal_verify_available =
+                    specs.iter().any(|spec| spec.function.name == "goal.verify");
                 if has_active_goal
                     && goal_verify_available
                     && !goal_verified_in_run
