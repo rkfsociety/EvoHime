@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | 180 | [Core-owned A2A Bridge](180-0-core-a2a-bridge.md) | active; исторический источник issue #158 |
 | 181 | [Core-owned Sensitive Egress Guardrails](181-0-core-sensitive-egress-guardrails.md) | active; исторический источник issue #159 |
-| 184 | [Core-owned Execution-Trace Evaluation](184-0-core-execution-trace-evaluation.md) | active; исторический источник issue #160 |
+| 184 | [Core-owned Execution-Trace Evaluation](184-0-core-execution-trace-evaluation.md) | active; trace contract/legacy digest есть, 184.2 capture не подключён |
 | 185 | [Core-owned Behavioral Simulation Harness](185-0-core-behavioral-simulation-harness.md) | active; исторический источник issue #161; blocking dependency 184 |
 | 186 | [Core-owned Local Typed-Decision Fast Path](186-0-core-local-typed-decision-fast-path.md) | active; исторический источник issue #162 |
 | 187 | [Core-owned Windows Native Computer Use](187-0-core-windows-native-computer-use.md) | active; исторический источник issue #163; blocking dependencies 184–185 |

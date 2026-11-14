@@ -1712,6 +1712,35 @@ regression — hard failure независимо от среднего score; ba
 metadata-only `AgentBenchmarkMatrixPanel`, а deterministic PR gate
 `cargo eval --mode deterministic` остаётся отдельным от nightly/manual matrix.
 
+### Core-Owned Execution Trace Evaluation v1 (plan 184)
+
+`crates/evohime-core/src/execution_trace_evaluation.rs` defines the
+metadata-only trace and deterministic evaluator contracts consumed by the
+existing Agent Benchmark Matrix. Schema v1 and evaluation-contract v1 bind
+run/attempt identity, terminal state, ordered event ids, tool ids, canonical
+argument digests, approval/effect references, bounded evidence refs and typed
+outcomes. Raw prompts, tool arguments, provider output, transcripts,
+credentials and reasoning are excluded from the serialized trace and its hash.
+
+The contract bounds traces to 4,096 events, policies to 128 assertions and
+assertion lists to 256 items. Assertions cover exact/subsequence tool order,
+forbidden tools, approval-before-effect, required evidence, retry equivalence
+and event limits. Validation rejects malformed or duplicate event identities,
+non-contiguous sequence, invalid digest shape, retries without a preceding
+ToolCall, duplicate effect ids, inconsistent event outcomes and effects without
+a preceding matching approval. Empty traces are incomplete, not oversized.
+Canonical SHA-256 is prefixed with `sha256:`; the legacy digest adapter returns
+the same bytes as 64 lowercase hex for the existing
+`AttemptResult::tool_trace_digest` field. No second trace store is introduced.
+
+The current boundary is still contract/evaluator only: runtime capture,
+partition by run/attempt, frozen-report lifecycle and recovery are not wired.
+The generic ToolAgent event stream is not a typed trace source, and receipt
+ledger events currently lack the attempt identity required for safe partition.
+Stage 184.2 must connect the existing Core tool/effect boundary to the existing
+EventJournal/execution-ledger owner, with redaction before hashing; it must not
+infer identifiers from untyped payloads or add another persistence owner.
+
 ### Core-Owned A2A Remote-Agent Bridge v1 (plan 180, stage 1)
 
 `crates/evohime-core/src/external_agent_a2a.rs` реализует Core‑owned outbound A2A remote‑agent backend как protocol/backend extension существующего external‑agent owner (`external_coding_agent_adapter`). Он определяет bounded untrusted profile/card/delegation/capsule/task‑binding contracts с deterministic validation, SHA‑256 хэшированием и детерминированными переходами состояний. Card claims никогда не дают локальных capability; сырые карты, заголовки, куки, транскрипты, токены и сырые цели никогда не попадают в persistent или projected структуры — сохраняются только id, ссылки, хэши и типизированное состояние.

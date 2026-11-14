@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-13.
+Обновлено: 2026-11-14.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -117,9 +117,9 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000091`, `core 0.0.000405`, `installer 0.0.000065`,
-`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000113`,
-`supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000142`,
+0.0.000043`, `cli 0.0.000091`, `core 0.0.000412`, `installer 0.0.000065`,
+`listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000114`,
+`supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000144`,
 `updater 0.0.000132` и `verifier 0.0.000057`.
 
 Новые задания чата получают из Core conversation log последние 40 durable
@@ -547,24 +547,47 @@ diagnostics обязательны для опасных операций. По�
 runtime переиспользует canonical hash, ограничивает глубину графа 64 узлами и
 публикует bounded dispatch metrics.
 
-## Execution trace contract (план 184, этап 1)
+## Execution trace contract (план 184, этапы 1–2)
 
 Core содержит versioned redacted contract в
 `crates/evohime-core/src/execution_trace_evaluation.rs`: trace schema v1,
-evaluation contract v1, максимум 4096 events, 128 assertions и 128 символов
-на identifier. Raw prompts, tool arguments, provider output и reasoning не
-являются полями trace. Canonical hash имеет вид `sha256:<64 lowercase hex>`;
-`ExecutionTrace::legacy_tool_trace_digest()` возвращает те же digest bytes в
-прежнем 64-hex формате поля `AttemptResult::tool_trace_digest`, без второго
-trace store.
+evaluation contract v1, максимум 4096 events, 128 assertions, 256 элементов
+в assertion list и 128 символов на identifier. Raw prompts, tool arguments,
+provider output и reasoning не являются полями trace. Canonical hash имеет
+вид `sha256:<64 lowercase hex>`; `ExecutionTrace::legacy_tool_trace_digest()`
+возвращает те же digest bytes в прежнем 64-hex формате поля
+`AttemptResult::tool_trace_digest`, без второго trace store.
 
 Validation требует непрерывную event sequence, уникальные event ids,
-предшествующий ToolCall для RetryStarted, согласованные outcome для
-нормализованных событий и matching approval до EffectCommitted. Unknown event
-kinds и дополнительные payload-поля отвергаются serde-контрактом. Runtime
-capture, partition по run/attempt, persistence и lifecycle ещё не подключены:
-это следующий этап 184.2. Regression tests добавлены; exact-SHA CI для
-изменения ожидает результата.
+предшествующий ToolCall для RetryStarted, уникальные effect ids,
+согласованные outcome для нормализованных событий и matching approval до
+EffectCommitted. Пустой trace классифицируется как incomplete, превышение
+лимита — отдельно. Unknown event kinds и дополнительные payload-поля
+отвергаются serde-контрактом.
+
+Exact-SHA baseline `f034f3d82a07176fa17d58688b5b9e0f76ebd5b8` прошёл Core
+tests/lint/release build, Linux CLI/IPC, Rust documentation/doc-tests, UI
+bundle tests/build, module-router и compatible manifest; run IDs и scope
+проверок записаны в `release-evidence.md`. В текущем изменении добавлены
+regression tests для пустого trace и повторного effect id; Core marker
+`0.0.000412` ожидает post-push CI. Локальные Rust tests/build/lint и точный
+`git diff --check` в этой среде не запускались: локального checkout нет,
+а clone недоступен из-за DNS. Stage 184.1 остаётся активным до exact-SHA CI и
+whitespace gate.
+
+Runtime capture, partition по run/attempt, persistence и lifecycle ещё не
+подключены. Audit текущего checkout показывает, что обычный ToolAgent loop
+публикует Core tool events, но не записывает typed `ExecutionEventV1` для
+каждого model tool call. Receipt-tracked terminal path записывает typed
+events в Standalone scope без attempt id. Workflow attempt projection хранит
+attempt ids и поддерживает link на ledger, но production call site для
+`append_ledger_event_with_node_transition` не найден — сейчас он используется
+в storage tests. Поэтому следующий этап 184.2 должен сначала связать
+существующую Core tool/effect boundary с authoritative typed ledger и
+redaction-before-hash. Нельзя выводить approval/effect/attempt ids из
+неструктурированных payloads, синтезировать их или создавать второй trace
+store. Неполный и неоднозначный исход должен оставаться partial/unknown и
+не давать passing verdict.
 
 ## Declared analysis kernel tool (план 192, этап 1)
 

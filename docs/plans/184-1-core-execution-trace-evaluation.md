@@ -1,6 +1,6 @@
 # План 184.1 — trace contract, normalization и assertions
 
-Статус: active implementation contract. Этап следует после overview 184.0 и предыдущих этапов этого направления.
+Статус: active implementation contract. Schema, assertions и legacy digest подтверждены exact-SHA CI на базовом main; follow-up hardening ожидает CI, а git diff --check остаётся открытым gate.
 
 ## Scope и изменяемые контракты
 
@@ -40,6 +40,6 @@ versions.
 
 ## Критерии выхода
 
-- [ ] Schema, stable reason codes and compatibility with old tool_trace_digest; no second trace store.
+- [x] Schema, stable reason codes and compatibility with old tool_trace_digest; no second trace store.
 - [ ] Внутренние ссылки разрешаются и git diff --check проходит.
-- [ ] Canonical docs обновляются только после подтверждённого поведения.
+- [x] Canonical docs обновляются только после подтверждённого поведения.

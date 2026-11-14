@@ -295,11 +295,15 @@ impl ExecutionTrace {
         if !valid_identifier(&self.run_id) || !valid_identifier(&self.attempt_id) {
             return Err(TraceEvaluationError::InvalidIdentity);
         }
-        if self.events.is_empty() || self.events.len() > MAX_TRACE_EVENTS {
+        if self.events.is_empty() {
+            return Err(TraceEvaluationError::IncompleteTrace);
+        }
+        if self.events.len() > MAX_TRACE_EVENTS {
             return Err(TraceEvaluationError::EventLimitExceeded);
         }
 
         let mut event_ids = BTreeSet::new();
+        let mut effect_ids = BTreeSet::new();
         let mut approvals = BTreeMap::<String, u64>::new();
         let mut tool_call_ids = BTreeSet::new();
         for (index, event) in self.events.iter().enumerate() {
@@ -371,8 +375,14 @@ impl ExecutionTrace {
                         .approval_id
                         .as_deref()
                         .ok_or(TraceEvaluationError::InvalidEventShape)?;
-                    if event.effect_id.is_none()
-                        || event.tool_id.is_some()
+                    let effect_id = event
+                        .effect_id
+                        .as_deref()
+                        .ok_or(TraceEvaluationError::InvalidEventShape)?;
+                    if !effect_ids.insert(effect_id) {
+                        return Err(TraceEvaluationError::InvalidEventShape);
+                    }
+                    if event.tool_id.is_some()
                         || event.args_digest.is_some()
                         || !event.evidence_refs.is_empty()
                         || event.retry_of.is_some()
@@ -927,6 +937,29 @@ mod tests {
 
         let mut value = trace();
         value.events.push(retry_event("missing-tool-call"));
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::InvalidEventShape
+        );
+    }
+
+    #[test]
+    fn empty_trace_is_incomplete_not_over_limit() {
+        let mut value = trace();
+        value.events.clear();
+        assert_eq!(
+            value.validate().unwrap_err(),
+            TraceEvaluationError::IncompleteTrace
+        );
+    }
+
+    #[test]
+    fn duplicate_effect_ids_are_rejected() {
+        let mut value = trace();
+        let mut duplicate = value.events[2].clone();
+        duplicate.sequence = 5;
+        duplicate.event_id = "effect-2".into();
+        value.events.push(duplicate);
         assert_eq!(
             value.validate().unwrap_err(),
             TraceEvaluationError::InvalidEventShape

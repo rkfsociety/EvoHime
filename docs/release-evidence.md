@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-11-11.
+Обновлено: 2026-11-14.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -3509,3 +3509,59 @@ GitHub Actions результаты:
 Implemented locally on `main`: bounded Core-owned A2A profile/card/delegation/capsule/task-binding contracts in `crates/evohime-core/src/external_agent_a2a.rs` with deterministic validation, SHA-256 hashing and typed state transitions, plus metadata-only persistence in `crates/evohime-local-storage/src/external_agent_a2a_store.rs` and migration `v181.rs` (schema v181). `ExternalAgentProtocolKind` gained a versioned `A2a` backend and `validate_preset` rejects wrong protocol versions or labels. Card claims never grant local capability; raw cards, headers, cookies, transcripts, tokens and raw objectives are never persisted or projected; ambiguous submit becomes `UnknownOutcome` with reconciliation only against the same task. No network access, discovery, inbound listener, second runtime or scheduler was introduced; those belong to stages 180.2-180.3.
 
 Local verification on Windows passed: `cargo test -p evohime-core --lib external_agent_a2a` (9/9), `cargo test -p evohime-local-storage --lib a2a` (6/6, including migration v181), full `cargo test -p evohime-core -p evohime-local-storage` (1090 and 450 unit tests plus integration targets, 0 failures), `cargo fmt --all -- --check`, `cargo clippy -p evohime-core -p evohime-local-storage --all-targets -- -D warnings`, the workspace rustdoc `missing_docs` gate, Electron `npm run typecheck`, `npm run build`, `npm run check:bundle` and the full Electron suite (141 files / 713 tests passed, 1 file / 4 tests skipped). The full Core run exposed a pre-existing timing flake in `positive_model_timeout_still_applies` (1 ms timeout against a 20 ms sleep); the test now uses a 50 ms timeout against a 5 s sleep so an already-elapsed future cannot win the race. Source changes advanced the Core module patch marker to `0.0.000403` and the UI bundle marker to `0.0.000140`. Task-only implementation commits are local on `main` and have not been pushed; exact-SHA GitHub CI and module publication remain pending that push.
+
+
+## Execution Trace Evaluation — exact-SHA baseline и следующий capture gate (2026-11-14)
+
+Trace contract/evaluator implementation entered `main` in
+`95287db59c3e630873555186a875d91ea04bbc43`. The verified pre-follow-up
+baseline is `f034f3d82a07176fa17d58688b5b9e0f76ebd5b8`. Its exact-SHA GitHub
+Actions evidence:
+
+- Core module
+  [43422822694](https://github.com/rkfsociety/EvoHime/actions/runs/43422822694)
+  — Windows format, Core test build/tests, Clippy, release build and artifact
+  publication passed; Linux headless CLI format, desktop IPC tests, release
+  build, Core autostart and private IPC endpoint also passed.
+- Rust documentation
+  [43422744232](https://github.com/rkfsociety/EvoHime/actions/runs/43422744232)
+  — documentation links/stale-reference gate, workspace rustdoc, strict
+  public-library documentation and workspace doc-tests passed.
+- UI bundle
+  [43422827055](https://github.com/rkfsociety/EvoHime/actions/runs/43422827055)
+  — protocol check, TypeScript typecheck, full npm tests, production build,
+  package and module publication passed.
+- Module router
+  [43422744130](https://github.com/rkfsociety/EvoHime/actions/runs/43422744130)
+  — updater-recovery and router regressions passed; selected module workflows
+  were dispatched successfully.
+- Compatible release manifest
+  [43425158427](https://github.com/rkfsociety/EvoHime/actions/runs/43425158427)
+  — fixed compatible manifest publication passed.
+
+Published module releases verified for that baseline:
+[Core 0.0.000411](https://github.com/rkfsociety/EvoHime/releases/tag/module-core-v0.0.000411),
+[UI bundle 0.0.000144](https://github.com/rkfsociety/EvoHime/releases/tag/module-ui-bundle-v0.0.000144),
+and [shell-host 0.0.000114](https://github.com/rkfsociety/EvoHime/releases/tag/module-shell-host-v0.0.000114).
+The shell-host release was produced by
+[workflow 43388011319](https://github.com/rkfsociety/EvoHime/actions/runs/43388011319)
+on its own source commit; it is not represented as an exact-`f034f3d` run.
+
+The current follow-up adds two validator regressions: empty traces now return
+the typed incomplete-trace error instead of an event-limit error, and duplicate
+effect ids are rejected. Core marker advances to `0.0.000412`; exact-SHA Core
+and rustdoc CI for this follow-up remain pending until the new main commit is
+processed. No release for `0.0.000412` is claimed here.
+
+The capture audit also found that the ordinary ToolAgent loop does not yet
+write typed execution-ledger rows for every tool call; receipt-tracked terminal
+events have no attempt id, while workflow attempt ids are not yet connected to
+production typed-ledger writes. Stage 184.2 therefore remains blocked on
+authoritative Core capture wiring, not on evaluator schema. No raw event payload
+is copied into the trace and no second trace store is introduced.
+
+No local Rust tests, build, lint or literal `git diff --check` ran in this
+execution: the runtime has no repository checkout and the public clone attempt
+could not resolve GitHub. The pre-follow-up exact-SHA CI above is evidence only
+for `f034f3d`; the new Core patch is pending its own CI. This documentation
+records that distinction rather than carrying the baseline result forward.
