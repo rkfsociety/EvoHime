@@ -94,18 +94,16 @@ fn is_plain_directory(path: &Path) -> bool {
     let Ok(metadata) = std::fs::symlink_metadata(path) else {
         return false;
     };
-    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
-        return false;
-    }
+    let is_regular_dir = metadata.file_type().is_dir() && !metadata.file_type().is_symlink();
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0
+        is_regular_dir && (metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0)
     }
     #[cfg(not(windows))]
     {
-        true
+        is_regular_dir
     }
 }
 
@@ -175,7 +173,10 @@ mod tests {
         let _cleanup = TempRoot(root.clone());
         let package = root.join("tools/llama.cpp").join(LLAMA_CPP_VERSION);
         std::fs::create_dir_all(&package).unwrap();
-        std::fs::write(package.join("llama-server.exe"), b"modified executable").unwrap();
+        assert!(is_plain_directory(&package));
+        let binary = package.join("llama-server.exe");
+        std::fs::write(&binary, b"modified executable").unwrap();
+        assert!(!is_plain_directory(&binary));
         assert!(!verify_runtime_files(&package));
     }
 }

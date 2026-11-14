@@ -1408,6 +1408,7 @@ mod tests {
                     conversation_id: "conversation-history".into(),
                     before_sequence: current.event.sequence,
                 }),
+                goal_id: None,
             })
             .await
             .expect("task dispatches");

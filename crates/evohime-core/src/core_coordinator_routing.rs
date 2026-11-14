@@ -876,7 +876,8 @@ async fn ensure_goal_continuation_run(
     let now = crate::task_memory::now_millis() as i64;
     let max_continuations = goal.continuation_budget.unwrap_or(12).clamp(1, 50) as u32;
     let policy_id = format!("goal-policy:{goal_id}");
-    let owner_scope = crate::task_memory::project_scope_id(workspace_root);
+    let workspace_path = workspace_root.to_string_lossy();
+    let owner_scope = crate::task_memory::project_scope_id(&workspace_path);
     let mut policy = crate::continuation::ContinuationPolicyV1 {
         schema_version: crate::continuation::POLICY_SCHEMA_VERSION,
         id: policy_id.clone(),
@@ -976,20 +977,12 @@ fn format_goal_iteration_prompt(
         ));
     }
     format!(
-        "<active_goal id="{}" iteration="{}/{}">
-Цель: {}
-Критерии выполнения:
-{}
-Инструкция: работай над целью до полного выполнения всех критериев. Проверяй результат реальными инструментами и вызывай инструмент `goal.verify` с `goal_id`, `criterion_id` и `evidence_summary` только после того, как критерий действительно выполнен и проверен.
-</active_goal>
-
-{}",
+        "<active_goal id=\"{}\" iteration=\"{}/{}\">\nЦель: {}\nКритерии выполнения:\n{}\nИнструкция: работай над целью до полного выполнения всех критериев. Проверяй результат реальными инструментами и вызывай инструмент `goal.verify` с `goal_id`, `criterion_id` и `evidence_summary` только после того, как критерий действительно выполнен и проверен.\n</active_goal>\n\n{}",
         goal.id,
         iteration.max(1),
         max_iterations.max(1),
         goal.objective,
-        criteria_lines.join("
-    "),
+        criteria_lines.join("\n"),
         base_prompt
     )
 }
@@ -1019,5 +1012,50 @@ mod timeout_tests {
         .await;
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_goal_iteration_prompt_renders_header_and_criteria() {
+        let mut verified = evohime_local_storage::goal::GoalCriterionV1::new(
+            "c1",
+            evohime_local_storage::goal::GoalCriterionKind::Manual,
+            "First step",
+        );
+        verified.status = evohime_local_storage::goal::GoalCriterionStatus::Verified;
+        let pending = evohime_local_storage::goal::GoalCriterionV1::new(
+            "c2",
+            evohime_local_storage::goal::GoalCriterionKind::Manual,
+            "Second step",
+        );
+        let goal = evohime_local_storage::goal::GoalV1 {
+            id: "goal-1".into(),
+            version: 1,
+            workspace_id: "ws-1".into(),
+            chat_id: None,
+            objective: "Finish task".into(),
+            success_criteria: vec![verified, pending],
+            status: evohime_local_storage::goal::GoalStatus::Active,
+            progress_summary: String::new(),
+            completed_criteria: vec!["c1".into()],
+            remaining_criteria: vec!["c2".into()],
+            blockers: Vec::new(),
+            next_action: None,
+            workflow_run_ids: Vec::new(),
+            child_run_ids: Vec::new(),
+            checkpoint_id: None,
+            token_budget: None,
+            cost_budget_micros: None,
+            continuation_budget: None,
+            created_at_ms: 0,
+            updated_at_ms: 0,
+            created_by: "core".into(),
+            updated_by: "core".into(),
+            content_hash: String::new(),
+        };
+
+        let rendered = format_goal_iteration_prompt("Base prompt", &goal, 0, 0);
+        assert!(rendered.starts_with("<active_goal id=\"goal-1\" iteration=\"1/1\">\n"));
+        assert!(rendered.contains("Цель: Finish task\nКритерии выполнения:\n- [verified] c1 (First step)\n- [pending] c2 (Second step)\n"));
+        assert!(rendered.ends_with("</active_goal>\n\nBase prompt"));
     }
 }
