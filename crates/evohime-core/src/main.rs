@@ -330,7 +330,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 workspace_root: Some(workspace_root),
                 preferred_route_hint: None,
                 conversation: None,
-        goal_id: None,
+                goal_id: None,
             })
             .await
         {

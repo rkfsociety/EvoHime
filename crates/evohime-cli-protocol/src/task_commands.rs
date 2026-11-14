@@ -23,6 +23,7 @@ where
                     execution_kind: "agent".into(),
                     conversation_id: String::new(),
                     client_message_id: String::new(),
+                    goal_id: String::new(),
                 },
             )),
         )

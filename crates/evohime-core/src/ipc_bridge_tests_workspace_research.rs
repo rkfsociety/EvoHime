@@ -881,6 +881,7 @@ async fn start_task_retry_is_idempotent_and_conflict_returns_typed_non_success()
                 execution_kind: "dialogue".into(),
                 conversation_id: "conversation-1".into(),
                 client_message_id: "client-message-1".into(),
+                goal_id: String::new(),
             },
         )),
     };

@@ -1530,9 +1530,8 @@ impl ToolAgent {
                                 })?;
                             let summary_digest =
                                 crate::research::sha256_hex(parsed.evidence_summary.as_bytes());
-                            let short_digest = summary_digest
-                                .get(..16)
-                                .unwrap_or(summary_digest.as_str());
+                            let short_digest =
+                                summary_digest.get(..16).unwrap_or(summary_digest.as_str());
                             let evidence_ref = format!("task:{task_id}:{short_digest}");
                             let idempotency_key = format!(
                                 "agent-verify:{task_id}:{}:{}:{}",
