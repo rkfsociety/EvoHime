@@ -114,11 +114,14 @@ export function buildChatSummary(
   let outputTokens = 0
   let contextUsedTokens: number | null = null
   let contextLimitTokens: number | null = null
-  let goal: SummaryGoalItem | null = null
+  let goal = null as SummaryGoalItem | null
 
   for (const event of chronological) {
     const payload = parseJsonRecord(event.payload)
     const root = unwrapPayload(payload)
+    const eventTimestamp =
+      readString(root, ['timestamp', 'created_at']) ??
+      readString(payload, ['timestamp', 'created_at'])
 
     switch (event.eventType) {
       case 'task.started': {
@@ -126,7 +129,7 @@ export function buildChatSummary(
           tasksMap.set(event.taskId, {
             taskId: event.taskId,
             status: 'running',
-            startedAt: event.timestamp || null,
+            startedAt: eventTimestamp,
             finishedAt: null,
             error: null
           })
@@ -145,7 +148,7 @@ export function buildChatSummary(
             taskId: event.taskId,
             status: 'completed',
             startedAt: prev?.startedAt ?? null,
-            finishedAt: event.timestamp || null,
+            finishedAt: eventTimestamp,
             error: null
           })
           closeRunningShellsForTask(shells, event.taskId)
@@ -160,7 +163,7 @@ export function buildChatSummary(
             taskId: event.taskId,
             status: 'failed',
             startedAt: prev?.startedAt ?? null,
-            finishedAt: event.timestamp || null,
+            finishedAt: eventTimestamp,
             error: readString(root, ['error', 'message', 'reason']) ?? 'Ошибка выполнения'
           })
           closeRunningShellsForTask(shells, event.taskId)
@@ -175,7 +178,7 @@ export function buildChatSummary(
             taskId: event.taskId,
             status: 'cancelled',
             startedAt: prev?.startedAt ?? null,
-            finishedAt: event.timestamp || null,
+            finishedAt: eventTimestamp,
             error: null
           })
           closeRunningShellsForTask(shells, event.taskId)
@@ -220,7 +223,7 @@ export function buildChatSummary(
             command: extractShellCommand(toolName, root),
             status: 'running',
             output: null,
-            startedAt: event.timestamp || null
+            startedAt: eventTimestamp
           })
         }
         const fileTouch = extractTouchedFile(toolName, root)
@@ -256,7 +259,7 @@ export function buildChatSummary(
               command: extractShellCommand(toolName, root),
               status: 'completed',
               output: clampText(output, 1_500),
-              startedAt: event.timestamp || null
+              startedAt: eventTimestamp
             })
           }
         }
@@ -290,7 +293,7 @@ export function buildChatSummary(
           if (goalId && objective) {
             goal = { goalId, objective, status }
           } else if (goal && status) {
-            goal = { ...goal, status }
+            goal = { goalId: goal.goalId, objective: goal.objective, status }
           }
         }
         break

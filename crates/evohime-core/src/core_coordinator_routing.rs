@@ -411,18 +411,22 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 load_continuation_context(journal, &task_id).await
                             {
                                 is_continuation_run = true;
-                                let goal_complete = if let Some(gid) = policy.linked_goal_id.as_deref() {
+                                let goal_complete = if let Some(gid) =
+                                    policy.linked_goal_id.as_deref()
+                                {
                                     let database = journal.database().lock().await;
-                                    evohime_local_storage::goal::GoalStore::new(database.connection())
-                                        .get(gid)
-                                        .ok()
-                                        .flatten()
-                                        .is_some_and(|goal| {
-                                            matches!(
-                                                goal.status,
-                                                evohime_local_storage::goal::GoalStatus::Completed
-                                            ) && goal.remaining_criteria.is_empty()
-                                        })
+                                    evohime_local_storage::goal::GoalStore::new(
+                                        database.connection(),
+                                    )
+                                    .get(gid)
+                                    .ok()
+                                    .flatten()
+                                    .is_some_and(|goal| {
+                                        matches!(
+                                            goal.status,
+                                            evohime_local_storage::goal::GoalStatus::Completed
+                                        ) && goal.remaining_criteria.is_empty()
+                                    })
                                 } else {
                                     false
                                 };
@@ -904,10 +908,9 @@ async fn load_continuation_context(
     crate::continuation::ContinuationPolicyV1,
 )> {
     let database = journal.database().lock().await;
-    let run =
-        evohime_local_storage::domains::runs::get_run_by_task(database.connection(), task_id)
-            .ok()
-            .flatten()?;
+    let run = evohime_local_storage::domains::runs::get_run_by_task(database.connection(), task_id)
+        .ok()
+        .flatten()?;
     let policy = serde_json::from_slice::<crate::continuation::ContinuationPolicyV1>(
         &evohime_local_storage::domains::runs::get_policy(
             database.connection(),

@@ -138,8 +138,7 @@ export function ChatSummaryPanel({
     if (!api || !connected || !summary.latestTaskId) return
     setActionNotice(t('Запрос сжатия контекста отправлен…'))
     const outcome = await api.invoke('core.summarizeContextNow', {
-      taskId: summary.latestTaskId,
-      reason: 'user_summary_panel'
+      taskId: summary.latestTaskId
     })
     if (!outcome.ok) setActionNotice(outcome.message)
   }, [api, connected, summary.latestTaskId, t])
@@ -290,7 +289,7 @@ export function ChatSummaryPanel({
               </div>
               <div>
                 <dt>{t('Провайдер')}</dt>
-                <dd>{summary.providerName ?? (chat?.providerMode === 'codex_cli' ? 'Codex CLI' : 'Cloud')}</dd>
+                <dd>{summary.providerName ?? '—'}</dd>
               </div>
               <div>
                 <dt>{t('Токены (in / out)')}</dt>

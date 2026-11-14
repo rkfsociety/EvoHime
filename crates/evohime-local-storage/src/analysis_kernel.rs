@@ -525,6 +525,28 @@ impl<'a> AnalysisKernelStore<'a> {
             .collect()
     }
 
+    /// Lists sessions associated with a task in identifier order.
+    pub fn list_sessions_for_task(
+        &self,
+        task_id: &str,
+    ) -> Result<Vec<AnalysisKernelSessionV1>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id FROM analysis_kernel_sessions WHERE task_id=?1 ORDER BY id LIMIT ?2",
+        )?;
+        let ids = statement
+            .query_map(
+                rusqlite::params![task_id, ANALYSIS_KERNEL_MAX_RUNNING_SESSIONS as i64],
+                |row| row.get::<_, String>(0),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        ids.into_iter()
+            .map(|id| {
+                self.get_session(&id)?
+                    .ok_or_else(|| StorageError::InvalidInput("kernel session disappeared".into()))
+            })
+            .collect()
+    }
+
     /// Changes a session's status only if its current revision matches `expected_revision`.
     ///
     /// Returns the incremented revision or a version-conflict error when another writer won.

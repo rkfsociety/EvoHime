@@ -1579,7 +1579,9 @@ impl ToolAgent {
                                 .collect::<Vec<_>>();
                             let criteria_pairs = criteria
                                 .iter()
-                                .map(|criterion| (criterion.id.clone(), criterion.statement.clone()))
+                                .map(|criterion| {
+                                    (criterion.id.clone(), criterion.statement.clone())
+                                })
                                 .collect::<Vec<_>>();
                             let now = crate::goal::now_ms();
                             let workspace_path = context.workspace_root.to_string_lossy();
@@ -1591,17 +1593,24 @@ impl ToolAgent {
                                 objective: parsed.objective.clone(),
                                 success_criteria: criteria,
                                 status: crate::goal::GoalStatus::Active,
-                                progress_summary: "Цель создана агентом; критерии ещё не подтверждены.".into(),
+                                progress_summary:
+                                    "Цель создана агентом; критерии ещё не подтверждены.".into(),
                                 completed_criteria: Vec::new(),
                                 remaining_criteria: Vec::new(),
                                 blockers: Vec::new(),
-                                next_action: Some("Выполнить критерии и подтвердить каждый через goal.verify.".into()),
+                                next_action: Some(
+                                    "Выполнить критерии и подтвердить каждый через goal.verify."
+                                        .into(),
+                                ),
                                 workflow_run_ids: Vec::new(),
                                 child_run_ids: Vec::new(),
                                 checkpoint_id: None,
                                 token_budget: None,
                                 cost_budget_micros: None,
-                                continuation_budget: parsed.continuation_budget.or(Some(12)),
+                                continuation_budget: parsed
+                                    .continuation_budget
+                                    .map(u64::from)
+                                    .or(Some(12)),
                                 created_at_ms: now,
                                 updated_at_ms: now,
                                 created_by: "agent".into(),
@@ -1626,7 +1635,7 @@ impl ToolAgent {
                                 .map_err(|error| {
                                     evohime_tool_runtime::ToolError::Execution(error.to_string())
                                 })?;
-                            crate::core_coordinator_routing::ensure_goal_continuation_run(
+                            crate::core_coordinator::routing::ensure_goal_continuation_run(
                                 journal,
                                 &task_id,
                                 &context.workspace_root,

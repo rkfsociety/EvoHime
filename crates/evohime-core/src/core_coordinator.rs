@@ -72,7 +72,7 @@ mod orchestration;
 #[path = "core_coordinator_orchestration_runtime.rs"]
 mod orchestration_runtime;
 #[path = "core_coordinator_routing.rs"]
-mod routing;
+pub(crate) mod routing;
 #[path = "core_coordinator_tasks.rs"]
 mod tasks;
 #[path = "core_coordinator_workflow.rs"]

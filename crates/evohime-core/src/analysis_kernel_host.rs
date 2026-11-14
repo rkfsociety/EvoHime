@@ -20,6 +20,7 @@ use evohime_tool_runtime::kernel_host::{
     AnalysisOperation, AnalysisSensitivity, KernelHost, KernelTaskBinding, KernelToolError,
     KernelToolRequest, KernelToolResult,
 };
+use sha2::Digest;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -59,7 +60,7 @@ impl CoreKernelHost {
     /// Computes a deterministic workspace identifier from an absolute workspace root.
     fn workspace_id_from_root(workspace_root: &PathBuf) -> String {
         // Use the same deterministic hashing as IPC commands for consistency
-        crate::task_memory::project_scope_id(workspace_root)
+        crate::task_memory::project_scope_id(&workspace_root.to_string_lossy())
     }
 
     /// Ensures a kernel session exists for the given task binding, creating it
