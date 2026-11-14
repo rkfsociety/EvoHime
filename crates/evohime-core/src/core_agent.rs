@@ -68,6 +68,11 @@ pub struct ConversationExecutionContext {
     pub preferred_route_hint: Option<String>,
     /// Prior user and assistant messages in chronological order.
     pub history: Vec<ChatMessage>,
+    /// 1-based continuation attempt number when executed inside a goal continuation loop.
+    pub continuation_attempt: Option<u32>,
+    /// When true, terminal `CoreEvent::TaskCompleted` / `CoreEvent::TaskFailed`
+    /// emissions are deferred to the coordinating continuation loop.
+    pub defer_completion_event: bool,
 }
 
 /// Coordinates one-shot user approvals for protected agent actions.
@@ -859,6 +864,7 @@ struct AssembleModelContextInput<'a> {
     runtime: &'a mut context_budget::ContextRuntime,
     task_id: &'a str,
     session_id: &'a str,
+    continuation_attempt: Option<u32>,
     iteration: usize,
     messages: &'a [ChatMessage],
     specs: &'a [ToolSpec],
@@ -1236,6 +1242,8 @@ impl TaskExecutor for ToolAgent {
                     ConversationExecutionContext {
                         preferred_route_hint,
                         history: Vec::new(),
+                        continuation_attempt: None,
+                        defer_completion_event: false,
                     },
                 )
                 .await

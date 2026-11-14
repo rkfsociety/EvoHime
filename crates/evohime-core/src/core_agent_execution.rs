@@ -161,6 +161,8 @@ impl ToolAgent {
         let ConversationExecutionContext {
             preferred_route_hint: preferred_route,
             history: conversation_history,
+            continuation_attempt,
+            defer_completion_event,
         } = execution_context;
         let task_id = task_id.into();
         let prompt = prompt.into();
@@ -243,8 +245,12 @@ impl ToolAgent {
         // also keeps the agent working set, so the composer choice is not
         // narrowed by prompt wording. Only manifests that already passed
         // permission preflight can be appended here.
+        let has_active_goal = prompt.contains("<active_goal ");
         let mut appended_tool_ids = Vec::new();
         let mut required_ids = delivery_required_tool_ids(delivery_requirements);
+        if has_active_goal {
+            required_ids.push("goal.verify");
+        }
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
         }
@@ -703,6 +709,8 @@ impl ToolAgent {
         let mut last_pre_compaction_checkpoint_iteration = None;
         let mut primary_request_id: Option<String> = None;
         let mut primary_response_id: Option<String> = None;
+        let mut goal_verified_in_run = false;
+        let mut goal_verify_nudged = false;
         let max_reroutes = 1_u32;
         let mut provenance_source_refs = project_instruction_refs;
         provenance_source_refs.extend(strategy_example_refs);
@@ -781,6 +789,7 @@ impl ToolAgent {
                     runtime: &mut context_runtime,
                     task_id: &task_id,
                     session_id: &context_session_id,
+                    continuation_attempt,
                     iteration,
                     messages: &messages,
                     specs: &specs,
@@ -901,7 +910,12 @@ impl ToolAgent {
                         .and_then(|value| value.parse::<u64>().ok())
                         .unwrap_or(120_000)
                         .clamp(1, 120_000);
-                    let trace_id = format!("{task_id}:routing:{iteration}");
+                    let trace_id = match continuation_attempt {
+                        Some(attempt) if attempt > 1 => {
+                            format!("{task_id}:routing:c{attempt}:{iteration}")
+                        }
+                        _ => format!("{task_id}:routing:{iteration}"),
+                    };
                     let approved = registry
                         .wait_for_decision(RoutingApprovalWait {
                             task_id: &task_id,
@@ -1185,6 +1199,31 @@ impl ToolAgent {
                         continue;
                     }
                 }
+                let goal_verify_available = specs
+                    .iter()
+                    .any(|spec| spec.function.name == "goal.verify");
+                if has_active_goal
+                    && goal_verify_available
+                    && !goal_verified_in_run
+                    && !goal_verify_nudged
+                    && iteration + 1 < self.max_iterations
+                {
+                    goal_verify_nudged = true;
+                    write_model_trace(
+                        "task.goal_verify_nudge",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "iteration": iteration,
+                            "continuation_attempt": continuation_attempt,
+                        }),
+                    );
+                    messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
+                    messages.push(ChatMessage::text(
+                        ChatRole::User,
+                        "Перед итоговым ответом подтверди выполненные критерии активной цели через tool `goal.verify` (передав `goal_id`, `criterion_id` и `evidence_summary`). Если критерий действительно ещё не выполнен, продолжай работу.",
+                    ));
+                    continue;
+                }
                 let mut final_message = strip_legacy_function_blocks(&result.content);
                 if final_message.trim().is_empty() && iteration + 1 < self.max_iterations {
                     write_model_trace(
@@ -1275,12 +1314,14 @@ impl ToolAgent {
                         events,
                     )
                     .await;
-                let _ = events
-                    .send(CoreEvent::TaskCompleted {
-                        task_id: task_id.clone(),
-                        final_message: final_message.clone(),
-                    })
-                    .await;
+                if !defer_completion_event {
+                    let _ = events
+                        .send(CoreEvent::TaskCompleted {
+                            task_id: task_id.clone(),
+                            final_message: final_message.clone(),
+                        })
+                        .await;
+                }
                 // Extraction runs after the answer has already been sent, so
                 // it adds nothing to the turn's latency and cannot fail it.
                 self.run_memory_extraction(
@@ -1596,7 +1637,12 @@ impl ToolAgent {
                             result = self.execute_tool_with_receipt(&context, &call.name, input, cancellation.clone()) => result,
                         }
                     } {
-                        Ok(result) => recovery::ToolOutcome::success(result),
+                        Ok(result) => {
+                            if call.name == "goal.verify" {
+                                goal_verified_in_run = true;
+                            }
+                            recovery::ToolOutcome::success(result)
+                        }
                         Err(evohime_tool_runtime::ToolError::NeedsApproval(details)) => {
                             let evohime_tool_runtime::ApprovalRequired {
                                 tool,
@@ -2049,6 +2095,9 @@ impl ToolAgent {
                         ],
                     );
                     self.persist_lesson(&task_id, &context.workspace_root).await;
+                    if defer_completion_event {
+                        return Err(AgentRunError::Internal(message));
+                    }
                     let _ = events
                         .send(CoreEvent::TaskFailed {
                             task_id: task_id.clone(),
@@ -2073,6 +2122,9 @@ impl ToolAgent {
             ],
         );
         self.persist_lesson(&task_id, &context.workspace_root).await;
+        if defer_completion_event {
+            return Err(AgentRunError::Internal(message));
+        }
         let _ = events
             .send(CoreEvent::TaskFailed {
                 task_id,

@@ -269,6 +269,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 } else {
                     None
                 };
+                let is_continuation_run = continuation_context.is_some();
                 let mut result = Err(AgentRunError::Internal(
                     "continuation did not execute an attempt".into(),
                 ));
@@ -277,6 +278,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .map(|(run, _)| run.continuation_index)
                     .unwrap_or(0);
                 let mut stagnation_count: u32 = 0;
+                let mut last_attempt_output: Option<String> = None;
                 loop {
                     let attempt = if let Some((run, policy)) = &continuation_context {
                         if policy.budget.max_wall_clock_ms.is_some_and(|limit| {
@@ -314,24 +316,20 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             crate::task_memory::now_millis() as i64,
                         ) {
                             Ok(true) => Some((run.run_id.clone(), continuation_index + 1)),
-                            Ok(false) => None,
+                            Ok(false) => break,
                             Err(_) => {
-                                TaskCoordinator::emit_state_event(
-                                    &state,
-                                    CoreEvent::TaskFailed {
-                                        task_id: task_id.clone(),
-                                        error:
-                                            "continuation budget or state rejected the next attempt"
-                                                .into(),
-                                    },
-                                )
-                                .await;
+                                result = Err(AgentRunError::Internal(
+                                    "continuation budget or state rejected the next attempt".into(),
+                                ));
                                 break;
                             }
                         }
                     } else {
                         None
                     };
+                    let current_attempt = attempt
+                        .as_ref()
+                        .and_then(|(_, index)| u32::try_from(*index).ok());
                     let (iteration_prompt, completed_before) = if let (
                         Some(journal),
                         Some((run, policy)),
@@ -372,16 +370,22 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                                 Some("goal_completed"),
                                                 crate::task_memory::now_millis() as i64,
                                             );
+                                        if result.is_err() {
+                                            result = Ok(last_attempt_output
+                                                .clone()
+                                                .unwrap_or_else(|| "Цель уже выполнена.".into()));
+                                        }
                                         break;
                                     }
                                     _ => {}
                                 }
                                 let verified = goal.success_criteria.iter().filter(|c| c.status == evohime_local_storage::goal::GoalCriterionStatus::Verified).count();
-                                let formatted = format_goal_iteration_prompt(
+                                let formatted = format_goal_continuation_prompt(
                                     &prompt,
                                     &goal,
                                     continuation_index + 1,
                                     run.max_continuations,
+                                    last_attempt_output.as_deref(),
                                 );
                                 (formatted, verified)
                             } else {
@@ -402,6 +406,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 ConversationExecutionContext {
                                     preferred_route_hint: preferred_route_hint.clone(),
                                     history: conversation_history.clone(),
+                                    continuation_attempt: current_attempt,
+                                    defer_completion_event: is_continuation_run,
                                 },
                                 cancellation.clone(),
                                 events.clone(),
@@ -676,9 +682,21 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     } else {
                         crate::continuation::Decision::Complete
                     };
-                    if !matches!(decision, crate::continuation::Decision::Continue) {
-                        break;
+                    if matches!(decision, crate::continuation::Decision::Continue) {
+                        if let Ok(output) = &result {
+                            if !output.trim().is_empty() {
+                                let _ = events
+                                    .send(CoreEvent::AssistantDelta {
+                                        task_id: task_id.clone(),
+                                        content: format!("{output}\n"),
+                                    })
+                                    .await;
+                                last_attempt_output = Some(output.clone());
+                            }
+                        }
+                        continue;
                     }
+                    break;
                 }
                 heartbeat_cancel.cancel();
                 if let Some(heartbeat_task) = heartbeat_task {
@@ -743,7 +761,16 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             })
                             .await;
                     }
-                    (Ok(_), None) => {}
+                    (Ok(final_message), None) => {
+                        if is_continuation_run {
+                            let _ = events
+                                .send(CoreEvent::TaskCompleted {
+                                    task_id,
+                                    final_message,
+                                })
+                                .await;
+                        }
+                    }
                     (Err(error), _) => {
                         let task_id = task_id;
                         if matches!(error, AgentRunError::Cancelled) {
@@ -987,6 +1014,28 @@ fn format_goal_iteration_prompt(
     )
 }
 
+fn format_goal_continuation_prompt(
+    base_prompt: &str,
+    goal: &evohime_local_storage::goal::GoalV1,
+    iteration: i64,
+    max_iterations: i64,
+    previous_attempt_output: Option<&str>,
+) -> String {
+    let mut prompt = format_goal_iteration_prompt(base_prompt, goal, iteration, max_iterations);
+    if iteration > 1 {
+        if let Some(previous) = previous_attempt_output
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let excerpt: String = previous.chars().take(1_200).collect();
+            prompt.push_str("\n\n<previous_attempt_summary>\n");
+            prompt.push_str(&excerpt);
+            prompt.push_str("\n</previous_attempt_summary>\nПродолжай с того места, на котором остановился: не повторяй уже сделанную работу без необходимости, заверши оставшиеся критерии цели и подтверди каждый через `goal.verify`.");
+        }
+    }
+    prompt
+}
+
 #[cfg(test)]
 mod timeout_tests {
     use super::*;
@@ -1057,5 +1106,416 @@ mod timeout_tests {
         assert!(rendered.starts_with("<active_goal id=\"goal-1\" iteration=\"1/1\">\n"));
         assert!(rendered.contains("Цель: Finish task\nКритерии выполнения:\n- [verified] c1 (First step)\n- [pending] c2 (Second step)\n"));
         assert!(rendered.ends_with("</active_goal>\n\nBase prompt"));
+
+        let first = format_goal_continuation_prompt("Base prompt", &goal, 1, 3, Some("Attempt 1 output"));
+        assert!(!first.contains("<previous_attempt_summary>"));
+
+        let second = format_goal_continuation_prompt("Base prompt", &goal, 2, 3, Some("Attempt 1 output"));
+        assert!(second.contains("<previous_attempt_summary>\nAttempt 1 output\n</previous_attempt_summary>"));
+    }
+
+    #[test]
+    fn goal_continuation_completes_second_attempt_without_ledger_or_request_collisions() {
+        std::thread::Builder::new()
+            .name("evohime-goal-continuation-test".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(
+                        goal_continuation_completes_second_attempt_without_ledger_or_request_collisions_inner(),
+                    );
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn goal_continuation_completes_second_attempt_without_ledger_or_request_collisions_inner(
+    ) {
+        use evohime_model_gateway::{
+            providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
+        };
+        use std::sync::Arc;
+
+        let dir = tempfile::tempdir().expect("tempdir creates");
+        let db_path = dir.path().join("events.db");
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace creates");
+        let journal = EventJournal::open(&db_path).expect("journal opens");
+
+        let goal_id = "goal-cont-1";
+        let owner_scope = crate::task_memory::project_scope_id(&workspace.to_string_lossy());
+        let goal = evohime_local_storage::goal::GoalV1 {
+            id: goal_id.into(),
+            version: 1,
+            workspace_id: owner_scope,
+            chat_id: None,
+            objective: "Complete criterion c1".into(),
+            success_criteria: vec![evohime_local_storage::goal::GoalCriterionV1::new(
+                "c1",
+                evohime_local_storage::goal::GoalCriterionKind::Manual,
+                "Verify c1",
+            )],
+            status: evohime_local_storage::goal::GoalStatus::Active,
+            progress_summary: "Initial active goal".into(),
+            completed_criteria: Vec::new(),
+            remaining_criteria: vec!["c1".into()],
+            blockers: Vec::new(),
+            next_action: None,
+            workflow_run_ids: Vec::new(),
+            child_run_ids: Vec::new(),
+            checkpoint_id: None,
+            token_budget: None,
+            cost_budget_micros: None,
+            continuation_budget: Some(3),
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            created_by: "core".into(),
+            updated_by: "core".into(),
+            content_hash: String::new(),
+        };
+        {
+            let db = journal.database().lock().await;
+            evohime_local_storage::goal::GoalStore::new(db.connection())
+                .create(
+                    &goal,
+                    crate::goal::GoalCommand::new(
+                        "core",
+                        "create-goal-cont-1",
+                        &crate::research::sha256_hex(b"create-goal-cont-1"),
+                    ),
+                )
+                .expect("goal creates");
+        }
+
+        let provider = MockProvider::with_tool_call_sequence(
+            "mock",
+            vec![
+                // Attempt 1, iteration 0: model finishes without goal.verify, triggering nudge.
+                ChatResult {
+                    content: "attempt 1 before nudge".into(),
+                    ..ChatResult::default()
+                },
+                // Attempt 1, iteration 1: still finishes without calling goal.verify.
+                ChatResult {
+                    content: "attempt 1 after nudge".into(),
+                    ..ChatResult::default()
+                },
+                // Attempt 2, iteration 0: model calls goal.verify.
+                ChatResult {
+                    content: String::new(),
+                    tool_calls: vec![NativeToolCall {
+                        id: "verify-call-1".into(),
+                        name: "goal.verify".into(),
+                        arguments: serde_json::json!({
+                            "goal_id": goal_id,
+                            "criterion_id": "c1",
+                            "evidence_summary": "verified on second attempt"
+                        })
+                        .to_string(),
+                    }],
+                    ..ChatResult::default()
+                },
+                // Attempt 2, iteration 1: model completes the task.
+                ChatResult {
+                    content: "goal completed cleanly".into(),
+                    ..ChatResult::default()
+                },
+            ],
+        );
+        let permissions = evohime_permissions::PermissionEngine::new();
+        permissions
+            .set_all_modes(evohime_permissions::PermissionMode::Allow)
+            .await;
+        let receipt_keys = Arc::new(evohime_receipts::key_lifecycle::ReceiptKeyManager::new(
+            dir.path(),
+        ));
+        {
+            let mut db = journal.database().lock().await;
+            receipt_keys
+                .startup_with_database(db.connection_mut())
+                .expect("receipt keys initialize");
+        }
+        let agent = crate::ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(provider))),
+            Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(
+                permissions,
+            )),
+        )
+        .with_journal(journal.clone())
+        .with_receipt_keys(receipt_keys);
+
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_journal(8, Some(Arc::new(agent)), journal.clone());
+        let task_id = "task-cont-success";
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: task_id.into(),
+                prompt: "Finish the active goal".into(),
+                workspace_root: Some(workspace),
+                preferred_route_hint: None,
+                conversation: None,
+                goal_id: Some(goal_id.into()),
+            })
+            .await
+            .expect("task dispatches");
+
+        let mut observed = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(Duration::from_secs(2), events.recv()).await {
+                Ok(Ok(event)) => {
+                    let is_terminal = matches!(
+                        event,
+                        CoreEvent::TaskCompleted { .. }
+                            | CoreEvent::TaskFailed { .. }
+                            | CoreEvent::TaskStopped { .. }
+                    );
+                    observed.push(event);
+                    if is_terminal {
+                        break;
+                    }
+                }
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) | Err(_) => break,
+            }
+        }
+        while let Ok(event) = events.try_recv() {
+            observed.push(event);
+        }
+
+        let completed_count = observed
+            .iter()
+            .filter(|e| matches!(e, CoreEvent::TaskCompleted { .. }))
+            .count();
+        let failed_count = observed
+            .iter()
+            .filter(|e| matches!(e, CoreEvent::TaskFailed { .. }))
+            .count();
+        assert_eq!(completed_count, 1, "events={observed:?}");
+        assert_eq!(failed_count, 0, "events={observed:?}");
+        assert!(observed.iter().any(|e| matches!(
+            e,
+            CoreEvent::TaskCompleted { final_message, .. } if final_message == "goal completed cleanly"
+        )));
+        assert!(observed.iter().any(|e| matches!(
+            e,
+            CoreEvent::AssistantDelta { content, .. } if content.contains("attempt 1 after nudge")
+        )));
+
+        let db = journal.database().lock().await;
+        let stored_goal = evohime_local_storage::goal::GoalStore::new(db.connection())
+            .get(goal_id)
+            .expect("goal queries")
+            .expect("goal exists");
+        assert_eq!(
+            stored_goal.status,
+            evohime_local_storage::goal::GoalStatus::Completed
+        );
+
+        let request_ids: Vec<String> = db
+            .connection()
+            .prepare("SELECT logical_request_id FROM model_requests WHERE logical_request_id LIKE ?1 ORDER BY rowid ASC")
+            .expect("prepare model_requests")
+            .query_map([format!("{task_id}:%")], |row| row.get(0))
+            .expect("query model_requests")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect model_requests");
+        assert!(
+            request_ids.iter().any(|id| id == &format!("{task_id}:{task_id}-0")),
+            "request_ids={request_ids:?}"
+        );
+        assert!(
+            request_ids
+                .iter()
+                .any(|id| id == &format!("{task_id}:{task_id}-c2-0")),
+            "request_ids={request_ids:?}"
+        );
+
+        let ledger_count: i64 = db
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM context_ledger WHERE task_id = ?1",
+                [task_id],
+                |row| row.get(0),
+            )
+            .expect("count context_ledger");
+        assert!(ledger_count >= 3, "ledger_count={ledger_count}");
+    }
+
+    #[test]
+    fn goal_continuation_failure_on_second_attempt_emits_single_terminal_failure() {
+        std::thread::Builder::new()
+            .name("evohime-goal-continuation-fail-test".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(
+                        goal_continuation_failure_on_second_attempt_emits_single_terminal_failure_inner(),
+                    );
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn goal_continuation_failure_on_second_attempt_emits_single_terminal_failure_inner() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+
+        struct FailOnSecondAttemptExecutor {
+            attempts: AtomicU32,
+        }
+
+        impl crate::TaskExecutor for FailOnSecondAttemptExecutor {
+            fn execute(
+                &self,
+                _task_id: String,
+                _prompt: String,
+                _cancellation: tokio_util::sync::CancellationToken,
+                _events: crate::EventSink,
+            ) -> futures_util::future::BoxFuture<'static, Result<String, crate::AgentRunError>>
+            {
+                Box::pin(async { Ok("unused".into()) })
+            }
+
+            fn execute_in_conversation(
+                &self,
+                _task_id: String,
+                prompt: String,
+                _workspace_root: std::path::PathBuf,
+                context: crate::ConversationExecutionContext,
+                _cancellation: tokio_util::sync::CancellationToken,
+                _events: crate::EventSink,
+            ) -> futures_util::future::BoxFuture<'static, Result<String, crate::AgentRunError>>
+            {
+                let attempt = self.attempts.fetch_add(1, Ordering::SeqCst) + 1;
+                Box::pin(async move {
+                    assert!(context.defer_completion_event);
+                    assert_eq!(context.continuation_attempt, Some(attempt));
+                    if attempt == 1 {
+                        Ok("first attempt partial".into())
+                    } else {
+                        assert!(prompt.contains("first attempt partial"));
+                        Err(crate::AgentRunError::Internal("repeated failure on attempt 2".into()))
+                    }
+                })
+            }
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir creates");
+        let db_path = dir.path().join("events.db");
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace creates");
+        let journal = EventJournal::open(&db_path).expect("journal opens");
+
+        let goal_id = "goal-fail-2";
+        let owner_scope = crate::task_memory::project_scope_id(&workspace.to_string_lossy());
+        let goal = evohime_local_storage::goal::GoalV1 {
+            id: goal_id.into(),
+            version: 1,
+            workspace_id: owner_scope,
+            chat_id: None,
+            objective: "Should fail cleanly on attempt 2".into(),
+            success_criteria: vec![evohime_local_storage::goal::GoalCriterionV1::new(
+                "c1",
+                evohime_local_storage::goal::GoalCriterionKind::Manual,
+                "Criterion",
+            )],
+            status: evohime_local_storage::goal::GoalStatus::Active,
+            progress_summary: "Initial active goal".into(),
+            completed_criteria: Vec::new(),
+            remaining_criteria: vec!["c1".into()],
+            blockers: Vec::new(),
+            next_action: None,
+            workflow_run_ids: Vec::new(),
+            child_run_ids: Vec::new(),
+            checkpoint_id: None,
+            token_budget: None,
+            cost_budget_micros: None,
+            continuation_budget: Some(3),
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            created_by: "core".into(),
+            updated_by: "core".into(),
+            content_hash: String::new(),
+        };
+        {
+            let db = journal.database().lock().await;
+            evohime_local_storage::goal::GoalStore::new(db.connection())
+                .create(
+                    &goal,
+                    crate::goal::GoalCommand::new(
+                        "core",
+                        "create-goal-fail-2",
+                        &crate::research::sha256_hex(b"create-goal-fail-2"),
+                    ),
+                )
+                .expect("goal creates");
+        }
+
+        let executor = Arc::new(FailOnSecondAttemptExecutor {
+            attempts: AtomicU32::new(0),
+        });
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_journal(8, Some(executor), journal);
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-cont-fail".into(),
+                prompt: "Run failing continuation".into(),
+                workspace_root: Some(workspace),
+                preferred_route_hint: None,
+                conversation: None,
+                goal_id: Some(goal_id.into()),
+            })
+            .await
+            .expect("task dispatches");
+
+        let mut observed = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(Duration::from_secs(1), events.recv()).await {
+                Ok(Ok(event)) => {
+                    let is_terminal = matches!(
+                        event,
+                        CoreEvent::TaskCompleted { .. }
+                            | CoreEvent::TaskFailed { .. }
+                            | CoreEvent::TaskStopped { .. }
+                    );
+                    observed.push(event);
+                    if is_terminal {
+                        break;
+                    }
+                }
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) | Err(_) => break,
+            }
+        }
+        while let Ok(event) = events.try_recv() {
+            observed.push(event);
+        }
+
+        assert_eq!(
+            observed
+                .iter()
+                .filter(|e| matches!(e, CoreEvent::TaskCompleted { .. }))
+                .count(),
+            0,
+            "events={observed:?}"
+        );
+        assert_eq!(
+            observed
+                .iter()
+                .filter(|e| matches!(e, CoreEvent::TaskFailed { .. }))
+                .count(),
+            1,
+            "events={observed:?}"
+        );
     }
 }

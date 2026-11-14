@@ -657,9 +657,21 @@ impl ToolAgent {
         last.result.result.usage = Some(aggregate_strategy_usages(&usages));
         Ok(last)
     }
+}
 
-    /// Calls model with retry logic and timeout for resilience (Wave VII).
-    /// Returns the model result or a terminal error after max retries.
+/// Formats a distinct model call identifier per continuation attempt and iteration.
+pub(super) fn format_model_call_id(
+    task_id: &str,
+    continuation_attempt: Option<u32>,
+    iteration: usize,
+) -> String {
+    match continuation_attempt {
+        Some(attempt) if attempt > 1 => format!("{task_id}-c{attempt}-{iteration}"),
+        _ => format!("{task_id}-{iteration}"),
+    }
+}
+
+impl ToolAgent {
     /// Сборка контекста одного шага под bounded budget (план 01).
     ///
     /// Artifact store и summarizer подключаются, только если у Core есть
@@ -673,6 +685,7 @@ impl ToolAgent {
             runtime,
             task_id,
             session_id,
+            continuation_attempt,
             iteration,
             messages,
             specs,
@@ -680,7 +693,7 @@ impl ToolAgent {
             mutation_authorized,
             selected_model,
         } = input;
-        let model_call_id = format!("{task_id}-{iteration}");
+        let model_call_id = format_model_call_id(task_id, continuation_attempt, iteration);
         let now = task_memory::now_millis() as i64;
         let provider = self.gateway.provider_kind().as_str().to_string();
         let model = effective_model_name(self.gateway.model_name(), selected_model);
@@ -1501,5 +1514,13 @@ mod prompt_strategy_fanout_tests {
         .await;
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn format_model_call_id_separates_continuation_attempts() {
+        assert_eq!(format_model_call_id("task-1", None, 0), "task-1-0");
+        assert_eq!(format_model_call_id("task-1", Some(1), 0), "task-1-0");
+        assert_eq!(format_model_call_id("task-1", Some(2), 0), "task-1-c2-0");
+        assert_eq!(format_model_call_id("task-1", Some(3), 4), "task-1-c3-4");
     }
 }
