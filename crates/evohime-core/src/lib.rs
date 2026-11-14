@@ -180,6 +180,7 @@ pub(crate) mod agentic_browser_session;
 pub mod ambient;
 pub(crate) mod ambient_proactivity;
 pub(crate) mod analysis_kernel;
+pub(crate) mod analysis_kernel_host;
 pub(crate) mod artifact_handoff_registry;
 pub(crate) mod audit;
 pub mod batch_invocation_runtime;
