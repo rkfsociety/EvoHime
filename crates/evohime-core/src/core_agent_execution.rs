@@ -1507,6 +1507,90 @@ impl ToolAgent {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                             result = result => result,
                         }
+                    } else if call.name == "goal.verify" {
+                        let result = async {
+                            let journal = self.journal.as_ref().ok_or_else(|| {
+                                evohime_tool_runtime::ToolError::Execution(
+                                    "goal.verify requires the Core journal".into(),
+                                )
+                            })?;
+                            let parsed = evohime_tool_runtime::goal::parse_input(&input)?;
+                            let runtime = crate::goal::GoalRuntime::new(journal.clone());
+                            let current = runtime
+                                .get(&parsed.goal_id)
+                                .await
+                                .map_err(|error| {
+                                    evohime_tool_runtime::ToolError::Execution(error.to_string())
+                                })?
+                                .ok_or_else(|| {
+                                    evohime_tool_runtime::ToolError::Execution(format!(
+                                        "goal '{}' not found",
+                                        parsed.goal_id
+                                    ))
+                                })?;
+                            let summary_digest =
+                                crate::research::sha256_hex(parsed.evidence_summary.as_bytes());
+                            let short_digest = summary_digest
+                                .get(..16)
+                                .unwrap_or(summary_digest.as_str());
+                            let evidence_ref = format!("task:{task_id}:{short_digest}");
+                            let idempotency_key = format!(
+                                "agent-verify:{task_id}:{}:{}:{}",
+                                parsed.goal_id, parsed.criterion_id, current.version
+                            );
+                            let command_hash = crate::research::sha256_hex(
+                                format!(
+                                    "{}:{}:{}",
+                                    parsed.goal_id, parsed.criterion_id, parsed.evidence_summary
+                                )
+                                .as_bytes(),
+                            );
+                            let mutation = runtime
+                                .verify_criterion(
+                                    &parsed.goal_id,
+                                    current.version,
+                                    crate::goal::GoalCriterionEvidence {
+                                        criterion_id: &parsed.criterion_id,
+                                        evidence_ref: &evidence_ref,
+                                        verifier_id: "agent-self-check",
+                                        verifier_version: "1",
+                                    },
+                                    crate::goal::GoalCommand::new(
+                                        "agent",
+                                        &idempotency_key,
+                                        &command_hash,
+                                    ),
+                                )
+                                .await
+                                .map_err(|error| {
+                                    evohime_tool_runtime::ToolError::Execution(error.to_string())
+                                })?;
+                            let updated = mutation.goal;
+                            let remaining_ids = updated
+                                .success_criteria
+                                .iter()
+                                .filter(|criterion| {
+                                    criterion.status != crate::goal::GoalCriterionStatus::Verified
+                                })
+                                .map(|criterion| criterion.id.clone())
+                                .collect::<Vec<_>>();
+                            let completed_count = updated
+                                .success_criteria
+                                .len()
+                                .saturating_sub(remaining_ids.len());
+                            Ok(evohime_tool_runtime::goal::format_result(
+                                &updated.id,
+                                &parsed.criterion_id,
+                                updated.status.as_str(),
+                                completed_count,
+                                updated.success_criteria.len(),
+                                &remaining_ids,
+                            ))
+                        };
+                        tokio::select! {
+                            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                            result = result => result,
+                        }
                     } else {
                         tokio::select! {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),

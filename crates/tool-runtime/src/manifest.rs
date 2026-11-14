@@ -84,6 +84,10 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"query":string("Search query"),"limit":integer()}),
             &["query"],
         ),
+        "goal.verify" => object(
+            serde_json::json!({"goal_id":string("Active Core Goal ID"),"criterion_id":string("Criterion ID to mark verified"),"evidence_summary":string("Concise summary of verified tool output")}),
+            &["goal_id", "criterion_id", "evidence_summary"],
+        ),
         "git.commit" => object(
             serde_json::json!({"message":string("Commit message")}),
             &["message"],

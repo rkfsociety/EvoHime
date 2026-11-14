@@ -8,6 +8,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             workspace_root,
             preferred_route_hint,
             conversation,
+            goal_id,
         } => {
             let cancellation = CancellationToken::new();
             let run_id = format!("agent-{}", uuid::Uuid::new_v4());
@@ -239,6 +240,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .and_then(|value| value.parse().ok())
                     .unwrap_or(DEFAULT_TASK_TIMEOUT_SECONDS);
                 let task_timeout = task_timeout_duration(task_timeout_secs);
+                if let (Some(journal), Some(gid)) = (&journal, goal_id.as_deref()) {
+                    ensure_goal_continuation_run(journal, &task_id, &workspace_root, gid).await;
+                }
                 let continuation_context = if let Some(journal) = &journal {
                     let database = journal.database().lock().await;
                     let run = evohime_local_storage::domains::runs::get_run_by_task(
@@ -272,6 +276,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     .as_ref()
                     .map(|(run, _)| run.continuation_index)
                     .unwrap_or(0);
+                let mut stagnation_count: u32 = 0;
                 loop {
                     let attempt = if let Some((run, policy)) = &continuation_context {
                         if policy.budget.max_wall_clock_ms.is_some_and(|limit| {
@@ -327,11 +332,60 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     } else {
                         None
                     };
+                    let (iteration_prompt, completed_before) = if let (Some(journal), Some((run, policy))) = (&journal, &continuation_context) {
+                        if let Some(gid) = policy.linked_goal_id.as_deref() {
+                            let database = journal.database().lock().await;
+                            let current_goal = evohime_local_storage::goal::GoalStore::new(database.connection())
+                                .get(gid)
+                                .ok()
+                                .flatten();
+                            if let Some(goal) = current_goal {
+                                match goal.status {
+                                    evohime_local_storage::goal::GoalStatus::Paused
+                                    | evohime_local_storage::goal::GoalStatus::Cancelled => {
+                                        let _ = evohime_local_storage::domains::runs::transition_run(
+                                            database.connection(),
+                                            &run.run_id,
+                                            "running",
+                                            "stopped",
+                                            Some(if goal.status == evohime_local_storage::goal::GoalStatus::Paused { "goal_paused" } else { "goal_cancelled" }),
+                                            crate::task_memory::now_millis() as i64,
+                                        );
+                                        if result.is_err() {
+                                            result = Err(AgentRunError::Cancelled);
+                                        }
+                                        break;
+                                    }
+                                    evohime_local_storage::goal::GoalStatus::Completed => {
+                                        let _ = evohime_local_storage::domains::runs::transition_run(
+                                            database.connection(),
+                                            &run.run_id,
+                                            "running",
+                                            "completed",
+                                            Some("goal_completed"),
+                                            crate::task_memory::now_millis() as i64,
+                                        );
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                                let verified = goal.success_criteria.iter().filter(|c| c.status == evohime_local_storage::goal::GoalCriterionStatus::Verified).count();
+                                let formatted = format_goal_iteration_prompt(&prompt, &goal, continuation_index + 1, run.max_continuations);
+                                (formatted, verified)
+                            } else {
+                                (prompt.clone(), 0)
+                            }
+                        } else {
+                            (prompt.clone(), 0)
+                        }
+                    } else {
+                        (prompt.clone(), 0)
+                    };
                     result = match executor.as_ref() {
                         Some(executor) => {
                             let execution = executor.execute_in_conversation(
                                 task_id.clone(),
-                                prompt.clone(),
+                                iteration_prompt,
                                 workspace_root.clone(),
                                 ConversationExecutionContext {
                                     preferred_route_hint: preferred_route_hint.clone(),
@@ -465,6 +519,29 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             &result_json,
                             crate::task_memory::now_millis() as i64,
                         );
+                        let mut goal_stagnated = false;
+                        if let Some(gid) = policy.linked_goal_id.as_deref() {
+                            if let Ok(Some(goal_after)) = evohime_local_storage::goal::GoalStore::new(database.connection()).get(gid) {
+                                let completed_after = goal_after.success_criteria.iter().filter(|c| c.status == evohime_local_storage::goal::GoalCriterionStatus::Verified).count();
+                                if result.is_ok() && goal_after.status == evohime_local_storage::goal::GoalStatus::Active {
+                                    if completed_after > completed_before {
+                                        stagnation_count = 0;
+                                    } else {
+                                        stagnation_count = stagnation_count.saturating_add(1);
+                                        if stagnation_count >= 3 {
+                                            goal_stagnated = true;
+                                            let cmd_hash = crate::research::sha256_hex(format!("stagnation:{gid}:{}:{}", goal_after.version, continuation_index).as_bytes());
+                                            let _ = evohime_local_storage::goal::GoalStore::new(database.connection()).transition(
+                                                gid,
+                                                goal_after.version,
+                                                evohime_local_storage::goal::GoalStatus::Blocked,
+                                                crate::goal::GoalCommand::new("core", &format!("goal-stagnation:{task_id}:{continuation_index}"), &cmd_hash),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         let goal_criteria_complete =
                             policy.linked_goal_id.as_ref().is_none_or(|goal_id| {
                                 evohime_local_storage::goal::GoalStore::new(database.connection())
@@ -483,7 +560,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                 required_gates_passed,
                                 goal_criteria_complete,
                                 pending_approval,
-                                unknown_outcome: result.is_err() || gate_unknown,
+                                unknown_outcome: result.is_err() || gate_unknown || goal_stagnated,
                                 non_retryable_failure: result.is_err() || gate_non_retryable,
                                 continuation_index: continuation_index as u32,
                                 max_continuations: run.max_continuations as u32,
@@ -523,6 +600,21 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     },
                                 })
                                 .await;
+                        }
+                        if next_state == "budget_limited" {
+                            if let Some(gid) = policy.linked_goal_id.as_deref() {
+                                if let Ok(Some(goal_now)) = evohime_local_storage::goal::GoalStore::new(database.connection()).get(gid) {
+                                    if goal_now.status == evohime_local_storage::goal::GoalStatus::Active {
+                                        let cmd_hash = crate::research::sha256_hex(format!("budget:{gid}:{}:{}", goal_now.version, continuation_index).as_bytes());
+                                        let _ = evohime_local_storage::goal::GoalStore::new(database.connection()).transition(
+                                            gid,
+                                            goal_now.version,
+                                            evohime_local_storage::goal::GoalStatus::BudgetLimited,
+                                            crate::goal::GoalCommand::new("core", &format!("goal-budget:{task_id}:{continuation_index}"), &cmd_hash),
+                                        );
+                                    }
+                                }
+                            }
                         }
                         if next_state != "running" {
                             let _ = evohime_local_storage::domains::runs::transition_run(
@@ -687,6 +779,165 @@ where
 
 fn task_timeout_duration(timeout_secs: u64) -> Option<Duration> {
     (timeout_secs > 0).then(|| Duration::from_secs(timeout_secs))
+}
+
+async fn ensure_goal_continuation_run(
+    journal: &crate::EventJournal,
+    task_id: &str,
+    workspace_root: &std::path::Path,
+    goal_id: &str,
+) {
+    let database = journal.database().lock().await;
+    if evohime_local_storage::domains::runs::get_run_by_task(database.connection(), task_id)
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    let store = evohime_local_storage::goal::GoalStore::new(database.connection());
+    let Ok(Some(mut goal)) = store.get(goal_id) else {
+        return;
+    };
+    if matches!(
+        goal.status,
+        evohime_local_storage::goal::GoalStatus::Completed
+            | evohime_local_storage::goal::GoalStatus::Cancelled
+    ) {
+        return;
+    }
+    if matches!(
+        goal.status,
+        evohime_local_storage::goal::GoalStatus::Paused
+            | evohime_local_storage::goal::GoalStatus::Blocked
+            | evohime_local_storage::goal::GoalStatus::BudgetLimited
+    ) {
+        let cmd_hash = crate::research::sha256_hex(format!("resume:{goal_id}:{task_id}").as_bytes());
+        if let Ok(resumed) = store.transition(
+            goal_id,
+            goal.version,
+            evohime_local_storage::goal::GoalStatus::Active,
+            crate::goal::GoalCommand::new("core", &format!("goal-resume:{task_id}:{goal_id}"), &cmd_hash),
+        ) {
+            goal = resumed.goal;
+        }
+    }
+    let now = crate::task_memory::now_millis() as i64;
+    let max_continuations = goal.continuation_budget.unwrap_or(12).clamp(1, 50) as u32;
+    let policy_id = format!("goal-policy:{goal_id}");
+    let owner_scope = crate::task_memory::project_scope_id(workspace_root);
+    let mut policy = crate::continuation::ContinuationPolicyV1 {
+        schema_version: crate::continuation::POLICY_SCHEMA_VERSION,
+        id: policy_id.clone(),
+        revision: 1,
+        scope: crate::continuation::ScopeRef {
+            kind: crate::continuation::ScopeKind::Goal,
+            owner_scope: owner_scope.clone(),
+            workspace_id: owner_scope.clone(),
+        },
+        actor: "core".into(),
+        enabled: true,
+        linked_goal_id: Some(goal_id.to_owned()),
+        budget: crate::continuation::BudgetV1 {
+            max_continuations,
+            max_model_turns: max_continuations.saturating_mul(4),
+            max_tokens: goal.token_budget,
+            max_cost_micros: goal.cost_budget_micros,
+            max_wall_clock_ms: None,
+        },
+        require_workspace_change_before_retry: false,
+        stop_on_user_interaction: true,
+        stop_on_approval_required: true,
+        stop_on_unknown_outcome: false,
+        gates: Vec::new(),
+        completion_mode: crate::continuation::CompletionMode::GoalCriteriaAndGates,
+        created_at_ms: now,
+        updated_at_ms: now,
+        content_hash: String::new(),
+    };
+    if let Ok(hash) = policy.compute_hash() {
+        policy.content_hash = hash;
+    }
+    let Ok(canonical_json) = serde_json::to_vec(&policy) else {
+        return;
+    };
+    let _ = evohime_local_storage::domains::runs::save_policy(
+        database.connection(),
+        &evohime_local_storage::domains::runs::PolicyRecord {
+            policy_id: policy_id.clone(),
+            revision: 1,
+            owner_scope: owner_scope.clone(),
+            actor: "core".into(),
+            enabled: true,
+            canonical_json,
+            content_hash: policy.content_hash.clone(),
+            created_at_ms: now,
+            updated_at_ms: now,
+        },
+    );
+    let _ = evohime_local_storage::domains::runs::create_run(
+        database.connection(),
+        &evohime_local_storage::domains::runs::RunRecord {
+            run_id: format!("goal-run:{task_id}"),
+            idempotency_key: format!("goal-run:{task_id}:{goal_id}"),
+            task_id: task_id.to_owned(),
+            owner_scope,
+            policy_id,
+            policy_revision: 1,
+            policy_hash: policy.content_hash,
+            goal_id: Some(goal_id.to_owned()),
+            goal_version: Some(goal.version as i64),
+            state: "running".into(),
+            continuation_index: 0,
+            max_continuations: max_continuations as i64,
+            max_model_turns: max_continuations.saturating_mul(4) as i64,
+            used_model_turns: 0,
+            token_budget: goal.token_budget.map(|v| v as i64),
+            token_used: 0,
+            cost_budget_micros: goal.cost_budget_micros.map(|v| v as i64),
+            cost_used_micros: 0,
+            stop_reason: None,
+            prompt: None,
+            workspace_path: Some(workspace_root.to_string_lossy().into_owned()),
+            created_at_ms: now,
+            updated_at_ms: now,
+        },
+    );
+}
+
+fn format_goal_iteration_prompt(
+    base_prompt: &str,
+    goal: &evohime_local_storage::goal::GoalV1,
+    iteration: i64,
+    max_iterations: i64,
+) -> String {
+    let mut criteria_lines = Vec::new();
+    for criterion in &goal.success_criteria {
+        let status = match criterion.status {
+            evohime_local_storage::goal::GoalCriterionStatus::Verified => "verified",
+            evohime_local_storage::goal::GoalCriterionStatus::Failed => "failed",
+            evohime_local_storage::goal::GoalCriterionStatus::Blocked => "blocked",
+            evohime_local_storage::goal::GoalCriterionStatus::Pending => "pending",
+        };
+        criteria_lines.push(format!("- [{}] {} ({})", status, criterion.id, criterion.statement));
+    }
+    format!(
+        "<active_goal id="{}" iteration="{}/{}">
+Цель: {}
+Критерии выполнения:
+{}
+Инструкция: работай над целью до полного выполнения всех критериев. Проверяй результат реальными инструментами и вызывай инструмент `goal.verify` с `goal_id`, `criterion_id` и `evidence_summary` только после того, как критерий действительно выполнен и проверен.
+</active_goal>
+
+{}",
+        goal.id,
+        iteration.max(1),
+        max_iterations.max(1),
+        goal.objective,
+        criteria_lines.join("
+"),
+        base_prompt
+    )
 }
 
 #[cfg(test)]

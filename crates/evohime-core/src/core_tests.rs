@@ -497,6 +497,7 @@ mod tests {
                 workspace_root: None,
                 preferred_route_hint: None,
                 conversation: None,
+        goal_id: None,
             })
             .await
             .expect("start dispatches");
@@ -561,6 +562,7 @@ mod tests {
                 workspace_root: None,
                 preferred_route_hint: None,
                 conversation: None,
+        goal_id: None,
             })
             .await
             .expect("start dispatches");
@@ -620,6 +622,7 @@ mod tests {
                 workspace_root: None,
                 preferred_route_hint: None,
                 conversation: None,
+        goal_id: None,
             })
             .await
             .expect("start dispatches");
@@ -1020,6 +1023,7 @@ mod tests {
                 workspace_root: None,
                 preferred_route_hint: None,
                 conversation: None,
+        goal_id: None,
             })
             .await
             .expect("start dispatches");
@@ -1304,6 +1308,7 @@ mod tests {
                 workspace_root: None,
                 preferred_route_hint: None,
                 conversation: None,
+        goal_id: None,
             })
             .await
             .expect("command dispatches");
@@ -1663,6 +1668,7 @@ mod tests {
                 workspace_root: None,
                 preferred_route_hint: None,
                 conversation: None,
+        goal_id: None,
             })
             .await
             .expect("start dispatches");
@@ -1770,6 +1776,7 @@ mod tests {
                 workspace_root: None,
                 preferred_route_hint: None,
                 conversation: None,
+        goal_id: None,
             })
             .await
             .expect("task dispatches");

@@ -287,6 +287,7 @@ impl IpcBridge {
                                     _ => None,
                                 },
                                 conversation: conversation_context,
+                                goal_id: (!start.goal_id.is_empty()).then_some(start.goal_id),
                             })
                             .await;
                         if has_conversation {

@@ -88,6 +88,8 @@ pub use tools::filesystem_advanced;
 pub use tools::git;
 /// Extended Git tool adapter.
 pub use tools::git_advanced;
+/// Core goal verification tool adapter.
+pub use tools::goal;
 /// Log inspection tool adapter.
 pub use tools::logs;
 /// Model Context Protocol tool adapter.

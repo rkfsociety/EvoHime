@@ -15,6 +15,7 @@ import { PermissionModePicker } from './PermissionModePicker'
 import { ContextUsage } from './ContextUsage'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
+import { PinnedGoalBar } from './PinnedGoalBar'
 import {
   addOptimisticMessage,
   applyInitialConversationHistory,
@@ -162,6 +163,7 @@ export function TaskTimeline({
   const [prompt, setPrompt] = useState('')
   const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([])
   const [webSearchEnabled, setWebSearchEnabled] = useState(false)
+  const [goalMode, setGoalMode] = useState(false)
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false)
   const [composerNotice, setComposerNotice] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
@@ -638,11 +640,10 @@ export function TaskTimeline({
     }
   }, [maxTimelineWindowStart, timelineItemKeys, timelineItems.length])
 
-  const start = useCallback(async () => {
-    if (!api || prompt.trim().length === 0) return
+  const launchTask = useCallback(async (text: string, goalId?: string): Promise<boolean> => {
+    if (!api || text.trim().length === 0) return false
     const nextTaskId = makeTaskId()
     const clientMessageId = globalThis.crypto.randomUUID()
-    const text = composeTaskPrompt(prompt.trim(), attachments, webSearchEnabled)
     cancelRequestedTaskId.current = null
     setTaskId(nextTaskId)
     setStartingTaskId(nextTaskId)
@@ -660,7 +661,7 @@ export function TaskTimeline({
         setStartingTaskId(null)
         setBusy(false)
         setCommandError(created.message)
-        return
+        return false
       }
       targetChatId = created.value.id
       setChat(created.value)
@@ -679,7 +680,8 @@ export function TaskTimeline({
       conversationId: targetChatId,
       clientMessageId,
       preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
-      executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue'
+      executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue',
+      ...(goalId ? { goalId } : {})
     })
     setBusy(false)
     if (!outcome.ok) {
@@ -689,15 +691,12 @@ export function TaskTimeline({
       cancelRequestedTaskId.current = null
       setConversationProjection((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
       setCommandError(outcome.message)
-      return
+      return false
     }
     setStartingTaskId(null)
     setTaskId(nextTaskId)
     setSentPrompt(text)
     setSentPromptAtMs(Date.now())
-    setPrompt('')
-    setAttachments([])
-    setWebSearchEnabled(false)
     setComposerNotice(null)
     const stored = await api.invoke('chat.appendPrompt', {
       chatId: targetChatId,
@@ -710,7 +709,41 @@ export function TaskTimeline({
     if (cancelRequestedTaskId.current === nextTaskId) {
       await api.invoke('core.stopTask', { taskId: nextTaskId })
     }
-  }, [api, attachments, chatId, onChatOpened, onChatTouched, prompt, providerMode, setConversationProjection, webSearchEnabled, workspace])
+    return true
+  }, [api, chatId, onChatOpened, onChatTouched, providerMode, setConversationProjection, workspace])
+
+  const start = useCallback(async () => {
+    if (!api || prompt.trim().length === 0) return
+    const rawPrompt = prompt.trim()
+    const text = composeTaskPrompt(rawPrompt, attachments, webSearchEnabled)
+    let goalId: string | undefined
+    if (goalMode && workspace) {
+      const createdGoalId = `goal-${makeTaskId()}`
+      setBusy(true)
+      setCommandError(null)
+      const created = await api.invoke('core.createGoal', {
+        goalId: createdGoalId,
+        workspacePath: workspace,
+        ...(chatId ? { chatId } : {}),
+        objective: rawPrompt,
+        successCriteria: [{ id: 'criterion-1', kind: 'manual', statement: 'Цель полностью выполнена и проверена.' }],
+        continuationBudget: 12,
+        idempotencyKey: `goal:create:${createdGoalId}`
+      })
+      if (!created.ok) {
+        setBusy(false)
+        setCommandError(created.message)
+        return
+      }
+      goalId = createdGoalId
+    }
+    const launched = await launchTask(text, goalId)
+    if (!launched) return
+    setPrompt('')
+    setAttachments([])
+    setWebSearchEnabled(false)
+    if (goalMode) setGoalMode(false)
+  }, [api, attachments, chatId, goalMode, launchTask, prompt, webSearchEnabled, workspace])
 
   const selectFiles = useCallback((fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return
@@ -856,6 +889,18 @@ export function TaskTimeline({
         )}
       </div>
 
+      <PinnedGoalBar
+        connection={connection}
+        events={events}
+        workspace={workspace}
+        chatId={chatId}
+        taskRunning={running}
+        disabled={busy || running}
+        onRunGoal={async (goalId, objective) => {
+          await launchTask(objective, goalId)
+        }}
+      />
+
       <div className="composer">
         <div className="composer__inner">
           <div className="composer__controls" aria-label={translate("Параметры задачи")}>
@@ -934,10 +979,23 @@ export function TaskTimeline({
                     if (canStart) void start()
                   }
                 }}
-                placeholder={translate("Опиши задачу для агента…")}
+                placeholder={goalMode
+                  ? translate("Опиши цель — Ева закрепит её и будет выполнять до конца…")
+                  : translate("Опиши задачу для агента…")}
                 disabled={!connected || busy}
                 rows={1}
               />
+              <button
+                type="button"
+                className={`composer__action composer__action--icon${goalMode ? ' composer__action--active' : ''}`}
+                disabled={!connected || busy || !workspace}
+                aria-label={translate("Режим цели")}
+                aria-pressed={goalMode}
+                title={!workspace ? translate("Сначала выбери проект") : translate("Поставить цель: закрепить над композером и выполнять до полного завершения")}
+                onClick={() => setGoalMode((value) => !value)}
+              >
+                <ComposerIcon name="target" />
+              </button>
               <button
                 type="button"
                 className={`composer__action composer__action--icon${webSearchEnabled ? ' composer__action--active' : ''}`}
@@ -981,6 +1039,7 @@ export function TaskTimeline({
             </div>
           ) : null}
           {webSearchEnabled ? <p className="composer__mode-hint" role="status">{translate("Веб-поиск включён для следующего запроса.")}</p> : null}
+          {goalMode ? <p className="composer__mode-hint" role="status">{translate("Режим цели: задача закрепится над композером и будет выполняться до конца.")}</p> : null}
           {composerNotice ? <p className="composer__mode-hint" role="status">{translate(composerNotice)}</p> : null}
 
 
@@ -1017,7 +1076,7 @@ function relativeWorkspacePath(workspace: string, filePath: string): string | nu
   return relative.length > 0 && !relative.split('/').includes('..') ? relative : null
 }
 
-type ComposerIconName = 'box' | 'folder' | 'globe' | 'link' | 'lock' | 'plus' | 'send'
+type ComposerIconName = 'box' | 'folder' | 'globe' | 'link' | 'lock' | 'plus' | 'send' | 'target'
 
 function ComposerIcon({ name, className = '' }: { readonly name: ComposerIconName; readonly className?: string }): React.JSX.Element {
   const common = {
@@ -1046,6 +1105,8 @@ function ComposerIcon({ name, className = '' }: { readonly name: ComposerIconNam
       return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>
     case 'send':
       return <svg {...common}><path d="m21 3-7.2 18-3.1-7.7L3 10.2 21 3Z" /><path d="m21 3-10.3 10.3" /></svg>
+    case 'target':
+      return <svg {...common}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.2" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></svg>
   }
 }
 

@@ -429,6 +429,8 @@ message StartTask {
   string conversation_id = 6;
   // Stable client identity for optimistic reconciliation and idempotent retry.
   string client_message_id = 7;
+  // Optional Core-owned Goal ID to bind and drive until completion.
+  string goal_id = 8;
 }
 
 // Bounded read-only workspace browsing for the native Files surface.

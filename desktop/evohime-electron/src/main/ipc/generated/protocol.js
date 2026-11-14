@@ -10292,6 +10292,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [executionKind] StartTask executionKind
                  * @property {string|null} [conversationId] StartTask conversationId
                  * @property {string|null} [clientMessageId] StartTask clientMessageId
+                 * @property {string|null} [goalId] StartTask goalId
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -10380,6 +10381,14 @@ export const evohime = $root.evohime = (() => {
                 StartTask.prototype.clientMessageId = "";
 
                 /**
+                 * StartTask goalId.
+                 * @member {string} goalId
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.goalId = "";
+
+                /**
                  * Encodes the specified StartTask message. Does not implicitly {@link evohime.desktop.v1.StartTask.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.StartTask
@@ -10409,6 +10418,8 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 6, wireType 2 =*/50).string(message.conversationId);
                     if (message.clientMessageId != null && $Object.hasOwnProperty.call(message, "clientMessageId") && message.clientMessageId !== "")
                         writer.uint32(/* id 7, wireType 2 =*/58).string(message.clientMessageId);
+                    if (message.goalId != null && $Object.hasOwnProperty.call(message, "goalId") && message.goalId !== "")
+                        writer.uint32(/* id 8, wireType 2 =*/66).string(message.goalId);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -10504,6 +10515,15 @@ export const evohime = $root.evohime = (() => {
                                     message.clientMessageId = value;
                                 else
                                     delete message.clientMessageId;
+                                continue;
+                            }
+                        case 8: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.goalId = value;
+                                else
+                                    delete message.goalId;
                                 continue;
                             }
                         }

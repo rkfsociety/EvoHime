@@ -28,6 +28,8 @@ pub enum CoreCommand {
         preferred_route_hint: Option<String>,
         /// Conversation history scope for chat-submitted tasks.
         conversation: Option<ConversationTaskContext>,
+        /// Optional Core-owned Goal ID to bind and drive until completion.
+        goal_id: Option<String>,
     },
     /// Останавливает выполняемую задачу по её идентификатору.
     StopTask {

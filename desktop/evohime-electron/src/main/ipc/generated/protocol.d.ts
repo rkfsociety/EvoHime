@@ -4360,6 +4360,9 @@ export namespace evohime {
                 /** StartTask clientMessageId. */
                 clientMessageId: string;
 
+                /** StartTask goalId. */
+                goalId: string;
+
                 /**
                  * Encodes the specified StartTask message. Does not implicitly {@link evohime.desktop.v1.StartTask.verify|verify} messages.
                  * @param message StartTask message or plain object to encode
@@ -4411,6 +4414,9 @@ export namespace evohime {
 
                     /** StartTask clientMessageId */
                     clientMessageId?: (string|null);
+
+                    /** StartTask goalId */
+                    goalId?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

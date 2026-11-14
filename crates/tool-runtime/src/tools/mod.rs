@@ -20,6 +20,8 @@ pub mod git;
 /// Higher-risk Git operations with explicit policy checks.
 pub mod git_advanced;
 pub mod git_worktree;
+/// Core goal criterion verification registry adapter.
+pub mod goal;
 pub mod http;
 pub mod list;
 /// Structured tool and execution log access.

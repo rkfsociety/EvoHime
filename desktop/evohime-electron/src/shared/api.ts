@@ -1705,7 +1705,7 @@ export interface CommandPayloads {
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
-  'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | null; executionKind?: 'dialogue' | 'coding' }
+  'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | null; executionKind?: 'dialogue' | 'coding'; goalId?: string }
   'core.getConversationEvents': { conversationId: string; beforeSequence?: number; afterSequence?: number; limit?: number; kindsFilter?: readonly string[] }
   'core.subscribeConversationEvents': { conversationId: string; afterSequence: number; limit?: number; kindsFilter?: readonly string[] }
   'core.getConversationWorkbench': { conversationId: string; workspaceId: string; runId?: string; backendSnapshotHash?: string; capabilitySnapshotHash?: string; afterSequence?: number; limit?: number }
