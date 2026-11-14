@@ -16,6 +16,7 @@ import { ContextUsage } from './ContextUsage'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
 import { PinnedGoalBar } from './PinnedGoalBar'
+import { UiIcon } from './UiIcon'
 import {
   addOptimisticMessage,
   applyInitialConversationHistory,
@@ -1017,7 +1018,7 @@ export function TaskTimeline({
                 }}
                 disabled={running ? stopRequested || !connected : !canStart}
               >
-                {running ? <span aria-hidden="true">■</span> : <ComposerIcon name="send" />}
+                {running ? <UiIcon name="stop" size={15} className="composer__icon" /> : <ComposerIcon name="send" />}
               </button>
             </div>
           </div>
@@ -1045,7 +1046,7 @@ export function TaskTimeline({
 
           <div className="composer__footer">
             {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : <span />}
-            <span className="composer__shortcut"><kbd>Enter</kbd> {translate("— отправить ·")}<kbd>Shift + Enter</kbd> {translate("— новая строка")}</span>
+            <span className="composer__shortcut"><kbd>Enter</kbd> {translate("— отправить ·")}{' '}<kbd>Shift + Enter</kbd> {translate("— новая строка")}</span>
           </div>
 
           {commandError ? <p role="alert" className="shell__reason">{translate(commandError)}</p> : null}
@@ -1079,35 +1080,7 @@ function relativeWorkspacePath(workspace: string, filePath: string): string | nu
 type ComposerIconName = 'box' | 'folder' | 'globe' | 'link' | 'lock' | 'plus' | 'send' | 'target'
 
 function ComposerIcon({ name, className = '' }: { readonly name: ComposerIconName; readonly className?: string }): React.JSX.Element {
-  const common = {
-    className: `composer__icon${className.length > 0 ? ` ${className}` : ''}`,
-    viewBox: '0 0 24 24',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.8,
-    strokeLinecap: 'round' as const,
-    strokeLinejoin: 'round' as const,
-    'aria-hidden': true
-  }
-
-  switch (name) {
-    case 'box':
-      return <svg {...common}><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" /><path d="m4.5 7.5 7.5 4 7.5-4M12 11.5V21" /></svg>
-    case 'folder':
-      return <svg {...common}><path d="M3.5 6.5h6l2 2h9v9a2 2 0 0 1-2 2h-15v-13Z" /><path d="M3.5 10.5h17" /></svg>
-    case 'globe':
-      return <svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M3.7 12h16.6M12 3.5c2.2 2.3 3.2 5.1 3.2 8.5s-1 6.2-3.2 8.5c-2.2-2.3-3.2-5.1-3.2-8.5s1-6.2 3.2-8.5Z" /></svg>
-    case 'link':
-      return <svg {...common}><path d="M9 17H7a5 5 0 0 1 0-10h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8" /></svg>
-    case 'lock':
-      return <svg {...common}><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2" /></svg>
-    case 'plus':
-      return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>
-    case 'send':
-      return <svg {...common}><path d="m21 3-7.2 18-3.1-7.7L3 10.2 21 3Z" /><path d="m21 3-10.3 10.3" /></svg>
-    case 'target':
-      return <svg {...common}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.2" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></svg>
-  }
+  return <UiIcon name={name} size={16} className={`composer__icon${className.length > 0 ? ` ${className}` : ''}`} />
 }
 
 function renderTranscriptEntry(
@@ -1253,7 +1226,7 @@ function MessageActions({ id, text, atMs, copied, onCopy }: MessageActionsProps)
           })
         }}
       >
-        {translate(copied ? '✓' : '▣')}
+        <UiIcon name={copied ? 'check' : 'copy'} size={13} />
       </button>
       {atMs !== null ? <time dateTime={new Date(atMs).toISOString()}>{translate(formatMessageTime(atMs))}</time> : null}
     </div>

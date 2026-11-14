@@ -4,6 +4,7 @@ import type { ChatSummary, ConnectionState, WorkspaceOption } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { translate, useT } from './i18n'
+import { UiIcon } from './UiIcon'
 
 /**
  * Chat workspace and its chats.
@@ -118,8 +119,8 @@ export function ProjectSidebar({
           className="chat-rail__action chat-rail__action--primary"
           onClick={() => onChatChange(null)}
         >
-          <span className="chat-rail__action-icon" aria-hidden="true">＋</span>
-          <span>{t('Новый чат')}</span>
+          <span className="chat-rail__action-icon" aria-hidden="true"><UiIcon name="plus" size={15} /></span>
+          <span className="chat-rail__action-label">{t('Новый чат')}</span>
           <kbd>Ctrl K</kbd>
         </button>
       </div>
@@ -132,20 +133,23 @@ export function ProjectSidebar({
       <section className="chat-rail__workspace-switcher" aria-label={t('Рабочая папка')}>
         <label htmlFor="workspace-select">{t('Рабочая папка')}</label>
         <div className="chat-rail__workspace-row">
-          <select
-            id="workspace-select"
-            value={workspace ?? ''}
-            onChange={(event) => void selectWorkspace(event.target.value)}
-            aria-label={t('Рабочая папка')}
-            title={workspace ?? t('Без проекта')}
-          >
-            <option value="">{t('Без проекта')}</option>
-            {projects.map((project) => (
-              <option key={project.path} value={project.path}>
-                {basename(project.path)}{project.available ? '' : t(' · недоступен')}
-              </option>
-            ))}
-          </select>
+          <div className="chat-rail__select-wrap">
+            <select
+              id="workspace-select"
+              value={workspace ?? ''}
+              onChange={(event) => void selectWorkspace(event.target.value)}
+              aria-label={t('Рабочая папка')}
+              title={workspace ?? t('Без проекта')}
+            >
+              <option value="">{t('Без проекта')}</option>
+              {projects.map((project) => (
+                <option key={project.path} value={project.path}>
+                  {basename(project.path)}{project.available ? '' : t(' · недоступен')}
+                </option>
+              ))}
+            </select>
+            <span className="chat-rail__select-chevron" aria-hidden="true"><UiIcon name="chevron-down" size={13} /></span>
+          </div>
           <button
             type="button"
             className="chat-rail__workspace-pick"
@@ -153,7 +157,7 @@ export function ProjectSidebar({
             title={t('Выбрать папку')}
             onClick={() => void pickWorkspace()}
           >
-            <span aria-hidden="true">＋</span>
+            <UiIcon name="folder-plus" size={15} />
           </button>
         </div>
       </section>
@@ -184,7 +188,7 @@ export function ProjectSidebar({
                 onClick={() => onChatChange(chat.id)}
                 title={chat.title}
               >
-                <span className="chats__item-icon" aria-hidden="true">✦</span>
+                <span className="chats__item-icon" aria-hidden="true"><UiIcon name="message" size={13} /></span>
                 <span className="chats__item-title">{chat.title}</span>
               </button>
               <button
@@ -193,7 +197,7 @@ export function ProjectSidebar({
                 onClick={() => void removeChat(chat.id)}
                 aria-label={t('Удалить чат {title}').replace('{title}', chat.title)}
               >
-                ✕
+                <UiIcon name="x" size={12} />
               </button>
             </li>
           ))}

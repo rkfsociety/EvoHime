@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ConnectionState, PermissionMode as SharedPermissionMode } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { UiIcon } from './UiIcon'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 type PermissionMode = SharedPermissionMode
@@ -115,7 +116,7 @@ export function PermissionModePicker({ connection, workspace = null, open: contr
       >
         <span aria-hidden="true">◉</span>
         <span>{translate(current.compactLabel)}</span>
-        <span className="permission-picker__chevron" aria-hidden="true">▾</span>
+        <span className="permission-picker__chevron" aria-hidden="true"><UiIcon name="chevron-down" size={12} /></span>
       </button>
 
       {open ? (

@@ -6,6 +6,7 @@ import { PROVIDER_KINDS, type ChatProviderMode, type CodexStatus, type Connectio
 import { useShellApi } from './shell-api'
 import { PROVIDER_PROFILE_LABELS } from './provider-labels'
 import { useProviderState } from './provider-state'
+import { UiIcon } from './UiIcon'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
@@ -97,6 +98,7 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
         {options.length === 0 ? <option value="">{translate("Настрой провайдера")}</option> : null}
         {options.map((option) => <option key={option.value} value={option.value}>{translate(option.label)}</option>)}
       </select>
+      <span className="composer__select-chevron" aria-hidden="true"><UiIcon name="chevron-down" size={12} /></span>
     </label>
   )
 }

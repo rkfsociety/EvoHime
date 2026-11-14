@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { RepositorySummary } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { UiIcon } from './UiIcon'
 
 /**
  * Project, branch and uncommitted volume, above the composer.
@@ -47,7 +48,10 @@ export function RepositoryBar({
   return (
     <div className="repobar">
       <span className="repobar__project">{translate(projectName(workspace))}</span>
-      <span className="repobar__branch">{translate(repository.branch)}</span>
+      <span className="repobar__branch">
+        <UiIcon name="git-branch" size={12} className="repobar__branch-icon" />
+        {translate(repository.branch)}
+      </span>
       <span className="repobar__spacer" />
       {changed ? (
         <span className="repobar__diff" title={translate("Незакоммиченные изменения")}>

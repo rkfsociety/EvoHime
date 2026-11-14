@@ -4,6 +4,7 @@ import type { ConnectionState, CoreEvent, GoalProjection } from '@shared/api'
 
 import { translate } from './i18n'
 import { useShellApi } from './shell-api'
+import { UiIcon } from './UiIcon'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
@@ -196,7 +197,8 @@ export function PinnedGoalBar({
               disabled={!connected || disabled || busy}
               onClick={() => setComposerOpen(true)}
             >
-              <span>+ {translate('Поставить цель')}</span>
+              <UiIcon name="plus" size={13} />
+              <span>{translate('Поставить цель')}</span>
             </button>
             <span className="pinned-goal-bar__hint">
               {translate('Цель фиксируется над композером и выполняется до конца')}
@@ -346,7 +348,7 @@ export function PinnedGoalBar({
             aria-label={translate('Детали цели')}
             onClick={() => setExpanded((value) => !value)}
           >
-            {expanded ? '▴' : '▾'}
+            <UiIcon name={expanded ? 'chevron-up' : 'chevron-down'} size={13} />
           </button>
         </div>
       </div>
@@ -364,8 +366,8 @@ export function PinnedGoalBar({
           <ul className="pinned-goal-bar__criteria">
             {pinnedGoal.successCriteria.map((item) => (
               <li key={item.id} className="pinned-goal-bar__criterion">
-                <span className={`pinned-goal-bar__criterion-badge pinned-goal-bar__criterion-badge--${item.status}`}>
-                  {item.status === 'verified' ? '✓' : '○'}
+                <span className={`pinned-goal-bar__criterion-badge pinned-goal-bar__criterion-badge--${item.status}`} aria-hidden="true">
+                  <UiIcon name={item.status === 'verified' ? 'check-circle' : 'circle'} size={13} />
                 </span>
                 <span>{item.statement}</span>
                 {item.status !== 'verified' && !isCompleted ? (

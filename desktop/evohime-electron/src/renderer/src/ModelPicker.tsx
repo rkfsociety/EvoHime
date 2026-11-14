@@ -13,6 +13,7 @@ import {
   type ModelUse
 } from '@shared/model-capabilities'
 import { useProviderState } from './provider-state'
+import { UiIcon } from './UiIcon'
 
 /**
  * Model selection for the next task, shown in the composer.
@@ -413,7 +414,7 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
         }}
       >
         <span className="model-picker__value">{translate(current || translate("загрузка моделей…"))}</span>
-        <span className="model-picker__chevron" aria-hidden="true">▾</span>
+        <span className="model-picker__chevron" aria-hidden="true"><UiIcon name="chevron-down" size={12} /></span>
       </button>
 
       {open ? (

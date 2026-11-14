@@ -21,6 +21,7 @@ import type { SettingsTab } from './SettingsModal'
 import { RecoveryBanner } from './RecoveryBanner'
 import { ProviderStateProvider } from './provider-state'
 import { EvaIcon } from './EvaIcon'
+import { UiIcon, type UiIconName } from './UiIcon'
 import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
 import { setAppLocale, translate, useT } from './i18n'
 import { REASON_TEXTS, STATE_TITLES } from './listening-labels'
@@ -70,7 +71,7 @@ type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'wo
 interface ViewDescriptor {
   readonly id: ViewId
   readonly label: string
-  readonly icon: string
+  readonly icon: UiIconName
 }
 
 /**
@@ -78,18 +79,18 @@ interface ViewDescriptor {
  * scheduled work appear first in the persistent primary navigation.
  */
 const USER_VIEWS: readonly ViewDescriptor[] = [
-  { id: 'overview', label: 'Обзор', icon: '◉' },
-  { id: 'reviews', label: 'Ревью планов', icon: '✓' },
-  { id: 'operations', label: 'Память и Pulse', icon: '◌' },
-  { id: 'workflows', label: 'Составные задачи', icon: '⛓' },
-  { id: 'continuations', label: 'Продолжения', icon: '↻' },
-  { id: 'kernels', label: 'Анализ', icon: '⌘' },
-  { id: 'listening', label: 'Слух', icon: '🎙' },
-  { id: 'human-work-items', label: 'Задачи для человека', icon: '☑' },
+  { id: 'overview', label: 'Обзор', icon: 'compass' },
+  { id: 'reviews', label: 'Ревью планов', icon: 'check-circle' },
+  { id: 'operations', label: 'Память и Pulse', icon: 'pulse' },
+  { id: 'workflows', label: 'Составные задачи', icon: 'workflow' },
+  { id: 'continuations', label: 'Продолжения', icon: 'repeat' },
+  { id: 'kernels', label: 'Анализ', icon: 'terminal' },
+  { id: 'listening', label: 'Слух', icon: 'mic' },
+  { id: 'human-work-items', label: 'Задачи для человека', icon: 'list-checks' },
 ]
 
-const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запланировано', icon: '◷' }, ...USER_VIEWS]
-const PRIMARY_VIEWS: readonly ViewDescriptor[] = [{ id: 'chat', label: 'Чат', icon: '✦' }, ...VIEWS]
+const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запланировано', icon: 'history' }, ...USER_VIEWS]
+const PRIMARY_VIEWS: readonly ViewDescriptor[] = [{ id: 'chat', label: 'Чат', icon: 'chat' }, ...VIEWS]
 
 /** Settings remain under the account menu to keep the main navigation focused. */
 const SETTINGS_LABEL = 'Настройки'
@@ -331,7 +332,7 @@ export function App(): React.JSX.Element {
               </span>
               <small>{t('Разделы и настройки')}</small>
             </span>
-            <span className="account__chevron" aria-hidden="true">⌃</span>
+            <span className="account__chevron" aria-hidden="true"><UiIcon name="chevron-up" size={14} /></span>
           </button>
           <UpdateIndicator status={update} />
           {accountMenuOpen ? (
@@ -347,7 +348,7 @@ export function App(): React.JSX.Element {
                   setAccountMenuOpen(false)
                 }}
               >
-                <span aria-hidden="true">⚙</span>
+                <span aria-hidden="true"><UiIcon name="settings" size={15} /></span>
                 {t(SETTINGS_LABEL)}
               </button>
             </div>
@@ -362,12 +363,12 @@ export function App(): React.JSX.Element {
           <span className="topbar__spacer" />
           {!workbenchVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setWorkbenchVisible(true)} title={t('Рабочая панель')}>
-              <span aria-hidden="true">▤</span>{t('Рабочая панель')}
+              <UiIcon name="panel-right" size={14} />{t('Рабочая панель')}
             </button>
           ) : null}
           {!browserVisible ? (
             <button type="button" className="topbar__panel-toggle" onClick={() => setBrowserVisible(true)} title={t('Открыть браузер')}>
-              <span aria-hidden="true">◎</span>{t('Открыть браузер')}
+              <UiIcon name="globe" size={14} />{t('Открыть браузер')}
             </button>
           ) : null}
           <button
@@ -377,8 +378,10 @@ export function App(): React.JSX.Element {
             aria-pressed={traceOpen}
             onClick={() => setTraceOpen((value) => !value)}
           >
+            <UiIcon name="activity" size={14} />
             {t('Трейс')}
           </button>
+          <span className="topbar__divider" aria-hidden="true" />
           <ListeningIndicator events={events} />
           <span className={`status-pill status-pill--${connection}`}>{t(STATE_LABELS[connection])}</span>
         </header>
@@ -533,7 +536,9 @@ export function ListeningIndicator({
       role="status"
       title={tooltip}
     >
-      <span aria-hidden="true">{translate(live ? '🎙' : unknown ? '⚠️' : '⏸')}</span>
+      <span className="listening-pill__icon" aria-hidden="true">
+        <UiIcon name={live ? 'mic' : unknown ? 'alert-triangle' : 'mic-off'} size={13} />
+      </span>
       {translate(title)}
     </span>
   )
@@ -567,7 +572,7 @@ function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
       title={t(view.label)}
       onClick={() => onSelect(view.id)}
     >
-      <span className="nav-item__icon" aria-hidden="true">{translate(view.icon)}</span>
+      <span className="nav-item__icon" aria-hidden="true"><UiIcon name={view.icon} size={18} /></span>
       <span className="nav-item__label">{t(view.label)}</span>
     </button>
   )

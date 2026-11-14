@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import type { ToolCall } from './transcript'
 import { toolLabel } from './tool-names'
+import { UiIcon } from './UiIcon'
 
 /**
  * One stretch of tool work as a single line.
@@ -29,13 +30,17 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
-        <span className="activity__icon" aria-hidden="true">{translate(running ? '◐' : '✓')}</span>
+        <span className="activity__icon" aria-hidden="true">
+          <UiIcon name={running ? 'loader' : 'check'} size={14} />
+        </span>
         <span className="activity__label">
           {translate(running
             ? liveLabel(current)
             : summarize(calls))}
         </span>
-        <span className="activity__chevron" aria-hidden="true">{translate(open ? '▾' : '▸')}</span>
+        <span className="activity__chevron" aria-hidden="true">
+          <UiIcon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
+        </span>
       </button>
 
       {open ? (
