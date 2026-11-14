@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, nativeTheme, type TitleBarOverlay } from 'electron'
 
+import type { AppTheme } from '../shared/api'
 import { hardenWebContents, isProduction, type HardeningOptions } from './security'
 import { resourcePath } from './paths'
 import { resolveUiEntry } from './ui-bundle'
@@ -17,7 +18,29 @@ export interface WindowOptions extends HardeningOptions {
   readonly onRendererFailure: (reason: string) => void
 }
 
+const TITLEBAR_HEIGHT = 56
+const DARK_BACKGROUND = '#0c1017'
+const LIGHT_BACKGROUND = '#f3f5f9'
+
+function windowBackgroundColor(dark: boolean): string {
+  return dark ? DARK_BACKGROUND : LIGHT_BACKGROUND
+}
+
+function titleBarOverlayOptions(dark: boolean): TitleBarOverlay {
+  return {
+    color: '#00000000',
+    symbolColor: dark ? '#a6b1c2' : '#516075',
+    height: TITLEBAR_HEIGHT
+  }
+}
+
+/** Updates the native theme source so window chrome matches the renderer theme. */
+export function applyWindowTheme(theme: AppTheme): void {
+  nativeTheme.themeSource = theme
+}
+
 export function createMainWindow(options: WindowOptions): BrowserWindow {
+  const dark = nativeTheme.shouldUseDarkColors
   const window = new BrowserWindow({
     width: 1_360,
     height: 860,
@@ -26,7 +49,9 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
     useContentSize: true,
     center: true,
     show: false,
-    backgroundColor: '#101014',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: titleBarOverlayOptions(dark),
+    backgroundColor: windowBackgroundColor(dark),
     icon: resourcePath('evohime-agent.ico'),
     autoHideMenuBar: true,
     webPreferences: {
@@ -45,6 +70,17 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   })
 
   hardenWebContents(window.webContents, options)
+
+  const syncTheme = (): void => {
+    if (window.isDestroyed()) return
+    const isDark = nativeTheme.shouldUseDarkColors
+    window.setBackgroundColor?.(windowBackgroundColor(isDark))
+    window.setTitleBarOverlay?.(titleBarOverlayOptions(isDark))
+  }
+  nativeTheme.on('updated', syncTheme)
+  window.once('closed', () => {
+    nativeTheme.off('updated', syncTheme)
+  })
 
   window.once('ready-to-show', () => {
     // The standalone updater owns blocking progress; the shell window remains

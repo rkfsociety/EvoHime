@@ -5075,12 +5075,14 @@ body {
   gap: 11px;
   border-bottom: 1px solid var(--border);
   background: rgb(255 255 255 / 1%);
+  -webkit-app-region: drag;
 }
 
 .sidebar__brand-toggle {
   width: 34px;
   height: 34px;
   border-radius: 10px;
+  -webkit-app-region: no-drag;
 }
 
 .sidebar__logo {
@@ -5523,8 +5525,20 @@ body {
   flex-wrap: nowrap;
   gap: 8px;
   padding: 0 20px;
+  padding-right: calc(16px + max(0px, 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
   background: color-mix(in srgb, var(--bg-raised) 76%, transparent);
   border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.topbar button,
+.topbar a,
+.topbar input,
+.topbar select,
+.topbar [role='button'],
+.topbar .listening-pill,
+.topbar .status-pill {
+  -webkit-app-region: no-drag;
 }
 
 .topbar__title {
@@ -6100,6 +6114,7 @@ body {
 .settings-modal {
   padding: clamp(12px, 2vw, 28px);
   backdrop-filter: blur(12px);
+  -webkit-app-region: no-drag;
 }
 
 .settings-modal__window {
@@ -6212,7 +6227,8 @@ body {
     height: auto;
     min-height: var(--header-height);
     flex-wrap: wrap;
-    padding: 8px 16px;
+    padding-block: 8px;
+    padding-left: 16px;
   }
   .topbar__path { display: none; }
 }

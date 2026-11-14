@@ -29,7 +29,7 @@ import { ModuleUpdateService, resolveInstalledUpdaterPath } from './update/modul
 import { UpdateService, type UpdateController } from './update/update-service'
 import { reportSupportBundle } from './update/update-issue-reporter'
 import { createOverlay, type OverlayController } from './overlay'
-import { createMainWindow, focusWindow, loadRenderer } from './window'
+import { applyWindowTheme, createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
 import { WorkspaceStore } from './workspace-store'
 import { runBrowserBackend } from './browser-backend'
@@ -308,6 +308,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
         shellLocale = locale
         tray?.setLocale(locale)
       },
+      setTheme: applyWindowTheme,
       exportDiagnostics: async () => {
         const window = BrowserWindow.getFocusedWindow()
         const save = window

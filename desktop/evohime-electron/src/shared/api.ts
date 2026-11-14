@@ -15,6 +15,9 @@ export const API_VERSION = 1 as const
 /** Locale selected for user-facing desktop shell surfaces. */
 export type AppLocale = 'ru' | 'en'
 
+/** Theme mode selected for the desktop shell window. */
+export type AppTheme = 'system' | 'dark' | 'light'
+
 /** Renderer-visible lifecycle of the Core connection owned by the main process. */
 export type ConnectionState =
   | 'starting'
@@ -2716,6 +2719,8 @@ export interface EvoHimeApiV1 {
   openExternal(url: string): Promise<boolean>
   /** Updates the native tray language using a validated locale value. */
   setLocale(locale: AppLocale): void
+  /** Updates the native window theme and titlebar overlay colors. */
+  setTheme(theme: AppTheme): void
   /**
    * Путь файла, брошенного в окно. Нужен ровно затем, чтобы следующий диалог
    * открылся в той же папке: у объекта `File` в renderer пути нет. Возвращает

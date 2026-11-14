@@ -8,6 +8,7 @@ import {
   RENDERER_COMMANDS,
   type AmbientHotkeyStatus,
   type AppLocale,
+  type AppTheme,
   type CommandFailure,
   type PermissionMode,
   type ProviderKind,
@@ -22,7 +23,8 @@ import {
   EVENT_CHANNEL,
   INVOKE_CHANNEL,
   OPEN_EXTERNAL_CHANNEL,
-  SET_LOCALE_CHANNEL
+  SET_LOCALE_CHANNEL,
+  SET_THEME_CHANNEL
 } from '@shared/channels'
 
 import type { ShellLog } from './diagnostics/logger'
@@ -92,6 +94,8 @@ export interface ShellBridgeOptions {
   readonly ambientHotkey: () => AmbientHotkeyStatus
   /** Applies the renderer's validated appearance language to native shell UI. */
   readonly setLocale: (locale: AppLocale) => void
+  /** Applies the renderer's validated theme mode to the native window chrome. */
+  readonly setTheme?: (theme: AppTheme) => void
   readonly exportDiagnostics: () => Promise<{ cancelled: boolean; path: string }>
   readonly submitDiagnostics?: () => Promise<{ url: string }>
   readonly log: ShellLog
@@ -131,6 +135,14 @@ export function registerShellBridge(options: ShellBridgeOptions): void {
       return
     }
     options.setLocale(locale)
+  })
+
+  ipcMain.on(SET_THEME_CHANNEL, (_event, theme: unknown) => {
+    if (theme !== 'system' && theme !== 'dark' && theme !== 'light') {
+      log('warn', 'shell.invalid_theme', {})
+      return
+    }
+    options.setTheme?.(theme)
   })
 }
 

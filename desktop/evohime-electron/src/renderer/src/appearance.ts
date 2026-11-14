@@ -68,4 +68,5 @@ export function applyAppearance(settings: AppearanceSettings): void {
   root.dataset['reduceMotion'] = String(settings.reduceMotion)
   root.style.setProperty('--ui-scale', String(Number(settings.scale) / 100))
   root.style.setProperty('--ui-density', settings.density === 'compact' ? '0.96' : '1')
+  window.evohime?.v1.setTheme?.(settings.theme)
 }

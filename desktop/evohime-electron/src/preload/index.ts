@@ -6,6 +6,7 @@ import {
   type CommandOutcome,
   type CommandPayloads,
   type AppLocale,
+  type AppTheme,
   type EvoHimeApiV1,
   type RendererCommand,
   type ShellEvent
@@ -15,7 +16,8 @@ import {
   EVENT_CHANNEL,
   INVOKE_CHANNEL,
   OPEN_EXTERNAL_CHANNEL,
-  SET_LOCALE_CHANNEL
+  SET_LOCALE_CHANNEL,
+  SET_THEME_CHANNEL
 } from '@shared/channels'
 
 /**
@@ -56,6 +58,10 @@ const api: EvoHimeApiV1 = {
 
   setLocale(locale: AppLocale): void {
     ipcRenderer.send(SET_LOCALE_CHANNEL, locale)
+  },
+
+  setTheme(theme: AppTheme): void {
+    ipcRenderer.send(SET_THEME_CHANNEL, theme)
   },
 
   // Единственное место, где renderer вообще узнаёт путь: имя папки нужно, чтобы
