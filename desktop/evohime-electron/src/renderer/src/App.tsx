@@ -35,6 +35,7 @@ const CapabilityRecipePanel = lazy(() => import('./CapabilityRecipePanel').then(
 const OverviewPanel = lazy(() => import('./OverviewPanel').then((module) => ({ default: module.OverviewPanel })))
 const ListeningPanel = lazy(() => import('./ListeningPanel').then((module) => ({ default: module.ListeningPanel })))
 const TracePanel = lazy(() => import('./TracePanel').then((module) => ({ default: module.TracePanel })))
+const ChatSummaryPanel = lazy(() => import('./ChatSummaryPanel').then((module) => ({ default: module.ChatSummaryPanel })))
 const ContinuationPanel = lazy(() => import('./ContinuationPanel').then((module) => ({ default: module.ContinuationPanel })))
 const AnalysisKernelPanel = lazy(() => import('./AnalysisKernelPanel').then((module) => ({ default: module.AnalysisKernelPanel })))
 const VisualWorkflowBuilderPanel = lazy(() => import('./VisualWorkflowBuilderPanel').then((module) => ({ default: module.VisualWorkflowBuilderPanel })))
@@ -114,6 +115,7 @@ export function App(): React.JSX.Element {
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [repair, setRepair] = useState<RepairStatus | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('provider')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -271,7 +273,7 @@ export function App(): React.JSX.Element {
 
   return (
     <ProviderStateProvider>
-    <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
+    <div className={`shell${traceOpen || summaryOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
       <nav className="sidebar" aria-label={t('Чаты и навигация')}>
         <div className="sidebar__brand">
           <button
@@ -373,10 +375,32 @@ export function App(): React.JSX.Element {
           ) : null}
           <button
             type="button"
+            className={`topbar__trace${summaryOpen ? ' topbar__trace--active' : ''}`}
+            aria-label={summaryOpen ? t('Закрыть сводку') : t('Открыть сводку')}
+            aria-pressed={summaryOpen}
+            onClick={() => {
+              setSummaryOpen((value) => {
+                const next = !value
+                if (next) setTraceOpen(false)
+                return next
+              })
+            }}
+          >
+            <UiIcon name="list-checks" size={14} />
+            {t('Сводка')}
+          </button>
+          <button
+            type="button"
             className={`topbar__trace${traceOpen ? ' topbar__trace--active' : ''}`}
             aria-label={traceOpen ? t('Закрыть трейс') : t('Открыть трейс')}
             aria-pressed={traceOpen}
-            onClick={() => setTraceOpen((value) => !value)}
+            onClick={() => {
+              setTraceOpen((value) => {
+                const next = !value
+                if (next) setSummaryOpen(false)
+                return next
+              })
+            }}
           >
             <UiIcon name="activity" size={14} />
             {t('Трейс')}
@@ -474,6 +498,17 @@ export function App(): React.JSX.Element {
           onClose={() => setTraceOpen(false)}
         />
       ) : null)}
+
+      {summaryOpen ? (
+        <ChatSummaryPanel
+          connection={connection}
+          chatId={chatId}
+          chatRevision={chatRevision}
+          events={events}
+          workspace={workspace}
+          onClose={() => setSummaryOpen(false)}
+        />
+      ) : null}
       </Suspense>
 
       <footer className="statusbar">
