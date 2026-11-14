@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 
 import type { CoreEvent, GoalListProjection, GoalProjection } from '../src/shared/api'
 import { PinnedGoalBar } from '../src/renderer/src/PinnedGoalBar'
+import { parseGoalSlashCommand } from '../src/renderer/src/TaskTimeline'
 
 const activeGoal: GoalProjection = {
   schemaVersion: 1,
@@ -68,11 +69,11 @@ afterEach(() => {
 })
 
 describe('PinnedGoalBar', () => {
-  it('creates a goal and starts execution immediately from the bar form', async () => {
+  it('renders nothing above the composer when no goal exists', async () => {
     const invoke = installApi()
     const onRunGoal = vi.fn().mockResolvedValue(undefined)
 
-    render(
+    const { container } = render(
       <PinnedGoalBar
         connection="connected"
         events={[]}
@@ -84,26 +85,37 @@ describe('PinnedGoalBar', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /Поставить цель/i }))
-    fireEvent.change(screen.getByPlaceholderText(/Сформулируй цель/i), {
-      target: { value: 'Довести фичу до конца' }
+    expect(container.firstChild).toBeNull()
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('core.listGoals', { workspacePath: 'D:/repo', limit: 32 })
     })
-    fireEvent.click(screen.getByRole('button', { name: /Поставить и выполнить/i }))
+  })
+
+  it('refreshes goals when the model executes goal.create', async () => {
+    const invoke = installApi()
+    const onRunGoal = vi.fn().mockResolvedValue(undefined)
+    const toolOutputEvent = {
+      sequenceId: 7,
+      taskId: 'task-1',
+      eventType: 'tool.output',
+      payload: JSON.stringify({ tool_name: 'goal.create', output: 'created' }),
+      executionEvent: null
+    } as unknown as CoreEvent
+
+    render(
+      <PinnedGoalBar
+        connection="connected"
+        events={[toolOutputEvent]}
+        workspace="D:/repo"
+        chatId="chat-1"
+        taskRunning={true}
+        disabled={true}
+        onRunGoal={onRunGoal}
+      />
+    )
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith(
-        'core.createGoal',
-        expect.objectContaining({
-          workspacePath: 'D:/repo',
-          chatId: 'chat-1',
-          objective: 'Довести фичу до конца',
-          continuationBudget: 12
-        })
-      )
-      expect(onRunGoal).toHaveBeenCalledWith(
-        expect.stringMatching(/^goal-/),
-        'Довести фичу до конца'
-      )
+      expect(invoke).toHaveBeenCalledWith('core.listGoals', { workspacePath: 'D:/repo', limit: 32 })
     })
   })
 
@@ -136,6 +148,26 @@ describe('PinnedGoalBar', () => {
           expectedVersion: 2
         })
       )
+    })
+  })
+})
+
+describe('parseGoalSlashCommand', () => {
+  it('parses /goal command with objective and rejects empty /goal', () => {
+    expect(parseGoalSlashCommand('/goal починить все тесты')).toEqual({
+      isGoalCommand: true,
+      objective: 'починить все тесты'
+    })
+    expect(parseGoalSlashCommand('  /GOAL   довести до конца  ')).toEqual({
+      isGoalCommand: true,
+      objective: 'довести до конца'
+    })
+    expect(parseGoalSlashCommand('/goal   ')).toEqual({
+      isGoalCommand: true,
+      objective: ''
+    })
+    expect(parseGoalSlashCommand('обычная задача')).toEqual({
+      isGoalCommand: false
     })
   })
 })

@@ -641,7 +641,7 @@ export function TaskTimeline({
     }
   }, [maxTimelineWindowStart, timelineItemKeys, timelineItems.length])
 
-  const launchTask = useCallback(async (text: string, goalId?: string): Promise<boolean> => {
+  const launchTask = useCallback(async (text: string, goalId?: string, chatIdOverride?: string): Promise<boolean> => {
     if (!api || text.trim().length === 0) return false
     const nextTaskId = makeTaskId()
     const clientMessageId = globalThis.crypto.randomUUID()
@@ -654,7 +654,7 @@ export function TaskTimeline({
 
     // Typing is the intent to start a conversation, so the first prompt of a
     // session creates the chat instead of demanding it be made first.
-    let targetChatId = chatId
+    let targetChatId = chatIdOverride ?? chatId
     if (targetChatId === null) {
       const created = await api.invoke('chat.create', { workspacePath: workspace })
       if (!created.ok) {
@@ -716,17 +716,41 @@ export function TaskTimeline({
   const start = useCallback(async () => {
     if (!api || prompt.trim().length === 0) return
     const rawPrompt = prompt.trim()
-    const text = composeTaskPrompt(rawPrompt, attachments, webSearchEnabled)
+    const parsedGoal = parseGoalSlashCommand(rawPrompt)
+    if (parsedGoal.isGoalCommand) {
+      if (parsedGoal.objective.length === 0) {
+        setComposerNotice('Укажи цель после /goal, например: /goal починить тесты')
+        return
+      }
+      if (!workspace) {
+        setComposerNotice('Сначала выбери проект, чтобы поставить цель.')
+        return
+      }
+    }
+    const effectivePrompt = parsedGoal.isGoalCommand ? parsedGoal.objective : rawPrompt
+    const text = composeTaskPrompt(effectivePrompt, attachments, webSearchEnabled)
     let goalId: string | undefined
-    if (goalMode && workspace) {
-      const createdGoalId = `goal-${makeTaskId()}`
+    let targetChatId = chatId ?? undefined
+    if ((parsedGoal.isGoalCommand || goalMode) && workspace) {
       setBusy(true)
       setCommandError(null)
+      if (!targetChatId) {
+        const createdChat = await api.invoke('chat.create', { workspacePath: workspace })
+        if (!createdChat.ok) {
+          setBusy(false)
+          setCommandError(createdChat.message)
+          return
+        }
+        targetChatId = createdChat.value.id
+        setChat(createdChat.value)
+        onChatOpened(targetChatId)
+      }
+      const createdGoalId = `goal-${makeTaskId()}`
       const created = await api.invoke('core.createGoal', {
         goalId: createdGoalId,
         workspacePath: workspace,
-        ...(chatId ? { chatId } : {}),
-        objective: rawPrompt,
+        ...(targetChatId ? { chatId: targetChatId } : {}),
+        objective: effectivePrompt,
         successCriteria: [{ id: 'criterion-1', kind: 'manual', statement: 'Цель полностью выполнена и проверена.' }],
         continuationBudget: 12,
         idempotencyKey: `goal:create:${createdGoalId}`
@@ -738,13 +762,13 @@ export function TaskTimeline({
       }
       goalId = createdGoalId
     }
-    const launched = await launchTask(text, goalId)
+    const launched = await launchTask(text, goalId, targetChatId)
     if (!launched) return
     setPrompt('')
     setAttachments([])
     setWebSearchEnabled(false)
     if (goalMode) setGoalMode(false)
-  }, [api, attachments, chatId, goalMode, launchTask, prompt, webSearchEnabled, workspace])
+  }, [api, attachments, chatId, goalMode, launchTask, onChatOpened, prompt, webSearchEnabled, workspace])
 
   const selectFiles = useCallback((fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return
@@ -982,7 +1006,7 @@ export function TaskTimeline({
                 }}
                 placeholder={goalMode
                   ? translate("Опиши цель — Ева закрепит её и будет выполнять до конца…")
-                  : translate("Опиши задачу для агента…")}
+                  : translate("Опиши задачу для агента или /goal <цель>…")}
                 disabled={!connected || busy}
                 rows={1}
               />
@@ -1054,6 +1078,14 @@ export function TaskTimeline({
       </div>
     </section>
   )
+}
+
+export function parseGoalSlashCommand(
+  rawPrompt: string
+): { readonly isGoalCommand: true; readonly objective: string } | { readonly isGoalCommand: false } {
+  const match = rawPrompt.trim().match(/^\/goal(?:\s+([\s\S]*))?$/i)
+  if (!match) return { isGoalCommand: false }
+  return { isGoalCommand: true, objective: (match[1] ?? '').trim() }
 }
 
 function composeTaskPrompt(prompt: string, attachments: readonly ComposerAttachment[], webSearchEnabled: boolean): string {

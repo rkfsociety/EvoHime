@@ -75,6 +75,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
             }
             drop(state_guard);
+            let conversation_id = conversation
+                .as_ref()
+                .map(|value| value.conversation_id.clone());
             let conversation_history = if let Some(conversation) = conversation {
                 let history = match journal.as_ref() {
                     Some(journal) => {
@@ -243,33 +246,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 if let (Some(journal), Some(gid)) = (&journal, goal_id.as_deref()) {
                     ensure_goal_continuation_run(journal, &task_id, &workspace_root, gid).await;
                 }
-                let continuation_context = if let Some(journal) = &journal {
-                    let database = journal.database().lock().await;
-                    let run = evohime_local_storage::domains::runs::get_run_by_task(
-                        database.connection(),
-                        &task_id,
-                    )
-                    .ok()
-                    .flatten();
-                    run.and_then(|run| {
-                        serde_json::from_slice::<crate::continuation::ContinuationPolicyV1>(
-                            &evohime_local_storage::domains::runs::get_policy(
-                                database.connection(),
-                                &run.policy_id,
-                                run.policy_revision,
-                                &run.owner_scope,
-                            )
-                            .ok()
-                            .flatten()?
-                            .canonical_json,
-                        )
-                        .ok()
-                        .map(|policy| (run, policy))
-                    })
+                let mut continuation_context = if let Some(journal) = &journal {
+                    load_continuation_context(journal, &task_id).await
                 } else {
                     None
                 };
-                let is_continuation_run = continuation_context.is_some();
+                let mut is_continuation_run = continuation_context.is_some();
                 let mut result = Err(AgentRunError::Internal(
                     "continuation did not execute an attempt".into(),
                 ));
@@ -408,6 +390,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     history: conversation_history.clone(),
                                     continuation_attempt: current_attempt,
                                     defer_completion_event: is_continuation_run,
+                                    conversation_id: conversation_id.clone(),
                                 },
                                 cancellation.clone(),
                                 events.clone(),
@@ -423,6 +406,65 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         }
                     };
                     let Some((run_id, attempt_index)) = attempt else {
+                        if let Some(journal) = &journal {
+                            if let Some((run, policy)) =
+                                load_continuation_context(journal, &task_id).await
+                            {
+                                is_continuation_run = true;
+                                let goal_complete = if let Some(gid) = policy.linked_goal_id.as_deref() {
+                                    let database = journal.database().lock().await;
+                                    evohime_local_storage::goal::GoalStore::new(database.connection())
+                                        .get(gid)
+                                        .ok()
+                                        .flatten()
+                                        .is_some_and(|goal| {
+                                            matches!(
+                                                goal.status,
+                                                evohime_local_storage::goal::GoalStatus::Completed
+                                            ) && goal.remaining_criteria.is_empty()
+                                        })
+                                } else {
+                                    false
+                                };
+                                if result.is_err() {
+                                    let database = journal.database().lock().await;
+                                    let _ = evohime_local_storage::domains::runs::transition_run(
+                                        database.connection(),
+                                        &run.run_id,
+                                        "running",
+                                        "failed",
+                                        Some("agent_run_failed"),
+                                        crate::task_memory::now_millis() as i64,
+                                    );
+                                    break;
+                                }
+                                if goal_complete {
+                                    let database = journal.database().lock().await;
+                                    let _ = evohime_local_storage::domains::runs::transition_run(
+                                        database.connection(),
+                                        &run.run_id,
+                                        "running",
+                                        "completed",
+                                        Some("goal_completed"),
+                                        crate::task_memory::now_millis() as i64,
+                                    );
+                                    break;
+                                }
+                                if let Ok(output) = &result {
+                                    if !output.trim().is_empty() {
+                                        let _ = events
+                                            .send(CoreEvent::AssistantDelta {
+                                                task_id: task_id.clone(),
+                                                content: format!("{output}\n"),
+                                            })
+                                            .await;
+                                        last_attempt_output = Some(output.clone());
+                                    }
+                                }
+                                continuation_context = Some((run, policy));
+                                continue;
+                            }
+                        }
                         break;
                     };
                     continuation_index = continuation_index.saturating_add(1);
@@ -854,7 +896,34 @@ fn task_timeout_duration(timeout_secs: u64) -> Option<Duration> {
     (timeout_secs > 0).then(|| Duration::from_secs(timeout_secs))
 }
 
-async fn ensure_goal_continuation_run(
+async fn load_continuation_context(
+    journal: &crate::EventJournal,
+    task_id: &str,
+) -> Option<(
+    evohime_local_storage::domains::runs::RunRecord,
+    crate::continuation::ContinuationPolicyV1,
+)> {
+    let database = journal.database().lock().await;
+    let run =
+        evohime_local_storage::domains::runs::get_run_by_task(database.connection(), task_id)
+            .ok()
+            .flatten()?;
+    let policy = serde_json::from_slice::<crate::continuation::ContinuationPolicyV1>(
+        &evohime_local_storage::domains::runs::get_policy(
+            database.connection(),
+            &run.policy_id,
+            run.policy_revision,
+            &run.owner_scope,
+        )
+        .ok()
+        .flatten()?
+        .canonical_json,
+    )
+    .ok()?;
+    Some((run, policy))
+}
+
+pub(crate) async fn ensure_goal_continuation_run(
     journal: &crate::EventJournal,
     task_id: &str,
     workspace_root: &std::path::Path,

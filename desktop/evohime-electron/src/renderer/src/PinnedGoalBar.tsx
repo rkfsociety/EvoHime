@@ -31,7 +31,8 @@ interface Props {
 /**
  * Compact Goal bar pinned directly above the composer in TaskTimeline.
  * Displays the active or paused goal for the current workspace/chat and allows
- * creating, starting, pausing, resuming, or cancelling a goal in Core.
+ * starting, pausing, resuming, verifying, or cancelling a goal in Core.
+ * Renders nothing when there is no goal to display.
  */
 export function PinnedGoalBar({
   connection,
@@ -44,10 +45,7 @@ export function PinnedGoalBar({
 }: Props): React.JSX.Element | null {
   const api = useShellApi()
   const [goals, setGoals] = useState<readonly GoalProjection[]>([])
-  const [composerOpen, setComposerOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const [objective, setObjective] = useState('')
-  const [criterion, setCriterion] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [dismissedGoalIds, setDismissedGoalIds] = useState<readonly string[]>([])
@@ -75,6 +73,8 @@ export function PinnedGoalBar({
       || event.eventType === 'goal.cancelled'
       || event.eventType === 'task.completed'
       || event.eventType === 'task.failed'
+      || (event.eventType === 'tool.output'
+        && (event.payload.includes('"goal.create"') || event.payload.includes('"goal.verify"')))
     )
     return match?.sequenceId ?? 0
   }, [events])
@@ -82,7 +82,6 @@ export function PinnedGoalBar({
   useEffect(() => {
     setGoals([])
     setNotice(null)
-    setComposerOpen(false)
     setExpanded(false)
   }, [workspace])
 
@@ -118,36 +117,6 @@ export function PinnedGoalBar({
   }, [chatId, dismissedGoalIds, goals])
 
   if (!workspace) return null
-
-  const createGoal = async (runImmediately: boolean): Promise<void> => {
-    if (!api || !workspace || !connected) return
-    const trimmedObjective = objective.trim()
-    if (trimmedObjective.length === 0) return
-    const goalId = `goal-${makeId()}`
-    const criterionText = criterion.trim() || 'Цель полностью выполнена и проверена.'
-    setBusy(true)
-    setNotice(null)
-    const outcome = await api.invoke('core.createGoal', {
-      goalId,
-      workspacePath: workspace,
-      ...(chatId ? { chatId } : {}),
-      objective: trimmedObjective,
-      successCriteria: [{ id: 'criterion-1', kind: 'manual', statement: criterionText }],
-      continuationBudget: 12,
-      idempotencyKey: `goal:create:${goalId}`
-    })
-    setBusy(false)
-    if (!outcome.ok) {
-      setNotice(outcome.message)
-      return
-    }
-    setObjective('')
-    setCriterion('')
-    setComposerOpen(false)
-    if (runImmediately) {
-      await onRunGoal(goalId, trimmedObjective)
-    }
-  }
 
   const transition = async (
     goal: GoalProjection,
@@ -186,82 +155,7 @@ export function PinnedGoalBar({
     if (!outcome.ok) setNotice(outcome.message)
   }
 
-  if (!pinnedGoal) {
-    return (
-      <div className="pinned-goal-bar pinned-goal-bar--empty" data-testid="pinned-goal-bar">
-        {!composerOpen ? (
-          <div className="pinned-goal-bar__trigger-row">
-            <button
-              type="button"
-              className="pinned-goal-bar__trigger"
-              disabled={!connected || disabled || busy}
-              onClick={() => setComposerOpen(true)}
-            >
-              <UiIcon name="plus" size={13} />
-              <span>{translate('Поставить цель')}</span>
-            </button>
-            <span className="pinned-goal-bar__hint">
-              {translate('Цель фиксируется над композером и выполняется до конца')}
-            </span>
-          </div>
-        ) : (
-          <form
-            className="pinned-goal-bar__form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void createGoal(true)
-            }}
-          >
-            <div className="pinned-goal-bar__form-fields">
-              <input
-                type="text"
-                className="pinned-goal-bar__input"
-                value={objective}
-                onChange={(event) => setObjective(event.target.value)}
-                placeholder={translate('Сформулируй цель (например: починить все тесты модуля и проверить сборку)…')}
-                disabled={busy}
-                autoFocus
-              />
-              <input
-                type="text"
-                className="pinned-goal-bar__input pinned-goal-bar__input--criterion"
-                value={criterion}
-                onChange={(event) => setCriterion(event.target.value)}
-                placeholder={translate('Критерий готовности (необязательно)')}
-                disabled={busy}
-              />
-            </div>
-            <div className="pinned-goal-bar__form-actions">
-              <button
-                type="submit"
-                className="pinned-goal-bar__btn pinned-goal-bar__btn--primary"
-                disabled={!connected || busy || disabled || objective.trim().length === 0}
-              >
-                {translate('Поставить и выполнить')}
-              </button>
-              <button
-                type="button"
-                className="pinned-goal-bar__btn"
-                disabled={!connected || busy || objective.trim().length === 0}
-                onClick={() => void createGoal(false)}
-              >
-                {translate('Только закрепить')}
-              </button>
-              <button
-                type="button"
-                className="pinned-goal-bar__btn"
-                disabled={busy}
-                onClick={() => setComposerOpen(false)}
-              >
-                {translate('Отмена')}
-              </button>
-            </div>
-            {notice ? <p className="pinned-goal-bar__notice" role="alert">{translate(notice)}</p> : null}
-          </form>
-        )}
-      </div>
-    )
-  }
+  if (!pinnedGoal) return null
 
   const totalCriteria = pinnedGoal.successCriteria.length
   const completedCount = pinnedGoal.completedCriteria.length

@@ -163,6 +163,7 @@ impl ToolAgent {
             history: conversation_history,
             continuation_attempt,
             defer_completion_event,
+            conversation_id,
         } = execution_context;
         let task_id = task_id.into();
         let prompt = prompt.into();
@@ -248,9 +249,10 @@ impl ToolAgent {
         let has_active_goal = prompt.contains("<active_goal ");
         let mut appended_tool_ids = Vec::new();
         let mut required_ids = delivery_required_tool_ids(delivery_requirements);
-        if has_active_goal {
-            required_ids.push("goal.verify");
+        if !has_active_goal {
+            required_ids.push("goal.create");
         }
+        required_ids.push("goal.verify");
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
         }
@@ -710,6 +712,7 @@ impl ToolAgent {
         let mut primary_request_id: Option<String> = None;
         let mut primary_response_id: Option<String> = None;
         let mut goal_verified_in_run = false;
+        let mut created_goal_id_in_run: Option<String> = None;
         let mut goal_verify_nudged = false;
         let max_reroutes = 1_u32;
         let mut provenance_source_refs = project_instruction_refs;
@@ -1313,7 +1316,9 @@ impl ToolAgent {
                         events,
                     )
                     .await;
-                if !defer_completion_event {
+                let defer_terminal_event =
+                    defer_completion_event || created_goal_id_in_run.is_some();
+                if !defer_terminal_event {
                     let _ = events
                         .send(CoreEvent::TaskCompleted {
                             task_id: task_id.clone(),
@@ -1547,6 +1552,98 @@ impl ToolAgent {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                             result = result => result,
                         }
+                    } else if call.name == "goal.create" {
+                        let result = async {
+                            let journal = self.journal.as_ref().ok_or_else(|| {
+                                evohime_tool_runtime::ToolError::Execution(
+                                    "goal.create requires the Core journal".into(),
+                                )
+                            })?;
+                            let parsed = evohime_tool_runtime::goal::parse_create_input(&input)?;
+                            let goal_id = format!("goal-{}", uuid::Uuid::new_v4());
+                            let criteria = parsed
+                                .success_criteria
+                                .iter()
+                                .enumerate()
+                                .map(|(index, statement)| crate::goal::GoalCriterionV1 {
+                                    id: format!("criterion-{}", index + 1),
+                                    kind: crate::goal::GoalCriterionKind::Manual,
+                                    statement: statement.clone(),
+                                    status: crate::goal::GoalCriterionStatus::Pending,
+                                    evidence_ref: None,
+                                    verifier_id: None,
+                                    verifier_version: None,
+                                    verified_at_ms: None,
+                                    provenance: crate::goal::GoalProvenance::User,
+                                })
+                                .collect::<Vec<_>>();
+                            let criteria_pairs = criteria
+                                .iter()
+                                .map(|criterion| (criterion.id.clone(), criterion.statement.clone()))
+                                .collect::<Vec<_>>();
+                            let now = crate::goal::now_ms();
+                            let workspace_path = context.workspace_root.to_string_lossy();
+                            let goal = crate::goal::GoalV1 {
+                                id: goal_id.clone(),
+                                version: 1,
+                                workspace_id: crate::goal::workspace_id_from_path(&workspace_path),
+                                chat_id: conversation_id.clone(),
+                                objective: parsed.objective.clone(),
+                                success_criteria: criteria,
+                                status: crate::goal::GoalStatus::Active,
+                                progress_summary: "Цель создана агентом; критерии ещё не подтверждены.".into(),
+                                completed_criteria: Vec::new(),
+                                remaining_criteria: Vec::new(),
+                                blockers: Vec::new(),
+                                next_action: Some("Выполнить критерии и подтвердить каждый через goal.verify.".into()),
+                                workflow_run_ids: Vec::new(),
+                                child_run_ids: Vec::new(),
+                                checkpoint_id: None,
+                                token_budget: None,
+                                cost_budget_micros: None,
+                                continuation_budget: parsed.continuation_budget.or(Some(12)),
+                                created_at_ms: now,
+                                updated_at_ms: now,
+                                created_by: "agent".into(),
+                                updated_by: "agent".into(),
+                                content_hash: String::new(),
+                            };
+                            let idempotency_key = format!("agent-create:{task_id}:{goal_id}");
+                            let command_hash = crate::research::sha256_hex(
+                                format!("{task_id}:{goal_id}:{}", parsed.objective).as_bytes(),
+                            );
+                            let runtime = crate::goal::GoalRuntime::new(journal.clone());
+                            let mutation = runtime
+                                .create(
+                                    &goal,
+                                    crate::goal::GoalCommand::new(
+                                        "agent",
+                                        &idempotency_key,
+                                        &command_hash,
+                                    ),
+                                )
+                                .await
+                                .map_err(|error| {
+                                    evohime_tool_runtime::ToolError::Execution(error.to_string())
+                                })?;
+                            crate::core_coordinator_routing::ensure_goal_continuation_run(
+                                journal,
+                                &task_id,
+                                &context.workspace_root,
+                                &mutation.goal.id,
+                            )
+                            .await;
+                            Ok(evohime_tool_runtime::goal::format_create_result(
+                                &mutation.goal.id,
+                                &mutation.goal.objective,
+                                mutation.goal.status.as_str(),
+                                &criteria_pairs,
+                            ))
+                        };
+                        tokio::select! {
+                            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                            result = result => result,
+                        }
                     } else if call.name == "goal.verify" {
                         let result = async {
                             let journal = self.journal.as_ref().ok_or_else(|| {
@@ -1637,7 +1734,15 @@ impl ToolAgent {
                         }
                     } {
                         Ok(result) => {
-                            if call.name == "goal.verify" {
+                            if call.name == "goal.create" {
+                                if let Some(goal_id) = result
+                                    .structured
+                                    .get("goal_id")
+                                    .and_then(serde_json::Value::as_str)
+                                {
+                                    created_goal_id_in_run = Some(goal_id.to_owned());
+                                }
+                            } else if call.name == "goal.verify" {
                                 goal_verified_in_run = true;
                             }
                             recovery::ToolOutcome::success(result)

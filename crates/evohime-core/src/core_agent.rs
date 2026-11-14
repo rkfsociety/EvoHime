@@ -73,6 +73,8 @@ pub struct ConversationExecutionContext {
     /// When true, terminal `CoreEvent::TaskCompleted` / `CoreEvent::TaskFailed`
     /// emissions are deferred to the coordinating continuation loop.
     pub defer_completion_event: bool,
+    /// Optional conversation/chat identifier associated with this task.
+    pub conversation_id: Option<String>,
 }
 
 /// Coordinates one-shot user approvals for protected agent actions.
@@ -1244,6 +1246,7 @@ impl TaskExecutor for ToolAgent {
                         history: Vec::new(),
                         continuation_attempt: None,
                         defer_completion_event: false,
+                        conversation_id: None,
                     },
                 )
                 .await

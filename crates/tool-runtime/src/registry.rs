@@ -366,6 +366,12 @@ impl ToolRegistry {
             timeout: tools::memory::TIMEOUT,
         });
         registry.register(ToolDefinition {
+            name: tools::goal::CREATE_NAME,
+            description: tools::goal::CREATE_DESCRIPTION,
+            permissions: tools::goal::CREATE_PERMISSIONS,
+            timeout: tools::goal::CREATE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::goal::NAME,
             description: tools::goal::DESCRIPTION,
             permissions: tools::goal::PERMISSIONS,
@@ -848,6 +854,7 @@ impl ToolRegistry {
                 tools::git::CHANGED_FILES_NAME => tools::git::changed_files(ctx, input).await,
                 tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
                 tools::memory::NAME => tools::memory::execute(ctx, input).await,
+                tools::goal::CREATE_NAME => tools::goal::execute_create(ctx, input).await,
                 tools::goal::NAME => tools::goal::execute(ctx, input).await,
                 tools::agent::NAME => tools::agent::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
@@ -1003,6 +1010,7 @@ impl ToolRegistry {
                 tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
                 tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
                 tools::memory::NAME => tools::memory::execute(ctx, input).await,
+                tools::goal::CREATE_NAME => tools::goal::execute_create(ctx, input).await,
                 tools::goal::NAME => tools::goal::execute(ctx, input).await,
                 tools::agent::NAME => tools::agent::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,

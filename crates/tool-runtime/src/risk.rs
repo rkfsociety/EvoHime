@@ -44,6 +44,7 @@ pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
         | "browser.session.read"
         | "browser.session.screenshot"
         | "memory.search"
+        | "goal.create"
         | "goal.verify"
         | "app.list"
         // `analysis.run` лишь считает по уже переданным аргументам: у него нет
