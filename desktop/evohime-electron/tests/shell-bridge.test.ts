@@ -13,7 +13,8 @@ import {
   CLIPBOARD_CHANNEL,
   INVOKE_CHANNEL,
   OPEN_EXTERNAL_CHANNEL,
-  SET_LOCALE_CHANNEL
+  SET_LOCALE_CHANNEL,
+  SET_THEME_CHANNEL
 } from '../src/shared/channels'
 
 /**
@@ -355,7 +356,7 @@ describe('renderer command surface', () => {
 
   it('exposes only the documented channels', () => {
     expect([...handlers.keys()].sort()).toEqual(
-      [CLIPBOARD_CHANNEL, INVOKE_CHANNEL, OPEN_EXTERNAL_CHANNEL, SET_LOCALE_CHANNEL].sort()
+      [CLIPBOARD_CHANNEL, INVOKE_CHANNEL, OPEN_EXTERNAL_CHANNEL, SET_LOCALE_CHANNEL, SET_THEME_CHANNEL].sort()
     )
   })
 

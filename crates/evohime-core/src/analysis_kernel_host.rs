@@ -10,15 +10,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::analysis_kernel::{self, KernelLimitsV1, KernelRuntime, KernelRuntimeState};
+use crate::analysis_kernel::{self, KernelLimitsV1, KernelRuntime};
 use crate::EventJournal;
 use evohime_local_storage::analysis_kernel::{
     AnalysisKernelError, AnalysisKernelSessionV1, AnalysisKernelStore, KernelStatus,
     ANALYSIS_KERNEL_SCHEMA_VERSION,
 };
 use evohime_tool_runtime::kernel_host::{
-    AnalysisOperation, AnalysisSensitivity, KernelHost, KernelTaskBinding, KernelToolError,
-    KernelToolRequest, KernelToolResult,
+    AnalysisOperation, KernelHost, KernelTaskBinding, KernelToolError, KernelToolRequest,
+    KernelToolResult,
 };
 use sha2::Digest;
 use tokio::sync::Mutex;
@@ -27,10 +27,21 @@ use uuid::Uuid;
 /// Canonical hash of the `analysis.run` tool manifest for use in session policy.
 ///
 /// This is a deterministically computed SHA-256 digest of the canonical JSON
-/// representation of the tool's manifest. It is computed once at compile time
-/// and used to bind kernel sessions to the exact declared tool contract.
-pub const ANALYSIS_RUN_MANIFEST_HASH: &str =
-    include!(concat!(env!("OUT_DIR"), "/analysis_run_manifest_hash.txt"));
+/// representation of the tool's manifest. It is computed once and used to bind
+/// kernel sessions to the exact declared tool contract.
+pub fn analysis_run_manifest_hash() -> &'static str {
+    static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HASH.get_or_init(|| {
+        let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
+        let manifest = registry
+            .manifest_for(evohime_tool_runtime::tools::analysis::NAME)
+            .expect("analysis.run manifest must exist");
+        let hash = manifest
+            .canonical_hash()
+            .expect("analysis.run manifest hash must compute");
+        hash.strip_prefix("sha256:").unwrap_or(&hash).to_string()
+    })
+}
 
 /// Policy hash used for kernel sessions created by the agent.
 ///
@@ -73,24 +84,26 @@ impl CoreKernelHost {
         let task_id = binding.task_id.to_string();
 
         // Check if a session already exists for this task
-        let database = self.journal.database().lock().await;
-        let store = AnalysisKernelStore::new(database.connection());
-        let existing = store
-            .list_sessions_for_task(&task_id)
-            .map_err(|error| {
-                KernelToolError::new(
-                    evohime_tool_runtime::kernel_host::KERNEL_STORAGE_FAILED,
-                    format!("could not query existing sessions: {error}"),
-                )
-            })?
-            .into_iter()
-            .find(|session| {
-                session.workspace_id == workspace_id
-                    && matches!(
-                        session.status,
-                        KernelStatus::Created | KernelStatus::Running | KernelStatus::Reset
+        let existing = {
+            let database = self.journal.database().lock().await;
+            let store = AnalysisKernelStore::new(database.connection());
+            store
+                .list_sessions_for_task(&task_id)
+                .map_err(|error| {
+                    KernelToolError::new(
+                        evohime_tool_runtime::kernel_host::KERNEL_STORAGE_FAILED,
+                        format!("could not query existing sessions: {error}"),
                     )
-            });
+                })?
+                .into_iter()
+                .find(|session| {
+                    session.workspace_id == workspace_id
+                        && matches!(
+                            session.status,
+                            KernelStatus::Created | KernelStatus::Running | KernelStatus::Reset
+                        )
+                })
+        };
 
         if let Some(session) = existing {
             return Ok(session.id);
@@ -104,7 +117,7 @@ impl CoreKernelHost {
             task_id,
             workspace_id,
             runtime_version: "trusted-local-1".into(),
-            package_manifest_hash: ANALYSIS_RUN_MANIFEST_HASH.into(),
+            package_manifest_hash: analysis_run_manifest_hash().into(),
             policy_hash: AGENT_KERNEL_POLICY_HASH.into(),
             status: KernelStatus::Created,
             revision: 0,
@@ -137,21 +150,25 @@ impl CoreKernelHost {
             }
         }
 
-        store.create_session(&session).map_err(|error| {
-            KernelToolError::new(
-                evohime_tool_runtime::kernel_host::KERNEL_STORAGE_FAILED,
-                format!("could not create session: {error}"),
-            )
-        })?;
-
-        store
-            .set_status(&session.id, session.revision, KernelStatus::Running, now)
-            .map_err(|error| {
+        {
+            let database = self.journal.database().lock().await;
+            let store = AnalysisKernelStore::new(database.connection());
+            store.create_session(&session).map_err(|error| {
                 KernelToolError::new(
                     evohime_tool_runtime::kernel_host::KERNEL_STORAGE_FAILED,
-                    format!("could not start session: {error}"),
+                    format!("could not create session: {error}"),
                 )
             })?;
+
+            store
+                .set_status(&session.id, session.revision, KernelStatus::Running, now)
+                .map_err(|error| {
+                    KernelToolError::new(
+                        evohime_tool_runtime::kernel_host::KERNEL_STORAGE_FAILED,
+                        format!("could not start session: {error}"),
+                    )
+                })?;
+        }
 
         // Create runtime and insert into process-local map
         let mut session = session;
@@ -215,10 +232,11 @@ impl CoreKernelHost {
     /// Converts a kernel host response to a tool result.
     fn host_response_to_tool_result(
         &self,
+        kernel_id: &str,
         response: analysis_kernel::KernelHostResponseV1,
     ) -> KernelToolResult {
         KernelToolResult {
-            kernel_id: response.request_id.clone(),
+            kernel_id: kernel_id.to_string(),
             inline_result: response.inline_result,
             object_ref: response.object_ref.map(|object| {
                 evohime_tool_runtime::kernel_host::KernelToolObjectRef {
@@ -261,7 +279,7 @@ impl KernelHost for CoreKernelHost {
             };
 
             match runtime.execute(host_request, Instant::now()) {
-                Ok(response) => Ok(self.host_response_to_tool_result(response)),
+                Ok(response) => Ok(self.host_response_to_tool_result(&kernel_id, response)),
                 Err(error) => {
                     let code = match error {
                         analysis_kernel::KernelRuntimeError::NotRunning => {
@@ -328,5 +346,12 @@ mod tests {
         assert_eq!(id1, id2);
         assert_ne!(id1, id3);
         assert!(!id1.is_empty());
+    }
+
+    #[test]
+    fn manifest_hash_is_valid_sha256() {
+        let hash = analysis_run_manifest_hash();
+        assert_eq!(hash.len(), 64);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
     }
 }
