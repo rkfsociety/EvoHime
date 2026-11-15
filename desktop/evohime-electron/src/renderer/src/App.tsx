@@ -303,6 +303,7 @@ export function App(): React.JSX.Element {
               // Starting or picking a chat means going back to the conversation.
               setView('chat')
             }}
+            onChatsChanged={() => setChatRevision((value) => value + 1)}
             revision={chatRevision}
           />
         </div>

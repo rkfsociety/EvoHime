@@ -31,6 +31,11 @@ beforeEach(() => {
         chats = [{ ...created, messageCount: 0 }, ...chats]
         return ok(created)
       }
+      if (command === 'chat.remove') {
+        const { chatId } = payload as { chatId: string }
+        chats = chats.filter((chat) => chat.id !== chatId)
+        return ok(chats)
+      }
       return ok({ accepted: true })
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {}, writeClipboardText: async () => true, openExternal: async () => true
@@ -71,5 +76,14 @@ describe('project sidebar', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Новый чат/ }))
     expect(calls.some(({ command }) => command === 'chat.create')).toBe(false)
     expect(props.onChatChange).toHaveBeenCalledWith(null)
+  })
+
+  it('notifies the shell when a chat is removed so the home screen refreshes', async () => {
+    const onChatsChanged = vi.fn()
+    const { props } = renderSidebar({ chatId: 'chat-1', onChatsChanged })
+    await userEvent.click(await screen.findByRole('button', { name: 'Удалить чат Изучи проект' }))
+    expect(calls).toContainEqual({ command: 'chat.remove', payload: { chatId: 'chat-1' } })
+    expect(props.onChatChange).toHaveBeenCalledWith(null)
+    expect(onChatsChanged).toHaveBeenCalledTimes(1)
   })
 })

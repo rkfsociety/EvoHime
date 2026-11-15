@@ -22,6 +22,8 @@ export interface ProjectSidebarProps {
   readonly chatId: string | null
   readonly onWorkspaceChange: (workspace: string | null) => void
   readonly onChatChange: (chatId: string | null) => void
+  /** Notifies the shell that the chat list changed (e.g. a chat was removed). */
+  readonly onChatsChanged?: () => void
   /** Bumped by the chat surface when a prompt renames or reorders a chat. */
   readonly revision: number
 }
@@ -32,6 +34,7 @@ export function ProjectSidebar({
   chatId,
   onWorkspaceChange,
   onChatChange,
+  onChatsChanged,
   revision
 }: ProjectSidebarProps): React.JSX.Element {
   const t = useT()
@@ -104,8 +107,9 @@ export function ProjectSidebar({
       if (!outcome.ok) return
       setChats(outcome.value)
       if (id === chatId) onChatChange(null)
+      onChatsChanged?.()
     },
-    [api, chatId, onChatChange]
+    [api, chatId, onChatChange, onChatsChanged]
   )
 
   const connected = CONNECTED_STATES.includes(connection)
