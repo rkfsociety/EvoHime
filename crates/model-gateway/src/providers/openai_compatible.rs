@@ -1,4 +1,4 @@
-use crate::config::LiteRouterConfig;
+use crate::config::{LiteRouterConfig, RequestPacingConfig};
 use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     TokenStream,
@@ -21,14 +21,26 @@ impl OpenAICompatibleProvider {
     }
 
     /// Creates the adapter with an explicit retry policy.
+    ///
+    /// Request pacing is disabled: unlike LiteRouter, a generic
+    /// OpenAI-compatible endpoint has no known tier window to respect.
     pub fn with_retry(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
+        Self::with_pacing(config, retry, RequestPacingConfig::disabled())
+    }
+
+    /// Creates the adapter with explicit retry and request pacing.
+    pub fn with_pacing(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        pacing: RequestPacingConfig,
+    ) -> Result<Self, ProviderError> {
         if config.api_key.is_empty() {
             return Err(ProviderError::Config(
                 "OpenAI-compatible API key must not be empty".to_string(),
             ));
         }
         Ok(Self {
-            inner: super::literouter::LiteRouterProvider::with_retry(config, retry)?,
+            inner: super::literouter::LiteRouterProvider::with_pacing(config, retry, pacing)?,
         })
     }
 

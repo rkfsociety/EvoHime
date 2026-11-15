@@ -102,6 +102,9 @@ describe('provider store', () => {
       MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY: 'disabled',
       MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING: '',
       MODEL_PROVIDER_REVOKED_CREDENTIAL_BINDINGS: '',
+      MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
+      MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
       OPENAI_API_KEY: 'sk-openai',
       OPENAI_MODEL: 'gpt-4o-mini',
       OPENAI_BASE_URL: 'https://api.openai.com/v1',
@@ -129,6 +132,9 @@ describe('provider store', () => {
       MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY: 'disabled',
       MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING: '',
       MODEL_PROVIDER_REVOKED_CREDENTIAL_BINDINGS: '',
+      MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
+      MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
       OLLAMA_BASE_URL: 'http://127.0.0.1:11434/v1',
       OLLAMA_MODEL: 'qwen3:4b'
     })
@@ -157,6 +163,9 @@ describe('provider store', () => {
       MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY: 'disabled',
       MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING: '',
       MODEL_PROVIDER_REVOKED_CREDENTIAL_BINDINGS: '',
+      MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
+      MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
       OPENAI_API_KEY: 'sk-openai',
       OPENAI_MODEL: 'gpt-model',
       OPENAI_BASE_URL: 'https://api.openai.com/v1',
@@ -189,6 +198,89 @@ describe('provider store', () => {
     expect(store.summary().profiles.openai_compatible.configured).toBe(true)
   })
 
+  it('persists request pacing per provider and exports it to Core', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    store.save({
+      provider: 'literouter',
+      apiKey: 'sk-literouter',
+      model: 'router-model',
+      baseUrl: '',
+      tier: 'free',
+      requestPacing: { enabled: true, intervalMs: 1_500, freeIntervalMs: 2_500 }
+    })
+    store.save({
+      provider: 'openai_compatible',
+      apiKey: 'sk-openai',
+      model: 'gpt-model',
+      baseUrl: '',
+      tier: 'paid',
+      requestPacing: { enabled: false, intervalMs: 3_500, freeIntervalMs: 4_500 }
+    })
+
+    expect(store.summary().profiles.literouter.requestPacing).toEqual({
+      enabled: true,
+      intervalMs: 1_500,
+      freeIntervalMs: 2_500
+    })
+    expect(store.summary().profiles.openai_compatible.requestPacing).toEqual({
+      enabled: false,
+      intervalMs: 3_500,
+      freeIntervalMs: 4_500
+    })
+
+    store.select('literouter')
+    expect(store.environment()).toMatchObject({
+      MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'true',
+      MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '1500',
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '2500'
+    })
+    store.select('openai_compatible')
+    expect(store.environment()).toMatchObject({
+      MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
+      MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '3500',
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '4500'
+    })
+  })
+
+  it('keeps request pacing when the key is removed', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    store.save({
+      provider: 'literouter',
+      apiKey: 'sk-literouter',
+      model: 'router-model',
+      baseUrl: '',
+      tier: 'free',
+      requestPacing: { enabled: false, intervalMs: 900, freeIntervalMs: 1900 }
+    })
+
+    expect(store.clearKey('literouter').profiles.literouter.requestPacing).toEqual({
+      enabled: false,
+      intervalMs: 900,
+      freeIntervalMs: 1900
+    })
+    expect(store.environment()['MODEL_PROVIDER_REQUEST_PACING_ENABLED']).toBe('false')
+  })
+
+  it('rejects an out-of-range request pacing interval', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    expect(store.save({
+      provider: 'literouter',
+      apiKey: 'sk-literouter',
+      model: 'router-model',
+      baseUrl: '',
+      tier: 'free',
+      requestPacing: { enabled: true, intervalMs: 3_600_001, freeIntervalMs: 18_948 }
+    })).toBeNull()
+    expect(store.save({
+      provider: 'literouter',
+      apiKey: 'sk-literouter',
+      model: 'router-model',
+      baseUrl: '',
+      tier: 'free',
+      requestPacing: { enabled: true, intervalMs: 8_000, freeIntervalMs: -1 }
+    })).toBeNull()
+  })
+
   it('exports Responses credentials through the same protected OpenAI environment', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
     store.save({ provider: 'openai_responses', apiKey: 'sk-responses', model: 'gpt-5-codex', baseUrl: '', tier: 'paid' })
@@ -200,6 +292,9 @@ describe('provider store', () => {
       MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY: 'disabled',
       MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING: '',
       MODEL_PROVIDER_REVOKED_CREDENTIAL_BINDINGS: '',
+      MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
+      MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
       OPENAI_API_KEY: 'sk-responses',
       OPENAI_MODEL: 'gpt-5-codex',
       MODEL_PROVIDER_CREDENTIAL_BINDING: expect.stringMatching(/^credential:[0-9a-f-]{36}$/)
@@ -231,6 +326,9 @@ describe('provider store', () => {
       MODEL_PROVIDER_FREE_ACCESS_PROBE_POLICY: 'disabled',
       MODEL_PROVIDER_FREE_ACCESS_PROBE_CONSENT_BINDING: '',
       MODEL_PROVIDER_REVOKED_CREDENTIAL_BINDINGS: '',
+      MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
+      MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
       OPENAI_API_KEY: 'cf-token',
       OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/v1',
       OPENAI_MODEL: '@cf/meta/llama-3.1-8b-instruct',
@@ -358,8 +456,13 @@ describe('provider store', () => {
     const binding = store.environment()['MODEL_PROVIDER_CREDENTIAL_BINDING']
     expect(binding).toMatch(/^credential:[0-9a-f-]{36}$/)
     expect(store.environment()['MODEL_PROVIDER_CREDENTIAL_BINDING']).toBe(binding)
+    expect(store.summary().profiles.literouter.requestPacing).toEqual({
+      enabled: true,
+      intervalMs: 8_000,
+      freeIntervalMs: 18_948
+    })
     expect(readFileSync(path, 'utf8')).not.toContain('sk-legacy')
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 5 })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 6 })
   })
 
   it('binds automatic probe consent to the saved OpenRouter credential and clears it on removal', () => {

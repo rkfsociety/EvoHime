@@ -663,6 +663,21 @@ describe('renderer command surface', () => {
     expect(restarts).toHaveLength(0)
   })
 
+  it('rejects an out-of-range request pacing interval before it reaches Core', async () => {
+    const outcome = (await invoke('provider.save', {
+      provider: 'literouter',
+      apiKey: 'sk-secret-value',
+      model: '',
+      baseUrl: '',
+      tier: 'free',
+      requestPacing: { enabled: true, intervalMs: -1, freeIntervalMs: 18_948 }
+    })) as CommandFailure
+
+    expect(outcome.ok).toBe(false)
+    expect(outcome.code).toBe('invalid-payload')
+    expect(providerWrites).toHaveLength(0)
+  })
+
   it('forwards a bounded model selection to Core', () => {
     expect(invoke('core.selectModel', { model: 'deepseek:free' })).toEqual({
       ok: true,

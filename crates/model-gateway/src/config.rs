@@ -2,6 +2,7 @@ use crate::providers::{ProviderError, ProviderKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
+use std::time::Duration;
 
 /// Default LiteRouter OpenAI-compatible base URL.
 pub const LITEROUTER_DEFAULT_BASE_URL: &str = "https://api.literouter.com/v1";
@@ -17,6 +18,118 @@ pub const OPENAI_CODEX_DEFAULT_MODEL: &str = "gpt-5-codex";
 pub const LOCAL_DEFAULT_BASE_URL: &str = "http://127.0.0.1:49152/v1";
 /// Default loopback endpoint for Ollama's OpenAI-compatible API.
 pub const OLLAMA_DEFAULT_BASE_URL: &str = "http://127.0.0.1:11434/v1";
+
+/// Minimum spacing between provider request starts.
+///
+/// The interval is a local pacing guard, not a rate-limit retry: it spaces
+/// successful attempts so the provider does not answer with a rate limit at
+/// all. Providers other than LiteRouter do not need it and keep it disabled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestPacingConfig {
+    /// Whether the adapter spaces request starts.
+    pub enabled: bool,
+    /// Minimum interval for regular models, in milliseconds.
+    pub interval_ms: u64,
+    /// Minimum interval for `:free` models, in milliseconds.
+    pub free_interval_ms: u64,
+}
+
+impl Default for RequestPacingConfig {
+    fn default() -> Self {
+        Self::disabled()
+    }
+}
+
+impl RequestPacingConfig {
+    /// Largest accepted interval; a misconfigured value stays bounded.
+    pub const MAX_INTERVAL_MS: u64 = 3_600_000;
+    /// LiteRouter tier window for regular models.
+    pub const LITEROUTER_INTERVAL_MS: u64 = 8_000;
+    /// LiteRouter free-tier budget: 190 requests per hour.
+    pub const LITEROUTER_FREE_INTERVAL_MS: u64 = 18_948;
+
+    /// Builds a policy that never waits between request starts.
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            interval_ms: 0,
+            free_interval_ms: 0,
+        }
+    }
+
+    /// Returns the built-in policy for a provider transport.
+    pub fn for_provider(provider: ProviderKind) -> Self {
+        match provider {
+            ProviderKind::LiteRouter => Self {
+                enabled: true,
+                interval_ms: Self::LITEROUTER_INTERVAL_MS,
+                free_interval_ms: Self::LITEROUTER_FREE_INTERVAL_MS,
+            },
+            _ => Self::disabled(),
+        }
+    }
+
+    /// Reads the `MODEL_PROVIDER_REQUEST_PACING_*` environment variables,
+    /// falling back to the provider defaults.
+    pub fn from_env(provider: ProviderKind) -> Self {
+        let default = Self::for_provider(provider);
+        Self {
+            enabled: env_bool(
+                "MODEL_PROVIDER_REQUEST_PACING_ENABLED",
+                default.enabled,
+            ),
+            interval_ms: env_u64(
+                "MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS",
+                default.interval_ms,
+            ),
+            free_interval_ms: env_u64(
+                "MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS",
+                default.free_interval_ms,
+            ),
+        }
+        .normalized()
+    }
+
+    /// Clamps the intervals into the accepted range.
+    pub fn normalized(self) -> Self {
+        Self {
+            enabled: self.enabled,
+            interval_ms: self.interval_ms.min(Self::MAX_INTERVAL_MS),
+            free_interval_ms: self.free_interval_ms.min(Self::MAX_INTERVAL_MS),
+        }
+    }
+
+    /// Returns the pacing interval for a model, or `None` when pacing is off.
+    pub fn interval_for_model(self, model: &str) -> Option<Duration> {
+        if !self.enabled {
+            return None;
+        }
+        let interval_ms = if model.trim().to_ascii_lowercase().ends_with(":free") {
+            self.free_interval_ms
+        } else {
+            self.interval_ms
+        };
+        (interval_ms > 0).then(|| Duration::from_millis(interval_ms))
+    }
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    match env::var(name) {
+        Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => true,
+            "0" | "false" | "no" | "off" => false,
+            _ => default,
+        },
+        Err(_) => default,
+    }
+}
+
+fn env_u64(name: &str, default: u64) -> u64 {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(default)
+}
 
 /// Stable provider identity selected independently from the wire transport.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -248,6 +361,9 @@ pub struct ModelRouteConfig {
     /// Wave 3B: Provider supports extended thinking
     #[serde(default = "default_thinking_support")]
     pub supports_thinking: bool,
+    /// Minimum spacing between request starts for this route.
+    #[serde(default)]
+    pub request_pacing: RequestPacingConfig,
 }
 
 fn default_thinking_support() -> bool {
@@ -277,6 +393,7 @@ impl ModelRouteConfig {
             provider_account_id: None,
             provider_credential_binding: None,
             supports_thinking,
+            request_pacing: RequestPacingConfig::for_provider(provider),
         }
     }
 
@@ -315,6 +432,12 @@ impl ModelRouteConfig {
     /// Associates a stable opaque scope handle with the configured provider credential.
     pub fn with_credential_binding(mut self, binding: Option<String>) -> Self {
         self.provider_credential_binding = binding;
+        self
+    }
+
+    /// Replaces the request pacing policy for this route.
+    pub fn with_request_pacing(mut self, request_pacing: RequestPacingConfig) -> Self {
+        self.request_pacing = request_pacing.normalized();
         self
     }
 
@@ -416,6 +539,7 @@ impl ModelRouteConfig {
             provider_account_id: None,
             provider_credential_binding: None,
             supports_thinking: true, // Mock supports all features
+            request_pacing: RequestPacingConfig::disabled(),
         }
     }
 
@@ -463,6 +587,7 @@ impl ModelGatewayConfig {
                 provider_account_id: None,
                 provider_credential_binding: None,
                 supports_thinking: true,
+                request_pacing: RequestPacingConfig::for_provider(provider),
             },
             ProviderKind::OpenAICompatible => {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
@@ -488,7 +613,9 @@ impl ModelGatewayConfig {
                 env::var("LOCAL_PROVIDER_MODEL").unwrap_or_else(|_| "local-slm".to_string()),
             ),
         };
-        route = route.with_credential_binding(env::var("MODEL_PROVIDER_CREDENTIAL_BINDING").ok());
+        route = route
+            .with_credential_binding(env::var("MODEL_PROVIDER_CREDENTIAL_BINDING").ok())
+            .with_request_pacing(RequestPacingConfig::from_env(provider));
         if provider == ProviderKind::OpenAICompatible {
             let profile_id =
                 match env::var("MODEL_PROVIDER_PROFILE_ID") {
@@ -531,6 +658,8 @@ struct EnvRouteConfig {
     provider_account_id: Option<String>,
     #[serde(default)]
     provider_credential_binding: Option<String>,
+    #[serde(default)]
+    request_pacing: Option<RequestPacingConfig>,
 }
 
 fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, ProviderError> {
@@ -545,6 +674,10 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             .as_deref()
             .and_then(ProviderKind::parse)
             .unwrap_or(ProviderKind::LiteRouter);
+        let request_pacing = route
+            .request_pacing
+            .map(RequestPacingConfig::normalized)
+            .unwrap_or_else(|| RequestPacingConfig::for_provider(provider));
         let model = route.model.unwrap_or_else(|| match provider {
             ProviderKind::OpenAICompatible => OPENAI_DEFAULT_MODEL.to_string(),
             ProviderKind::OpenAIResponses => OPENAI_CODEX_DEFAULT_MODEL.to_string(),
@@ -606,7 +739,9 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             route_config =
                 route_config.with_provider_profile(profile_id, route.provider_account_id);
         }
-        route_config = route_config.with_credential_binding(route.provider_credential_binding);
+        route_config = route_config
+            .with_credential_binding(route.provider_credential_binding)
+            .with_request_pacing(request_pacing);
         route_config.validate_provider_profile()?;
         parsed_routes.insert(name, route_config);
     }
@@ -778,6 +913,92 @@ mod tests {
         for invalid in ["", "../", "0123456789abcdef0123456789abcdeg"] {
             assert!(ProviderProfileId::cloudflare_base_url(invalid).is_none());
         }
+    }
+
+    #[test]
+    fn request_pacing_defaults_only_for_literouter() {
+        let literouter = RequestPacingConfig::for_provider(ProviderKind::LiteRouter);
+        assert!(literouter.enabled);
+        assert_eq!(literouter.interval_ms, 8_000);
+        assert_eq!(literouter.free_interval_ms, 18_948);
+        assert_eq!(
+            literouter.interval_for_model("deepseek:free"),
+            Some(Duration::from_millis(18_948))
+        );
+        assert_eq!(
+            literouter.interval_for_model("deepseek"),
+            Some(Duration::from_millis(8_000))
+        );
+
+        for provider in [
+            ProviderKind::OpenAICompatible,
+            ProviderKind::OpenAIResponses,
+            ProviderKind::Ollama,
+            ProviderKind::Local,
+        ] {
+            let pacing = RequestPacingConfig::for_provider(provider);
+            assert!(!pacing.enabled, "{provider:?}");
+            assert_eq!(pacing.interval_for_model("any-model"), None);
+        }
+    }
+
+    #[test]
+    fn request_pacing_clamps_and_honors_enabled_flag() {
+        let pacing = RequestPacingConfig {
+            enabled: true,
+            interval_ms: u64::MAX,
+            free_interval_ms: 12,
+        }
+        .normalized();
+        assert_eq!(pacing.interval_ms, RequestPacingConfig::MAX_INTERVAL_MS);
+        assert_eq!(pacing.free_interval_ms, 12);
+        assert_eq!(
+            pacing.interval_for_model("model:free"),
+            Some(Duration::from_millis(12))
+        );
+        assert_eq!(
+            RequestPacingConfig {
+                enabled: false,
+                interval_ms: 5_000,
+                free_interval_ms: 5_000,
+            }
+            .interval_for_model("model"),
+            None
+        );
+    }
+
+    #[test]
+    fn routes_json_reads_request_pacing() {
+        let raw = serde_json::json!({
+            "default": {
+                "provider": "openai_compatible",
+                "api_key": "test-token",
+                "base_url": "https://api.openai.com/v1",
+                "model": "gpt-4o-mini",
+                "request_pacing": {
+                    "enabled": true,
+                    "interval_ms": 1500,
+                    "free_interval_ms": 2500
+                }
+            },
+            "literouter": {
+                "provider": "literouter",
+                "api_key": "lr-test",
+                "model": "deepseek:free"
+            }
+        });
+
+        let parsed = parse_routes_from_json(&raw.to_string()).expect("routes parse");
+        let openai = parsed.routes.get("default").expect("default route");
+        assert!(openai.request_pacing.enabled);
+        assert_eq!(openai.request_pacing.interval_ms, 1_500);
+        assert_eq!(openai.request_pacing.free_interval_ms, 2_500);
+        let literouter = parsed.routes.get("literouter").expect("literouter route");
+        assert!(literouter.request_pacing.enabled);
+        assert_eq!(
+            literouter.request_pacing.interval_ms,
+            RequestPacingConfig::LITEROUTER_INTERVAL_MS
+        );
     }
 
     #[test]

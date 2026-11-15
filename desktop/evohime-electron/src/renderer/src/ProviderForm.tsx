@@ -5,10 +5,13 @@ import {
   PROVIDER_PROFILE_ENDPOINTS,
   PROVIDER_PROFILE_IDS,
   OLLAMA_DEFAULT_BASE_URL,
+  REQUEST_PACING_MAX_INTERVAL_MS,
+  defaultRequestPacing,
   type ModelTier,
   type ProviderKind,
   type ProviderProfileId,
   type ProviderSummary,
+  type RequestPacingSettings,
   type FreeAccessProbePolicy,
   type FreeAccessRoutingMode
 } from '@shared/api'
@@ -55,6 +58,18 @@ function defaultProbePolicy(provider: ProviderKind, profileId: ProviderProfileId
   return provider === 'openai_compatible' && profileId === 'openrouter' ? 'on_first_use' : 'disabled'
 }
 
+/** Parses a millisecond interval typed by the user, or reports it invalid. */
+function parsePacingInterval(value: string): number | null {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const parsed = Number(trimmed)
+  return Number.isSafeInteger(parsed) && parsed <= REQUEST_PACING_MAX_INTERVAL_MS ? parsed : null
+}
+
+function pacingOrDefault(value: RequestPacingSettings | undefined, provider: ProviderKind): RequestPacingSettings {
+  return value ?? defaultRequestPacing(provider)
+}
+
 type Status =
   | { readonly kind: 'idle' }
   | { readonly kind: 'saving' }
@@ -79,6 +94,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [probePolicy, setProbePolicy] = useState<FreeAccessProbePolicy>('disabled')
   const [routingMode, setRoutingMode] = useState<FreeAccessRoutingMode>('any')
   const [allowPaidFallback, setAllowPaidFallback] = useState(false)
+  const [pacingEnabled, setPacingEnabled] = useState(true)
+  const [pacingInterval, setPacingInterval] = useState('8000')
+  const [pacingFreeInterval, setPacingFreeInterval] = useState('18948')
   const [acknowledgeProbePossibleCost, setAcknowledgeProbePossibleCost] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [catalogStatus, setCatalogStatus] = useState<string | null>(null)
@@ -89,6 +107,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const pendingSelection = useRef(false)
 
   // Fields stay controlled even if a summary arrives with a missing member.
+  const applyPacing = useCallback((pacing: RequestPacingSettings) => {
+    setPacingEnabled(pacing.enabled)
+    setPacingInterval(String(pacing.intervalMs))
+    setPacingFreeInterval(String(pacing.freeIntervalMs))
+  }, [])
+
   const apply = useCallback((value: ProviderSummary) => {
     const nextProvider = PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter'
     const nextProfileId = nextProvider === 'openai_compatible' ? (value.profileId ?? 'openai') : 'custom'
@@ -101,8 +125,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setProbePolicy(value.profiles?.[value.provider]?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
     setRoutingMode(value.freeAccessRoutingMode ?? 'any')
     setAllowPaidFallback(value.allowPaidFallback === true)
+    applyPacing(value.requestPacing ?? value.profiles?.[value.provider]?.requestPacing ?? defaultRequestPacing(nextProvider))
     setAcknowledgeProbePossibleCost(false)
-  }, [])
+  }, [applyPacing])
 
   useEffect(() => {
     if (summary && !pendingSelection.current) apply(summary)
@@ -175,6 +200,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         ? (saved?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
         : defaultProbePolicy(nextProvider, nextProfileId)
     )
+    applyPacing(pacingOrDefault(saved?.requestPacing, nextProvider))
     setAcknowledgeProbePossibleCost(false)
 
     // Selecting an unconfigured provider or switching vendor inside the
@@ -203,10 +229,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       apply(outcome.value.summary)
     }
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
-  }, [api, apply, applySummary, profileId, provider, summary])
+  }, [api, apply, applyPacing, applySummary, profileId, provider, summary])
 
   const save = useCallback(async () => {
     if (!api) return
+    const intervalMs = parsePacingInterval(pacingInterval)
+    const freeIntervalMs = parsePacingInterval(pacingFreeInterval)
+    if (intervalMs === null || freeIntervalMs === null) {
+      setStatus({ kind: 'failed', message: 'Интервал паузы должен быть целым числом от 0 до 3600000 мс.' })
+      return
+    }
     setStatus({ kind: 'saving' })
     const outcome = await api.invoke('provider.save', {
       provider,
@@ -219,6 +251,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       acknowledgeProbePossibleCost,
       freeAccessRoutingMode: routingMode,
       allowPaidFallback: routingMode === 'prefer_free' && allowPaidFallback,
+      requestPacing: { enabled: pacingEnabled, intervalMs, freeIntervalMs },
       ...(provider === 'openai_compatible' ? { profileId } : {}),
       ...(provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? { accountId } : {})
     })
@@ -231,7 +264,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
-  }, [accountId, acknowledgeProbePossibleCost, allowPaidFallback, api, apiKey, apply, applySummary, baseUrl, model, probePolicy, profileId, provider, routingMode, tier])
+  }, [accountId, acknowledgeProbePossibleCost, allowPaidFallback, api, apiKey, apply, applySummary, baseUrl, model, pacingEnabled, pacingFreeInterval, pacingInterval, probePolicy, profileId, provider, routingMode, tier])
 
   const clearKey = useCallback(async () => {
     if (!api) return
@@ -270,7 +303,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     || selectedProfile.profileId === profileId
   const configured = profileMatches && (selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured))
   const cloudflareAccountValid = /^[a-fA-F0-9]{32}$/.test(accountId.trim())
+  const pacingValid = parsePacingInterval(pacingInterval) !== null
+    && parsePacingInterval(pacingFreeInterval) !== null
   const canSave = !busy
+    && pacingValid
     && (provider === 'ollama' || apiKey.trim().length > 0 || configured)
     && (provider !== 'openai_compatible' || profileId !== 'cloudflare_workers_ai' || cloudflareAccountValid)
     && (!(probePolicy === 'on_first_use' || probePolicy === 'periodic_bounded') ||
@@ -455,6 +491,48 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
             />
             {translate("Разрешить платный fallback, если подтверждённая бесплатная модель недоступна")}</label>
         ) : null}
+      </fieldset>
+
+      <fieldset className="provider-form__tier">
+        <legend>{translate("Пауза между запросами")}</legend>
+        <label>
+          <input
+            type="checkbox"
+            checked={pacingEnabled}
+            onChange={(event) => setPacingEnabled(event.target.checked)}
+            disabled={busy}
+          />
+          {translate("Выдерживать минимальную паузу между запросами к этому провайдеру")}
+        </label>
+        {pacingEnabled ? (
+          <>
+            <label htmlFor="provider-pacing-interval">
+              {translate("Интервал для платных моделей, мс")}<input
+                id="provider-pacing-interval"
+                type="number"
+                min={0}
+                max={REQUEST_PACING_MAX_INTERVAL_MS}
+                step={1}
+                value={pacingInterval}
+                onChange={(event) => setPacingInterval(event.target.value)}
+                disabled={busy}
+              />
+            </label>
+            <label htmlFor="provider-pacing-free-interval">
+              {translate("Интервал для моделей :free, мс")}<input
+                id="provider-pacing-free-interval"
+                type="number"
+                min={0}
+                max={REQUEST_PACING_MAX_INTERVAL_MS}
+                step={1}
+                value={pacingFreeInterval}
+                onChange={(event) => setPacingFreeInterval(event.target.value)}
+                disabled={busy}
+              />
+            </label>
+          </>
+        ) : null}
+        <p className="provider-form__hint">{translate("LiteRouter ограничивает частоту сообщений по тарифу, поэтому пауза включена по умолчанию. Для остальных провайдеров она по умолчанию выключена; настройка хранится отдельно для каждого провайдера.")}</p>
       </fieldset>
 
       <div className="provider-form__actions">

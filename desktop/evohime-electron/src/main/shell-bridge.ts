@@ -6,6 +6,7 @@ import { basename, dirname, extname, isAbsolute, join, win32 } from 'node:path'
 import {
   PROVIDER_KINDS,
   RENDERER_COMMANDS,
+  defaultRequestPacing,
   type AmbientHotkeyStatus,
   type AppLocale,
   type AppTheme,
@@ -40,6 +41,7 @@ import {
   isProviderProfileId,
   normalizeCloudflareAccountId,
   normalizeModel,
+  normalizeRequestPacing,
   type ProviderStore
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
@@ -1717,6 +1719,9 @@ function dispatch(
       const allowPaidFallback = value['allowPaidFallback'] === undefined
         ? currentSummary.allowPaidFallback === true
         : value['allowPaidFallback'] === true
+      const requestPacing = value['requestPacing'] === undefined
+        ? currentProfile?.requestPacing ?? (provider ? defaultRequestPacing(provider) : null)
+        : normalizeRequestPacing(value['requestPacing'])
       const profileIdValue = value['profileId']
       const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
       const accountIdValue = value['accountId']
@@ -1731,6 +1736,7 @@ function dispatch(
         tier === null ||
         freeAccessProbePolicy === null ||
         freeAccessRoutingMode === null ||
+        requestPacing === null ||
         (value['acknowledgeProbePossibleCost'] !== undefined && typeof value['acknowledgeProbePossibleCost'] !== 'boolean') ||
         (value['allowPaidFallback'] !== undefined && typeof value['allowPaidFallback'] !== 'boolean') ||
         (profileIdValue !== undefined && profileId === null) ||
@@ -1758,6 +1764,7 @@ function dispatch(
         acknowledgeProbePossibleCost,
         freeAccessRoutingMode,
         allowPaidFallback,
+        requestPacing,
         ...(profileId ? { profileId } : {}),
         ...(accountId ? { accountId } : {})
       })

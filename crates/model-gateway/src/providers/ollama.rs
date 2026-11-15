@@ -4,7 +4,7 @@ use super::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     TokenStream,
 };
-use crate::config::LiteRouterConfig;
+use crate::config::{LiteRouterConfig, RequestPacingConfig};
 use crate::providers::literouter::LiteRouterProvider;
 use crate::retry::RetryPolicy;
 use crate::tools::ToolSpec;
@@ -30,12 +30,21 @@ pub struct OllamaProvider {
 impl OllamaProvider {
     /// Creates the adapter after verifying that the endpoint is loopback-only.
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
+        Self::with_pacing(config, RequestPacingConfig::disabled())
+    }
+
+    /// Creates the adapter with explicit request pacing.
+    pub fn with_pacing(
+        config: LiteRouterConfig,
+        pacing: RequestPacingConfig,
+    ) -> Result<Self, ProviderError> {
         validate_loopback(&config.base_url)?;
         Ok(Self {
             inner: LiteRouterProvider::without_auth_with_reasoning_effort(
                 config,
                 RetryPolicy::from_env(),
                 "none",
+                pacing,
             )?,
         })
     }

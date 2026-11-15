@@ -117,7 +117,11 @@ impl LocalProvider {
             cancellation: true,
             tools: Vec::new(),
         };
-        let inner = LiteRouterProvider::with_retry(config, RetryPolicy::none())?;
+        let inner = LiteRouterProvider::with_pacing(
+            config,
+            RetryPolicy::none(),
+            crate::config::RequestPacingConfig::disabled(),
+        )?;
         Ok(Self { inner, capability })
     }
 

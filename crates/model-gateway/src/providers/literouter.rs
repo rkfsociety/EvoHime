@@ -1,4 +1,4 @@
-use crate::config::{LiteRouterConfig, ProviderProfileId};
+use crate::config::{LiteRouterConfig, ProviderProfileId, RequestPacingConfig};
 use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     ThinkingConfig, TokenStream,
@@ -38,17 +38,10 @@ pub struct LiteRouterProvider {
     retry: RetryPolicy,
     reasoning_effort: Option<&'static str>,
     request_gate: Arc<Mutex<RequestGate>>,
+    pacing: RequestPacingConfig,
 }
 
 impl LiteRouterProvider {
-    /// Minimum spacing for models without a `:free` suffix.
-    ///
-    /// LiteRouter rejects requests sent closer than its tier window (for
-    /// example "7 seconds between messages"), so the default keeps a margin
-    /// above that window for the tiers this client is used with.
-    const PAID_REQUEST_INTERVAL: Duration = Duration::from_secs(8);
-    /// Minimum spacing for `:free` models (190 requests per hour).
-    const FREE_REQUEST_INTERVAL: Duration = Duration::from_millis(18_948);
     /// Extra room added to a pacing hint reported by the provider.
     const RATE_LIMIT_INTERVAL_MARGIN: Duration = Duration::from_millis(250);
     /// Delay for a rate-limit reply that carries no hint and no `Retry-After`.
@@ -61,27 +54,42 @@ impl LiteRouterProvider {
 
     /// Creates a LiteRouter adapter with an explicit retry policy.
     pub fn with_retry(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
+        Self::with_pacing(
+            config,
+            retry,
+            RequestPacingConfig::for_provider(ProviderKind::LiteRouter),
+        )
+    }
+
+    /// Creates a LiteRouter adapter with explicit retry and request pacing.
+    pub fn with_pacing(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        pacing: RequestPacingConfig,
+    ) -> Result<Self, ProviderError> {
         if config.api_key.is_empty() {
             return Err(ProviderError::Config(
                 "LiteRouter API key must not be empty".to_string(),
             ));
         }
 
-        Self::build(config, retry, None)
+        Self::build(config, retry, None, pacing)
     }
 
     pub(crate) fn without_auth_with_reasoning_effort(
         config: LiteRouterConfig,
         retry: RetryPolicy,
         reasoning_effort: &'static str,
+        pacing: RequestPacingConfig,
     ) -> Result<Self, ProviderError> {
-        Self::build(config, retry, Some(reasoning_effort))
+        Self::build(config, retry, Some(reasoning_effort), pacing)
     }
 
     fn build(
         config: LiteRouterConfig,
         retry: RetryPolicy,
         reasoning_effort: Option<&'static str>,
+        pacing: RequestPacingConfig,
     ) -> Result<Self, ProviderError> {
         // Core owns the request/task deadlines. Keep only a bounded connection
         // setup so a refused or unreachable endpoint fails promptly.
@@ -96,6 +104,7 @@ impl LiteRouterProvider {
             retry,
             reasoning_effort,
             request_gate: Arc::new(Mutex::new(RequestGate::default())),
+            pacing: pacing.normalized(),
         })
     }
 
@@ -291,7 +300,9 @@ impl LiteRouterProvider {
     }
 
     async fn wait_for_request_slot(&self, model: &str) {
-        let base_interval = request_interval_for_model(model);
+        let Some(base_interval) = self.pacing.interval_for_model(model) else {
+            return;
+        };
         let mut gate = self.request_gate.lock().await;
         let interval = gate
             .min_interval
@@ -307,8 +318,12 @@ impl LiteRouterProvider {
 
     /// Widens the request pacing after the provider reports the interval its
     /// tier requires, so models without a `:free` suffix stop colliding with
-    /// the tier window.
+    /// the tier window. A route with pacing disabled does not learn a pacing
+    /// interval: the provider hint still delays the current retry only.
     async fn learn_request_interval(&self, hint: Duration) {
+        if !self.pacing.enabled {
+            return;
+        }
         let interval = hint.saturating_add(Self::RATE_LIMIT_INTERVAL_MARGIN);
         let mut gate = self.request_gate.lock().await;
         gate.min_interval = Some(
@@ -340,14 +355,6 @@ fn cloudflare_typed_error_code(base_url: &str, body: &str) -> Option<u64> {
     match errors[0].get("code")?.as_u64()? {
         code @ (5035 | 3036) => Some(code),
         _ => None,
-    }
-}
-
-fn request_interval_for_model(model: &str) -> Duration {
-    if model.trim().to_ascii_lowercase().ends_with(":free") {
-        LiteRouterProvider::FREE_REQUEST_INTERVAL
-    } else {
-        LiteRouterProvider::PAID_REQUEST_INTERVAL
     }
 }
 
@@ -396,6 +403,7 @@ impl ModelProvider for LiteRouterProvider {
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
+            pacing: self.pacing,
         };
         let request_messages = messages.to_vec();
         let model = model.to_string();
@@ -458,6 +466,7 @@ impl ModelProvider for LiteRouterProvider {
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
+            pacing: self.pacing,
         };
         let request_messages = messages.to_vec();
         let tools = tools.map(|t| t.to_vec());
@@ -520,6 +529,7 @@ impl ModelProvider for LiteRouterProvider {
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
+            pacing: self.pacing,
         };
         let model = model
             .filter(|value| !value.trim().is_empty())
@@ -561,6 +571,7 @@ impl ModelProvider for LiteRouterProvider {
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
             request_gate: Arc::clone(&self.request_gate),
+            pacing: self.pacing,
         };
         let model = model
             .filter(|value| !value.trim().is_empty())
@@ -1059,13 +1070,18 @@ mod tests {
 
     #[test]
     fn paces_free_and_paid_models() {
+        let pacing = RequestPacingConfig::for_provider(ProviderKind::LiteRouter);
         assert_eq!(
-            request_interval_for_model("some-model:free"),
-            Duration::from_millis(18_948)
+            pacing.interval_for_model("some-model:free"),
+            Some(Duration::from_millis(RequestPacingConfig::LITEROUTER_FREE_INTERVAL_MS))
         );
         assert_eq!(
-            request_interval_for_model("gemini-3.1-flash-lite-thinking"),
-            Duration::from_secs(8)
+            pacing.interval_for_model("gemini-3.1-flash-lite-thinking"),
+            Some(Duration::from_millis(RequestPacingConfig::LITEROUTER_INTERVAL_MS))
+        );
+        assert_eq!(
+            RequestPacingConfig::for_provider(ProviderKind::OpenAICompatible).interval_for_model("gpt-4o-mini"),
+            None
         );
     }
 }

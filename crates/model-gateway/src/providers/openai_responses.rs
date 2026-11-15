@@ -4,7 +4,7 @@
 //! models are exposed through Responses, and the wire format for function
 //! calls is different.
 
-use crate::config::LiteRouterConfig;
+use crate::config::{LiteRouterConfig, RequestPacingConfig};
 use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ChatRole, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
@@ -15,7 +15,9 @@ use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 /// Provider adapter for the OpenAI Responses API.
 #[derive(Debug)]
@@ -23,6 +25,8 @@ pub struct OpenAIResponsesProvider {
     config: LiteRouterConfig,
     client: Client,
     retry: RetryPolicy,
+    request_gate: Arc<Mutex<Option<Instant>>>,
+    pacing: RequestPacingConfig,
 }
 
 impl OpenAIResponsesProvider {
@@ -31,8 +35,17 @@ impl OpenAIResponsesProvider {
         Self::with_retry(config, RetryPolicy::from_env())
     }
 
-    /// Creates the adapter with an explicit retry policy.
+    /// Creates the adapter with an explicit retry policy and no request pacing.
     pub fn with_retry(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
+        Self::with_pacing(config, retry, RequestPacingConfig::disabled())
+    }
+
+    /// Creates the adapter with explicit retry and request pacing.
+    pub fn with_pacing(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        pacing: RequestPacingConfig,
+    ) -> Result<Self, ProviderError> {
         if config.api_key.trim().is_empty() {
             return Err(ProviderError::Config(
                 "OpenAI Responses API key must not be empty".into(),
@@ -47,7 +60,23 @@ impl OpenAIResponsesProvider {
             config,
             client,
             retry,
+            request_gate: Arc::new(Mutex::new(None)),
+            pacing: pacing.normalized(),
         })
+    }
+
+    async fn wait_for_request_slot(&self, model: &str) {
+        let Some(interval) = self.pacing.interval_for_model(model) else {
+            return;
+        };
+        let mut previous = self.request_gate.lock().await;
+        if let Some(started) = *previous {
+            let elapsed = started.elapsed();
+            if elapsed < interval {
+                tokio::time::sleep(interval - elapsed).await;
+            }
+        }
+        *previous = Some(Instant::now());
     }
 
     fn responses_url(&self) -> String {
@@ -75,6 +104,7 @@ impl OpenAIResponsesProvider {
         let max_retries = options.max_retries.unwrap_or(self.retry.max_retries);
         let mut attempt = 0;
         loop {
+            self.wait_for_request_slot(model).await;
             match self
                 .client
                 .post(self.responses_url())
@@ -134,6 +164,8 @@ impl ModelProvider for OpenAIResponsesProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            request_gate: Arc::clone(&self.request_gate),
+            pacing: self.pacing,
         };
         let model = model.to_string();
         let messages = messages.to_vec();
@@ -173,6 +205,8 @@ impl ModelProvider for OpenAIResponsesProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            request_gate: Arc::clone(&self.request_gate),
+            pacing: self.pacing,
         };
         let model = model
             .filter(|value| !value.trim().is_empty())
@@ -209,6 +243,8 @@ impl ModelProvider for OpenAIResponsesProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            request_gate: Arc::clone(&self.request_gate),
+            pacing: self.pacing,
         };
         let model = model
             .filter(|value| !value.trim().is_empty())

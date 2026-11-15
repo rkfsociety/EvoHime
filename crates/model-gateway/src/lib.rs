@@ -1690,16 +1690,25 @@ pub fn mock_gateway(chunks: Vec<String>) -> ModelGateway {
 
 fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, ProviderError> {
     match route.provider {
-        ProviderKind::LiteRouter => {
-            Ok(Arc::new(LiteRouterProvider::new(route.literouter.clone())?))
-        }
-        ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::new(
+        ProviderKind::LiteRouter => Ok(Arc::new(LiteRouterProvider::with_pacing(
             route.literouter.clone(),
+            RetryPolicy::from_env(),
+            route.request_pacing,
         )?)),
-        ProviderKind::OpenAIResponses => Ok(Arc::new(OpenAIResponsesProvider::new(
+        ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::with_pacing(
             route.literouter.clone(),
+            RetryPolicy::from_env(),
+            route.request_pacing,
         )?)),
-        ProviderKind::Ollama => Ok(Arc::new(OllamaProvider::new(route.literouter.clone())?)),
+        ProviderKind::OpenAIResponses => Ok(Arc::new(OpenAIResponsesProvider::with_pacing(
+            route.literouter.clone(),
+            RetryPolicy::from_env(),
+            route.request_pacing,
+        )?)),
+        ProviderKind::Ollama => Ok(Arc::new(OllamaProvider::with_pacing(
+            route.literouter.clone(),
+            route.request_pacing,
+        )?)),
         ProviderKind::Local => {
             LocalProvider::validate_loopback(&route.literouter.base_url)?;
             Ok(Arc::new(LocalProvider::new(route.literouter.clone())?))

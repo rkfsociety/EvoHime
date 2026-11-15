@@ -691,6 +691,34 @@ export type ProviderProfileId = (typeof PROVIDER_PROFILE_IDS)[number]
 export type FreeAccessProbePolicy = 'disabled' | 'passive_only' | 'on_first_use' | 'periodic_bounded' | 'manual_only'
 export type FreeAccessRoutingMode = 'any' | 'prefer_free' | 'free_only'
 
+/**
+ * Per-provider minimum spacing between model request starts.
+ *
+ * It is a local pacing guard, not a retry: LiteRouter limits how often its
+ * tier accepts messages, while other providers need no such delay.
+ */
+export interface RequestPacingSettings {
+  readonly enabled: boolean
+  readonly intervalMs: number
+  readonly freeIntervalMs: number
+}
+
+/** Largest interval the shell and Core accept for one request pause. */
+export const REQUEST_PACING_MAX_INTERVAL_MS = 3_600_000
+/** LiteRouter tier window between regular-model messages. */
+export const REQUEST_PACING_DEFAULT_INTERVAL_MS = 8_000
+/** LiteRouter free-tier budget: 190 requests per hour. */
+export const REQUEST_PACING_DEFAULT_FREE_INTERVAL_MS = 18_948
+
+/** Built-in pacing for a provider: only LiteRouter needs it. */
+export function defaultRequestPacing(provider: ProviderKind): RequestPacingSettings {
+  return {
+    enabled: provider === 'literouter',
+    intervalMs: REQUEST_PACING_DEFAULT_INTERVAL_MS,
+    freeIntervalMs: REQUEST_PACING_DEFAULT_FREE_INTERVAL_MS
+  }
+}
+
 /** Единственный источник модели для одной задачи в чате. */
 export type ChatProviderMode = ProviderKind | 'codex_cli'
 
@@ -705,6 +733,7 @@ export interface ProviderProfileSummary {
   readonly profileId?: ProviderProfileId
   readonly accountId?: string
   readonly freeAccessProbePolicy?: FreeAccessProbePolicy
+  readonly requestPacing?: RequestPacingSettings
 }
 
 
@@ -723,6 +752,7 @@ export interface ProviderSummary {
   readonly profiles: Readonly<Record<ProviderKind, ProviderProfileSummary>>
   readonly freeAccessRoutingMode?: FreeAccessRoutingMode
   readonly allowPaidFallback?: boolean
+  readonly requestPacing?: RequestPacingSettings
 }
 
 /** Модель, опубликованная локальным Codex app-server. */
@@ -2006,6 +2036,7 @@ export interface CommandPayloads {
     acknowledgeProbePossibleCost?: boolean
     freeAccessRoutingMode?: FreeAccessRoutingMode
     allowPaidFallback?: boolean
+    requestPacing?: RequestPacingSettings
   }
   'provider.select': { provider: ProviderKind }
   'provider.clearKey': { provider?: ProviderKind }

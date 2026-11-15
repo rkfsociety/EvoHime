@@ -165,12 +165,64 @@ describe('provider form', () => {
       freeAccessProbePolicy: 'disabled',
       acknowledgeProbePossibleCost: false,
       freeAccessRoutingMode: 'any',
-      allowPaidFallback: false
+      allowPaidFallback: false,
+      requestPacing: { enabled: true, intervalMs: 8000, freeIntervalMs: 18948 }
     })
     await waitFor(() => expect(screen.getByText(/Core перезапущен/)).toBeTruthy())
     // The stored value is never echoed back into the form.
     expect(field.value).toBe('')
     expect(screen.getByText('Ключ сохранён')).toBeTruthy()
+  })
+
+  it('loads and saves per-provider request pacing', async () => {
+    providerGetSummary = {
+      provider: 'literouter',
+      model: 'deepseek:free',
+      baseUrl: '',
+      tier: 'free',
+      configured: true,
+      profiles: {
+        literouter: {
+          model: 'deepseek:free', baseUrl: '', tier: 'free', configured: true,
+          requestPacing: { enabled: true, intervalMs: 1234, freeIntervalMs: 4321 }
+        },
+        openai_compatible: { model: '', baseUrl: '', tier: 'free', configured: false },
+        openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
+        ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
+      }
+    }
+    renderProviderForm()
+
+    const interval = await screen.findByLabelText('Интервал для платных моделей, мс') as HTMLInputElement
+    const freeInterval = screen.getByLabelText('Интервал для моделей :free, мс') as HTMLInputElement
+    await waitFor(() => expect(interval.value).toBe('1234'))
+    expect(freeInterval.value).toBe('4321')
+
+    await userEvent.clear(interval)
+    await userEvent.type(interval, '2500')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
+
+    expect(calls).toContainEqual({
+      command: 'provider.save',
+      payload: expect.objectContaining({
+        provider: 'literouter',
+        requestPacing: { enabled: true, intervalMs: 2500, freeIntervalMs: 4321 }
+      })
+    })
+  })
+
+  it('disables saving when a pacing interval is not a bounded integer', async () => {
+    renderProviderForm()
+
+    await userEvent.type(await screen.findByLabelText('Ключ API'), 'sk-test')
+    const save = screen.getByRole('button', { name: 'Сохранить ключ и применить' }) as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+
+    const interval = screen.getByLabelText('Интервал для платных моделей, мс') as HTMLInputElement
+    await userEvent.clear(interval)
+    await userEvent.type(interval, '3600001')
+
+    expect(save.disabled).toBe(true)
   })
 
   it('keeps the provider settings block free of a separate coding-engine switch', async () => {
