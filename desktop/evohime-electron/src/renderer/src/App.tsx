@@ -36,7 +36,6 @@ const OverviewPanel = lazy(() => import('./OverviewPanel').then((module) => ({ d
 const ListeningPanel = lazy(() => import('./ListeningPanel').then((module) => ({ default: module.ListeningPanel })))
 const TracePanel = lazy(() => import('./TracePanel').then((module) => ({ default: module.TracePanel })))
 const ChatSummaryPanel = lazy(() => import('./ChatSummaryPanel').then((module) => ({ default: module.ChatSummaryPanel })))
-const ContinuationPanel = lazy(() => import('./ContinuationPanel').then((module) => ({ default: module.ContinuationPanel })))
 const VisualWorkflowBuilderPanel = lazy(() => import('./VisualWorkflowBuilderPanel').then((module) => ({ default: module.VisualWorkflowBuilderPanel })))
 const ConversationalWorkflowComposerPanel = lazy(() => import('./ConversationalWorkflowComposerPanel').then((module) => ({ default: module.ConversationalWorkflowComposerPanel })))
 const WorkbenchPanel = lazy(() => import('./WorkbenchPanel').then((module) => ({ default: module.WorkbenchPanel })))
@@ -65,7 +64,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'continuations' | 'listening'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -82,7 +81,6 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'reviews', label: 'Ревью планов', icon: 'check-circle' },
   { id: 'operations', label: 'Память и Pulse', icon: 'pulse' },
   { id: 'workflows', label: 'Составные задачи', icon: 'workflow' },
-  { id: 'continuations', label: 'Продолжения', icon: 'repeat' },
   { id: 'listening', label: 'Слух', icon: 'mic' },
 ]
 
@@ -445,7 +443,6 @@ export function App(): React.JSX.Element {
                     <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} draftId={builderDraftId} ownerScope={builderDraftOwnerScope} />
                   </>
                 ) : null}
-                {translate(view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null)}
                 {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
               </div>
             )}
