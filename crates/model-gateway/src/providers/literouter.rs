@@ -1073,14 +1073,19 @@ mod tests {
         let pacing = RequestPacingConfig::for_provider(ProviderKind::LiteRouter);
         assert_eq!(
             pacing.interval_for_model("some-model:free"),
-            Some(Duration::from_millis(RequestPacingConfig::LITEROUTER_FREE_INTERVAL_MS))
+            Some(Duration::from_millis(
+                RequestPacingConfig::LITEROUTER_FREE_INTERVAL_MS
+            ))
         );
         assert_eq!(
             pacing.interval_for_model("gemini-3.1-flash-lite-thinking"),
-            Some(Duration::from_millis(RequestPacingConfig::LITEROUTER_INTERVAL_MS))
+            Some(Duration::from_millis(
+                RequestPacingConfig::LITEROUTER_INTERVAL_MS
+            ))
         );
         assert_eq!(
-            RequestPacingConfig::for_provider(ProviderKind::OpenAICompatible).interval_for_model("gpt-4o-mini"),
+            RequestPacingConfig::for_provider(ProviderKind::OpenAICompatible)
+                .interval_for_model("gpt-4o-mini"),
             None
         );
     }

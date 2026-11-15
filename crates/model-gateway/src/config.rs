@@ -74,10 +74,7 @@ impl RequestPacingConfig {
     pub fn from_env(provider: ProviderKind) -> Self {
         let default = Self::for_provider(provider);
         Self {
-            enabled: env_bool(
-                "MODEL_PROVIDER_REQUEST_PACING_ENABLED",
-                default.enabled,
-            ),
+            enabled: env_bool("MODEL_PROVIDER_REQUEST_PACING_ENABLED", default.enabled),
             interval_ms: env_u64(
                 "MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS",
                 default.interval_ms,

@@ -639,7 +639,8 @@ retry budget и открывала circuit как серверный сбой.
   `provider_rate_limited`, `provider_request_rejected`, `provider_timeout`,
   `provider_unreachable`, `provider_unavailable`, `provider_configuration`) в
   `task.failed` projection и в trace (`http_status` в `provider.error_*`);
-- renderer показывает по этому коду понятную причину и подсказку, а неизвестный
+- renderer показывает по этому коду понятную причину и подсказку в баннере
+  восстановления и в ленте диалога (единый `failureReasonText`), а неизвестный
   код по-прежнему выводится как есть.
 
 ## Delivery requirements и tool loadout

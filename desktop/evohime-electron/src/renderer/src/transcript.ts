@@ -1,4 +1,5 @@
 import type { CoreEvent } from '@shared/api'
+import { failureReasonText } from './recovery-state'
 
 /**
  * Turns the raw Core event stream into what a person actually wants to read.
@@ -168,10 +169,13 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {  con
       case 'task.failed': {
         finished = true
         finishActivities(entries)
+        const errorCode = clamp(text_(payload, 'error_code'))
         entries.push({
           kind: 'result',
           id,
-          text: clamp(text_(payload, 'error_code')) || 'Задача завершилась ошибкой.',
+          // Live and restored views explain the same stable Core code the same
+          // way; the raw code stays visible in the recovery banner diagnostics.
+          text: errorCode.length > 0 ? failureReasonText(errorCode) : 'Задача завершилась ошибкой.',
           failed: true
         })
         break
