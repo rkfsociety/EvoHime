@@ -116,7 +116,7 @@ describe('model picker', () => {
     )
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['mythomax-l2-13b:free', 'usable:free'])
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['mythomax-l2-13b:free0/100', 'usable:free'])
   })
 
   it('requests the configured tier and offers what the provider returned', async () => {
@@ -255,9 +255,9 @@ describe('model picker', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'mythomax-l2-13b:free0/100',
       'claude-haiku-4.5-cheap:free',
-      'gemma-3-27b-it:free',
-      'mythomax-l2-13b:free'
+      'gemma-3-27b-it:free'
     ])
     expect(screen.getByText(/tool_calls не подтверждён Core/i)).toBeTruthy()
   })
