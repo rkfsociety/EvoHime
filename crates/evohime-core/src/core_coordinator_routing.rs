@@ -486,14 +486,15 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                             "error": serde_json::Value::Null,
                                         }))
                                         .unwrap_or_default();
-                                        let _ = evohime_local_storage::domains::runs::finish_attempt(
-                                            database.connection(),
-                                            &run.run_id,
-                                            1,
-                                            "completed",
-                                            &result_json,
-                                            now,
-                                        );
+                                        let _ =
+                                            evohime_local_storage::domains::runs::finish_attempt(
+                                                database.connection(),
+                                                &run.run_id,
+                                                1,
+                                                "completed",
+                                                &result_json,
+                                                now,
+                                            );
                                         run.continuation_index = 1;
                                     }
                                 }
@@ -1649,8 +1650,8 @@ mod timeout_tests {
     }
 
     async fn goal_created_during_first_attempt_continues_without_model_request_collision_inner() {
-        use std::sync::Arc;
         use evohime_model_gateway::{providers::mock::MockProvider, ChatResult, ModelGateway};
+        use std::sync::Arc;
 
         struct DynamicGoalExecutor {
             agent: Arc<crate::ToolAgent>,
@@ -1705,11 +1706,13 @@ mod timeout_tests {
                             workspace_id: owner_scope,
                             chat_id: None,
                             objective: "Complete dynamic criterion c1".into(),
-                            success_criteria: vec![evohime_local_storage::goal::GoalCriterionV1::new(
-                                "c1",
-                                evohime_local_storage::goal::GoalCriterionKind::Manual,
-                                "Verify c1",
-                            )],
+                            success_criteria: vec![
+                                evohime_local_storage::goal::GoalCriterionV1::new(
+                                    "c1",
+                                    evohime_local_storage::goal::GoalCriterionKind::Manual,
+                                    "Verify c1",
+                                ),
+                            ],
                             status: evohime_local_storage::goal::GoalStatus::Active,
                             progress_summary: "Created during first attempt".into(),
                             completed_criteria: Vec::new(),
@@ -1801,7 +1804,9 @@ mod timeout_tests {
         let agent = Arc::new(
             crate::ToolAgent::new(
                 Arc::new(ModelGateway::from_provider(Arc::new(provider))),
-                Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions)),
+                Arc::new(
+                    evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions),
+                ),
             )
             .with_journal(journal.clone())
             .with_receipt_keys(receipt_keys),
