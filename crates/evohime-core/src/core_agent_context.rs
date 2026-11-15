@@ -2,14 +2,7 @@ use super::*;
 use sha2::Digest;
 
 fn provider_error_code(error: &ProviderError) -> &'static str {
-    match error {
-        ProviderError::Config(_) => "provider_configuration",
-        ProviderError::Http(_) => "provider_transport",
-        ProviderError::Api(_) => "provider_api",
-        ProviderError::Stream(_) => "provider_stream",
-        ProviderError::ImagePreflightRejected => "image_preflight_rejected",
-        ProviderError::ImageCapabilityStale => "image_capability_stale",
-    }
+    error.failure_code()
 }
 
 /// Safe, bounded classification for a terminal configuration failure. The raw
@@ -1343,9 +1336,14 @@ impl ToolAgent {
                             serde_json::json!({
                                 "task_id": task_id,
                                 "error_code": error_code,
+                                "failure_class": format!("{failure:?}"),
+                                "http_status": error.http_status(),
                                 "reason": provider_error_reason(&error),
                             }),
                         );
+                        // Surface the stable failure code instead of the raw
+                        // provider text so the conversation projection and UI
+                        // can explain the cause without leaking diagnostics.
                         return Err(AgentRunError::Provider(ProviderError::Api(
                             error_code.into(),
                         )));
@@ -1356,14 +1354,15 @@ impl ToolAgent {
                             "task_id": task_id,
                             "error_code": error_code,
                             "failure_class": format!("{failure:?}"),
+                            "http_status": error.http_status(),
                             "policy_outcome": policy_metadata.as_ref().map(|value| format!("{:?}", value.outcome)),
                             "attempt": attempt + 1,
                             "will_retry": attempt < config.retry_max,
                         }),
                     );
                     if attempt >= config.retry_max {
-                        return Err(AgentRunError::Provider(ProviderError::Http(
-                            "provider_overload_after_retries".into(),
+                        return Err(AgentRunError::Provider(ProviderError::Api(
+                            error_code.into(),
                         )));
                     }
                 }

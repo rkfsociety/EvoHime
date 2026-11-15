@@ -458,6 +458,20 @@ provenance ledger переводит dispatch в `interrupted` или `unknown_o
 IPC 188/event 43 отдаёт только bounded metadata; renderer не получает prompt,
 output или provider payload.
 
+Классификация provider-отказов учитывает HTTP status, встроенный adapter-ом в
+текст ошибки (`"<status>: message"`). Отказ ключа (`401`/`403`), исчерпанный
+баланс (`402`) и неизвестная модель (`404`) — клиентские ошибки: Core не
+тратит retry budget и не открывает circuit, потому что повтор не может
+завершиться успехом. Повторяемыми остаются `429`, timeout, сетевой сбой и
+`5xx`; `403` с явным rate-limit маркером классифицируется как cooldown. Тот же
+контракт использует и gateway fallback loop, и Core resilience policy, поэтому
+обе стадии принимают одинаковое решение. В trace и в `task.failed` передаётся
+bounded `error_code` (`provider_auth_rejected`, `provider_quota_exhausted`,
+`provider_model_not_found`, `provider_rate_limited`, `provider_timeout`,
+`provider_unreachable`, `provider_unavailable`, `provider_request_rejected`,
+`provider_configuration`), а renderer показывает по нему понятную причину:
+provider text, URL и ключ в projection не попадают.
+
 Core является владельцем model gateway и принимает routing-решения после
 проверки privacy, offline, approval/tool policy, capability, health, evaluation
 gate и budget. User preference передаётся только как hint внутри разрешённого

@@ -198,6 +198,88 @@ pub enum ProviderError {
     ImageCapabilityStale,
 }
 
+/// Maximum length of the provider message prefix inspected for an HTTP status.
+const HTTP_STATUS_PREFIX_CHARS: usize = 3;
+
+impl ProviderError {
+    /// Returns the HTTP status code the adapter embedded in the error text.
+    ///
+    /// Adapters format API failures as `"<status>: message"`. Transport
+    /// failures, configuration errors and provider text without that prefix
+    /// have no status, so callers must treat `None` as "unknown".
+    pub fn http_status(&self) -> Option<u16> {
+        let message = match self {
+            Self::Http(message) | Self::Api(message) | Self::Stream(message) => message,
+            Self::Config(_) | Self::ImagePreflightRejected | Self::ImageCapabilityStale => {
+                return None
+            }
+        };
+        let prefix = message.split(':').next()?.trim();
+        if prefix.len() != HTTP_STATUS_PREFIX_CHARS
+            || !prefix.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return None;
+        }
+        let status = prefix.parse::<u16>().ok()?;
+        (100..=599).contains(&status).then_some(status)
+    }
+
+    /// Returns the bounded stable failure code shown in diagnostics and the UI.
+    ///
+    /// The code never contains provider text: only fixed tokens derived from
+    /// the adapter error class, the embedded HTTP status and a small set of
+    /// well-known provider markers. Unrecognized failures fall back to the
+    /// adapter-level codes so they stay distinguishable.
+    pub fn failure_code(&self) -> &'static str {
+        match self {
+            Self::Config(_) => "provider_configuration",
+            Self::ImagePreflightRejected => "image_preflight_rejected",
+            Self::ImageCapabilityStale => "image_capability_stale",
+            Self::Http(message) | Self::Api(message) | Self::Stream(message) => {
+                classify_failure_message(self, message)
+            }
+        }
+    }
+}
+
+/// Maps a provider message and its embedded status to a stable failure code.
+fn classify_failure_message(error: &ProviderError, message: &str) -> &'static str {
+    let lower = message.to_ascii_lowercase();
+    let status = error.http_status();
+    if lower.contains("timeout") || lower.contains("timed out") || status == Some(408) {
+        "provider_timeout"
+    } else if lower.contains("connect") || lower.contains("dns") || lower.contains("unreachable") {
+        "provider_unreachable"
+    } else if lower.contains("quota")
+        || lower.contains("insufficient")
+        || lower.contains("balance")
+        || lower.contains("billing")
+        || status == Some(402)
+    {
+        "provider_quota_exhausted"
+    } else if lower.contains("rate limit") || status == Some(429) {
+        "provider_rate_limited"
+    } else if lower.contains("model not exist")
+        || lower.contains("model_not_found")
+        || lower.contains("does not exist")
+        || status == Some(404)
+    {
+        "provider_model_not_found"
+    } else if matches!(status, Some(401 | 403)) {
+        "provider_auth_rejected"
+    } else if status.is_some_and(|status| status >= 500) {
+        "provider_unavailable"
+    } else if status.is_some_and(|status| (400..500).contains(&status)) {
+        "provider_request_rejected"
+    } else if matches!(error, ProviderError::Stream(_)) {
+        "provider_stream"
+    } else if matches!(error, ProviderError::Http(_)) {
+        "provider_transport"
+    } else {
+        "provider_api"
+    }
+}
+
 /// Публичный trait `ModelProvider` для общего контракта поведения.
 pub trait ModelProvider: Send + Sync {
     /// Returns the provider kind implemented by this adapter.
@@ -288,3 +370,96 @@ pub trait ModelProvider: Send + Sync {
 /// Future returned by an image-output provider call.
 pub type ImageOutputFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<ProviderImageOutput>, ProviderError>> + Send + 'a>>;
+
+#[cfg(test)]
+mod failure_code_tests {
+    use super::ProviderError;
+
+    #[test]
+    fn reads_http_status_only_from_adapter_prefixed_messages() {
+        assert_eq!(
+            ProviderError::Api("401: provider request failed".into()).http_status(),
+            Some(401)
+        );
+        assert_eq!(
+            ProviderError::Http("503: provider request failed".into()).http_status(),
+            Some(503)
+        );
+        assert_eq!(
+            ProviderError::Http("model timeout after 120 seconds".into()).http_status(),
+            None
+        );
+        assert_eq!(
+            ProviderError::Http("error sending request for url https://provider.test/v1".into())
+                .http_status(),
+            None
+        );
+        assert_eq!(
+            ProviderError::Config("provider_route_not_configured".into()).http_status(),
+            None
+        );
+    }
+
+    #[test]
+    fn maps_rejected_credentials_and_models_to_stable_codes() {
+        let cases = [
+            (
+                ProviderError::Api("401: provider request failed".into()),
+                "provider_auth_rejected",
+            ),
+            (
+                ProviderError::Api("403: provider request failed".into()),
+                "provider_auth_rejected",
+            ),
+            (
+                ProviderError::Api("402: provider request failed".into()),
+                "provider_quota_exhausted",
+            ),
+            (
+                ProviderError::Api("404: provider request failed".into()),
+                "provider_model_not_found",
+            ),
+            (
+                ProviderError::Api("429: rate limit".into()),
+                "provider_rate_limited",
+            ),
+            (
+                ProviderError::Api("400: provider request failed".into()),
+                "provider_request_rejected",
+            ),
+            (
+                ProviderError::Api("500: provider request failed".into()),
+                "provider_unavailable",
+            ),
+            (
+                ProviderError::Http("model timeout after 120 seconds".into()),
+                "provider_timeout",
+            ),
+            (
+                ProviderError::Http("error sending request: connect error".into()),
+                "provider_unreachable",
+            ),
+            (
+                ProviderError::Api("provider request failed".into()),
+                "provider_api",
+            ),
+            (
+                ProviderError::Config("provider_route_not_configured".into()),
+                "provider_configuration",
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.failure_code(), expected, "{error}");
+        }
+    }
+
+    #[test]
+    fn failure_codes_never_repeat_provider_text() {
+        let error = ProviderError::Api(
+            "401: provider request failed for https://provider.test/v1?token=secret".into(),
+        );
+        assert_eq!(error.failure_code(), "provider_auth_rejected");
+        assert!(!error.failure_code().contains("provider.test"));
+        assert!(!error.failure_code().contains("secret"));
+    }
+}

@@ -32,6 +32,15 @@ fn provider_details_are_normalized_and_unknown_is_fail_closed() {
         normalize_provider_error(&ProviderError::Api("429 rate limit".into())),
         evohime_model_gateway::FailureCategory::RateLimited
     );
+    assert_eq!(
+        normalize_provider_error(&ProviderError::Api("401: provider request failed".into())),
+        evohime_model_gateway::FailureCategory::InvalidRequest
+    );
+    assert_eq!(
+        normalize_provider_error(&ProviderError::Api("503: provider request failed".into())),
+        evohime_model_gateway::FailureCategory::ServerError
+    );
+    assert!(!evohime_model_gateway::FailureCategory::InvalidRequest.opens_circuit());
     let outcome = builtin_policy()
         .next_attempt(
             0,

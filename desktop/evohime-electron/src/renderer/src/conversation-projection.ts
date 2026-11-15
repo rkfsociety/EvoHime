@@ -1,4 +1,5 @@
 import type { ConversationEventProjection, CoreEvent } from '@shared/api'
+import { failureReasonText } from './recovery-state'
 
 const MAX_LIVE_EVENTS = 400
 const coreEventProjectionCache = new WeakMap<ConversationEventProjection, CoreEvent | null>()
@@ -441,7 +442,7 @@ export function batchAssistantDeltas(
       output.push({
         kind: 'failed',
         taskId: event.taskId,
-        content: textPayload(event.payload, 'error_code') || 'task_failed',
+        content: failureReasonText(textPayload(event.payload, 'error_code') || null),
         firstSequence: event.sequence,
         lastSequence: event.sequence
       })

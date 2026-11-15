@@ -303,6 +303,41 @@ impl FailureCategory {
     }
 }
 
+/// Classifies an adapter error into the retry/circuit taxonomy.
+///
+/// HTTP status codes embedded by the adapter take precedence over free-text
+/// markers: a rejected credential (`401`/`403`), an exhausted balance (`402`)
+/// or an unknown model (`404`) is a client-side failure that retrying cannot
+/// turn into a success, so it must not open the circuit or consume the retry
+/// budget. Only rate limits, timeouts, connection failures and `5xx` responses
+/// remain retriable.
+pub fn classify_provider_error(error: &crate::providers::ProviderError) -> FailureCategory {
+    use crate::providers::ProviderError;
+    let message = match error {
+        ProviderError::Config(_)
+        | ProviderError::ImagePreflightRejected
+        | ProviderError::ImageCapabilityStale => return FailureCategory::InvalidRequest,
+        ProviderError::Http(message)
+        | ProviderError::Api(message)
+        | ProviderError::Stream(message) => message,
+    };
+    let lower = message.to_ascii_lowercase();
+    let status = error.http_status();
+    if status == Some(429) || lower.contains("rate limit") {
+        FailureCategory::RateLimited
+    } else if status == Some(408) || lower.contains("timeout") || lower.contains("timed out") {
+        FailureCategory::Timeout
+    } else if lower.contains("connect") || lower.contains("dns") || lower.contains("unreachable") {
+        FailureCategory::ConnectionRefused
+    } else if status.is_some_and(|status| (400..500).contains(&status)) {
+        FailureCategory::InvalidRequest
+    } else if matches!(error, ProviderError::Stream(_)) {
+        FailureCategory::MalformedResponse
+    } else {
+        FailureCategory::ServerError
+    }
+}
+
 /// Hashes of policy sections for audit/verification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyHashes {
@@ -1728,5 +1763,43 @@ mod tests {
         assert!(!FailureCategory::PolicyDenied.opens_circuit());
         assert!(!FailureCategory::InvalidRequest.opens_circuit());
         assert!(!FailureCategory::Cancelled.opens_circuit());
+    }
+
+    #[test]
+    fn provider_status_drives_retry_classification() {
+        use crate::providers::ProviderError;
+        let invalid = [
+            "401: provider request failed",
+            "402: provider request failed",
+            "403: provider request failed",
+            "404: provider request failed",
+        ];
+        for message in invalid {
+            assert_eq!(
+                classify_provider_error(&ProviderError::Api(message.into())),
+                FailureCategory::InvalidRequest,
+                "{message}"
+            );
+        }
+        assert_eq!(
+            classify_provider_error(&ProviderError::Api("429: rate limit".into())),
+            FailureCategory::RateLimited
+        );
+        assert_eq!(
+            classify_provider_error(&ProviderError::Api("503: provider request failed".into())),
+            FailureCategory::ServerError
+        );
+        assert_eq!(
+            classify_provider_error(&ProviderError::Http(
+                "model timeout after 120 seconds".into()
+            )),
+            FailureCategory::Timeout
+        );
+        assert_eq!(
+            classify_provider_error(&ProviderError::Http(
+                "error sending request: connect error".into()
+            )),
+            FailureCategory::ConnectionRefused
+        );
     }
 }

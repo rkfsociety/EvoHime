@@ -154,33 +154,7 @@ pub enum PolicyError {
 pub fn normalize_provider_error(
     error: &evohime_model_gateway::providers::ProviderError,
 ) -> FailureCategory {
-    use evohime_model_gateway::providers::ProviderError;
-    match error {
-        ProviderError::Config(_)
-        | ProviderError::ImagePreflightRejected
-        | ProviderError::ImageCapabilityStale => FailureCategory::InvalidRequest,
-        ProviderError::Http(message) => {
-            let lower = message.to_ascii_lowercase();
-            if lower.contains("timeout") {
-                FailureCategory::Timeout
-            } else if lower.contains("connection") {
-                FailureCategory::ConnectionRefused
-            } else if lower.contains("429") || lower.contains("rate limit") {
-                FailureCategory::RateLimited
-            } else {
-                FailureCategory::ServerError
-            }
-        }
-        ProviderError::Api(message) => {
-            let lower = message.to_ascii_lowercase();
-            if lower.contains("429") || lower.contains("rate limit") {
-                FailureCategory::RateLimited
-            } else {
-                FailureCategory::ServerError
-            }
-        }
-        ProviderError::Stream(_) => FailureCategory::MalformedResponse,
-    }
+    evohime_model_gateway::classify_provider_error(error)
 }
 
 impl Default for ModelResiliencePolicyRules {

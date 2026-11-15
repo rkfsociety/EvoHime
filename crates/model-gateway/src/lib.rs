@@ -43,10 +43,10 @@ pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderProfileId};
 pub use crate::provider_contract::{
-    select_route_snapshot, select_route_snapshot_cached, AttemptTrace, CandidateEntry,
-    CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory, HealthStatus,
-    ImageOutputCapability, ImageOutputOperation, ImageProviderRequest, PolicyHashes, ProbeConfig,
-    ProbeFailure, ProbeResult, ProviderImageOutput, RetryConfig, RoutePolicySnapshot,
+    classify_provider_error, select_route_snapshot, select_route_snapshot_cached, AttemptTrace,
+    CandidateEntry, CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory,
+    HealthStatus, ImageOutputCapability, ImageOutputOperation, ImageProviderRequest, PolicyHashes,
+    ProbeConfig, ProbeFailure, ProbeResult, ProviderImageOutput, RetryConfig, RoutePolicySnapshot,
     RunHealthOverlay, RunResult, RunTrace, SnapshotCandidateDecision, SnapshotError,
     SnapshotRouteDecision,
 };
@@ -176,18 +176,7 @@ fn load_runtime_catalog() -> Option<EvaluationCatalog> {
 
 #[cfg(not(test))]
 fn classify_failure(error: &ProviderError) -> FailureCategory {
-    match error {
-        ProviderError::Config(_) => FailureCategory::InvalidRequest,
-        ProviderError::ImagePreflightRejected | ProviderError::ImageCapabilityStale => {
-            FailureCategory::InvalidRequest
-        }
-        ProviderError::Http(message) if message.contains("timeout") => FailureCategory::Timeout,
-        ProviderError::Http(message) if message.contains("connection") => {
-            FailureCategory::ConnectionRefused
-        }
-        ProviderError::Http(_) | ProviderError::Api(_) => FailureCategory::ServerError,
-        ProviderError::Stream(_) => FailureCategory::MalformedResponse,
-    }
+    provider_contract::classify_provider_error(error)
 }
 
 /// Entry point for chat completions.

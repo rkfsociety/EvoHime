@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-14.
+Обновлено: 2026-11-15.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -613,6 +613,31 @@ Kernel уже существовал как Core-owned runtime, но не был
 они остаются этапами 192.2–192.4, и до их реализации вызов из агента
 завершается typed `unavailable`. Значения объектов, inline result и абсолютные
 пути в декларацию, каталог и логи не попадают.
+
+## Provider failure classification
+
+Задача `4ad79c10-6bdf-43ab-9934-d1e0de261c3f` в установленной версии упала с
+общим `task.failed`: провайдер DeepSeek вернул ошибку на все четыре попытки
+(`provider.error_retriable` ×4 в `model-trace.jsonl`). Ни HTTP status, ни
+причина в проекцию не попадали, поэтому UI не мог объяснить отказ, а
+клиентская ошибка (например, неверный ключ или неизвестная модель) расходовала
+retry budget и открывала circuit как серверный сбой.
+
+Исправлено в исходниках:
+
+- `ProviderError::http_status` и `ProviderError::failure_code` в
+  `evohime-model-gateway` извлекают HTTP status из формата adapter-сообщения и
+  дают bounded код без provider text, URL и секретов;
+- `classify_provider_error` — единый контракт для gateway fallback loop и Core
+  resilience policy: `401`/`403`/`402`/`404` и прочие `4xx` — `InvalidRequest`
+  без retry и circuit, `429` — cooldown, timeout/connect и `5xx` — повторяемые;
+- Core публикует точный код отказа (`provider_auth_rejected`,
+  `provider_quota_exhausted`, `provider_model_not_found`,
+  `provider_rate_limited`, `provider_request_rejected`, `provider_timeout`,
+  `provider_unreachable`, `provider_unavailable`, `provider_configuration`) в
+  `task.failed` projection и в trace (`http_status` в `provider.error_*`);
+- renderer показывает по этому коду понятную причину и подсказку, а неизвестный
+  код по-прежнему выводится как есть.
 
 ## Delivery requirements и tool loadout
 

@@ -506,7 +506,9 @@ fn is_safe_failure_token(candidate: &str) -> bool {
 
 fn classify_failure_error(error: &str) -> &'static str {
     let lower = error.to_ascii_lowercase();
-    if lower.contains("err_blocked_by_client") {
+    if let Some(code) = classify_provider_failure(&lower) {
+        code
+    } else if lower.contains("err_blocked_by_client") {
         "client_blocked"
     } else if lower.contains("timeout") || lower.contains("timed out") {
         "timeout"
@@ -519,6 +521,33 @@ fn classify_failure_error(error: &str) -> &'static str {
     } else {
         "task_failed"
     }
+}
+
+/// Stable provider failure codes Core publishes for terminal model calls.
+///
+/// The codes are bounded tokens produced by `ProviderError::failure_code`, so a
+/// conversation trace can explain a provider outage without storing the raw
+/// provider message, URL or credential.
+const PROVIDER_FAILURE_CODES: &[&str] = &[
+    "provider_auth_rejected",
+    "provider_quota_exhausted",
+    "provider_model_not_found",
+    "provider_rate_limited",
+    "provider_request_rejected",
+    "provider_timeout",
+    "provider_unreachable",
+    "provider_unavailable",
+    "provider_configuration",
+    "provider_stream",
+    "provider_transport",
+    "provider_api",
+];
+
+fn classify_provider_failure(error: &str) -> Option<&'static str> {
+    PROVIDER_FAILURE_CODES
+        .iter()
+        .copied()
+        .find(|code| error.contains(code))
 }
 
 fn classify_failure_source(error: &str) -> &'static str {
@@ -639,6 +668,42 @@ mod tests {
                 !serde_json::to_string(&projection).unwrap().contains(error),
                 "raw error text must stay out of the durable projection"
             );
+        }
+    }
+
+    #[test]
+    fn provider_failures_keep_their_stable_code_outside_the_raw_text() {
+        let cases = [
+            (
+                "api error: provider_auth_rejected",
+                "provider_auth_rejected",
+            ),
+            (
+                "api error: provider_quota_exhausted",
+                "provider_quota_exhausted",
+            ),
+            (
+                "api error: provider_model_not_found",
+                "provider_model_not_found",
+            ),
+            ("api error: provider_rate_limited", "provider_rate_limited"),
+            ("api error: provider_timeout", "provider_timeout"),
+            ("api error: provider_unreachable", "provider_unreachable"),
+            ("api error: provider_unavailable", "provider_unavailable"),
+            (
+                "api error: provider_request_rejected",
+                "provider_request_rejected",
+            ),
+            (
+                "configuration error: provider_configuration",
+                "provider_configuration",
+            ),
+        ];
+        for (error, expected) in cases {
+            let projection = failure_projection(&serde_json::json!({ "error": error }));
+            assert_eq!(projection["error_code"], expected, "{error}");
+            assert_eq!(projection["source"], "core");
+            assert_eq!(projection["operation"], "task.execute");
         }
     }
 

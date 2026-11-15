@@ -89,6 +89,25 @@ describe('recovery contract', () => {
     expect(unknown?.reason).toBe('future_code')
   })
 
+  it('explains provider failures without exposing provider text', () => {
+    const cases: Array<[string, string]> = [
+      ['provider_auth_rejected', 'ключ доступа'],
+      ['provider_quota_exhausted', 'квота'],
+      ['provider_model_not_found', 'модель'],
+      ['provider_unavailable', 'недоступен']
+    ]
+    for (const [errorCode, expected] of cases) {
+      const notice = latestRecoveryNotice([event('task.failed', {
+        error_code: errorCode,
+        operation: 'task.execute',
+        source: 'core'
+      })])
+      expect(notice?.state).toBe('FAILED')
+      expect(notice?.reason).toContain(expected)
+      expect(notice?.reason).not.toContain(errorCode)
+    }
+  })
+
   it('keeps only bounded safe fields in recovery details', () => {
     const notice = latestRecoveryNotice([event('task.failed', {
       request_id: 'request-1',

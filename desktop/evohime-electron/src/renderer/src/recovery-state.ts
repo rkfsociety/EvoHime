@@ -93,7 +93,7 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
       return {
         ...common,
         state: 'FAILED',
-        reason: (errorCode ? FAILURE_REASON_TEXT[errorCode] : undefined) ?? errorCode ?? 'Операция завершилась ошибкой.',
+        reason: failureReasonText(errorCode),
         correlationId: stringField(payload, 'request_id') ?? event.taskId
       }
     }
@@ -111,7 +111,28 @@ const MAX_DETAIL_CHARS = 512
  */
 const FAILURE_REASON_TEXT: Readonly<Record<string, string>> = {
   task_failed: 'Операция завершилась ошибкой.',
-  tool_iteration_limit: 'Задача исчерпала лимит шагов: модель не смогла продвинуть выполнение.'
+  tool_iteration_limit: 'Задача исчерпала лимит шагов: модель не смогла продвинуть выполнение.',
+  provider_auth_rejected:
+    'Провайдер отклонил ключ доступа: проверь API key выбранного провайдера в настройках.',
+  provider_quota_exhausted: 'У провайдера закончилась квота или баланс: пополни счёт или выбери другой профиль.',
+  provider_model_not_found:
+    'Провайдер не знает выбранную модель: выбери модель из живого каталога провайдера.',
+  provider_rate_limited: 'Провайдер ограничил частоту запросов: повтори задачу позже.',
+  provider_request_rejected:
+    'Провайдер отклонил запрос: проверь выбранную модель и параметры профиля.',
+  provider_timeout: 'Провайдер не ответил вовремя: повтори задачу позже.',
+  provider_unreachable: 'Нет связи с провайдером: проверь сеть и base URL профиля.',
+  provider_unavailable: 'Провайдер недоступен: повтори задачу позже.',
+  provider_configuration: 'Провайдер настроен неверно: проверь профиль и ключ в настройках.'
+}
+
+/**
+ * Returns the localized reason for a stable failure code, or the code itself
+ * for a class this renderer does not know yet.
+ */
+export function failureReasonText(code: string | null): string {
+  if (!code) return 'Операция завершилась ошибкой.'
+  return FAILURE_REASON_TEXT[code] ?? code
 }
 
 function projectDetails(payload: Record<string, unknown>): Record<string, unknown> {
