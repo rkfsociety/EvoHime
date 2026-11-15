@@ -666,7 +666,7 @@ mod tests {
 
         let deepseek_entries = vec![entry("deepseek-chat"), entry("deepseek-reasoner")];
         let filtered_deepseek = filter_catalog_entries_by_tier(
-            evohime_model_gateway::providers::ProviderKind::OpenAiCompatible,
+            evohime_model_gateway::providers::ProviderKind::OpenAICompatible,
             "free",
             deepseek_entries,
         );
@@ -680,7 +680,7 @@ mod tests {
 
         let responses_entries = vec![entry("gpt-4.1"), entry("o3-mini")];
         let filtered_responses = filter_catalog_entries_by_tier(
-            evohime_model_gateway::providers::ProviderKind::OpenAiResponses,
+            evohime_model_gateway::providers::ProviderKind::OpenAIResponses,
             "free",
             responses_entries,
         );
