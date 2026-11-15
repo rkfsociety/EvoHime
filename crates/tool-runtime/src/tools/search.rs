@@ -726,7 +726,9 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         std::fs::write(dir.path().join("a.txt"), "Needle One").expect("write a");
 
-        assert!(fallback_search(dir.path(), dir.path(), &["needle".into()], &[], 10, false).is_empty());
+        assert!(
+            fallback_search(dir.path(), dir.path(), &["needle".into()], &[], 10, false).is_empty()
+        );
         assert_eq!(
             fallback_search(dir.path(), dir.path(), &["needle".into()], &[], 10, true).len(),
             1
