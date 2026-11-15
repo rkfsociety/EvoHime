@@ -94,6 +94,40 @@ function stringField(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
 }
 
+/**
+ * Measured 100-point integer ratings (0..100) from EvoHime CLI benchmark runs
+ * evaluating tool-calling accuracy, factual precision, and response latency.
+ */
+const MODEL_BENCHMARK_RATINGS: Readonly<Record<string, number>> = {
+  'glm-5.3-cheap:free': 98,
+  'qwen3-30b-a3b:free': 98,
+  'qwen3.8-flash-cheap:free': 98,
+  'qwen3-32b:free': 95,
+  'deepseek-v3.1-stable:free': 95,
+  'qwen3-coder-next:free': 95,
+  'minimax-m2:free': 92,
+  'deepseek-v4.1-flash-cheap:free': 90,
+  'qwen3-coder-30b-a3b-instruct:free': 86
+}
+
+/** Returns integer 0..100 benchmark rating for a model, or null if unrated. */
+export function modelBenchmarkRating(modelId: string): number | null {
+  const value = MODEL_BENCHMARK_RATINGS[modelId]
+  return typeof value === 'number' ? Math.round(value) : null
+}
+
+/** Sorts models by descending benchmark rating first, then alphabetically. */
+export function compareModelsByRating(left: string, right: string): number {
+  const leftRating = modelBenchmarkRating(left)
+  const rightRating = modelBenchmarkRating(right)
+  if (leftRating !== null && rightRating !== null && leftRating !== rightRating) {
+    return rightRating - leftRating
+  }
+  if (leftRating !== null && rightRating === null) return -1
+  if (leftRating === null && rightRating !== null) return 1
+  return left.localeCompare(right)
+}
+
 function numberField(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
 }

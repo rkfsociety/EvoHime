@@ -2208,7 +2208,10 @@ body {
 }
 
 .model-picker__menu li button {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   padding: 6px 8px;
   border: none;
@@ -2218,9 +2221,19 @@ body {
   font-family: var(--mono);
   font-size: 12px;
   text-align: left;
+}
+
+.model-picker__option-label {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.model-picker__option-rating {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .model-picker__menu li button:hover {

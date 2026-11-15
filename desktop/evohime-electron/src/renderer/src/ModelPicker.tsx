@@ -7,6 +7,8 @@ import { useShellApi } from './shell-api'
 import { CodexRateLimits } from './CodexRateLimits'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import {
+  compareModelsByRating,
+  modelBenchmarkRating,
   modelMetadataHint,
   parseCoreModelDescriptor,
   type CoreModelDescriptor,
@@ -140,7 +142,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       })
       : []
     setModelDescriptors(projectedModels)
-    setModels([...new Set(catalogModels)].sort((left, right) => left.localeCompare(right)))
+    setModels([...new Set(catalogModels)].sort(compareModelsByRating))
     const ollama = typeof parsed['ollama'] === 'object' && parsed['ollama'] !== null
       ? parsed['ollama'] as Record<string, unknown>
       : null
@@ -211,8 +213,8 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
 
   const requiredCapability = use === 'agent' ? 'tool_calls' : 'chat'
   const catalogModels = useMemo(() => provider === 'codex_cli'
-    ? codexModels.map((model) => ({ value: model.id, label: model.displayName || model.id }))
-    : models.map((model) => ({ value: model, label: model })), [codexModels, models, provider])
+    ? codexModels.map((model) => ({ value: model.id, label: model.displayName || model.id, rating: modelBenchmarkRating(model.id) }))
+    : models.map((model) => ({ value: model, label: model, rating: modelBenchmarkRating(model) })), [codexModels, models, provider])
   const visibleModels = useMemo(() => {
     if (provider === 'codex_cli' || !hideConfirmedUnsupported) return catalogModels
     return catalogModels.filter((model) => {
@@ -339,6 +341,7 @@ interface ModelDropdownProps {
 interface ModelOption {
   readonly value: string
   readonly label: string
+  readonly rating: number | null
 }
 
 interface CatalogStatus {
@@ -453,7 +456,10 @@ function ModelDropdown({ models, current, onSelect, disabled = false, capability
                       setOpen(false)
                     }}
                   >
-                    {translate(model.label)}
+                    <span className="model-picker__option-label">{translate(model.label)}</span>
+                    {model.rating !== null ? (
+                      <span className="model-picker__option-rating">{model.rating}/100</span>
+                    ) : null}
                   </button>
                 </li>
               ))

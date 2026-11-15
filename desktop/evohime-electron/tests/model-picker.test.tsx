@@ -394,4 +394,33 @@ describe('model picker', () => {
     expect(screen.getByText('Неделя: осталось 60%')).toBeTruthy()
     expect(screen.getByTestId('codex-composer-limits')).toBeTruthy()
   })
+
+  it('sorts rated models by descending integer score and displays 100-point rating', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[
+          event('model.catalog', {
+            mode: 'free',
+            models: [
+              'unrated-alpha:free',
+              'qwen3-coder-30b-a3b-instruct:free',
+              'glm-5.3-cheap:free',
+              'deepseek-v3.1-stable:free'
+            ]
+          })
+        ]}
+        use="text"
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
+    const options = screen.getAllByRole('option').map((option) => option.textContent)
+    expect(options).toEqual([
+      'glm-5.3-cheap:free98/100',
+      'deepseek-v3.1-stable:free95/100',
+      'qwen3-coder-30b-a3b-instruct:free86/100',
+      'unrated-alpha:free'
+    ])
+  })
 })
