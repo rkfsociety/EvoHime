@@ -40,7 +40,6 @@ const ContinuationPanel = lazy(() => import('./ContinuationPanel').then((module)
 const AnalysisKernelPanel = lazy(() => import('./AnalysisKernelPanel').then((module) => ({ default: module.AnalysisKernelPanel })))
 const VisualWorkflowBuilderPanel = lazy(() => import('./VisualWorkflowBuilderPanel').then((module) => ({ default: module.VisualWorkflowBuilderPanel })))
 const ConversationalWorkflowComposerPanel = lazy(() => import('./ConversationalWorkflowComposerPanel').then((module) => ({ default: module.ConversationalWorkflowComposerPanel })))
-const HumanWorkItemsPanel = lazy(() => import('./HumanWorkItemsPanel').then((module) => ({ default: module.HumanWorkItemsPanel })))
 const WorkbenchPanel = lazy(() => import('./WorkbenchPanel').then((module) => ({ default: module.WorkbenchPanel })))
 const AgenticBrowserSessionPanel = lazy(() => import('./AgenticBrowserSessionPanel').then((module) => ({ default: module.AgenticBrowserSessionPanel })))
 
@@ -67,7 +66,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'continuations' | 'kernels' | 'listening' | 'human-work-items'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'continuations' | 'kernels' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -87,7 +86,6 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'continuations', label: 'Продолжения', icon: 'repeat' },
   { id: 'kernels', label: 'Анализ', icon: 'terminal' },
   { id: 'listening', label: 'Слух', icon: 'mic' },
-  { id: 'human-work-items', label: 'Задачи для человека', icon: 'list-checks' },
 ]
 
 const VIEWS: readonly ViewDescriptor[] = [{ id: 'scheduled', label: 'Запланировано', icon: 'history' }, ...USER_VIEWS]
@@ -451,7 +449,6 @@ export function App(): React.JSX.Element {
               {translate(view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null)}
               {translate(view === 'kernels' ? <AnalysisKernelPanel connection={connection} events={events} /> : null)}
               {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
-              {translate(view === 'human-work-items' ? <HumanWorkItemsPanel /> : null)}
             </div>
           )}
           </Suspense>

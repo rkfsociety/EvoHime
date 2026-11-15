@@ -147,8 +147,8 @@ sidebar `#181b23`, поверхности `#191c25`, hover/active `#252b39`, г�
 создают новый IPC-контракт и не переносят authority из Core. Sidebar
 содержит бренд, выбранный workspace, чаты и быстрые действия «Новый чат»,
 «Запланировано» и «Плагины». Пользовательские разделы «Обзор», «Ревью планов»,
-«Память и Pulse», «Составные задачи», «Продолжения», «Анализ», «Слух» и
-«Задачи для человека», «Запланировано», а также «Настройки» открываются из
+«Память и Pulse», «Составные задачи», «Продолжения», «Анализ», «Слух»,
+«Запланировано», а также «Настройки» открываются из
 основной навигации или выпадающего меню пользователя. Внутренние Core/agent/model
 контракты, диагностика и служебные проекции не являются вкладками: ими управляет
 ядро, агент и модель. В контекстной области чата остаются только рабочая панель,
@@ -2134,9 +2134,9 @@ schema проверяются в Core. Ответ, принятый от authent
 backup-before-migrate. В v1 нет provider/tool/child dispatch: timeout даёт
 `Expired`, restart восстанавливает лишь durable state и не создаёт completion.
 
-Authenticated additive IPC command 203/event 52 и Electron Inbox показывают
-bounded metadata; `get` передаёт только typed user-visible instructions/response
-schema. Raw model prompt, hidden reasoning, credentials и approval payloads
+Authenticated additive IPC command 203/event 52 и inline-карточка вопросов в
+чате показывают bounded metadata (только когда есть активные вопросы); `get`
+передаёт только typed user-visible instructions/response schema. Raw model prompt, hidden reasoning, credentials и approval payloads
 исключены из projection.
 
 ## Revision-Safe Workspace Files v1 (план 60)

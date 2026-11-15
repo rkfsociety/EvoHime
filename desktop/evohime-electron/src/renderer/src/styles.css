@@ -7070,3 +7070,54 @@ body {
     order: -1;
   }
 }
+
+.human-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 780px;
+  width: 100%;
+  margin: 0 auto 8px;
+  padding: 0 16px;
+}
+
+.human-questions__card {
+  margin: 0;
+}
+
+.human-questions__instructions {
+  margin: 0;
+  color: var(--fg);
+  white-space: pre-wrap;
+}
+
+.human-questions__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.human-questions__choice--selected {
+  border-color: var(--accent);
+  background: rgb(91 156 246 / 18%);
+}
+
+.human-questions__input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.human-questions__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.human-questions__hint {
+  color: var(--fg-muted);
+}

@@ -16,6 +16,7 @@ import { ContextUsage } from './ContextUsage'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
 import { PinnedGoalBar } from './PinnedGoalBar'
+import { HumanChatQuestions } from './HumanWorkItemsPanel'
 import { UiIcon } from './UiIcon'
 import {
   addOptimisticMessage,
@@ -913,6 +914,8 @@ export function TaskTimeline({
           </>
         )}
       </div>
+
+      <HumanChatQuestions connection={connection} />
 
       <PinnedGoalBar
         connection={connection}
