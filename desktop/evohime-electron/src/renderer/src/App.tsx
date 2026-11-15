@@ -30,14 +30,11 @@ const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ d
 const ScheduledPanel = lazy(() => import('./ScheduledPanel').then((module) => ({ default: module.ScheduledPanel })))
 const OperationsPanel = lazy(() => import('./OperationsPanel').then((module) => ({ default: module.OperationsPanel })))
 const PlanReviewPanel = lazy(() => import('./PlanReviewPanel').then((module) => ({ default: module.PlanReviewPanel })))
-const WorkflowPanel = lazy(() => import('./WorkflowPanel').then((module) => ({ default: module.WorkflowPanel })))
-const CapabilityRecipePanel = lazy(() => import('./CapabilityRecipePanel').then((module) => ({ default: module.CapabilityRecipePanel })))
+const WorkflowsWorkspace = lazy(() => import('./WorkflowsWorkspace').then((module) => ({ default: module.WorkflowsWorkspace })))
 const OverviewPanel = lazy(() => import('./OverviewPanel').then((module) => ({ default: module.OverviewPanel })))
 const ListeningPanel = lazy(() => import('./ListeningPanel').then((module) => ({ default: module.ListeningPanel })))
 const TracePanel = lazy(() => import('./TracePanel').then((module) => ({ default: module.TracePanel })))
 const ChatSummaryPanel = lazy(() => import('./ChatSummaryPanel').then((module) => ({ default: module.ChatSummaryPanel })))
-const VisualWorkflowBuilderPanel = lazy(() => import('./VisualWorkflowBuilderPanel').then((module) => ({ default: module.VisualWorkflowBuilderPanel })))
-const ConversationalWorkflowComposerPanel = lazy(() => import('./ConversationalWorkflowComposerPanel').then((module) => ({ default: module.ConversationalWorkflowComposerPanel })))
 const WorkbenchPanel = lazy(() => import('./WorkbenchPanel').then((module) => ({ default: module.WorkbenchPanel })))
 const AgenticBrowserSessionPanel = lazy(() => import('./AgenticBrowserSessionPanel').then((module) => ({ default: module.AgenticBrowserSessionPanel })))
 
@@ -436,12 +433,14 @@ export function App(): React.JSX.Element {
                 {translate(view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null)}
                 {translate(view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null)}
                 {view === 'workflows' ? (
-                  <>
-                    <WorkflowPanel connection={connection} events={events} workspace={workspace} />
-                    <CapabilityRecipePanel connection={connection} events={events} workspace={workspace} onOpenDraft={openRecipeDraft} />
-                    <ConversationalWorkflowComposerPanel connection={connection} events={events} workspace={workspace} />
-                    <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} draftId={builderDraftId} ownerScope={builderDraftOwnerScope} />
-                  </>
+                  <WorkflowsWorkspace
+                    connection={connection}
+                    events={events}
+                    workspace={workspace}
+                    draftId={builderDraftId}
+                    ownerScope={builderDraftOwnerScope}
+                    onOpenDraft={openRecipeDraft}
+                  />
                 ) : null}
                 {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
               </div>

@@ -89,7 +89,7 @@ export function VisualWorkflowBuilderPanel({ connection, events, workspace, draf
     <div className="workflow-builder__canvas" aria-label="Canvas typed workflow">
       {nodes.length === 0 ? <p>{translate("Добавь узлы в typed draft JSON — они появятся на canvas.")}</p> : nodes.map((node) => <article className="workflow-builder__node" key={node.id}><strong>{translate(node.id)}</strong><small>{translate(typeof node.node_type === 'string' ? node.node_type : 'typed block')}</small></article>)}
     </div>
-    <div>
+    <div className="workflow-builder__actions">
       <button type="button" disabled={!api || !['connected', 'replaying', 'resyncing'].includes(connection)} onClick={() => void validate()}>{translate("Проверить draft")}</button>{translate(' ')}
       <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('save', draft)}>{translate("Сохранить draft")}</button>{translate(' ')}
       <button type="button" disabled={!api || !draftOwnerScope} onClick={() => void command('issue_handoff')}>{translate("Передать Composer")}</button>{translate(' ')}

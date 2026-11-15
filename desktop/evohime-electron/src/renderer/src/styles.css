@@ -3714,6 +3714,81 @@ select:focus {
   opacity: 0.85;
 }
 
+.workflows-hub {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.workflows-hub__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+}
+
+.workflows-hub__tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.workflows-hub__tabs button {
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.workflows-hub__tabs button:hover,
+.workflows-hub__tabs button[aria-selected='true'] {
+  border-color: var(--border);
+  background: var(--bg-active);
+  color: var(--fg);
+}
+
+.workflows-hub__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.workflows-hub__pane--hidden {
+  display: none;
+}
+
+.workflow-builder__canvas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.workflow-builder__node {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+}
+
+.workflow-builder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 /* ───────────────────── visual concept: dark workspace ─────────────────────
    This layer is presentation-only. Component geometry and IPC-driven states
    stay owned by the existing renderer components. */

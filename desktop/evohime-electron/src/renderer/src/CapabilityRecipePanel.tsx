@@ -284,7 +284,7 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
           {selected.availability.status === 'unsupported' ? (
             <p role="status">{translate("Запуск недоступен:")} {translate(selected.availability.reason_code)}</p>
           ) : (
-            <p>Binding: {translate(selected.workflow_binding?.template_id)} {translate("· версия")}{translate(selected.workflow_binding?.template_version)}</p>
+            <p>Binding: {translate(selected.workflow_binding?.template_id)} {translate("· версия")} {translate(selected.workflow_binding?.template_version)}</p>
           )}
           {selected.inputs.map((input) => (
             <label key={input.name}>

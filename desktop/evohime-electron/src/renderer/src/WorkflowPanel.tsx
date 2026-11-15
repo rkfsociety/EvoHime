@@ -383,7 +383,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
             ))}
           </ul>
           <p>
-            <small>{translate("требуются возможности:")}{translate(template.required_capabilities.join(', '))}</small>
+            <small>{translate("требуются возможности:")} {translate(template.required_capabilities.join(', '))}</small>
           </p>
           {template.inputs.map((input) => (
             <label key={input.name} className="workflow__input">
@@ -485,7 +485,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
 
       {runId ? (
         <div className="workflow__run" aria-label={translate("Текущий запуск")}>
-          <h4>{translate("Запуск")}{translate(runId)}</h4>
+          <h4>{translate("Запуск")} {translate(runId)}</h4>
           <p role="status">
             {translate("состояние:")} {translate(runStateLabel(activeRun?.state ?? 'unknown_state'))}
             {translate(activeRun?.terminal_reason ? ` · ${activeRun.terminal_reason}` : '')}
@@ -507,7 +507,7 @@ export function WorkflowPanel({ connection, events, workspace }: Props): React.J
                 {node.dependencies.length > 0 ? (
                   <small> {translate("зависит от:")} {translate(node.dependencies.join(', '))}</small>
                 ) : null}
-                {node.error_code ? <small> {translate("код:")}{translate(node.error_code)}</small> : null}
+                {node.error_code ? <small> {translate("код:")} {translate(node.error_code)}</small> : null}
               </li>
             ))}
           </ol>
