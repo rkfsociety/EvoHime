@@ -49,10 +49,27 @@ const MAX_FALLBACK_FILE_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_FALLBACK_LINE_CHARS: usize = 16 * 1024;
 
 #[derive(Deserialize)]
+#[serde(untagged)]
+enum StringOrVec {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl StringOrVec {
+    fn into_vec(self) -> Vec<String> {
+        match self {
+            Self::One(value) => vec![value],
+            Self::Many(values) => values,
+        }
+    }
+}
+
+#[derive(Deserialize)]
 struct Input {
-    query: String,
+    #[serde(alias = "pattern", alias = "text")]
+    query: StringOrVec,
     path: Option<String>,
-    glob: Option<String>,
+    glob: Option<StringOrVec>,
     limit: Option<usize>,
     /// Treat `query` as a ripgrep regular expression. Defaults to a literal
     /// substring match, which behaves identically with and without ripgrep.
@@ -78,7 +95,13 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         tool: NAME.into(),
         message: e.to_string(),
     })?;
-    if input.query.is_empty() {
+    let queries: Vec<String> = input
+        .query
+        .into_vec()
+        .into_iter()
+        .filter(|query| !query.is_empty())
+        .collect();
+    if queries.is_empty() {
         return Err(ToolError::InvalidInput {
             tool: NAME.into(),
             message: "query must not be empty".into(),
@@ -89,13 +112,18 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         Some(path) => sandbox.resolve_existing(path)?,
         None => sandbox.root().to_path_buf(),
     };
-    if let Some(glob) = input.glob.as_deref() {
-        if glob.starts_with('-') {
-            return Err(ToolError::InvalidInput {
-                tool: NAME.into(),
-                message: "invalid glob".into(),
-            });
-        }
+    let globs: Vec<String> = input
+        .glob
+        .map(StringOrVec::into_vec)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|glob| !glob.trim().is_empty())
+        .collect();
+    if globs.iter().any(|glob| glob.starts_with('-')) {
+        return Err(ToolError::InvalidInput {
+            tool: NAME.into(),
+            message: "invalid glob".into(),
+        });
     }
     let limit = input.limit.unwrap_or(100).min(1000);
     let force_fallback = std::env::var("EVOHIME_SEARCH_FORCE_FALLBACK")
@@ -112,8 +140,8 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         match ripgrep_search(
             sandbox.root(),
             &base,
-            &input.query,
-            input.glob.as_deref(),
+            &queries,
+            &globs,
             limit,
             input.regex,
             input.ignore_case,
@@ -138,12 +166,10 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         });
     }
 
-    let query = input.query.clone();
-    let glob = input.glob.clone();
     let root = sandbox.root().to_path_buf();
     let ignore_case = input.ignore_case;
     let matches = tokio::task::spawn_blocking(move || {
-        fallback_search(&root, &base, &query, glob.as_deref(), limit, ignore_case)
+        fallback_search(&root, &base, &queries, &globs, limit, ignore_case)
     })
     .await
     .map_err(|error| ToolError::Execution(format!("search worker failed: {error}")))?;
@@ -159,13 +185,13 @@ enum RgFailure {
 async fn ripgrep_search(
     workspace_root: &Path,
     base: &Path,
-    query: &str,
-    glob: Option<&str>,
+    queries: &[String],
+    globs: &[String],
     limit: usize,
     regex: bool,
     ignore_case: bool,
 ) -> Result<Vec<Value>, RgFailure> {
-    if limit == 0 {
+    if limit == 0 || queries.is_empty() {
         return Ok(Vec::new());
     }
     let mut command = Command::new("rg");
@@ -185,15 +211,17 @@ async fn ripgrep_search(
         command.arg("--ignore-case");
     }
     // `-e` keeps queries that start with `-` from being parsed as flags.
+    for query in queries {
+        command.args(["-e", query.as_str()]);
+    }
     command
-        .args(["-e", query])
         .arg(base)
         .current_dir(workspace_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    if let Some(glob) = glob {
-        command.args(["--glob", glob]);
+    for glob in globs {
+        command.args(["--glob", glob.as_str()]);
     }
     for pattern in [
         "!.env*",
@@ -371,8 +399,8 @@ async fn read_bounded<R: tokio::io::AsyncRead + Unpin>(
 fn fallback_search(
     workspace_root: &Path,
     base: &Path,
-    query: &str,
-    glob: Option<&str>,
+    queries: &[String],
+    globs: &[String],
     limit: usize,
     ignore_case: bool,
 ) -> Vec<Value> {
@@ -402,15 +430,13 @@ fn fallback_search(
             if !file_type.is_file() {
                 continue;
             }
-            if let Some(glob) = glob {
-                if !path_matches_glob(&path, glob) {
-                    continue;
-                }
+            if !globs.is_empty() && !globs.iter().any(|glob| path_matches_glob(&path, glob)) {
+                continue;
             }
             if let Some(file_matches) = scan_file(
                 workspace_root,
                 &path,
-                query,
+                queries,
                 limit - matches.len(),
                 ignore_case,
             ) {
@@ -427,11 +453,11 @@ fn fallback_search(
 fn scan_file(
     workspace_root: &Path,
     path: &Path,
-    query: &str,
+    queries: &[String],
     remaining: usize,
     ignore_case: bool,
 ) -> Option<Vec<Value>> {
-    if remaining == 0 || is_hard_excluded(path) {
+    if remaining == 0 || queries.is_empty() || is_hard_excluded(path) {
         return None;
     }
     if fs::metadata(path).ok()?.len() > MAX_FALLBACK_FILE_BYTES {
@@ -448,16 +474,17 @@ fn scan_file(
         .to_string_lossy()
         .replace('\\', "/");
     let mut out = Vec::new();
-    let needle = if ignore_case {
-        query.to_lowercase()
+    let needles: Vec<String> = if ignore_case {
+        queries.iter().map(|query| query.to_lowercase()).collect()
     } else {
-        query.to_owned()
+        queries.to_vec()
     };
     for (index, line) in text.lines().enumerate() {
         let hit = if ignore_case {
-            line.to_lowercase().contains(&needle)
+            let lowered = line.to_lowercase();
+            needles.iter().any(|needle| lowered.contains(needle))
         } else {
-            line.contains(&needle)
+            needles.iter().any(|needle| line.contains(needle))
         };
         if hit {
             out.push(json!({
@@ -680,7 +707,14 @@ mod tests {
         std::fs::write(dir.path().join("nested").join("b.md"), "needle two").expect("write b");
         std::fs::write(dir.path().join("skip.bin"), b"needle\0binary").expect("binary");
 
-        let matches = fallback_search(dir.path(), dir.path(), "needle", Some("*.md"), 10, false);
+        let matches = fallback_search(
+            dir.path(),
+            dir.path(),
+            &["needle".into()],
+            &["*.md".into()],
+            10,
+            false,
+        );
         assert_eq!(matches.len(), 1);
         assert!(matches[0]["path"].as_str().unwrap().ends_with("b.md"));
         assert_eq!(matches[0]["line"], 1);
@@ -691,9 +725,9 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         std::fs::write(dir.path().join("a.txt"), "Needle One").expect("write a");
 
-        assert!(fallback_search(dir.path(), dir.path(), "needle", None, 10, false).is_empty());
+        assert!(fallback_search(dir.path(), dir.path(), &["needle".into()], &[], 10, false).is_empty());
         assert_eq!(
-            fallback_search(dir.path(), dir.path(), "needle", None, 10, true).len(),
+            fallback_search(dir.path(), dir.path(), &["needle".into()], &[], 10, true).len(),
             1
         );
     }
@@ -714,7 +748,7 @@ mod tests {
         let file = dir.path().join("large.txt");
         std::fs::write(&file, vec![b'n'; MAX_FALLBACK_FILE_BYTES as usize + 1]).expect("write");
 
-        assert!(scan_file(dir.path(), &file, "n", 10, false).is_none());
+        assert!(scan_file(dir.path(), &file, &["n".into()], 10, false).is_none());
     }
 
     #[test]
@@ -768,8 +802,68 @@ mod tests {
         std::fs::write(dir.path().join("credentials.json"), "needle").expect("credential file");
         std::fs::write(dir.path().join("safe.txt"), "needle").expect("safe file");
 
-        let matches = fallback_search(dir.path(), dir.path(), "needle", None, 10, false);
+        let matches = fallback_search(dir.path(), dir.path(), &["needle".into()], &[], 10, false);
         assert_eq!(matches.len(), 1);
         assert!(matches[0]["path"].as_str().unwrap().ends_with("safe.txt"));
+    }
+
+    #[tokio::test]
+    async fn search_accepts_pattern_alias_and_array_query_and_glob() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.rs"), "alpha hit").expect("write a");
+        std::fs::write(dir.path().join("b.md"), "beta hit").expect("write b");
+        std::fs::write(dir.path().join("c.txt"), "alpha skip").expect("write c");
+
+        let by_pattern = execute(
+            &ctx(&dir),
+            json!({
+                "pattern": "beta",
+                "path": "."
+            }),
+        )
+        .await
+        .expect("pattern alias succeeds");
+        assert_eq!(by_pattern.structured["count"], 1);
+
+        let by_arrays = execute(
+            &ctx(&dir),
+            json!({
+                "query": ["alpha", "beta"],
+                "glob": ["*.rs", "*.md"],
+                "path": "."
+            }),
+        )
+        .await
+        .expect("array query and glob succeed");
+        assert_eq!(by_arrays.structured["count"], 2);
+
+        let empty_array = execute(
+            &ctx(&dir),
+            json!({
+                "query": [],
+                "path": "."
+            }),
+        )
+        .await
+        .expect_err("empty query array rejected");
+        assert!(matches!(empty_array, ToolError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn fallback_search_supports_multiple_queries_and_globs() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.rs"), "alpha hit").expect("write a");
+        std::fs::write(dir.path().join("b.md"), "beta hit").expect("write b");
+        std::fs::write(dir.path().join("c.txt"), "alpha skip").expect("write c");
+
+        let matches = fallback_search(
+            dir.path(),
+            dir.path(),
+            &["alpha".into(), "beta".into()],
+            &["*.rs".into(), "*.md".into()],
+            10,
+            false,
+        );
+        assert_eq!(matches.len(), 2);
     }
 }
