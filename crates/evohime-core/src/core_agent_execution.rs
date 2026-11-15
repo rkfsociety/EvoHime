@@ -191,13 +191,9 @@ impl ToolAgent {
         // Requirements are derived once: the adaptive catalog, the delivery
         // gate and the final eligibility check must agree on what the task
         // owes, otherwise the gate can demand a tool that was never offered.
-        let router_mutation_intent = request_allows_mutation(&prompt);
-        let mut delivery_requirements = DeliveryRequirements::from_prompt(&prompt);
-        let reconciliation =
-            reconcile_delivery_requirements(&mut delivery_requirements, router_mutation_intent);
         // Permission preflight is the authority for mutation availability: in
         // full access the write tools are allowed without approval, so the model
-        // must get them regardless of how the prompt is phrased.
+        // must get them and keep mutation delivery regardless of prompt wording.
         let mut preflight = Vec::new();
         for tool in self.tools.list() {
             let decision = self
@@ -213,7 +209,11 @@ impl ToolAgent {
                     Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { .. })
                 )
         });
+        let router_mutation_intent = request_allows_mutation(&prompt);
         let mutation_intent = router_mutation_intent || mutation_authorized;
+        let mut delivery_requirements = DeliveryRequirements::from_prompt(&prompt);
+        let reconciliation =
+            reconcile_delivery_requirements(&mut delivery_requirements, mutation_intent);
         let mut authorized_manifests = Vec::new();
         for (name, decision) in &preflight {
             if tool_preflight_can_be_offered(decision, mutation_intent) {
@@ -1102,12 +1102,25 @@ impl ToolAgent {
                 is_new
             });
             if let Some(tool_name) = duplicate_tool_call {
-                messages.push(ChatMessage::text(
-                    ChatRole::User,
-                    format!(
-                        "Ты уже выполняла точно такой вызов {tool_name}. Его повтор удалён Core. Самостоятельно выбери следующий новый шаг: используй другой подтверждённый путь или filesystem.search, затем продолжи исследование/реализацию. Не повторяй последний вызов и не завершай задачу отчётом."
-                    ),
-                ));
+                let duplicate_guidance = format!(
+                    "Ты уже выполняла точно такой вызов {tool_name}. Его повтор удалён Core. Самостоятельно выбери следующий новый шаг: используй другой подтверждённый путь или filesystem.search, затем продолжи исследование/реализацию. Не повторяй последний вызов и не завершай задачу отчётом."
+                );
+                if tool_calls.is_empty() && iteration + 1 < self.max_iterations {
+                    write_model_trace(
+                        "task.duplicate_tool_call_recovery",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "iteration": iteration,
+                            "tool_name": tool_name,
+                        }),
+                    );
+                    if !result.content.trim().is_empty() {
+                        messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
+                    }
+                    messages.push(ChatMessage::text(ChatRole::User, duplicate_guidance));
+                    continue;
+                }
+                messages.push(ChatMessage::text(ChatRole::User, duplicate_guidance));
             }
             if let (Some(journal), Some(request_id), Some(request_hash), Some(response_id)) = (
                 &self.journal,
@@ -2325,6 +2338,34 @@ mod tests {
                 "command tool missing: {query}"
             );
         }
+    }
+
+    #[test]
+    fn russian_add_request_allows_mutation() {
+        let prompt = "надо добавить возможность делать вложения в композер через ctrl+V";
+        assert!(
+            request_allows_mutation(prompt),
+            "add request was classified read-only: {prompt}"
+        );
+        let query = adaptive_catalog_query(prompt, true);
+        assert!(query.contains("filesystem.patch"));
+        assert!(query.contains("filesystem.write"));
+    }
+
+    #[test]
+    fn full_access_keeps_mutation_delivery_requirement_regardless_of_router_intent() {
+        let mut requirements = super::DeliveryRequirements {
+            mutation: true,
+            ..Default::default()
+        };
+        let router_mutation_intent = false;
+        let mutation_authorized = true;
+        let reconciliation = super::reconcile_delivery_requirements(
+            &mut requirements,
+            router_mutation_intent || mutation_authorized,
+        );
+        assert!(!reconciliation.mutation_skipped);
+        assert!(requirements.mutation);
     }
 
     #[test]

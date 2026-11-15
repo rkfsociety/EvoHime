@@ -209,7 +209,7 @@ pub fn default_intent_rules() -> IntentRules {
                 keywords: vec![
                     "измени".to_string(),
                     "исправь".to_string(),
-                    "добавь".to_string(),
+                    "добав".to_string(),
                     "удали".to_string(),
                     "создай".to_string(),
                     "напиши".to_string(),
