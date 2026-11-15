@@ -153,6 +153,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
     const saved = summary?.profiles?.[nextProvider]
     const savedMatches = nextProvider !== 'openai_compatible' || saved?.profileId === nextProfileId
+    const nextConfigured = savedMatches && (
+      saved?.configured === true
+      || (saved === undefined && summary?.provider === nextProvider && summary.configured)
+    )
     pendingSelection.current = true
 
     setProvider(nextProvider)
@@ -173,10 +177,12 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     )
     setAcknowledgeProbePossibleCost(false)
 
-    // Changing only the vendor inside the OpenAI-compatible transport is a
-    // local draft until "Save" persists the profile and its credential.
-    if (nextProvider === provider) {
-      if (savedMatches) pendingSelection.current = false
+    // Selecting an unconfigured provider or switching vendor inside the
+    // OpenAI-compatible transport stays a local draft until "Save" persists
+    // the profile and its credential.
+    if (nextProvider === provider || !nextConfigured) {
+      if (savedMatches && summary?.provider === nextProvider) pendingSelection.current = false
+      setStatus({ kind: 'idle' })
       return
     }
 

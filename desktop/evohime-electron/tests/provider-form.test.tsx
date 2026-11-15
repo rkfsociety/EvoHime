@@ -237,6 +237,26 @@ describe('provider form', () => {
   })
 
   it('requires a one-shot warning before requesting an OpenRouter free-access probe', async () => {
+    const openrouterProfiles = {
+      literouter: { model: '', baseUrl: '', tier: 'free', configured: false },
+      openai_compatible: {
+        model: 'author/model:free',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        tier: 'free',
+        configured: true,
+        profileId: 'openrouter'
+      },
+      openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
+      ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
+    }
+    providerGetSummary = {
+      provider: 'literouter',
+      model: '',
+      baseUrl: '',
+      tier: 'free',
+      configured: false,
+      profiles: openrouterProfiles
+    }
     selectOutcome = ok({
       summary: {
         provider: 'openai_compatible',
@@ -245,18 +265,7 @@ describe('provider form', () => {
         tier: 'free',
         configured: true,
         profileId: 'openrouter',
-        profiles: {
-          literouter: { model: '', baseUrl: '', tier: 'free', configured: false },
-          openai_compatible: {
-            model: 'author/model:free',
-            baseUrl: 'https://openrouter.ai/api/v1',
-            tier: 'free',
-            configured: true,
-            profileId: 'openrouter'
-          },
-          openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
-          ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
-        }
+        profiles: openrouterProfiles
       },
       restarted: true
     })
@@ -274,6 +283,29 @@ describe('provider form', () => {
     })
     expect(await screen.findByText(/Проверка выполняется/)).toBeTruthy()
     confirm.mockRestore()
+  })
+
+  it('keeps an unconfigured provider selected as a local draft instead of calling provider.select', async () => {
+    selectOutcome = { ok: false, code: 'invalid-payload', message: 'Сначала настрой ключ выбранного провайдера.' }
+    renderProviderForm()
+
+    const select = (await screen.findByLabelText('Провайдер')) as HTMLSelectElement
+    await userEvent.selectOptions(select, 'openai_responses')
+
+    expect(select.value).toBe('openai_responses')
+    expect(calls.some((call) => call.command === 'provider.select')).toBe(false)
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    await userEvent.type(screen.getByLabelText('Ключ API'), 'sk-responses-test')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
+
+    await waitFor(() => expect(calls).toContainEqual({
+      command: 'provider.save',
+      payload: expect.objectContaining({
+        provider: 'openai_responses',
+        apiKey: 'sk-responses-test'
+      })
+    }))
   })
 
   it('defaults a new OpenRouter profile to automatic first-use checks and requires cost consent', async () => {
