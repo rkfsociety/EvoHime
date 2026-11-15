@@ -29,6 +29,27 @@ only the `custom` entry accepts a user-supplied HTTPS or loopback URL.
 | SambaNova | `https://api.sambanova.ai/v1` |
 | Nebius Token Factory | `https://api.tokenfactory.nebius.com/v1` |
 
+## DeepSeek
+
+The DeepSeek profile (`https://api.deepseek.com/v1`) currently serves two
+models:
+
+| Model ID | Version | Thinking mode | Vision | Context / max output |
+| --- | --- | --- | --- | --- |
+| `deepseek-flash(1)` | DeepSeek-V4.1-Flash-1017 | both, thinking by default | ✓ | 1M / 384K |
+| `deepseek-v4-pro` | DeepSeek-V4-Pro-0813 | both, thinking by default | ✗ | 1M / 384K |
+
+Both models support JSON output, tool calls and the Responses API; FIM
+completion is available in non-thinking mode only. The model ID is picked from
+the provider's live catalog; if discovery is unsupported, the ID is entered
+manually as shown above.
+
+DeepSeek also exposes an Anthropic-format endpoint at
+`https://api.deepseek.com/anthropic`. EvoHime currently talks to DeepSeek only
+through the OpenAI-compatible chat transport.
+
+## Cloudflare Workers AI
+
 For Cloudflare, enter the 32-character hexadecimal Account ID separately from
 the API token. EvoHime builds the account-scoped base URL and model-discovery
 request from that ID; the host and path are not editable. For model discovery

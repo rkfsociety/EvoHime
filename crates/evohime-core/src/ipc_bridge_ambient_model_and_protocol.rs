@@ -664,7 +664,7 @@ mod tests {
             vec!["gpt-4o"]
         );
 
-        let deepseek_entries = vec![entry("deepseek-chat"), entry("deepseek-reasoner")];
+        let deepseek_entries = vec![entry("deepseek-flash(1)"), entry("deepseek-v4-pro")];
         let filtered_deepseek = filter_catalog_entries_by_tier(
             evohime_model_gateway::providers::ProviderKind::OpenAICompatible,
             "free",
@@ -675,7 +675,7 @@ mod tests {
                 .iter()
                 .map(|e| e.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["deepseek-chat", "deepseek-reasoner"]
+            vec!["deepseek-flash(1)", "deepseek-v4-pro"]
         );
 
         let responses_entries = vec![entry("gpt-4.1"), entry("o3-mini")];
