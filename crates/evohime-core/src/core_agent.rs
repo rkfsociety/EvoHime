@@ -85,6 +85,32 @@ pub struct ApprovalCoordinator {
     resolved: Arc<Mutex<HashSet<uuid::Uuid>>>,
 }
 
+/// Process-wide state shared by the model's workflow tools and the IPC
+/// workflow runtime. It keeps approvals coherent and background work bounded.
+#[derive(Clone)]
+pub struct WorkflowRuntimeState {
+    pub(crate) approvals: Arc<crate::workflow_runtime::WorkflowApprovalRegistry>,
+    pub(crate) tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
+}
+
+impl WorkflowRuntimeState {
+    /// Creates a fresh Core workflow state with the standard task bound.
+    pub fn new() -> Self {
+        Self {
+            approvals: Arc::new(crate::workflow_runtime::WorkflowApprovalRegistry::new()),
+            tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
+                crate::bounded_tasks::DEFAULT_CAPACITY,
+            )),
+        }
+    }
+}
+
+impl Default for WorkflowRuntimeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Holds pending user decisions for model-route changes.
 #[derive(Clone, Default)]
 pub struct RoutingApprovalRegistry {
@@ -817,6 +843,7 @@ pub struct ToolAgent {
     /// не создаётся, а не создаётся «без потолка».
     proactivity: Option<crate::ambient::AmbientProactivityRegistry>,
     workflow_registry: Arc<crate::workflow_registry::WorkflowRegistry>,
+    workflow_state: Arc<WorkflowRuntimeState>,
 }
 
 /// Жёсткий предел циклов `model -> tool` для одной задачи.
@@ -1079,6 +1106,7 @@ impl TaskExecutor for ToolAgent {
             extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
+            workflow_state: Arc::clone(&self.workflow_state),
         };
         Box::pin(async move {
             agent.recover_pending_memory_extractions(&events).await;
@@ -1187,6 +1215,7 @@ impl TaskExecutor for ToolAgent {
             extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
+            workflow_state: Arc::clone(&self.workflow_state),
         };
         Box::pin(async move {
             agent
@@ -1233,6 +1262,7 @@ impl TaskExecutor for ToolAgent {
             extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
+            workflow_state: Arc::clone(&self.workflow_state),
         };
         Box::pin(async move {
             agent
@@ -1286,6 +1316,7 @@ impl TaskExecutor for ToolAgent {
             extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
+            workflow_state: Arc::clone(&self.workflow_state),
         };
         Box::pin(async move {
             agent
@@ -1321,6 +1352,7 @@ impl TaskExecutor for ToolAgent {
             extraction_lease: Arc::clone(&self.extraction_lease),
             proactivity: self.proactivity.clone(),
             workflow_registry: Arc::clone(&self.workflow_registry),
+            workflow_state: Arc::clone(&self.workflow_state),
         };
         Box::pin(async move {
             agent

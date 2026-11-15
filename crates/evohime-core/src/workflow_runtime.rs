@@ -550,6 +550,7 @@ impl EventJournal {
 // Runtime.
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct WorkflowRuntime {
     journal: EventJournal,
     registry: Arc<WorkflowRegistry>,

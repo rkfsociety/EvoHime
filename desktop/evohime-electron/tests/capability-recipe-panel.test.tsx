@@ -59,7 +59,6 @@ describe('CapabilityRecipePanel', () => {
     const props = {
       connection: 'connected' as const,
       workspace: 'C:\\work',
-      onOpenDraft: () => {},
     }
     const { rerender } = render(
       <CapabilityRecipePanel

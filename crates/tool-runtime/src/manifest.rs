@@ -18,6 +18,23 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
         // Declared kernel surface keeps one source of truth: the tool module
         // owns the schema, and the manifest derives it instead of a stub.
         "analysis.run" => crate::tools::analysis::input_schema(),
+        "workflow.catalog" => object(serde_json::json!({}), &[]),
+        "workflow.start" => object(
+            serde_json::json!({
+                "template_id": string("Stable ID of a fixed Core-owned workflow template"),
+                "inputs": {
+                    "type": "object",
+                    "description": "Template-declared string inputs",
+                    "additionalProperties": {"type": "string"}
+                },
+                "idempotency_key": string("Optional key to deduplicate this request")
+            }),
+            &["template_id", "inputs"],
+        ),
+        "workflow.status" | "workflow.cancel" => object(
+            serde_json::json!({"run_id":string("Durable workflow run ID in the current workspace")}),
+            &["run_id"],
+        ),
         "utility.base64.encode"
         | "utility.base64.decode"
         | "utility.hash.sha256"
@@ -360,6 +377,29 @@ mod tests {
         assert_eq!(schema["properties"]["args"]["type"], "array");
         assert_eq!(schema["properties"]["cwd"]["type"], "string");
         assert!(schema["properties"].get("input").is_none());
+    }
+
+    #[test]
+    fn workflow_tool_schemas_are_explicit_and_closed() {
+        for (tool, required) in [
+            ("workflow.catalog", serde_json::json!([])),
+            (
+                "workflow.start",
+                serde_json::json!(["template_id", "inputs"]),
+            ),
+            ("workflow.status", serde_json::json!(["run_id"])),
+            ("workflow.cancel", serde_json::json!(["run_id"])),
+        ] {
+            let schema = builtin_input_schema(tool);
+            assert_eq!(schema["type"], "object");
+            assert_eq!(schema["additionalProperties"], false);
+            assert_eq!(schema["required"], required);
+        }
+        let start = builtin_input_schema("workflow.start");
+        assert_eq!(
+            start["properties"]["inputs"]["additionalProperties"]["type"],
+            "string"
+        );
     }
 
     #[test]

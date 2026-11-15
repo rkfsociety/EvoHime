@@ -25,7 +25,7 @@ fn bootstrap_registers_filesystem_read() {
     let tools = registry.list();
     // Bound instead of an exact literal: adding a declared tool must not churn
     // this assertion, while a shrinking surface still fails the test.
-    assert!(tools.len() >= 67, "declared tool surface shrank");
+    assert!(tools.len() >= 74, "declared tool surface shrank");
     for name in [
         "agent.run",
         "analysis.run",
@@ -76,6 +76,10 @@ fn bootstrap_registers_filesystem_read() {
         "memory.search",
         "process.run",
         "shell.execute",
+        "workflow.catalog",
+        "workflow.start",
+        "workflow.status",
+        "workflow.cancel",
     ] {
         assert!(
             tools.iter().any(|tool| tool.name == name),
@@ -917,6 +921,18 @@ fn analysis_run_is_declared_once_with_a_closed_manifest() {
         !properties.contains_key("input"),
         "analysis.run must not fall back to the generic input stub"
     );
+}
+
+#[test]
+fn workflow_mutation_tools_are_marked_mutating_in_the_manifest() {
+    let registry = ToolRegistry::bootstrap();
+
+    for name in ["workflow.start", "workflow.cancel"] {
+        let manifest = registry.manifest_for(name).expect("workflow manifest");
+        assert_eq!(manifest.side_effect, crate::SideEffectClass::Mutating);
+        assert_eq!(manifest.workspace_scope, "task");
+        assert_eq!(manifest.approval, crate::ApprovalMode::Never);
+    }
 }
 
 #[test]

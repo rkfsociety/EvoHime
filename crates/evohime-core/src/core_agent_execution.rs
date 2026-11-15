@@ -172,6 +172,285 @@ fn mutation_nudge_message(available: &[String], steps_without_mutation: usize) -
 }
 
 impl ToolAgent {
+    async fn execute_workflow_tool(
+        &self,
+        context: &ToolContext,
+        task_id: &str,
+        tool_name: &str,
+        input: serde_json::Value,
+    ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
+        use evohime_tool_runtime::{ToolError, ToolResult};
+        use serde::Deserialize;
+
+        fn rejected(code: &str) -> ToolResult {
+            ToolResult {
+                output: format!("Workflow не выполнен: {code}"),
+                structured: serde_json::json!({ "started": false, "error_code": code }),
+            }
+        }
+        fn same_workspace(stored: &str, requested: &std::path::Path) -> bool {
+            match (
+                std::path::Path::new(stored).canonicalize(),
+                requested.canonicalize(),
+            ) {
+                (Ok(stored), Ok(requested)) => stored == requested,
+                _ => false,
+            }
+        }
+        fn failure() -> ToolError {
+            ToolError::Execution("invalid workflow tool input".into())
+        }
+
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct StartInput {
+            template_id: String,
+            inputs: std::collections::BTreeMap<String, String>,
+            #[serde(default)]
+            idempotency_key: Option<String>,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct RunInput {
+            run_id: String,
+        }
+
+        let workspace = &context.workspace_root;
+        let Ok(canonical_workspace) = workspace.canonicalize() else {
+            return Ok(rejected("workspace_unavailable"));
+        };
+        let workspace_path = canonical_workspace.to_string_lossy().into_owned();
+
+        match tool_name {
+            "workflow.catalog" => {
+                if !input.as_object().is_some_and(serde_json::Map::is_empty) {
+                    return Err(failure());
+                }
+                let templates = crate::workflow_templates::catalog()
+                    .into_iter()
+                    .map(|template| {
+                        let unavailable = template.graph().nodes.iter().any(|node| {
+                            matches!(&node.node_type, crate::workflow::NodeType::Child { .. })
+                        });
+                        serde_json::json!({
+                            "template_id": template.template_id,
+                            "version": template.version,
+                            "name": template.display_name,
+                            "description": template.description,
+                            "inputs": template.inputs,
+                            "available": !unavailable,
+                            "unavailable_reason": if unavailable { "child_executor_unavailable" } else { "" },
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                Ok(ToolResult {
+                    output: serde_json::to_string(&templates).unwrap_or_default(),
+                    structured: serde_json::json!({ "templates": templates }),
+                })
+            }
+            "workflow.start" => {
+                let Some(journal) = &self.journal else {
+                    return Ok(rejected("workflow_runtime_unavailable"));
+                };
+                let request: StartInput = serde_json::from_value(input).map_err(|_| failure())?;
+                if request.template_id.trim().is_empty() {
+                    return Err(failure());
+                }
+                let Some(template) = crate::workflow_templates::template(&request.template_id)
+                else {
+                    return Ok(rejected("unknown_template"));
+                };
+                let graph = match template.instantiate(&request.inputs) {
+                    Ok(graph) => graph,
+                    Err(error) => return Ok(rejected(error.code())),
+                };
+                if graph
+                    .nodes
+                    .iter()
+                    .any(|node| matches!(&node.node_type, crate::workflow::NodeType::Child { .. }))
+                {
+                    return Ok(rejected("child_executor_unavailable"));
+                }
+                let graph = match self.workflow_registry.expand_subgraphs(&graph) {
+                    Ok(graph) => graph,
+                    Err(_) => return Ok(rejected("workflow_binding_rejected")),
+                };
+                if graph.validate().is_err()
+                    || self
+                        .workflow_registry
+                        .validate_bindings(
+                            &graph,
+                            &crate::ipc_bridge::workflow_parent_capabilities(),
+                        )
+                        .is_err()
+                {
+                    return Ok(rejected("workflow_binding_rejected"));
+                }
+                let key = request
+                    .idempotency_key
+                    .as_deref()
+                    .filter(|key| !key.trim().is_empty())
+                    .unwrap_or(task_id);
+                if key.len() > 256 {
+                    return Err(failure());
+                }
+                let digest = <sha2::Sha256 as sha2::Digest>::digest(
+                    format!("{}|{}|{}", task_id, template.template_id, key).as_bytes(),
+                );
+                let digest_text = digest[..16]
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>();
+                let run_id = format!("agent-wf-{digest_text}");
+                if let Some(existing) = journal
+                    .workflow_run(&run_id)
+                    .await
+                    .map_err(|error| ToolError::Execution(error.to_string()))?
+                {
+                    if !same_workspace(&journal.workflow_run_workspace(&run_id).await, workspace) {
+                        return Ok(rejected("workflow_run_outside_workspace"));
+                    }
+                    if existing.graph_hash != graph.canonical_hash() {
+                        return Ok(rejected("idempotency_key_conflict"));
+                    }
+                    return Ok(ToolResult {
+                        output: format!(
+                            "Workflow {} уже существует: {}",
+                            existing.run_id,
+                            existing.state.as_str()
+                        ),
+                        structured: serde_json::json!({ "run_id": existing.run_id, "state": existing.state.as_str(), "deduplicated": true, "error_code": "" }),
+                    });
+                }
+                let Some(permit) = self.workflow_state.tasks.try_acquire() else {
+                    return Ok(rejected("background_task_capacity_exhausted"));
+                };
+                let runtime = crate::workflow_runtime::WorkflowRuntime::new(
+                    journal.clone(),
+                    Arc::clone(&self.workflow_registry),
+                    Arc::new(
+                        crate::workflow_adapters::CoreNodeAdapter::new(
+                            journal.clone(),
+                            workspace_path.clone(),
+                        )
+                        .with_tools(Arc::clone(&self.tools)),
+                    ),
+                    Arc::clone(&self.workflow_state.approvals)
+                        as Arc<dyn crate::workflow_runtime::WorkflowApprovalGate>,
+                    format!(
+                        "agent:{}",
+                        self.selected_model.get().as_deref().unwrap_or("configured")
+                    ),
+                );
+                let start = crate::workflow_runtime::StartWorkflowRequest {
+                    run_id: run_id.clone(),
+                    task_id: task_id.to_owned(),
+                    workspace_path,
+                    template_id: template.template_id,
+                    template_version: template.version,
+                    inputs: request.inputs,
+                    graph,
+                    parent: crate::ipc_bridge::workflow_parent_capabilities(),
+                };
+                if let Err(error) = runtime.start(start).await {
+                    return Ok(rejected(error.code()));
+                }
+                let driver = runtime.clone();
+                let driver_run_id = run_id.clone();
+                self.workflow_state
+                    .tasks
+                    .spawn_reserved(permit, async move {
+                        let _ = driver.drive(&driver_run_id).await;
+                    })
+                    .await;
+                Ok(ToolResult {
+                    output: format!("Workflow запущен: {run_id}"),
+                    structured: serde_json::json!({ "run_id": run_id, "state": "pending", "error_code": "" }),
+                })
+            }
+            "workflow.status" | "workflow.cancel" => {
+                let Some(journal) = &self.journal else {
+                    return Ok(rejected("workflow_runtime_unavailable"));
+                };
+                let request: RunInput = serde_json::from_value(input).map_err(|_| failure())?;
+                if request.run_id.trim().is_empty() || request.run_id.len() > 128 {
+                    return Err(failure());
+                }
+                let Some(_run) = journal
+                    .workflow_run(&request.run_id)
+                    .await
+                    .map_err(|error| ToolError::Execution(error.to_string()))?
+                else {
+                    return Ok(rejected("unknown_run"));
+                };
+                if !same_workspace(
+                    &journal.workflow_run_workspace(&request.run_id).await,
+                    workspace,
+                ) {
+                    return Ok(rejected("workflow_run_outside_workspace"));
+                }
+                let runtime = crate::workflow_runtime::WorkflowRuntime::new(
+                    journal.clone(),
+                    Arc::clone(&self.workflow_registry),
+                    Arc::new(
+                        crate::workflow_adapters::CoreNodeAdapter::new(
+                            journal.clone(),
+                            workspace.to_path_buf(),
+                        )
+                        .with_tools(Arc::clone(&self.tools)),
+                    ),
+                    Arc::clone(&self.workflow_state.approvals)
+                        as Arc<dyn crate::workflow_runtime::WorkflowApprovalGate>,
+                    format!(
+                        "agent:{}",
+                        self.selected_model.get().as_deref().unwrap_or("configured")
+                    ),
+                );
+                if tool_name == "workflow.status" {
+                    let Some(projection) = runtime
+                        .projection(&request.run_id)
+                        .await
+                        .map_err(|error| ToolError::Execution(error.code().into()))?
+                    else {
+                        return Ok(rejected("unknown_run"));
+                    };
+                    let structured =
+                        serde_json::to_value(projection).unwrap_or(serde_json::Value::Null);
+                    return Ok(ToolResult {
+                        output: structured.to_string(),
+                        structured,
+                    });
+                }
+                let Some(permit) = self.workflow_state.tasks.try_acquire() else {
+                    return Ok(rejected("background_task_capacity_exhausted"));
+                };
+                let cancelled = journal
+                    .request_workflow_cancel(
+                        &request.run_id,
+                        crate::task_memory::now_millis() as i64,
+                    )
+                    .await
+                    .map_err(|error| ToolError::Execution(error.to_string()))?;
+                if cancelled {
+                    let run_id = request.run_id.clone();
+                    self.workflow_state
+                        .tasks
+                        .spawn_reserved(permit, async move {
+                            let _ = runtime.drive(&run_id).await;
+                        })
+                        .await;
+                } else {
+                    drop(permit);
+                }
+                Ok(ToolResult {
+                    output: format!("Workflow cancellation requested: {cancelled}"),
+                    structured: serde_json::json!({ "run_id": request.run_id, "cancelled": cancelled, "error_code": if cancelled { "" } else { "not_cancellable" } }),
+                })
+            }
+            _ => Ok(rejected("unknown_workflow_tool")),
+        }
+    }
+
     /// Runs one agent task to completion without an external cancellation signal.
     ///
     /// The task uses the configured tools and providers, applies the workspace
@@ -302,6 +581,18 @@ impl ToolAgent {
         let has_active_goal = prompt.contains("<active_goal ");
         let mut appended_tool_ids = Vec::new();
         let mut required_ids = delivery_required_tool_ids(delivery_requirements);
+        let lower_prompt = prompt.to_lowercase();
+        if ["workflow", "составн", "сценар", "шаблон", "отмен", "статус"]
+            .iter()
+            .any(|marker| lower_prompt.contains(marker))
+        {
+            required_ids.extend_from_slice(&[
+                "workflow.catalog",
+                "workflow.start",
+                "workflow.status",
+                "workflow.cancel",
+            ]);
+        }
         if !has_active_goal {
             required_ids.push("goal.create");
         }
@@ -1622,7 +1913,12 @@ impl ToolAgent {
                             ],
                         );
                     }
-                    match if call.name == "memory.search" {
+                    match if call.name.starts_with("workflow.") {
+                        tokio::select! {
+                            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                            result = self.execute_workflow_tool(&context, &task_id, &call.name, input) => result,
+                        }
+                    } else if call.name == "memory.search" {
                         let result = async {
                             let journal = self.journal.as_ref().ok_or_else(|| {
                                 evohime_tool_runtime::ToolError::Execution(
@@ -2421,7 +2717,7 @@ fn tool_preflight_can_be_offered(
 #[cfg(test)]
 mod tests {
     use super::{
-        adaptive_catalog_query, inject_observed_expected_hash, model_tool_observation,
+        ToolAgent, adaptive_catalog_query, inject_observed_expected_hash, model_tool_observation,
         request_allows_mutation, tool_preflight_can_be_offered, update_observed_file_revision,
     };
     use evohime_permissions::{Permission, PermissionEngine, PermissionMode};
@@ -2437,6 +2733,162 @@ mod tests {
         assert!(query.contains("filesystem.mkdir"));
         assert!(query.contains("shell.execute"));
         assert!(query.contains("filesystem.read"));
+    }
+
+    #[test]
+    fn workflow_requests_keep_all_four_workflow_tools_in_the_catalog_query() {
+        for prompt in ["Запусти сценарий исследования", "workflow status for run"]
+        {
+            let query = adaptive_catalog_query(prompt, false);
+            for tool in [
+                "workflow.catalog",
+                "workflow.start",
+                "workflow.status",
+                "workflow.cancel",
+            ] {
+                assert!(query.contains(tool), "{tool} missing for {prompt}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn workflow_catalog_and_start_report_child_executor_limitation() {
+        use evohime_model_gateway::{ModelGateway, providers::mock::MockProvider};
+        use std::sync::Arc;
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let database = tempfile::tempdir().expect("database directory");
+        let journal = crate::EventJournal::open(database.path().join("core.db")).expect("journal");
+        let agent = ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(MockProvider::new(
+                "mock",
+                Vec::new(),
+            )))),
+            Arc::new(ToolRegistry::bootstrap()),
+        )
+        .with_journal(journal)
+        .with_workflow_registry(Arc::new(
+            crate::workflow_registry::WorkflowRegistry::bootstrap(),
+        ));
+        let context = ToolContext {
+            workspace_root: workspace.path().to_path_buf(),
+            task_id: uuid::Uuid::new_v4(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        let catalog = agent
+            .execute_workflow_tool(
+                &context,
+                "task-workflow-test",
+                "workflow.catalog",
+                serde_json::json!({}),
+            )
+            .await
+            .expect("catalog call");
+        assert!(
+            catalog.structured["templates"]
+                .as_array()
+                .expect("templates")
+                .iter()
+                .all(|template| template["available"] == false
+                    && template["unavailable_reason"] == "child_executor_unavailable")
+        );
+
+        let start = agent
+            .execute_workflow_tool(
+                &context,
+                "task-workflow-test",
+                "workflow.start",
+                serde_json::json!({
+                    "template_id": "repository-research",
+                    "inputs": { "question": "Check the repository" }
+                }),
+            )
+            .await
+            .expect("start is a structured refusal");
+        assert_eq!(start.structured["error_code"], "child_executor_unavailable");
+        assert_eq!(start.structured["started"], false);
+    }
+
+    #[tokio::test]
+    async fn workflow_status_and_cancel_are_limited_to_the_starting_workspace() {
+        use evohime_model_gateway::{ModelGateway, providers::mock::MockProvider};
+        use std::sync::Arc;
+
+        let owner_workspace = tempfile::tempdir().expect("owner workspace");
+        let other_workspace = tempfile::tempdir().expect("other workspace");
+        let database = tempfile::tempdir().expect("database directory");
+        let journal = crate::EventJournal::open(database.path().join("core.db")).expect("journal");
+        let record = evohime_local_storage::workflow_store::WorkflowRunRecord {
+            run_id: "workspace-bound-run".into(),
+            task_id: "task-workflow-test".into(),
+            template_id: "test-template".into(),
+            template_version: 1,
+            graph_id: "test-graph".into(),
+            graph_version: 1,
+            graph_hash: "a".repeat(64),
+            graph_json: "{}".into(),
+            inputs_json: "{}".into(),
+            policy_json: serde_json::json!({
+                "workspace_path": owner_workspace.path().canonicalize().expect("canonical owner")
+            })
+            .to_string(),
+            state: evohime_local_storage::workflow_store::RunState::Pending,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+            terminal_reason: String::new(),
+            cancel_requested: false,
+            lease_owner: String::new(),
+            lease_expires_at_ms: 0,
+        };
+        journal
+            .insert_workflow_run(&record, &[])
+            .await
+            .expect("persist test run");
+
+        let agent = ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(MockProvider::new(
+                "mock",
+                Vec::new(),
+            )))),
+            Arc::new(ToolRegistry::bootstrap()),
+        )
+        .with_journal(journal.clone())
+        .with_workflow_registry(Arc::new(
+            crate::workflow_registry::WorkflowRegistry::bootstrap(),
+        ));
+        let context = ToolContext {
+            workspace_root: other_workspace.path().to_path_buf(),
+            task_id: uuid::Uuid::new_v4(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        for tool_name in ["workflow.status", "workflow.cancel"] {
+            let result = agent
+                .execute_workflow_tool(
+                    &context,
+                    "task-workflow-test",
+                    tool_name,
+                    serde_json::json!({ "run_id": "workspace-bound-run" }),
+                )
+                .await
+                .expect("workspace mismatch is a structured refusal");
+            assert_eq!(
+                result.structured["error_code"],
+                "workflow_run_outside_workspace"
+            );
+        }
+        let stored = journal
+            .workflow_run("workspace-bound-run")
+            .await
+            .expect("load run")
+            .expect("run remains present");
+        assert!(
+            !stored.cancel_requested,
+            "cross-workspace cancel must not mutate the run"
+        );
     }
 
     #[test]

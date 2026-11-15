@@ -38,6 +38,8 @@ pub mod process;
 pub mod search;
 /// Policy-bound direct program execution.
 pub mod shell;
+/// Core-owned durable workflow orchestration entry points.
+pub mod workflow;
 /// Revision-safe workspace file writing.
 pub mod write;
 

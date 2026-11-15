@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 
 import type { ConnectionState, CoreEvent } from '@shared/api'
 import { translate } from './i18n'
@@ -18,28 +18,14 @@ interface Props {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
   readonly workspace: string | null
-  readonly draftId: string
-  readonly ownerScope: string | null
-  readonly onOpenDraft: (draftId: string, ownerScope: string) => void
 }
 
 export function WorkflowsWorkspace({
   connection,
   events,
   workspace,
-  draftId,
-  ownerScope,
-  onOpenDraft,
 }: Props): React.JSX.Element {
   const [subtab, setSubtab] = useState<WorkflowsSubtab>('run')
-
-  const handleOpenDraft = useCallback(
-    (nextDraftId: string, nextOwnerScope: string) => {
-      onOpenDraft(nextDraftId, nextOwnerScope)
-      setSubtab('studio')
-    },
-    [onOpenDraft],
-  )
 
   return (
     <div className="workflows-hub">
@@ -77,7 +63,7 @@ export function WorkflowsWorkspace({
       >
         <Suspense fallback={null}>
           <WorkflowPanel connection={connection} events={events} workspace={workspace} />
-          <CapabilityRecipePanel connection={connection} events={events} workspace={workspace} onOpenDraft={handleOpenDraft} />
+          <CapabilityRecipePanel connection={connection} events={events} workspace={workspace} />
         </Suspense>
       </div>
 
@@ -94,8 +80,8 @@ export function WorkflowsWorkspace({
             connection={connection}
             events={events}
             workspace={workspace}
-            draftId={draftId}
-            ownerScope={ownerScope}
+            draftId="builder-draft"
+            ownerScope={null}
           />
         </Suspense>
       </div>

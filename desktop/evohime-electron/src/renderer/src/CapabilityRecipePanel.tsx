@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   CapabilityRecipeCatalog,
   CapabilityRecipeDescriptor,
-  CapabilityRecipeForkResult,
   CapabilityRecipePreflight,
   CapabilityRecipeRunResult,
   CapabilityRecipeStartResult,
@@ -18,7 +17,6 @@ interface Props {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
   readonly workspace: string | null
-  readonly onOpenDraft: (draftId: string, ownerScope: string) => void
 }
 
 interface PendingRequest {
@@ -66,7 +64,7 @@ function maxSequence(events: readonly CoreEvent[], eventType: string): number {
     .reduce((max, event) => Math.max(max, event.sequenceId), 0)
 }
 
-export function CapabilityRecipePanel({ connection, events, workspace, onOpenDraft }: Props): React.JSX.Element {
+export function CapabilityRecipePanel({ connection, events, workspace }: Props): React.JSX.Element {
   const api = useShellApi()
   const connected = connection === 'connected' || connection === 'replaying' || connection === 'resyncing'
   const [selectedId, setSelectedId] = useState('')
@@ -75,12 +73,9 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
   const [confirmedSignature, setConfirmedSignature] = useState('')
   const [preflightPending, setPreflightPending] = useState<PendingRequest | null>(null)
   const [startPending, setStartPending] = useState<PendingRequest | null>(null)
-  const [forkPending, setForkPending] = useState<PendingRequest | null>(null)
   const [runId, setRunId] = useState('')
-  const [runWorkspace, setRunWorkspace] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const startKeyRef = useRef<{ signature: string; key: string } | null>(null)
-  const forkKeyRef = useRef<{ runId: string; key: string } | null>(null)
 
   const catalogEvent = latestPayload<CapabilityRecipeCatalog>(events, 'capability_recipe.catalog')
   const catalog = catalogEvent?.payload ?? null
@@ -94,7 +89,6 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
   const preflightEvent = latestPayload<CapabilityRecipePreflight>(events, 'capability_recipe.preflight')
   const startEvent = latestPayload<CapabilityRecipeStartResult>(events, 'capability_recipe.started')
   const recipeRunEvent = latestPayload<CapabilityRecipeRunResult>(events, 'capability_recipe.run')
-  const forkEvent = latestPayload<CapabilityRecipeForkResult>(events, 'capability_recipe.forked')
   const workflowRunEvent = latestPayload<WorkflowRunProjection>(events, 'workflow.run')
   const recipeRunPayload = recipeRunEvent?.payload ?? null
   const recipeRun = recipeRunPayload && recipeRunPayload.recipe_run?.run_id === runId
@@ -138,26 +132,8 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
     }
     startKeyRef.current = null
     setRunId(startEvent.payload.run_id)
-    setRunWorkspace(startPending.workspacePath ?? null)
     setNotice(startEvent.payload.deduplicated ? 'Возвращён уже созданный запуск.' : 'Запуск принят Core.')
   }, [startEvent?.event.sequenceId, startPending, startEvent?.payload])
-
-  useEffect(() => {
-    if (!forkEvent || !forkPending || forkEvent.event.sequenceId <= forkPending.afterSequence) return
-    if (forkEvent.payload.source_run_id !== forkPending.signature) return
-    setForkPending(null)
-    if (forkEvent.payload.status !== 'draft_created' || forkEvent.payload.error_code) {
-      setNotice(`Не удалось создать draft: ${forkEvent.payload.error_code || 'fork_refused'}`)
-      return
-    }
-    setNotice(`Создан draft ${forkEvent.payload.draft_id} · revision ${forkEvent.payload.revision}.`)
-    if (forkPending.signature !== runId || !runWorkspace) return
-    if (workspace !== runWorkspace) {
-      setNotice('Draft сохранён в исходном workspace. Переключись на него и повтори действие, чтобы открыть draft.')
-      return
-    }
-    onOpenDraft(forkEvent.payload.draft_id, runWorkspace)
-  }, [forkEvent?.event.sequenceId, forkPending, forkEvent?.payload, onOpenDraft, runId, runWorkspace, workspace])
 
   useEffect(() => {
     if (!api || !connected || !runId) return
@@ -179,7 +155,6 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
     setPreflightPending(null)
     setNotice('')
     setRunId('')
-    setRunWorkspace(null)
     startKeyRef.current = null
   }
 
@@ -242,23 +217,9 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
   }
 
   const cancel = async (): Promise<void> => {
-    if (!api || !runId || !runWorkspace) return
+    if (!api || !runId) return
     const outcome = await api.invoke('workflow.cancel', { runId })
     if (!outcome.ok) setNotice(outcome.message)
-  }
-
-  const fork = async (): Promise<void> => {
-    if (!api || !runId || !runWorkspace) return
-    const key = forkKeyRef.current?.runId === runId ? forkKeyRef.current.key : crypto.randomUUID()
-    forkKeyRef.current = { runId, key }
-    const pending = { afterSequence: maxSequence(events, 'capability_recipe.forked'), signature: runId }
-    setForkPending(pending)
-    setNotice('Создаю отдельный draft из исходного шаблона…')
-    const outcome = await api.invoke('capabilityRecipe.forkRun', { runId, idempotencyKey: key })
-    if (!outcome.ok) {
-      setForkPending(null)
-      setNotice(outcome.message)
-    }
   }
 
   const ready = selected?.availability.status === 'ready' && isReady(preflight) && confirmedSignature === signature
@@ -368,13 +329,10 @@ export function CapabilityRecipePanel({ connection, events, workspace, onOpenDra
                   <p>{translate("ReRunWithCurrentCompatible: недоступно (")}{translate(recipeRunEvent.payload.replay_options.rerun_current_compatible.reason_code)})</p>
                 </>
               ) : null}
-              <p>{translate("ForkAndModify создаёт отдельный draft из исходного шаблона после успешного запуска.")}</p>
             </details>
           ) : null}
           <button type="button" disabled={!api || !connected || ['completed', 'failed', 'cancelled', 'degraded', 'interrupted'].includes(runState)} onClick={() => void cancel()}>
             {translate("Отменить запуск")}</button>{translate(' ')}
-          <button type="button" disabled={!api || !connected || runState !== 'completed' || Boolean(forkPending)} onClick={() => void fork()}>
-            {translate("Создать draft из шаблона")}</button>
         </div>
       ) : null}
       {notice ? <p role="status">{translate(notice)}</p> : null}

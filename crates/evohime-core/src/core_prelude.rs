@@ -592,6 +592,8 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
             "operation": "json_parse",
             "args": "{}"
         }),
+        "workflow.start" => serde_json::json!({ "template_id": "probe", "inputs": {} }),
+        "workflow.status" | "workflow.cancel" => serde_json::json!({ "run_id": "probe" }),
         _ => serde_json::json!({}),
     }
 }
@@ -745,6 +747,16 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
         rules.push(
             "- Если задача многоэтапная, требует длительной автономной работы до результата или пользователь просит поставить цель, зафиксируй её через goal.create (с понятной формулировкой objective и конкретными success_criteria), а затем подтверждай каждый критерий через goal.verify после фактической проверки.".into(),
         );
+    }
+    if has("workflow.catalog") {
+        rules.push(
+            "- Если пользователь просит запустить или проверить составной сценарий, сначала вызови workflow.catalog и выбирай только шаблоны с available=true. Если шаблон недоступен, сообщи указанный unavailable_reason; не обещай запуск и не подменяй сценарий ручным запуском узлов.".into(),
+        );
+        if has("workflow.start") {
+            rules.push(
+                "- Запускай только фиксированный шаблон через workflow.start; не создавай и не редактируй графы. Для продолжения используй run_id из ответа, workflow.status или workflow.cancel.".into(),
+            );
+        }
     }
     rules.push("- Если инструмент вернул ошибку, не завершай задачу: исправь аргументы по тексту ошибки и повтори вызов.".into());
     if has("filesystem.patch") {

@@ -136,6 +136,7 @@ impl ToolAgent {
             extraction_lease: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             proactivity: None,
             workflow_registry: Arc::new(crate::workflow_registry::WorkflowRegistry::bootstrap()),
+            workflow_state: Arc::new(crate::core_agent::WorkflowRuntimeState::new()),
         }
     }
 
@@ -178,6 +179,15 @@ impl ToolAgent {
         registry: Arc<crate::workflow_registry::WorkflowRegistry>,
     ) -> Self {
         self.workflow_registry = registry;
+        self
+    }
+
+    /// Shares approval and bounded background state with the IPC bridge.
+    pub fn with_workflow_runtime_state(
+        mut self,
+        state: Arc<crate::core_agent::WorkflowRuntimeState>,
+    ) -> Self {
+        self.workflow_state = state;
         self
     }
 

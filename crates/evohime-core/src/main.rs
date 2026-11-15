@@ -274,6 +274,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // потолок. Координатор подключается ниже — он рождается позже агента.
     let proactivity = evohime_core::ambient::AmbientProactivityRegistry::default();
     proactivity.set_data_dir(data_dir.clone()).await;
+    let workflow_state = std::sync::Arc::new(evohime_core::WorkflowRuntimeState::new());
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
@@ -291,6 +292,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .with_receipt_keys(receipt_keys.clone())
                 .with_routing_approvals(routing_approvals.clone())
                 .with_proactivity(proactivity.clone())
+                .with_workflow_runtime_state(workflow_state.clone())
                 .with_selected_model(selected_model.clone()),
             ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
@@ -390,6 +392,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )
     .with_selected_model(selected_model)
     .with_proactivity(proactivity)
+    .with_workflow_runtime_state(workflow_state)
     .with_provider_catalog_cache(provider_catalog_cache)
     .with_free_access_evidence_cache(free_access_evidence_cache)
     .with_free_access_probe_guard(free_access_probe_guard)

@@ -370,6 +370,10 @@ pub fn catalog() -> Result<Vec<CapabilityRecipeDescriptor>, CapabilityRecipeErro
                 registry
                     .validate_bindings(graph, &parent)
                     .map_err(|_| CapabilityRecipeError::InvalidBinding("invalid_binding"))?;
+                let runtime_available = !graph
+                    .nodes
+                    .iter()
+                    .any(|node| matches!(&node.node_type, crate::workflow::NodeType::Child { .. }));
                 let binding = CapabilityRecipeWorkflowBinding {
                     template_id: template.template_id.clone(),
                     template_version: template.version,
@@ -379,7 +383,13 @@ pub fn catalog() -> Result<Vec<CapabilityRecipeDescriptor>, CapabilityRecipeErro
                     Some(binding),
                     template.required_capabilities.clone(),
                     template.preview.clone(),
-                    CapabilityRecipeAvailability::Ready,
+                    if runtime_available {
+                        CapabilityRecipeAvailability::Ready
+                    } else {
+                        CapabilityRecipeAvailability::Unsupported {
+                            reason_code: "child_executor_unavailable".into(),
+                        }
+                    },
                 )
             } else {
                 (
@@ -479,6 +489,7 @@ pub fn validate_descriptor(
 
     match (&descriptor.workflow_binding, &descriptor.availability) {
         (Some(binding), CapabilityRecipeAvailability::Ready)
+        | (Some(binding), CapabilityRecipeAvailability::Unsupported { .. })
             if !binding.template_id.trim().is_empty()
                 && binding.template_id.len() <= 128
                 && binding.template_version > 0
@@ -488,7 +499,7 @@ pub fn validate_descriptor(
         _ => {
             return Err(CapabilityRecipeError::Invalid(
                 "availability_binding_mismatch",
-            ))
+            ));
         }
     }
 
@@ -702,6 +713,19 @@ pub fn preflight(
             .map(|error| error.code().to_string())
             .take(16)
             .collect();
+        seal_preflight(&mut result, parent);
+        return result;
+    }
+
+    if expanded
+        .nodes
+        .iter()
+        .any(|node| matches!(&node.node_type, crate::workflow::NodeType::Child { .. }))
+    {
+        result.state = CapabilityRecipePreflightState::Unsupported;
+        result
+            .reason_codes
+            .push("child_executor_unavailable".into());
         seal_preflight(&mut result, parent);
         return result;
     }
@@ -964,6 +988,17 @@ mod tests {
             &by_id["local-model-fit"].availability,
             CapabilityRecipeAvailability::Unsupported { .. }
         ));
+        for id in [
+            "knowledge-grounding",
+            "multi-agent-review",
+            "structured-output",
+        ] {
+            assert!(matches!(
+                &by_id[id].availability,
+                CapabilityRecipeAvailability::Unsupported { reason_code }
+                    if reason_code == "child_executor_unavailable"
+            ));
+        }
     }
 
     #[test]
@@ -971,11 +1006,13 @@ mod tests {
         let recipe = descriptor("knowledge-grounding")
             .expect("catalog")
             .expect("recipe");
-        assert!(validate_inputs(
-            &recipe,
-            &BTreeMap::from([("question".into(), "How does recovery work?".into())])
-        )
-        .is_ok());
+        assert!(
+            validate_inputs(
+                &recipe,
+                &BTreeMap::from([("question".into(), "How does recovery work?".into())])
+            )
+            .is_ok()
+        );
         assert_eq!(
             validate_inputs(&recipe, &BTreeMap::from([("unknown".into(), "x".into())])),
             Err(CapabilityRecipeError::Invalid("unknown_input"))
@@ -999,23 +1036,18 @@ mod tests {
             &registry,
             &parent,
         );
-        assert_eq!(
-            ready.state,
-            CapabilityRecipePreflightState::ReadyWithWarnings
+        assert_eq!(ready.state, CapabilityRecipePreflightState::Unsupported);
+        assert!(
+            ready
+                .reason_codes
+                .contains(&"child_executor_unavailable".into())
         );
-        assert!(ready.workflow_budget.is_some());
-        assert!(ready
-            .revisions
-            .iter()
-            .any(|revision| revision.owner_kind == "context_snapshot"
-                && revision.state == CapabilityRecipeRevisionState::NotPinned));
-        assert!(ready
-            .degraded_paths
-            .contains(&"context_snapshot_rechecked_at_execution".into()));
-        assert!(!serde_json::to_string(&ready)
-            .expect("projection serializes")
-            .contains("private user question"));
-        assert_eq!(ready.run_graph_hash.len(), 64);
+        assert!(
+            !serde_json::to_string(&ready)
+                .expect("projection serializes")
+                .contains("private user question")
+        );
+        assert_eq!(ready.run_graph_hash, "");
         assert_eq!(ready.input_hash.len(), 64);
 
         let stale = preflight(
@@ -1031,9 +1063,11 @@ mod tests {
             stale.state,
             CapabilityRecipePreflightState::InvalidDefinition
         );
-        assert!(stale
-            .reason_codes
-            .contains(&"recipe_revision_mismatch".into()));
+        assert!(
+            stale
+                .reason_codes
+                .contains(&"recipe_revision_mismatch".into())
+        );
 
         let unsupported_recipe = descriptor("model-comparison")
             .expect("catalog")
@@ -1051,14 +1085,16 @@ mod tests {
             unsupported.state,
             CapabilityRecipePreflightState::Unsupported
         );
-        assert!(unsupported
-            .reason_codes
-            .contains(&"model_run_adapter_unavailable".into()));
+        assert!(
+            unsupported
+                .reason_codes
+                .contains(&"model_run_adapter_unavailable".into())
+        );
 
         let structured = descriptor("structured-output")
             .expect("catalog")
             .expect("recipe");
-        let approval = preflight(
+        let structured_preflight = preflight(
             &structured.id,
             structured.version,
             &structured.content_hash,
@@ -1067,7 +1103,16 @@ mod tests {
             &registry,
             &parent,
         );
-        assert!(approval.approval_points.contains(&"approval".into()));
-        assert!(approval.workflow_budget.is_some());
+        assert_eq!(
+            structured_preflight.state,
+            CapabilityRecipePreflightState::Unsupported
+        );
+        assert!(
+            structured_preflight
+                .reason_codes
+                .contains(&"child_executor_unavailable".into())
+        );
+        assert!(structured_preflight.approval_points.is_empty());
+        assert!(structured_preflight.workflow_budget.is_none());
     }
 }

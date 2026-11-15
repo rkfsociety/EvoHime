@@ -254,6 +254,15 @@ mod tests {
         ]);
         assert!(research.contains("сначала вызови filesystem.list"));
         assert!(research.contains("filesystem.search — {\"query\":\"pattern\",\"path\":\".\"}"));
+
+        let workflow = super::build_agent_system_prompt(&[
+            "workflow.catalog".into(),
+            "workflow.start".into(),
+            "workflow.status".into(),
+            "workflow.cancel".into(),
+        ]);
+        assert!(workflow.contains("сначала вызови workflow.catalog"));
+        assert!(workflow.contains("available=true"));
     }
 
     #[test]

@@ -28,9 +28,6 @@ describe('WorkflowsWorkspace', () => {
         connection="connected"
         events={[]}
         workspace="C:\\work"
-        draftId="builder-draft"
-        ownerScope={null}
-        onOpenDraft={() => {}}
       />,
     )
 
@@ -51,9 +48,6 @@ describe('WorkflowsWorkspace', () => {
         connection="connected"
         events={[]}
         workspace="C:\\work"
-        draftId="builder-draft"
-        ownerScope={null}
-        onOpenDraft={() => {}}
       />,
     )
 

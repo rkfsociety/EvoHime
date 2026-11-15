@@ -147,6 +147,10 @@ impl ToolDefinition {
         // authority: it is local computation scoped to the task, and its
         // object writes stay inside the Core-owned kernel session.
         let is_analysis_kernel = self.name == crate::tools::analysis::NAME;
+        let is_workflow_mutation = matches!(
+            self.name,
+            crate::tools::workflow::START_NAME | crate::tools::workflow::CANCEL_NAME
+        );
         let is_local_computation = is_utility || is_analysis_kernel;
         crate::ToolManifest {
             kind: crate::MANIFEST_KIND.into(),
@@ -164,12 +168,15 @@ impl ToolDefinition {
                     .map(|p| format!("{p:?}"))
                     .unwrap_or_else(|| "none".into())
             },
-            side_effect: if self.permissions.iter().any(|p| {
-                matches!(
-                    p,
-                    Permission::FilesystemWrite | Permission::ShellExecute | Permission::GitWrite
-                )
-            }) {
+            side_effect: if is_workflow_mutation
+                || self.permissions.iter().any(|p| {
+                    matches!(
+                        p,
+                        Permission::FilesystemWrite
+                            | Permission::ShellExecute
+                            | Permission::GitWrite
+                    )
+                }) {
                 crate::SideEffectClass::Mutating
             } else {
                 crate::SideEffectClass::ReadOnly
@@ -181,7 +188,7 @@ impl ToolDefinition {
             } else {
                 crate::ApprovalMode::OnPermission
             },
-            workspace_scope: if is_analysis_kernel {
+            workspace_scope: if is_analysis_kernel || self.name.starts_with("workflow.") {
                 "task".into()
             } else {
                 "workspace".into()
@@ -639,6 +646,14 @@ impl ToolRegistry {
             permissions: tools::analysis::PERMISSIONS,
             timeout: tools::analysis::TIMEOUT,
         });
+        for name in [
+            tools::workflow::CATALOG_NAME,
+            tools::workflow::START_NAME,
+            tools::workflow::STATUS_NAME,
+            tools::workflow::CANCEL_NAME,
+        ] {
+            registry.register(tools::workflow::definition(name));
+        }
 
         registry
     }
@@ -738,14 +753,14 @@ impl ToolRegistry {
             match decision {
                 PermissionDecision::Allowed => {}
                 PermissionDecision::Denied => {
-                    return Ok(ToolPreflightDecision::Denied(*permission))
+                    return Ok(ToolPreflightDecision::Denied(*permission));
                 }
                 PermissionDecision::NeedsApproval => {
                     return Ok(ToolPreflightDecision::ApprovalRequired {
                         permission: *permission,
                         scope,
                         preview,
-                    })
+                    });
                 }
             }
         }
@@ -837,6 +852,10 @@ impl ToolRegistry {
                 tools::analysis::NAME => {
                     tools::analysis::execute(ctx, input, self.kernel_host.as_ref()).await
                 }
+                tools::workflow::CATALOG_NAME
+                | tools::workflow::START_NAME
+                | tools::workflow::STATUS_NAME
+                | tools::workflow::CANCEL_NAME => tools::workflow::execute(ctx, input).await,
                 tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
                 tools::write::NAME => tools::write::execute(ctx, input).await,
                 tools::patch::NAME => tools::patch::execute(ctx, input).await,
@@ -1140,10 +1159,10 @@ impl ToolRegistry {
             {
                 Some(evohime_permissions::ApprovalState::Granted) => {}
                 Some(evohime_permissions::ApprovalState::Denied) => {
-                    return Err(ToolError::ApprovalDenied)
+                    return Err(ToolError::ApprovalDenied);
                 }
                 Some(evohime_permissions::ApprovalState::Pending) | None => {
-                    return Err(ToolError::ApprovalMismatch)
+                    return Err(ToolError::ApprovalMismatch);
                 }
             }
         }

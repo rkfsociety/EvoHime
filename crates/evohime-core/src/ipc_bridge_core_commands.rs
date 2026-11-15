@@ -1199,6 +1199,13 @@ impl IpcBridge {
         self
     }
 
+    /// Shares the agent's workflow approvals and bounded background capacity.
+    pub fn with_workflow_runtime_state(mut self, state: Arc<crate::WorkflowRuntimeState>) -> Self {
+        self.workflow_approvals = Arc::clone(&state.approvals);
+        self.background_tasks = Arc::clone(&state.tasks);
+        self
+    }
+
     pub(crate) fn ambient_data_dir(&self) -> std::path::PathBuf {
         self.ambient_data_dir
             .clone()

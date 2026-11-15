@@ -30,7 +30,6 @@ const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ d
 const ScheduledPanel = lazy(() => import('./ScheduledPanel').then((module) => ({ default: module.ScheduledPanel })))
 const OperationsPanel = lazy(() => import('./OperationsPanel').then((module) => ({ default: module.OperationsPanel })))
 const PlanReviewPanel = lazy(() => import('./PlanReviewPanel').then((module) => ({ default: module.PlanReviewPanel })))
-const WorkflowsWorkspace = lazy(() => import('./WorkflowsWorkspace').then((module) => ({ default: module.WorkflowsWorkspace })))
 const OverviewPanel = lazy(() => import('./OverviewPanel').then((module) => ({ default: module.OverviewPanel })))
 const ListeningPanel = lazy(() => import('./ListeningPanel').then((module) => ({ default: module.ListeningPanel })))
 const TracePanel = lazy(() => import('./TracePanel').then((module) => ({ default: module.TracePanel })))
@@ -61,7 +60,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'listening'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -77,7 +76,6 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: 'compass' },
   { id: 'reviews', label: 'Ревью планов', icon: 'check-circle' },
   { id: 'operations', label: 'Память и Pulse', icon: 'pulse' },
-  { id: 'workflows', label: 'Составные задачи', icon: 'workflow' },
   { id: 'listening', label: 'Слух', icon: 'mic' },
 ]
 
@@ -96,8 +94,6 @@ export function App(): React.JSX.Element {
   const [apiMissing, setApiMissing] = useState(false)
   const [view, setView] = useState<ViewId>('chat')
   const [workspace, setWorkspace] = useState<string | null>(null)
-  const [builderDraftId, setBuilderDraftId] = useState('builder-draft')
-  const [builderDraftOwnerScope, setBuilderDraftOwnerScope] = useState<string | null>(null)
   const [chatId, setChatId] = useState<string | null>(null)
   const workspaceRef = useRef(workspace)
   // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
@@ -134,12 +130,6 @@ export function App(): React.JSX.Element {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
-  const openRecipeDraft = useCallback((draftId: string, ownerScope: string) => {
-    if (!sameWorkspacePath(workspaceRef.current, ownerScope)) return
-    setBuilderDraftId(draftId)
-    setBuilderDraftOwnerScope(ownerScope)
-  }, [])
-
   const api = useShellApi()
 
   useEffect(() => {
@@ -150,11 +140,6 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     workspaceRef.current = workspace
-  }, [workspace])
-
-  useEffect(() => {
-    setBuilderDraftId('builder-draft')
-    setBuilderDraftOwnerScope(null)
   }, [workspace])
 
   const changeWorkspace = useCallback((nextWorkspace: string | null) => {
@@ -433,16 +418,6 @@ export function App(): React.JSX.Element {
                 {translate(view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null)}
                 {translate(view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null)}
                 {translate(view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null)}
-                {view === 'workflows' ? (
-                  <WorkflowsWorkspace
-                    connection={connection}
-                    events={events}
-                    workspace={workspace}
-                    draftId={builderDraftId}
-                    ownerScope={builderDraftOwnerScope}
-                    onOpenDraft={openRecipeDraft}
-                  />
-                ) : null}
                 {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
               </div>
             )}
