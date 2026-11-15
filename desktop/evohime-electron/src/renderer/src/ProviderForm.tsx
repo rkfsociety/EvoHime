@@ -378,7 +378,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         <OllamaModelDownloadPanel connection={connection} events={events} baseUrl={baseUrl} />
       ) : null)}
 
-      {provider !== 'ollama' ? <fieldset className="provider-form__tier">
+      {provider === 'literouter' ? <fieldset className="provider-form__tier">
         <legend>{translate("Какие модели показывать")}</legend>
         {TIERS.map((item) => (
           <label key={item.id}>

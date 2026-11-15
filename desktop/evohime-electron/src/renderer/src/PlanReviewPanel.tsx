@@ -6,6 +6,7 @@ import { useShellApi } from './shell-api'
 import { formatNumber, translate } from './i18n'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import { MarkdownMessage } from './MarkdownMessage'
+import { useProviderState } from './provider-state'
 
 const CONNECTED: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MIN_REVIEWERS = 2
@@ -129,6 +130,8 @@ function savePlanDirectory(directory: string): void {
 
 export function PlanReviewPanel({ connection, events }: Props): React.JSX.Element {
   const api = useShellApi()
+  const { summary } = useProviderState()
+  const showTierSelector = summary === null || summary.provider === 'literouter'
   const [preferences] = useState(loadReviewPreferences)
   const [plans, setPlans] = useState<readonly PlanFile[]>([])
   const [dragging, setDragging] = useState(false)
@@ -519,14 +522,14 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       {plans.length > 0 ? <p className="review-panel__source">{translate("Файлов:")} {translate(plans.length)} {translate("· загружено символов:")} {translate(sourceMarkdown.length)}</p> : null}
 
       <div className="review-panel__controls">
-        <label>{translate("Режим каталога")}<select value={tier} onChange={(event) => setTier(event.target.value as ModelTier)} disabled={running}><option value="free">{translate("Бесплатные")}</option><option value="paid">{translate("Платные")}</option></select></label>
+        {showTierSelector ? <label>{translate("Режим каталога")}<select value={tier} onChange={(event) => setTier(event.target.value as ModelTier)} disabled={running}><option value="free">{translate("Бесплатные")}</option><option value="paid">{translate("Платные")}</option></select></label> : null}
         <label>{translate("Количество рецензентов")}<select value={reviewerCount} onChange={(event) => changeCount(Number(event.target.value))} disabled={running}>{Array.from({ length: MAX_REVIEWERS - MIN_REVIEWERS + 1 }, (_, index) => MIN_REVIEWERS + index).map((count) => <option key={count} value={count}>{translate(count)}</option>)}</select></label>
       </div>
 
       <fieldset className="review-panel__models">
         <legend>{translate("Модели-рецензенты ·")}{translate(reviewers.filter(Boolean).length)} {translate("из")}{translate(reviewerCount)}</legend>
         {catalog.error ? <p role="alert" className="review-panel__catalog-error">{translate("Каталог моделей не обновился:")}{translate(catalogErrorMessage(catalog.error))}{translate(models.length > 0 ? translate(" Показан прошлый список.") : '')}</p> : null}
-        {models.length === 0 ? <p>{translate("Каталог")}{translate(tier === 'free' ? translate("бесплатных") : translate("платных"))} {translate("моделей пуст.")}</p> : reviewers.map((model, index) => (
+        {models.length === 0 ? <p>{showTierSelector ? <>{translate("Каталог")}{translate(tier === 'free' ? translate("бесплатных") : translate("платных"))} {translate("моделей пуст.")}</> : translate("Каталог моделей пуст.")}</p> : reviewers.map((model, index) => (
           <label key={index} className="review-panel__model-row">
             <span>{translate("Рецензент")}{translate(index + 1)}</span>
             <select aria-label={`Модель рецензента ${index + 1}`} value={model} onChange={(event) => setReviewerModel(index, event.target.value)} disabled={running}>

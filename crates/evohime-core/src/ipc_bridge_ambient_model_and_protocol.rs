@@ -1,6 +1,28 @@
 use super::*;
 use evohime_desktop_ipc::MAX_FRAME_BYTES;
 
+/// Filters catalog entries by free/paid tier only for LiteRouter, which uses
+/// the `:free` model ID suffix convention. Other providers return all models.
+fn filter_catalog_entries_by_tier(
+    provider: evohime_model_gateway::providers::ProviderKind,
+    mode: &str,
+    entries: Vec<evohime_model_gateway::ModelCatalogEntry>,
+) -> Vec<evohime_model_gateway::ModelCatalogEntry> {
+    if provider != evohime_model_gateway::providers::ProviderKind::LiteRouter {
+        return entries;
+    }
+    entries
+        .into_iter()
+        .filter(|entry| {
+            if mode == "free" {
+                entry.id.ends_with(":free")
+            } else {
+                !entry.id.ends_with(":free")
+            }
+        })
+        .collect()
+}
+
 fn safe_model_catalog_error_code(
     error: &evohime_model_gateway::providers::ProviderError,
 ) -> &'static str {
@@ -453,16 +475,7 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
                     }
                     Some(route) => match evohime_model_gateway::fetch_model_catalog(route).await {
                         Ok(entries) => (
-                            entries
-                                .into_iter()
-                                .filter(|entry| {
-                                    if mode == "free" {
-                                        entry.id.ends_with(":free")
-                                    } else {
-                                        !entry.id.ends_with(":free")
-                                    }
-                                })
-                                .collect::<Vec<_>>(),
+                            filter_catalog_entries_by_tier(route.provider, &mode, entries),
                             None,
                             None,
                             None,
@@ -491,16 +504,11 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
                         .await;
                     if entries.is_empty() {
                         if let Some(cached_entries) = cached_entries {
-                            entries = cached_entries
-                                .into_iter()
-                                .filter(|entry| {
-                                    if mode == "free" {
-                                        entry.id.ends_with(":free")
-                                    } else {
-                                        !entry.id.ends_with(":free")
-                                    }
-                                })
-                                .collect();
+                            entries = filter_catalog_entries_by_tier(
+                                route.provider,
+                                &mode,
+                                cached_entries,
+                            );
                         }
                     }
                 }
@@ -626,6 +634,62 @@ mod tests {
                 "provider model catalog request failed with HTTP 404".into(),
             )),
             "catalog_model_not_found"
+        );
+    }
+
+    #[test]
+    fn filter_catalog_entries_by_tier_applies_only_to_literouter() {
+        let entry = |id: &str| evohime_model_gateway::ModelCatalogEntry {
+            id: id.into(),
+            context_tokens: None,
+            max_output_tokens: None,
+        };
+        let literouter_entries = vec![entry("deepseek:free"), entry("gpt-4o")];
+        let free_only = filter_catalog_entries_by_tier(
+            evohime_model_gateway::providers::ProviderKind::LiteRouter,
+            "free",
+            literouter_entries.clone(),
+        );
+        assert_eq!(
+            free_only.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            vec!["deepseek:free"]
+        );
+        let paid_only = filter_catalog_entries_by_tier(
+            evohime_model_gateway::providers::ProviderKind::LiteRouter,
+            "paid",
+            literouter_entries,
+        );
+        assert_eq!(
+            paid_only.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            vec!["gpt-4o"]
+        );
+
+        let deepseek_entries = vec![entry("deepseek-chat"), entry("deepseek-reasoner")];
+        let filtered_deepseek = filter_catalog_entries_by_tier(
+            evohime_model_gateway::providers::ProviderKind::OpenAiCompatible,
+            "free",
+            deepseek_entries,
+        );
+        assert_eq!(
+            filtered_deepseek
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["deepseek-chat", "deepseek-reasoner"]
+        );
+
+        let responses_entries = vec![entry("gpt-4.1"), entry("o3-mini")];
+        let filtered_responses = filter_catalog_entries_by_tier(
+            evohime_model_gateway::providers::ProviderKind::OpenAiResponses,
+            "free",
+            responses_entries,
+        );
+        assert_eq!(
+            filtered_responses
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["gpt-4.1", "o3-mini"]
         );
     }
 }

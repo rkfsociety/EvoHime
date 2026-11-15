@@ -399,4 +399,20 @@ describe('provider form', () => {
 
     expect(await screen.findByText(/Core не перезапустился/)).toBeTruthy()
   })
+
+  it('shows the free/paid tier selector only for LiteRouter', async () => {
+    renderProviderForm()
+
+    const profile = await screen.findByLabelText('Провайдер')
+    expect(screen.queryByText('Какие модели показывать')).toBeTruthy()
+
+    await userEvent.selectOptions(profile, 'deepseek')
+    expect(screen.queryByText('Какие модели показывать')).toBeNull()
+
+    await userEvent.selectOptions(profile, 'openai_responses')
+    expect(screen.queryByText('Какие модели показывать')).toBeNull()
+
+    await userEvent.selectOptions(profile, 'literouter')
+    expect(screen.queryByText('Какие модели показывать')).toBeTruthy()
+  })
 })
