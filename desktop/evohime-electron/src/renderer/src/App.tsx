@@ -37,7 +37,6 @@ const ListeningPanel = lazy(() => import('./ListeningPanel').then((module) => ({
 const TracePanel = lazy(() => import('./TracePanel').then((module) => ({ default: module.TracePanel })))
 const ChatSummaryPanel = lazy(() => import('./ChatSummaryPanel').then((module) => ({ default: module.ChatSummaryPanel })))
 const ContinuationPanel = lazy(() => import('./ContinuationPanel').then((module) => ({ default: module.ContinuationPanel })))
-const AnalysisKernelPanel = lazy(() => import('./AnalysisKernelPanel').then((module) => ({ default: module.AnalysisKernelPanel })))
 const VisualWorkflowBuilderPanel = lazy(() => import('./VisualWorkflowBuilderPanel').then((module) => ({ default: module.VisualWorkflowBuilderPanel })))
 const ConversationalWorkflowComposerPanel = lazy(() => import('./ConversationalWorkflowComposerPanel').then((module) => ({ default: module.ConversationalWorkflowComposerPanel })))
 const WorkbenchPanel = lazy(() => import('./WorkbenchPanel').then((module) => ({ default: module.WorkbenchPanel })))
@@ -66,7 +65,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'continuations' | 'kernels' | 'listening'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'workflows' | 'continuations' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -84,7 +83,6 @@ const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'operations', label: 'Память и Pulse', icon: 'pulse' },
   { id: 'workflows', label: 'Составные задачи', icon: 'workflow' },
   { id: 'continuations', label: 'Продолжения', icon: 'repeat' },
-  { id: 'kernels', label: 'Анализ', icon: 'terminal' },
   { id: 'listening', label: 'Слух', icon: 'mic' },
 ]
 
@@ -392,65 +390,81 @@ export function App(): React.JSX.Element {
           taskScoped={false}
         />
 
-        <div className="main__body">
-          <Suspense fallback={<p role="status">{t('Загрузка')}</p>}>
-          {view === 'chat' ? (
-            <div className={`conversation-layout${workbenchVisible || browserVisible ? '' : ' conversation-layout--summary-only'}`}>
-              <TaskTimeline
-                connection={connection}
-                events={events}
-                workspace={workspace}
-                chatId={chatId}
-                onChatTouched={() => setChatRevision((value) => value + 1)}
-                onChatOpened={(id) => {
-                  setChatId(id)
-                  setChatRevision((value) => value + 1)
-                }}
-                identityName={identity?.name ?? null}
-                chatRevision={chatRevision}
-              />
-              <aside
-                className={`conversation-side-panels${workbenchVisible || browserVisible ? '' : ' conversation-side-panels--summary-only'}`}
-                aria-label={t('Дополнительные панели')}
-              >
-                <ChatSummaryPanel
+        <div className="main__workspace">
+          <div className="main__body">
+            <Suspense fallback={<p role="status">{t('Загрузка')}</p>}>
+            {view === 'chat' ? (
+              <div className={`conversation-layout${workbenchVisible || browserVisible ? '' : ' conversation-layout--summary-only'}`}>
+                <TaskTimeline
                   connection={connection}
-                  chatId={chatId}
-                  chatRevision={chatRevision}
                   events={events}
                   workspace={workspace}
+                  chatId={chatId}
+                  onChatTouched={() => setChatRevision((value) => value + 1)}
+                  onChatOpened={(id) => {
+                    setChatId(id)
+                    setChatRevision((value) => value + 1)
+                  }}
+                  identityName={identity?.name ?? null}
+                  chatRevision={chatRevision}
                 />
-                {translate(workbenchVisible ? (
-                  <WorkbenchPanel
+                <aside
+                  className={`conversation-side-panels${workbenchVisible || browserVisible ? '' : ' conversation-side-panels--summary-only'}`}
+                  aria-label={t('Дополнительные панели')}
+                >
+                  <ChatSummaryPanel
                     connection={connection}
                     chatId={chatId}
-                    workspace={workspace}
+                    chatRevision={chatRevision}
                     events={events}
-                    onClose={() => setWorkbenchVisible(false)}
+                    workspace={workspace}
                   />
-                ) : null)}
-                {translate(browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null)}
-              </aside>
-            </div>
-          ) : (
-            <div className="main__scroll">
-              {translate(view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null)}
-              {translate(view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null)}
-              {translate(view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null)}
-              {translate(view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null)}
-              {view === 'workflows' ? (
-                <>
-                  <WorkflowPanel connection={connection} events={events} workspace={workspace} />
-                  <CapabilityRecipePanel connection={connection} events={events} workspace={workspace} onOpenDraft={openRecipeDraft} />
-                  <ConversationalWorkflowComposerPanel connection={connection} events={events} workspace={workspace} />
-                  <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} draftId={builderDraftId} ownerScope={builderDraftOwnerScope} />
-                </>
-              ) : null}
-              {translate(view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null)}
-              {translate(view === 'kernels' ? <AnalysisKernelPanel connection={connection} events={events} /> : null)}
-              {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
-            </div>
-          )}
+                  {translate(workbenchVisible ? (
+                    <WorkbenchPanel
+                      connection={connection}
+                      chatId={chatId}
+                      workspace={workspace}
+                      events={events}
+                      onClose={() => setWorkbenchVisible(false)}
+                    />
+                  ) : null)}
+                  {translate(browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null)}
+                </aside>
+              </div>
+            ) : (
+              <div className="main__scroll">
+                {translate(view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null)}
+                {translate(view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null)}
+                {translate(view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null)}
+                {translate(view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null)}
+                {view === 'workflows' ? (
+                  <>
+                    <WorkflowPanel connection={connection} events={events} workspace={workspace} />
+                    <CapabilityRecipePanel connection={connection} events={events} workspace={workspace} onOpenDraft={openRecipeDraft} />
+                    <ConversationalWorkflowComposerPanel connection={connection} events={events} workspace={workspace} />
+                    <VisualWorkflowBuilderPanel connection={connection} events={events} workspace={workspace} draftId={builderDraftId} ownerScope={builderDraftOwnerScope} />
+                  </>
+                ) : null}
+                {translate(view === 'continuations' ? <ContinuationPanel connection={connection} events={events} /> : null)}
+                {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
+              </div>
+            )}
+            </Suspense>
+          </div>
+
+          <Suspense fallback={null}>
+            {translate(traceOpen ? (
+              <TracePanel
+                chatId={chatId}
+                chatRevision={chatRevision}
+                events={events}
+                shellDiagnostics={shellDiagnostics}
+                state={state}
+                update={update}
+                workspace={workspace}
+                onClose={() => setTraceOpen(false)}
+              />
+            ) : null)}
           </Suspense>
         </div>
       </main>
@@ -465,19 +479,6 @@ export function App(): React.JSX.Element {
           onAppearanceChange={setAppearance}
           initialTab={settingsTab}
           onClose={() => setSettingsOpen(false)}
-        />
-      ) : null)}
-
-      {translate(traceOpen ? (
-        <TracePanel
-          chatId={chatId}
-          chatRevision={chatRevision}
-          events={events}
-          shellDiagnostics={shellDiagnostics}
-          state={state}
-          update={update}
-          workspace={workspace}
-          onClose={() => setTraceOpen(false)}
         />
       ) : null)}
       </Suspense>

@@ -177,19 +177,8 @@ body {
   overflow: hidden;
 }
 
-.shell--trace-open {
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) minmax(320px, 420px);
-  grid-template-areas:
-    'sidebar main trace'
-    'status  status status';
-}
-
 .shell--sidebar-collapsed {
   grid-template-columns: 58px 1fr;
-}
-
-.shell--sidebar-collapsed.shell--trace-open {
-  grid-template-columns: 58px minmax(0, 1fr) minmax(320px, 420px);
 }
 
 .shell--recovery {
@@ -1020,10 +1009,12 @@ body {
 }
 
 .trace-panel {
-  grid-area: trace;
+  flex: 0 0 clamp(320px, 30vw, 420px);
+  width: clamp(320px, 30vw, 420px);
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   padding: 18px;
   background: var(--bg-raised);
   border-left: 1px solid var(--border-strong);
@@ -4001,11 +3992,6 @@ button.button:hover,
   .main__scroll {
     padding: 20px;
   }
-
-  .shell--trace-open {
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-    grid-template-areas: 'sidebar main' 'status status';
-  }
 }
 
 @media (max-width: 680px) {
@@ -4847,36 +4833,17 @@ button.button:hover,
    minimum supported window size. Auxiliary surfaces become overlays instead
    of squeezing the conversation into a narrow column. */
 @media (max-width: 1180px) {
-  .shell--trace-open {
-    position: relative;
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-    grid-template-areas:
-      'sidebar main'
-      'status status';
-  }
-
-  .shell--sidebar-collapsed.shell--trace-open {
-    grid-template-columns: 58px minmax(0, 1fr);
-  }
-
   .trace-panel {
     position: absolute;
-    top: 48px;
-    right: 0;
-    bottom: 26px;
+    inset: 0 0 0 auto;
     z-index: 30;
-    width: min(400px, calc(100% - var(--sidebar-width) - 16px));
-    max-width: calc(100vw - var(--sidebar-width) - 16px);
+    width: min(400px, 100%);
+    max-width: 100%;
     border: 1px solid var(--border-strong);
     border-top: 0;
     border-right: 0;
     border-radius: 0 0 0 12px;
     box-shadow: -18px 12px 42px rgb(0 0 0 / 34%);
-  }
-
-  .shell--sidebar-collapsed .trace-panel {
-    width: min(400px, calc(100% - 74px));
-    max-width: calc(100vw - 74px);
   }
 }
 
@@ -5629,6 +5596,14 @@ body {
   place-items: center;
 }
 
+.main__workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+
 .main__body {
   min-width: 0;
   background: transparent;
@@ -6126,6 +6101,7 @@ body {
 
 .settings-modal {
   padding: clamp(12px, 2vw, 28px);
+  padding-top: max(clamp(12px, 2vw, 28px), var(--header-height));
   backdrop-filter: blur(12px);
   -webkit-app-region: no-drag;
 }
@@ -6218,18 +6194,15 @@ body {
 @media (max-width: 1180px) {
   :root { --sidebar-width: 288px; }
 
-  .shell--trace-open {
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-    grid-template-areas: 'sidebar main' 'status status';
-  }
-
   .trace-panel {
     position: absolute;
-    inset: var(--header-height) 0 28px auto;
+    inset: 0 0 0 auto;
     z-index: 30;
-    width: min(420px, calc(100% - 296px));
-    max-width: calc(100vw - 296px);
+    width: min(420px, 100%);
+    max-width: 100%;
     border: 1px solid var(--border-strong);
+    border-top: 0;
+    border-right: 0;
     border-radius: 14px 0 0 14px;
   }
 }
