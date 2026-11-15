@@ -70,13 +70,14 @@ struct Input {
     query: StringOrVec,
     path: Option<String>,
     glob: Option<StringOrVec>,
+    #[serde(default, deserialize_with = "super::deserialize_optional_usize")]
     limit: Option<usize>,
     /// Treat `query` as a ripgrep regular expression. Defaults to a literal
     /// substring match, which behaves identically with and without ripgrep.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::deserialize_flexible_bool")]
     regex: bool,
     /// Match case-insensitively.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::deserialize_flexible_bool")]
     ignore_case: bool,
 }
 
@@ -817,12 +818,14 @@ mod tests {
         let by_pattern = execute(
             &ctx(&dir),
             json!({
-                "pattern": "beta",
+                "pattern": "BETA",
+                "limit": "10",
+                "ignore_case": "true",
                 "path": "."
             }),
         )
         .await
-        .expect("pattern alias succeeds");
+        .expect("pattern alias and stringified limit/bool succeed");
         assert_eq!(by_pattern.structured["count"], 1);
 
         let by_arrays = execute(

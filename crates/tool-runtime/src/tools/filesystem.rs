@@ -17,10 +17,10 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 struct Input {
     path: String,
     /// 1-based first line to return.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::deserialize_optional_usize")]
     offset: Option<usize>,
     /// Maximum number of lines to return.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "super::deserialize_optional_usize")]
     limit: Option<usize>,
 }
 

@@ -40,3 +40,63 @@ pub mod search;
 pub mod shell;
 /// Revision-safe workspace file writing.
 pub mod write;
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum UsizeOrString {
+    Num(usize),
+    Text(String),
+}
+
+pub(crate) fn deserialize_optional_usize<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let Some(value) = Option::<UsizeOrString>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    match value {
+        UsizeOrString::Num(number) => Ok(Some(number)),
+        UsizeOrString::Text(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            trimmed.parse::<usize>().map(Some).map_err(|_| {
+                serde::de::Error::invalid_value(
+                    serde::de::Unexpected::Str(&text),
+                    &"a non-negative integer",
+                )
+            })
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum BoolOrString {
+    Flag(bool),
+    Text(String),
+}
+
+pub(crate) fn deserialize_flexible_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    let Some(value) = Option::<BoolOrString>::deserialize(deserializer)? else {
+        return Ok(false);
+    };
+    match value {
+        BoolOrString::Flag(flag) => Ok(flag),
+        BoolOrString::Text(text) => match text.trim().to_ascii_lowercase().as_str() {
+            "" | "false" | "0" | "no" => Ok(false),
+            "true" | "1" | "yes" => Ok(true),
+            _ => Err(serde::de::Error::invalid_value(
+                serde::de::Unexpected::Str(&text),
+                &"a boolean",
+            )),
+        },
+    }
+}
