@@ -101,3 +101,38 @@ async fn state_projection_journal_failure_is_reported_before_success_reply() {
         .await
         .is_some_and(|error| error.starts_with("journal:")));
 }
+
+#[tokio::test]
+async fn durable_background_list_runs_without_run_id_persists_journal_event() {
+    let directory = tempfile::tempdir().expect("temporary journal directory");
+    let journal = EventJournal::open(directory.path().join("core.db")).expect("journal opens");
+    let (coordinator, _notifications) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+
+    let (reply, response) = tokio::sync::oneshot::channel();
+    coordinator
+        .dispatch(CoreCommand::DurableBackgroundExecution {
+            operation: "list_runs".into(),
+            run_id: String::new(),
+            owner_scope: r"D:\workspace\EvoHime".into(),
+            payload: Vec::new(),
+            expected_revision: 0,
+            idempotency_key: String::new(),
+            reply,
+        })
+        .await
+        .expect("background command dispatches");
+
+    let payload = response
+        .await
+        .expect("background command responds")
+        .expect("list_runs without run_id should persist and succeed");
+    assert!(!payload.is_empty());
+    assert_eq!(coordinator.persistence_error().await, None);
+
+    let events = journal.replay(0, 32).await.expect("journal replays");
+    let recorded = events
+        .iter()
+        .find(|event| event.event_type == "background_execution.result")
+        .expect("background_execution.result should be recorded");
+    assert_eq!(recorded.task_id, "background-execution");
+}

@@ -103,7 +103,13 @@ impl EventJournal {
             CoreEvent::PersistentAgentOrganizationRegistry { agent_id, .. } => agent_id,
             CoreEvent::ExecutionEnvironmentProfile { profile_id, .. } => profile_id,
             CoreEvent::ContextNamespace { namespace_id, .. } => namespace_id,
-            CoreEvent::DurableBackgroundExecution { run_id, .. } => run_id,
+            CoreEvent::DurableBackgroundExecution { run_id, .. } => {
+                if run_id.is_empty() {
+                    "background-execution"
+                } else {
+                    run_id
+                }
+            }
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -289,11 +295,19 @@ impl EventJournal {
                                 "injected journal failure after primary event".into(),
                             ));
                         }
-                        if let Some((conversation_id, client_message_id, workspace_id)) =
-                            evohime_local_storage::domains::audit::task_binding(
+                        let binding = if task_id.is_empty() {
+                            None
+                        } else {
+                            match evohime_local_storage::domains::audit::task_binding(
                                 &transaction,
                                 &task_id,
-                            )?
+                            ) {
+                                Ok(binding) => binding,
+                                Err(evohime_local_storage::domains::audit::ConversationStoreError::InvalidInput) => None,
+                                Err(error) => return Err(error.into()),
+                            }
+                        };
+                        if let Some((conversation_id, client_message_id, workspace_id)) = binding
                         {
                             for draft in projected {
                                 let stored = evohime_local_storage::domains::audit::append_event_in_transaction(
