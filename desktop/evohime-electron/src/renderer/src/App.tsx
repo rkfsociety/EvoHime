@@ -115,7 +115,6 @@ export function App(): React.JSX.Element {
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [repair, setRepair] = useState<RepairStatus | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
-  const [summaryOpen, setSummaryOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('provider')
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
@@ -273,7 +272,7 @@ export function App(): React.JSX.Element {
 
   return (
     <ProviderStateProvider>
-    <div className={`shell${traceOpen || summaryOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
+    <div className={`shell${traceOpen ? ' shell--trace-open' : ''}${sidebarCollapsed ? ' shell--sidebar-collapsed' : ''}`}>
       <nav className="sidebar" aria-label={t('Чаты и навигация')}>
         <div className="sidebar__brand">
           <button
@@ -375,32 +374,10 @@ export function App(): React.JSX.Element {
           ) : null}
           <button
             type="button"
-            className={`topbar__trace${summaryOpen ? ' topbar__trace--active' : ''}`}
-            aria-label={summaryOpen ? t('Закрыть сводку') : t('Открыть сводку')}
-            aria-pressed={summaryOpen}
-            onClick={() => {
-              setSummaryOpen((value) => {
-                const next = !value
-                if (next) setTraceOpen(false)
-                return next
-              })
-            }}
-          >
-            <UiIcon name="list-checks" size={14} />
-            {t('Сводка')}
-          </button>
-          <button
-            type="button"
             className={`topbar__trace${traceOpen ? ' topbar__trace--active' : ''}`}
             aria-label={traceOpen ? t('Закрыть трейс') : t('Открыть трейс')}
             aria-pressed={traceOpen}
-            onClick={() => {
-              setTraceOpen((value) => {
-                const next = !value
-                if (next) setSummaryOpen(false)
-                return next
-              })
-            }}
+            onClick={() => setTraceOpen((value) => !value)}
           >
             <UiIcon name="activity" size={14} />
             {t('Трейс')}
@@ -420,7 +397,7 @@ export function App(): React.JSX.Element {
         <div className="main__body">
           <Suspense fallback={<p role="status">{t('Загрузка')}</p>}>
           {view === 'chat' ? (
-            <div className={`conversation-layout${workbenchVisible || browserVisible ? '' : ' conversation-layout--chat-only'}`}>
+            <div className={`conversation-layout${workbenchVisible || browserVisible ? '' : ' conversation-layout--summary-only'}`}>
               <TaskTimeline
                 connection={connection}
                 events={events}
@@ -434,20 +411,28 @@ export function App(): React.JSX.Element {
                 identityName={identity?.name ?? null}
                 chatRevision={chatRevision}
               />
-              {workbenchVisible || browserVisible ? (
-                <aside className="conversation-side-panels" aria-label={t('Дополнительные панели')}>
-                  {translate(workbenchVisible ? (
-                    <WorkbenchPanel
-                      connection={connection}
-                      chatId={chatId}
-                      workspace={workspace}
-                      events={events}
-                      onClose={() => setWorkbenchVisible(false)}
-                    />
-                  ) : null)}
-                  {translate(browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null)}
-                </aside>
-              ) : null}
+              <aside
+                className={`conversation-side-panels${workbenchVisible || browserVisible ? '' : ' conversation-side-panels--summary-only'}`}
+                aria-label={t('Дополнительные панели')}
+              >
+                <ChatSummaryPanel
+                  connection={connection}
+                  chatId={chatId}
+                  chatRevision={chatRevision}
+                  events={events}
+                  workspace={workspace}
+                />
+                {translate(workbenchVisible ? (
+                  <WorkbenchPanel
+                    connection={connection}
+                    chatId={chatId}
+                    workspace={workspace}
+                    events={events}
+                    onClose={() => setWorkbenchVisible(false)}
+                  />
+                ) : null)}
+                {translate(browserVisible ? <AgenticBrowserSessionPanel onClose={() => setBrowserVisible(false)} /> : null)}
+              </aside>
             </div>
           ) : (
             <div className="main__scroll">
@@ -498,17 +483,6 @@ export function App(): React.JSX.Element {
           onClose={() => setTraceOpen(false)}
         />
       ) : null)}
-
-      {summaryOpen ? (
-        <ChatSummaryPanel
-          connection={connection}
-          chatId={chatId}
-          chatRevision={chatRevision}
-          events={events}
-          workspace={workspace}
-          onClose={() => setSummaryOpen(false)}
-        />
-      ) : null}
       </Suspense>
 
       <footer className="statusbar">

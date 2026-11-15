@@ -89,9 +89,8 @@ describe('chat summary', () => {
     expect(summary.touchedFiles).toEqual([{ path: 'src/App.tsx', action: 'write', count: 1 }])
   })
 
-  it('renders summary tabs, git changes, context compression and shells', async () => {
+  it('renders compact summary widget rows, git changes, context compression and shells', async () => {
     const user = userEvent.setup()
-    const onClose = vi.fn()
     const events: CoreEvent[] = [
       makeEvent(10, 'git.status', '', { output: ' M src/App.tsx\n?? src/New.tsx', truncated: false }),
       makeEvent(9, 'git.diff', '', { output: '+added line', structured: { path: 'src/App.tsx' }, truncated: false }),
@@ -109,32 +108,32 @@ describe('chat summary', () => {
         chatId="chat-1"
         events={events}
         workspace="D:/github/EvoHime"
-        onClose={onClose}
       />
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Сборка сводки')).toBeTruthy()
+      expect(screen.getByText('+42')).toBeTruthy()
     })
-    expect(screen.getAllByText('40%').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Закрыть сводку' })).toBeNull()
+    expect(screen.getByText('40%')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: /Изменения/i }))
     expect(screen.getByText('claude-sonnet')).toBeTruthy()
 
-    await user.click(screen.getByRole('tab', { name: /Файлы/i }))
+    await user.click(screen.getByRole('button', { name: /Файлы/i }))
     expect(screen.getByText('src/App.tsx')).toBeTruthy()
     expect(screen.getByText('src/New.tsx')).toBeTruthy()
     await user.click(screen.getAllByRole('button', { name: 'Diff' })[0]!)
     expect(invokeMock).toHaveBeenCalledWith('core.gitDiff', expect.objectContaining({ relativePath: 'src/App.tsx' }))
 
-    await user.click(screen.getByRole('tab', { name: /Контекст/i }))
+    await user.click(screen.getByRole('button', { name: /Контекст/i }))
     expect(screen.getByText('Архитектура панели')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Сжать контекст' }))
     expect(invokeMock).toHaveBeenCalledWith('core.summarizeContextNow', expect.objectContaining({ taskId: 'task-1' }))
 
-    await user.click(screen.getByRole('tab', { name: /Шелы/i }))
+    await user.click(screen.getByRole('button', { name: /Терминал/i }))
     expect(screen.getByText('pwsh -File check.ps1')).toBeTruthy()
     expect(screen.getByText('активен')).toBeTruthy()
-
-    await user.click(screen.getByRole('button', { name: 'Закрыть сводку' }))
-    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
