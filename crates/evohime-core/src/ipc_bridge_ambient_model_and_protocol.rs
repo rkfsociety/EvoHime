@@ -475,7 +475,7 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
                     }
                     Some(route) => match evohime_model_gateway::fetch_model_catalog(route).await {
                         Ok(entries) => (
-                            filter_catalog_entries_by_tier(route.provider, &mode, entries),
+                            filter_catalog_entries_by_tier(route.provider, mode, entries),
                             None,
                             None,
                             None,
@@ -506,7 +506,7 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
                         if let Some(cached_entries) = cached_entries {
                             entries = filter_catalog_entries_by_tier(
                                 route.provider,
-                                &mode,
+                                mode,
                                 cached_entries,
                             );
                         }
