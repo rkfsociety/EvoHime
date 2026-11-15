@@ -96,11 +96,11 @@ export function ImageGenerationPanel({ connection, events }: Props): React.JSX.E
   const jobState = typeof projection?.['state'] === 'string' ? projection['state'] : typeof projection?.['status'] === 'string' ? projection['status'] : ''
   const cancellableJob = Boolean(jobId) && ['preflight', 'queued'].includes(jobState)
   return (
-    <article className="operations-card">
+    <article className="operations-card operations-card--image">
       <div className="operations-card__topline"><span className="operations-card__eyebrow">Core image capability</span><span className="operations-card__phase">{translate(capability?.state ?? translate("проверка"))}</span></div>
       <h3>{translate("Генерация изображений")}</h3>
       <small>{translate(available ? `Операции: ${capability?.operations?.join(', ')} · ${capability.mime_types?.join(', ')}` : capability?.reason_code ?? translate("Состояние capability ещё не получено."))}</small>
-      <label>
+      <label className="field operations-card__field">
         <span>{translate("Описание изображения")}</span>
         <textarea value={prompt} maxLength={8192} rows={3} onChange={(event) => setPrompt(event.target.value)} disabled={!available || busy} />
       </label>
@@ -108,12 +108,14 @@ export function ImageGenerationPanel({ connection, events }: Props): React.JSX.E
         <button type="button" aria-pressed={operation === 'generate'} disabled={!available || busy} onClick={() => setOperation('generate')}>{translate("Создать")}</button>
         <button type="button" aria-pressed={operation === 'edit'} disabled={!available || !capability?.operations?.includes('edit') || !editableArtifact || busy} onClick={() => setOperation('edit')}>{translate("Изменить последний результат")}</button>
       </div>
-      {operation === 'edit' && editableArtifact ? <small>{translate("Вход:")}{translate(String(editableArtifact['mime_type']))}, {translate(String(editableArtifact['width']))}×{translate(String(editableArtifact['height']))}</small> : null}
-      <button type="button" disabled={!connected || !available || busy || prompt.trim().length === 0 || (operation === 'edit' && !editableArtifact)} onClick={() => void generate()}>{translate(busy ? translate("Передача…") : operation === 'edit' ? translate("Изменить изображение") : translate("Создать изображение"))}</button>
-      {cancellableJob ? <button type="button" onClick={() => void api?.invoke('imageGeneration.cancel', { jobId })}>{translate("Отменить до dispatch")}</button> : null}
+      {operation === 'edit' && editableArtifact ? <small>{translate("Вход:")} {translate(String(editableArtifact['mime_type']))}, {translate(String(editableArtifact['width']))}×{translate(String(editableArtifact['height']))}</small> : null}
+      <div className="operations-card__actions">
+        <button type="button" disabled={!connected || !available || busy || prompt.trim().length === 0 || (operation === 'edit' && !editableArtifact)} onClick={() => void generate()}>{translate(busy ? translate("Передача…") : operation === 'edit' ? translate("Изменить изображение") : translate("Создать изображение"))}</button>
+        {cancellableJob ? <button type="button" onClick={() => void api?.invoke('imageGeneration.cancel', { jobId })}>{translate("Отменить до dispatch")}</button> : null}
+      </div>
       {message ? <small role="status">{translate(message)}</small> : null}
       {artifacts.map((artifact, index) => (
-        <small key={`${String(artifact['content_hash'])}-${index}`}>{translate("Готово:")}{translate(String(artifact['mime_type']))}, {translate(String(artifact['width']))}×{translate(String(artifact['height']))}, SHA-256 {translate(String(artifact['sha256']).slice(0, 16))}…</small>
+        <small key={`${String(artifact['content_hash'])}-${index}`}>{translate("Готово:")} {translate(String(artifact['mime_type']))}, {translate(String(artifact['width']))}×{translate(String(artifact['height']))}, SHA-256 {translate(String(artifact['sha256']).slice(0, 16))}…</small>
       ))}
       {typeof projection?.['error_code'] === 'string' && projection['error_code'] ? <small className="operations-card__error">{translate(projection['error_code'])}</small> : null}
     </article>

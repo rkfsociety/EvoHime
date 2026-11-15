@@ -22,10 +22,11 @@ const REPAIR_PROVIDER_LABELS: Record<ChatProviderMode, string> = {
 }
 
 const REPAIR_SUMMARY_LIMIT = 220
+const REPAIR_EVIDENCE_LIMIT = 140
 
-function boundedDiagnostic(value: string): string {
-  if (value.length <= REPAIR_SUMMARY_LIMIT) return value
-  return `${value.slice(0, REPAIR_SUMMARY_LIMIT).trimEnd()}…`
+function boundedDiagnostic(value: string, limit = REPAIR_SUMMARY_LIMIT): string {
+  if (value.length <= limit) return value
+  return `${value.slice(0, limit).trimEnd()}…`
 }
 
 function RepairCard({ status, connection, events }: { readonly status: RepairStatus; readonly connection: ConnectionState; readonly events: readonly CoreEvent[] }): React.JSX.Element {
@@ -92,16 +93,24 @@ function RepairCard({ status, connection, events }: { readonly status: RepairSta
             disabled={active}
           />
         </div>
-        {model ? <small>{translate("Выбрано:")}{translate(REPAIR_PROVIDER_LABELS[provider])} · {translate(model)}</small> : <small>{translate("Выбери доступную модель — без неё запуск запрещён.")}</small>}
+        {model ? <small>{translate("Выбрано:")} {translate(REPAIR_PROVIDER_LABELS[provider])} · {translate(model)}</small> : <small>{translate("Выбери доступную модель — без неё запуск запрещён.")}</small>}
       </div>
-      {status.provider && status.model ? <small>{translate("Последний run:")}{translate(REPAIR_PROVIDER_LABELS[status.provider])} · {translate(status.model)}</small> : null}
+      {status.provider && status.model ? <small>{translate("Последний run:")} {translate(REPAIR_PROVIDER_LABELS[status.provider])} · {translate(status.model)}</small> : null}
       {status.commit ? <small>commit {translate(status.commit.slice(0, 12))} · CI: {translate(status.ciState)}</small> : null}
-      {status.evidence?.slice(-4).map((entry) => (
-        <small key={`${entry.phase}-${entry.atMs}`}>{translate(entry.phase)}: {translate(entry.result)} · {translate(entry.detail)}</small>
-      ))}
-      {action ? <button type="button" disabled={action.disabled || active} onClick={() => void command(action.name, action.payload)}>{translate(action.label)}</button> : null}
-      {status.phase === 'ready_to_update' ? <button type="button" onClick={() => void api?.invoke('update.prepare', {})}>{translate("Подготовить обновление")}</button> : null}
-      {active ? <button type="button" onClick={() => void command('repair.cancel', {})}>{translate("Остановить")}</button> : null}
+      {status.evidence && status.evidence.length > 0 ? (
+        <div className="operations-card__evidence">
+          {status.evidence.slice(-4).map((entry) => (
+            <small key={`${entry.phase}-${entry.atMs}`} title={entry.detail}>
+              {translate(entry.phase)}: {translate(entry.result)} · {translate(boundedDiagnostic(entry.detail, REPAIR_EVIDENCE_LIMIT))}
+            </small>
+          ))}
+        </div>
+      ) : null}
+      <div className="operations-card__actions">
+        {action ? <button type="button" disabled={action.disabled || active} onClick={() => void command(action.name, action.payload)}>{translate(action.label)}</button> : null}
+        {status.phase === 'ready_to_update' ? <button type="button" onClick={() => void api?.invoke('update.prepare', {})}>{translate("Подготовить обновление")}</button> : null}
+        {active ? <button type="button" onClick={() => void command('repair.cancel', {})}>{translate("Остановить")}</button> : null}
+      </div>
       {message ? <small>{translate(message)}</small> : null}
     </article>
   )
@@ -632,13 +641,21 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         </div>
         <span className={`status-pill status-pill--${connection}`}>{translate(connection)}</span>
       </div>
-      <div className="operations-grid">
-        {translate(repair ? <RepairCard status={repair} connection={connection} events={events} /> : null)}
+      <div className="operations-grid operations-grid--featured">
+        {repair ? <RepairCard status={repair} connection={connection} events={events} /> : null}
         <ImageGenerationPanel connection={connection} events={events} />
+      </div>
+      <div className="operations-grid operations-grid--metrics">
         <article className={`operations-card ${projectionReady && pending.length ? 'operations-card--warning' : ''}`}>
+          <div className="operations-card__topline">
+            <span className="operations-card__eyebrow">Memory queue</span>
+            <span className="operations-card__phase">{translate(projectionReady ? (pending.length ? 'pending' : 'clear') : 'offline')}</span>
+          </div>
           <h3>{translate("Память: подтверждение")}</h3>
-          <strong>{translate(projectionReady ? (counts['pending_confirmation'] ?? 0) : '—')}</strong>
-          <span>{translate(projectionReady ? translate("ждут решения") : translate("состояние не подтверждено"))}</span>
+          <div className="operations-card__metric">
+            <strong>{translate(projectionReady ? (counts['pending_confirmation'] ?? 0) : '—')}</strong>
+            <span>{translate(projectionReady ? translate("ждут решения") : translate("состояние не подтверждено"))}</span>
+          </div>
           <small>
             {translate(projectionReady
               ? `${counts['confirmed'] ?? 0} активных · ${counts['expired'] ?? 0} истекло · ${counts['rejected'] ?? 0} отклонено`
@@ -646,34 +663,58 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           </small>
         </article>
         <article className={`operations-card ${projectionReady && conflicts.length ? 'operations-card--warning' : ''}`}>
+          <div className="operations-card__topline">
+            <span className="operations-card__eyebrow">Conflicts</span>
+            <span className="operations-card__phase">{translate(projectionReady ? (conflicts.length ? 'conflict' : 'clear') : 'offline')}</span>
+          </div>
           <h3>{translate("Конфликты памяти")}</h3>
-          <strong>{translate(projectionReady ? conflicts.length : '—')}</strong>
-          <span>{translate(projectionReady ? translate("неразрешённых") : translate("состояние не подтверждено"))}</span>
+          <div className="operations-card__metric">
+            <strong>{translate(projectionReady ? conflicts.length : '—')}</strong>
+            <span>{translate(projectionReady ? translate("неразрешённых") : translate("состояние не подтверждено"))}</span>
+          </div>
           <small>{translate(projectionReady ? translate("Старая запись остаётся активной, пока выбор не сделан") : translate("Core недоступен — ожидается актуальная проекция"))}</small>
         </article>
         <article className={`operations-card ${latestExtraction && ['failed', 'deferred', 'conflict', 'stale'].includes(latestExtraction.status) ? 'operations-card--warning' : ''}`}>
+          <div className="operations-card__topline">
+            <span className="operations-card__eyebrow">Extraction</span>
+            <span className="operations-card__phase">{translate(projectionReady ? (latestExtraction?.status ?? 'idle') : 'offline')}</span>
+          </div>
           <h3>{translate("Извлечение памяти")}</h3>
-          <strong>{translate(projectionReady ? (latestExtraction ? MEMORY_EXTRACTION_STATUS_LABELS[latestExtraction.status] : '—') : '—')}</strong>
-          <span>{translate(projectionReady ? (latestExtraction ? `${latestExtraction.stage} · ${latestExtraction.origin}` : translate("состояние ещё не получено")) : translate("состояние не подтверждено"))}</span>
+          <div className="operations-card__metric">
+            <strong>{translate(projectionReady ? (latestExtraction ? MEMORY_EXTRACTION_STATUS_LABELS[latestExtraction.status] : '—') : '—')}</strong>
+            <span>{translate(projectionReady ? (latestExtraction ? `${latestExtraction.stage} · ${latestExtraction.origin}` : translate("состояние ещё не получено")) : translate("состояние не подтверждено"))}</span>
+          </div>
           <small>{translate(projectionReady && latestExtraction ? `${latestExtraction.backlog} в очереди восстановления · ${latestExtraction.conflict_count} конфликтов в последнем проходе · ${observedReentries} подавлено как повторный запуск` : translate("Core недоступен — ожидается актуальная проекция"))}</small>
           {projectionReady && lastExtractionFailure ? <small>{translate("Последний сбой:")} {translate(lastExtractionFailure.reason_code ?? 'unknown')} · {translate(lastExtractionFailure.stage)}</small> : null}
         </article>
         <article className="operations-card">
+          <div className="operations-card__topline">
+            <span className="operations-card__eyebrow">Child runtime</span>
+            <span className="operations-card__phase">{translate(projectionReady ? (activeChildren > 0 ? 'active' : 'idle') : 'offline')}</span>
+          </div>
           <h3>Child jobs</h3>
-          <strong>{translate(projectionReady ? activeChildren : '—')}</strong>
-          <span>{translate(projectionReady ? translate("активных children") : translate("состояние не подтверждено"))}</span>
+          <div className="operations-card__metric">
+            <strong>{translate(projectionReady ? activeChildren : '—')}</strong>
+            <span>{translate(projectionReady ? translate("активных children") : translate("состояние не подтверждено"))}</span>
+          </div>
           <small>{translate(projectionReady ? `${liveLeases} leases · ${deadLetters} dead-letter · ${count('child.report.accepted')} принятых отчётов` : translate("Core недоступен — ожидается актуальная проекция"))}</small>
         </article>
         <article className={`operations-card ${!projectionReady || pulseFailed ? 'operations-card--warning' : ''}`}>
+          <div className="operations-card__topline">
+            <span className="operations-card__eyebrow">Scheduler</span>
+            <span className="operations-card__phase">{translate(!projectionReady ? 'syncing' : pulseFailed ? 'warning' : 'healthy')}</span>
+          </div>
           <h3>Pulse</h3>
-          <strong>{translate(!projectionReady ? (CONNECTED_STATES.includes(connection) ? translate("Синхронизация") : translate("Недоступно")) : pulseFailed ? translate("Внимание") : 'OK')}</strong>
-          <span>
-            {translate(!projectionReady
-              ? translate("состояние Pulse не подтверждено")
-              : pulseFailed
-                ? translate("есть ошибки расписаний")
-                : translate("ошибок не обнаружено"))}
-          </span>
+          <div className="operations-card__metric">
+            <strong>{translate(!projectionReady ? (CONNECTED_STATES.includes(connection) ? translate("Синхронизация") : translate("Недоступно")) : pulseFailed ? translate("Внимание") : 'OK')}</strong>
+            <span>
+              {translate(!projectionReady
+                ? translate("состояние Pulse не подтверждено")
+                : pulseFailed
+                  ? translate("есть ошибки расписаний")
+                  : translate("ошибок не обнаружено"))}
+            </span>
+          </div>
           <small>
             {translate(projectionReady
               ? `${count('runtime.schedule_completed')} completed · ${count('runtime.schedule_requeued')} requeued · ${count('runtime.schedule_dead_letter')} dead-letter`
@@ -681,9 +722,15 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           </small>
         </article>
         <article className={`operations-card ${toolCalls !== toolOutputs ? 'operations-card--warning' : ''}`}>
+          <div className="operations-card__topline">
+            <span className="operations-card__eyebrow">Tools</span>
+            <span className="operations-card__phase">{translate(projectionReady ? (toolCalls !== toolOutputs ? 'pending' : 'synced') : 'offline')}</span>
+          </div>
           <h3>{translate("Инструменты")}</h3>
-          <strong>{translate(projectionReady ? toolCalls : '—')}</strong>
-          <span>{translate(projectionReady ? translate("вызовов в текущем replay") : translate("состояние не подтверждено"))}</span>
+          <div className="operations-card__metric">
+            <strong>{translate(projectionReady ? toolCalls : '—')}</strong>
+            <span>{translate(projectionReady ? translate("вызовов в текущем replay") : translate("состояние не подтверждено"))}</span>
+          </div>
           <small>{translate(projectionReady ? `${toolOutputs} результатов · ${approvalRequests} запросов approval` : translate("Core недоступен — ожидается актуальная проекция"))}</small>
         </article>
       </div>
@@ -703,13 +750,14 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           {translate(indexStatus?.dirty ? translate(" · индекс требует обновления") : '')}
         </p>
         <div className="operations-actions">
-          <label>
+          <label className="operations-checkbox">
             <input
               type="checkbox"
               checked={embeddingEnabled}
               onChange={(input) => setEmbeddingEnabled(input.target.checked)}
             />
-            {translate("локальные embeddings")}</label>
+            {translate("локальные embeddings")}
+          </label>
           <button type="button" disabled={!connected || !workspacePath} onClick={() => void updateIndex(false)}>
             {translate("Обновить индекс")}</button>
           <button type="button" disabled={!connected || !workspacePath} onClick={() => void updateIndex(true)}>
@@ -725,7 +773,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           <button type="button" disabled={!connected || !workspacePath} onClick={refresh}>
             {translate("Обновить статус")}</button>
         </div>
-        <div className="operations-actions">
+        <div className="operations-actions operations-actions--search">
           <input
             type="search"
             aria-label={translate("Поиск по локальному индексу")}
@@ -738,7 +786,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         </div>
         {searchPayload ? (
           <p>
-            {translate(searchPayload.evidence.length)} {translate("источников · coverage")}{translate(searchPayload.diagnostics.coverage.toFixed(2))} · {translate(searchPayload.diagnostics.mode)} · {translate(searchPayload.diagnostics.stop_reason)}
+            {translate(searchPayload.evidence.length)} {translate("источников · coverage")} {translate(searchPayload.diagnostics.coverage.toFixed(2))} · {translate(searchPayload.diagnostics.mode)} · {translate(searchPayload.diagnostics.stop_reason)}
             {translate(searchPayload.uncertainty ? ` · ${searchPayload.uncertainty}` : '')}
           </p>
         ) : null}
@@ -828,129 +876,147 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         )}
       </section>
 
-      {pending.length > 0 ? (
-        <>
-          <div className="operations-actions">
-            <label htmlFor="memory-source-filter">{translate("Источник")}</label>
-            <select
-              id="memory-source-filter"
-              value={sourceFilter}
-              onChange={(input) => setSourceFilter(input.target.value as SourceFilter)}
-            >
-              {SOURCE_FILTERS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {translate(option.label)}
-                </option>
-              ))}
-            </select>
-            <small>{translate("услышано:")}{translate(ambientCount)} {translate("из")}{translate(pending.length)}</small>
+      <section className="operations-section" aria-label={translate("Очередь памяти и конфликты")}>
+        <div className="operations-section__header">
+          <div>
+            <p className="panel__eyebrow">Memory review</p>
+            <h3>{translate("Очередь подтверждения и конфликты")}</h3>
           </div>
-          <ol className="operations-timeline" aria-label={translate("Кандидаты в память")}>
-            {visiblePending.map((record) => (
-              <li key={record.id}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(record.id)}
-                    onChange={() => toggle(record.id)}
-                  />
-                  <code>{translate(KIND_LABELS[record.kind] ?? record.kind)}</code>
-                </label>
-                {record.source_trust === 'ambient' ? (
-                  <span className="operations-badge operations-badge--ambient">{translate("услышано")}</span>
-                ) : null}
+          <span className="operations-section__hint">{translate("только метаданные")}</span>
+        </div>
+        {pending.length > 0 ? (
+          <>
+            <div className="operations-actions">
+              <label htmlFor="memory-source-filter">{translate("Источник")}</label>
+              <select
+                id="memory-source-filter"
+                value={sourceFilter}
+                onChange={(input) => setSourceFilter(input.target.value as SourceFilter)}
+              >
+                {SOURCE_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {translate(option.label)}
+                  </option>
+                ))}
+              </select>
+              <small>{translate("услышано:")} {translate(ambientCount)} {translate("из")} {translate(pending.length)}</small>
+            </div>
+            <ol className="operations-timeline" aria-label={translate("Кандидаты в память")}>
+              {visiblePending.map((record) => (
+                <li key={record.id}>
+                  <label className="operations-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(record.id)}
+                      onChange={() => toggle(record.id)}
+                    />
+                    <code>{translate(KIND_LABELS[record.kind] ?? record.kind)}</code>
+                  </label>
+                  {record.source_trust === 'ambient' ? (
+                    <span className="operations-badge operations-badge--ambient">{translate("услышано")}</span>
+                  ) : null}
+                  <span>
+                    {translate(record.canonical_subject ?? translate("без темы"))} ·{translate(' ')}
+                    {translate(TRUST_LABELS[record.source_trust] ?? record.source_trust)} {translate("· уверенность")}{translate(' ')}
+                    {translate((record.model_confidence ?? 0).toFixed(2))} {translate("· проверка")} {translate(record.validation_status)}
+                    {translate(' · ')}{translate(record.authority ?? 'user_asserted')} · {translate(record.durability ?? 'durable')} · governance {translate((record.confidence ?? 1).toFixed(2))}
+                    {translate(record.privacy_class === 'normal' ? '' : translate(" · содержимое скрыто"))}
+                    {translate(record.source_trust === 'ambient' ? translate(" · говорящий не подтверждён") : '')}
+                  </span>
+                  <div className="operations-actions">
+                    {editing === record.id ? (
+                      <>
+                        <input
+                          type="text"
+                          aria-label={translate("Новая формулировка")}
+                          value={draft}
+                          onChange={(input) => setDraft(input.target.value)}
+                        />
+                        <button
+                          type="button"
+                          disabled={draft.trim().length === 0}
+                          onClick={() => void revise(record.id, draft, false)}
+                        >
+                          {translate("Сохранить правку")}</button>
+                        <button type="button" onClick={() => setEditing(null)}>
+                          {translate("Отмена")}</button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditing(record.id)
+                            setDraft('')
+                          }}
+                        >
+                          {translate("Изменить")}</button>
+                        <button type="button" onClick={() => void revise(record.id, '', true)}>
+                          {translate("Только на эту сессию")}</button>
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="operations-actions">
+              <button type="button" disabled={selected.length === 0} onClick={() => void decide('core.confirmMemory')}>
+                {translate("Сохранить выбранные")}</button>
+              <button type="button" disabled={selected.length === 0} onClick={() => void decide('core.rejectMemory')}>
+                {translate("Отклонить выбранные")}</button>
+            </div>
+          </>
+        ) : (
+          <p className="empty-state">{translate("Кандидатов в память нет: Core ничего не ждёт от вас.")}</p>
+        )}
+
+        {conflicts.length > 0 ? (
+          <ol className="operations-timeline" aria-label={translate("Конфликты памяти")}>
+            {conflicts.map((conflict) => (
+              <li key={conflict.pending.id}>
+                <code>{translate(conflict.conflict_key)}</code>
                 <span>
-                  {translate(record.canonical_subject ?? translate("без темы"))} ·{translate(' ')}
-                  {translate(TRUST_LABELS[record.source_trust] ?? record.source_trust)} {translate("· уверенность")}{translate(' ')}
-                  {translate((record.model_confidence ?? 0).toFixed(2))} {translate("· проверка")}{translate(record.validation_status)}
-                  {translate(' · ')}{translate(record.authority ?? 'user_asserted')} · {translate(record.durability ?? 'durable')} · governance {translate((record.confidence ?? 1).toFixed(2))}
-                  {translate(record.privacy_class === 'normal' ? '' : translate(" · содержимое скрыто"))}
-                  {translate(record.source_trust === 'ambient' ? translate(" · говорящий не подтверждён") : '')}
+                  {translate("активная")} {translate(conflict.active.id)} {translate("· цепочка")} {translate(conflict.supersession_chain.join(' → '))}
                 </span>
-                <div className="operations-actions">
-                  {editing === record.id ? (
-                    <>
-                      <input
-                        type="text"
-                        aria-label={translate("Новая формулировка")}
-                        value={draft}
-                        onChange={(input) => setDraft(input.target.value)}
-                      />
-                      <button
-                        type="button"
-                        disabled={draft.trim().length === 0}
-                        onClick={() => void revise(record.id, draft, false)}
-                      >
-                        {translate("Сохранить правку")}</button>
-                      <button type="button" onClick={() => setEditing(null)}>
-                        {translate("Отмена")}</button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditing(record.id)
-                          setDraft('')
-                        }}
-                      >
-                        {translate("Изменить")}</button>
-                      <button type="button" onClick={() => void revise(record.id, '', true)}>
-                        {translate("Только на эту сессию")}</button>
-                    </>
-                  )}
-                </div>
+                <button type="button" onClick={() => void resolveConflict(conflict)}>
+                  {translate("Заменить новой записью")}</button>
               </li>
             ))}
           </ol>
-          <div className="operations-actions">
-            <button type="button" disabled={selected.length === 0} onClick={() => void decide('core.confirmMemory')}>
-              {translate("Сохранить выбранные")}</button>
-            <button type="button" disabled={selected.length === 0} onClick={() => void decide('core.rejectMemory')}>
-              {translate("Отклонить выбранные")}</button>
+        ) : null}
+      </section>
+
+      <section className="operations-section" aria-label={translate("События и контексты child-задач")}>
+        <div className="operations-section__header">
+          <div>
+            <p className="panel__eyebrow">Child runtime</p>
+            <h3>{translate("Дочерние задачи и контексты")}</h3>
           </div>
-        </>
-      ) : (
-        <p className="empty-state">{translate("Кандидатов в память нет: Core ничего не ждёт от вас.")}</p>
-      )}
+          <span className="operations-section__hint">bounded timeline</span>
+        </div>
+        {childProjection.length > 0 ? (
+          <ol className="operations-timeline" aria-label={translate("Последние child события")}>
+            {childProjection.slice(0, 8).map(({ event, item }) => (
+              <li key={`${event.sequenceId}-${event.eventType}`}>
+                <code>{translate(item.role ?? 'child')} · {translate(item.state ?? event.eventType)}</code>
+                <span>{translate(item.child_task_id ?? translate("идентификатор скрыт"))} · rev {translate(item.revision ?? 0)}{translate(item.reason_code ? ` · ${item.reason_code}` : '')}{translate(item.dead_letter ? ' · dead-letter' : '')}</span>
+              </li>
+            ))}
+          </ol>
+        ) : <p className="empty-state">{translate("Child timeline появится после запуска bounded read-only задачи.")}</p>}
 
-      {conflicts.length > 0 ? (
-        <ol className="operations-timeline" aria-label={translate("Конфликты памяти")}>
-          {conflicts.map((conflict) => (
-            <li key={conflict.pending.id}>
-              <code>{translate(conflict.conflict_key)}</code>
-              <span>
-                {translate("активная")}{translate(conflict.active.id)} {translate("· цепочка")}{translate(conflict.supersession_chain.join(' → '))}
-              </span>
-              <button type="button" onClick={() => void resolveConflict(conflict)}>
-                {translate("Заменить новой записью")}</button>
-            </li>
-          ))}
-        </ol>
-      ) : null}
-
-      {childProjection.length > 0 ? (
-        <ol className="operations-timeline" aria-label={translate("Последние child события")}>
-          {childProjection.slice(0, 8).map(({ event, item }) => (
-            <li key={`${event.sequenceId}-${event.eventType}`}>
-              <code>{translate(item.role ?? 'child')} · {translate(item.state ?? event.eventType)}</code>
-              <span>{translate(item.child_task_id ?? translate("идентификатор скрыт"))} · rev {translate(item.revision ?? 0)}{translate(item.reason_code ? ` · ${item.reason_code}` : '')}{translate(item.dead_letter ? ' · dead-letter' : '')}</span>
-            </li>
-          ))}
-        </ol>
-      ) : <p className="empty-state">{translate("Child timeline появится после запуска bounded read-only задачи.")}</p>}
-
-      {retainedChildren.length > 0 ? (
-        <ol className="operations-timeline" aria-label={translate("Сохранённые child контексты")}>
-          {retainedChildren.slice(0, 16).map((child, index) => (
-            <li key={`${child.child_id ?? 'child'}-${index}`}>
-              <code>{translate(child.stable_name || child.child_id || 'child')} · {translate(child.role || 'role')}</code>
-              <span>{translate(child.lifecycle || 'unknown')} · rev {translate(child.revision ?? 0)} · pending {translate(child.pending_count ?? 0)}{translate(child.last_delivery_outcome ? ` · ${child.last_delivery_outcome}` : '')}{translate(child.invalidation_reason ? ` · ${child.invalidation_reason}` : '')}</span>
-              {child.lifecycle !== 'deleted' && child.child_id && child.registry_version !== undefined ? <button type="button" onClick={() => void deleteRetainedChild(child)}>{translate("Удалить контекст")}</button> : null}
-            </li>
-          ))}
-        </ol>
-      ) : null}
+        {retainedChildren.length > 0 ? (
+          <ol className="operations-timeline" aria-label={translate("Сохранённые child контексты")}>
+            {retainedChildren.slice(0, 16).map((child, index) => (
+              <li key={`${child.child_id ?? 'child'}-${index}`}>
+                <code>{translate(child.stable_name || child.child_id || 'child')} · {translate(child.role || 'role')}</code>
+                <span>{translate(child.lifecycle || 'unknown')} · rev {translate(child.revision ?? 0)} · pending {translate(child.pending_count ?? 0)}{translate(child.last_delivery_outcome ? ` · ${child.last_delivery_outcome}` : '')}{translate(child.invalidation_reason ? ` · ${child.invalidation_reason}` : '')}</span>
+                {child.lifecycle !== 'deleted' && child.child_id && child.registry_version !== undefined ? <button type="button" onClick={() => void deleteRetainedChild(child)}>{translate("Удалить контекст")}</button> : null}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </section>
     </section>
   )
 }
