@@ -1,5 +1,5 @@
 use crate::execution_policy_profiles::{
-    apply_environment, reject_user_environment, validate_program_name, ExecutionPolicyProfile,
+    apply_environment, reject_user_environment, validate_process_egress, ExecutionPolicyProfile,
     ProcessGuard,
 };
 use crate::{ToolContext, ToolError, ToolResult};
@@ -51,9 +51,11 @@ pub async fn execute(ctx: &ToolContext, value: serde_json::Value) -> Result<Tool
         tool: NAME.to_string(),
         message: error.to_string(),
     })?;
-    validate_program_name(&input.command).map_err(|error| ToolError::InvalidInput {
-        tool: NAME.to_string(),
-        message: error.to_string(),
+    validate_process_egress(&input.command, &input.args).map_err(|error| {
+        ToolError::InvalidInput {
+            tool: NAME.to_string(),
+            message: error.to_string(),
+        }
     })?;
 
     let cwd = if let Some(path) = input.cwd {
@@ -235,5 +237,17 @@ mod tests {
             }
             other => panic!("ожидался InvalidInput, получено {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn direct_network_client_is_rejected_before_spawn() {
+        let ctx = ToolContext {
+            workspace_root: std::env::temp_dir(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let result = execute(&ctx, json!({"command": "curl", "args": ["--version"]})).await;
+        assert!(matches!(result, Err(ToolError::InvalidInput { .. })));
     }
 }

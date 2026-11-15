@@ -16,6 +16,11 @@
 5. Integrate tool input/output and external-agent boundaries using the same
    typed destination contract; local trusted model semantics may differ from
    cloud/external but secrets retain stricter policy.
+6. Treat command-based egress as a distinct boundary: scan the exact resolved
+   executable and argument vector before process spawn, block secret-source
+   access combined with external transfer, and do not treat a `NetworkPolicy`
+   metadata value as OS-enforced network isolation. Preserve an explicit
+   unsupported/blocked outcome when process-level egress cannot be guaranteed.
 
 ## Зависимости
 
@@ -36,6 +41,8 @@ high-privacy route passes, weaker fallback/stale provider metadata blocks, and
 local trusted path preserves allowed PII without weakening secret policy.
 Pre-dispatch tests mutate payload/route after scan, verify transform recheck,
 approval invalidation and zero provider calls on detector overflow/error.
+Process regressions cover known direct clients/tunnels, trycloudflare destinations,
+secret-source paths and upload-shaped arguments, with no child spawned on denial.
 
 ## Rollback и evidence
 

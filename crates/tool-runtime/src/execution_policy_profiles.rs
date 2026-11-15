@@ -95,6 +95,8 @@ pub enum ExecutionPolicyError {
     BackendUnavailable,
     /// The tool name is not an allowed process entrypoint.
     UnsupportedTool,
+    /// The invocation has an unapproved direct egress or sensitive-data pattern.
+    EgressDenied,
 }
 
 impl std::fmt::Display for ExecutionPolicyError {
@@ -106,6 +108,7 @@ impl std::fmt::Display for ExecutionPolicyError {
             }
             Self::BackendUnavailable => f.write_str("required execution backend unavailable"),
             Self::UnsupportedTool => f.write_str("tool is not a process entrypoint"),
+            Self::EgressDenied => f.write_str("process invocation violates egress safety policy"),
         }
     }
 }
@@ -244,6 +247,85 @@ pub fn validate_program_name(program: &str) -> Result<(), ExecutionPolicyError> 
     Ok(())
 }
 
+/// Rejects direct network clients and process arguments that combine likely
+/// secret sources with outbound-transfer indicators.
+///
+/// This is a bounded defense-in-depth check, not an operating-system network
+/// sandbox: arbitrary permitted executables may implement their own network
+/// protocols. External effects still require the Core-owned permission policy.
+pub fn validate_process_egress(program: &str, args: &[String]) -> Result<(), ExecutionPolicyError> {
+    validate_program_name(program)?;
+    let program = program.to_ascii_lowercase();
+    let program = program.strip_suffix(".exe").unwrap_or(&program);
+    if matches!(
+        program,
+        "curl"
+            | "wget"
+            | "aria2c"
+            | "ftp"
+            | "sftp"
+            | "scp"
+            | "ssh"
+            | "nc"
+            | "ncat"
+            | "netcat"
+            | "socat"
+            | "cloudflared"
+            | "ngrok"
+            | "frpc"
+            | "chisel"
+            | "rclone"
+    ) {
+        return Err(ExecutionPolicyError::EgressDenied);
+    }
+
+    let normalized = args
+        .iter()
+        .map(|arg| arg.to_ascii_lowercase().replace('\\', "/"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let without_exe = args
+        .iter()
+        .map(|arg| {
+            let lower = arg.to_ascii_lowercase().replace('\\', "/");
+            lower
+                .strip_suffix(".exe")
+                .map(str::to_owned)
+                .unwrap_or(lower)
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if without_exe.contains(".trycloudflare.com") {
+        return Err(ExecutionPolicyError::EgressDenied);
+    }
+
+    let sensitive_source = [
+        ".env",
+        ".ssh/",
+        "id_rsa",
+        "id_ed25519",
+        ".aws/credentials",
+        ".config/solana/",
+        "keystore",
+        "private key",
+        "mnemonic",
+        "seed phrase",
+        "private|secret|mnemonic|seed|key|pass",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker));
+    let outbound_transfer = [
+        "http://", "https://", "--data", "--upload", "upload", "-x post", "-x put", "\"post\"",
+        "'post'", "--remote",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker));
+    if sensitive_source && outbound_transfer {
+        return Err(ExecutionPolicyError::EgressDenied);
+    }
+    Ok(())
+}
+
 impl ResolvedExecutionProfile {
     /// Returns the requested timeout capped by the profile maximum.
     pub fn timeout(&self, requested_ms: Option<u64>) -> Duration {
@@ -378,5 +460,48 @@ mod tests {
         let mut env = HashMap::new();
         env.insert("EVOHIME_API_TOKEN".into(), "secret".into());
         assert!(reject_user_environment(Some(&env)).is_err());
+    }
+
+    #[test]
+    fn rejects_direct_egress_clients_and_tunnel_domains() {
+        assert!(validate_process_egress("curl.exe", &[]).is_err());
+        assert!(
+            validate_process_egress("git", &["https://example.trycloudflare.com/c/id".into()])
+                .is_err()
+        );
+        assert!(validate_process_egress("git", &["status".into()]).is_ok());
+        assert!(validate_process_egress("git", &["https://github.com/org/repo".into()]).is_ok());
+    }
+
+    #[test]
+    fn rejects_sensitive_source_combined_with_upload_arguments() {
+        let args = vec![
+            "--data-binary".into(),
+            "@-".into(),
+            "~/.ssh/id_ed25519".into(),
+            "https://example.invalid/collect".into(),
+        ];
+        assert!(validate_process_egress("git", &args).is_err());
+        assert!(validate_process_egress("cargo", &["test".into()]).is_ok());
+    }
+
+    #[test]
+    fn detects_common_secret_locations_for_egress_checks() {
+        for path in [
+            ".env.production",
+            "~/.ssh/id_ed25519",
+            "~/.aws/credentials",
+            "~/.config/solana/id.json",
+            "~/.ethereum/keystore/key.json",
+        ] {
+            let args = vec![path.into(), "https://collector.invalid/collect".into()];
+            assert!(validate_process_egress("grep", &args).is_err(), "{path}");
+        }
+        let grep_pattern = vec![
+            ".env*".into(),
+            "PRIVATE|SECRET|MNEMONIC|SEED|KEY|PASS".into(),
+            "https://collector.invalid/collect".into(),
+        ];
+        assert!(validate_process_egress("grep", &grep_pattern).is_err());
     }
 }

@@ -1861,6 +1861,16 @@ explicit network/environment policy, bounded timeout/output, mandatory process
 tree cleanup и backend requirement; command text и user `env` не выбирают
 policy. Environment наследуется только через scrubbed allow-list.
 
+До `spawn` общий validator для обоих инструментов отклоняет известные прямые
+сетевые клиенты/туннели и URL `*.trycloudflare.com`; аргументы, одновременно
+указывающие на `.env*`, SSH/AWS/Solana credentials, keystore или сигнатуры
+секретов и на upload/POST, также отклоняются.
+Это bounded защита от известных command-shaped стилеров, а не OS-level network
+изоляция: произвольный разрешённый executable может иметь собственный сетевой
+код. Поэтому профильное `NetworkPolicy::Deny` само по себе не следует считать
+принудительно применённым firewall; неизвестные способы исходящего трафика
+остаются отдельной задачей плана 181.
+
 На Windows restricted backend использует Job Object с `KILL_ON_JOB_CLOSE`;
 timeout/cancel/drop очищает дерево. Required backend failure происходит до
 dispatch success. На других системах разрешён только portable bounded режим

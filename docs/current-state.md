@@ -109,6 +109,15 @@ capability and otherwise shows its unavailable state.
 
 ## Актуальный code baseline
 
+`shell.execute` и `process.run` перед созданием процесса совместно проверяют
+имя executable и аргументы: известные сетевые клиенты/туннели, домены
+`*.trycloudflare.com` и комбинации ссылок на `.env*`, SSH/AWS/Solana credentials,
+keystore или сигнатур секретов с upload/POST-признаками отклоняются fail-closed.
+Это блокирует известную форму command-based сбора и отправки секретов, но не
+является сетевой изоляцией ОС и не гарантирует перехват собственного сетевого
+кода произвольного executable; полная Core-owned egress boundary остаётся
+незавершённым планом 181.
+
 Все 22 workspace packages проходят локальный rustdoc gate для каждого library
 target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Внешне достижимые Rust API снабжены предметными `///`-описаниями; примеры
