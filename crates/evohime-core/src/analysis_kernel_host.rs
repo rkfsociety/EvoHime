@@ -5,7 +5,7 @@
 //! or bypass the existing permission path.
 
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
@@ -33,13 +33,23 @@ pub fn analysis_run_manifest_hash() -> &'static str {
     static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     HASH.get_or_init(|| {
         let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
-        let manifest = registry
-            .manifest_for(evohime_tool_runtime::analysis::NAME)
-            .expect("analysis.run manifest must exist");
-        let hash = manifest
-            .canonical_hash()
-            .expect("analysis.run manifest hash must compute");
-        hash.strip_prefix("sha256:").unwrap_or(&hash).to_string()
+        let raw_hash = match registry.manifest_for(evohime_tool_runtime::analysis::NAME) {
+            Some(manifest) => match manifest.canonical_hash() {
+                Ok(hash) => hash,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to compute canonical hash for analysis.run manifest; using agent policy hash");
+                    AGENT_KERNEL_POLICY_HASH.to_string()
+                }
+            },
+            None => {
+                tracing::warn!("analysis.run tool manifest not found; using agent policy hash");
+                AGENT_KERNEL_POLICY_HASH.to_string()
+            }
+        };
+        raw_hash
+            .strip_prefix("sha256:")
+            .unwrap_or(&raw_hash)
+            .to_string()
     })
 }
 
@@ -69,7 +79,7 @@ impl CoreKernelHost {
     }
 
     /// Computes a deterministic workspace identifier from an absolute workspace root.
-    fn workspace_id_from_root(workspace_root: &PathBuf) -> String {
+    fn workspace_id_from_root(workspace_root: &Path) -> String {
         // Use the same deterministic hashing as IPC commands for consistency
         crate::task_memory::project_scope_id(&workspace_root.to_string_lossy())
     }
