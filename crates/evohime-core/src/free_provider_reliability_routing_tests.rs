@@ -471,7 +471,7 @@ fn cloudflare_catalog_scope_isolated_by_account_id() {
 #[test]
 fn builtin_profiles_are_bounded_and_versioned() {
     let profiles = builtin_provider_profiles();
-    assert_eq!(profiles.len(), 16);
+    assert_eq!(profiles.len(), 17);
     assert!(profiles.iter().all(|profile| profile.validate().is_ok()));
     assert!(profiles
         .iter()
@@ -492,6 +492,7 @@ fn builtin_profiles_are_bounded_and_versioned() {
         "zai",
         "sambanova",
         "nebius",
+        "rout",
     ] {
         assert!(ids.contains(&expected), "{expected}");
     }

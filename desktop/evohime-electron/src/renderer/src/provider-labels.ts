@@ -19,5 +19,6 @@ export const PROVIDER_PROFILE_LABELS: Record<ProviderProfileId, string> = {
   zai: 'Z.AI (GLM)',
   sambanova: 'SambaNova',
   nebius: 'Nebius Token Factory',
+  rout: 'Rout',
   custom: 'Другой OpenAI-compatible API'
 }

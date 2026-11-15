@@ -661,7 +661,7 @@ export const OLLAMA_DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1'
 export const PROVIDER_PROFILE_IDS = [
   'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'cloudflare_workers_ai',
   'nvidia_nim', 'cerebras', 'hugging_face',
-  'deepseek', 'xai', 'together_ai', 'fireworks_ai', 'moonshot', 'zai', 'sambanova', 'nebius',
+  'deepseek', 'xai', 'together_ai', 'fireworks_ai', 'moonshot', 'zai', 'sambanova', 'nebius', 'rout',
   'custom'
 ] as const
 
@@ -682,7 +682,8 @@ export const PROVIDER_PROFILE_ENDPOINTS: Readonly<Partial<Record<ProviderProfile
   moonshot: 'https://api.moonshot.ai/v1',
   zai: 'https://api.z.ai/api/paas/v4',
   sambanova: 'https://api.sambanova.ai/v1',
-  nebius: 'https://api.tokenfactory.nebius.com/v1'
+  nebius: 'https://api.tokenfactory.nebius.com/v1',
+  rout: 'https://api.rout.my/v1'
 }
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]

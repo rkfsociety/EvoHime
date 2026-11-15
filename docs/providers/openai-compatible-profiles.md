@@ -4,7 +4,7 @@
 vendor is a separate entry in one provider list: OpenAI, OpenRouter, Groq,
 Google Gemini, Mistral, Cloudflare Workers AI, NVIDIA NIM, Cerebras, Hugging
 Face Inference Providers, DeepSeek, xAI, Together AI, Fireworks AI, Moonshot
-(Kimi), Z.AI (GLM), SambaNova and Nebius Token Factory. Picking a vendor sets
+(Kimi), Z.AI (GLM), SambaNova, Nebius Token Factory and Rout. Picking a vendor sets
 its OpenAI-compatible profile internally: the profile identifies the vendor
 independently from the transport. Fixed profiles use their trusted base URL;
 only the `custom` entry accepts a user-supplied HTTPS or loopback URL.
@@ -28,6 +28,7 @@ only the `custom` entry accepts a user-supplied HTTPS or loopback URL.
 | Z.AI (GLM) | `https://api.z.ai/api/paas/v4` |
 | SambaNova | `https://api.sambanova.ai/v1` |
 | Nebius Token Factory | `https://api.tokenfactory.nebius.com/v1` |
+| Rout | `https://api.rout.my/v1` |
 
 ## DeepSeek
 

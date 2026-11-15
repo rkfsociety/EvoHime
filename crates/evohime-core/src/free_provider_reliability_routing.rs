@@ -99,6 +99,8 @@ pub enum ProviderFamily {
     SambaNova,
     /// Nebius Token Factory hosted provider.
     Nebius,
+    /// Rout hosted provider.
+    Rout,
     /// LiteRouter provider.
     LiteRouter,
     /// OpenAI hosted provider.
@@ -133,6 +135,7 @@ impl ProviderFamily {
             Self::ZAi => "zai",
             Self::SambaNova => "sambanova",
             Self::Nebius => "nebius",
+            Self::Rout => "rout",
             Self::LiteRouter => "literouter",
             Self::OpenAi => "open_ai",
             Self::Ollama => "ollama",
@@ -2049,6 +2052,7 @@ pub fn builtin_provider_profiles() -> Vec<ProviderProfile> {
             ProviderFamily::Nebius,
             "https://api.tokenfactory.nebius.com/v1",
         ),
+        ("rout", ProviderFamily::Rout, "https://api.rout.my/v1"),
     ]
     .into_iter()
     .map(|(provider_id, provider_family, endpoint)| {

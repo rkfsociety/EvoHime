@@ -186,6 +186,9 @@ pub enum ProviderProfileId {
     /// Nebius Token Factory hosted API profile.
     #[serde(rename = "nebius")]
     Nebius,
+    /// Rout hosted API profile.
+    #[serde(rename = "rout")]
+    Rout,
 }
 
 impl ProviderProfileId {
@@ -210,6 +213,7 @@ impl ProviderProfileId {
             Self::ZAi => "zai",
             Self::SambaNova => "sambanova",
             Self::Nebius => "nebius",
+            Self::Rout => "rout",
         }
     }
 
@@ -234,6 +238,7 @@ impl ProviderProfileId {
             "zai" => Self::ZAi,
             "sambanova" => Self::SambaNova,
             "nebius" => Self::Nebius,
+            "rout" => Self::Rout,
             _ => return None,
         })
     }
@@ -259,6 +264,7 @@ impl ProviderProfileId {
             Self::ZAi => Some("https://api.z.ai/api/paas/v4"),
             Self::SambaNova => Some("https://api.sambanova.ai/v1"),
             Self::Nebius => Some("https://api.tokenfactory.nebius.com/v1"),
+            Self::Rout => Some("https://api.rout.my/v1"),
         }
     }
 
@@ -822,6 +828,7 @@ mod tests {
             ProviderProfileId::ZAi,
             ProviderProfileId::SambaNova,
             ProviderProfileId::Nebius,
+            ProviderProfileId::Rout,
         ];
 
         for profile in profiles {
@@ -880,6 +887,7 @@ mod tests {
                 "nebius",
                 "https://api.tokenfactory.nebius.com/v1",
             ),
+            (ProviderProfileId::Rout, "rout", "https://api.rout.my/v1"),
         ];
 
         for (profile, id, endpoint) in profiles {
