@@ -51,10 +51,11 @@ describe('responsive shell layout contract', () => {
   })
 
   it('keeps the trace panel from compressing the primary workspace', () => {
+    expect(stylesheet).toContain('.main__workspace {')
     expect(stylesheet).toContain('@media (max-width: 1180px)')
-    expect(stylesheet).toContain("grid-template-areas:\n      'sidebar main'\n      'status status'")
     expect(stylesheet).toContain('position: absolute;')
-    expect(stylesheet).toContain('width: min(400px, calc(100% - var(--sidebar-width) - 16px));')
+    expect(stylesheet).toContain('inset: 0 0 0 auto;')
+    expect(stylesheet).toContain('width: min(400px, 100%);')
   })
 
   it('turns auxiliary conversation panels into a bounded drawer on narrow windows', () => {
