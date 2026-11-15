@@ -34,7 +34,7 @@ pub fn analysis_run_manifest_hash() -> &'static str {
     HASH.get_or_init(|| {
         let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
         let manifest = registry
-            .manifest_for(evohime_tool_runtime::tools::analysis::NAME)
+            .manifest_for(evohime_tool_runtime::analysis::NAME)
             .expect("analysis.run manifest must exist");
         let hash = manifest
             .canonical_hash()
