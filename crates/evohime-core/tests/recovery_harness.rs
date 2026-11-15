@@ -84,15 +84,19 @@ fn seed_executing_effect(database_path: &Path) {
 }
 
 fn run_until_killed(mut child: Child, marker: &Path) {
-    for _ in 0..50 {
+    for _ in 0..300 {
         if marker.exists() {
             child.kill().expect("child kills");
             let _ = child.wait();
             return;
         }
+        if let Some(status) = child.try_wait().expect("try_wait succeeds") {
+            panic!("recovery child exited early with status {status:?} before reaching executing effect");
+        }
         thread::sleep(Duration::from_millis(100));
     }
     let _ = child.kill();
+    let _ = child.wait();
     panic!("recovery child did not reach executing effect");
 }
 
@@ -110,6 +114,7 @@ fn kill_restart_recovers_unknown_effect_without_retry() {
 
     let database = temp_path("child");
     let marker = database.with_extension("ready");
+    drop(LocalDatabase::open(&database).expect("database initializes"));
     let child = Command::new(env::current_exe().expect("test executable"))
         .arg("kill_restart_recovers_unknown_effect_without_retry")
         .env(CHILD_ENV, "1")
