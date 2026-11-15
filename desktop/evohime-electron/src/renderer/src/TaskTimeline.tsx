@@ -715,7 +715,7 @@ export function TaskTimeline({
   }, [api, chatId, onChatOpened, onChatTouched, providerMode, setConversationProjection, workspace])
 
   const start = useCallback(async () => {
-    if (!api || prompt.trim().length === 0) return
+    if (!api || (prompt.trim().length === 0 && (attachments.length === 0 || goalMode))) return
     const rawPrompt = prompt.trim()
     const parsedGoal = parseGoalSlashCommand(rawPrompt)
     if (parsedGoal.isGoalCommand) {
@@ -771,15 +771,15 @@ export function TaskTimeline({
     if (goalMode) setGoalMode(false)
   }, [api, attachments, chatId, goalMode, launchTask, onChatOpened, prompt, webSearchEnabled, workspace])
 
-  const selectFiles = useCallback((fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0) return
+  const selectFiles = useCallback((files: readonly File[]) => {
+    if (files.length === 0) return
     if (!workspace) {
       setComposerNotice('Сначала выбери проект, чтобы прикрепить файл.')
       return
     }
     const selected: ComposerAttachment[] = []
     let rejected = false
-    for (const file of Array.from(fileList)) {
+    for (const file of files) {
       const absolutePath = api?.pathForFile?.(file) ?? ''
       const relativePath = absolutePath.length > 0 ? relativeWorkspacePath(workspace, absolutePath) : null
       if (!relativePath) {
@@ -830,7 +830,7 @@ export function TaskTimeline({
   )
 
   const connected = CONNECTED_STATES.includes(connection)
-  const canStart = connected && prompt.trim().length > 0 && !busy
+  const canStart = connected && !busy && (prompt.trim().length > 0 || attachments.length > 0 && !goalMode)
   const running = activeTaskId !== null && (startingTaskId === activeTaskId || !finished)
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
@@ -981,7 +981,7 @@ export function TaskTimeline({
                 tabIndex={-1}
                 aria-hidden="true"
                 onChange={(event) => {
-                  selectFiles(event.target.files)
+                  selectFiles(Array.from(event.target.files ?? []))
                   event.target.value = ''
                 }}
               />
@@ -1001,6 +1001,12 @@ export function TaskTimeline({
                 ref={promptRef}
                 value={prompt}
                 onChange={(event) => setPrompt(event.target.value)}
+                onPaste={(event) => {
+                  const files = Array.from(event.clipboardData.files)
+                  if (files.length === 0) return
+                  event.preventDefault()
+                  selectFiles(files)
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
@@ -1073,7 +1079,7 @@ export function TaskTimeline({
 
           <div className="composer__footer">
             {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : <span />}
-            <span className="composer__shortcut"><kbd>Enter</kbd> {translate("— отправить ·")}{' '}<kbd>Shift + Enter</kbd> {translate("— новая строка")}</span>
+            <span className="composer__shortcut"><kbd>Enter</kbd> {translate("— отправить ·")}{' '}<kbd>Shift + Enter</kbd> {translate("— новая строка ·")}{' '}<kbd>Ctrl + V</kbd> {translate("— вставить файлы")}</span>
           </div>
 
           {commandError ? <p role="alert" className="shell__reason">{translate(commandError)}</p> : null}
@@ -1092,7 +1098,7 @@ export function parseGoalSlashCommand(
 }
 
 function composeTaskPrompt(prompt: string, attachments: readonly ComposerAttachment[], webSearchEnabled: boolean): string {
-  const sections = [prompt]
+  const sections = prompt.length > 0 ? [prompt] : []
   if (attachments.length > 0) {
     sections.push(`Прикреплённые файлы из текущего проекта:\n${attachments.map((attachment) => `- ${attachment.relativePath}`).join('\n')}\nИспользуй их как дополнительный контекст задачи.`)
   }

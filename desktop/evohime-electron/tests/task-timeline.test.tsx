@@ -741,7 +741,7 @@ describe('task timeline', () => {
   })
 
   it('starts a task only through the typed bridge', async () => {
-    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
+    render(<TaskTimeline connection="connected" events={[]} workspace={String.raw`C:\work\repo`} chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
     await userEvent.type(await screen.findByLabelText('Задача'), 'Проверь тесты')
     await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
 
@@ -750,6 +750,30 @@ describe('task timeline', () => {
       prompt: 'Проверь тесты',
       workspacePath: 'C:\\work\\repo'
     })
+  })
+
+  it('attaches files pasted into the composer and preserves ordinary text paste', async () => {
+    selectedFilePath = 'C:\\work\\repo\\docs\\pasted.md'
+    render(<TaskTimeline connection="connected" events={[]} workspace={String.raw`C:\work\repo`} chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
+
+    const prompt = await screen.findByLabelText('Задача')
+    const file = new File(['pasted'], 'pasted.md', { type: 'text/markdown' })
+    const filePaste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(filePaste, 'clipboardData', { value: { files: [file] } })
+    expect(fireEvent(prompt, filePaste)).toBe(false)
+
+    expect(await screen.findByText('pasted.md')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Запустить задачу' }).hasAttribute('disabled')).toBe(false)
+    await userEvent.type(prompt, 'Изучи файл')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
+
+    await waitFor(() => expect(calls.some((call) => call.command === 'core.startTask')).toBe(true))
+    expect((calls.find((call) => call.command === 'core.startTask')?.payload as { prompt: string }).prompt).toContain('docs/pasted.md')
+
+    const plainPasteEvent = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(plainPasteEvent, 'clipboardData', { value: { files: [] } })
+    const plainPaste = fireEvent(prompt, plainPasteEvent)
+    expect(plainPaste).toBe(true)
   })
 
   it('makes composer actions affect the next task instead of leaving them decorative', async () => {

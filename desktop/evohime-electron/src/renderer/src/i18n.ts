@@ -915,6 +915,8 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Веб-поиск включён для следующего запроса.': 'Web search is enabled for the next request.',
   'Core недоступен: запуск и управление задачей приостановлены.': 'Core is unavailable: starting and managing tasks are paused.',
   '— отправить ·': '— send ·',
+  '— новая строка ·': '— new line ·',
+  '— вставить файлы': '— paste files',
   'Core хранит lifecycle и version fence; UI не выбирает host path и не выполняет Git effect напрямую.': 'Core stores the lifecycle and version fence; the UI does not choose a host path or perform Git effects directly.',
   'Core выбирает роль (typed participant) и причину решения; child grants, approvals, protocol routes и effects остаются в существующем runtime.': 'Core selects the role (typed participant) and the reason; child grants, approvals, protocol routes, and effects remain in the existing runtime.',
   'Core владеет envelope, reserve, attribution и BudgetBlocked; UI показывает только bounded projection.': 'Core owns the envelope, reserve, attribution, and BudgetBlocked state; the UI shows only a bounded projection.',
