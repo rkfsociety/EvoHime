@@ -46,7 +46,7 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
         ),
         "filesystem.patch" => object(
             serde_json::json!({"path":string("Logical namespace/path"),"patch":string("Unified diff"),"expected_hash":string("SHA-256 hash from filesystem.read")}),
-            &["path", "patch"],
+            &["path", "patch", "expected_hash"],
         ),
         "filesystem.delete" => object(
             serde_json::json!({"path":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the file before deletion")}),
@@ -360,5 +360,19 @@ mod tests {
         assert_eq!(schema["properties"]["args"]["type"], "array");
         assert_eq!(schema["properties"]["cwd"]["type"], "string");
         assert!(schema["properties"].get("input").is_none());
+    }
+
+    #[test]
+    fn patch_schema_requires_the_revision_precondition_the_executor_reads() {
+        // tools/patch.rs deserializes expected_hash as a required field. The
+        // declared schema must say the same, otherwise the catalog probe is
+        // rejected and filesystem.patch silently leaves the model catalog.
+        let schema = builtin_input_schema("filesystem.patch");
+
+        assert_eq!(
+            schema["required"],
+            serde_json::json!(["path", "patch", "expected_hash"])
+        );
+        assert_eq!(schema["properties"]["expected_hash"]["type"], "string");
     }
 }

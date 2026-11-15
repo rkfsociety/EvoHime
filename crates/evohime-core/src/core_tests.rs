@@ -284,6 +284,17 @@ mod tests {
             compiled.validate(&analysis_probe).is_ok(),
             "catalog probe must satisfy the declared analysis.run schema"
         );
+        // filesystem.patch must stay in the authorized snapshot too: an
+        // existing-file edit is impossible without it, and a probe rejected by
+        // the runtime removes the tool from the model catalog silently.
+        let patch_probe = super::catalog_preflight_input("filesystem.patch");
+        let patch_schema = evohime_tool_runtime::builtin_input_schema("filesystem.patch");
+        let patch_compiled = jsonschema::JSONSchema::compile(&patch_schema)
+            .expect("filesystem.patch schema compiles");
+        assert!(
+            patch_compiled.validate(&patch_probe).is_ok(),
+            "catalog probe must satisfy the declared filesystem.patch schema"
+        );
         assert!(super::requires_workspace_research_catalog(
             "Изучи проект и расскажи, как он устроен"
         ));

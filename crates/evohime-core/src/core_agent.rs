@@ -820,7 +820,8 @@ pub struct ToolAgent {
 }
 
 /// Жёсткий предел циклов `model -> tool` для одной задачи.
-/// Maximum model-to-tool iterations allowed in one autonomous task.
+/// Maximum model-to-tool iterations allowed in one autonomous task. Core makes
+/// one extra tool-free call after this budget to guarantee a final answer.
 const DEFAULT_TOOL_ITERATIONS: usize = 32;
 
 struct ProvenancedModelResult {

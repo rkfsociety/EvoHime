@@ -118,6 +118,51 @@ fn update_observed_file_revision(
     }
 }
 
+/// Number of successful steps without the required mutation before Core nudges
+/// the model to edit instead of continuing to read.
+const DELIVERY_MUTATION_NUDGE_FIRST_STEP: usize = 6;
+/// Bounded number of mutation nudges per task. The nudge is guidance for the
+/// next model call, not a policy denial, so it must not flood the context.
+const DELIVERY_MUTATION_NUDGE_LIMIT: u32 = 3;
+/// User-role guidance for the extra tool-free iteration. Tools are absent from
+/// that request, so the model has to turn what it already has into an answer.
+const ITERATION_LIMIT_FINAL_ANSWER_PROMPT: &str =
+    "Это последний доступный шаг задачи, инструменты больше не предоставляются. Не вызывай инструменты и не повторяй исследование: верни обычным текстом итог по уже выполненной работе, явно указав, что осталось несделанным, если работа не завершена.";
+
+/// True when the current iteration is the reserved final answer step.
+///
+/// The loop allows `max_iterations` tool-capable steps and one extra step that
+/// is guaranteed to be tool-free, so a model that keeps calling tools cannot
+/// end the task with a bare limit error and no text.
+fn iteration_limit_final_answer(iteration: usize, max_iterations: usize) -> bool {
+    iteration >= max_iterations
+}
+
+/// True when the mutation-required task has spent enough successful steps
+/// without editing to justify the next bounded nudge.
+fn mutation_nudge_due(steps_without_mutation: usize, nudges_sent: u32) -> bool {
+    nudges_sent < DELIVERY_MUTATION_NUDGE_LIMIT
+        && steps_without_mutation >= DELIVERY_MUTATION_NUDGE_FIRST_STEP * (nudges_sent as usize + 1)
+}
+
+/// Bounded guidance for a mutation task that keeps reading. Only tools already
+/// present in the session are named, so the nudge never points at a tool the
+/// model cannot use.
+fn mutation_nudge_message(available: &[String], steps_without_mutation: usize) -> Option<String> {
+    let tools = DELIVERY_MUTATION_TOOLS
+        .iter()
+        .copied()
+        .filter(|id| available.iter().any(|name| name == id))
+        .collect::<Vec<_>>();
+    if tools.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Core: изменение ещё не внесено, а успешных шагов без правки уже {steps_without_mutation}. Не повторяй чтение и не пиши отчёт вместо изменения: следующим вызовом измени файлы workspace через {} с workspace-relative путём. Для точечной правки уже прочитанного файла используй filesystem.patch с контекстом его строк, для нового файла или полной замены — filesystem.write.",
+        tools.join(" или ")
+    ))
+}
+
 impl ToolAgent {
     /// Runs one agent task to completion without an external cancellation signal.
     ///
@@ -706,6 +751,9 @@ impl ToolAgent {
         let mut research_has_overview = false;
         let mut research_has_content = false;
         let mut research_has_search = false;
+        let mut steps_without_mutation = 0usize;
+        let mut mutation_nudges_sent = 0u32;
+        let mut last_mutation_nudge_iteration: Option<usize> = None;
         let mut observability_sequence = 0_u64;
         let mut reroutes_used = 0_u32;
         let mut last_pre_compaction_checkpoint_iteration = None;
@@ -741,7 +789,31 @@ impl ToolAgent {
                 })
                 .unwrap_or_default(),
         );
-        for iteration in 0..self.max_iterations {
+        for iteration in 0..=self.max_iterations {
+            let final_iteration = iteration_limit_final_answer(iteration, self.max_iterations);
+            if final_iteration {
+                // Дополнительный tool-free шаг сверх лимита: инструменты
+                // убираются из запроса, а модель обязана превратить уже
+                // собранные данные в ответ. Иначе модель, которая так и не
+                // перестала вызывать инструменты, закрывала задачу голым
+                // лимитом шагов без текста.
+                specs.clear();
+                messages.push(ChatMessage::text(
+                    ChatRole::User,
+                    ITERATION_LIMIT_FINAL_ANSWER_PROMPT,
+                ));
+                write_model_trace(
+                    "task.iteration_limit_final_answer",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "iteration": iteration,
+                        "max_iterations": self.max_iterations,
+                        "mutation_done": mutation_done,
+                        "verification_done": verification_done,
+                        "commit_done": commit_done,
+                    }),
+                );
+            }
             let selected_model = self.selected_model.get();
             let effective_model =
                 effective_model_name(self.gateway.model_name(), selected_model.as_deref());
@@ -1074,6 +1146,20 @@ impl ToolAgent {
                     );
                     tool_calls.push(call);
                 }
+            }
+            // Дополнительный шаг не исполняет инструменты даже если модель всё
+            // равно попросила их текстом: лимит tool-итераций уже исчерпан, и
+            // любой новый вызов только снова съел бы ход без ответа.
+            if final_iteration && !tool_calls.is_empty() {
+                write_model_trace(
+                    "task.iteration_limit_tool_calls_ignored",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "iteration": iteration,
+                        "tool_names": tool_calls.iter().map(|call| call.name.clone()).collect::<Vec<_>>(),
+                    }),
+                );
+                tool_calls.clear();
             }
             // What the model said before calling a tool is the reasoning the
             // user watches. Without this the chat only ever showed tool lines.
@@ -2128,6 +2214,33 @@ impl ToolAgent {
                     );
                 }
                 messages.push(ChatMessage::tool_observation(call.id, wrapped_output));
+                if delivery_requirements.mutation && !mutation_done {
+                    if outcome.ok && !DELIVERY_MUTATION_TOOLS.contains(&call.name.as_str()) {
+                        steps_without_mutation = steps_without_mutation.saturating_add(1);
+                    }
+                    if last_mutation_nudge_iteration != Some(iteration)
+                        && mutation_nudge_due(steps_without_mutation, mutation_nudges_sent)
+                    {
+                        if let Some(message) =
+                            mutation_nudge_message(&tool_names, steps_without_mutation)
+                        {
+                            mutation_nudges_sent = mutation_nudges_sent.saturating_add(1);
+                            last_mutation_nudge_iteration = Some(iteration);
+                            write_model_trace(
+                                "task.delivery_mutation_nudge",
+                                serde_json::json!({
+                                    "task_id": task_id,
+                                    "iteration": iteration,
+                                    "steps_without_mutation": steps_without_mutation,
+                                    "nudges_sent": mutation_nudges_sent,
+                                }),
+                            );
+                            messages.push(ChatMessage::text(ChatRole::User, message));
+                        }
+                    }
+                } else if mutation_done {
+                    steps_without_mutation = 0;
+                }
                 if failed {
                     let schema = evohime_tool_runtime::builtin_input_schema(&call.name);
                     let description = self
@@ -2617,6 +2730,37 @@ mod tests {
         assert!(matches!(&decision, Ok(ToolPreflightDecision::Denied(_))));
         assert!(!tool_preflight_can_be_offered(&decision, true));
     }
+
+    #[tokio::test]
+    async fn catalog_probe_keeps_filesystem_patch_available_for_existing_file_edits() {
+        // Regression: the runtime required expected_hash, but the catalog probe
+        // (and the declared schema) omitted it, so preflight rejected the probe
+        // and filesystem.patch silently left the model catalog. The model could
+        // not edit an existing file and kept re-reading it.
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        let context = ToolContext {
+            workspace_root: workspace.path().to_path_buf(),
+            task_id: uuid::Uuid::new_v4(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let registry = ToolRegistry::bootstrap();
+        let probe = serde_json::json!({
+            "path": ".evohime-catalog-probe",
+            "patch": "--- a/.evohime-catalog-probe\n+++ b/.evohime-catalog-probe\n@@\n",
+            "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        });
+        let decision = registry
+            .preflight(&context, "filesystem.patch", &probe)
+            .await
+            .expect("patch preflight runs");
+
+        assert!(matches!(
+            &decision,
+            ToolPreflightDecision::ApprovalRequired { .. }
+        ));
+        assert!(tool_preflight_can_be_offered(&Ok(decision), true));
+    }
 }
 
 fn initial_agent_messages(
@@ -2651,6 +2795,58 @@ mod conversation_history_tests {
         assert!(miss.output.contains("filesystem.list"));
         assert!(miss.output.contains("filesystem.read, filesystem.write"));
         assert_eq!(miss.structured["error_code"], "tool_not_in_session");
+    }
+
+    #[test]
+    fn final_iteration_is_reserved_for_a_tool_free_answer() {
+        assert!(iteration_limit_final_answer(32, 32));
+        assert!(!iteration_limit_final_answer(31, 32));
+        assert!(iteration_limit_final_answer(0, 0));
+    }
+
+    #[test]
+    fn mutation_nudges_are_bounded_and_spaced_by_successful_steps() {
+        assert!(!mutation_nudge_due(
+            DELIVERY_MUTATION_NUDGE_FIRST_STEP - 1,
+            0
+        ));
+        assert!(mutation_nudge_due(DELIVERY_MUTATION_NUDGE_FIRST_STEP, 0));
+        assert!(!mutation_nudge_due(DELIVERY_MUTATION_NUDGE_FIRST_STEP, 1));
+        assert!(mutation_nudge_due(
+            DELIVERY_MUTATION_NUDGE_FIRST_STEP * 2,
+            1
+        ));
+        assert!(mutation_nudge_due(
+            DELIVERY_MUTATION_NUDGE_FIRST_STEP * 3,
+            2
+        ));
+        assert!(!mutation_nudge_due(
+            DELIVERY_MUTATION_NUDGE_FIRST_STEP * 4,
+            3
+        ));
+    }
+
+    #[test]
+    fn mutation_nudge_names_only_tools_available_in_the_session() {
+        let with_patch = vec![
+            "filesystem.read".to_string(),
+            "filesystem.write".to_string(),
+            "filesystem.patch".to_string(),
+        ];
+        let message = mutation_nudge_message(&with_patch, 6).expect("nudge");
+        assert!(message.contains("filesystem.patch"));
+        assert!(message.contains("filesystem.write"));
+        assert!(message.contains("6"));
+
+        let without_patch = vec![
+            "filesystem.read".to_string(),
+            "filesystem.write".to_string(),
+        ];
+        let message = mutation_nudge_message(&without_patch, 6).expect("nudge");
+        assert!(!message.contains("filesystem.patch"));
+
+        let read_only = vec!["filesystem.read".to_string()];
+        assert!(mutation_nudge_message(&read_only, 6).is_none());
     }
 
     #[test]
