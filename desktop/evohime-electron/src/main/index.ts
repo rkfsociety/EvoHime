@@ -657,14 +657,18 @@ function quitForUpdate(): void {
  */
 async function restartCore(): Promise<boolean> {
   log('info', 'shell.core_restart_requested', {})
-  client?.stop()
+  const activeClient = client
+  activeClient?.beginPlannedRestart()
   stopSupervisor()
   const launch = await ensureSupervisorSession(true)
-  client?.start()
+  const ready = activeClient ? activeClient.waitForConnected() : Promise.resolve(false)
+  activeClient?.start()
   if (launch.developerLaunch) {
+    activeClient?.endPlannedRestart()
     log('warn', 'shell.core_restart_no_supervisor', {})
     return false
   }
+  await ready
   return true
 }
 

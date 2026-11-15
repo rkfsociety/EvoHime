@@ -910,4 +910,91 @@ ${TEST_NONCE}`, 'utf8')
     expect(results.has('queued')).toBe(true)
     expect(results.has('queue-full')).toBe(true)
   })
+
+  it('suppresses transient disconnect and socket-error states during a planned restart', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => {
+        if (command.handshake) return [readyFrame()]
+        if (command.resyncRequest) return [resyncEndFrame(0, false)]
+        return []
+      }
+    })
+
+    const target = new CorePipeClient({
+      launch: launchContext(pipeName),
+      connectTimeoutMs: 2_000,
+      handshakeTimeoutMs: 2_000,
+      plannedRestartGraceMs: 2_000,
+      plannedRestartRetryMs: 30,
+      backoff: { baseMs: 20, maxMs: 60, jitterRatio: 0 }
+    })
+    client = target
+
+    const initialConnected = waitForState(target, (state) => state.connection === 'connected')
+    target.start()
+    await initialConnected
+
+    const observed: ShellState[] = []
+    target.on('state', (state) => observed.push(state))
+
+    const closing = server
+    server = null
+    target.beginPlannedRestart()
+    await new Promise<void>((resolve) => closing.close(() => resolve()))
+
+    const readyPromise = target.waitForConnected()
+    target.start()
+
+    await new Promise((resolve) => setTimeout(resolve, 90))
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => {
+        if (command.handshake) return [readyFrame()]
+        if (command.resyncRequest) return [resyncEndFrame(0, false)]
+        return []
+      }
+    })
+
+    expect(await readyPromise).toBe(true)
+    expect(observed.some((s) => s.connection === 'starting' || s.connection === 'connecting' || s.connection === 'reconnecting')).toBe(false)
+    expect(observed.some((s) => s.reason === 'socket-error')).toBe(false)
+    expect(observed.every((s) => s.reconnectAttempts === 0)).toBe(true)
+  })
+
+  it('surfaces the suppressed reconnect state if a planned restart exceeds its grace window', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => {
+        if (command.handshake) return [readyFrame()]
+        if (command.resyncRequest) return [resyncEndFrame(0, false)]
+        return []
+      }
+    })
+
+    const target = new CorePipeClient({
+      launch: launchContext(pipeName),
+      connectTimeoutMs: 2_000,
+      handshakeTimeoutMs: 2_000,
+      plannedRestartGraceMs: 120,
+      plannedRestartRetryMs: 30,
+      backoff: { baseMs: 20, maxMs: 60, jitterRatio: 0 }
+    })
+    client = target
+
+    const initialConnected = waitForState(target, (state) => state.connection === 'connected')
+    target.start()
+    await initialConnected
+
+    const closing = server
+    server = null
+    const reconnecting = waitForState(target, (state) => state.connection === 'reconnecting')
+    target.beginPlannedRestart()
+    await new Promise<void>((resolve) => closing.close(() => resolve()))
+
+    const readyPromise = target.waitForConnected(500)
+    target.start()
+
+    expect(await readyPromise).toBe(false)
+    expect((await reconnecting).reason).toBe('socket-error')
+  })
 })

@@ -87,6 +87,8 @@ export const CLIENT_CAPABILITIES = ['conversation_event_log', 'conversation_work
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
+export const DEFAULT_PLANNED_RESTART_GRACE_MS = 5_000
+export const DEFAULT_PLANNED_RESTART_RETRY_MS = 60
 
 export const MAX_AUTH_REJECTIONS = 3
 
@@ -105,6 +107,8 @@ export interface PipeClientOptions {
   readonly refreshLaunch?: () => LaunchContext
   readonly connectTimeoutMs?: number
   readonly handshakeTimeoutMs?: number
+  readonly plannedRestartGraceMs?: number
+  readonly plannedRestartRetryMs?: number
   readonly backoff?: BackoffOptions
   /** Injectable socket factory; tests substitute an in-memory pipe. */
   readonly createSocket?: (pipeName: string) => Socket
@@ -121,7 +125,14 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private readonly reader = new FrameReader()
   private readonly queue = new CommandQueue()
   private readonly options: Required<
-    Pick<PipeClientOptions, 'connectTimeoutMs' | 'handshakeTimeoutMs' | 'backoff'>
+    Pick<
+      PipeClientOptions,
+      | 'connectTimeoutMs'
+      | 'handshakeTimeoutMs'
+      | 'plannedRestartGraceMs'
+      | 'plannedRestartRetryMs'
+      | 'backoff'
+    >
   >
   private launch: LaunchContext
   private readonly refreshLaunch: (() => LaunchContext) | null
@@ -143,6 +154,10 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private writable = true
   private reconnectTimer: NodeJS.Timeout | null = null
   private handshakeTimer: NodeJS.Timeout | null = null
+  private plannedRestart = false
+  private plannedRestartTimer: NodeJS.Timeout | null = null
+  private suppressedState: { connection: ConnectionState; reason: string | null } | null = null
+  private readonly connectedWaiters = new Set<(connected: boolean) => void>()
   private authRejections = 0
   /**
    * `afterSequence` of the auto-resync currently awaiting a response, or
@@ -175,6 +190,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     this.options = {
       connectTimeoutMs: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
       handshakeTimeoutMs: options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS,
+      plannedRestartGraceMs: options.plannedRestartGraceMs ?? DEFAULT_PLANNED_RESTART_GRACE_MS,
+      plannedRestartRetryMs: options.plannedRestartRetryMs ?? DEFAULT_PLANNED_RESTART_RETRY_MS,
       backoff: options.backoff ?? DEFAULT_BACKOFF
     }
     this.createSocket =
@@ -204,10 +221,75 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   }
 
   stop(): void {
+    this.clearPlannedRestart()
+    this.resolveConnectedWaiters(false)
     this.stopped = true
     this.clearTimers()
     this.destroySocket()
     this.setState('starting', null)
+  }
+
+  /**
+   * Prepares the client for an intentional Core restart (e.g. applying a newly
+   * selected provider). While the new Core process is starting within the
+   * bounded grace window, transient pipe-missing errors and intermediate
+   * `starting`/`reconnecting` states are suppressed so the UI does not flash
+   * disconnection alerts; if Core fails to come back before the grace window
+   * expires, the real state is surfaced.
+   */
+  beginPlannedRestart(graceMs = this.options.plannedRestartGraceMs): void {
+    const wasConnected =
+      this.connection === 'connected' ||
+      this.connection === 'replaying' ||
+      this.connection === 'resyncing'
+    this.clearPlannedRestart()
+    this.stopped = true
+    this.clearTimers()
+    this.destroySocket()
+    this.reconnectAttempts = 0
+    if (wasConnected) {
+      this.plannedRestart = true
+      this.plannedRestartTimer = setTimeout(() => {
+        this.expirePlannedRestart()
+      }, graceMs)
+      this.plannedRestartTimer.unref?.()
+    } else {
+      this.setState('starting', null)
+    }
+  }
+
+  /** Ends a planned restart early and surfaces any suppressed state. */
+  endPlannedRestart(): void {
+    this.expirePlannedRestart()
+  }
+
+  /**
+   * Resolves once the client completes a handshake (`true`), or `false` if the
+   * client stops, hits a terminal error, or the timeout elapses first.
+   */
+  waitForConnected(timeoutMs = this.options.plannedRestartGraceMs): Promise<boolean> {
+    if (
+      !this.plannedRestart &&
+      (this.connection === 'connected' ||
+        this.connection === 'replaying' ||
+        this.connection === 'resyncing')
+    ) {
+      return Promise.resolve(true)
+    }
+    return new Promise((resolve) => {
+      let timer: NodeJS.Timeout | null = null
+      const finish = (connected: boolean): void => {
+        if (timer) {
+          clearTimeout(timer)
+          timer = null
+        }
+        this.connectedWaiters.delete(finish)
+        resolve(connected)
+      }
+      this.connectedWaiters.add(finish)
+      timer = setTimeout(() => finish(false), timeoutMs)
+      timer.unref?.()
+    })
   }
 
   /**
@@ -584,6 +666,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     this.sessionEpoch = Number(event.sessionEpoch ?? 0)
     this.reconnectAttempts = 0
     this.authRejections = 0
+    this.clearPlannedRestart()
+    this.resolveConnectedWaiters(true)
     this.setState('connected', null)
 
     // A fresh Electron process has no local sequence cursor yet. Replay the
@@ -698,6 +782,18 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       // must not be counted or scheduled twice.
       return
     }
+    if (
+      this.plannedRestart &&
+      (reason === 'socket-error' || reason === 'connect-failed' || reason === 'socket-closed')
+    ) {
+      this.setState('reconnecting', reason)
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null
+        this.openConnection()
+      }, this.options.plannedRestartRetryMs)
+      this.reconnectTimer.unref?.()
+      return
+    }
     this.reconnectAttempts += 1
     this.setState('reconnecting', reason)
     this.log('warn', 'ipc.reconnect_scheduled', { reason, error, attempt: this.reconnectAttempts })
@@ -733,7 +829,54 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     }
   }
 
+  private clearPlannedRestart(): void {
+    this.plannedRestart = false
+    this.suppressedState = null
+    if (this.plannedRestartTimer) {
+      clearTimeout(this.plannedRestartTimer)
+      this.plannedRestartTimer = null
+    }
+  }
+
+  private expirePlannedRestart(): void {
+    if (this.plannedRestartTimer) {
+      clearTimeout(this.plannedRestartTimer)
+      this.plannedRestartTimer = null
+    }
+    if (!this.plannedRestart) {
+      return
+    }
+    this.plannedRestart = false
+    this.resolveConnectedWaiters(false)
+    if (this.suppressedState) {
+      const next = this.suppressedState
+      this.suppressedState = null
+      this.setState(next.connection, next.reason)
+    }
+  }
+
+  private resolveConnectedWaiters(connected: boolean): void {
+    if (this.connectedWaiters.size === 0) {
+      return
+    }
+    for (const resolve of [...this.connectedWaiters]) {
+      resolve(connected)
+    }
+  }
+
   private setState(connection: ConnectionState, reason: string | null): void {
+    if (
+      this.plannedRestart &&
+      (connection === 'starting' || connection === 'connecting' || connection === 'reconnecting')
+    ) {
+      this.suppressedState = { connection, reason }
+      return
+    }
+    this.suppressedState = null
+    if (connection === 'version-mismatch' || connection === 'fatal') {
+      this.clearPlannedRestart()
+      this.resolveConnectedWaiters(false)
+    }
     if (this.connection === connection && this.reason === reason) {
       return
     }

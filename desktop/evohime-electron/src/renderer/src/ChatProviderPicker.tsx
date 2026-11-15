@@ -30,6 +30,7 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   const api = useShellApi()
   const { summary, apply } = useProviderState()
   const [codex, setCodex] = useState<CodexStatus | null>(null)
+  const [switching, setSwitching] = useState(false)
   const connected = CONNECTED_STATES.includes(connection)
 
   useEffect(() => {
@@ -76,11 +77,16 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   }, [onChange, options, summary?.provider, value])
 
   const select = async (next: ChatProviderMode): Promise<void> => {
-    if (!api || next === value) return
+    if (!api || next === value || switching) return
     if (next !== 'codex_cli') {
-      const outcome = await api.invoke('provider.select', { provider: next })
-      if (!outcome.ok) return
-      apply(outcome.value.summary)
+      setSwitching(true)
+      try {
+        const outcome = await api.invoke('provider.select', { provider: next })
+        if (!outcome.ok) return
+        apply(outcome.value.summary)
+      } finally {
+        setSwitching(false)
+      }
     }
     window.localStorage.setItem('evohime.chat-provider-mode', next)
     onChange(next)
@@ -92,7 +98,7 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
       <select
         aria-label={translate("Провайдер задачи")}
         value={options.some((option) => option.value === value) ? value : ''}
-        disabled={disabled || !connected || options.length === 0}
+        disabled={disabled || switching || !connected || options.length === 0}
         onChange={(event) => void select(event.target.value as ChatProviderMode)}
       >
         {options.length === 0 ? <option value="">{translate("Настрой провайдера")}</option> : null}
