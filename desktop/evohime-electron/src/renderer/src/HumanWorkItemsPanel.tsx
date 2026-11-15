@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { translate } from './i18n'
 import { useShellApi } from './shell-api'
-import type { ConnectionState } from './types'
+import type { ConnectionState } from '@shared/api'
 
 type ResponseSchema =
   | { kind: 'text' }
@@ -17,8 +17,8 @@ type WorkItemSummary = {
 
 type WorkItemDetails = {
   revision: number
-  instructions?: string
-  response_schema?: ResponseSchema
+  instructions?: string | undefined
+  response_schema?: ResponseSchema | undefined
 }
 
 type EventPayload = {
