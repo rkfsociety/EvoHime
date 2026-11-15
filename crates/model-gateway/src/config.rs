@@ -613,7 +613,7 @@ impl ModelGatewayConfig {
             ProviderKind::Mock => {
                 return Err(ProviderError::Config(
                     "mock provider is available only to tests".into(),
-                ))
+                ));
             }
             ProviderKind::Local => ModelRouteConfig::local(
                 env::var("LOCAL_PROVIDER_SESSION").unwrap_or_default(),
@@ -738,7 +738,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             ProviderKind::Mock => {
                 return Err(ProviderError::Config(
                     "mock provider is available only to tests".into(),
-                ))
+                ));
             }
         };
         if route.provider_profile_id.is_some() || route.provider_account_id.is_some() {
@@ -895,7 +895,11 @@ mod tests {
                 "https://api.tokenfactory.nebius.com/v1",
             ),
             (ProviderProfileId::Rout, "rout", "https://api.rout.my/v1"),
-            (ProviderProfileId::AnyModel, "anymodel", "https://anymodel.org/v1"),
+            (
+                ProviderProfileId::AnyModel,
+                "anymodel",
+                "https://anymodel.org/v1",
+            ),
         ];
 
         for (profile, id, endpoint) in profiles {
