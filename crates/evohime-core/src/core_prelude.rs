@@ -579,8 +579,11 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
             "content": ""
         }),
         "filesystem.patch" => serde_json::json!({
-            "path": ".evohime-catalog-probe",
-            "patch": "--- a/.evohime-catalog-probe\n+++ b/.evohime-catalog-probe\n@@\n",
+            // Preflight resolves the policy subject but does not apply a patch.
+            // Use the existing workspace root so the tool stays in the catalog
+            // even when the workspace has no files yet.
+            "path": ".",
+            "patch": "--- a/.\n+++ b/.\n@@\n",
             "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
         }),
         // Probe input must satisfy the declared `analysis.run` schema, otherwise

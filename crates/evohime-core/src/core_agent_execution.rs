@@ -157,9 +157,17 @@ fn mutation_nudge_message(available: &[String], steps_without_mutation: usize) -
     if tools.is_empty() {
         return None;
     }
+    let has_patch = tools.contains(&"filesystem.patch");
+    let has_write = tools.contains(&"filesystem.write");
+    let mutation_guidance = match (has_patch, has_write) {
+        (true, true) => " Для точечной правки уже прочитанного файла используй filesystem.patch с контекстом его строк; для нового файла или полной замены — filesystem.write.",
+        (true, false) => " Для точечной правки уже прочитанного файла используй filesystem.patch с контекстом его строк.",
+        (false, true) => " Для нового файла или полной замены используй filesystem.write.",
+        (false, false) => "",
+    };
     Some(format!(
-        "Core: изменение ещё не внесено, а успешных шагов без правки уже {steps_without_mutation}. Не повторяй чтение и не пиши отчёт вместо изменения: следующим вызовом измени файлы workspace через {} с workspace-relative путём. Для точечной правки уже прочитанного файла используй filesystem.patch с контекстом его строк, для нового файла или полной замены — filesystem.write.",
-        tools.join(" или ")
+        "Core: изменение ещё не внесено, а успешных шагов без правки уже {steps_without_mutation}. Не повторяй чтение и не пиши отчёт вместо изменения: следующим вызовом измени файлы workspace через {} с workspace-relative путём.{mutation_guidance}",
+        tools.join(" или "),
     ))
 }
 
@@ -2745,11 +2753,7 @@ mod tests {
             progress_tx: None,
         };
         let registry = ToolRegistry::bootstrap();
-        let probe = serde_json::json!({
-            "path": ".evohime-catalog-probe",
-            "patch": "--- a/.evohime-catalog-probe\n+++ b/.evohime-catalog-probe\n@@\n",
-            "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
-        });
+        let probe = super::super::catalog_preflight_input("filesystem.patch");
         let decision = registry
             .preflight(&context, "filesystem.patch", &probe)
             .await
@@ -2844,6 +2848,11 @@ mod conversation_history_tests {
         ];
         let message = mutation_nudge_message(&without_patch, 6).expect("nudge");
         assert!(!message.contains("filesystem.patch"));
+
+        let patch_only = vec!["filesystem.patch".to_string()];
+        let message = mutation_nudge_message(&patch_only, 6).expect("nudge");
+        assert!(message.contains("filesystem.patch"));
+        assert!(!message.contains("filesystem.write"));
 
         let read_only = vec!["filesystem.read".to_string()];
         assert!(mutation_nudge_message(&read_only, 6).is_none());
