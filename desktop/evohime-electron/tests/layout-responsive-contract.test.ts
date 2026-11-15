@@ -64,6 +64,11 @@ describe('responsive shell layout contract', () => {
     expect(stylesheet).toContain('grid-template-columns: minmax(0, 1fr);')
   })
 
+  it('stacks the summary above the chat at the minimum supported width', () => {
+    expect(stylesheet).toContain('.conversation-layout--summary-only {\n    grid-template-columns: minmax(0, 1fr);\n  }')
+    expect(stylesheet).toContain('.conversation-side-panels--summary-only {\n    position: static;')
+  })
+
   it('allows the top and status bars to wrap instead of overflowing', () => {
     expect(stylesheet).toContain('@media (max-width: 1080px)')
     expect(stylesheet).toContain('.topbar {\n    height: auto;\n    min-height: 48px;\n    flex-wrap: wrap;')

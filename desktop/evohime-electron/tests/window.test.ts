@@ -110,8 +110,8 @@ describe('основное окно', () => {
     expect(window.options).toMatchObject({
       width: 1_360,
       height: 860,
-      minWidth: 960,
-      minHeight: 640,
+      minWidth: 1_100,
+      minHeight: 760,
       useContentSize: true,
       center: true,
       titleBarStyle: 'hidden',

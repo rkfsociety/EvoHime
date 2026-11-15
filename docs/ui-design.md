@@ -99,7 +99,9 @@ attachments корректно остаются недоступны без вы
 - module-router and compatible-manifest CI
 
 Для завершённого визуального acceptance отдельно проверяются реальные
-Electron screenshots на Windows: 1360×860, 1100×760, 960×640; dark/light
-themes; collapsed/expanded rail; Trace + Workbench + Browser combinations;
-long prompts and long tool output; settings dialog; keyboard navigation.
+Electron screenshots на Windows: 1360×860 и 1100×760; dark/light themes;
+collapsed/expanded rail; Trace + Workbench + Browser combinations; long prompts
+and long tool output; settings dialog; keyboard navigation. Размер 1100×760 —
+минимальный размер основного окна: меньшая область не обеспечивает читаемую
+одновременную компоновку sidebar, верхней панели, сводки и composer.
 Static CSS contract tests не заменяют этот runtime screenshot audit.

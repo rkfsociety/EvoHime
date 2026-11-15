@@ -44,8 +44,8 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   const window = new BrowserWindow({
     width: 1_360,
     height: 860,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 1_100,
+    minHeight: 760,
     useContentSize: true,
     center: true,
     show: false,

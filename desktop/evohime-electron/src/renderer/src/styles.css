@@ -6402,6 +6402,13 @@ body {
     min-height: 0;
   }
 
+  /* The summary-only desktop layout has a second column. At the minimum
+     supported window width the summary is stacked above the conversation;
+     otherwise the chat is placed in an invisible second column and clipped. */
+  .conversation-layout--summary-only {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .conversation-side-panels {
     position: absolute;
     inset: 8px 8px 8px auto;
