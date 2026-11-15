@@ -189,6 +189,9 @@ pub enum ProviderProfileId {
     /// Rout hosted API profile.
     #[serde(rename = "rout")]
     Rout,
+    /// AnyModel hosted API profile.
+    #[serde(rename = "anymodel")]
+    AnyModel,
 }
 
 impl ProviderProfileId {
@@ -214,6 +217,7 @@ impl ProviderProfileId {
             Self::SambaNova => "sambanova",
             Self::Nebius => "nebius",
             Self::Rout => "rout",
+            Self::AnyModel => "anymodel",
         }
     }
 
@@ -239,6 +243,7 @@ impl ProviderProfileId {
             "sambanova" => Self::SambaNova,
             "nebius" => Self::Nebius,
             "rout" => Self::Rout,
+            "anymodel" => Self::AnyModel,
             _ => return None,
         })
     }
@@ -265,6 +270,7 @@ impl ProviderProfileId {
             Self::SambaNova => Some("https://api.sambanova.ai/v1"),
             Self::Nebius => Some("https://api.tokenfactory.nebius.com/v1"),
             Self::Rout => Some("https://api.rout.my/v1"),
+            Self::AnyModel => Some("https://anymodel.org/v1"),
         }
     }
 
@@ -829,6 +835,7 @@ mod tests {
             ProviderProfileId::SambaNova,
             ProviderProfileId::Nebius,
             ProviderProfileId::Rout,
+            ProviderProfileId::AnyModel,
         ];
 
         for profile in profiles {
@@ -888,6 +895,7 @@ mod tests {
                 "https://api.tokenfactory.nebius.com/v1",
             ),
             (ProviderProfileId::Rout, "rout", "https://api.rout.my/v1"),
+            (ProviderProfileId::AnyModel, "anymodel", "https://anymodel.org/v1"),
         ];
 
         for (profile, id, endpoint) in profiles {

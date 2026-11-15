@@ -449,7 +449,8 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 Поддерживаются LiteRouter, OpenAI Responses API, Ollama и OpenAI-compatible
 транспорт с явными профилями OpenAI, OpenRouter, Groq, Gemini, Mistral,
 Cloudflare Workers AI, NVIDIA NIM, Cerebras, Hugging Face, DeepSeek, xAI,
-Together AI, Fireworks AI, Moonshot, Z.AI, SambaNova, Nebius и generic custom;
+Together AI, Fireworks AI, Moonshot, Z.AI, SambaNova, Nebius, Rout, AnyModel и
+generic custom;
 `mock` используется только в тестах. В настройках все вендоры выбираются одним
 списком, а профиль OpenAI-compatible применяется внутри выбранного пункта.
 Ollama не требует ключа и ограничен loopback endpoint.

@@ -3070,8 +3070,8 @@ SQLite schema v100 добавляет только reliability metadata.
 
 ## Cloud Provider Profiles contract v1 (план 173, закрыт 2026-09-25)
 
-`ProviderProfileId` является явной стабильной identity для `openai`, восьми
-built-in OpenAI-compatible профилей и `custom`; она независима от
+`ProviderProfileId` является явной стабильной identity для `openai`, built-in
+OpenAI-compatible профилей (включая AnyModel) и `custom`; она независима от
 `ProviderKind` транспорта. Новые настройки оболочки сохраняют ID профиля
 отдельно от base URL. Маршруты старого формата без ID остаются совместимыми;
 только точные ранее известные endpoint могут восстановить legacy identity,
