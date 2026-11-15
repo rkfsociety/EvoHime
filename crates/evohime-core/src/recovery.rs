@@ -73,7 +73,11 @@ pub fn recovery_hint(
             "Путь не найден. Используй filesystem.search по фрагменту имени `{tool_name}`; пути должны быть workspace-relative."
         ),
         ToolFailureKind::InvalidInput => {
-            if schema.get("additionalProperties") == Some(&Value::Bool(true)) {
+            if matches!(tool_name, "process.run" | "shell.execute") {
+                format!(
+                    "Проверь ограничения и схему {tool_name}: для изменения или создания файлов используй `filesystem.patch` или `filesystem.write` (не запускай `node`, `python` и другие скриптовые интерпретаторы через `{tool_name}` и не передавай `env`). Схема: {schema}"
+                )
+            } else if schema.get("additionalProperties") == Some(&Value::Bool(true)) {
                 format!("Проверь обязательные поля инструмента {tool_name}: {description}")
             } else {
                 format!("Повтори вызов {tool_name} с JSON по схеме: {schema}")
@@ -648,5 +652,18 @@ mod tests {
         );
         assert!(hint.contains("заблокирован"));
         assert!(hint.contains("2 шаг"));
+    }
+
+    #[test]
+    fn recovery_hint_invalidinput_for_process_run_points_to_filesystem_tools() {
+        let hint = recovery_hint(
+            "process.run",
+            ToolFailureKind::InvalidInput,
+            &Value::Null,
+            &json!({"type": "object", "properties": {"command": {"type": "string"}}}),
+            "запустить процесс",
+        );
+        assert!(hint.contains("filesystem.patch"));
+        assert!(hint.contains("filesystem.write"));
     }
 }

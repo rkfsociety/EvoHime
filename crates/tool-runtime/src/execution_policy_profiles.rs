@@ -238,7 +238,7 @@ pub fn validate_program_name(program: &str) -> Result<(), ExecutionPolicyError> 
         )
     {
         return Err(ExecutionPolicyError::InvalidProfile(
-            "program must be a direct executable name",
+            "program must be a direct executable name (script interpreters like node/python are disallowed; use filesystem.patch or filesystem.write to edit files)",
         ));
     }
     Ok(())

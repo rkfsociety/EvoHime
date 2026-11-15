@@ -218,4 +218,22 @@ mod tests {
         .await;
         assert!(matches!(result, Err(ToolError::InvalidInput { .. })));
     }
+
+    #[tokio::test]
+    async fn script_interpreter_is_rejected_with_filesystem_hint() {
+        let ctx = ToolContext {
+            workspace_root: std::env::temp_dir(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let result = execute(&ctx, json!({"command": "node", "args": ["-e", "1"]})).await;
+        match result {
+            Err(ToolError::InvalidInput { message, .. }) => {
+                assert!(message.contains("program must be a direct executable name"));
+                assert!(message.contains("filesystem.patch"));
+            }
+            other => panic!("ожидался InvalidInput, получено {other:?}"),
+        }
+    }
 }
