@@ -407,7 +407,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     };
                     let Some((run_id, attempt_index)) = attempt else {
                         if let Some(journal) = &journal {
-                            if let Some((run, policy)) =
+                            if let Some((mut run, policy)) =
                                 load_continuation_context(journal, &task_id).await
                             {
                                 is_continuation_run = true;
@@ -465,6 +465,39 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                         last_attempt_output = Some(output.clone());
                                     }
                                 }
+                                if run.continuation_index == 0 {
+                                    let fingerprint = format!("{task_id}:1");
+                                    let now = crate::task_memory::now_millis() as i64;
+                                    let mut database = journal.database().lock().await;
+                                    if matches!(
+                                        evohime_local_storage::domains::runs::reserve_attempt(
+                                            database.connection_mut(),
+                                            &run.run_id,
+                                            "task",
+                                            &fingerprint,
+                                            0,
+                                            0,
+                                            now,
+                                        ),
+                                        Ok(true)
+                                    ) {
+                                        let result_json = serde_json::to_vec(&serde_json::json!({
+                                            "success": true,
+                                            "error": serde_json::Value::Null,
+                                        }))
+                                        .unwrap_or_default();
+                                        let _ = evohime_local_storage::domains::runs::finish_attempt(
+                                            database.connection(),
+                                            &run.run_id,
+                                            1,
+                                            "completed",
+                                            &result_json,
+                                            now,
+                                        );
+                                        run.continuation_index = 1;
+                                    }
+                                }
+                                continuation_index = run.continuation_index.max(1);
                                 continuation_context = Some((run, policy));
                                 continue;
                             }
@@ -1593,6 +1626,268 @@ mod timeout_tests {
                 .count(),
             1,
             "events={observed:?}"
+        );
+    }
+
+    #[test]
+    fn goal_created_during_first_attempt_continues_without_model_request_collision() {
+        std::thread::Builder::new()
+            .name("evohime-goal-dynamic-create-test".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(
+                        goal_created_during_first_attempt_continues_without_model_request_collision_inner(),
+                    );
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn goal_created_during_first_attempt_continues_without_model_request_collision_inner() {
+        use std::sync::Arc;
+        use evohime_model_gateway::{providers::mock::MockProvider, ChatResult, ModelGateway};
+
+        struct DynamicGoalExecutor {
+            agent: Arc<crate::ToolAgent>,
+            journal: EventJournal,
+            workspace: PathBuf,
+        }
+
+        impl crate::TaskExecutor for DynamicGoalExecutor {
+            fn execute(
+                &self,
+                _task_id: String,
+                _prompt: String,
+                _cancellation: tokio_util::sync::CancellationToken,
+                _events: crate::EventSink,
+            ) -> futures_util::future::BoxFuture<'static, Result<String, crate::AgentRunError>>
+            {
+                Box::pin(async { Ok("unused".into()) })
+            }
+
+            fn execute_in_conversation(
+                &self,
+                task_id: String,
+                prompt: String,
+                workspace_root: std::path::PathBuf,
+                context: crate::ConversationExecutionContext,
+                cancellation: tokio_util::sync::CancellationToken,
+                events: crate::EventSink,
+            ) -> futures_util::future::BoxFuture<'static, Result<String, crate::AgentRunError>>
+            {
+                let agent = self.agent.clone();
+                let journal = self.journal.clone();
+                let workspace = self.workspace.clone();
+                Box::pin(async move {
+                    let is_first_attempt = context.continuation_attempt.is_none();
+                    let result = agent
+                        .execute_in_conversation(
+                            task_id.clone(),
+                            prompt,
+                            workspace_root,
+                            context,
+                            cancellation,
+                            events,
+                        )
+                        .await?;
+                    let goal_id = "goal-dynamic-1";
+                    if is_first_attempt {
+                        let owner_scope =
+                            crate::task_memory::project_scope_id(&workspace.to_string_lossy());
+                        let goal = evohime_local_storage::goal::GoalV1 {
+                            id: goal_id.into(),
+                            version: 1,
+                            workspace_id: owner_scope,
+                            chat_id: None,
+                            objective: "Complete dynamic criterion c1".into(),
+                            success_criteria: vec![evohime_local_storage::goal::GoalCriterionV1::new(
+                                "c1",
+                                evohime_local_storage::goal::GoalCriterionKind::Manual,
+                                "Verify c1",
+                            )],
+                            status: evohime_local_storage::goal::GoalStatus::Active,
+                            progress_summary: "Created during first attempt".into(),
+                            completed_criteria: Vec::new(),
+                            remaining_criteria: vec!["c1".into()],
+                            blockers: Vec::new(),
+                            next_action: None,
+                            workflow_run_ids: Vec::new(),
+                            child_run_ids: Vec::new(),
+                            checkpoint_id: None,
+                            token_budget: None,
+                            cost_budget_micros: None,
+                            continuation_budget: Some(3),
+                            created_at_ms: 1,
+                            updated_at_ms: 1,
+                            created_by: "agent".into(),
+                            updated_by: "agent".into(),
+                            content_hash: String::new(),
+                        };
+                        let db = journal.database().lock().await;
+                        evohime_local_storage::goal::GoalStore::new(db.connection())
+                            .create(
+                                &goal,
+                                crate::goal::GoalCommand::new(
+                                    "agent",
+                                    "create-goal-dynamic-1",
+                                    &crate::research::sha256_hex(b"create-goal-dynamic-1"),
+                                ),
+                            )
+                            .expect("dynamic goal creates");
+                        drop(db);
+                        ensure_goal_continuation_run(&journal, &task_id, &workspace, goal_id).await;
+                    } else {
+                        let db = journal.database().lock().await;
+                        evohime_local_storage::goal::GoalStore::new(db.connection())
+                            .verify_criterion(
+                                goal_id,
+                                1,
+                                evohime_local_storage::goal::GoalCriterionEvidence {
+                                    criterion_id: "c1",
+                                    evidence_ref: "verified-on-second-attempt",
+                                    verifier_id: "agent",
+                                    verifier_version: "1",
+                                },
+                                crate::goal::GoalCommand::new(
+                                    "agent",
+                                    "verify-goal-dynamic-1",
+                                    &crate::research::sha256_hex(b"verify-goal-dynamic-1"),
+                                ),
+                            )
+                            .expect("dynamic goal verifies");
+                    }
+                    Ok(result)
+                })
+            }
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir creates");
+        let db_path = dir.path().join("events.db");
+        let workspace = dir.path().join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace creates");
+        let journal = EventJournal::open(&db_path).expect("journal opens");
+
+        let provider = MockProvider::with_tool_call_sequence(
+            "mock",
+            vec![
+                ChatResult {
+                    content: "attempt 1 created goal".into(),
+                    ..ChatResult::default()
+                },
+                ChatResult {
+                    content: "goal completed after dynamic creation".into(),
+                    ..ChatResult::default()
+                },
+            ],
+        );
+        let permissions = evohime_permissions::PermissionEngine::new();
+        permissions
+            .set_all_modes(evohime_permissions::PermissionMode::Allow)
+            .await;
+        let receipt_keys = Arc::new(evohime_receipts::key_lifecycle::ReceiptKeyManager::new(
+            dir.path(),
+        ));
+        {
+            let mut db = journal.database().lock().await;
+            receipt_keys
+                .startup_with_database(db.connection_mut())
+                .expect("receipt keys initialize");
+        }
+        let agent = Arc::new(
+            crate::ToolAgent::new(
+                Arc::new(ModelGateway::from_provider(Arc::new(provider))),
+                Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions)),
+            )
+            .with_journal(journal.clone())
+            .with_receipt_keys(receipt_keys),
+        );
+        let executor: Arc<dyn TaskExecutor> = Arc::new(DynamicGoalExecutor {
+            agent,
+            journal: journal.clone(),
+            workspace: workspace.clone(),
+        });
+
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_journal(8, Some(executor), journal.clone());
+        let task_id = "task-dynamic-goal";
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: task_id.into(),
+                prompt: "Create a goal and finish it".into(),
+                workspace_root: Some(workspace),
+                preferred_route_hint: None,
+                conversation: None,
+                goal_id: None,
+            })
+            .await
+            .expect("task dispatches");
+
+        let mut observed = Vec::new();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        while tokio::time::Instant::now() < deadline {
+            match tokio::time::timeout(Duration::from_secs(2), events.recv()).await {
+                Ok(Ok(event)) => {
+                    let is_terminal = matches!(
+                        event,
+                        CoreEvent::TaskCompleted { .. }
+                            | CoreEvent::TaskFailed { .. }
+                            | CoreEvent::TaskStopped { .. }
+                    );
+                    observed.push(event);
+                    if is_terminal {
+                        break;
+                    }
+                }
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Closed)) | Err(_) => break,
+            }
+        }
+        while let Ok(event) = events.try_recv() {
+            observed.push(event);
+        }
+
+        assert_eq!(
+            observed
+                .iter()
+                .filter(|e| matches!(e, CoreEvent::TaskCompleted { .. }))
+                .count(),
+            1,
+            "events={observed:?}"
+        );
+        assert_eq!(
+            observed
+                .iter()
+                .filter(|e| matches!(e, CoreEvent::TaskFailed { .. }))
+                .count(),
+            0,
+            "events={observed:?}"
+        );
+
+        let db = journal.database().lock().await;
+        let request_ids: Vec<String> = db
+            .connection()
+            .prepare("SELECT logical_request_id FROM model_requests WHERE logical_request_id LIKE ?1 ORDER BY rowid ASC")
+            .expect("prepare model_requests")
+            .query_map([format!("{task_id}:%")], |row| row.get(0))
+            .expect("query model_requests")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect model_requests");
+        assert!(
+            request_ids
+                .iter()
+                .any(|id| id == &format!("{task_id}:{task_id}-0")),
+            "request_ids={request_ids:?}"
+        );
+        assert!(
+            request_ids
+                .iter()
+                .any(|id| id == &format!("{task_id}:{task_id}-c2-0")),
+            "request_ids={request_ids:?}"
         );
     }
 }
