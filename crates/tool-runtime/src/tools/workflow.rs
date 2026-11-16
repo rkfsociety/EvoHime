@@ -1,6 +1,6 @@
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for reading the Core-owned workflow template catalog.
@@ -26,8 +26,8 @@ pub async fn execute(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, To
     ))
 }
 
-pub(crate) fn definition(name: &'static str) -> super::ToolDefinition {
-    super::ToolDefinition {
+pub(crate) fn definition(name: &'static str) -> crate::ToolDefinition {
+    crate::ToolDefinition {
         name,
         description: match name {
             CATALOG_NAME => "List fixed Core workflow templates and their runtime availability",

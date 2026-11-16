@@ -2717,8 +2717,9 @@ fn tool_preflight_can_be_offered(
 #[cfg(test)]
 mod tests {
     use super::{
-        ToolAgent, adaptive_catalog_query, inject_observed_expected_hash, model_tool_observation,
+        adaptive_catalog_query, inject_observed_expected_hash, model_tool_observation,
         request_allows_mutation, tool_preflight_can_be_offered, update_observed_file_revision,
+        ToolAgent,
     };
     use evohime_permissions::{Permission, PermissionEngine, PermissionMode};
     use evohime_tool_runtime::{ToolContext, ToolPreflightDecision, ToolRegistry};
@@ -2753,7 +2754,7 @@ mod tests {
 
     #[tokio::test]
     async fn workflow_catalog_and_start_report_child_executor_limitation() {
-        use evohime_model_gateway::{ModelGateway, providers::mock::MockProvider};
+        use evohime_model_gateway::{providers::mock::MockProvider, ModelGateway};
         use std::sync::Arc;
 
         let workspace = tempfile::tempdir().expect("workspace");
@@ -2786,14 +2787,12 @@ mod tests {
             )
             .await
             .expect("catalog call");
-        assert!(
-            catalog.structured["templates"]
-                .as_array()
-                .expect("templates")
-                .iter()
-                .all(|template| template["available"] == false
-                    && template["unavailable_reason"] == "child_executor_unavailable")
-        );
+        assert!(catalog.structured["templates"]
+            .as_array()
+            .expect("templates")
+            .iter()
+            .all(|template| template["available"] == false
+                && template["unavailable_reason"] == "child_executor_unavailable"));
 
         let start = agent
             .execute_workflow_tool(
@@ -2813,7 +2812,7 @@ mod tests {
 
     #[tokio::test]
     async fn workflow_status_and_cancel_are_limited_to_the_starting_workspace() {
-        use evohime_model_gateway::{ModelGateway, providers::mock::MockProvider};
+        use evohime_model_gateway::{providers::mock::MockProvider, ModelGateway};
         use std::sync::Arc;
 
         let owner_workspace = tempfile::tempdir().expect("owner workspace");

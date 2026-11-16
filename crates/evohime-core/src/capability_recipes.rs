@@ -1006,13 +1006,11 @@ mod tests {
         let recipe = descriptor("knowledge-grounding")
             .expect("catalog")
             .expect("recipe");
-        assert!(
-            validate_inputs(
-                &recipe,
-                &BTreeMap::from([("question".into(), "How does recovery work?".into())])
-            )
-            .is_ok()
-        );
+        assert!(validate_inputs(
+            &recipe,
+            &BTreeMap::from([("question".into(), "How does recovery work?".into())])
+        )
+        .is_ok());
         assert_eq!(
             validate_inputs(&recipe, &BTreeMap::from([("unknown".into(), "x".into())])),
             Err(CapabilityRecipeError::Invalid("unknown_input"))
@@ -1037,16 +1035,12 @@ mod tests {
             &parent,
         );
         assert_eq!(ready.state, CapabilityRecipePreflightState::Unsupported);
-        assert!(
-            ready
-                .reason_codes
-                .contains(&"child_executor_unavailable".into())
-        );
-        assert!(
-            !serde_json::to_string(&ready)
-                .expect("projection serializes")
-                .contains("private user question")
-        );
+        assert!(ready
+            .reason_codes
+            .contains(&"child_executor_unavailable".into()));
+        assert!(!serde_json::to_string(&ready)
+            .expect("projection serializes")
+            .contains("private user question"));
         assert_eq!(ready.run_graph_hash, "");
         assert_eq!(ready.input_hash.len(), 64);
 
@@ -1063,11 +1057,9 @@ mod tests {
             stale.state,
             CapabilityRecipePreflightState::InvalidDefinition
         );
-        assert!(
-            stale
-                .reason_codes
-                .contains(&"recipe_revision_mismatch".into())
-        );
+        assert!(stale
+            .reason_codes
+            .contains(&"recipe_revision_mismatch".into()));
 
         let unsupported_recipe = descriptor("model-comparison")
             .expect("catalog")
@@ -1085,11 +1077,9 @@ mod tests {
             unsupported.state,
             CapabilityRecipePreflightState::Unsupported
         );
-        assert!(
-            unsupported
-                .reason_codes
-                .contains(&"model_run_adapter_unavailable".into())
-        );
+        assert!(unsupported
+            .reason_codes
+            .contains(&"model_run_adapter_unavailable".into()));
 
         let structured = descriptor("structured-output")
             .expect("catalog")
@@ -1107,11 +1097,9 @@ mod tests {
             structured_preflight.state,
             CapabilityRecipePreflightState::Unsupported
         );
-        assert!(
-            structured_preflight
-                .reason_codes
-                .contains(&"child_executor_unavailable".into())
-        );
+        assert!(structured_preflight
+            .reason_codes
+            .contains(&"child_executor_unavailable".into()));
         assert!(structured_preflight.approval_points.is_empty());
         assert!(structured_preflight.workflow_budget.is_none());
     }
