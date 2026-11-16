@@ -370,10 +370,6 @@ pub fn catalog() -> Result<Vec<CapabilityRecipeDescriptor>, CapabilityRecipeErro
                 registry
                     .validate_bindings(graph, &parent)
                     .map_err(|_| CapabilityRecipeError::InvalidBinding("invalid_binding"))?;
-                let runtime_available = !graph
-                    .nodes
-                    .iter()
-                    .any(|node| matches!(&node.node_type, crate::workflow::NodeType::Child { .. }));
                 let binding = CapabilityRecipeWorkflowBinding {
                     template_id: template.template_id.clone(),
                     template_version: template.version,
@@ -383,13 +379,7 @@ pub fn catalog() -> Result<Vec<CapabilityRecipeDescriptor>, CapabilityRecipeErro
                     Some(binding),
                     template.required_capabilities.clone(),
                     template.preview.clone(),
-                    if runtime_available {
-                        CapabilityRecipeAvailability::Ready
-                    } else {
-                        CapabilityRecipeAvailability::Unsupported {
-                            reason_code: "child_executor_unavailable".into(),
-                        }
-                    },
+                    CapabilityRecipeAvailability::Ready,
                 )
             } else {
                 (
@@ -717,19 +707,6 @@ pub fn preflight(
         return result;
     }
 
-    if expanded
-        .nodes
-        .iter()
-        .any(|node| matches!(&node.node_type, crate::workflow::NodeType::Child { .. }))
-    {
-        result.state = CapabilityRecipePreflightState::Unsupported;
-        result
-            .reason_codes
-            .push("child_executor_unavailable".into());
-        seal_preflight(&mut result, parent);
-        return result;
-    }
-
     result.run_graph_hash = expanded.canonical_hash();
     result.revisions.push(pinned_revision(
         "workflow_graph",
@@ -995,8 +972,7 @@ mod tests {
         ] {
             assert!(matches!(
                 &by_id[id].availability,
-                CapabilityRecipeAvailability::Unsupported { reason_code }
-                    if reason_code == "child_executor_unavailable"
+                CapabilityRecipeAvailability::Ready
             ));
         }
     }
@@ -1034,14 +1010,20 @@ mod tests {
             &registry,
             &parent,
         );
-        assert_eq!(ready.state, CapabilityRecipePreflightState::Unsupported);
+        assert_eq!(
+            ready.state,
+            CapabilityRecipePreflightState::ReadyWithWarnings
+        );
         assert!(ready
+            .reason_codes
+            .contains(&"child_executor_rechecked_at_start".into()));
+        assert!(!ready
             .reason_codes
             .contains(&"child_executor_unavailable".into()));
         assert!(!serde_json::to_string(&ready)
             .expect("projection serializes")
             .contains("private user question"));
-        assert_eq!(ready.run_graph_hash, "");
+        assert!(!ready.run_graph_hash.is_empty());
         assert_eq!(ready.input_hash.len(), 64);
 
         let stale = preflight(
@@ -1095,12 +1077,15 @@ mod tests {
         );
         assert_eq!(
             structured_preflight.state,
-            CapabilityRecipePreflightState::Unsupported
+            CapabilityRecipePreflightState::ReadyWithWarnings
         );
-        assert!(structured_preflight
+        assert!(!structured_preflight
             .reason_codes
             .contains(&"child_executor_unavailable".into()));
-        assert!(structured_preflight.approval_points.is_empty());
-        assert!(structured_preflight.workflow_budget.is_none());
+        assert_eq!(
+            structured_preflight.approval_points,
+            vec!["approval".to_string(), "implementer".to_string()]
+        );
+        assert!(structured_preflight.workflow_budget.is_some());
     }
 }

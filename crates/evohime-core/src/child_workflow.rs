@@ -504,6 +504,13 @@ pub struct ChildProjection {
     pub lease_live: bool,
     /// Whether the task has entered dead-letter retention.
     pub dead_letter: bool,
+    /// Bounded report status for the child-task panel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_status: Option<String>,
+    /// Bounded report summary for the child-task panel. Raw tool output and
+    /// model transcripts never enter this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_summary: Option<String>,
 }
 
 /// Verifies requested context identifiers against the available parent allowlist.

@@ -142,6 +142,32 @@ fn session_version_fence_rejects_stale_snapshots() {
 }
 
 #[test]
+fn session_listing_is_bounded_and_orders_by_latest_update() {
+    let c = Connection::open_in_memory().unwrap();
+    install_schema(&c).unwrap();
+    for index in 0..70_i64 {
+        assert!(save_session(
+            &c,
+            SaveSessionInput {
+                id: &format!("session-{index:02}"),
+                protocol_id: "coding",
+                protocol_version: 1,
+                hash: "h",
+                snapshot: format!(r#"{{"index":{index}}}"#).as_bytes(),
+                status: "pinned",
+                phase: "execute",
+                version: 1,
+                now_ms: index,
+            },
+        )
+        .unwrap());
+    }
+    let rows = load_sessions_json(&c).unwrap();
+    assert_eq!(rows.len(), 64);
+    assert_eq!(rows[0], br#"{"index":69}"#);
+}
+
+#[test]
 fn duplicate_session_version_cannot_replace_state() {
     let c = Connection::open_in_memory().unwrap();
     install_schema(&c).unwrap();

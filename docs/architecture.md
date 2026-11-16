@@ -232,12 +232,19 @@ Core: `repository-research`, `plan-implement-review`,
 Отдельного раздела составных задач в Electron-навигации нет. Через обычный чат
 Core предоставляет агенту закрытые инструменты `workflow.catalog`,
 `workflow.start`, `workflow.status` и `workflow.cancel`; registry adapter
-отказывает вне Core agent runtime. Каталог помечает шаблоны с `child`-узлами
-`available=false`, а запуск и recipe preflight возвращают
-`child_executor_unavailable`, пока Core не имеет исполнителя child-узлов.
-Произвольное редактирование графов через агентские инструменты не разрешено.
-Доступ к durable run и отмене каждый раз ограничен каноническим путём текущего
-workspace, а фоновые драйверы используют общий ограниченный пул задач.
+отказывает вне Core agent runtime. `child`-узлы исполняет Core-owned
+`child_executor::RegisteredChildExecutor`: он выбирает только зарегистрированный
+профиль роли (persisted Agent Role Profile или Core-owned built-in), повторно
+проверяет `parent grants ∩ read-only policy ∩ profile ∩ requested`, берёт бюджет
+ребёнка не больше остатка родителя и вызывает только read-only инструменты через
+существующий `ToolRegistry`. Отчёт проходит
+`Validating → WaitingParentAcceptance → Accepted`, сохраняется в child store и
+попадает в fan-in как типизированный `TypedChildReport`; отдельного agent loop,
+dispatch path или board не появляется. Вложенная делегация по-прежнему
+запрещена, `NodeType::Subgraph` остаётся статическим разворачиванием графа до
+старта. Произвольное редактирование графов через агентские инструменты не
+разрешено. Доступ к durable run и отмене каждый раз ограничен каноническим путём
+текущего workspace, а фоновые драйверы используют общий ограниченный пул задач.
 
 Runtime (`workflow_runtime.rs`) durable: SQLite-схема 29
 (`workflow_runs`, `workflow_run_nodes`, `workflow_node_attempts`,

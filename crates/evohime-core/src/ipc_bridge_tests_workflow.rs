@@ -338,7 +338,7 @@ async fn capability_recipe_catalog_is_fixed_and_marks_missing_adapters_unsupport
 }
 
 #[tokio::test]
-async fn recipe_preflight_binds_hashes_and_reports_child_executor_limitation() {
+async fn recipe_preflight_binds_hashes_and_accepts_child_role_templates() {
     let (bridge, directory) = workflow_bridge("capability-recipe-preflight");
     let recipe = crate::capability_recipes::descriptor("knowledge-grounding")
         .expect("catalog")
@@ -362,14 +362,15 @@ async fn recipe_preflight_binds_hashes_and_reports_child_executor_limitation() {
     )
     .await;
     assert_eq!(event_type, "capability_recipe.preflight");
-    // Рецепт привязан к workflow-шаблону с Child-узлами: preflight обязан
-    // сообщить ограничение запуска, но всё равно связать хеши запроса.
-    assert_eq!(payload["state"], "unsupported");
-    assert_eq!(payload["error_code"], "child_executor_unavailable");
-    assert_eq!(
-        payload["reason_codes"],
-        serde_json::json!(["child_executor_unavailable"])
-    );
+    // Рецепт привязан к workflow-шаблону с Child-узлами: исполнитель роли
+    // зарегистрирован в Core, поэтому preflight связывает хеши и допускает запуск.
+    assert_eq!(payload["state"], "ready_with_warnings");
+    assert_eq!(payload["error_code"], "");
+    assert!(payload["reason_codes"]
+        .as_array()
+        .expect("reason codes")
+        .iter()
+        .all(|code| code != "child_executor_unavailable"));
     assert_eq!(payload["input_hash"].as_str().unwrap_or_default().len(), 64);
     assert_eq!(
         payload["workspace_hash"].as_str().unwrap_or_default().len(),
@@ -391,7 +392,7 @@ async fn recipe_preflight_binds_hashes_and_reports_child_executor_limitation() {
 }
 
 #[tokio::test]
-async fn guided_recipe_start_reports_child_executor_limitation_without_storing_a_run() {
+async fn guided_recipe_start_creates_a_run_for_child_role_templates() {
     let (bridge, directory) = workflow_bridge("capability-recipe-start");
     let recipe = crate::capability_recipes::descriptor("knowledge-grounding")
         .expect("catalog")
@@ -414,7 +415,7 @@ async fn guided_recipe_start_reports_child_executor_limitation_without_storing_a
         ),
     )
     .await;
-    assert_eq!(preflight["state"], "unsupported");
+    assert_eq!(preflight["state"], "ready_with_warnings");
     let request = || {
         generated::command_envelope::Command::StartCapabilityRecipe(
             generated::StartCapabilityRecipe {
@@ -433,37 +434,31 @@ async fn guided_recipe_start_reports_child_executor_limitation_without_storing_a
     };
     let (event_type, first) = ambient_call(&bridge, request()).await;
     assert_eq!(event_type, "capability_recipe.started");
-    // Start возвращает первый reason code preflight: рецепт с Child-узлами
-    // недоступен, run не создаётся и атрибуция не сохраняется.
-    assert_eq!(first["error_code"], "child_executor_unavailable");
-    assert_eq!(first["run_id"], "");
+    assert_eq!(first["error_code"], "");
+    let run_id = first["run_id"].as_str().expect("run id").to_owned();
+    assert!(!run_id.is_empty());
     assert_eq!(first["deduplicated"], false);
 
     let (_, second) = ambient_call(&bridge, request()).await;
-    assert_eq!(second["error_code"], "child_executor_unavailable");
-    assert_eq!(second["run_id"], "");
-    assert_eq!(second["deduplicated"], false);
-    assert_eq!(
-        bridge
-            .journal()
-            .capability_recipe_run_by_idempotency_key(
-                &recipe.id,
-                recipe.version,
-                "guided-recipe-start-key",
-            )
-            .await
-            .expect("idempotency query"),
-        None
-    );
-    assert_eq!(
-        bridge
-            .journal()
-            .list_workflow_runs(10)
-            .await
-            .expect("workflow rows")
-            .len(),
-        0
-    );
+    assert_eq!(second["error_code"], "");
+    assert_eq!(second["run_id"], run_id);
+    assert_eq!(second["deduplicated"], true);
+    assert!(bridge
+        .journal()
+        .capability_recipe_run_by_idempotency_key(
+            &recipe.id,
+            recipe.version,
+            "guided-recipe-start-key",
+        )
+        .await
+        .expect("idempotency query")
+        .is_some());
+    assert!(bridge
+        .journal()
+        .workflow_run(&run_id)
+        .await
+        .expect("workflow rows")
+        .is_some());
     assert!(!first
         .to_string()
         .contains("question not copied into recipe sidecar"));

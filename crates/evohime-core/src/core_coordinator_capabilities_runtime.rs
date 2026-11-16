@@ -159,6 +159,11 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             budget: typed_request.budget.clone(),
                             lease_live: false,
                             dead_letter: false,
+                            report_status: Some(
+                                crate::child_executor::report_status_str(typed_accepted.status)
+                                    .to_owned(),
+                            ),
+                            report_summary: Some(typed_accepted.summary.clone()),
                         },
                     },
                 )

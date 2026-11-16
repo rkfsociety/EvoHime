@@ -190,6 +190,7 @@ pub mod capability_registry;
 pub mod capability_selection;
 pub(crate) mod causal_collaboration_bus;
 pub mod child_contracts;
+pub mod child_executor;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod child_workflow;

@@ -529,6 +529,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             budget: typed_request.budget.clone(),
                             lease_live: false,
                             dead_letter: false,
+                            report_status: None,
+                            report_summary: None,
                         },
                     },
                 )

@@ -10,6 +10,13 @@ impl IpcBridge {
         if let Some(tools) = &self.tools {
             adapter = adapter.with_tools(Arc::clone(tools));
         }
+        let executor = crate::child_executor::RegisteredChildExecutor::new(
+            self.journal.clone(),
+            workspace_path,
+        )
+        .with_tools(self.tools.clone())
+        .with_coordinator(self.coordinator.clone());
+        adapter = adapter.with_child_executor(Arc::new(executor));
         crate::workflow_runtime::WorkflowRuntime::new(
             self.journal.clone(),
             Arc::clone(&self.workflow_registry),

@@ -205,6 +205,8 @@ interface ChildTimelineItem {
   readonly dead_letter?: boolean
   readonly parent_sequence?: number
   readonly budget?: { readonly max_tokens?: number; readonly max_time_seconds?: number; readonly max_tool_calls?: number }
+  readonly report_status?: string | null
+  readonly report_summary?: string | null
 }
 
 interface RetainedChildProjection {
@@ -998,8 +1000,9 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           <ol className="operations-timeline" aria-label={translate("Последние child события")}>
             {childProjection.slice(0, 8).map(({ event, item }) => (
               <li key={`${event.sequenceId}-${event.eventType}`}>
-                <code>{translate(item.role ?? 'child')} · {translate(item.state ?? event.eventType)}</code>
+                <code>{translate(item.role ?? 'child')} · {translate(item.state ?? event.eventType)}{item.report_status ? ` · ${translate(item.report_status)}` : ''}</code>
                 <span>{translate(item.child_task_id ?? translate("идентификатор скрыт"))} · rev {translate(item.revision ?? 0)}{translate(item.reason_code ? ` · ${item.reason_code}` : '')}{translate(item.dead_letter ? ' · dead-letter' : '')}</span>
+                {item.report_summary ? <small>{translate(item.report_summary)}</small> : null}
               </li>
             ))}
           </ol>

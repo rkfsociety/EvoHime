@@ -91,6 +91,22 @@ pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     rows
 }
 
+/// Lists serialized team sessions by most recent update, capped at 64 rows.
+///
+/// The caller decodes the bounded snapshots and applies its own workflow-run
+/// and role-profile checks. Sessions are never modified by this read.
+///
+/// # Errors
+///
+/// Returns the underlying SQLite query error.
+pub fn load_sessions_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
+    let mut statement = c.prepare(
+        "SELECT snapshot_json FROM team_sop_sessions ORDER BY updated_at_ms DESC LIMIT 64",
+    )?;
+    let rows = statement.query_map([], |row| row.get(0))?.collect();
+    rows
+}
+
 #[cfg(test)]
 #[path = "team_sop_protocols_store_tests.rs"]
 mod tests;

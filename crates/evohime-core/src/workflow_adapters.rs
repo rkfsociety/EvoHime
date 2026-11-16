@@ -39,6 +39,8 @@ pub struct ChildOutcome {
     pub summary: String,
     pub findings: Vec<String>,
     pub evidence: u32,
+    /// Deterministic JSON of the accepted `TypedChildReport`.
+    pub report_json: String,
 }
 
 pub type ChildFuture<'a> = std::pin::Pin<
@@ -73,6 +75,7 @@ impl ChildExecutor for UnavailableChildExecutor {
                 summary: format!("исполнитель роли {role} недоступен в этой сборке"),
                 findings: Vec::new(),
                 evidence: 0,
+                report_json: String::new(),
             })
         })
     }
@@ -89,7 +92,7 @@ pub struct CoreNodeAdapter {
     workspace_root: std::path::PathBuf,
     task_id: uuid::Uuid,
     session_id: Option<uuid::Uuid>,
-    child_executor: Arc<dyn ChildExecutor>,
+    child_executor: Option<Arc<dyn ChildExecutor>>,
     simulation:
         Option<Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>>,
     simulation_mode: Option<crate::tool_simulation_runtime::ToolSimulationMode>,
@@ -114,7 +117,7 @@ impl CoreNodeAdapter {
             workspace_root,
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
-            child_executor: Arc::new(UnavailableChildExecutor),
+            child_executor: None,
             simulation: None,
             simulation_mode: None,
         }
@@ -142,7 +145,7 @@ impl CoreNodeAdapter {
     }
 
     pub fn with_child_executor(mut self, executor: Arc<dyn ChildExecutor>) -> Self {
-        self.child_executor = executor;
+        self.child_executor = Some(executor);
         self
     }
 
@@ -485,23 +488,44 @@ impl NodeAdapter for CoreNodeAdapter {
                 )),
                 NodeType::Child { child } => {
                     let request = self.build_child_request(&invocation, child)?;
-                    let outcome = self.child_executor.run(&request).await?;
-                    let degraded = outcome.status == "degraded";
+                    let executor = match &self.child_executor {
+                        Some(executor) => Arc::clone(executor),
+                        None => Arc::new(
+                            crate::child_executor::RegisteredChildExecutor::new(
+                                self.journal.clone(),
+                                self.workspace_root.clone(),
+                            )
+                            .with_tools(self.tools.clone())
+                            .with_parent_capabilities(
+                                invocation.parent.grants.iter().cloned(),
+                                Some(invocation.parent.budget),
+                            ),
+                        ),
+                    };
+                    let outcome = executor.run(&request).await?;
+                    let degraded = outcome.status != "accepted";
+                    let fallback_status = outcome.status.clone();
+                    let fallback_summary = bounded(&outcome.summary);
+                    let fallback_findings = outcome.findings.clone();
+                    let report = serde_json::from_str::<serde_json::Value>(&outcome.report_json)
+                        .unwrap_or_else(|_| {
+                            json!({
+                                "status": fallback_status,
+                                "summary": fallback_summary,
+                                "findings": fallback_findings,
+                            })
+                        });
                     let success = NodeSuccess::new(json!({
                         "out": {
                             "status": outcome.status,
                             "summary": bounded(&outcome.summary),
                             "findings": outcome.findings,
                         },
-                        "report": {
-                            "status": outcome.status,
-                            "summary": bounded(&outcome.summary),
-                            "findings": outcome.findings,
-                        },
+                        "report": report,
                     }))
                     .with_evidence(outcome.evidence);
                     if degraded {
-                        Ok(success.degraded("degraded"))
+                        Ok(success.degraded(&outcome.status))
                     } else {
                         Ok(success)
                     }
@@ -542,6 +566,7 @@ impl CoreNodeAdapter {
         .map_err(|error| NodeError::permanent("invalid_child_request", error.to_string()))?;
 
         let mut grants = Vec::new();
+        let mut capabilities = Vec::new();
         for grant in &child.grants {
             let parsed = match grant.split_once(':') {
                 Some((kind, scope)) => {
@@ -558,14 +583,35 @@ impl CoreNodeAdapter {
                     format!("родитель не выдавал право {grant}"),
                 ));
             }
+            let Some(capability) = crate::child_executor::canonical_capability(grant) else {
+                return Err(NodeError::permanent(
+                    "child_effect_forbidden",
+                    format!("child grant {grant} is not read-only"),
+                ));
+            };
+            if !capabilities
+                .iter()
+                .any(|value: &String| value.as_str() == capability)
+            {
+                capabilities.push(capability.to_owned());
+            }
             grants.push(parsed);
         }
         request = request
             .with_grants(grants)
             .map_err(|error| NodeError::permanent("invalid_grant", error.to_string()))?;
         request = request
+            .with_capabilities(capabilities)
+            .map_err(|error| NodeError::permanent("invalid_grant", error.to_string()))?;
+        request = request
             .with_context(child.context_allowlist.clone())
             .map_err(|error| NodeError::permanent("invalid_context", error.to_string()))?;
+        if !child.budget.is_within(&invocation.parent.budget) {
+            return Err(NodeError::permanent(
+                "child_cannot_escalate_budget",
+                "бюджет child-узла превышает остаток родителя",
+            ));
+        }
         request = request.with_budget(
             ChildBudget::new()
                 .with_tokens(child.budget.max_tokens)
@@ -954,8 +1000,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unavailable_child_executor_returns_degraded_not_success() {
+    async fn an_explicitly_unavailable_child_executor_returns_degraded_not_success() {
         let (adapter, _dir) = adapter();
+        let adapter = adapter.with_child_executor(Arc::new(UnavailableChildExecutor));
         let registry = WorkflowRegistry::empty();
         let parent = ParentCapabilities {
             grants: BTreeSet::from(["fs.read".to_string()]),
@@ -984,6 +1031,44 @@ mod tests {
             .expect("degraded result");
         assert!(result.degraded);
         assert_eq!(result.status, "degraded");
+    }
+
+    #[tokio::test]
+    async fn a_child_node_without_a_configured_executor_uses_the_registered_role_runner() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        std::fs::write(directory.path().join("main.rs"), "fn main() {}\n").expect("file");
+        let journal = EventJournal::open(directory.path().join("core.db")).expect("journal");
+        let adapter = CoreNodeAdapter::new(journal, directory.path())
+            .with_tools(Arc::new(ToolRegistry::bootstrap()));
+        let registry = WorkflowRegistry::empty();
+        let parent = ParentCapabilities {
+            grants: BTreeSet::from(["fs.read".to_string()]),
+            budget: NodeBudget::default(),
+            context_allowlist: BTreeSet::new(),
+        };
+        let node = WorkflowNode::new(
+            "child",
+            NodeType::Child {
+                child: ChildActionProfile {
+                    role: "researcher".into(),
+                    goal: "Проверь main.rs".into(),
+                    output_schema: None,
+                    context_allowlist: vec![],
+                    artifact_allowlist: vec![],
+                    grants: vec!["fs.read".into()],
+                    budget: NodeBudget::default(),
+                    max_revisions: 1,
+                },
+            },
+            policy(),
+        );
+        let result = adapter
+            .execute(invocation(&node, &registry, &parent, BTreeMap::new()))
+            .await
+            .expect("registered role runner");
+        assert!(!result.degraded);
+        assert_eq!(result.status, "accepted");
+        assert_eq!(result.output["report"]["status"], "complete");
     }
 
     #[tokio::test]

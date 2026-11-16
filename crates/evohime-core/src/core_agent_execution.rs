@@ -248,17 +248,14 @@ impl ToolAgent {
                 let templates = crate::workflow_templates::catalog()
                     .into_iter()
                     .map(|template| {
-                        let unavailable = template.graph().nodes.iter().any(|node| {
-                            matches!(&node.node_type, crate::workflow::NodeType::Child { .. })
-                        });
                         serde_json::json!({
                             "template_id": template.template_id,
                             "version": template.version,
                             "name": template.display_name,
                             "description": template.description,
                             "inputs": template.inputs,
-                            "available": !unavailable,
-                            "unavailable_reason": if unavailable { "child_executor_unavailable" } else { "" },
+                            "available": true,
+                            "unavailable_reason": "",
                         })
                     })
                     .collect::<Vec<_>>();
@@ -283,13 +280,6 @@ impl ToolAgent {
                     Ok(graph) => graph,
                     Err(error) => return Ok(rejected(error.code())),
                 };
-                if graph
-                    .nodes
-                    .iter()
-                    .any(|node| matches!(&node.node_type, crate::workflow::NodeType::Child { .. }))
-                {
-                    return Ok(rejected("child_executor_unavailable"));
-                }
                 let graph = match self.workflow_registry.expand_subgraphs(&graph) {
                     Ok(graph) => graph,
                     Err(_) => return Ok(rejected("workflow_binding_rejected")),
@@ -2774,7 +2764,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workflow_catalog_and_start_report_child_executor_limitation() {
+    async fn workflow_catalog_and_start_accept_read_only_child_templates() {
         use evohime_model_gateway::{providers::mock::MockProvider, ModelGateway};
         use std::sync::Arc;
 
@@ -2812,8 +2802,7 @@ mod tests {
             .as_array()
             .expect("templates")
             .iter()
-            .all(|template| template["available"] == false
-                && template["unavailable_reason"] == "child_executor_unavailable"));
+            .all(|template| template["available"] == true && template["unavailable_reason"] == ""));
 
         let start = agent
             .execute_workflow_tool(
@@ -2826,9 +2815,12 @@ mod tests {
                 }),
             )
             .await
-            .expect("start is a structured refusal");
-        assert_eq!(start.structured["error_code"], "child_executor_unavailable");
-        assert_eq!(start.structured["started"], false);
+            .expect("workflow starts");
+        assert_eq!(start.structured["error_code"], "");
+        assert!(!start.structured["run_id"]
+            .as_str()
+            .unwrap_or_default()
+            .is_empty());
     }
 
     #[tokio::test]
