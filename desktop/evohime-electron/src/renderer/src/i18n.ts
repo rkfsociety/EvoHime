@@ -57,6 +57,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Закрыть трейс': 'Close trace',
   'Открыть трейс': 'Open trace',
   'Трейс': 'Trace',
+  'Транскрипт беседы': 'Conversation transcript',
   'Дополнительные панели': 'Additional panels',
   'папка не выбрана': 'No folder selected',
   'Протокол': 'Protocol',

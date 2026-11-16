@@ -3,11 +3,59 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { CommandOutcome, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import type { CommandOutcome, ConversationEventProjection, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { disabledUpdateStatus, type UpdateStatus } from '../src/shared/update'
-import { formatTrace, TracePanel } from '../src/renderer/src/TracePanel'
+import { formatConversationTranscript, formatTrace, TracePanel } from '../src/renderer/src/TracePanel'
 
 let taskIds = ['task-1']
+
+function conversationEvent(
+  sequence: number,
+  kind: string,
+  payload: unknown,
+  taskId = 'task-1'
+): ConversationEventProjection {
+  return {
+    schemaVersion: 1,
+    conversationId: 'chat-1',
+    eventId: `event-${sequence}`,
+    sequence,
+    timestampMs: sequence,
+    kind,
+    category: 'message',
+    payload,
+    correlationId: '',
+    causationId: '',
+    taskId,
+    runId: taskId,
+    turnId: taskId,
+    clientMessageId: '',
+    persistenceClass: kind === 'assistant_message_delta' ? 'transient_stream' : 'durable',
+    sensitivity: 'internal'
+  }
+}
+
+function conversationPage(events: readonly ConversationEventProjection[]): CoreEvent {
+  return {
+    sequenceId: 900,
+    taskId: '',
+    eventType: 'conversation.event',
+    payload: '',
+    executionEvent: null,
+    conversationEventLog: {
+      schemaVersion: 1,
+      operation: 'history',
+      conversationId: 'chat-1',
+      events,
+      oldestSequence: events[0]?.sequence ?? 0,
+      newestSequence: events.at(-1)?.sequence ?? 0,
+      hasOlder: false,
+      hasNewer: false,
+      earliestAvailableSequence: events[0]?.sequence ?? 0,
+      errorCode: ''
+    }
+  }
+}
 
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
@@ -403,5 +451,104 @@ describe('trace panel', () => {
     expect(trace).toContain('tool=filesystem.read iteration=3 failure_kind=denied_policy path_form=absolute path_scope=outside_workspace path_boundary_reason=absolute_path_not_allowed')
     expect(trace).toContain('"path_form": "absolute"')
     expect(trace).not.toContain('C:\\Users\\roman')
+  })
+})
+
+describe('trace transcript', () => {
+  it('renders the prompt, assistant text, tool call with arguments, output and failure', () => {
+    const lines = formatConversationTranscript([
+      conversationEvent(1, 'user_message_accepted', { content: 'проверь репозиторий' }),
+      conversationEvent(2, 'assistant_message_delta', { content: 'смотрю ' }),
+      conversationEvent(3, 'assistant_message_delta', { content: 'файлы' }),
+      conversationEvent(4, 'tool_started', { tool_name: 'filesystem.search', arguments: '{"query":"retry"}' }),
+      conversationEvent(5, 'tool_output', { tool_name: 'filesystem.search', output: 'src/retry.rs' }),
+      conversationEvent(6, 'assistant_message_failed', {
+        error_code: 'permission_denied',
+        source: 'core',
+        operation: 'task.execute'
+      }),
+      // Duplicate terminal projection: must not be rendered twice.
+      conversationEvent(7, 'task_failed', {
+        error_code: 'permission_denied',
+        source: 'core',
+        operation: 'task.execute'
+      })
+    ])
+    const transcript = lines.join('\n')
+
+    expect(transcript).toContain('### Пользователь (task=task-1)')
+    expect(transcript).toContain('проверь репозиторий')
+    expect(transcript).toContain('### Ассистент\nсмотрю файлы')
+    expect(transcript).toContain('#### → filesystem.search')
+    expect(transcript).toContain('{"query":"retry"}')
+    expect(transcript).toContain('#### ← filesystem.search')
+    expect(transcript).toContain('src/retry.rs')
+    expect(transcript).toContain('error_code=permission_denied source=core operation=task.execute')
+    expect(transcript.match(/Ошибка задачи/g)).toHaveLength(1)
+  })
+
+  it('does not duplicate a finalized answer that was already streamed', () => {
+    const lines = formatConversationTranscript([
+      conversationEvent(1, 'assistant_message_delta', { content: 'о' }),
+      conversationEvent(2, 'assistant_message_delta', { content: 'к' }),
+      conversationEvent(3, 'assistant_message_finalized', { content: 'ок' })
+    ])
+    const transcript = lines.join('\n')
+    expect(transcript).toContain('### Ассистент\nок')
+    expect(transcript).not.toContain('итог')
+    expect(transcript.match(/ок/g)).toHaveLength(1)
+  })
+
+  it('masks URLs and secret assignments before the transcript is exported', () => {
+    const lines = formatConversationTranscript([
+      conversationEvent(1, 'user_message_accepted', {
+        content: 'открой https://example.test/private и token=sk-live-abcdef'
+      })
+    ])
+    const transcript = lines.join('\n')
+    expect(transcript).not.toContain('example.test')
+    expect(transcript).not.toContain('sk-live-abcdef')
+    expect(transcript).toContain('[URL]')
+    expect(transcript).toContain('[REDACTED]')
+  })
+
+  it('adds the transcript to the exported trace and reports its size', () => {
+    const trace = formatTrace(null, 'G:/github/EvoHime', [], null, [], [
+      conversationEvent(1, 'user_message_accepted', { content: 'привет' }),
+      conversationEvent(2, 'tool_started', { tool_name: 'filesystem.list', arguments: '{"path":"."}' }),
+      conversationEvent(3, 'tool_output', { tool_name: 'filesystem.list', output: 'Cargo.toml' })
+    ])
+    expect(trace).toContain('conversation_events: 3')
+    expect(trace).toContain('transcript:')
+    expect(trace).toContain('### Пользователь (task=task-1)')
+    expect(trace).toContain('{"path":"."}')
+    expect(trace).toContain('Cargo.toml')
+  })
+
+  it('keeps the export boundary: a URL in tool output is masked, not rejected', () => {
+    const trace = formatTrace(null, null, [], null, [], [
+      conversationEvent(1, 'tool_output', { tool_name: 'browser.open', output: 'opened https://example.test/page' })
+    ])
+    expect(trace).toContain('opened [URL]')
+    expect(trace).not.toContain('example.test')
+  })
+
+  it('shows the transcript section in the panel from conversation log pages', async () => {
+    render(
+      <TracePanel
+        chatId="chat-1"
+        state={null}
+        workspace={null}
+        onClose={() => {}}
+        events={[conversationPage([
+          conversationEvent(1, 'user_message_accepted', { content: 'проверь репозиторий' }),
+          conversationEvent(2, 'tool_started', { tool_name: 'filesystem.list', arguments: '{"path":"."}' })
+        ])]}
+      />
+    )
+
+    expect(await screen.findByRole('region', { name: 'Транскрипт беседы' })).toBeTruthy()
+    expect(screen.getByText((text) => text.includes('проверь репозиторий'))).toBeTruthy()
+    expect(screen.getByText((text) => text.includes('{"path":"."}'))).toBeTruthy()
   })
 })

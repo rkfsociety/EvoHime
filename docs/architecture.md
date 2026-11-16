@@ -537,6 +537,19 @@ deterministic summary: диапазон и непрерывность sequence, 
 итог задачи, tool started/output/telemetry, bounded `tool_failures` и routing statuses. Main bridge
 отклоняет необработанные URL и чувствительные assignment-поля до native save
 dialog.
+Читаемая часть экспорта строится из Core-owned журнала conversation
+(`core.getConversationEvents`), а не из redacted trace projection: renderer
+собирает раздел `transcript:` и секцию «Транскрипт беседы» с промптом, текстом
+ассистента, вызовами инструментов, их выводом и терминальной ошибкой — теми же
+renderer-payload'ами, что показывает чат. Чтобы вызовы инструментов были
+понятны, `CoreEvent::ToolStarted` и conversation-событие `tool_started` несут
+bounded guardrail-redacted `arguments` (≤ 8 KiB с суффиксом `…[truncated]`,
+`<sensitive_data_blocked>` при блокировке guardrail) — они проходят тот же
+guardrail, что и сам вызов инструмента, и ограничены, чтобы не выбить событие из
+bounded conversation journal. Промпт, arguments и tool output при этом
+по-прежнему не пересекают projection boundary живого потока и остаются доступны
+только через conversation log; shell-граница `asTraceContent` маскирует URL и
+секретные assignment-поля перед записью файла.
 Shell-owned Ollama fallback не маскируется под Core event: main broadcast
 передаёт в trace только allow-listed `shell.ollama_download_fallback` с typed
 `error_code/source/operation`, а trace явно различает `observed=yes/no`.

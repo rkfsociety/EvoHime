@@ -2140,6 +2140,11 @@ pub enum CoreEvent {
         task_id: String,
         /// Registered tool name.
         tool_name: String,
+        /// Bounded, guardrail-redacted arguments the model requested for the
+        /// call, serialized as JSON text. Empty when the invocation carries no
+        /// model-provided arguments. Additive field: older readers ignore it.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        arguments: String,
     },
     /// Reports the bounded output of a tool invocation.
     ToolOutput {

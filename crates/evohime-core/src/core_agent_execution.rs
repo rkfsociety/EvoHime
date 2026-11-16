@@ -138,6 +138,25 @@ fn iteration_limit_final_answer(iteration: usize, max_iterations: usize) -> bool
     iteration >= max_iterations
 }
 
+/// Serializes guardrail-redacted tool arguments for the conversation trace and
+/// bounds them so one oversized value (for example an entire file body passed
+/// to `filesystem.write`) cannot push the `tool.started` event past the bounded
+/// conversation payload limit and drop it from the journal.
+fn bounded_tool_arguments(input: &serde_json::Value) -> String {
+    const MAX_TOOL_ARGUMENT_BYTES: usize = 8 * 1024;
+    const TRUNCATION_SUFFIX: &str = "…[truncated]";
+    let mut rendered = serde_json::to_string(input).unwrap_or_else(|_| "null".to_string());
+    if rendered.len() > MAX_TOOL_ARGUMENT_BYTES {
+        let mut end = MAX_TOOL_ARGUMENT_BYTES;
+        while end > 0 && !rendered.is_char_boundary(end) {
+            end -= 1;
+        }
+        rendered.truncate(end);
+        rendered.push_str(TRUNCATION_SUFFIX);
+    }
+    rendered
+}
+
 /// True when the mutation-required task has spent enough successful steps
 /// without editing to justify the next bounded nudge.
 fn mutation_nudge_due(steps_without_mutation: usize, nudges_sent: u32) -> bool {
@@ -1736,20 +1755,6 @@ impl ToolAgent {
             for call in tool_calls {
                 let hook_sequence = observability_sequence;
                 observability_sequence = observability_sequence.saturating_add(1);
-                let _ = events
-                    .send(CoreEvent::ToolStarted {
-                        task_id: task_id.clone(),
-                        tool_name: call.name.clone(),
-                    })
-                    .await;
-                write_model_trace(
-                    "tool.started",
-                    serde_json::json!({
-                        "task_id": task_id,
-                        "tool_name": call.name,
-                        "arguments": call.arguments
-                    }),
-                );
                 let mut input =
                     serde_json::from_str(&call.arguments).unwrap_or(serde_json::Value::Null);
                 let guardrail_blocked = match sensitive_data_guardrails::redact_json(
@@ -1762,6 +1767,31 @@ impl ToolAgent {
                     }
                     Err(_) => true,
                 };
+                // The conversation trace explains what the model asked a tool to
+                // do, so `tool.started` carries the requested arguments. They
+                // pass the same guardrail as the call itself and are bounded so
+                // one oversized value cannot drop the event out of the bounded
+                // conversation journal.
+                let trace_arguments = if guardrail_blocked {
+                    "<sensitive_data_blocked>".to_string()
+                } else {
+                    bounded_tool_arguments(&input)
+                };
+                let _ = events
+                    .send(CoreEvent::ToolStarted {
+                        task_id: task_id.clone(),
+                        tool_name: call.name.clone(),
+                        arguments: trace_arguments,
+                    })
+                    .await;
+                write_model_trace(
+                    "tool.started",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "tool_name": call.name,
+                        "arguments": call.arguments
+                    }),
+                );
                 if call.name == "mcp.call" {
                     input = match resolve_model_mcp_input(&self.workflow_registry, input) {
                         Ok(value) => value,

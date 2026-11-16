@@ -499,7 +499,9 @@ impl TaskCoordinator {
                 )
                 .await;
             }
-            CoreEvent::ToolStarted { task_id, tool_name } => {
+            CoreEvent::ToolStarted {
+                task_id, tool_name, ..
+            } => {
                 Self::record_audit(
                     state,
                     crate::audit::AuditKind::ToolCall,

@@ -489,6 +489,7 @@ pub(crate) async fn run_codex_cli(
         .send(CoreEvent::ToolStarted {
             task_id: task_id.clone(),
             tool_name: "codex.execute".into(),
+            arguments: String::new(),
         })
         .await;
     let _ = events
@@ -655,6 +656,7 @@ pub(crate) async fn emit_codex_event(line: &str, events: &EventSink, task_id: &s
                     .send(CoreEvent::ToolStarted {
                         task_id: task_id.to_string(),
                         tool_name: codex_command_tool_name(command),
+                        arguments: command.to_string(),
                     })
                     .await;
             }

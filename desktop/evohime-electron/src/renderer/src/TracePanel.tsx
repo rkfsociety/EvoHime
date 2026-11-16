@@ -1,13 +1,18 @@
 import { translate } from './i18n'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import type { ChatRecord, CoreEvent, ShellDiagnostic, ShellState } from '@shared/api'
+import type { ChatRecord, ConversationEventLogPage, ConversationEventProjection, CoreEvent, ShellDiagnostic, ShellState } from '@shared/api'
 import type { UpdateStatus } from '@shared/update'
 
 import { useShellApi } from './shell-api'
 import { filterEventsForChat } from './trace-filter'
 
 export { filterEventsForChat } from './trace-filter'
+
+/** Page size accepted by Core's bounded conversation history read. */
+const CONVERSATION_PAGE_LIMIT = 200
+/** Safety bound so one trace export cannot walk an unbounded history. */
+const CONVERSATION_MAX_EVENTS = 5_000
 
 export interface TraceDiagnostics {
   readonly errorCode: string
@@ -34,6 +39,8 @@ export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics 
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+  const [conversationEvents, setConversationEvents] = useState<readonly ConversationEventProjection[]>([])
+  const requestedHistory = useRef<Set<number>>(new Set())
   const traceEvents = filterEventsForChat(events, chat)
 
   useEffect(() => {
@@ -51,6 +58,48 @@ export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics 
     }
   }, [api, chatId, chatRevision])
 
+  // The redacted Core telemetry stream cannot explain a run, so the export is
+  // built from the Core-owned conversation log — the same renderer payloads the
+  // chat already shows: prompt, assistant text, tool calls with arguments and
+  // tool output. Pages arrive asynchronously over the event stream, so history
+  // is requested once here and paged backwards as older pages land.
+  useEffect(() => {
+    setConversationEvents([])
+    requestedHistory.current = new Set()
+    if (!api || chatId === null) return
+    requestedHistory.current.add(0)
+    void api.invoke('core.getConversationEvents', { conversationId: chatId, limit: CONVERSATION_PAGE_LIMIT })
+  }, [api, chatId, chatRevision])
+
+  useEffect(() => {
+    if (chatId === null) return
+    const pages: ConversationEventLogPage[] = []
+    for (const event of events) {
+      const page = event.conversationEventLog
+      if (page && page.conversationId === chatId && page.errorCode === '') pages.push(page)
+    }
+    if (pages.length === 0) return
+    setConversationEvents((previous) => {
+      const bySequence = new Map(previous.map((item) => [item.sequence, item]))
+      for (const page of pages) {
+        for (const item of page.events) {
+          if (!bySequence.has(item.sequence)) bySequence.set(item.sequence, item)
+        }
+      }
+      if (bySequence.size === previous.length) return previous
+      return [...bySequence.values()]
+        .sort((left, right) => left.sequence - right.sequence)
+        .slice(-CONVERSATION_MAX_EVENTS)
+    })
+    if (!api) return
+    for (const page of pages) {
+      if (page.hasOlder && page.oldestSequence > 1 && !requestedHistory.current.has(page.oldestSequence)) {
+        requestedHistory.current.add(page.oldestSequence)
+        void api.invoke('core.getConversationEvents', { conversationId: chatId, beforeSequence: page.oldestSequence, limit: CONVERSATION_PAGE_LIMIT })
+      }
+    }
+  }, [api, events, chatId])
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
@@ -62,7 +111,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics 
   const save = async () => {
     if (!api) return
     setSaveStatus('Сохраняю…')
-    const outcome = await api.invoke('trace.export', { content: formatTrace(state, workspace, traceEvents, update, shellDiagnostics) })
+    const outcome = await api.invoke('trace.export', { content: formatTrace(state, workspace, traceEvents, update, shellDiagnostics, conversationEvents) })
     if (!outcome.ok) {
       setSaveStatus(outcome.message)
       return
@@ -94,6 +143,12 @@ export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics 
         {state?.reason ? <p className="trace-panel__reason">{translate("Причина:")}{translate(safeTraceReason(state.reason))}</p> : null}
         <OllamaFallbackNotice events={traceEvents} shellDiagnostics={shellDiagnostics} />
         <ShellDiagnosticsView diagnostics={shellDiagnostics} />
+        {chatId !== null && conversationEvents.length > 0 ? (
+          <section className="trace-panel__transcript" aria-label={translate('Транскрипт беседы')}>
+            <h3>{translate('Транскрипт беседы')}</h3>
+            <pre>{formatConversationTranscript(conversationEvents).join('\n')}</pre>
+          </section>
+        ) : null}
         {chatId === null ? (
           <p className="trace-panel__empty">{translate("Выбери чат, чтобы открыть его трейс.")}</p>
         ) : traceEvents.length === 0 ? (
@@ -267,12 +322,135 @@ function safeTraceReason(reason: string | null): string {
   return 'unavailable'
 }
 
+/**
+ * Renders the Core-owned conversation log as a chat-like transcript: the
+ * prompt, the assistant text, each tool call with its arguments, each tool
+ * result and the terminal error. This is the part of a trace that explains to
+ * another model what the agent actually did and what stopped it.
+ */
+export function formatConversationTranscript(events: readonly ConversationEventProjection[]): string[] {
+  const lines: string[] = []
+  let stream = ''
+  let streamTask: string | null = null
+  const flushStream = () => {
+    if (stream.trim().length > 0) {
+      lines.push('### Ассистент')
+      lines.push(redactTraceText(stream))
+      lines.push('')
+    }
+    stream = ''
+    streamTask = null
+  }
+  for (const event of events) {
+    const payload = safeTracePayload(event.payload)
+    const task = event.taskId || '—'
+    switch (event.kind) {
+      case 'assistant_message_delta':
+        if (streamTask !== null && streamTask !== event.taskId) flushStream()
+        streamTask = event.taskId
+        stream += textField(payload, 'content')
+        break
+      case 'assistant_message_finalized': {
+        // A streamed answer and its authoritative copy carry the same text;
+        // keep only one so a finalized turn is not duplicated in the export.
+        const content = textField(payload, 'content')
+        const alreadyStreamed = stream.length > 0 && stream === content
+        flushStream()
+        if (!alreadyStreamed && content.trim().length > 0) {
+          lines.push(`### Ассистент, итог (task=${task})`)
+          lines.push(redactTraceText(content))
+          lines.push('')
+        }
+        break
+      }
+      case 'user_message_accepted':
+        flushStream()
+        lines.push(`### Пользователь (task=${task})`)
+        lines.push(redactTraceText(textField(payload, 'content')))
+        lines.push('')
+        break
+      case 'tool_started': {
+        flushStream()
+        lines.push(`#### → ${safeTraceToken(payload['tool_name']) ?? 'tool'}`)
+        const args = textField(payload, 'arguments')
+        if (args.trim().length > 0) {
+          lines.push('```json')
+          lines.push(redactTraceText(args))
+          lines.push('```')
+        }
+        break
+      }
+      case 'tool_output': {
+        flushStream()
+        lines.push(`#### ← ${safeTraceToken(payload['tool_name']) ?? 'tool'}`)
+        lines.push('```')
+        lines.push(redactTraceText(textField(payload, 'output')))
+        lines.push('```')
+        lines.push('')
+        break
+      }
+      // `task.failed` duplicates `assistant_message_failed` with the same
+      // bounded payload, so only the message copy is rendered.
+      case 'assistant_message_failed': {
+        flushStream()
+        lines.push(`#### Ошибка задачи (task=${task})`)
+        lines.push(
+          `error_code=${safeTraceToken(payload['error_code']) ?? 'task_failed'} ` +
+          `source=${safeTraceToken(payload['source']) ?? 'core'} ` +
+          `operation=${safeTraceToken(payload['operation']) ?? 'task.execute'}`
+        )
+        const pathForm = safeTraceToken(payload['path_form'])
+        if (pathForm) {
+          lines.push(
+            `path_form=${pathForm} ` +
+            `path_scope=${safeTraceToken(payload['path_scope']) ?? 'unknown'} ` +
+            `path_boundary_reason=${safeTraceToken(payload['path_boundary_reason']) ?? 'unknown'}`
+          )
+        }
+        lines.push('')
+        break
+      }
+      case 'usage_snapshot': {
+        flushStream()
+        lines.push(
+          `#### Модель: ${safeTraceToken(payload['model']) ?? 'unknown'} ` +
+          `(токены ↓${numberField(payload, 'input_tokens')}/↑${numberField(payload, 'output_tokens')})`
+        )
+        lines.push('')
+        break
+      }
+      default:
+        break
+    }
+  }
+  flushStream()
+  return lines
+}
+
+function safeTracePayload(value: unknown): Record<string, unknown> {
+  const redacted = redactTraceValue(value)
+  return redacted !== null && typeof redacted === 'object' && !Array.isArray(redacted)
+    ? (redacted as Record<string, unknown>)
+    : {}
+}
+
+function textField(payload: Record<string, unknown>, key: string): string {
+  const value = payload[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function numberField(payload: Record<string, unknown>, key: string): number {
+  const value = payload[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
 export function formatTrace(
   state: ShellState | null,
   workspace: string | null,
   events: readonly CoreEvent[],
   update: UpdateStatus | null = null,
-  shellDiagnostics: readonly ShellDiagnostic[] = []
+  shellDiagnostics: readonly ShellDiagnostic[] = [],
+  conversation: readonly ConversationEventProjection[] = []
 ): string {
   const lines = [
     'EvoHime trace',
@@ -286,10 +464,20 @@ export function formatTrace(
     `workspace: ${workspace ?? 'none'}`,
     `reason: ${safeTraceReason(state?.reason ?? null)}`,
     `events: ${events.length}`,
+    `conversation_events: ${conversation.length}`,
     ''
   ]
 
   appendTraceSummary(lines, events)
+
+  // The readable part of the trace: the Core-owned conversation log with the
+  // prompt, assistant text, tool calls and tool output. Content is already
+  // guardrail-redacted in Core; renderer redaction only repeats URL and
+  // sensitive-assignment masking the export boundary requires.
+  if (conversation.length > 0) {
+    lines.push('transcript:')
+    lines.push(...formatConversationTranscript(conversation))
+  }
 
   const diagnostics = events.flatMap((event) => {
     const value = parseTraceDiagnostics(formatTraceEventPayload(event.eventType, event.payload))

@@ -210,6 +210,20 @@ raw shell-log payload в renderer не передаются.
 При наличии marker он также отображается отдельной карточкой «События
 оболочки», чтобы экран и Markdown показывали один и тот же факт.
 
+Экспорт трейса дополнен читаемым транскриптом беседы: `TracePanel` читает
+Core-owned журнал conversation через `core.getConversationEvents` (те же
+renderer-payload'ы, что показывает чат) и собирает Markdown-раздел `transcript:`
+с промптом пользователя, текстом ассистента, вызовами инструментов, их выводом
+и терминальной ошибкой; та же секция «Транскрипт беседы» показывается в панели.
+`CoreEvent::ToolStarted` и conversation-событие `tool_started` теперь несут
+bounded guardrail-redacted `arguments` (≤ 8 KiB, при переполнении суффикс
+`…[truncated]`; при блокировке guardrail — `<sensitive_data_blocked>`), поэтому
+экспорт объясняет, что именно модель просила сделать. Redacted projection v3
+живого потока по-прежнему не несёт prompt, arguments или tool output: транскрипт
+строится из журнала conversation, а не перескакивает projection boundary.
+Контент транскрипта проходит ту же shell-границу `asTraceContent`, что и раньше:
+URL заменяются на `[URL]`, секретные assignment-поля — на `[REDACTED]`.
+
 Добавлены проверки очереди размера 1 с потоком событий, задержкой чтения и
 финальным `task.completed`, а также проверка явного уведомления об ошибке audit.
 В Electron bridge крупные поля проверяются отдельным UTF-8 byte-bound helper,

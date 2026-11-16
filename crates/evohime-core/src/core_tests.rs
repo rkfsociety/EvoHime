@@ -498,6 +498,7 @@ mod tests {
                     .send(CoreEvent::ToolStarted {
                         task_id: task_id.clone(),
                         tool_name: "filesystem.list".into(),
+                        arguments: r#"{"path":"."}"#.into(),
                     })
                     .await;
                 Ok("done".into())
