@@ -1917,7 +1917,7 @@ pub fn check_acceptance(node: &WorkflowNode, success: &NodeSuccess) -> Result<()
                 "схема результата узла нечитаема",
             ));
         };
-        let Ok(compiled) = jsonschema::JSONSchema::compile(&parsed) else {
+        let Ok(compiled) = jsonschema::validator_for(&parsed) else {
             return Err(NodeError::permanent(
                 "invalid_output_schema",
                 "схема результата узла не компилируется",
@@ -1960,7 +1960,7 @@ fn bounded_text(value: &str) -> String {
 fn hash_value(value: &Value) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.to_string().as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]

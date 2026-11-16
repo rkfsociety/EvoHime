@@ -61,7 +61,8 @@ async function startStubCore(pipeName: string, options: StubOptions): Promise<Se
       socket.write(challengeFrame())
     }
     socket.on('data', (chunk) => {
-      for (const frame of reader.push(chunk)) {
+      const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+      for (const frame of reader.push(bytes)) {
         const command = CommandEnvelope.decode(frame)
         const responses = options.onCommand(command, socket) ?? []
         for (const response of responses) {

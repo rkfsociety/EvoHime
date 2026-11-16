@@ -65,7 +65,7 @@ pub fn canonical_hash(v: &InteractiveModelCompareWorkbenchRecord) -> Result<Stri
     let mut c = v.clone();
     c.content_hash.clear();
     let b = serde_json::to_vec(&c).map_err(|_| Error::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(b)))
+    Ok(hex::encode(Sha256::digest(b)))
 }
 /// Validates schema version, workbench identity bounds, revision, lifecycle, and digest.
 pub fn validate(v: &InteractiveModelCompareWorkbenchRecord) -> Result<(), Error> {

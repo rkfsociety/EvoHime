@@ -291,7 +291,7 @@ impl EventJournal {
             };
             crate::workspace_rag::search_workspace_with_progress(
                 crate::workspace_rag::SearchWorkspaceInput {
-                    connection: database.connection(),
+                    connection: database.connection_mut(),
                     workspace_root: &workspace_root,
                     query: &query,
                     filters,

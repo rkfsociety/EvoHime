@@ -303,7 +303,7 @@ fn has_duplicate_keys(input: &str) -> bool {
 
 /// Computes the lowercase hexadecimal SHA-256 digest of arbitrary bytes.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 /// Computes the raw 32-byte SHA-256 digest of arbitrary bytes.

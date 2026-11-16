@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 import type { UpdateStatus } from '@shared/update'
 
@@ -25,9 +25,9 @@ interface Harness {
   readonly service: UpdateService
   readonly config: UpdateConfig
   readonly statuses: UpdateStatus[]
-  readonly spawnWorker: ReturnType<typeof vi.fn>
-  readonly build: ReturnType<typeof vi.fn>
-  readonly quit: ReturnType<typeof vi.fn>
+  readonly spawnWorker: Mock<(file: string, args: readonly string[]) => void>
+  readonly build: Mock<NonNullable<UpdateServiceDeps['build']>>
+  readonly quit: Mock<() => void>
   /** Writes a staged package as a finished background rebuild would leave it. */
   stage(commit: string): void
 }
@@ -58,8 +58,8 @@ function harness(
   const updateConfig: UpdateConfig = { ...config, launchPolicy: 'build', ...configOverrides }
 
   const statuses: UpdateStatus[] = []
-  const spawnWorker = vi.fn()
-  const quit = vi.fn()
+  const spawnWorker = vi.fn<(file: string, args: readonly string[]) => void>()
+  const quit = vi.fn<() => void>()
   const stage = (commit: string): void => {
     mkdirSync(config.stagingDirectory, { recursive: true })
     writeFileSync(join(config.stagingDirectory, 'EvoHime.exe'), 'staged shell')
@@ -70,7 +70,7 @@ function harness(
   }
   // A real build leaves the staged package behind; the stub does the same, so
   // the apply step is exercised exactly as in production.
-  const build = vi.fn(async () => {
+  const build = vi.fn<NonNullable<UpdateServiceDeps['build']>>(async () => {
     stage(REMOTE)
     return { commit: REMOTE, branch: 'main', builtAtMs: 2 }
   })
@@ -212,7 +212,7 @@ describe('launch gate', () => {
   })
 
   it.skip('legacy commit marker behavior is not part of module-version updates', async () => {
-    const downloadInstaller = vi.fn()
+    const downloadInstaller = vi.fn<NonNullable<UpdateServiceDeps['downloadInstaller']>>()
     const test = harness({
       downloadInstaller,
       publishedInstallerCommit: async () => REMOTE
@@ -585,7 +585,7 @@ describe('green commits only', () => {
   it.skip('legacy commit CI gating is not part of module-version updates', async () => {
     const { config } = harness()
     const statuses: UpdateStatus[] = []
-    const build = vi.fn()
+    const build = vi.fn<NonNullable<UpdateServiceDeps['build']>>()
     const service = new UpdateService({
       // A non-GitHub remote has no checks API the client could trust.
       config: { ...config, repositoryUrl: 'https://git.example.invalid/evo.git' },

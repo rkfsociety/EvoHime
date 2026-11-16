@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use evohime_context_budget::{
     ContextItemBuilder, ContextPlanner, HeuristicEstimator, ItemKind, OwnedContent, PlanInput,
     PlanRequest,
@@ -6,6 +6,7 @@ use evohime_context_budget::{
 use evohime_core::workflow::WorkflowGraph;
 use evohime_desktop_ipc::generated;
 use prost::Message;
+use std::hint::black_box;
 use std::sync::Arc;
 
 fn context_request() -> PlanRequest {

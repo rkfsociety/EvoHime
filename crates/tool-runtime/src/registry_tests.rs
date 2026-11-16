@@ -24,8 +24,14 @@ fn bootstrap_registers_filesystem_read() {
     let registry = ToolRegistry::bootstrap();
     let tools = registry.list();
     // Bound instead of an exact literal: adding a declared tool must not churn
-    // this assertion, while a shrinking surface still fails the test.
-    assert!(tools.len() >= 74, "declared tool surface shrank");
+    // this assertion, while a shrinking surface still fails the test. The
+    // current declared surface is 73 tools (60 direct + 9 developer utilities
+    // + 4 workflow tools).
+    assert!(
+        tools.len() >= 73,
+        "declared tool surface shrank: {} tools",
+        tools.len()
+    );
     for name in [
         "agent.run",
         "analysis.run",

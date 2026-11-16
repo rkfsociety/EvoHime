@@ -146,13 +146,13 @@ where
     }
     let config: cpal::StreamConfig = supported.into();
     let format = CaptureFormat {
-        sample_rate: config.sample_rate.0,
+        sample_rate: config.sample_rate,
         channels: config.channels,
     };
     let mut callback = build(format);
     let stream = device
         .build_input_stream(
-            &config,
+            config,
             move |data: &[f32], _| callback(data),
             move |error| {
                 let _ = error;
@@ -241,14 +241,18 @@ pub fn list_capture_devices() -> Result<Vec<CaptureDevice>, AudioError> {
     let host = cpal::default_host();
     let default_name = host
         .default_input_device()
-        .and_then(|device| device.name().ok());
+        .and_then(|device| device.description().ok())
+        .map(|description| description.name().to_owned());
     let devices = host
         .input_devices()
         .map_err(|error| AudioError::DeviceUnavailable(error.to_string()))?;
     let mut listed = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for (index, device) in devices.enumerate() {
-        let Ok(name) = device.name() else { continue };
+        let Ok(description) = device.description() else {
+            continue;
+        };
+        let name = description.name().to_owned();
         let id = device_id_from_name(&name, index);
         if !seen.insert(id.clone()) {
             continue;
@@ -295,8 +299,9 @@ where
         .enumerate()
         .find(|(index, device)| {
             device
-                .name()
-                .map(|name| device_id_from_name(&name, *index) == device_id)
+                .description()
+                .ok()
+                .map(|description| device_id_from_name(description.name(), *index) == device_id)
                 .unwrap_or(false)
         })
         .map(|(_, device)| device)

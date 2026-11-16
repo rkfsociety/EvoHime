@@ -168,7 +168,7 @@ pub fn validate_pe_artifact(
         }
         digest.update(&buffer[..count]);
     }
-    let actual = format!("{:x}", digest.finalize());
+    let actual = hex::encode(digest.finalize());
     if actual != expected_sha256.to_ascii_lowercase() {
         return Err("artifact hash mismatch".into());
     }
@@ -263,7 +263,7 @@ mod recovery_tests {
         payload[0x54..0x56].copy_from_slice(&2u16.to_le_bytes());
         payload[0x58..0x5a].copy_from_slice(&0x20bu16.to_le_bytes());
         std::fs::write(&path, &payload).unwrap();
-        let hash = format!("{:x}", sha2::Sha256::digest(&payload));
+        let hash = hex::encode(sha2::Sha256::digest(&payload));
         validate_pe_artifact(&path, payload.len() as u64, &hash).unwrap();
         assert!(validate_pe_artifact(&path, payload.len() as u64 - 1, &hash).is_err());
         assert!(validate_pe_artifact(&path, 9, &"00".repeat(32)).is_err());

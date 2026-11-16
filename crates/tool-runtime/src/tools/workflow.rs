@@ -1,6 +1,6 @@
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::time::Duration;
 
 /// Registry identifier for reading the Core-owned workflow template catalog.
@@ -37,13 +37,5 @@ pub(crate) fn definition(name: &'static str) -> crate::ToolDefinition {
         },
         permissions: PERMISSIONS,
         timeout: TIMEOUT,
-    }
-}
-
-/// Returns a bounded structured rejection suitable for a model tool result.
-pub(crate) fn unavailable(code: &str) -> ToolResult {
-    ToolResult {
-        output: format!("Workflow не запущен: {code}"),
-        structured: json!({ "started": false, "error_code": code }),
     }
 }

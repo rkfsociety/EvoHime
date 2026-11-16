@@ -38,7 +38,7 @@ impl WorkspaceVerificationFingerprint {
         Self {
             root_id: root_id.into(),
             scope: scope.into(),
-            content_hash: format!("{:x}", hasher.finalize()),
+            content_hash: hex::encode(hasher.finalize()),
             normalization: "content-v1".into(),
             complete,
         }

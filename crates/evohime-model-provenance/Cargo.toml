@@ -8,7 +8,7 @@ edition = "2021"
 evohime-receipts = { path = "../evohime-receipts" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = "0.10"
+sha2 = "0.11"
 thiserror = { workspace = true }
 uuid = { version = "1", features = ["v7"] }
 

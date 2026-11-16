@@ -88,7 +88,7 @@ pub fn canonical_hash(notebook: &Notebook) -> Result<String, NotebookError> {
     normalized.content_hash.clear();
     let bytes = serde_json::to_vec(&normalized)
         .map_err(|_| NotebookError::Invalid("notebook_not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 /// Validates schema, field bounds, entry uniqueness, and the canonical digest.
 pub fn validate(notebook: &Notebook) -> Result<(), NotebookError> {

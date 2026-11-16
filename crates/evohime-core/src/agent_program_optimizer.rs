@@ -93,7 +93,7 @@ pub fn canonical_hash(program: &AgentProgram) -> Result<String, OptimizerError> 
     normalized.content_hash.clear();
     let bytes = serde_json::to_vec(&normalized)
         .map_err(|_| OptimizerError::Invalid("program_not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 /// Validates schema, field bounds, unique steps, and the canonical digest.

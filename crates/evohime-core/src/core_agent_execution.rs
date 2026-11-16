@@ -581,17 +581,8 @@ impl ToolAgent {
         let has_active_goal = prompt.contains("<active_goal ");
         let mut appended_tool_ids = Vec::new();
         let mut required_ids = delivery_required_tool_ids(delivery_requirements);
-        let lower_prompt = prompt.to_lowercase();
-        if ["workflow", "составн", "сценар", "шаблон", "отмен", "статус"]
-            .iter()
-            .any(|marker| lower_prompt.contains(marker))
-        {
-            required_ids.extend_from_slice(&[
-                "workflow.catalog",
-                "workflow.start",
-                "workflow.status",
-                "workflow.cancel",
-            ]);
+        if request_mentions_workflow(&prompt) {
+            required_ids.extend_from_slice(&WORKFLOW_TOOL_IDS);
         }
         if !has_active_goal {
             required_ids.push("goal.create");

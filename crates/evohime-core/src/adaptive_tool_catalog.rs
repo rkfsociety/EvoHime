@@ -281,12 +281,12 @@ fn cache_key(
     hasher.update(projection.grant_hash.as_bytes());
     hasher.update(query.trim().as_bytes());
     hasher.update(format!("{selector:?}:{limit}").as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", hex::encode(hasher.finalize()))
 }
 
 fn hash_json<T: Serialize>(value: &T) -> String {
     let bytes = serde_json::to_vec(value).unwrap_or_default();
-    format!("sha256:{:x}", Sha256::digest(bytes))
+    format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
 }
 
 fn bounded_hash(value: &str) -> String {

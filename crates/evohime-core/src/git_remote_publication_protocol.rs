@@ -58,7 +58,7 @@ pub fn canonical_hash(p: &PublicationProtocol) -> Result<String, ProtocolError> 
     n.content_hash.clear();
     let bytes =
         serde_json::to_vec(&n).map_err(|_| ProtocolError::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 /// Validates schema version, bounded identifiers, revision, and content hash.
 pub fn validate(p: &PublicationProtocol) -> Result<(), ProtocolError> {

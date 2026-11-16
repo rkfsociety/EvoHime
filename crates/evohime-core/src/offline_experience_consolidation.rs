@@ -48,7 +48,7 @@ pub fn canonical_hash(c: &ConsolidationCycle) -> Result<String, ConsolidationErr
     n.content_hash.clear();
     let b = serde_json::to_vec(&n)
         .map_err(|_| ConsolidationError::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(b)))
+    Ok(hex::encode(Sha256::digest(b)))
 }
 /// Validates the schema version, field bounds, references, and canonical hash.
 pub fn validate(c: &ConsolidationCycle) -> Result<(), ConsolidationError> {

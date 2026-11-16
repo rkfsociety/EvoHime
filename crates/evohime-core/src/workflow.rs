@@ -1133,7 +1133,7 @@ impl WorkflowGraph {
     pub fn canonical_hash(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.canonical_json().as_bytes());
-        format!("{:x}", hasher.finalize())
+        hex::encode(hasher.finalize())
     }
 
     /// Returns the node with the given identifier, if it exists.

@@ -1325,21 +1325,18 @@ impl crate::EventJournal {
                 "invalid_context_namespace_command".into(),
             ));
         }
-        let command_hash = format!(
-            "{:x}",
-            Sha256::digest(
-                [
-                    command.operation.as_bytes(),
-                    b"\0",
-                    command.namespace_id.as_bytes(),
-                    b"\0",
-                    &command.expected_revision.to_le_bytes(),
-                    b"\0",
-                    &command.payload,
-                ]
-                .concat()
-            )
-        );
+        let command_hash = hex::encode(Sha256::digest(
+            [
+                command.operation.as_bytes(),
+                b"\0",
+                command.namespace_id.as_bytes(),
+                b"\0",
+                &command.expected_revision.to_le_bytes(),
+                b"\0",
+                &command.payload,
+            ]
+            .concat(),
+        ));
         let mutation = matches!(
             command.operation.as_str(),
             "register_node" | "register_projection" | "save_view" | "record_trace"

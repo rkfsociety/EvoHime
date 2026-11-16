@@ -344,7 +344,7 @@ fn extract_zip(archive_path: &Path, destination: &Path) -> io::Result<()> {
             ));
         }
         reserve_extraction(&mut total_bytes, entry.size())?;
-        let raw_name = entry.name().replace('\\', "/");
+        let raw_name = entry.name().map_err(io::Error::other)?.replace('\\', "/");
         let path = safe_archive_path(Path::new(&raw_name))?;
         let target = destination.join(path);
         if entry.is_dir() {

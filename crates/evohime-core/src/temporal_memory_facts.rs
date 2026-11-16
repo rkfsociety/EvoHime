@@ -65,7 +65,7 @@ pub fn canonical_hash(v: &TemporalMemoryFactsRecord) -> Result<String, Error> {
     let mut c = v.clone();
     c.content_hash.clear();
     let b = serde_json::to_vec(&c).map_err(|_| Error::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(b)))
+    Ok(hex::encode(Sha256::digest(b)))
 }
 /// Validates the schema, fact-set identity, revision, lifecycle, and digest.
 pub fn validate(v: &TemporalMemoryFactsRecord) -> Result<(), Error> {

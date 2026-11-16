@@ -17,8 +17,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
-    "paths": { "@shared/*": ["src/shared/*"] },
+    "paths": { "@shared/*": ["./src/shared/*"] },
     "allowJs": false,
     "noEmit": true,
     "composite": true

@@ -337,7 +337,7 @@ pub fn public_key_bytes(value: &str) -> Result<Vec<u8>, KeyError> {
 }
 /// Derives the stable key identifier from raw public-key bytes.
 pub fn key_id(public_key: &[u8]) -> String {
-    format!("ed25519:{:x}", Sha256::digest(public_key))
+    format!("ed25519:{}", hex::encode(Sha256::digest(public_key)))
 }
 /// Hashes the canonical serialized representation of a signed transition.
 pub fn transition_hash(transition: &KeyTransition) -> Result<String, KeyError> {
@@ -345,7 +345,7 @@ pub fn transition_hash(transition: &KeyTransition) -> Result<String, KeyError> {
 }
 /// Returns a lowercase hexadecimal SHA-256 digest.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 /// Commits the authoritative transition and its bounded audit reference in a
@@ -748,7 +748,7 @@ impl ReceiptKeyManager {
         SystemRandom::new()
             .fill(&mut key)
             .map_err(|_| KeyError::DpapiFailed)?;
-        let id = format!("{:x}", Sha256::digest(key));
+        let id = hex::encode(Sha256::digest(key));
         let metadata = StorageKeyMetadata {
             storage_version: 1,
             key_id: id,
@@ -771,7 +771,7 @@ impl ReceiptKeyManager {
             .map_err(|_| KeyError::Corrupt)?;
         let plain = unprotect(&protected)?;
         if plain.len() != STORAGE_KEY_BYTES
-            || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id
+            || hex::encode(Sha256::digest(&plain)) != metadata.key_id
         {
             return Err(KeyError::Corrupt);
         }
@@ -898,7 +898,7 @@ impl ReceiptKeyManager {
             .map_err(|_| KeyError::Corrupt)?;
         let plain = unprotect(&protected)?;
         if plain.len() != STORAGE_KEY_BYTES
-            || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id
+            || hex::encode(Sha256::digest(&plain)) != metadata.key_id
         {
             return Err(KeyError::Corrupt);
         }

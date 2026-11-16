@@ -283,10 +283,8 @@ mod tests {
     /// probe both see, so schema drift fails here instead of at runtime.
     fn schema_accepts(input: &Value) -> bool {
         let schema = input_schema();
-        let compiled =
-            jsonschema::JSONSchema::compile(&schema).expect("analysis.run schema compiles");
-        let accepted = compiled.validate(input).is_ok();
-        accepted
+        let compiled = jsonschema::validator_for(&schema).expect("analysis.run schema compiles");
+        compiled.validate(input).is_ok()
     }
 
     #[test]

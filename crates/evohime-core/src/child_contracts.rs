@@ -405,18 +405,13 @@ impl Schema {
         if let Some(schema) = &self.json_schema {
             let schema_value: serde_json::Value = serde_json::from_str(schema)
                 .map_err(|_| ContractError::SchemaValidation("schema is not valid JSON".into()))?;
-            let compiled = jsonschema::JSONSchema::compile(&schema_value)
+            let compiled = jsonschema::validator_for(&schema_value)
                 .map_err(|error| ContractError::SchemaValidation(error.to_string()))?;
             let value: serde_json::Value = serde_json::from_str(content)
                 .map_err(|_| ContractError::SchemaValidation("content is not valid JSON".into()))?;
-            if let Err(mut errors) = compiled.validate(&value) {
-                return Err(ContractError::SchemaValidation(
-                    errors
-                        .next()
-                        .map(|error| error.to_string())
-                        .unwrap_or_else(|| "content does not match schema".into()),
-                ));
-            };
+            if let Err(error) = compiled.validate(&value) {
+                return Err(ContractError::SchemaValidation(error.to_string()));
+            }
         }
         Ok(())
     }
@@ -529,7 +524,7 @@ impl Provenance {
     pub fn compute_hash(content: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
-        format!("{:x}", hasher.finalize())
+        hex::encode(hasher.finalize())
     }
 }
 

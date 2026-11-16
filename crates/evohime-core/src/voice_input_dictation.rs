@@ -56,7 +56,7 @@ pub fn canonical_hash(p: &DictationProfile) -> Result<String, DictationError> {
     n.content_hash.clear();
     let bytes =
         serde_json::to_vec(&n).map_err(|_| DictationError::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 /// Validates schema version, bounded identifiers, and the canonical profile hash.
 pub fn validate(p: &DictationProfile) -> Result<(), DictationError> {

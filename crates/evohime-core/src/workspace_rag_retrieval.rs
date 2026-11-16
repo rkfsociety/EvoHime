@@ -26,7 +26,7 @@ pub fn estimate_tokens(text: &str) -> usize {
 }
 
 pub fn search_workspace(
-    connection: &Connection,
+    connection: &mut Connection,
     workspace_root: &Path,
     query: &str,
     filters: QueryFilters,
@@ -45,7 +45,7 @@ pub fn search_workspace(
 }
 
 pub fn search_workspace_with_config(
-    connection: &Connection,
+    connection: &mut Connection,
     workspace_root: &Path,
     query: &str,
     filters: QueryFilters,
@@ -66,7 +66,7 @@ pub fn search_workspace_with_config(
 }
 
 pub struct SearchWorkspaceInput<'a, F> {
-    pub connection: &'a Connection,
+    pub connection: &'a mut Connection,
     pub workspace_root: &'a Path,
     pub query: &'a str,
     pub filters: QueryFilters,
@@ -231,7 +231,7 @@ pub fn search_workspace_with_progress<F: FnMut(RetrievalProgress)>(
         let remaining = Duration::from_millis(loop_config.wall_clock_timeout_ms)
             .saturating_sub(started.elapsed());
         evidence = match bounded_lexical_retrieval(BoundedLexicalRetrievalInput {
-            connection,
+            connection: &mut *connection,
             workspace_root,
             workspace_key: &key,
             generation,
@@ -246,7 +246,7 @@ pub fn search_workspace_with_progress<F: FnMut(RetrievalProgress)>(
                 let retry_remaining = Duration::from_millis(loop_config.wall_clock_timeout_ms)
                     .saturating_sub(started.elapsed());
                 match bounded_lexical_retrieval(BoundedLexicalRetrievalInput {
-                    connection,
+                    connection: &mut *connection,
                     workspace_root,
                     workspace_key: &key,
                     generation,
@@ -366,7 +366,7 @@ pub fn search_workspace_with_progress<F: FnMut(RetrievalProgress)>(
     let mut fallback_reason = None;
     if hybrid.enabled && hybrid_allowed(&plan, hybrid) {
         match hybrid_retrieval(HybridRetrievalInput {
-            connection,
+            connection: &*connection,
             workspace_root,
             workspace_key: &key,
             generation,
@@ -551,7 +551,7 @@ fn unresolved_conflict(evidence: &[RetrievedChunk]) -> bool {
 }
 
 struct BoundedLexicalRetrievalInput<'a> {
-    connection: &'a Connection,
+    connection: &'a mut Connection,
     workspace_root: &'a Path,
     workspace_key: &'a str,
     generation: i64,
@@ -567,18 +567,20 @@ fn bounded_lexical_retrieval(
         return Err(RagError::Timeout);
     }
     let deadline = Instant::now() + input.timeout;
-    input
-        .connection
-        .progress_handler(1_000, Some(move || Instant::now() >= deadline));
+    let connection = input.connection;
+    // rusqlite 0.43 takes `&mut self` for both progress-handler calls; the
+    // timeout guard stays best-effort, so a registration failure only drops the
+    // interrupt and leaves the bounded loop itself in charge of iteration caps.
+    let _ = connection.progress_handler(1_000, Some(move || Instant::now() >= deadline));
     let result = lexical_retrieval(
-        input.connection,
+        connection,
         input.workspace_root,
         input.workspace_key,
         input.generation,
         input.plan,
         input.limits,
     );
-    input.connection.progress_handler(0, None::<fn() -> bool>);
+    let _ = connection.progress_handler(0, None::<fn() -> bool>);
     match result {
         Err(RagError::Sqlite(error)) if error.to_string().to_lowercase().contains("interrupt") => {
             Err(RagError::Timeout)

@@ -634,10 +634,37 @@ pub(crate) fn request_allows_mutation(prompt: &str) -> bool {
     .allows_mutation
 }
 
+/// Ограниченный workflow-набор, который модель получает при workflow-intent.
+///
+/// Каталог и обязательные инструменты агентского цикла используют один и тот
+/// же список: расхождение отнимает у модели `workflow.*` ровно тогда, когда
+/// задача без них невыполнима.
+pub(crate) const WORKFLOW_TOOL_IDS: [&str; 4] = [
+    "workflow.catalog",
+    "workflow.start",
+    "workflow.status",
+    "workflow.cancel",
+];
+
+/// Определяет workflow-intent запроса по устойчивым маркерам.
+///
+/// Хелпер общий для `adaptive_catalog_query` и обязательного набора
+/// инструментов, чтобы лексический top-N не расходился с intent-роутингом.
+pub(crate) fn request_mentions_workflow(prompt: &str) -> bool {
+    let prompt = prompt.to_lowercase();
+    ["workflow", "составн", "сценар", "шаблон", "отмен", "статус"]
+        .iter()
+        .any(|marker| prompt.contains(marker))
+}
+
 pub(crate) fn adaptive_catalog_query(prompt: &str, mutation_intent: bool) -> String {
     let mut query = prompt.to_owned();
     if requires_workspace_research_catalog(prompt) {
         query.push_str(" filesystem.list filesystem.read filesystem.search");
+    }
+    if request_mentions_workflow(prompt) {
+        query.push(' ');
+        query.push_str(&WORKFLOW_TOOL_IDS.join(" "));
     }
     if mutation_intent {
         query.push_str(

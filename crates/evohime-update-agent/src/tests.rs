@@ -11,7 +11,7 @@ use sha2::Digest;
 use std::{
     fs,
     io::Write,
-    path::Path,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -343,7 +343,7 @@ fn streams_shell_host_hash_and_reports_size() {
     fs::write(&path, b"shell-host").expect("write shell host");
     let (size, hash) = stream_file_hash(&path).expect("hash shell host");
     assert_eq!(size, 10);
-    assert_eq!(hash, format!("{:x}", sha2::Sha256::digest(b"shell-host")));
+    assert_eq!(hash, hex::encode(sha2::Sha256::digest(b"shell-host")));
     fs::remove_file(path).expect("remove shell host");
 }
 
@@ -480,8 +480,21 @@ fn duplicate_archive_paths_are_rejected() {
 
 #[test]
 fn archive_paths_reject_windows_only_separators_and_streams() {
-    assert!(super::normalize_archive_path(Path::new(r"assets\\app.js")).is_none());
+    // `zip` normalizes entry names itself, so the raw name is what must not
+    // smuggle a backslash-separated path past the component checks.
+    assert!(super::normalize_enclosed_archive_path(
+        r"assets\app.js",
+        Some(PathBuf::from("assets").join("app.js"))
+    )
+    .is_none());
     assert!(super::normalize_archive_path(Path::new("assets/app.js:stream")).is_none());
+    assert_eq!(
+        super::normalize_enclosed_archive_path(
+            "assets/app.js",
+            Some(PathBuf::from("assets").join("app.js"))
+        ),
+        Some(PathBuf::from("assets").join("app.js"))
+    );
 }
 
 #[test]

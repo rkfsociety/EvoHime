@@ -200,23 +200,20 @@ pub struct EnvironmentProfileCommand {
 }
 
 fn command_hash(command: &EnvironmentProfileCommand) -> String {
-    format!(
-        "{:x}",
-        Sha256::digest(
-            [
-                command.owner_scope.as_bytes(),
-                b"\0",
-                command.operation.as_bytes(),
-                b"\0",
-                command.profile_id.as_bytes(),
-                b"\0",
-                &command.expected_revision.to_le_bytes(),
-                b"\0",
-                &command.payload,
-            ]
-            .concat()
-        )
-    )
+    hex::encode(Sha256::digest(
+        [
+            command.owner_scope.as_bytes(),
+            b"\0",
+            command.operation.as_bytes(),
+            b"\0",
+            command.profile_id.as_bytes(),
+            b"\0",
+            &command.expected_revision.to_le_bytes(),
+            b"\0",
+            &command.payload,
+        ]
+        .concat(),
+    ))
 }
 
 /// Result returned by an owner when resolving a resource reference.
@@ -305,7 +302,7 @@ fn id(value: &str) -> bool {
 }
 fn hash<T: Serialize>(value: &T) -> Result<String, EnvironmentProfileError> {
     let bytes = serde_json::to_vec(value).map_err(|_| EnvironmentProfileError::InvalidBinding)?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 fn canonical_profile_hash(

@@ -10,7 +10,7 @@
 // планах интерфейс.
 #![allow(dead_code)]
 
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::SysRng, TryRng};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
@@ -180,7 +180,9 @@ impl LocalProviderManager {
         record.references = record.references.saturating_add(1);
         record.idle_since_ms = None;
         let mut token = vec![0u8; 32];
-        OsRng.fill_bytes(&mut token);
+        SysRng
+            .try_fill_bytes(&mut token)
+            .map_err(|_| LocalError::Unavailable)?;
         let mut hash = [0u8; 32];
         hash.copy_from_slice(&Sha256::digest(&token));
         let expires_at_ms = now_ms.saturating_add(SESSION_TTL_MS);

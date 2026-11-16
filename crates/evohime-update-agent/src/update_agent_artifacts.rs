@@ -136,9 +136,8 @@ pub(super) fn extract_ui_bundle_inner(
         if entry.is_symlink() {
             return Err("updater: UI archive содержит symlink".to_owned());
         }
-        let relative = entry
-            .enclosed_name()
-            .and_then(|path| normalize_archive_path(&path))
+        let raw_name = entry.name().map_err(|error| error.to_string())?;
+        let relative = normalize_enclosed_archive_path(&raw_name, entry.enclosed_name())
             .ok_or_else(|| "updater: UI archive содержит небезопасный путь".to_owned())?;
         if !extracted_paths.insert(relative.to_owned()) {
             return Err("updater: UI archive содержит повторяющийся путь".to_owned());
@@ -200,9 +199,8 @@ pub(super) fn extract_shell_host_inner(
         if entry.is_symlink() {
             return Err("updater: shell-host archive содержит symlink".to_owned());
         }
-        let relative = entry
-            .enclosed_name()
-            .and_then(|path| normalize_archive_path(&path))
+        let raw_name = entry.name().map_err(|error| error.to_string())?;
+        let relative = normalize_enclosed_archive_path(&raw_name, entry.enclosed_name())
             .ok_or_else(|| "updater: shell-host archive содержит небезопасный путь".to_owned())?;
         if !extracted_paths.insert(relative.to_owned()) {
             return Err("updater: shell-host archive содержит повторяющийся путь".to_owned());
@@ -271,9 +269,8 @@ pub(super) fn extract_updater_package_inner(
         if entry.is_symlink() {
             return Err("updater: updater package содержит symlink".to_owned());
         }
-        let relative = entry
-            .enclosed_name()
-            .and_then(|path| normalize_archive_path(&path))
+        let raw_name = entry.name().map_err(|error| error.to_string())?;
+        let relative = normalize_enclosed_archive_path(&raw_name, entry.enclosed_name())
             .ok_or_else(|| "updater: updater package содержит небезопасный путь".to_owned())?;
         if !extracted_paths.insert(relative.to_owned()) {
             return Err("updater: updater package содержит повторяющийся путь".to_owned());
@@ -348,10 +345,24 @@ pub(super) fn copy_reader_bounded<R: Read, W: Write>(
     }
 }
 
-pub(super) fn normalize_archive_path(path: &Path) -> Option<PathBuf> {
-    if path.to_string_lossy().contains('\\') {
+/// Reduces one archive entry to a destination-relative extraction path.
+///
+/// [`zip::read::ZipFile::enclosed_name`] applies the Windows name rules and
+/// returns an already-normalized [`PathBuf`], which is spelled with backslashes
+/// on Windows. Those separators come from normalization rather than from the
+/// stored name, so the raw name is checked separately: a writer must not be
+/// able to smuggle a backslash-separated name past the component checks.
+pub(super) fn normalize_enclosed_archive_path(
+    raw_name: &str,
+    enclosed: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if raw_name.contains('\\') {
         return None;
     }
+    normalize_archive_path(&enclosed?)
+}
+
+pub(super) fn normalize_archive_path(path: &Path) -> Option<PathBuf> {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {

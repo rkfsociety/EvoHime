@@ -286,7 +286,7 @@ pub fn observation_hash(value: &HardwareFitObservation) -> Result<String, Hardwa
     let mut copy = value.clone();
     copy.content_hash.clear();
     let bytes = serde_json::to_vec(&copy).map_err(|_| HardwareFitError::InvalidField("json"))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 /// Validates identity bounds, metrics, sample count, and content hash.

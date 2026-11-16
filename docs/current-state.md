@@ -267,7 +267,7 @@ server, внешний Node.js runtime, cloud control plane и обязател�
 
 | Слой | Реализация | Подтверждение |
 | --- | --- | --- |
-| UI | Electron 43.4.0, React 19.2.8, TypeScript 5.9.3, Vite 7.3.6 | `desktop/evohime-electron/package.json` |
+| UI | Electron 45.3.3, React 19.3.1, TypeScript 7.0.2, Vite 8.3.8 | `desktop/evohime-electron/package.json` |
 | IPC | `desktop-ipc-v1`, protobuf bindings, HMAC-сессия supervisor | `crates/desktop-ipc/`, `npm run check:protocol` |
 | Core | Rust agent runtime, tools, SQLite и provider gateway | `crates/evohime-core/`, `crates/model-gateway/` |
 | Supervisor | mutex, Job Object, lifecycle и recovery | `crates/evohime-supervisor/` |

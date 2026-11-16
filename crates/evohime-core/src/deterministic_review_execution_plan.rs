@@ -49,7 +49,7 @@ pub fn canonical_hash(p: &ReviewPlan) -> Result<String, ReviewError> {
     v.content_hash.clear();
     let bytes =
         serde_json::to_vec(&v).map_err(|_| ReviewError::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 /// Validates plan bounds, lifecycle, evidence references, and canonical hash.
 pub fn validate(p: &ReviewPlan) -> Result<(), ReviewError> {

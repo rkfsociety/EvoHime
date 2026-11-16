@@ -266,11 +266,7 @@ fn self_test_inner(install_dir: &Path) -> Result<(), String> {
         }
         digest.update(&buffer[..count]);
     }
-    validate_pe_artifact(
-        &current,
-        metadata.len(),
-        &format!("{:x}", digest.finalize()),
-    )?;
+    validate_pe_artifact(&current, metadata.len(), &hex::encode(digest.finalize()))?;
     let data = data_directory(install_dir);
     fs::create_dir_all(data.join("update-state")).map_err(|e| e.to_string())?;
     if let Some(journal) = read_recovery_journal(&data.join("update-state").join("recovery.json"))?
@@ -359,7 +355,7 @@ fn hash_file(path: &Path) -> Result<String, String> {
         }
         digest.update(&buffer[..count]);
     }
-    Ok(format!("{:x}", digest.finalize()))
+    Ok(hex::encode(digest.finalize()))
 }
 
 const MODULE_IDS: &[&str] = &[

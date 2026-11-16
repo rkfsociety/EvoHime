@@ -151,7 +151,7 @@ pub fn content_hash(kind: &str, form: &ContentForm<'_>) -> String {
     hasher.update(kind.as_bytes());
     hasher.update([0x00]);
     hasher.update(normalized_bytes(form));
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Тот же алгоритм, но с явной версией нормализатора: нужен тестам совместимости
@@ -167,7 +167,7 @@ pub fn content_hash_with_version(
     hasher.update(kind.as_bytes());
     hasher.update([0x00]);
     hasher.update(normalized_bytes(form));
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Хеш произвольной строки — используется для `context_ledger_hash` и
@@ -175,7 +175,7 @@ pub fn content_hash_with_version(
 pub fn sha256_hex(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]

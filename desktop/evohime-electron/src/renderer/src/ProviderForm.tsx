@@ -10,6 +10,7 @@ import {
   type ModelTier,
   type ProviderKind,
   type ProviderProfileId,
+  type ProviderProfileSummary,
   type ProviderSummary,
   type RequestPacingSettings,
   type FreeAccessProbePolicy,
@@ -34,6 +35,18 @@ import { useProviderState } from './provider-state'
 
 /** A single provider choice: transport-level provider or fixed vendor profile. */
 type ProviderChoice = Exclude<ProviderKind, 'openai_compatible'> | ProviderProfileId
+
+/**
+ * Probe policy lives on individual profiles; a transport-level summary has no
+ * such field, so read it only when the stored record is a profile.
+ */
+function profileProbePolicy(
+  summary: ProviderSummary | ProviderProfileSummary | undefined
+): FreeAccessProbePolicy | undefined {
+  return summary !== undefined && 'freeAccessProbePolicy' in summary
+    ? summary.freeAccessProbePolicy
+    : undefined
+}
 
 const PROVIDER_CHOICES: readonly { readonly value: ProviderChoice; readonly label: string }[] = [
   { value: 'literouter', label: 'LiteRouter' },
@@ -202,7 +215,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setAccountId(savedMatches ? (saved?.accountId ?? '') : '')
     setProbePolicy(
       savedMatches
-        ? (saved?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
+        ? (profileProbePolicy(saved) ?? defaultProbePolicy(nextProvider, nextProfileId))
         : defaultProbePolicy(nextProvider, nextProfileId)
     )
     applyPacing(pacingOrDefault(saved?.requestPacing, nextProvider))
@@ -328,7 +341,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     && (provider !== 'openai_compatible' || profileId !== 'cloudflare_workers_ai' || cloudflareAccountValid)
     && (!(probePolicy === 'on_first_use' || probePolicy === 'periodic_bounded') ||
       acknowledgeProbePossibleCost ||
-      (probePolicy === selectedProfile?.freeAccessProbePolicy && apiKey.trim().length === 0 &&
+      (probePolicy === profileProbePolicy(selectedProfile) && apiKey.trim().length === 0 &&
         profileId === selectedProfile?.profileId && baseUrl === selectedProfile?.baseUrl && accountId === (selectedProfile?.accountId ?? '')))
   const displayBaseUrl = profileId === 'cloudflare_workers_ai' && cloudflareAccountValid
     ? `https://api.cloudflare.com/client/v4/accounts/${accountId.trim()}/ai/v1`

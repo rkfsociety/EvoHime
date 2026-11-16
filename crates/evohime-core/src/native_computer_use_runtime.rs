@@ -68,7 +68,7 @@ pub fn canonical_hash(v: &NativeComputerUseRuntimeRecord) -> Result<String, Erro
     let mut c = v.clone();
     c.content_hash.clear();
     let b = serde_json::to_vec(&c).map_err(|_| Error::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(b)))
+    Ok(hex::encode(Sha256::digest(b)))
 }
 /// Validates the record version, identity bounds, lifecycle, and digest.
 pub fn validate(v: &NativeComputerUseRuntimeRecord) -> Result<(), Error> {

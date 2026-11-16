@@ -1,5 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use evohime_core::{task_memory, visible_agent_text, workspace};
+use std::hint::black_box;
 use std::path::Path;
 
 fn visible_text_benchmark(c: &mut Criterion) {

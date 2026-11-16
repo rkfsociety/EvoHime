@@ -32,31 +32,31 @@ evohime-remote = { path = "../evohime-remote" }
 prost = "0.14"
 futures-util = "0.3"
 serde_json = { workspace = true }
-jsonschema = "0.18.3"
+jsonschema = "0.61"
 serde = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = { workspace = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "deflate", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "gzip", "brotli", "deflate", "stream"] }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-rusqlite = { version = "0.32.1", features = ["bundled", "hooks"] }
+rusqlite = { version = "0.43", features = ["bundled", "hooks"] }
 ring = "0.17"
 unicode-normalization = "0.1"
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
-rand = "0.8"
+rand = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-base64 = "0.22"
+base64 = "0.23"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_SystemInformation", "Win32_System_Threading"] }
-windows = { version = "0.54", features = ["Win32_Graphics_Dxgi", "Win32_Graphics_Imaging", "Win32_System_Com"] }
+windows = { version = "0.62", features = ["Win32_Graphics_Dxgi", "Win32_Graphics_Imaging", "Win32_System_Com"] }
 
 [dev-dependencies]
 wiremock = "0.6"
 tempfile = "3"
-criterion = "0.5"
+criterion = "0.8"
 
 [[bench]]
 name = "legacy_parser"

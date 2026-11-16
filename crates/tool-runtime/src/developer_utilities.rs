@@ -10,7 +10,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
     Engine,
 };
-use rand::RngCore;
+use rand::{rngs::SysRng, TryRng};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256, Sha512};
 use std::time::Duration;
@@ -152,7 +152,7 @@ pub async fn execute(
         }
         HASH_SHA256 => {
             let text = text_input(name, &input)?;
-            let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+            let digest = hex::encode(Sha256::digest(text.as_bytes()));
             result(
                 name,
                 json!({"algorithm":"sha256","digest":digest}),
@@ -162,7 +162,7 @@ pub async fn execute(
         }
         HASH_SHA512 => {
             let text = text_input(name, &input)?;
-            let digest = format!("{:x}", Sha512::digest(text.as_bytes()));
+            let digest = hex::encode(Sha512::digest(text.as_bytes()));
             result(
                 name,
                 json!({"algorithm":"sha512","digest":digest}),
@@ -220,7 +220,9 @@ pub async fn execute(
                 });
             }
             let mut bytes = vec![0; length as usize];
-            rand::thread_rng().fill_bytes(&mut bytes);
+            SysRng.try_fill_bytes(&mut bytes).map_err(|error| {
+                ToolError::Execution(format!("secure random generation failed: {error}"))
+            })?;
             let value = URL_SAFE_NO_PAD.encode(bytes);
             result(
                 name,

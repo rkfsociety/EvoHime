@@ -16,8 +16,9 @@ path = "src/main.rs"
 evohime_tx = { package = "evohime-updater", path = "../evohime-updater" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = "0.10"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+sha2 = "0.11"
+hex = "0.4"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 tempfile = "3"

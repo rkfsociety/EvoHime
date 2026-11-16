@@ -406,7 +406,7 @@ fn add_path_finding(out: &mut Vec<String>, path: &Path) {
 fn fingerprint(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
-    format!("sha256:{:x}", h.finalize())
+    format!("sha256:{}", hex::encode(h.finalize()))
 }
 
 #[cfg(test)]

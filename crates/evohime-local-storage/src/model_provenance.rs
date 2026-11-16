@@ -1335,10 +1335,10 @@ fn row_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<ModelRequestRecord> {
 }
 
 fn hash_bytes(value: &str) -> String {
-    format!("{:x}", Sha256::digest(value.as_bytes()))
+    hex::encode(Sha256::digest(value.as_bytes()))
 }
 fn hash_bytes_bytes(value: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(value))
+    hex::encode(Sha256::digest(value))
 }
 fn line(value: &[u8]) -> Vec<u8> {
     let mut bytes = value.to_vec();

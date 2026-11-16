@@ -167,7 +167,7 @@ impl Frame {
         let mut hasher = Sha256::new();
         hasher.update(b"evohime-remote-frame-v1\0");
         hasher.update(bytes);
-        Ok(format!("{:x}", hasher.finalize()))
+        Ok(hex::encode(hasher.finalize()))
     }
 }
 

@@ -264,7 +264,7 @@ fn canonical_json(value: &serde_json::Value) -> String {
 pub fn content_hash(package: &WorkflowPackage) -> String {
     let mut hasher = Sha256::new();
     hasher.update(canonical_json(&content_value(package)).as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 pub fn export_preview(
@@ -484,7 +484,7 @@ pub fn read_package(path: &Path) -> Result<WorkflowPackage, WorkflowPackageError
 fn source_fingerprint(path: &Path) -> String {
     let mut hasher = Sha256::new();
     hasher.update(path.to_string_lossy().as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Writes a preview package through an atomic temp-to-final operation. The

@@ -68,7 +68,7 @@ pub fn canonical_hash(v: &CommandCenterRecord) -> Result<String, Error> {
     let mut c = v.clone();
     c.content_hash.clear();
     let b = serde_json::to_vec(&c).map_err(|_| Error::Invalid("not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(b)))
+    Ok(hex::encode(Sha256::digest(b)))
 }
 /// Checks the schema version, record bounds, lifecycle, and canonical digest.
 pub fn validate(v: &CommandCenterRecord) -> Result<(), Error> {

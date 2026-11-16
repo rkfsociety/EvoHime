@@ -315,7 +315,7 @@ impl ToolManifest {
     pub fn canonical_hash(&self) -> Result<String, serde_json::Error> {
         let mut h = Sha256::new();
         h.update(self.canonical_json()?);
-        Ok(format!("sha256:{:x}", h.finalize()))
+        Ok(format!("sha256:{}", hex::encode(h.finalize())))
     }
 }
 

@@ -148,7 +148,7 @@ fn loop_limits_use_fixed_priority_and_emit_a_terminal_event() {
     fixture.write("README.md", "bounded evidence");
     fixture.index();
     let result = search_workspace_with_config(
-        fixture.database.connection(),
+        fixture.database.connection_mut(),
         &fixture.root,
         "bounded evidence",
         QueryFilters {
@@ -183,7 +183,7 @@ fn loop_limits_use_fixed_priority_and_emit_a_terminal_event() {
         .is_some_and(|request| request.requires_approval));
     let mut live_events = Vec::new();
     let _ = search_workspace_with_progress(SearchWorkspaceInput {
-        connection: fixture.database.connection(),
+        connection: fixture.database.connection_mut(),
         workspace_root: &fixture.root,
         query: "bounded evidence",
         filters: QueryFilters {
@@ -222,7 +222,7 @@ fn generation_publication_retrieval_and_incremental_reuse_work() {
     let status = get_index_status(fixture.database.connection(), &fixture.root).unwrap();
     assert_eq!(status.generation, Some(2));
     let result = search_workspace(
-        fixture.database.connection(),
+        fixture.database.connection_mut(),
         &fixture.root,
         "validate_token",
         QueryFilters {
@@ -391,7 +391,7 @@ fn vector_publication_is_atomic_and_hybrid_has_bounded_rrf_explanation() {
     .unwrap();
     assert!(index_id.is_some());
     let result = search_workspace(
-        fixture.database.connection(),
+        fixture.database.connection_mut(),
         &fixture.root,
         "search_workspace",
         QueryFilters {
@@ -406,7 +406,7 @@ fn vector_publication_is_atomic_and_hybrid_has_bounded_rrf_explanation() {
     assert_eq!(result.evidence[0].ranking_explanation.algorithm, "rrf");
     assert!(result.evidence[0].ranking_explanation.sources.len() <= 2);
     let vector_only = search_workspace(
-        fixture.database.connection(),
+        fixture.database.connection_mut(),
         &fixture.root,
         "concept_without_lexical_match",
         QueryFilters {
@@ -425,7 +425,7 @@ fn vector_publication_is_atomic_and_hybrid_has_bounded_rrf_explanation() {
     }));
     for _ in 0..24 {
         let lexical = search_workspace(
-            fixture.database.connection(),
+            fixture.database.connection_mut(),
             &fixture.root,
             "search_workspace",
             QueryFilters {
@@ -437,7 +437,7 @@ fn vector_publication_is_atomic_and_hybrid_has_bounded_rrf_explanation() {
         )
         .unwrap();
         let hybrid_result = search_workspace(
-            fixture.database.connection(),
+            fixture.database.connection_mut(),
             &fixture.root,
             "search_workspace",
             QueryFilters {
@@ -519,7 +519,7 @@ fn repeated_chunks_keep_their_persisted_byte_ranges() {
     );
     fixture.index();
     let result = search_workspace(
-        fixture.database.connection(),
+        fixture.database.connection_mut(),
         &fixture.root,
         "repeated evidence marker",
         QueryFilters {
@@ -549,7 +549,7 @@ fn context_ledger_contains_only_metadata_and_race_makes_citation_stale() {
     fixture.write("README.md", "# Stable fact\nThe answer is forty two.\n");
     fixture.index();
     let search = search_workspace(
-        fixture.database.connection(),
+        fixture.database.connection_mut(),
         &fixture.root,
         "forty two",
         QueryFilters {

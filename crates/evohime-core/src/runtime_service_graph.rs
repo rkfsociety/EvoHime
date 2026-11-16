@@ -101,7 +101,7 @@ pub fn canonical_hash(graph: &RuntimeServiceGraph) -> Result<String, GraphError>
     normalized.content_hash.clear();
     let bytes = serde_json::to_vec(&normalized)
         .map_err(|_| GraphError::Invalid("graph_not_serializable".into()))?;
-    Ok(format!("{:x}", Sha256::digest(bytes)))
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 /// Validates schema, bounds, node uniqueness, edge references, and content digest.
