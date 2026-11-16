@@ -354,19 +354,13 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     },
                 )
                 .map_err(|error| error.to_string())?;
-                let record = evohime_local_storage::domains::agents::HandoffRecord {
-                    handoff_id: envelope.handoff_id.clone(),
-                    task_id: envelope.task_id.clone(),
-                    kind: handoff_kind_str(envelope.kind).to_string(),
-                    status: handoff_status_str(envelope.status).to_string(),
-                    from_role: role_identity_display(&from),
-                    to_role: role_identity_display(&to),
-                    sequence: envelope.sequence,
-                    envelope_json: envelope
-                        .to_deterministic_json()
-                        .map_err(|error| error.to_string())?,
-                };
-                journal.save_child_handoff(&record).await?;
+                crate::child_workflow::save_handoff_envelope(
+                    &journal,
+                    &envelope,
+                    crate::core_domains::handoff_status_str(envelope.status),
+                )
+                .await
+                .map_err(|error| error.message().to_owned())?;
                 TaskCoordinator::record_audit(
                     &state,
                     crate::audit::AuditKind::Evidence,
@@ -375,8 +369,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     [
                         ("handoff_id".to_owned(), envelope.handoff_id.clone()),
                         ("task_id".to_owned(), task_id),
-                        ("from_role".to_owned(), record.from_role.clone()),
-                        ("to_role".to_owned(), record.to_role.clone()),
+                        (
+                            "from_role".to_owned(),
+                            crate::core_domains::role_identity_display(&from),
+                        ),
+                        (
+                            "to_role".to_owned(),
+                            crate::core_domains::role_identity_display(&to),
+                        ),
                     ],
                 )
                 .await;
@@ -486,55 +486,16 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     request_json,
                 };
                 journal.save_child_task_request(&record).await?;
-                let now_ms = task_memory::now_millis() as i64;
-                journal
-                    .save_coordinator_checkpoint(
-                        &evohime_local_storage::domains::agents::CoordinatorCheckpointRecord {
-                            schema_version: 1,
-                            child_task_id: request.child_task_id.clone(),
-                            parent_task_id: request.parent_task_id.clone(),
-                            revision: 0,
-                            state: "created".into(),
-                            failure_reason: None,
-                            dead_letter: false,
-                            report_json: None,
-                            evidence_locators_json: None,
-                            provenance_hashes_json: None,
-                            parent_sequence: parent_sequence as i64,
-                            lease_deadline_monotonic_ms: Some(
-                                now_ms + crate::child_workflow::DEFAULT_LEASE_MS as i64,
-                            ),
-                            lease_created_monotonic_ms: Some(now_ms),
-                            lease_clock_boot_id: Some("current".into()),
-                            lease_holder_process_id: Some(std::process::id().to_string()),
-                            last_transition_event: "child.request.submitted".into(),
-                            last_transition_at_ms: now_ms,
-                            created_at_ms: now_ms,
-                        },
-                    )
-                    .await?;
-                TaskCoordinator::emit_state_event(
-                    &state,
-                    CoreEvent::ChildWorkflowProjection {
-                        task_id: request.parent_task_id.clone(),
-                        projection: crate::child_workflow::ChildProjection {
-                            event_id: format!("{}:created", request.child_task_id),
-                            parent_task_id: request.parent_task_id.clone(),
-                            child_task_id: request.child_task_id.clone(),
-                            role: request.role.clone(),
-                            revision: 0,
-                            state: crate::child_workflow::CoordinatorState::Created,
-                            reason_code: None,
-                            parent_sequence,
-                            budget: typed_request.budget.clone(),
-                            lease_live: false,
-                            dead_letter: false,
-                            report_status: None,
-                            report_summary: None,
-                        },
-                    },
+                crate::child_workflow::persist_child_checkpoint(
+                    &journal,
+                    crate::child_workflow::ChildProjectionSink::CoordinatorState(&state),
+                    &typed_request,
+                    crate::child_workflow::CoordinatorState::Created,
+                    None,
+                    None,
                 )
-                .await;
+                .await
+                .map_err(|error| error.message().to_owned())?;
                 TaskCoordinator::record_audit(
                     &state,
                     crate::audit::AuditKind::Evidence,

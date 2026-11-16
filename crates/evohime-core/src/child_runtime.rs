@@ -294,6 +294,8 @@ pub enum ChildRuntimeError {
     ForbiddenCapability(String),
     /// Nested child delegation is prohibited.
     NestedChildForbidden,
+    /// The request claims `parent_is_child` without a running child context.
+    ChildContextRequired,
     /// Returned report does not belong to the request's child identifier.
     TaskMismatch,
     /// Report contains duplicate evidence references.
@@ -318,6 +320,10 @@ impl fmt::Display for ChildRuntimeError {
                 write!(f, "forbidden child capability: {capability}")
             }
             Self::NestedChildForbidden => write!(f, "nested child delegation is forbidden"),
+            Self::ChildContextRequired => write!(
+                f,
+                "parent_is_child requires an active Core child execution context"
+            ),
             Self::TaskMismatch => write!(f, "report child_task_id does not match request"),
             Self::DuplicateSource => write!(f, "report contains duplicate sources"),
             Self::SecretLikeContent => write!(f, "secret-like content is not allowed"),
@@ -355,7 +361,11 @@ impl ChildTaskRequest {
         validate_text("parent_task_id", &self.parent_task_id, MAX_ID_CHARS)?;
         validate_text("role", &self.role, MAX_ROLE_CHARS)?;
         if self.parent_is_child {
-            return Err(ChildRuntimeError::NestedChildForbidden);
+            return Err(if crate::child_execution_context::is_child_execution() {
+                ChildRuntimeError::NestedChildForbidden
+            } else {
+                ChildRuntimeError::ChildContextRequired
+            });
         }
         if self.reduced_context.len() > MAX_CONTEXT_ITEMS {
             return Err(ChildRuntimeError::TooManyItems {
@@ -554,7 +564,7 @@ mod tests {
         nested.parent_is_child = true;
         assert_eq!(
             nested.validate(),
-            Err(ChildRuntimeError::NestedChildForbidden)
+            Err(ChildRuntimeError::ChildContextRequired)
         );
 
         let mut mutating = request();
@@ -563,6 +573,18 @@ mod tests {
             mutating.validate(),
             Err(ChildRuntimeError::ForbiddenCapability(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn marked_child_context_still_forbids_nested_delegation() {
+        let mut nested = request();
+        nested.parent_is_child = true;
+        let result = crate::child_execution_context::scope(
+            crate::child_execution_context::ChildExecutionContext::new("child-1", "task-1"),
+            async move { nested.validate() },
+        )
+        .await;
+        assert_eq!(result, Err(ChildRuntimeError::NestedChildForbidden));
     }
 
     #[test]

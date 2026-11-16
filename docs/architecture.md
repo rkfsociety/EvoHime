@@ -189,12 +189,35 @@ scope grant и выбранный context, поэтому renderer не полу
 budget, lease, reason, dead-letter) и отделяет trace projection от audit.
 
 Вложенная делегация запрещена безусловно: `TypedChildTaskRequest::validate` и
-`child_runtime::ChildTaskRequest::validate` возвращают `nested_child_forbidden`
-раньше проверки capability, поэтому профиль роли (включая `coordinator`) не
-может разрешить dispatch `Child`-узла. У coordinator-ребёнка остаётся только
-read-only набор `workspace.read/search`, `git.status/diff`; delegation-
-capability (`child.spawn`, `workflow.start` и т. п.) не входит в канонический
-read-only контракт и отклоняется при создании запроса.
+`child_runtime::ChildTaskRequest::validate` возвращают ошибку раньше проверки
+capability, поэтому профиль роли (включая `coordinator`) не может разрешить
+dispatch `Child`-узла. У coordinator-ребёнка остаётся только read-only набор
+`workspace.read/search`, `git.status/diff`; delegation-capability
+(`child.spawn`, `workflow.start` и т. п.) не входит в канонический read-only
+контракт и отклоняется при создании запроса.
+
+Поле `parent_is_child` само по себе — утверждение вызывающей стороны, а не
+доказательство. Доверие к нему проверяется по runtime-маркеру
+`child_execution_context::ChildExecutionContext`: `RegisteredChildExecutor`
+устанавливает task-local контекст только вокруг выполнения воркера, а
+`validate` читает его. Маркер не сериализуется, не входит в IPC-контракт и не
+наследуется другим task, поэтому command handler и IPC никогда не могут его
+подделать. Если `parent_is_child = true`, а маркера нет, запрос отклоняется
+типизированной ошибкой `child_context_missing`; если маркер есть, вложенная
+делегация по-прежнему запрещена и даёт `nested_child_forbidden`. Запрос без
+маркера и без child-признака остаётся обычным верхнеуровневым вызовом.
+
+Lifecycle и accepted-report запись имеют один writer:
+`child_workflow::persist_child_checkpoint` и
+`child_workflow::record_accepted_child_report`. Executor и legacy-команды
+`SubmitChildRequest`/`SubmitChildReport` используют его для создания
+checkpoint, bounded projection, принятия `TypedChildReport`, записи
+`ChildReportRecord`, проверки `CollaborationMessage` и durable handoff-строки.
+Поэтому одинаковый отчёт даёт одинаковые состояние, revision, budget,
+`report_status`, `report_summary` (не длиннее 512 символов), provenance и
+evidence locators независимо от входного пути; полный отчёт по-прежнему
+ограничен 8192 символами на текстовое поле и 32 KiB сериализованного вывода и
+остаётся в child store.
 
 Pinned TeamSession загружается ограниченно: не более 64 сессий по последнему
 обновлению и не более 64 KiB на сериализованный snapshot; листинг усекается, а
@@ -254,10 +277,11 @@ Core предоставляет агенту закрытые инструмен
 профиль роли (persisted Agent Role Profile или Core-owned built-in), повторно
 проверяет `parent grants ∩ read-only policy ∩ profile ∩ requested`, берёт бюджет
 ребёнка не больше остатка родителя и вызывает только read-only инструменты через
-существующий `ToolRegistry`. Отчёт проходит
-`Validating → WaitingParentAcceptance → Accepted`, сохраняется в child store и
-попадает в fan-in как типизированный `TypedChildReport`; отдельного agent loop,
-dispatch path или board не появляется. Вложенная делегация по-прежнему
+существующий `ToolRegistry`. Lifecycle, accepted report, projection и handoff
+пишутся общим `child_workflow`-writer'ом, который использует и legacy IPC. Отчёт
+проходит `Validating → WaitingParentAcceptance → Accepted`, сохраняется в child
+store и попадает в fan-in как типизированный `TypedChildReport`; отдельного agent
+loop, dispatch path или board не появляется. Вложенная делегация по-прежнему
 запрещена, `NodeType::Subgraph` остаётся статическим разворачиванием графа до
 старта. Произвольное редактирование графов через агентские инструменты не
 разрешено. Доступ к durable run и отмене каждый раз ограничен каноническим путём

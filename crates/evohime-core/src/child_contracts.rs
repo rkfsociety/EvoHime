@@ -759,7 +759,11 @@ impl TypedChildTaskRequest {
 
         // Validate nested child
         if self.parent_is_child {
-            return Err(ContractError::NestedChildForbidden);
+            return Err(if crate::child_execution_context::is_child_execution() {
+                ContractError::NestedChildForbidden
+            } else {
+                ContractError::ChildContextRequired
+            });
         }
 
         // Validate context
@@ -1458,6 +1462,8 @@ pub enum ContractError {
     ForbiddenCapability(String),
     /// A child request attempted to delegate another child.
     NestedChildForbidden,
+    /// The request claims `parent_is_child` without a running child context.
+    ChildContextRequired,
 
     // Grant errors
     /// A requested grant exceeds the parent grant.
@@ -1519,6 +1525,10 @@ impl fmt::Display for ContractError {
                 write!(f, "forbidden child capability: {capability}")
             }
             Self::NestedChildForbidden => write!(f, "nested child delegation is forbidden"),
+            Self::ChildContextRequired => write!(
+                f,
+                "parent_is_child requires an active Core child execution context"
+            ),
             Self::GrantEscalation { grant } => {
                 write!(f, "grant escalation detected: {grant}")
             }
@@ -1712,10 +1722,19 @@ mod tests {
         // Test invalid nested child
         let mut nested = request.clone();
         nested.parent_is_child = true;
-        assert!(matches!(
-            nested.validate(),
-            Err(ContractError::NestedChildForbidden)
-        ));
+        assert_eq!(nested.validate(), Err(ContractError::ChildContextRequired));
+    }
+
+    #[tokio::test]
+    async fn test_marked_child_context_forbids_nested_delegation() {
+        let mut nested = create_test_request();
+        nested.parent_is_child = true;
+        let result = crate::child_execution_context::scope(
+            crate::child_execution_context::ChildExecutionContext::new("child-1", "task-1"),
+            async move { nested.validate() },
+        )
+        .await;
+        assert_eq!(result, Err(ContractError::NestedChildForbidden));
     }
 
     #[test]

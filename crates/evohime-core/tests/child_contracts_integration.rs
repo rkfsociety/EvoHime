@@ -148,7 +148,7 @@ fn test_nested_child_forbidden() {
     request.parent_is_child = true;
     assert!(matches!(
         request.validate(),
-        Err(ContractError::NestedChildForbidden)
+        Err(ContractError::ChildContextRequired)
     ));
 }
 

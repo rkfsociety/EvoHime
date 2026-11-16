@@ -460,9 +460,16 @@ timeline `child.workflow` со статусом роли и кратким от�
 вывода инструментов. Run status и cancel доступны только из workspace, в котором
 запуск был создан. Вложенная делегация остаётся запрещённой для любой роли,
 включая `coordinator`: проверка выполняется до capability-проверок, а
-delegation-capability отсутствует в read-only контракте. TeamSession читается не
-более 64 записей по 64 KiB (snapshot сверх лимита не сохраняется), а projection
-несёт `report_status` из enum и `report_summary` не длиннее 512 символов.
+delegation-capability отсутствует в read-only контракте. `parent_is_child`
+проверяется не только как поле запроса: executor устанавливает runtime-маркер
+`ChildExecutionContext` вокруг воркера, поэтому claim без маркера отклоняется
+как `child_context_missing`, а маркер нельзя подделать из IPC или legacy-команды.
+Executor и legacy `SubmitChildRequest`/`SubmitChildReport` используют один
+`child_workflow` writer для checkpoint, projection, accepted report и handoff —
+одинаковый отчёт даёт одинаковые структуры независимо от пути. TeamSession
+читается не более 64 записей по 64 KiB (snapshot сверх лимита не сохраняется), а
+projection несёт `report_status` из enum и `report_summary` не длиннее 512
+символов.
 
 Внутренние runtime-контракты, execution backends, безопасность, диагностика и
 организация агентов не представлены отдельными вкладками: это Core/agent/model

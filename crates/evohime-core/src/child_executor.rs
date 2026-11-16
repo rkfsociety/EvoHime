@@ -543,40 +543,12 @@ impl RegisteredChildExecutor {
         Ok(None)
     }
 
-    async fn emit_projection(
-        &self,
-        request: &TypedChildTaskRequest,
-        state: CoordinatorState,
-        report: Option<&TypedChildReport>,
-        reason: Option<String>,
-        lease_live: bool,
-    ) {
-        let projection = crate::child_workflow::ChildProjection {
-            event_id: format!("{}:{}", request.child_task_id, state.as_str()),
-            parent_task_id: request.parent_task_id.clone(),
-            child_task_id: request.child_task_id.clone(),
-            role: request.role.clone(),
-            revision: report
-                .and_then(|report| report.revision)
-                .unwrap_or_default(),
-            state,
-            reason_code: reason,
-            parent_sequence: request.correlation.parent_sequence,
-            budget: request.budget.clone(),
-            lease_live,
-            dead_letter: state == CoordinatorState::Failed,
-            report_status: report.map(|report| report_status_str(report.status).to_owned()),
-            report_summary: report
-                .map(|report| crate::child_workflow::bounded_report_summary(&report.summary)),
-        };
-        let event = crate::CoreEvent::ChildWorkflowProjection {
-            task_id: request.parent_task_id.clone(),
-            projection,
-        };
-        if let Some(coordinator) = &self.coordinator {
-            coordinator.emit(event).await;
-        } else {
-            let _ = self.journal.record(&event).await;
+    fn projection_sink(&self) -> crate::child_workflow::ChildProjectionSink<'_> {
+        match &self.coordinator {
+            Some(coordinator) => {
+                crate::child_workflow::ChildProjectionSink::Coordinator(coordinator)
+            }
+            None => crate::child_workflow::ChildProjectionSink::Journal(&self.journal),
         }
     }
 
@@ -587,53 +559,16 @@ impl RegisteredChildExecutor {
         report: Option<&TypedChildReport>,
         reason: Option<String>,
     ) -> Result<(), NodeError> {
-        let now_ms = crate::task_memory::now_millis() as i64;
-        let record = evohime_local_storage::domains::agents::CoordinatorCheckpointRecord {
-            schema_version: 1,
-            child_task_id: request.child_task_id.clone(),
-            parent_task_id: request.parent_task_id.clone(),
-            revision: report
-                .and_then(|report| report.revision)
-                .unwrap_or_default() as i64,
-            state: state.as_str().into(),
-            failure_reason: reason.clone(),
-            dead_letter: state == CoordinatorState::Failed,
-            report_json: report
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|error| {
-                    NodeError::permanent("child_report_serialization_failed", error.to_string())
-                })?,
-            evidence_locators_json: report
-                .map(|report| serde_json::to_string(&report.sources))
-                .transpose()
-                .map_err(|error| {
-                    NodeError::permanent("child_report_serialization_failed", error.to_string())
-                })?,
-            provenance_hashes_json: report
-                .map(|report| serde_json::to_string(&report.provenance))
-                .transpose()
-                .map_err(|error| {
-                    NodeError::permanent("child_report_serialization_failed", error.to_string())
-                })?,
-            parent_sequence: request.correlation.parent_sequence as i64,
-            lease_deadline_monotonic_ms: Some(
-                now_ms + crate::child_workflow::DEFAULT_LEASE_MS as i64,
-            ),
-            lease_created_monotonic_ms: Some(now_ms),
-            lease_clock_boot_id: Some("current".into()),
-            lease_holder_process_id: Some(std::process::id().to_string()),
-            last_transition_event: format!("child.{}", state.as_str()),
-            last_transition_at_ms: now_ms,
-            created_at_ms: now_ms,
-        };
-        self.journal
-            .save_coordinator_checkpoint(&record)
-            .await
-            .map_err(|error| NodeError::permanent("child_checkpoint_unavailable", error))?;
-        self.emit_projection(request, state, report, reason, !state.terminal())
-            .await;
-        Ok(())
+        crate::child_workflow::persist_child_checkpoint(
+            &self.journal,
+            self.projection_sink(),
+            request,
+            state,
+            report,
+            reason,
+        )
+        .await
+        .map_err(crate::child_workflow::ChildLifecycleError::into_node_error)
     }
 
     async fn transition(
@@ -704,22 +639,9 @@ impl RegisteredChildExecutor {
             sequence: request.correlation.parent_sequence,
         })
         .map_err(|error| NodeError::permanent("child_handoff_rejected", error.to_string()))?;
-        let record = evohime_local_storage::domains::agents::HandoffRecord {
-            handoff_id: envelope.handoff_id.clone(),
-            task_id: envelope.task_id.clone(),
-            kind: handoff_kind_str(kind).into(),
-            status: status.into(),
-            from_role: role_identity_text(&from),
-            to_role: role_identity_text(&to),
-            sequence: envelope.sequence,
-            envelope_json: envelope.to_deterministic_json().map_err(|error| {
-                NodeError::permanent("child_handoff_rejected", error.to_string())
-            })?,
-        };
-        self.journal
-            .save_child_handoff(&record)
+        crate::child_workflow::save_handoff_envelope(&self.journal, &envelope, status)
             .await
-            .map_err(|error| NodeError::permanent("child_handoff_unavailable", error))
+            .map_err(crate::child_workflow::ChildLifecycleError::into_node_error)
     }
 
     async fn execute_role_tools(
@@ -922,14 +844,12 @@ impl RegisteredChildExecutor {
             Some("parent_gate".into()),
         )
         .await?;
-        self.persist_checkpoint(
-            request,
-            CoordinatorState::Accepted,
-            Some(&report),
-            Some("parent_gate".into()),
-        )
-        .await?;
-        self.store_report(request, &report).await?;
+        // Accepted reports go through the same shared writer as the legacy
+        // `SubmitChildReport` command: acceptance, storage, checkpoint,
+        // projection, and the bounded collaboration message.
+        let report = self
+            .record_accepted_report(request, &report, session.as_deref())
+            .await?;
         self.persist_handoff(
             request,
             &role,
@@ -939,7 +859,6 @@ impl RegisteredChildExecutor {
             "completed",
         )
         .await?;
-        self.publish_report_message(request, &report, session.as_deref())?;
 
         let status = match report.status {
             TypedReportStatus::Complete => "accepted",
@@ -1042,84 +961,37 @@ impl RegisteredChildExecutor {
         Ok(report)
     }
 
-    async fn store_report(
-        &self,
-        request: &TypedChildTaskRequest,
-        report: &TypedChildReport,
-    ) -> Result<(), NodeError> {
-        let record = evohime_local_storage::domains::agents::ChildReportRecord {
-            child_task_id: report.child_task_id.clone(),
-            parent_task_id: request.parent_task_id.clone(),
-            status: report_status_str(report.status).to_owned(),
-            confidence_percent: report.confidence_percent,
-            report_json: serde_json::to_string(report).map_err(|error| {
-                NodeError::permanent("child_report_serialization_failed", error.to_string())
-            })?,
-        };
-        self.journal
-            .save_child_report(&record)
-            .await
-            .map_err(|error| NodeError::permanent("child_report_unavailable", error))
-    }
-
-    /// Publishes a bounded child-to-parent response on the existing causal
-    /// collaboration bus contract. The bus owns validation; no second board
-    /// or message store is created here.
-    fn publish_report_message(
+    pub(crate) async fn record_accepted_report(
         &self,
         request: &TypedChildTaskRequest,
         report: &TypedChildReport,
         session: Option<&str>,
-    ) -> Result<(), NodeError> {
-        use crate::causal_collaboration_bus::{
-            canonical_hash, validate, Address, CollaborationMessage, DeliveryState, MessageKind,
-            Sensitivity,
-        };
-        let payload = json!({
-            "child_task_id": report.child_task_id,
-            "status": report_status_str(report.status),
-            "summary": report.summary,
-        })
-        .to_string()
-        .into_bytes();
-        let payload_hash = Provenance::compute_hash(&String::from_utf8_lossy(&payload));
-        let message = CollaborationMessage {
-            schema_version: crate::causal_collaboration_bus::CONTRACT_VERSION,
-            message_id: sanitize_id(&format!("{}-response", report.child_task_id)),
-            session_id: sanitize_id(session.unwrap_or(&request.parent_task_id)),
-            protocol_hash: Provenance::compute_hash(&format!(
-                "{}:{}",
-                request.parent_task_id, report.child_task_id
-            )),
-            sender: Address::DirectRoleInstance {
-                slot_id: sanitize_id(&report.child_task_id),
-                ordinal: 0,
-            },
-            receiver: Address::Parent,
-            kind: MessageKind::Response,
-            correlation_id: sanitize_id(request.correlation.task_id.as_str()),
-            causation_id: sanitize_id(request.correlation.child_id.as_str()),
-            sequence: request.correlation.parent_sequence,
-            idempotency_key: sanitize_id(&format!("{}-response", report.child_task_id)),
-            payload,
-            payload_hash,
-            sensitivity: Sensitivity::Internal,
-            provenance_id: sanitize_id(&format!("child-executor:{}", report.child_task_id)),
-        };
-        validate(&message).map_err(|error| {
-            NodeError::permanent("child_bus_message_rejected", error.to_string())
-        })?;
-        let _hash = canonical_hash(&message).map_err(|error| {
-            NodeError::permanent("child_bus_message_rejected", error.to_string())
-        })?;
-        let _delivery = DeliveryState::Consumed;
-        Ok(())
+    ) -> Result<TypedChildReport, NodeError> {
+        crate::child_workflow::record_accepted_child_report(
+            &self.journal,
+            self.projection_sink(),
+            request,
+            report,
+            session,
+            crate::task_memory::now_millis() as i64,
+        )
+        .await
+        .map_err(crate::child_workflow::ChildLifecycleError::into_node_error)
     }
 }
 
 impl ChildExecutor for RegisteredChildExecutor {
     fn run<'a>(&'a self, request: &'a TypedChildTaskRequest) -> ChildFuture<'a> {
-        Box::pin(async move { self.execute(request).await })
+        Box::pin(async move {
+            // The runtime marker is created inside this task only. IPC and
+            // legacy command handlers never observe it, so `parent_is_child`
+            // from the wire cannot claim a child context it does not have.
+            let context = crate::child_execution_context::ChildExecutionContext::new(
+                request.child_task_id.clone(),
+                request.parent_task_id.clone(),
+            );
+            crate::child_execution_context::scope(context, self.execute(request)).await
+        })
     }
 }
 
@@ -1223,6 +1095,7 @@ fn collect_tool_evidence(output: &mut RoleRunOutput, tool_name: &str, structured
 fn contract_error(error: ContractError) -> NodeError {
     let (code, retryable) = match error {
         ContractError::NestedChildForbidden => ("nested_child_forbidden", false),
+        ContractError::ChildContextRequired => ("child_context_missing", false),
         ContractError::GrantEscalation { .. } | ContractError::GrantDrift => {
             ("child_effect_forbidden", false)
         }
@@ -1244,6 +1117,7 @@ fn runtime_error(error: crate::child_runtime::ChildRuntimeError) -> NodeError {
     use crate::child_runtime::ChildRuntimeError;
     let code = match error {
         ChildRuntimeError::NestedChildForbidden => "nested_child_forbidden",
+        ChildRuntimeError::ChildContextRequired => "child_context_missing",
         ChildRuntimeError::ForbiddenCapability(_) => "child_effect_forbidden",
         ChildRuntimeError::OutputTooLarge { .. } => "child_output_rejected",
         ChildRuntimeError::TaskMismatch => "child_report_rejected",
@@ -1262,13 +1136,6 @@ fn role_identity(profile_id: &str) -> Result<RoleIdentity, NodeError> {
         Ok(role) if role != ChildRole::Custom => Ok(RoleIdentity::builtin(role)),
         _ => RoleIdentity::custom(profile_id)
             .map_err(|error| NodeError::permanent("child_handoff_rejected", error.to_string())),
-    }
-}
-
-fn role_identity_text(identity: &RoleIdentity) -> String {
-    match &identity.name {
-        Some(name) => format!("custom:{name}"),
-        None => format!("{:?}", identity.role).to_ascii_lowercase(),
     }
 }
 
@@ -1544,7 +1411,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_child_is_rejected_for_every_builtin_role_before_capability_checks() {
+    fn nested_child_claim_without_runtime_context_is_rejected_for_every_builtin_role() {
         for role in [
             "coordinator",
             "researcher",
@@ -1558,10 +1425,23 @@ mod tests {
             request.parent_is_child = true;
             assert_eq!(
                 request.validate(),
-                Err(ContractError::NestedChildForbidden),
-                "role {role} must not delegate a nested child"
+                Err(ContractError::ChildContextRequired),
+                "role {role} must not be able to claim a child context from the wire"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn nested_delegation_stays_forbidden_inside_a_marked_runner() {
+        let context =
+            crate::child_execution_context::ChildExecutionContext::new("run-1:worker", "run-1");
+        let result = crate::child_execution_context::scope(context, async {
+            let mut request = request("coordinator", &["fs.read"]);
+            request.parent_is_child = true;
+            request.validate()
+        })
+        .await;
+        assert_eq!(result, Err(ContractError::NestedChildForbidden));
     }
 
     #[test]

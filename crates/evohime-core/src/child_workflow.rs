@@ -870,6 +870,350 @@ pub fn accept_report_with_offload(
     crate::child_contracts::accept_typed_report(request, &bounded)
 }
 
+// ============================================================================
+// Shared child lifecycle writer
+// ============================================================================
+
+/// Failure raised by the shared child lifecycle writer.
+///
+/// Both the registered child executor and the legacy IPC child commands go
+/// through this error type, so neither path can invent its own checkpoint,
+/// projection, or report-acceptance semantics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ChildLifecycleError {
+    code: &'static str,
+    message: String,
+}
+
+impl ChildLifecycleError {
+    pub(crate) fn permanent(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
+    /// Returns the stable machine-readable error code.
+    pub(crate) fn code(&self) -> &'static str {
+        self.code
+    }
+
+    /// Returns the human-readable error detail.
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Converts the failure into a workflow node error without changing code.
+    pub(crate) fn into_node_error(self) -> crate::workflow_runtime::NodeError {
+        crate::workflow_runtime::NodeError::permanent(self.code, self.message)
+    }
+}
+
+impl std::fmt::Display for ChildLifecycleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ChildLifecycleError {}
+
+/// Destination for the one bounded child projection.
+///
+/// The journal is the durable owner in every case; the sink only decides how
+/// the event reaches the shell. Executor runs may have a coordinator, while
+/// legacy command handlers only hold the coordinator state.
+pub(crate) enum ChildProjectionSink<'a> {
+    /// Writes the projection straight into the event journal.
+    Journal(&'a crate::EventJournal),
+    /// Publishes through the coordinator, which journals and notifies.
+    Coordinator(&'a crate::TaskCoordinator),
+    /// Publishes through the coordinator state owned by a command handler.
+    CoordinatorState(
+        &'a std::sync::Arc<tokio::sync::Mutex<crate::core_coordinator::CoordinatorState>>,
+    ),
+}
+
+impl ChildProjectionSink<'_> {
+    async fn emit(&self, event: crate::CoreEvent) {
+        match self {
+            Self::Journal(journal) => {
+                let _ = journal.record(&event).await;
+            }
+            Self::Coordinator(coordinator) => coordinator.emit(event).await,
+            Self::CoordinatorState(state) => {
+                crate::TaskCoordinator::emit_state_event(state, event).await;
+            }
+        }
+    }
+}
+
+/// Builds the durable checkpoint record for one child lifecycle state.
+///
+/// This is the single projection of [`CoordinatorCheckpoint`] into storage:
+/// report evidence, provenance, lease metadata, revision, and transition
+/// naming are identical for the executor and the legacy IPC path.
+pub(crate) fn checkpoint_record(
+    request: &TypedChildTaskRequest,
+    state: CoordinatorState,
+    report: Option<&TypedChildReport>,
+    reason: Option<String>,
+    now_ms: i64,
+) -> Result<evohime_local_storage::domains::agents::CoordinatorCheckpointRecord, ChildLifecycleError>
+{
+    Ok(
+        evohime_local_storage::domains::agents::CoordinatorCheckpointRecord {
+            schema_version: 1,
+            child_task_id: request.child_task_id.clone(),
+            parent_task_id: request.parent_task_id.clone(),
+            revision: report
+                .and_then(|report| report.revision)
+                .unwrap_or_default() as i64,
+            state: state.as_str().into(),
+            failure_reason: reason.clone(),
+            dead_letter: state == CoordinatorState::Failed,
+            report_json: report
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|error| {
+                    ChildLifecycleError::permanent(
+                        "child_report_serialization_failed",
+                        error.to_string(),
+                    )
+                })?,
+            evidence_locators_json: report
+                .map(|report| serde_json::to_string(&report.sources))
+                .transpose()
+                .map_err(|error| {
+                    ChildLifecycleError::permanent(
+                        "child_report_serialization_failed",
+                        error.to_string(),
+                    )
+                })?,
+            provenance_hashes_json: report
+                .map(|report| serde_json::to_string(&report.provenance))
+                .transpose()
+                .map_err(|error| {
+                    ChildLifecycleError::permanent(
+                        "child_report_serialization_failed",
+                        error.to_string(),
+                    )
+                })?,
+            parent_sequence: request.correlation.parent_sequence as i64,
+            lease_deadline_monotonic_ms: Some(now_ms + DEFAULT_LEASE_MS as i64),
+            lease_created_monotonic_ms: Some(now_ms),
+            lease_clock_boot_id: Some("current".into()),
+            lease_holder_process_id: Some(std::process::id().to_string()),
+            last_transition_event: format!("child.{}", state.as_str()),
+            last_transition_at_ms: now_ms,
+            created_at_ms: now_ms,
+        },
+    )
+}
+
+/// Builds the bounded parent-facing projection for one lifecycle state.
+///
+/// The report summary is always clamped by [`bounded_report_summary`], so a
+/// full report can never leak into the event stream.
+pub(crate) fn child_projection(
+    request: &TypedChildTaskRequest,
+    state: CoordinatorState,
+    report: Option<&TypedChildReport>,
+    reason: Option<String>,
+) -> ChildProjection {
+    ChildProjection {
+        event_id: format!("{}:{}", request.child_task_id, state.as_str()),
+        parent_task_id: request.parent_task_id.clone(),
+        child_task_id: request.child_task_id.clone(),
+        role: request.role.clone(),
+        revision: report
+            .and_then(|report| report.revision)
+            .unwrap_or_default(),
+        state,
+        reason_code: reason,
+        parent_sequence: request.correlation.parent_sequence,
+        budget: request.budget.clone(),
+        lease_live: !state.terminal(),
+        dead_letter: state == CoordinatorState::Failed,
+        report_status: report
+            .map(|report| crate::child_executor::report_status_str(report.status).to_owned()),
+        report_summary: report.map(|report| bounded_report_summary(&report.summary)),
+    }
+}
+
+/// Persists one checkpoint and emits its bounded projection.
+///
+/// Every lifecycle write in the child subsystem goes through this function:
+/// the executor's internal transitions and the legacy `SubmitChildRequest` /
+/// `SubmitChildReport` commands.
+pub(crate) async fn persist_child_checkpoint(
+    journal: &crate::EventJournal,
+    sink: ChildProjectionSink<'_>,
+    request: &TypedChildTaskRequest,
+    state: CoordinatorState,
+    report: Option<&TypedChildReport>,
+    reason: Option<String>,
+) -> Result<(), ChildLifecycleError> {
+    let now_ms = crate::task_memory::now_millis() as i64;
+    let record = checkpoint_record(request, state, report, reason.clone(), now_ms)?;
+    journal
+        .save_coordinator_checkpoint(&record)
+        .await
+        .map_err(|error| ChildLifecycleError::permanent("child_checkpoint_unavailable", error))?;
+    let event = crate::CoreEvent::ChildWorkflowProjection {
+        task_id: request.parent_task_id.clone(),
+        projection: child_projection(request, state, report, reason),
+    };
+    sink.emit(event).await;
+    Ok(())
+}
+
+/// Persists one accepted child report record.
+pub(crate) async fn store_child_report(
+    journal: &crate::EventJournal,
+    request: &TypedChildTaskRequest,
+    report: &TypedChildReport,
+) -> Result<(), ChildLifecycleError> {
+    let record = evohime_local_storage::domains::agents::ChildReportRecord {
+        child_task_id: report.child_task_id.clone(),
+        parent_task_id: request.parent_task_id.clone(),
+        status: crate::child_executor::report_status_str(report.status).to_owned(),
+        confidence_percent: report.confidence_percent,
+        report_json: serde_json::to_string(report).map_err(|error| {
+            ChildLifecycleError::permanent("child_report_serialization_failed", error.to_string())
+        })?,
+    };
+    journal
+        .save_child_report(&record)
+        .await
+        .map_err(|error| ChildLifecycleError::permanent("child_report_unavailable", error))
+}
+
+/// Publishes the bounded child-to-parent response on the collaboration bus.
+///
+/// The bus owns validation; no second message store is created here.
+pub(crate) fn publish_report_message(
+    request: &TypedChildTaskRequest,
+    report: &TypedChildReport,
+    session: Option<&str>,
+) -> Result<(), ChildLifecycleError> {
+    use crate::causal_collaboration_bus::{
+        canonical_hash, validate, Address, CollaborationMessage, DeliveryState, MessageKind,
+        Sensitivity,
+    };
+    let payload = serde_json::json!({
+        "child_task_id": report.child_task_id,
+        "status": crate::child_executor::report_status_str(report.status),
+        "summary": report.summary,
+    })
+    .to_string()
+    .into_bytes();
+    let payload_hash =
+        crate::child_contracts::Provenance::compute_hash(&String::from_utf8_lossy(&payload));
+    let message = CollaborationMessage {
+        schema_version: crate::causal_collaboration_bus::CONTRACT_VERSION,
+        message_id: sanitize_child_id(&format!("{}-response", report.child_task_id)),
+        session_id: sanitize_child_id(session.unwrap_or(&request.parent_task_id)),
+        protocol_hash: crate::child_contracts::Provenance::compute_hash(&format!(
+            "{}:{}",
+            request.parent_task_id, report.child_task_id
+        )),
+        sender: Address::DirectRoleInstance {
+            slot_id: sanitize_child_id(&report.child_task_id),
+            ordinal: 0,
+        },
+        receiver: Address::Parent,
+        kind: MessageKind::Response,
+        correlation_id: sanitize_child_id(request.correlation.task_id.as_str()),
+        causation_id: sanitize_child_id(request.correlation.child_id.as_str()),
+        sequence: request.correlation.parent_sequence,
+        idempotency_key: sanitize_child_id(&format!("{}-response", report.child_task_id)),
+        payload,
+        payload_hash,
+        sensitivity: Sensitivity::Internal,
+        provenance_id: sanitize_child_id(&format!("child-executor:{}", report.child_task_id)),
+    };
+    validate(&message).map_err(|error| {
+        ChildLifecycleError::permanent("child_bus_message_rejected", error.to_string())
+    })?;
+    let _hash = canonical_hash(&message).map_err(|error| {
+        ChildLifecycleError::permanent("child_bus_message_rejected", error.to_string())
+    })?;
+    let _delivery = DeliveryState::Consumed;
+    Ok(())
+}
+
+/// Accepts, stores, checkpoints, projects, and publishes one typed report.
+///
+/// Both `RegisteredChildExecutor` and the legacy `SubmitChildReport` command
+/// call this function, so an accepted report always produces the same
+/// checkpoint and the same bounded projection.
+pub(crate) async fn record_accepted_child_report(
+    journal: &crate::EventJournal,
+    sink: ChildProjectionSink<'_>,
+    request: &TypedChildTaskRequest,
+    report: &TypedChildReport,
+    session: Option<&str>,
+    now_ms: i64,
+) -> Result<TypedChildReport, ChildLifecycleError> {
+    let accepted = journal
+        .accept_typed_child_report(request, report, now_ms)
+        .await
+        .map_err(|error| ChildLifecycleError::permanent("child_report_rejected", error))?;
+    store_child_report(journal, request, &accepted).await?;
+    persist_child_checkpoint(
+        journal,
+        sink,
+        request,
+        CoordinatorState::Accepted,
+        Some(&accepted),
+        Some("parent_gate".into()),
+    )
+    .await?;
+    publish_report_message(request, &accepted, session)?;
+    Ok(accepted)
+}
+
+/// Persists one handoff envelope in its denormalized store row.
+///
+/// The full identity survives in the envelope JSON; the listing columns use
+/// the same display form on every producer.
+pub(crate) async fn save_handoff_envelope(
+    journal: &crate::EventJournal,
+    envelope: &crate::child_roles::HandoffEnvelope,
+    status: &str,
+) -> Result<(), ChildLifecycleError> {
+    let record = evohime_local_storage::domains::agents::HandoffRecord {
+        handoff_id: envelope.handoff_id.clone(),
+        task_id: envelope.task_id.clone(),
+        kind: crate::core_domains::handoff_kind_str(envelope.kind).into(),
+        status: status.into(),
+        from_role: crate::core_domains::role_identity_display(&envelope.from),
+        to_role: crate::core_domains::role_identity_display(&envelope.to),
+        sequence: envelope.sequence,
+        envelope_json: envelope.to_deterministic_json().map_err(|error| {
+            ChildLifecycleError::permanent("child_handoff_rejected", error.to_string())
+        })?,
+    };
+    journal
+        .save_child_handoff(&record)
+        .await
+        .map_err(|error| ChildLifecycleError::permanent("child_handoff_unavailable", error))
+}
+
+fn sanitize_child_id(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_' | '/') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .take(128)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
