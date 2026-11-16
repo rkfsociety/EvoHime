@@ -648,6 +648,40 @@ describe('renderer command surface', () => {
     })
   })
 
+  it('uses the selected compatible vendor settings when saving its key', async () => {
+    providerSummary = {
+      ...providerSummary,
+      compatibleProfiles: {
+        groq: {
+          model: 'llama-3.3-70b-versatile',
+          baseUrl: 'https://api.groq.com/openai/v1',
+          tier: 'paid',
+          configured: false,
+          profileId: 'groq',
+          freeAccessProbePolicy: 'manual_only',
+          requestPacing: { enabled: true, intervalMs: 1234, freeIntervalMs: 4321 }
+        }
+      }
+    }
+
+    await invoke('provider.save', {
+      provider: 'openai_compatible',
+      profileId: 'groq',
+      apiKey: 'gsk-secret-value',
+      model: 'llama-3.3-70b-versatile',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      tier: 'paid'
+    })
+
+    expect(providerWrites).toHaveLength(1)
+    expect(providerWrites[0]).toMatchObject({
+      provider: 'openai_compatible',
+      profileId: 'groq',
+      freeAccessProbePolicy: 'manual_only',
+      requestPacing: { enabled: true, intervalMs: 1234, freeIntervalMs: 4321 }
+    })
+  })
+
   it('rejects a provider endpoint that would leak the key over plain http', async () => {
     const outcome = (await invoke('provider.save', {
       provider: 'literouter',

@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import type { CommandOutcome, CoreEvent, EvoHimeApiV1, ProviderSummary, RendererCommand } from '../src/shared/api'
 import { PROVIDER_PROFILE_IDS } from '../src/shared/api'
 import { ProviderForm } from '../src/renderer/src/ProviderForm'
 import { ProviderStateProvider } from '../src/renderer/src/provider-state'
@@ -250,6 +250,53 @@ describe('provider form', () => {
     expect(calls.some((call) => call.command === 'provider.save')).toBe(false)
     expect(await screen.findByText(/Провайдер выбран и сохранён/)).toBeTruthy()
     expect(screen.getByText('Локальный провайдер')).toBeTruthy()
+  })
+
+  it('restores a separately saved compatible vendor key status when switching vendors', async () => {
+    providerGetSummary = {
+      provider: 'openai_compatible',
+      model: 'llama-groq',
+      baseUrl: 'https://api.groq.com/openai/v1',
+      tier: 'paid',
+      configured: true,
+      profileId: 'groq',
+      profiles: {
+        literouter: { model: '', baseUrl: '', tier: 'free', configured: false },
+        openai_compatible: {
+          model: 'llama-groq', baseUrl: 'https://api.groq.com/openai/v1', tier: 'paid', configured: true, profileId: 'groq'
+        },
+        openai_responses: { model: '', baseUrl: '', tier: 'free', configured: false },
+        ollama: { model: '', baseUrl: 'http://127.0.0.1:11434/v1', tier: 'free', configured: true }
+      },
+      compatibleProfiles: {
+        groq: { model: 'llama-groq', baseUrl: 'https://api.groq.com/openai/v1', tier: 'paid', configured: true, profileId: 'groq' },
+        deepseek: { model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1', tier: 'paid', configured: true, profileId: 'deepseek' }
+      }
+    }
+    selectOutcome = ok({
+      summary: {
+        provider: 'openai_compatible',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.deepseek.com/v1',
+        tier: 'paid',
+        configured: true,
+        profileId: 'deepseek',
+        profiles: (providerGetSummary as unknown as ProviderSummary).profiles,
+        compatibleProfiles: (providerGetSummary as unknown as ProviderSummary).compatibleProfiles
+      },
+      restarted: true
+    })
+    renderProviderForm()
+
+    const provider = await screen.findByLabelText('Провайдер')
+    await userEvent.selectOptions(provider, 'deepseek')
+
+    await waitFor(() => expect(calls).toContainEqual({
+      command: 'provider.select',
+      payload: { provider: 'openai_compatible', profileId: 'deepseek' }
+    }))
+    expect(await screen.findByText('Ключ сохранён')).toBeTruthy()
+    expect((screen.getByLabelText('Адрес API') as HTMLInputElement).value).toBe('https://api.deepseek.com/v1')
   })
 
   it('selects a vendor profile and requests a Cloudflare account ID separately from its token', async () => {

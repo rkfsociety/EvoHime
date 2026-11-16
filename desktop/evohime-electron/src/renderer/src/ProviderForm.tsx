@@ -176,11 +176,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     const nextProfileId: ProviderProfileId = isProviderProfileChoice(choice) ? choice : 'custom'
     if (nextProvider === provider && nextProfileId === profileId) return
 
-    const saved = summary?.profiles?.[nextProvider]
-    const savedMatches = nextProvider !== 'openai_compatible' || saved?.profileId === nextProfileId
+    const saved = nextProvider === 'openai_compatible'
+      ? summary?.compatibleProfiles?.[nextProfileId]
+        ?? (summary?.profiles?.openai_compatible?.profileId === nextProfileId ? summary.profiles.openai_compatible : undefined)
+        ?? (summary?.provider === nextProvider && summary.profileId === nextProfileId ? summary : undefined)
+      : summary?.profiles?.[nextProvider]
+    const savedMatches = nextProvider !== 'openai_compatible' || saved !== undefined
     const nextConfigured = savedMatches && (
       saved?.configured === true
-      || (saved === undefined && summary?.provider === nextProvider && summary.configured)
+      || (saved === undefined && summary?.provider === nextProvider && summary.configured &&
+        (nextProvider !== 'openai_compatible' || summary.profileId === nextProfileId))
     )
     pendingSelection.current = true
 
@@ -206,14 +211,17 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     // Selecting an unconfigured provider or switching vendor inside the
     // OpenAI-compatible transport stays a local draft until "Save" persists
     // the profile and its credential.
-    if (nextProvider === provider || !nextConfigured) {
+    if (!nextConfigured || (nextProvider === provider && nextProvider !== 'openai_compatible')) {
       if (savedMatches && summary?.provider === nextProvider) pendingSelection.current = false
       setStatus({ kind: 'idle' })
       return
     }
 
     setStatus({ kind: 'saving' })
-    const outcome = await api.invoke('provider.select', { provider: nextProvider })
+    const outcome = await api.invoke('provider.select', {
+      provider: nextProvider,
+      ...(nextProvider === 'openai_compatible' ? { profileId: nextProfileId } : {})
+    })
     if (!outcome.ok) {
       pendingSelection.current = false
       if (summary) apply(summary)
@@ -269,7 +277,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const clearKey = useCallback(async () => {
     if (!api) return
     setStatus({ kind: 'saving' })
-    const outcome = await api.invoke('provider.clearKey', { provider })
+    const outcome = await api.invoke('provider.clearKey', {
+      provider,
+      ...(provider === 'openai_compatible' ? { profileId } : {})
+    })
     if (!outcome.ok) {
       setStatus({ kind: 'failed', message: outcome.message })
       return
@@ -279,7 +290,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
-  }, [api, apply, applySummary, provider])
+  }, [api, apply, applySummary, profileId, provider])
 
   const verifyFreeAccess = useCallback(async () => {
     if (!api || model.trim().length === 0) return
@@ -297,11 +308,17 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
   const busy = status.kind === 'saving'
   const selection: ProviderChoice = provider === 'openai_compatible' ? profileId : provider
-  const selectedProfile = summary?.profiles?.[provider]
+  const selectedProfile = provider === 'openai_compatible'
+    ? summary?.compatibleProfiles?.[profileId]
+      ?? (summary?.profiles?.openai_compatible?.profileId === profileId ? summary.profiles.openai_compatible : undefined)
+      ?? (summary?.provider === provider && summary.profileId === profileId ? summary : undefined)
+    : summary?.profiles?.[provider]
   const profileMatches = provider !== 'openai_compatible'
-    || selectedProfile === undefined
-    || selectedProfile.profileId === profileId
-  const configured = profileMatches && (selectedProfile?.configured === true || (selectedProfile === undefined && summary?.provider === provider && summary.configured))
+    || selectedProfile?.profileId === profileId
+  const configured = profileMatches && (selectedProfile?.configured === true || (
+    selectedProfile === undefined && summary?.provider === provider && summary.configured &&
+    (provider !== 'openai_compatible' || summary.profileId === profileId)
+  ))
   const cloudflareAccountValid = /^[a-fA-F0-9]{32}$/.test(accountId.trim())
   const pacingValid = parsePacingInterval(pacingInterval) !== null
     && parsePacingInterval(pacingFreeInterval) !== null

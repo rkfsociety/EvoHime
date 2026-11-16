@@ -183,6 +183,84 @@ describe('provider store', () => {
     })
   })
 
+  it('keeps credentials and settings isolated for each OpenAI-compatible vendor', () => {
+    const path = storePath()
+    const store = new ProviderStore(path, reversibleCipher())
+    store.save({
+      provider: 'openai_compatible', apiKey: 'sk-groq', model: 'llama-groq',
+      baseUrl: '', tier: 'paid', profileId: 'groq'
+    })
+    store.save({
+      provider: 'openai_compatible', apiKey: 'sk-deepseek', model: 'deepseek-chat',
+      baseUrl: '', tier: 'paid', profileId: 'deepseek'
+    })
+    const reopened = new ProviderStore(path, reversibleCipher())
+    expect(reopened.summary().compatibleProfiles).toMatchObject({
+      groq: { configured: true, model: 'llama-groq' },
+      deepseek: { configured: true, model: 'deepseek-chat' }
+    })
+
+    expect(store.summary().compatibleProfiles).toMatchObject({
+      groq: { configured: true, model: 'llama-groq', profileId: 'groq' },
+      deepseek: { configured: true, model: 'deepseek-chat', profileId: 'deepseek' }
+    })
+    expect(store.environment()).toMatchObject({
+      MODEL_PROVIDER: 'openai_compatible',
+      OPENAI_API_KEY: 'sk-deepseek',
+      OPENAI_MODEL: 'deepseek-chat',
+      MODEL_PROVIDER_PROFILE_ID: 'deepseek'
+    })
+
+    reopened.select('openai_compatible', 'groq')
+    expect(reopened.environment()).toMatchObject({
+      OPENAI_API_KEY: 'sk-groq',
+      MODEL_PROVIDER_PROFILE_ID: 'groq'
+    })
+    expect(reopened.select('openai_compatible', 'deepseek')).toMatchObject({
+      profileId: 'deepseek', configured: true, model: 'deepseek-chat'
+    })
+    expect(reopened.environment()['OPENAI_API_KEY']).toBe('sk-deepseek')
+
+    const selected = store.select('openai_compatible', 'groq')
+    expect(selected).toMatchObject({ provider: 'openai_compatible', profileId: 'groq', configured: true })
+    expect(store.environment()).toMatchObject({
+      OPENAI_API_KEY: 'sk-groq',
+      OPENAI_MODEL: 'llama-groq',
+      MODEL_PROVIDER_PROFILE_ID: 'groq'
+    })
+
+    store.clearKey('openai_compatible', 'deepseek')
+    expect(store.summary().compatibleProfiles?.deepseek?.configured).toBe(false)
+    expect(store.summary().compatibleProfiles?.groq?.configured).toBe(true)
+  })
+
+  it('migrates the old shared OpenAI-compatible profile without losing its key', () => {
+    const path = storePath()
+    writeFileSync(path, JSON.stringify({
+      version: 6,
+      provider: 'openai_compatible',
+      profiles: {
+        openai_compatible: {
+          model: 'llama-groq', baseUrl: 'https://api.groq.com/openai/v1', tier: 'paid',
+          secret: Buffer.from('enc:sk-groq').toString('base64'), profileId: 'groq', accountId: '',
+          credentialBinding: 'credential:11111111-1111-4111-8111-111111111111',
+          freeAccessProbePolicy: 'disabled',
+          requestPacing: { enabled: false, intervalMs: 8000, freeIntervalMs: 18948 }
+        }
+      },
+      codexModel: '', freeAccessRoutingMode: 'any', allowPaidFallback: false, revokedCredentialBindings: []
+    }), 'utf8')
+
+    const store = new ProviderStore(path, reversibleCipher())
+    expect(store.summary().compatibleProfiles?.groq).toMatchObject({ configured: true, model: 'llama-groq' })
+    expect(store.environment()).toMatchObject({ OPENAI_API_KEY: 'sk-groq', MODEL_PROVIDER_PROFILE_ID: 'groq' })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
+      version: 7,
+      profiles: { openai_compatible: { profileId: 'groq', model: 'llama-groq' } },
+      compatibleProfiles: { groq: { secret: Buffer.from('enc:sk-groq').toString('base64') } }
+    })
+  })
+
   it('switches the active provider without changing its credentials', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
     store.save({ provider: 'literouter', apiKey: 'sk-literouter', model: 'router-model', baseUrl: '', tier: 'free' })
@@ -462,7 +540,7 @@ describe('provider store', () => {
       freeIntervalMs: 18_948
     })
     expect(readFileSync(path, 'utf8')).not.toContain('sk-legacy')
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 6 })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 7 })
   })
 
   it('binds automatic probe consent to the saved OpenRouter credential and clears it on removal', () => {

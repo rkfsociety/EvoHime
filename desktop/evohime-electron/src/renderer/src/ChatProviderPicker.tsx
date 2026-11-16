@@ -41,12 +41,19 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   }, [api])
 
   const options = useMemo(() => {
-    const apiOptions = PROVIDER_KINDS.filter((provider) => summary?.profiles?.[provider]?.configured === true)
+    const apiOptions = PROVIDER_KINDS.flatMap((provider) => {
+      if (provider !== 'openai_compatible') {
+        return summary?.profiles?.[provider]?.configured === true ? [provider] : []
+      }
+      const hasCompatible = Object.values(summary?.compatibleProfiles ?? {}).some((profile) => profile?.configured === true)
+      if (hasCompatible) return [provider]
+      return summary?.profiles?.openai_compatible?.configured === true ? [provider] : []
+    })
     return [
       ...apiOptions.map((provider) => ({
         value: provider as ChatProviderMode,
         label: provider === 'openai_compatible'
-          ? PROVIDER_PROFILE_LABELS[summary?.profiles?.openai_compatible?.profileId ?? 'custom']
+          ? PROVIDER_PROFILE_LABELS[summary?.profileId ?? summary?.profiles?.openai_compatible?.profileId ?? 'custom']
           : LABELS[provider]
       })),
       // Installation and readiness are different states. Keep an installed
@@ -54,7 +61,7 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
       // model picker performs a fresh refresh when this route is selected.
       ...(codex?.installed ? [{ value: 'codex_cli' as const, label: LABELS.codex_cli }] : [])
     ]
-  }, [codex?.installed, summary?.profiles])
+  }, [codex?.installed, summary?.compatibleProfiles, summary?.profiles])
 
   useEffect(() => {
     if (options.some((option) => option.value === value)) return

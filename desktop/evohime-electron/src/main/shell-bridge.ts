@@ -1707,8 +1707,17 @@ function dispatch(
       const model = normalizeModel(value['model'])
       const baseUrl = normalizeBaseUrl(value['baseUrl'])
       const tier = asModelCatalogMode(value['tier'])
+      const profileIdValue = value['profileId']
+      const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
       const currentSummary = providers.summary()
-      const currentProfile = provider === null ? undefined : currentSummary.profiles[provider]
+      const currentProfile = provider === null
+        ? undefined
+        : provider === 'openai_compatible' && profileId
+          ? currentSummary.compatibleProfiles?.[profileId]
+            ?? (currentSummary.profiles.openai_compatible.profileId === profileId
+              ? currentSummary.profiles.openai_compatible
+              : undefined)
+          : currentSummary.profiles[provider]
       const freeAccessProbePolicy = value['freeAccessProbePolicy'] === undefined
         ? currentProfile?.freeAccessProbePolicy ?? 'disabled'
         : asFreeAccessProbePolicy(value['freeAccessProbePolicy'])
@@ -1722,8 +1731,6 @@ function dispatch(
       const requestPacing = value['requestPacing'] === undefined
         ? currentProfile?.requestPacing ?? (provider ? defaultRequestPacing(provider) : null)
         : normalizeRequestPacing(value['requestPacing'])
-      const profileIdValue = value['profileId']
-      const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
       const accountIdValue = value['accountId']
       const accountId = accountIdValue === undefined
         ? undefined
@@ -1778,18 +1785,31 @@ function dispatch(
     }
 
     case 'provider.select': {
-      const provider = asProviderKind(asRecord(payload)['provider'])
+      const value = asRecord(payload)
+      const provider = asProviderKind(value['provider'])
+      const profileId = value['profileId'] === undefined ? undefined : asProviderProfileId(value['profileId'])
+      if (value['profileId'] !== undefined && profileId === null) return failure('invalid-payload', 'Некорректный профиль провайдера.')
       if (provider === null) return failure('invalid-payload', 'Некорректный провайдер.')
-      const profile = providers.summary().profiles[provider]
-      if (!profile.configured) return failure('invalid-payload', 'Сначала настрой ключ выбранного провайдера.')
-      const summary = providers.select(provider)
-      log('info', 'shell.provider_selected', { provider })
-      return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
+      if (profileId !== undefined && provider !== 'openai_compatible') return failure('invalid-payload', 'Профиль допустим только для OpenAI-compatible провайдера.')
+      const currentSummary = providers.summary()
+      const profile = provider === 'openai_compatible' && profileId
+        ? currentSummary.compatibleProfiles?.[profileId]
+          ?? (currentSummary.profiles.openai_compatible.profileId === profileId ? currentSummary.profiles.openai_compatible : undefined)
+        : currentSummary.profiles[provider]
+      if (!profile?.configured) return failure('invalid-payload', 'Сначала настрой ключ выбранного провайдера.')
+      const selectedSummary = providers.select(provider, profileId ?? undefined)
+      log('info', 'shell.provider_selected', { provider, ...(profileId ? { profileId } : {}) })
+      return restartCore().then((restarted) => ({ ok: true, value: { summary: selectedSummary, restarted } }))
     }
 
     case 'provider.clearKey': {
-      const requestedProvider = asProviderKind(asRecord(payload)['provider'])
-      const summary = providers.clearKey(requestedProvider ?? undefined)
+      const value = asRecord(payload)
+      const requestedProvider = asProviderKind(value['provider'])
+      const profileId = value['profileId'] === undefined ? undefined : asProviderProfileId(value['profileId'])
+      if (value['profileId'] !== undefined && profileId === null) return failure('invalid-payload', 'Некорректный профиль провайдера.')
+      if (value['provider'] !== undefined && requestedProvider === null) return failure('invalid-payload', 'Некорректный провайдер.')
+      if (profileId !== undefined && requestedProvider !== 'openai_compatible') return failure('invalid-payload', 'Профиль допустим только для OpenAI-compatible провайдера.')
+      const summary = providers.clearKey(requestedProvider ?? undefined, profileId ?? undefined)
       log('info', 'shell.provider_key_cleared', {})
       return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
     }

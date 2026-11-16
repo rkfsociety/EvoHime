@@ -752,6 +752,8 @@ export interface ProviderSummary {
   readonly profileId?: ProviderProfileId
   readonly accountId?: string
   readonly profiles: Readonly<Record<ProviderKind, ProviderProfileSummary>>
+  /** Saved settings for each vendor sharing the OpenAI-compatible transport. */
+  readonly compatibleProfiles?: Readonly<Partial<Record<ProviderProfileId, ProviderProfileSummary>>>
   readonly freeAccessRoutingMode?: FreeAccessRoutingMode
   readonly allowPaidFallback?: boolean
   readonly requestPacing?: RequestPacingSettings
@@ -2040,8 +2042,8 @@ export interface CommandPayloads {
     allowPaidFallback?: boolean
     requestPacing?: RequestPacingSettings
   }
-  'provider.select': { provider: ProviderKind }
-  'provider.clearKey': { provider?: ProviderKind }
+  'provider.select': { provider: ProviderKind; profileId?: ProviderProfileId }
+  'provider.clearKey': { provider?: ProviderKind; profileId?: ProviderProfileId }
   'provider.verifyFreeAccess': { modelId: string; confirmPossibleCost: true }
   'codex.getStatus': Record<string, never>
   'codex.refresh': Record<string, never>

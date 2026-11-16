@@ -32,7 +32,7 @@ import {
 export const MAX_KEY_CHARS = 512
 export const MAX_MODEL_CHARS = 128
 export const MAX_URL_CHARS = 512
-const STORE_VERSION = 6
+const STORE_VERSION = 7
 const MAX_STORED_SECRET_CHARS = 8_192
 const MAX_REVOKED_CREDENTIAL_BINDINGS = 128
 
@@ -75,6 +75,7 @@ interface StoredProfile {
 interface StoredDocument {
   readonly provider: ProviderKind
   readonly profiles: Readonly<Partial<Record<ProviderKind, StoredProfile>>>
+  readonly compatibleProfiles: Readonly<Partial<Record<ProviderProfileId, StoredProfile>>>
   readonly codexModel: string
   readonly freeAccessRoutingMode: FreeAccessRoutingMode
   readonly allowPaidFallback: boolean
@@ -84,6 +85,7 @@ interface StoredDocument {
 const EMPTY: StoredDocument = {
   provider: 'literouter',
   profiles: {},
+  compatibleProfiles: {},
   codexModel: '',
   freeAccessRoutingMode: 'any',
   allowPaidFallback: false,
@@ -215,7 +217,20 @@ export class ProviderStore {
           freeAccessProbePolicy: profile.freeAccessProbePolicy,
           requestPacing: profile.requestPacing
         } satisfies ProviderProfileSummary]
-      })) as Readonly<Record<ProviderKind, ProviderProfileSummary>>
+      })) as Readonly<Record<ProviderKind, ProviderProfileSummary>>,
+      compatibleProfiles: Object.fromEntries(PROVIDER_PROFILE_IDS.flatMap((profileId) => {
+        const profile = document.compatibleProfiles[profileId]
+        return profile ? [[profileId, {
+          model: profile.model,
+          baseUrl: profile.baseUrl,
+          tier: profile.tier,
+          configured: configuredProfile('openai_compatible', profile),
+          profileId,
+          ...(profile.accountId ? { accountId: profile.accountId } : {}),
+          freeAccessProbePolicy: profile.freeAccessProbePolicy,
+          requestPacing: profile.requestPacing
+        } satisfies ProviderProfileSummary]] : []
+      })) as Partial<Record<ProviderProfileId, ProviderProfileSummary>>
     }
   }
 
@@ -225,9 +240,14 @@ export class ProviderStore {
    */
   save(update: ProviderUpdate): ProviderSummary | null {
     const current = this.readDocument()
-    const previous = profileFor(current, update.provider)
     const requestedKey = normalizeApiKey(update.apiKey)
     if (requestedKey === null) return null
+    const profileId = update.provider === 'openai_compatible'
+      ? update.profileId ?? inferProviderProfileId(update.baseUrl)
+      : 'custom'
+    const previous = update.provider === 'openai_compatible'
+      ? compatibleProfileFor(current, profileId)
+      : profileFor(current, update.provider)
     let secret = previous.secret
     if (requestedKey.length > 0) {
       if (!this.cipher.isAvailable()) {
@@ -235,9 +255,6 @@ export class ProviderStore {
       }
       secret = this.cipher.encrypt(requestedKey).toString('base64')
     }
-    const profileId = update.provider === 'openai_compatible'
-      ? update.profileId ?? inferProviderProfileId(update.baseUrl)
-      : 'custom'
     const accountId = profileId === 'cloudflare_workers_ai'
       ? normalizeCloudflareAccountId(update.accountId) ?? cloudflareAccountFromBaseUrl(update.baseUrl) ?? ''
       : ''
@@ -293,6 +310,22 @@ export class ProviderStore {
           requestPacing
         }
       },
+      compatibleProfiles: update.provider === 'openai_compatible'
+        ? {
+            ...current.compatibleProfiles,
+            [profileId]: {
+              model: update.model,
+              baseUrl,
+              tier: update.tier,
+              secret,
+              profileId,
+              accountId,
+              credentialBinding,
+              freeAccessProbePolicy,
+              requestPacing
+            }
+          }
+        : current.compatibleProfiles,
       codexModel: current.codexModel,
       freeAccessRoutingMode: isFreeAccessRoutingMode(update.freeAccessRoutingMode)
         ? update.freeAccessRoutingMode
@@ -307,22 +340,51 @@ export class ProviderStore {
   }
 
   /** Changes the active API profile without touching any stored credential. */
-  select(provider: ProviderKind): ProviderSummary {
+  select(provider: ProviderKind, profileId?: ProviderProfileId): ProviderSummary {
     const current = this.readDocument()
-    if (current.provider === provider) return this.summaryFor(current)
-    const next = { ...current, provider }
+    const selectedProfileId = provider === 'openai_compatible'
+      ? profileId ?? (current.provider === 'openai_compatible' ? profileFor(current, provider).profileId : 'openai')
+      : undefined
+    if (current.provider === provider && (provider !== 'openai_compatible' || (
+      selectedProfileId !== undefined && current.profiles.openai_compatible?.profileId === selectedProfileId &&
+      current.compatibleProfiles[selectedProfileId] !== undefined
+    ))) {
+      return this.summaryFor(current)
+    }
+    const next = provider === 'openai_compatible' && selectedProfileId
+      ? {
+          ...current,
+          provider,
+          profiles: { ...current.profiles, openai_compatible: compatibleProfileFor(current, selectedProfileId) },
+          compatibleProfiles: {
+            ...current.compatibleProfiles,
+            [selectedProfileId]: compatibleProfileFor(current, selectedProfileId)
+          }
+        }
+      : { ...current, provider }
     this.write(next)
     return this.summaryFor(next)
   }
 
   /** Forgets the stored key while keeping the provider choice. */
-  clearKey(provider = this.readDocument().provider): ProviderSummary {
+  clearKey(provider = this.readDocument().provider, profileId?: ProviderProfileId): ProviderSummary {
     const current = this.readDocument()
-    const active = profileFor(current, provider)
-    const next = {
+    const selectedProfileId = provider === 'openai_compatible'
+      ? profileId ?? (current.provider === 'openai_compatible' ? profileFor(current, provider).profileId : 'openai')
+      : undefined
+    const active = selectedProfileId
+      ? compatibleProfileFor(current, selectedProfileId)
+      : profileFor(current, provider)
+    const cleared = { ...active, secret: '', credentialBinding: '', freeAccessProbePolicy: 'disabled' as const }
+    const next: StoredDocument = {
       ...current,
       provider,
-      profiles: { ...current.profiles, [provider]: { ...active, secret: '', credentialBinding: '', freeAccessProbePolicy: 'disabled' } },
+      profiles: selectedProfileId && current.profiles.openai_compatible?.profileId !== selectedProfileId
+        ? current.profiles
+        : { ...current.profiles, [provider]: cleared },
+      compatibleProfiles: selectedProfileId
+        ? { ...current.compatibleProfiles, [selectedProfileId]: cleared }
+        : current.compatibleProfiles,
       revokedCredentialBindings: active.credentialBinding
         ? appendRevokedBinding(current.revokedCredentialBindings, active.credentialBinding)
         : current.revokedCredentialBindings
@@ -353,6 +415,14 @@ export class ProviderStore {
         ...current.profiles,
         [current.provider]: { ...profile, model: normalized }
       }
+    }
+    if (current.provider === 'openai_compatible') {
+      const compatibleProfiles = {
+        ...current.compatibleProfiles,
+        [profile.profileId]: { ...profile, model: normalized }
+      }
+      this.write({ ...next, compatibleProfiles })
+      return
     }
     this.write(next)
   }
@@ -450,8 +520,11 @@ export class ProviderStore {
     const record = parsed as Record<string, unknown>
     const provider = isProviderKind(record['provider']) ? record['provider'] : EMPTY.provider
     const profiles: Partial<Record<ProviderKind, StoredProfile>> = {}
+    const compatibleProfiles: Partial<Record<ProviderProfileId, StoredProfile>> = {}
     let needsMigration = record['version'] !== STORE_VERSION
+    let hasCurrentProfiles = false
     if (isRecord(record['profiles'])) {
+      hasCurrentProfiles = true
       for (const kind of PROVIDER_KINDS) {
         const value = record['profiles'][kind]
         if (!isRecord(value)) continue
@@ -521,6 +594,52 @@ export class ProviderStore {
         }
       }
     }
+    if (isRecord(record['compatibleProfiles'])) {
+      for (const profileId of PROVIDER_PROFILE_IDS) {
+        const value = record['compatibleProfiles'][profileId]
+        if (!isRecord(value)) continue
+        const rawBaseUrl = normalizeBaseUrl(value['baseUrl']) ?? ''
+        const accountId = profileId === 'cloudflare_workers_ai'
+          ? normalizeCloudflareAccountId(value['accountId']) ?? cloudflareAccountFromBaseUrl(rawBaseUrl) ?? ''
+          : ''
+        const baseUrl = providerProfileBaseUrl(profileId, accountId, rawBaseUrl) ?? ''
+        const secret = normalizeStoredSecret(value['secret'])
+        const existingBinding = normalizeCredentialBinding(value['credentialBinding'])
+        const credentialBinding = secret.length > 0 ? existingBinding ?? newCredentialBinding() : ''
+        const freeAccessProbePolicy = isFreeAccessProbePolicy(value['freeAccessProbePolicy'])
+          ? value['freeAccessProbePolicy']
+          : 'disabled'
+        const storedPacing = normalizeRequestPacing(value['requestPacing'])
+        if (credentialBinding !== existingBinding || freeAccessProbePolicy !== value['freeAccessProbePolicy'] ||
+          storedPacing === null || baseUrl !== value['baseUrl']) needsMigration = true
+        compatibleProfiles[profileId] = {
+          model: normalizeModel(value['model']) ?? '',
+          baseUrl,
+          tier: value['tier'] === 'paid' ? 'paid' : 'free',
+          secret,
+          profileId,
+          accountId,
+          credentialBinding,
+          freeAccessProbePolicy,
+          requestPacing: storedPacing ?? defaultRequestPacing('openai_compatible')
+        }
+      }
+    }
+    const legacyCompatible = profiles.openai_compatible
+    if (legacyCompatible) {
+      if (!compatibleProfiles[legacyCompatible.profileId]) {
+        compatibleProfiles[legacyCompatible.profileId] = legacyCompatible
+        needsMigration = true
+      } else if (hasCurrentProfiles && record['version'] === STORE_VERSION) {
+        // Version 7 writes the active compatibility profile in both places for
+        // legacy readers. Do not let this mirror overwrite newer profile data.
+        const active = compatibleProfiles[legacyCompatible.profileId]
+        if (active && !sameStoredProfile(active, legacyCompatible)) {
+          profiles.openai_compatible = active
+          needsMigration = true
+        }
+      }
+    }
     const codexModel = normalizeModel(record['codexModel']) ?? ''
     const freeAccessRoutingMode = isFreeAccessRoutingMode(record['freeAccessRoutingMode'])
       ? record['freeAccessRoutingMode']
@@ -536,7 +655,7 @@ export class ProviderStore {
       JSON.stringify(revokedCredentialBindings) !== JSON.stringify(record['revokedCredentialBindings'] ?? [])) {
       needsMigration = true
     }
-    const document = { provider, profiles, codexModel, freeAccessRoutingMode, allowPaidFallback, revokedCredentialBindings }
+    const document = { provider, profiles, compatibleProfiles, codexModel, freeAccessRoutingMode, allowPaidFallback, revokedCredentialBindings }
     if (needsMigration) this.write(document)
     return document
   }
@@ -562,6 +681,9 @@ export class ProviderStore {
 }
 
 function profileFor(document: StoredDocument, provider: ProviderKind): StoredProfile {
+  if (provider === 'openai_compatible') {
+    return compatibleProfileFor(document, document.profiles[provider]?.profileId ?? 'openai')
+  }
   if (provider === 'ollama') {
     return document.profiles[provider] ?? {
       model: '', baseUrl: OLLAMA_DEFAULT_BASE_URL, tier: 'free', secret: '', profileId: 'custom', accountId: '', credentialBinding: '', freeAccessProbePolicy: 'disabled', requestPacing: defaultRequestPacing(provider)
@@ -569,15 +691,47 @@ function profileFor(document: StoredDocument, provider: ProviderKind): StoredPro
   }
   return document.profiles[provider] ?? {
     model: '',
-    baseUrl: provider === 'openai_compatible' ? PROVIDER_PROFILE_ENDPOINTS.openai ?? '' : '',
+    baseUrl: '',
     tier: 'free',
     secret: '',
-    profileId: provider === 'openai_compatible' ? 'openai' : 'custom',
+    profileId: 'custom',
     accountId: '',
     credentialBinding: '',
     freeAccessProbePolicy: 'disabled',
     requestPacing: defaultRequestPacing(provider)
   }
+}
+
+function compatibleProfileFor(document: StoredDocument, profileId: ProviderProfileId): StoredProfile {
+  const saved = document.compatibleProfiles[profileId]
+  if (saved) return saved
+  const legacy = document.profiles.openai_compatible
+  if (legacy?.profileId === profileId) return legacy
+  return {
+    model: '',
+    baseUrl: providerProfileBaseUrl(profileId, '', '') ?? '',
+    tier: 'free',
+    secret: '',
+    profileId,
+    accountId: '',
+    credentialBinding: '',
+    freeAccessProbePolicy: 'disabled',
+    requestPacing: defaultRequestPacing('openai_compatible')
+  }
+}
+
+function sameStoredProfile(left: StoredProfile, right: StoredProfile): boolean {
+  return left.model === right.model
+    && left.baseUrl === right.baseUrl
+    && left.tier === right.tier
+    && left.secret === right.secret
+    && left.profileId === right.profileId
+    && left.accountId === right.accountId
+    && left.credentialBinding === right.credentialBinding
+    && left.freeAccessProbePolicy === right.freeAccessProbePolicy
+    && left.requestPacing.enabled === right.requestPacing.enabled
+    && left.requestPacing.intervalMs === right.requestPacing.intervalMs
+    && left.requestPacing.freeIntervalMs === right.requestPacing.freeIntervalMs
 }
 
 function isFreeAccessProbePolicy(value: unknown): value is FreeAccessProbePolicy {
