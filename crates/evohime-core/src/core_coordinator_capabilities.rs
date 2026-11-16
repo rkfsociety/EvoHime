@@ -446,6 +446,15 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 // `ChildTaskRequest::validate` used by the pure unit
                 // tests, now enforced on the live IPC path.
                 request.validate().map_err(|error| error.to_string())?;
+                // Legacy IPC never carries the queen's delegation grant, so it
+                // can create only top-level child requests. Even a forged
+                // runtime marker cannot turn a wire request into nested
+                // delegation: depth and grants are owned by the executor.
+                if request.parent_is_child {
+                    return Err(
+                        "nested_child_forbidden: legacy IPC cannot delegate a child".to_string()
+                    );
+                }
                 let parent_sequence = journal.next_child_parent_sequence(&parent_task_id).await?;
                 let typed_correlation = crate::child_contracts::CorrelationContext::new(
                     crate::child_contracts::CorrelationId::new(parent_task_id.clone())

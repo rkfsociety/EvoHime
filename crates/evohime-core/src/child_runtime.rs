@@ -31,6 +31,11 @@ pub const MAX_SOURCES: usize = 32;
 pub const MAX_SOURCE_CHARS: usize = 512;
 /// Maximum lifecycle events retained by one child journal.
 pub const MAX_CHILD_EVENTS: usize = 256;
+/// Maximum supported child nesting depth, shared with the typed contract.
+///
+/// The queen delegates to a worker (`depth = 1`) and that worker may delegate
+/// exactly one sub-agent (`depth = 2`). Depth 3 is always rejected.
+pub const MAX_CHILD_DEPTH: u8 = crate::child_contracts::MAX_CHILD_DEPTH;
 
 /// Read-only child task category supported by the runtime contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,6 +301,8 @@ pub enum ChildRuntimeError {
     NestedChildForbidden,
     /// The request claims `parent_is_child` without a running child context.
     ChildContextRequired,
+    /// The request would create a child deeper than [`MAX_CHILD_DEPTH`].
+    ChildDepthExceeded,
     /// Returned report does not belong to the request's child identifier.
     TaskMismatch,
     /// Report contains duplicate evidence references.
@@ -324,6 +331,9 @@ impl fmt::Display for ChildRuntimeError {
                 f,
                 "parent_is_child requires an active Core child execution context"
             ),
+            Self::ChildDepthExceeded => {
+                write!(f, "nested delegation beyond one extra hop is forbidden")
+            }
             Self::TaskMismatch => write!(f, "report child_task_id does not match request"),
             Self::DuplicateSource => write!(f, "report contains duplicate sources"),
             Self::SecretLikeContent => write!(f, "secret-like content is not allowed"),
@@ -361,11 +371,12 @@ impl ChildTaskRequest {
         validate_text("parent_task_id", &self.parent_task_id, MAX_ID_CHARS)?;
         validate_text("role", &self.role, MAX_ROLE_CHARS)?;
         if self.parent_is_child {
-            return Err(if crate::child_execution_context::is_child_execution() {
-                ChildRuntimeError::NestedChildForbidden
-            } else {
-                ChildRuntimeError::ChildContextRequired
-            });
+            let Some(context) = crate::child_execution_context::current() else {
+                return Err(ChildRuntimeError::ChildContextRequired);
+            };
+            if context.depth() > MAX_CHILD_DEPTH {
+                return Err(ChildRuntimeError::ChildDepthExceeded);
+            }
         }
         if self.reduced_context.len() > MAX_CONTEXT_ITEMS {
             return Err(ChildRuntimeError::TooManyItems {
@@ -576,15 +587,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn marked_child_context_still_forbids_nested_delegation() {
+    async fn marked_child_context_enforces_the_depth_limit() {
         let mut nested = request();
         nested.parent_is_child = true;
-        let result = crate::child_execution_context::scope(
-            crate::child_execution_context::ChildExecutionContext::new("child-1", "task-1"),
+        let depth_one = crate::child_execution_context::scope(
+            crate::child_execution_context::ChildExecutionContext::new(
+                "child-1", "task-1", 1, true,
+            ),
+            {
+                let nested = nested.clone();
+                async move { nested.validate() }
+            },
+        )
+        .await;
+        assert!(
+            depth_one.is_ok(),
+            "depth 2 is the single permitted extra hop"
+        );
+
+        let depth_three = crate::child_execution_context::scope(
+            crate::child_execution_context::ChildExecutionContext::new(
+                "child-1", "task-1", 3, false,
+            ),
             async move { nested.validate() },
         )
         .await;
-        assert_eq!(result, Err(ChildRuntimeError::NestedChildForbidden));
+        assert_eq!(depth_three, Err(ChildRuntimeError::ChildDepthExceeded));
     }
 
     #[test]

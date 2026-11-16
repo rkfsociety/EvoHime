@@ -186,26 +186,44 @@ deadline, boot id и holder process id. Transport retry ограничен тр�
 offload запрещён. Чтение artifact каждый раз проверяет текущую parent chain,
 scope grant и выбранный context, поэтому renderer не получает raw transcript.
 `OperationsPanel` отображает typed projection timeline (role, state, revision,
-budget, lease, reason, dead-letter) и отделяет trace projection от audit.
+budget, lease, reason, dead-letter) и глубину child-задачи (`depth=1` для
+рабочего, `depth=2` для единственного подагента), отделяя trace projection от
+audit.
 
-Вложенная делегация запрещена безусловно: `TypedChildTaskRequest::validate` и
-`child_runtime::ChildTaskRequest::validate` возвращают ошибку раньше проверки
-capability, поэтому профиль роли (включая `coordinator`) не может разрешить
-dispatch `Child`-узла. У coordinator-ребёнка остаётся только read-only набор
-`workspace.read/search`, `git.status/diff`; delegation-capability
-(`child.spawn`, `workflow.start` и т. п.) не входит в канонический read-only
-контракт и отклоняется при создании запроса.
+Глубина child nesting ограничена явной константой `MAX_CHILD_DEPTH = 2`:
+королева делегирует рабочему (`depth = 1`), а рабочий может породить ровно
+одного подагента (`depth = 2`). Подагент уровня 2 не может порождать детей:
+`ChildDepthExceeded` возвращается раньше любой capability-проверки. Глубина 3
+и больше запрещена. `NestedChildForbidden` не снят глобально: он остаётся для
+вложенного запроса без действующего runtime-контекста и для legacy-пути,
+который не несёт delegation grant.
+
+Один дополнительный hop разрешается только явным delegation grant, выданным
+королевой в исходном `TypedChildTaskRequest` (`DelegationGrant`: роль,
+purpose, grants, бюджет и acceptance criteria). Рабочий не может расширить
+grant или синтезировать новый: executor берёт только исходный grant, проверяет
+`grants ⊆ grants рабочего`, бюджет как остаток рабочего после его собственных
+read-only вызовов и очищает delegation у подагента. Без grant попытка
+вложенного запуска отклоняется типизированной ошибкой
+`delegation_not_granted`. Рабочий порождает ровно одного подагента
+последовательно (`await`), без параллельного fan-out нескольких детей;
+`BoundedTaskGroup` продолжает ограничивать общий пул. Fan-in двухуровневый:
+рабочий принимает accepted `TypedChildReport` подагента, объединяет bounded
+findings/sources с собственным отчётом и возвращает агрегированный отчёт
+королеве через тот же `child_workflow` writer.
 
 Поле `parent_is_child` само по себе — утверждение вызывающей стороны, а не
 доказательство. Доверие к нему проверяется по runtime-маркеру
 `child_execution_context::ChildExecutionContext`: `RegisteredChildExecutor`
-устанавливает task-local контекст только вокруг выполнения воркера, а
-`validate` читает его. Маркер не сериализуется, не входит в IPC-контракт и не
-наследуется другим task, поэтому command handler и IPC никогда не могут его
-подделать. Если `parent_is_child = true`, а маркера нет, запрос отклоняется
-типизированной ошибкой `child_context_missing`; если маркер есть, вложенная
-делегация по-прежнему запрещена и даёт `nested_child_forbidden`. Запрос без
-маркера и без child-признака остаётся обычным верхнеуровневым вызовом.
+устанавливает task-local контекст только вокруг выполнения воркера, вычисляя
+`depth = parent.depth + 1` (верхний уровень — 1), а `validate` читает его.
+Маркер не сериализуется, не входит в IPC-контракт, не наследуется другим task
+и несёт глубину вместе с признаком разрешённой делегации, поэтому command
+handler и IPC никогда не могут подделать `depth`. Если `parent_is_child = true`,
+а маркера нет, запрос отклоняется типизированной ошибкой
+`child_context_missing`; если маркер есть, но глубина превышает
+`MAX_CHILD_DEPTH`, возвращается `child_depth_exceeded`. Запрос без маркера и без
+child-признака остаётся обычным верхнеуровневым вызовом.
 
 Lifecycle и accepted-report запись имеют один writer:
 `child_workflow::persist_child_checkpoint` и
@@ -281,9 +299,11 @@ Core предоставляет агенту закрытые инструмен
 пишутся общим `child_workflow`-writer'ом, который использует и legacy IPC. Отчёт
 проходит `Validating → WaitingParentAcceptance → Accepted`, сохраняется в child
 store и попадает в fan-in как типизированный `TypedChildReport`; отдельного agent
-loop, dispatch path или board не появляется. Вложенная делегация по-прежнему
-запрещена, `NodeType::Subgraph` остаётся статическим разворачиванием графа до
-старта. Произвольное редактирование графов через агентские инструменты не
+loop, dispatch path или board не появляется. Один дополнительный
+делегированный hop разрешён только при queen-issued `DelegationGrant` и
+глубине не больше `MAX_CHILD_DEPTH = 2`; глубина 3, параллельный fan-out от
+рабочего и self-spawn невозможны. `NodeType::Subgraph` остаётся статическим
+разворачиванием графа до старта. Произвольное редактирование графов через агентские инструменты не
 разрешено. Доступ к durable run и отмене каждый раз ограничен каноническим путём
 текущего workspace, а фоновые драйверы используют общий ограниченный пул задач.
 

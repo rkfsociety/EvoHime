@@ -508,6 +508,10 @@ pub struct ChildProjection {
     pub lease_live: bool,
     /// Whether the task has entered dead-letter retention.
     pub dead_letter: bool,
+    /// Nesting depth of the child: 1 for a worker delegated by the queen,
+    /// 2 for the single sub-agent that worker may spawn.
+    #[serde(default = "default_child_depth")]
+    pub depth: u8,
     /// Bounded report status for the child-task panel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_status: Option<String>,
@@ -516,6 +520,11 @@ pub struct ChildProjection {
     /// [`MAX_PROJECTION_SUMMARY_CHARS`] by [`bounded_report_summary`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_summary: Option<String>,
+}
+
+/// Default depth used when replaying an older projection without a depth.
+fn default_child_depth() -> u8 {
+    1
 }
 
 /// Clamps a child report summary to [`MAX_PROJECTION_SUMMARY_CHARS`].
@@ -1034,6 +1043,9 @@ pub(crate) fn child_projection(
         budget: request.budget.clone(),
         lease_live: !state.terminal(),
         dead_letter: state == CoordinatorState::Failed,
+        depth: crate::child_execution_context::current()
+            .map(|context| context.depth())
+            .unwrap_or(1),
         report_status: report
             .map(|report| crate::child_executor::report_status_str(report.status).to_owned()),
         report_summary: report.map(|report| bounded_report_summary(&report.summary)),

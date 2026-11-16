@@ -458,12 +458,20 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 возвращается в fan-in. Панель «Дочерние задачи и контексты» показывает bounded
 timeline `child.workflow` со статусом роли и кратким отчётом, без prompt и сырого
 вывода инструментов. Run status и cancel доступны только из workspace, в котором
-запуск был создан. Вложенная делегация остаётся запрещённой для любой роли,
-включая `coordinator`: проверка выполняется до capability-проверок, а
-delegation-capability отсутствует в read-only контракте. `parent_is_child`
-проверяется не только как поле запроса: executor устанавливает runtime-маркер
-`ChildExecutionContext` вокруг воркера, поэтому claim без маркера отклоняется
-как `child_context_missing`, а маркер нельзя подделать из IPC или legacy-команды.
+запуск был создан. Глубина child nesting ограничена `MAX_CHILD_DEPTH = 2`:
+королева → рабочий (`depth=1`) и ровно один подагент рабочего (`depth=2`).
+Подагент уровня 2 не может порождать детей (`child_depth_exceeded`), глубина 3
+и больше запрещена, а параллельный fan-out от рабочего не используется.
+Дополнительный hop разрешён только queen-issued `DelegationGrant`; без grant
+попытка отклоняется как `delegation_not_granted`, grants подагента обязаны быть
+подмножеством grants рабочего, а бюджет — остатком бюджета рабочего.
+`parent_is_child` проверяется не только как поле запроса: executor
+устанавливает runtime-маркер `ChildExecutionContext` с глубиной вокруг
+воркера, поэтому claim без маркера отклоняется как `child_context_missing`, а
+`depth` нельзя подделать из IPC или legacy-команды. `NestedChildForbidden`
+сохраняется для недопустимой вложенности и legacy-пути без grant.
+`OperationsPanel` показывает `depth=1`/`depth=2` и отдельный статус подагента
+в существующем child timeline, без нового agent loop или панели.
 Executor и legacy `SubmitChildRequest`/`SubmitChildReport` используют один
 `child_workflow` writer для checkpoint, projection, accepted report и handoff —
 одинаковый отчёт даёт одинаковые структуры независимо от пути. TeamSession

@@ -28,8 +28,8 @@ use crate::agent_role_profiles::{
     ContractField, ExecutionMode, RunState, StartRuntimeInput,
 };
 use crate::child_contracts::{
-    accept_typed_report, ChildBudget, ContractError, CorrelationContext, CorrelationId, Provenance,
-    TypedChildReport, TypedChildTaskRequest, TypedReportStatus,
+    accept_typed_report, ChildBudget, ContractError, CorrelationContext, CorrelationId,
+    DelegationGrant, Provenance, TypedChildReport, TypedChildTaskRequest, TypedReportStatus,
 };
 use crate::child_roles::{
     ChildRole, HandoffEnvelope, HandoffEnvelopeInput, HandoffKind, HandoffPayload, RoleIdentity,
@@ -174,6 +174,13 @@ struct ResolvedRole {
     effective_grants: Vec<String>,
 }
 
+/// Bounded summary of the single sub-agent the worker was allowed to spawn.
+struct DelegatedSummary {
+    child_task_id: String,
+    status: String,
+    summary: String,
+}
+
 /// Bounded output of the read-only role run before it becomes a typed report.
 struct RoleRunOutput {
     summary: String,
@@ -181,6 +188,7 @@ struct RoleRunOutput {
     sources: Vec<String>,
     errors: Vec<String>,
     successful_calls: u32,
+    delegated: Option<DelegatedSummary>,
 }
 
 impl RoleRunOutput {
@@ -685,6 +693,7 @@ impl RegisteredChildExecutor {
             sources: Vec::new(),
             errors: Vec::new(),
             successful_calls: 0,
+            delegated: None,
         };
         for (index, (tool_name, input)) in plan.into_iter().enumerate() {
             if index >= max_calls || Instant::now() >= deadline {
@@ -745,6 +754,52 @@ impl RegisteredChildExecutor {
         Ok(output)
     }
 
+    /// Returns the worker budget remainder after its own read-only calls.
+    fn remaining_budget(
+        &self,
+        request: &TypedChildTaskRequest,
+        run: &RoleRunOutput,
+        elapsed: Duration,
+    ) -> ChildBudget {
+        let mut budget = request.budget.clone().unwrap_or_default();
+        if let Some(calls) = budget.max_tool_calls {
+            budget.max_tool_calls = Some(calls.saturating_sub(u64::from(run.successful_calls)));
+        }
+        if let Some(seconds) = budget.max_time_seconds {
+            budget.max_time_seconds = Some(seconds.saturating_sub(elapsed.as_secs()));
+        }
+        budget
+    }
+
+    /// Runs the single sub-agent permitted by the queen's delegation grant.
+    ///
+    /// This is strictly sequential: the worker awaits exactly one nested
+    /// execution and never spawns siblings, so it cannot fan out. The nested
+    /// request is derived from the original grant, keeps `parent_is_child`,
+    /// uses a subset of the worker grants and the worker budget remainder, and
+    /// clears its own delegation so depth 3 is unreachable.
+    async fn run_delegated_once(
+        &self,
+        request: &TypedChildTaskRequest,
+        run: &RoleRunOutput,
+        elapsed: Duration,
+    ) -> Result<Option<TypedChildReport>, NodeError> {
+        let Some(grant) = request.delegation.as_ref() else {
+            return Ok(None);
+        };
+        let remaining = self.remaining_budget(request, run, elapsed);
+        let nested = delegated_request(request, grant, &remaining)?;
+        let outcome = self.run(&nested).await?;
+        let report =
+            serde_json::from_str::<TypedChildReport>(&outcome.report_json).map_err(|_| {
+                NodeError::permanent(
+                    "child_report_rejected",
+                    "the sub-agent did not return a typed accepted report",
+                )
+            })?;
+        Ok(Some(report))
+    }
+
     async fn execute(&self, request: &TypedChildTaskRequest) -> Result<ChildOutcome, NodeError> {
         let permit = self.capacity.try_acquire().ok_or_else(|| {
             NodeError::transient(
@@ -790,6 +845,7 @@ impl RegisteredChildExecutor {
         self.transition(&mut coordinator, request, CoordinatorState::Running, None)
             .await?;
 
+        let started = Instant::now();
         let run = match self
             .execute_role_tools(request, &role, &budget, session.as_deref())
             .await
@@ -807,6 +863,25 @@ impl RegisteredChildExecutor {
                 return Err(error);
             }
         };
+        let mut run = run;
+        match self
+            .run_delegated_once(request, &run, started.elapsed())
+            .await
+        {
+            Ok(Some(delegated)) => merge_delegated_output(&mut run, &delegated),
+            Ok(None) => {}
+            Err(error) => {
+                let _ = self
+                    .transition(
+                        &mut coordinator,
+                        request,
+                        CoordinatorState::Failed,
+                        Some(error.code.clone()),
+                    )
+                    .await;
+                return Err(error);
+            }
+        }
         self.transition(
             &mut coordinator,
             request,
@@ -909,6 +984,11 @@ impl RegisteredChildExecutor {
             },
             "summary": run.summary.clone(),
             "findings": run.findings.clone(),
+            "delegated_child": run.delegated.as_ref().map(|delegated| json!({
+                "child_task_id": delegated.child_task_id,
+                "status": delegated.status,
+                "summary": delegated.summary,
+            })),
         })
         .to_string();
         let evidence_hash = Provenance::compute_hash(&run.sources.join("\n"));
@@ -986,9 +1066,40 @@ impl ChildExecutor for RegisteredChildExecutor {
             // The runtime marker is created inside this task only. IPC and
             // legacy command handlers never observe it, so `parent_is_child`
             // from the wire cannot claim a child context it does not have.
+            //
+            // Depth is owned by the runtime, not by the wire: a top-level
+            // queen delegation creates depth 1, and a worker running inside a
+            // marker may create exactly one depth-2 sub-agent. The sub-agent
+            // request must be marked `parent_is_child` and the parent context
+            // must carry the queen's delegation grant.
+            let parent = crate::child_execution_context::current();
+            let depth = match &parent {
+                None => {
+                    if request.parent_is_child {
+                        return Err(contract_error(ContractError::NestedChildForbidden));
+                    }
+                    1
+                }
+                Some(context) => {
+                    if !request.parent_is_child {
+                        return Err(contract_error(ContractError::NestedChildForbidden));
+                    }
+                    context.depth().saturating_add(1)
+                }
+            };
+            if depth > crate::child_contracts::MAX_CHILD_DEPTH {
+                return Err(contract_error(ContractError::ChildDepthExceeded));
+            }
+            if let Some(context) = &parent {
+                if !context.delegation_permitted() {
+                    return Err(contract_error(ContractError::DelegationNotGranted));
+                }
+            }
             let context = crate::child_execution_context::ChildExecutionContext::new(
                 request.child_task_id.clone(),
                 request.parent_task_id.clone(),
+                depth,
+                request.has_delegation_grant() && depth < crate::child_contracts::MAX_CHILD_DEPTH,
             );
             crate::child_execution_context::scope(context, self.execute(request)).await
         })
@@ -1003,6 +1114,137 @@ fn runtime_kind(role: &str) -> ChildTaskKind {
         "planner" | "implementer" | "coordinator" => ChildTaskKind::Documentation,
         _ => ChildTaskKind::Documentation,
     }
+}
+
+/// Stable identifier of the single delegated sub-agent.
+///
+/// Colon stays because it already separates task and child segments in the
+/// existing correlation ids. The suffix is bounded so the contract id limit is
+/// never exceeded.
+fn delegated_child_id(parent: &str) -> String {
+    const SUFFIX: &str = ":hop2";
+    let available = crate::child_contracts::MAX_ID_CHARS.saturating_sub(SUFFIX.len());
+    let mut id: String = parent.chars().take(available).collect();
+    id.push_str(SUFFIX);
+    id
+}
+
+/// Builds the one permitted sub-agent request from the queen's grant.
+///
+/// The worker cannot widen anything: grants and budget are checked as subsets
+/// of the worker's own values, the budget is the worker remainder rather than a
+/// new wallet, and the nested request never carries its own delegation.
+fn delegated_request(
+    request: &TypedChildTaskRequest,
+    grant: &DelegationGrant,
+    remaining: &ChildBudget,
+) -> Result<TypedChildTaskRequest, NodeError> {
+    crate::child_contracts::validate_grant_subset(&grant.grants, &request.grants)
+        .map_err(contract_error)?;
+    crate::child_contracts::validate_budget_subset(&grant.budget, &Some(remaining.clone()))
+        .map_err(contract_error)?;
+    let budget = match &grant.budget {
+        Some(grant_budget) => narrow_budget(grant_budget, remaining),
+        None => remaining.clone(),
+    };
+
+    let child_task_id = delegated_child_id(&request.child_task_id);
+    let correlation = CorrelationContext::new(
+        CorrelationId::new(request.child_task_id.clone()).map_err(contract_error)?,
+        CorrelationId::new(child_task_id.clone()).map_err(contract_error)?,
+        request.correlation.parent_sequence.saturating_add(1),
+    );
+    let mut nested = TypedChildTaskRequest::new(
+        child_task_id,
+        request.child_task_id.clone(),
+        grant.role.clone(),
+        grant.purpose.clone(),
+        correlation,
+    )
+    .map_err(contract_error)?
+    .with_context(request.reduced_context.clone())
+    .map_err(contract_error)?
+    .with_max_output_bytes(
+        request
+            .max_output_bytes
+            .min(crate::child_contracts::MAX_OUTPUT_BYTES),
+    )
+    .map_err(contract_error)?
+    .with_capabilities(grant.requested_capabilities.clone())
+    .map_err(contract_error)?
+    .with_grants(grant.grants.clone())
+    .map_err(contract_error)?
+    .with_budget(budget)
+    .with_input_context_ids(request.input_context_ids.clone())
+    .map_err(contract_error)?
+    .with_output_offload(request.allow_output_offload, request.output_privacy.clone());
+    if let Some(criteria) = &grant.acceptance_criteria {
+        nested = nested
+            .with_acceptance_criteria(criteria.clone())
+            .map_err(contract_error)?;
+    }
+    nested.parent_is_child = true;
+    nested.validate().map_err(contract_error)?;
+    Ok(nested)
+}
+
+/// Narrows a request budget field-by-field so a missing grant field inherits
+/// the worker remainder instead of becoming an unbounded wallet.
+fn narrow_budget(child: &ChildBudget, parent: &ChildBudget) -> ChildBudget {
+    fn lower(child: Option<u64>, parent: Option<u64>) -> Option<u64> {
+        match (child, parent) {
+            (Some(child), Some(parent)) => Some(child.min(parent)),
+            (None, parent) => parent,
+            (child, None) => child,
+        }
+    }
+    ChildBudget {
+        max_tokens: lower(child.max_tokens, parent.max_tokens),
+        max_time_seconds: lower(child.max_time_seconds, parent.max_time_seconds),
+        max_tool_calls: lower(child.max_tool_calls, parent.max_tool_calls),
+    }
+}
+
+/// Merges the accepted sub-agent report into the worker report before fan-in.
+fn merge_delegated_output(run: &mut RoleRunOutput, report: &TypedChildReport) {
+    let status = report_status_str(report.status).to_owned();
+    let summary: String = report
+        .summary
+        .chars()
+        .take(crate::child_workflow::MAX_PROJECTION_SUMMARY_CHARS)
+        .collect();
+    if run.findings.len() < crate::child_contracts::MAX_CONTEXT_ITEMS {
+        run.findings
+            .push(format!("подагент {}: {status}", report.child_task_id));
+    }
+    for finding in &report.findings {
+        if run.findings.len() >= crate::child_contracts::MAX_CONTEXT_ITEMS {
+            break;
+        }
+        run.findings.push(finding.clone());
+    }
+    for source in &report.sources {
+        if run.sources.len() >= crate::child_contracts::MAX_SOURCES {
+            break;
+        }
+        if !run.sources.contains(source) {
+            run.sources.push(source.clone());
+        }
+    }
+    run.sources.sort();
+    run.sources.dedup();
+    run.summary = format!(
+        "{} Подагент {}: {}.",
+        run.summary, report.child_task_id, summary
+    )
+    .chars()
+    .take(crate::child_contracts::MAX_REPORT_CHARS)
+    .collect();
+    run.delegated = Some(DelegatedSummary {
+        child_task_id: report.child_task_id.clone(),
+        status,
+        summary,
+    });
 }
 
 fn role_tool_plan(
@@ -1096,6 +1338,8 @@ fn contract_error(error: ContractError) -> NodeError {
     let (code, retryable) = match error {
         ContractError::NestedChildForbidden => ("nested_child_forbidden", false),
         ContractError::ChildContextRequired => ("child_context_missing", false),
+        ContractError::ChildDepthExceeded => ("child_depth_exceeded", false),
+        ContractError::DelegationNotGranted => ("delegation_not_granted", false),
         ContractError::GrantEscalation { .. } | ContractError::GrantDrift => {
             ("child_effect_forbidden", false)
         }
@@ -1118,6 +1362,7 @@ fn runtime_error(error: crate::child_runtime::ChildRuntimeError) -> NodeError {
     let code = match error {
         ChildRuntimeError::NestedChildForbidden => "nested_child_forbidden",
         ChildRuntimeError::ChildContextRequired => "child_context_missing",
+        ChildRuntimeError::ChildDepthExceeded => "child_depth_exceeded",
         ChildRuntimeError::ForbiddenCapability(_) => "child_effect_forbidden",
         ChildRuntimeError::OutputTooLarge { .. } => "child_output_rejected",
         ChildRuntimeError::TaskMismatch => "child_report_rejected",
@@ -1239,6 +1484,23 @@ mod tests {
                 .with_tool_calls(4),
         )
         .with_output_schema(Schema::new().with_content_type("application/json"))
+    }
+
+    fn delegation_grant(grants: &[&str], budget: Option<ChildBudget>) -> DelegationGrant {
+        DelegationGrant {
+            role: "researcher".into(),
+            purpose: "Проверь тестовый модуль".into(),
+            grants: grants
+                .iter()
+                .map(|grant| Grant::new(*grant).expect("delegation grant"))
+                .collect(),
+            requested_capabilities: grants
+                .iter()
+                .filter_map(|grant| canonical_capability(grant).map(str::to_owned))
+                .collect(),
+            budget,
+            acceptance_criteria: None,
+        }
     }
 
     fn workspace_with_file() -> tempfile::TempDir {
@@ -1432,16 +1694,272 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nested_delegation_stays_forbidden_inside_a_marked_runner() {
-        let context =
-            crate::child_execution_context::ChildExecutionContext::new("run-1:worker", "run-1");
-        let result = crate::child_execution_context::scope(context, async {
-            let mut request = request("coordinator", &["fs.read"]);
-            request.parent_is_child = true;
-            request.validate()
+    async fn depth_two_delegation_completes_and_fans_in_through_the_worker() {
+        use crate::child_workflow::{ChildProjection, CoordinatorState};
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal.clone(), workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())));
+        let hop1 = request("researcher", &["fs.read", "filesystem.search"])
+            .with_delegation(delegation_grant(
+                &["filesystem.search"],
+                Some(
+                    ChildBudget::new()
+                        .with_tokens(4_000)
+                        .with_time(30)
+                        .with_tool_calls(2),
+                ),
+            ))
+            .expect("queen delegation grant");
+
+        let outcome = executor.run(&hop1).await.expect("worker with sub-agent");
+        assert_eq!(outcome.status, "accepted");
+
+        let worker_checkpoint = journal
+            .get_coordinator_checkpoint("run-1:worker")
+            .await
+            .expect("worker checkpoint query")
+            .expect("worker checkpoint");
+        assert_eq!(worker_checkpoint.state, "accepted");
+        let sub_checkpoint = journal
+            .get_coordinator_checkpoint("run-1:worker:hop2")
+            .await
+            .expect("sub-agent checkpoint query")
+            .expect("sub-agent checkpoint");
+        assert_eq!(sub_checkpoint.state, "accepted");
+
+        let mut projections: Vec<ChildProjection> = journal
+            .replay(0, 512)
+            .await
+            .expect("journal replay")
+            .into_iter()
+            .filter(|record| record.event_type == "child.workflow")
+            .filter_map(|record| serde_json::from_slice(&record.payload).ok())
+            .collect();
+        projections.retain(|projection| projection.state == CoordinatorState::Accepted);
+        let worker = projections
+            .iter()
+            .find(|projection| {
+                projection.child_task_id == "run-1:worker" && projection.report_status.is_some()
+            })
+            .expect("worker accepted projection");
+        let sub = projections
+            .iter()
+            .find(|projection| {
+                projection.child_task_id == "run-1:worker:hop2"
+                    && projection.report_status.is_some()
+            })
+            .expect("sub-agent accepted projection");
+        assert_eq!(worker.depth, 1);
+        assert_eq!(sub.depth, 2);
+        assert_eq!(worker.report_status.as_deref(), Some("complete"));
+        assert_eq!(sub.report_status.as_deref(), Some("complete"));
+        for projection in [worker, sub] {
+            let summary = projection
+                .report_summary
+                .as_deref()
+                .expect("bounded projection summary");
+            assert!(summary.chars().count() <= 512);
+            assert_eq!(
+                projection.event_id,
+                format!("{}:accepted", projection.child_task_id)
+            );
+        }
+
+        let report: TypedChildReport =
+            serde_json::from_str(&outcome.report_json).expect("worker typed report");
+        let output: serde_json::Value =
+            serde_json::from_str(report.output_data.as_deref().expect("output data"))
+                .expect("output json");
+        assert_eq!(
+            output["delegated_child"]["child_task_id"],
+            serde_json::json!("run-1:worker:hop2")
+        );
+        assert_eq!(
+            output["delegated_child"]["status"],
+            serde_json::json!("complete")
+        );
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| finding.contains("run-1:worker:hop2")));
+    }
+
+    #[tokio::test]
+    async fn a_worker_without_a_delegation_grant_cannot_spawn_hop_two() {
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal, workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())));
+        let mut nested = request("researcher", &["fs.read"]);
+        nested.parent_is_child = true;
+        let context = crate::child_execution_context::ChildExecutionContext::new(
+            "run-1:worker",
+            "run-1",
+            1,
+            false,
+        );
+        let error = crate::child_execution_context::scope(context, executor.run(&nested))
+            .await
+            .expect_err("missing queen grant");
+        assert_eq!(error.code, "delegation_not_granted");
+    }
+
+    #[tokio::test]
+    async fn a_sub_agent_at_depth_two_cannot_spawn_hop_three() {
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal, workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())));
+        let mut nested = request("researcher", &["fs.read"]);
+        nested.parent_is_child = true;
+        let context = crate::child_execution_context::ChildExecutionContext::new(
+            "run-1:worker:hop2",
+            "run-1:worker",
+            2,
+            true,
+        );
+        let error = crate::child_execution_context::scope(context, executor.run(&nested))
+            .await
+            .expect_err("depth three must be rejected");
+        assert_eq!(error.code, "child_depth_exceeded");
+        assert_eq!(
+            error.message,
+            "nested delegation beyond one extra hop is forbidden"
+        );
+    }
+
+    fn finished_run(successful_calls: u32) -> RoleRunOutput {
+        RoleRunOutput {
+            summary: "worker".into(),
+            findings: Vec::new(),
+            sources: Vec::new(),
+            errors: Vec::new(),
+            successful_calls,
+            delegated: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn delegated_request_uses_subset_grants_and_the_worker_remainder() {
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal, workspace.path());
+        let hop1 = request("researcher", &["fs.read", "filesystem.search"]);
+        let remaining =
+            executor.remaining_budget(&hop1, &finished_run(1), std::time::Duration::ZERO);
+        assert_eq!(remaining.max_tool_calls, Some(3), "one call already spent");
+
+        let grant = delegation_grant(
+            &["filesystem.search"],
+            Some(
+                ChildBudget::new()
+                    .with_tokens(4_000)
+                    .with_time(30)
+                    .with_tool_calls(2),
+            ),
+        );
+        let context = crate::child_execution_context::ChildExecutionContext::new(
+            "run-1:worker",
+            "run-1",
+            1,
+            true,
+        );
+        let nested = crate::child_execution_context::scope(context, async {
+            delegated_request(&hop1, &grant, &remaining)
         })
-        .await;
-        assert_eq!(result, Err(ContractError::NestedChildForbidden));
+        .await
+        .expect("subset delegation");
+        assert!(nested.parent_is_child);
+        assert!(nested.delegation.is_none());
+        assert!(nested.grants_are_subset_of(&hop1.grants));
+        assert_eq!(nested.grants.len(), 1);
+        assert_eq!(nested.grants[0].grant_type, "filesystem.search");
+        let budget = nested.budget.as_ref().expect("nested budget");
+        assert_eq!(budget.max_tokens, Some(4_000));
+        assert_eq!(budget.max_tool_calls, Some(2));
+        assert!(budget.is_within_parent(hop1.budget.as_ref().expect("worker budget")));
+        assert!(budget.max_tool_calls.unwrap_or(u64::MAX) <= remaining.max_tool_calls.unwrap_or(0));
+    }
+
+    #[tokio::test]
+    async fn hop_two_cannot_escalate_grants_or_budget() {
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal, workspace.path());
+        let hop1 = request("researcher", &["fs.read", "filesystem.search"]);
+        let remaining =
+            executor.remaining_budget(&hop1, &finished_run(0), std::time::Duration::ZERO);
+        let context = crate::child_execution_context::ChildExecutionContext::new(
+            "run-1:worker",
+            "run-1",
+            1,
+            true,
+        );
+
+        let wider_grants = crate::child_execution_context::scope(context.clone(), async {
+            delegated_request(
+                &hop1,
+                &delegation_grant(&["workspace.write"], None),
+                &remaining,
+            )
+        })
+        .await
+        .expect_err("grant escalation");
+        assert_eq!(wider_grants.code, "child_effect_forbidden");
+
+        let bigger_budget = crate::child_execution_context::scope(context, async {
+            delegated_request(
+                &hop1,
+                &delegation_grant(
+                    &["filesystem.search"],
+                    Some(
+                        ChildBudget::new()
+                            .with_tokens(9_000)
+                            .with_time(30)
+                            .with_tool_calls(2),
+                    ),
+                ),
+                &remaining,
+            )
+        })
+        .await
+        .expect_err("budget escalation");
+        assert_eq!(bigger_budget.code, "child_cannot_escalate_budget");
+    }
+
+    #[tokio::test]
+    async fn hop_two_cannot_request_write_shell_network_or_elevation() {
+        for capability in [
+            "workspace.write",
+            "shell.execute",
+            "network.fetch",
+            "elevation",
+        ] {
+            let (journal, _database_dir) = journal();
+            let workspace = workspace_with_file();
+            let executor = RegisteredChildExecutor::new(journal, workspace.path())
+                .with_tools(Some(Arc::new(ToolRegistry::bootstrap())));
+            let hop1 = request("researcher", &["fs.read", capability]);
+            let remaining =
+                executor.remaining_budget(&hop1, &finished_run(0), std::time::Duration::ZERO);
+            let grant = delegation_grant(&[capability], None);
+            let context = crate::child_execution_context::ChildExecutionContext::new(
+                "run-1:worker",
+                "run-1",
+                1,
+                true,
+            );
+            let nested = crate::child_execution_context::scope(context.clone(), async {
+                delegated_request(&hop1, &grant, &remaining)
+            })
+            .await
+            .expect("contract shape is built before the runtime policy check");
+            let error = crate::child_execution_context::scope(context, executor.run(&nested))
+                .await
+                .expect_err("forbidden nested capability");
+            assert_eq!(error.code, "child_effect_forbidden", "{capability}");
+        }
     }
 
     #[test]

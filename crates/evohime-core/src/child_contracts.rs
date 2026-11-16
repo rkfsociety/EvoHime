@@ -68,6 +68,12 @@ pub const MAX_RISKS: usize = 32;
 pub const MAX_REVISIONS: u32 = 3;
 /// Default number of allowed report revisions.
 pub const DEFAULT_MAX_REVISIONS: u32 = 2;
+/// Maximum supported child nesting depth.
+///
+/// The queen delegates to a worker (`depth = 1`) and that worker may delegate
+/// one sub-agent (`depth = 2`). A sub-agent at [`MAX_CHILD_DEPTH`] can never
+/// delegate again: there is no depth 3.
+pub const MAX_CHILD_DEPTH: u8 = 2;
 /// Current major and minor version of child-task contracts.
 pub const CONTRACT_VERSION: ContractVersion = ContractVersion { major: 1, minor: 0 };
 
@@ -339,6 +345,85 @@ impl ChildBudget {
 }
 
 // ============================================================================
+// Delegation Grant
+// ============================================================================
+
+/// Explicit permission from the queen for exactly one extra delegation hop.
+///
+/// A worker at depth 1 may spawn one sub-agent at depth 2 only when its own
+/// request carries this grant. The grant is part of the original request and
+/// is never synthesized by the worker: the executor derives the sub-agent
+/// request from this object alone, keeps `parent_is_child = true`, requires a
+/// subset of the worker's grants and budget, and clears the sub-agent's own
+/// delegation flag so depth 3 is impossible.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DelegationGrant {
+    /// Role assigned to the single permitted sub-agent.
+    pub role: String,
+    /// Bounded purpose of the one extra hop.
+    pub purpose: String,
+    /// Grants the worker may pass to the sub-agent; must be a subset of the
+    /// worker's grants.
+    pub grants: Vec<Grant>,
+    /// Read-only capabilities requested for the sub-agent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requested_capabilities: Vec<String>,
+    /// Optional budget ceiling for the sub-agent. It must fit inside the
+    /// worker's remaining budget; when omitted, the remainder itself is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<ChildBudget>,
+    /// Optional acceptance criteria forwarded to the sub-agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acceptance_criteria: Option<String>,
+}
+
+impl DelegationGrant {
+    /// Validates the grant against the worker's own grants and budget.
+    ///
+    /// The check is intentionally one-directional: the worker can only narrow
+    /// what the queen already allowed.
+    pub fn validate_for_parent(
+        &self,
+        parent_grants: &[Grant],
+        parent_budget: &Option<ChildBudget>,
+    ) -> Result<(), ContractError> {
+        validate_text("delegation.role", &self.role, MAX_ROLE_CHARS, true)?;
+        validate_text("delegation.purpose", &self.purpose, MAX_PURPOSE_CHARS, true)?;
+        if self.grants.len() > MAX_GRANTS {
+            return Err(ContractError::TooManyItems {
+                field: "delegation.grants",
+                max: MAX_GRANTS,
+            });
+        }
+        validate_grant_subset(&self.grants, parent_grants)?;
+        validate_budget_subset(&self.budget, parent_budget)?;
+        if self.requested_capabilities.len() > MAX_CAPABILITIES {
+            return Err(ContractError::TooManyItems {
+                field: "delegation.requested_capabilities",
+                max: MAX_CAPABILITIES,
+            });
+        }
+        for capability in &self.requested_capabilities {
+            validate_text("capability", capability, MAX_CAPABILITY_CHARS, true)?;
+            if !capability_name_is_bounded(capability)
+                || !role_allows_capability(&self.role, capability)
+            {
+                return Err(ContractError::ForbiddenCapability(capability.clone()));
+            }
+        }
+        if let Some(criteria) = &self.acceptance_criteria {
+            validate_text(
+                "delegation.acceptance_criteria",
+                criteria,
+                MAX_PURPOSE_CHARS,
+                false,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+// ============================================================================
 // Input/Output Schema
 // ============================================================================
 
@@ -566,6 +651,9 @@ pub struct TypedChildTaskRequest {
     /// Budget constraints
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget: Option<ChildBudget>,
+    /// Queen-issued permission for exactly one extra delegation hop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation: Option<DelegationGrant>,
     /// Acceptance criteria
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acceptance_criteria: Option<String>,
@@ -617,6 +705,7 @@ impl TypedChildTaskRequest {
             output_schema: None,
             grants: Vec::new(),
             budget: None,
+            delegation: None,
             acceptance_criteria: None,
             max_revisions: Some(DEFAULT_MAX_REVISIONS),
             input_context_ids: Vec::new(),
@@ -707,6 +796,22 @@ impl TypedChildTaskRequest {
         self
     }
 
+    /// Attaches the queen-issued permission for one extra delegation hop.
+    ///
+    /// The grant is validated immediately against this request's grants and
+    /// budget, so a worker request can never be created with a delegation
+    /// wider than what the queen already allowed.
+    pub fn with_delegation(mut self, grant: DelegationGrant) -> Result<Self, ContractError> {
+        grant.validate_for_parent(&self.grants, &self.budget)?;
+        self.delegation = Some(grant);
+        Ok(self)
+    }
+
+    /// Returns whether this request carries an explicit delegation grant.
+    pub fn has_delegation_grant(&self) -> bool {
+        self.delegation.is_some()
+    }
+
     /// Sets bounded criteria used by the parent to accept the report.
     pub fn with_acceptance_criteria(
         mut self,
@@ -757,13 +862,17 @@ impl TypedChildTaskRequest {
         // Validate correlation
         self.correlation.validate()?;
 
-        // Validate nested child
+        // Validate nested child depth. `parent_is_child` is still only a claim:
+        // it is accepted only while a real Core child execution context exists
+        // and that context is still within `MAX_CHILD_DEPTH`. The delegation
+        // grant itself is enforced by the executor against the parent context.
         if self.parent_is_child {
-            return Err(if crate::child_execution_context::is_child_execution() {
-                ContractError::NestedChildForbidden
-            } else {
-                ContractError::ChildContextRequired
-            });
+            let Some(context) = crate::child_execution_context::current() else {
+                return Err(ContractError::ChildContextRequired);
+            };
+            if context.depth() > MAX_CHILD_DEPTH {
+                return Err(ContractError::ChildDepthExceeded);
+            }
         }
 
         // Validate context
@@ -812,6 +921,11 @@ impl TypedChildTaskRequest {
                 field: "grants",
                 max: MAX_GRANTS,
             });
+        }
+
+        // Validate the optional one-hop delegation grant against this request.
+        if let Some(delegation) = &self.delegation {
+            delegation.validate_for_parent(&self.grants, &self.budget)?;
         }
 
         // Validate schemas if present
@@ -1464,6 +1578,10 @@ pub enum ContractError {
     NestedChildForbidden,
     /// The request claims `parent_is_child` without a running child context.
     ChildContextRequired,
+    /// The request would create a child deeper than [`MAX_CHILD_DEPTH`].
+    ChildDepthExceeded,
+    /// A child worker tried to delegate without a queen-issued grant.
+    DelegationNotGranted,
 
     // Grant errors
     /// A requested grant exceeds the parent grant.
@@ -1528,6 +1646,13 @@ impl fmt::Display for ContractError {
             Self::ChildContextRequired => write!(
                 f,
                 "parent_is_child requires an active Core child execution context"
+            ),
+            Self::ChildDepthExceeded => {
+                write!(f, "nested delegation beyond one extra hop is forbidden")
+            }
+            Self::DelegationNotGranted => write!(
+                f,
+                "nested delegation requires a queen-issued delegation grant"
             ),
             Self::GrantEscalation { grant } => {
                 write!(f, "grant escalation detected: {grant}")
@@ -1726,15 +1851,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_marked_child_context_forbids_nested_delegation() {
+    async fn test_marked_child_context_enforces_the_depth_limit() {
         let mut nested = create_test_request();
         nested.parent_is_child = true;
-        let result = crate::child_execution_context::scope(
-            crate::child_execution_context::ChildExecutionContext::new("child-1", "task-1"),
+        let depth_one = crate::child_execution_context::scope(
+            crate::child_execution_context::ChildExecutionContext::new(
+                "child-1", "task-1", 1, true,
+            ),
+            {
+                let nested = nested.clone();
+                async move { nested.validate() }
+            },
+        )
+        .await;
+        assert!(depth_one.is_ok());
+
+        let depth_three = crate::child_execution_context::scope(
+            crate::child_execution_context::ChildExecutionContext::new(
+                "child-1", "task-1", 3, false,
+            ),
             async move { nested.validate() },
         )
         .await;
-        assert_eq!(result, Err(ContractError::NestedChildForbidden));
+        assert_eq!(depth_three, Err(ContractError::ChildDepthExceeded));
+    }
+
+    #[test]
+    fn delegation_grant_must_stay_inside_the_worker_request() {
+        let request = create_test_request()
+            .with_grants(vec![
+                Grant::new("workspace.read").unwrap(),
+                Grant::new("git.status").unwrap(),
+            ])
+            .unwrap()
+            .with_budget(ChildBudget::new().with_tokens(4_000).with_tool_calls(4));
+        let grant = super::DelegationGrant {
+            role: "researcher".into(),
+            purpose: "проверь тесты".into(),
+            grants: vec![Grant::new("workspace.read").unwrap()],
+            requested_capabilities: vec!["workspace.read".into()],
+            budget: Some(ChildBudget::new().with_tokens(2_000).with_tool_calls(2)),
+            acceptance_criteria: None,
+        };
+        assert!(request.clone().with_delegation(grant.clone()).is_ok());
+
+        let escalated = super::DelegationGrant {
+            grants: vec![Grant::new("workspace.write").unwrap()],
+            ..grant
+        };
+        assert!(matches!(
+            request.with_delegation(escalated),
+            Err(ContractError::GrantEscalation { .. })
+        ));
     }
 
     #[test]

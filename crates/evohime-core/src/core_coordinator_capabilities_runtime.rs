@@ -359,16 +359,30 @@ mod tests {
         let journal = EventJournal::open(directory.path().join("legacy.db")).expect("journal");
         let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal);
 
-        let context =
-            crate::child_execution_context::ChildExecutionContext::new("child-1", "task-1");
-        let result = crate::child_execution_context::scope(context, async {
+        // No runtime marker: the wire claim has no evidence and is rejected
+        // before any checkpoint is written.
+        let unmarked = dispatch_request(&coordinator, true)
+            .await
+            .expect_err("an unmarked parent_is_child claim must be rejected");
+        assert!(
+            unmarked.contains("child execution context"),
+            "unexpected rejection: {unmarked}"
+        );
+
+        // Even an artificially scoped marker never reaches the command
+        // handler: dispatch runs on a different task, so the task-local marker
+        // is not inherited. The wire claim therefore stays unverified.
+        let context = crate::child_execution_context::ChildExecutionContext::new(
+            "child-1", "task-1", 1, false,
+        );
+        let forged = crate::child_execution_context::scope(context, async {
             dispatch_request(&coordinator, true).await
         })
-        .await;
-        let error = result.expect_err("a forged parent_is_child claim must be rejected");
+        .await
+        .expect_err("legacy nested delegation must stay forbidden");
         assert!(
-            error.contains("child execution context"),
-            "unexpected rejection: {error}"
+            forged.contains("child execution context"),
+            "unexpected rejection: {forged}"
         );
     }
 }
