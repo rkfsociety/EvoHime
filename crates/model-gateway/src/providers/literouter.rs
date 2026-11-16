@@ -7,7 +7,9 @@ use crate::retry::{
     classify_rate_limit, compute_backoff, is_retryable_status, parse_rate_limit_delay,
     parse_retry_after_seconds, read_bounded_rate_limit_body, RateLimitClass, RetryPolicy,
 };
-use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
+use crate::tools::{
+    provider_function_name, ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec,
+};
 use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -179,19 +181,7 @@ impl LiteRouterProvider {
         thinking: Option<ThinkingConfig>,
         options: ChatRequestOptions,
     ) -> Result<reqwest::Response, ProviderError> {
-        let tools = tools.map(|specs| {
-            specs
-                .iter()
-                .cloned()
-                .map(|mut spec| {
-                    // LiteRouter may translate the OpenAI-compatible request to
-                    // Gemini, whose function-declaration schema rejects this
-                    // otherwise common JSON-Schema keyword.
-                    strip_gemini_unsupported_schema_fields(&mut spec.function.parameters);
-                    spec
-                })
-                .collect::<Vec<ToolSpec>>()
-        });
+        let tools = tools.map(wire_tools);
         let has_tools = tools.as_ref().is_some_and(|specs| !specs.is_empty());
         let body = ChatCompletionRequest {
             model: model.to_string(),
@@ -356,6 +346,26 @@ fn cloudflare_typed_error_code(base_url: &str, body: &str) -> Option<u64> {
         code @ (5035 | 3036) => Some(code),
         _ => None,
     }
+}
+
+/// Rewrites Core tool declarations into the OpenAI-compatible wire shape.
+///
+/// Function names must match `^[a-zA-Z0-9_-]+$`; OpenAI and DeepSeek reject
+/// dotted Core ids such as `filesystem.read` with HTTP 400. The manifest hash
+/// is Core-owned metadata and is not part of the provider schema. The request
+/// may be translated to Gemini, whose function declarations reject the common
+/// `additionalProperties` keyword.
+fn wire_tools(specs: &[ToolSpec]) -> Vec<ToolSpec> {
+    specs
+        .iter()
+        .cloned()
+        .map(|mut spec| {
+            spec.function.name = provider_function_name(&spec.function.name);
+            spec.function.manifest_hash = None;
+            strip_gemini_unsupported_schema_fields(&mut spec.function.parameters);
+            spec
+        })
+        .collect()
 }
 
 fn strip_gemini_unsupported_schema_fields(value: &mut Value) {
@@ -945,6 +955,26 @@ mod tests {
         assert_eq!(observation_payload.role, "tool");
         assert_eq!(observation_payload.tool_call_id.as_deref(), Some("call-1"));
         assert_eq!(observation_payload.content, r#"{"ok":true}"#);
+    }
+
+    #[test]
+    fn wire_tools_use_provider_safe_function_names() {
+        let mut spec = ToolSpec::function(
+            "filesystem.read",
+            "Read a file",
+            json!({"type": "object", "properties": {}, "additionalProperties": false}),
+        );
+        spec.function.manifest_hash = Some("sha256:test".into());
+
+        let wire = wire_tools(&[spec]);
+
+        assert_eq!(wire[0].function.name, "filesystem_read");
+        assert!(wire[0].function.manifest_hash.is_none());
+        assert!(wire[0]
+            .function
+            .parameters
+            .get("additionalProperties")
+            .is_none());
     }
 
     #[test]

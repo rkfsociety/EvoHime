@@ -10,7 +10,9 @@ use crate::providers::{
     ProviderKind, TokenStream,
 };
 use crate::retry::{compute_backoff, is_retryable_status, RetryPolicy};
-use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
+use crate::tools::{
+    provider_function_name, ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec,
+};
 use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -275,7 +277,7 @@ fn response_input(message: &ChatMessage) -> Value {
 }
 
 fn response_tool(tool: &ToolSpec) -> Value {
-    json!({ "type": "function", "name": tool.function.name, "description": tool.function.description, "parameters": tool.function.parameters, "strict": tool.function.strict.unwrap_or(false) })
+    json!({ "type": "function", "name": provider_function_name(&tool.function.name), "description": tool.function.description, "parameters": tool.function.parameters, "strict": tool.function.strict.unwrap_or(false) })
 }
 
 fn parse_stream_event(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {
@@ -389,6 +391,13 @@ mod tests {
                 .expect("event")
                 .expect("ok");
         assert_eq!(item, ChatStreamItem::Delta("hi".into()));
+    }
+
+    #[test]
+    fn response_tool_declaration_uses_provider_safe_name() {
+        let tool = ToolSpec::function("filesystem.read", "Read a file", json!({"type": "object"}));
+        let value = response_tool(&tool);
+        assert_eq!(value["name"], "filesystem_read");
     }
 
     #[test]
