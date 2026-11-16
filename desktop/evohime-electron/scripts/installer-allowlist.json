@@ -1,0 +1,8 @@
+{
+  "installers": [
+    {
+      "name": "electron",
+      "script": "install.js"
+    }
+  ]
+}
