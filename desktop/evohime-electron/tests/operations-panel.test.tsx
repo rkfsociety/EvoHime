@@ -525,4 +525,36 @@ describe('operations panel', () => {
     })
     expect(screen.queryByText('Старое предложение')).toBeNull()
   })
+
+  it('показывает глубину child-задачи и отдельный hop 2 в существующем timeline', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('child.workflow', {
+            child_task_id: 'run-1:worker',
+            role: 'researcher',
+            state: 'accepted',
+            depth: 1,
+            report_status: 'complete',
+            report_summary: 'worker result'
+          }),
+          event('child.workflow', {
+            child_task_id: 'run-1:worker:hop2',
+            role: 'researcher',
+            state: 'accepted',
+            depth: 2,
+            report_status: 'partial',
+            report_summary: 'sub-agent result'
+          })
+        ]}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/depth=1/)).toBeTruthy()
+    })
+    expect(screen.getByText(/depth=2 · hop 2/)).toBeTruthy()
+    expect(screen.getByText(/partial/)).toBeTruthy()
+    expect(screen.getByText('sub-agent result')).toBeTruthy()
+  })
 })
