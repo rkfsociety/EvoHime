@@ -17,6 +17,10 @@ pub const MAX_TRANSPORT_RETRIES: u8 = 3;
 pub const DEFAULT_INLINE_MAX_BYTES: usize = 32 * 1024;
 /// Retention duration for dead-lettered child tasks.
 pub const DEAD_LETTER_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// Maximum character count for the bounded report summary in a parent-facing
+/// child projection. The accepted report keeps its full, contract-bounded
+/// summary; only the projection is clamped.
+pub const MAX_PROJECTION_SUMMARY_CHARS: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -508,9 +512,20 @@ pub struct ChildProjection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_status: Option<String>,
     /// Bounded report summary for the child-task panel. Raw tool output and
-    /// model transcripts never enter this field.
+    /// model transcripts never enter this field; the value is clamped to
+    /// [`MAX_PROJECTION_SUMMARY_CHARS`] by [`bounded_report_summary`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_summary: Option<String>,
+}
+
+/// Clamps a child report summary to [`MAX_PROJECTION_SUMMARY_CHARS`].
+///
+/// Projection construction must not depend on the upstream report validator
+/// alone: the full report stays in the child store, while the parent-facing
+/// event carries only this bounded summary. Truncation is character-based, so
+/// multi-byte text is never split mid-codepoint.
+pub fn bounded_report_summary(summary: &str) -> String {
+    summary.chars().take(MAX_PROJECTION_SUMMARY_CHARS).collect()
 }
 
 /// Verifies requested context identifiers against the available parent allowlist.
@@ -951,6 +966,55 @@ mod tests {
         assert_eq!(
             coordinator.begin_revision("child", 2, 10).unwrap().revision,
             1
+        );
+    }
+
+    #[test]
+    fn projection_summary_is_bounded_and_utf8_safe() {
+        let long = "ж".repeat(MAX_PROJECTION_SUMMARY_CHARS * 4);
+        let bounded = bounded_report_summary(&long);
+        assert_eq!(bounded.chars().count(), MAX_PROJECTION_SUMMARY_CHARS);
+        assert_eq!(bounded, "ж".repeat(MAX_PROJECTION_SUMMARY_CHARS));
+        assert_eq!(bounded_report_summary("короткий отчёт"), "короткий отчёт");
+    }
+
+    #[test]
+    fn maximum_report_still_yields_a_bounded_projection_summary() {
+        let request = request();
+        let report = TypedChildReport::new(
+            "child",
+            "parent",
+            request.correlation.clone(),
+            Provenance::new(1).mark_completed(),
+        )
+        .unwrap()
+        .with_summary("я".repeat(crate::child_contracts::MAX_REPORT_CHARS))
+        .unwrap();
+        assert!(report.validate().is_ok());
+        assert_eq!(
+            bounded_report_summary(&report.summary).chars().count(),
+            MAX_PROJECTION_SUMMARY_CHARS
+        );
+    }
+
+    #[test]
+    fn oversized_worker_report_is_rejected_before_projection() {
+        let request = request();
+        let error = TypedChildReport::new(
+            "child",
+            "parent",
+            request.correlation.clone(),
+            Provenance::new(1).mark_completed(),
+        )
+        .unwrap()
+        .with_summary("я".repeat(crate::child_contracts::MAX_REPORT_CHARS + 1))
+        .expect_err("oversized summary must be rejected");
+        assert_eq!(
+            error,
+            ContractError::FieldTooLong {
+                field: "summary",
+                max: crate::child_contracts::MAX_REPORT_CHARS,
+            }
         );
     }
 

@@ -566,7 +566,8 @@ impl RegisteredChildExecutor {
             lease_live,
             dead_letter: state == CoordinatorState::Failed,
             report_status: report.map(|report| report_status_str(report.status).to_owned()),
-            report_summary: report.map(|report| report.summary.clone()),
+            report_summary: report
+                .map(|report| crate::child_workflow::bounded_report_summary(&report.summary)),
         };
         let event = crate::CoreEvent::ChildWorkflowProjection {
             task_id: request.parent_task_id.clone(),
@@ -1525,6 +1526,83 @@ mod tests {
         nested.parent_is_child = true;
         let error = executor.run(&nested).await.expect_err("nested child");
         assert_eq!(error.code, "nested_child_forbidden");
+    }
+
+    #[tokio::test]
+    async fn coordinator_child_cannot_spawn_nested_children() {
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal, workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())));
+        let mut nested = request("coordinator", &["fs.read"]);
+        nested.parent_is_child = true;
+        let error = executor
+            .run(&nested)
+            .await
+            .expect_err("coordinator child spawn");
+        assert_eq!(error.code, "nested_child_forbidden");
+    }
+
+    #[test]
+    fn nested_child_is_rejected_for_every_builtin_role_before_capability_checks() {
+        for role in [
+            "coordinator",
+            "researcher",
+            "planner",
+            "implementer",
+            "tester",
+            "reviewer",
+            "security-reviewer",
+        ] {
+            let mut request = request(role, &["fs.read"]);
+            request.parent_is_child = true;
+            assert_eq!(
+                request.validate(),
+                Err(ContractError::NestedChildForbidden),
+                "role {role} must not delegate a nested child"
+            );
+        }
+    }
+
+    #[test]
+    fn delegation_capabilities_are_outside_the_read_only_contract() {
+        for capability in [
+            "child.spawn",
+            "child.dispatch",
+            "agent.spawn",
+            "workflow.start",
+            "workflow.create",
+        ] {
+            assert!(
+                canonical_capability(capability).is_none(),
+                "{capability} must not map to a read-only capability"
+            );
+        }
+        let profile = builtin_profile("coordinator").expect("coordinator profile");
+        assert!(profile
+            .constraints
+            .iter()
+            .any(|constraint| constraint == "no_nested_children"));
+        for tool in &profile.tools {
+            assert!(
+                capability_for_tool(tool).is_some(),
+                "{tool} must stay inside the read-only tool set"
+            );
+        }
+    }
+
+    #[test]
+    fn projected_report_status_is_a_stable_bounded_value() {
+        for status in [
+            TypedReportStatus::Complete,
+            TypedReportStatus::Partial,
+            TypedReportStatus::Rejected,
+            TypedReportStatus::Failed,
+        ] {
+            let value = report_status_str(status);
+            assert!(!value.is_empty());
+            assert!(value.chars().count() <= 16);
+        }
     }
 
     #[tokio::test]

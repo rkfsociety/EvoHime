@@ -1,6 +1,7 @@
 //! Durable metadata store for Team SOP definitions and immutable sessions.
 use rusqlite::{params, Connection, OptionalExtension};
 const MAX_PROTOCOLS: i64 = 256;
+const MAX_SESSIONS: i64 = 64;
 const MAX_PROTOCOL_BYTES: usize = 64 * 1024;
 const MAX_SESSION_SNAPSHOT_BYTES: usize = 64 * 1024;
 /// Creates the protocol, immutable revision, session, and transition tables.
@@ -94,16 +95,20 @@ pub fn load_all_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
 /// Lists serialized team sessions by most recent update, capped at 64 rows.
 ///
 /// The caller decodes the bounded snapshots and applies its own workflow-run
-/// and role-profile checks. Sessions are never modified by this read.
+/// and role-profile checks. Sessions are never modified by this read. Listing
+/// truncates rather than fails when more sessions exist; an oversized snapshot
+/// never reaches storage because [`save_session`] returns `false` for it.
 ///
 /// # Errors
 ///
 /// Returns the underlying SQLite query error.
 pub fn load_sessions_json(c: &Connection) -> Result<Vec<Vec<u8>>, rusqlite::Error> {
     let mut statement = c.prepare(
-        "SELECT snapshot_json FROM team_sop_sessions ORDER BY updated_at_ms DESC LIMIT 64",
+        "SELECT snapshot_json FROM team_sop_sessions ORDER BY updated_at_ms DESC LIMIT ?1",
     )?;
-    let rows = statement.query_map([], |row| row.get(0))?.collect();
+    let rows = statement
+        .query_map([MAX_SESSIONS], |row| row.get(0))?
+        .collect();
     rows
 }
 

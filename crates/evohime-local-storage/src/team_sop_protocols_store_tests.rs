@@ -38,6 +38,29 @@ fn oversized_protocol_is_rejected_before_storage() {
 }
 
 #[test]
+fn session_snapshot_at_the_bound_is_accepted() {
+    let c = Connection::open_in_memory().unwrap();
+    install_schema(&c).unwrap();
+    let snapshot = vec![b'x'; MAX_SESSION_SNAPSHOT_BYTES];
+    assert!(save_session(
+        &c,
+        SaveSessionInput {
+            id: "session",
+            protocol_id: "protocol",
+            protocol_version: 1,
+            hash: "hash",
+            snapshot: &snapshot,
+            status: "running",
+            phase: "execute",
+            version: 1,
+            now_ms: 1,
+        }
+    )
+    .unwrap());
+    assert_eq!(load_sessions_json(&c).unwrap(), vec![snapshot]);
+}
+
+#[test]
 fn oversized_session_snapshot_is_rejected_before_storage() {
     let c = Connection::open_in_memory().unwrap();
     install_schema(&c).unwrap();
@@ -163,7 +186,7 @@ fn session_listing_is_bounded_and_orders_by_latest_update() {
         .unwrap());
     }
     let rows = load_sessions_json(&c).unwrap();
-    assert_eq!(rows.len(), 64);
+    assert_eq!(rows.len(), MAX_SESSIONS as usize);
     assert_eq!(rows[0], br#"{"index":69}"#);
 }
 

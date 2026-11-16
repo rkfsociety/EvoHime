@@ -188,6 +188,23 @@ scope grant и выбранный context, поэтому renderer не полу
 `OperationsPanel` отображает typed projection timeline (role, state, revision,
 budget, lease, reason, dead-letter) и отделяет trace projection от audit.
 
+Вложенная делегация запрещена безусловно: `TypedChildTaskRequest::validate` и
+`child_runtime::ChildTaskRequest::validate` возвращают `nested_child_forbidden`
+раньше проверки capability, поэтому профиль роли (включая `coordinator`) не
+может разрешить dispatch `Child`-узла. У coordinator-ребёнка остаётся только
+read-only набор `workspace.read/search`, `git.status/diff`; delegation-
+capability (`child.spawn`, `workflow.start` и т. п.) не входит в канонический
+read-only контракт и отклоняется при создании запроса.
+
+Pinned TeamSession загружается ограниченно: не более 64 сессий по последнему
+обновлению и не более 64 KiB на сериализованный snapshot; листинг усекается, а
+snapshot сверх лимита отклоняется до записи (`save_session` возвращает `false`).
+Список протоколов ограничен 256 строками по 64 KiB. Отчёт ребёнка ограничен
+8192 символами на текстовое поле и 32 KiB сериализованного вывода; в
+parent-facing projection попадает только `report_status` из фиксированного enum
+и `report_summary`, усечённый до 512 символов, — полный отчёт остаётся в child
+store и не раздувает событие/журнал.
+
 ## Workflow orchestration
 
 Составная задача описывается графом контракта `workflow/v1`

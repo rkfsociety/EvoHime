@@ -458,7 +458,11 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 возвращается в fan-in. Панель «Дочерние задачи и контексты» показывает bounded
 timeline `child.workflow` со статусом роли и кратким отчётом, без prompt и сырого
 вывода инструментов. Run status и cancel доступны только из workspace, в котором
-запуск был создан. Вложенная делегация остаётся запрещённой.
+запуск был создан. Вложенная делегация остаётся запрещённой для любой роли,
+включая `coordinator`: проверка выполняется до capability-проверок, а
+delegation-capability отсутствует в read-only контракте. TeamSession читается не
+более 64 записей по 64 KiB (snapshot сверх лимита не сохраняется), а projection
+несёт `report_status` из enum и `report_summary` не длиннее 512 символов.
 
 Внутренние runtime-контракты, execution backends, безопасность, диагностика и
 организация агентов не представлены отдельными вкладками: это Core/agent/model
