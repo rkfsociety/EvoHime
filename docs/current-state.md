@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-15.
+Обновлено: 2026-11-17.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -218,7 +218,17 @@ renderer-payload'ы, что показывает чат) и собирает Mar
 `CoreEvent::ToolStarted` и conversation-событие `tool_started` теперь несут
 bounded guardrail-redacted `arguments` (≤ 8 KiB, при переполнении суффикс
 `…[truncated]`; при блокировке guardrail — `<sensitive_data_blocked>`), поэтому
-экспорт объясняет, что именно модель просила сделать. Redacted projection v3
+экспорт объясняет, что именно модель просила сделать. Вывод инструмента для
+`CoreEvent::ToolOutput` ограничен 32 KiB с явным суффиксом
+`…[tool output truncated; request the rest with a smaller limit or offset]`:
+раньше чтение файла около 65 KiB не помещалось в conversation payload и событие
+подменялось маркером `conversation.projection_failed`. Исходящий текст
+проверяется egress-guardrail чанками по границам строк, поэтому большой tool
+output редактируется целиком, а не роняет задачу по размеру. Причина отказа
+guardrail остаётся в `task.failed` стабильным кодом (`sensitive_data_blocked`,
+`egress_payload_too_large`, `egress_guardrail_unavailable`), а не generic
+`task_failed`, и дублируется в model-trace событием `model.egress_blocked` без
+тела сообщения. Redacted projection v3
 живого потока по-прежнему не несёт prompt, arguments или tool output: транскрипт
 строится из журнала conversation, а не перескакивает projection boundary.
 Контент транскрипта проходит ту же shell-границу `asTraceContent`, что и раньше:

@@ -502,7 +502,15 @@ fn is_safe_failure_token(candidate: &str) -> bool {
 
 fn classify_failure_error(error: &str) -> &'static str {
     let lower = error.to_ascii_lowercase();
-    if let Some(code) = classify_provider_failure(&lower) {
+    // Отказ egress-guardrail обязан сохранить причину: размер payload и
+    // найденный секрет — разные события, и generic `task_failed` их скрывал.
+    if lower.contains("sensitive_data_blocked") {
+        "sensitive_data_blocked"
+    } else if lower.contains("egress_payload_too_large") {
+        "egress_payload_too_large"
+    } else if lower.contains("egress_guardrail_unavailable") {
+        "egress_guardrail_unavailable"
+    } else if let Some(code) = classify_provider_failure(&lower) {
         code
     } else if lower.contains("err_blocked_by_client") {
         "client_blocked"
@@ -700,6 +708,34 @@ mod tests {
             assert_eq!(projection["error_code"], expected, "{error}");
             assert_eq!(projection["source"], "core");
             assert_eq!(projection["operation"], "task.execute");
+        }
+    }
+
+    #[test]
+    fn guardrail_failures_keep_their_stable_code_in_the_projection() {
+        let cases = [
+            (
+                "model request failed: api error: sensitive_data_blocked",
+                "sensitive_data_blocked",
+            ),
+            (
+                "model request failed: api error: egress_payload_too_large",
+                "egress_payload_too_large",
+            ),
+            (
+                "model request failed: api error: egress_guardrail_unavailable",
+                "egress_guardrail_unavailable",
+            ),
+        ];
+        for (error, expected) in cases {
+            let projection = failure_projection(&serde_json::json!({ "error": error }));
+            assert_eq!(projection["error_code"], expected, "{error}");
+            assert_eq!(projection["source"], "core");
+            assert_eq!(projection["operation"], "task.execute");
+            assert!(
+                !serde_json::to_string(&projection).unwrap().contains(error),
+                "raw error text must stay out of the durable projection"
+            );
         }
     }
 

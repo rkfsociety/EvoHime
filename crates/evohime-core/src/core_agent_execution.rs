@@ -157,6 +157,35 @@ fn bounded_tool_arguments(input: &serde_json::Value) -> String {
     rendered
 }
 
+/// Maximum tool-output text kept in a conversation-bound trace event.
+///
+/// The conversation journal caps one payload at 64 KiB (`MAX_PAYLOAD_BYTES`).
+/// Without a bound, a single large read dropped the whole `tool.output` event
+/// from the journal, so the transcript lost the call result instead of showing
+/// a truncated excerpt. 32 KiB leaves room for JSON escaping and the event
+/// wrapper even when the excerpt is quote-heavy.
+const MAX_TRACE_TOOL_OUTPUT_BYTES: usize = 32 * 1024;
+const TOOL_OUTPUT_TRUNCATION_SUFFIX: &str =
+    "\n…[tool output truncated; request the rest with a smaller limit or offset]";
+
+/// Truncates tool output on a UTF-8 boundary with an explicit marker.
+///
+/// The truncation is never silent: the suffix names the reason and tells the
+/// model how to fetch the remainder.
+fn bounded_tool_output(output: &str, max_bytes: usize) -> String {
+    if output.len() <= max_bytes {
+        return output.to_owned();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !output.is_char_boundary(end) {
+        end -= 1;
+    }
+    let mut bounded = String::with_capacity(end + TOOL_OUTPUT_TRUNCATION_SUFFIX.len());
+    bounded.push_str(&output[..end]);
+    bounded.push_str(TOOL_OUTPUT_TRUNCATION_SUFFIX);
+    bounded
+}
+
 /// True when the mutation-required task has spent enough successful steps
 /// without editing to justify the next bounded nudge.
 fn mutation_nudge_due(steps_without_mutation: usize, nudges_sent: u32) -> bool {
@@ -2321,7 +2350,7 @@ impl ToolAgent {
                     .send(CoreEvent::ToolOutput {
                         task_id: task_id.clone(),
                         tool_name: call.name.clone(),
-                        output: guarded_output.clone(),
+                        output: bounded_tool_output(&guarded_output, MAX_TRACE_TOOL_OUTPUT_BYTES),
                     })
                     .await;
                 let path_metadata = (!outcome.ok)
@@ -2735,10 +2764,13 @@ fn tool_preflight_can_be_offered(
 #[cfg(test)]
 mod tests {
     use super::{
-        adaptive_catalog_query, inject_observed_expected_hash, model_tool_observation,
-        request_allows_mutation, tool_preflight_can_be_offered, update_observed_file_revision,
-        ToolAgent,
+        adaptive_catalog_query, bounded_tool_output, inject_observed_expected_hash,
+        model_tool_observation, request_allows_mutation, tool_preflight_can_be_offered,
+        update_observed_file_revision, ToolAgent, MAX_TRACE_TOOL_OUTPUT_BYTES,
+        TOOL_OUTPUT_TRUNCATION_SUFFIX,
     };
+    use crate::logging::redact_boundary_text;
+    use crate::sensitive_data_guardrails;
     use evohime_permissions::{Permission, PermissionEngine, PermissionMode};
     use evohime_tool_runtime::{ToolContext, ToolPreflightDecision, ToolRegistry};
 
@@ -3005,6 +3037,69 @@ mod tests {
             model_tool_observation("filesystem_search", true, "search output", &complete),
             "search output"
         );
+    }
+
+    #[test]
+    fn oversized_trace_tool_output_keeps_an_explicit_truncation_marker() {
+        let content = "x".repeat(MAX_TRACE_TOOL_OUTPUT_BYTES + 5_000);
+        let bounded = bounded_tool_output(&content, MAX_TRACE_TOOL_OUTPUT_BYTES);
+        assert!(bounded.ends_with(TOOL_OUTPUT_TRUNCATION_SUFFIX));
+        assert_eq!(
+            bounded.len(),
+            MAX_TRACE_TOOL_OUTPUT_BYTES + TOOL_OUTPUT_TRUNCATION_SUFFIX.len()
+        );
+        assert_eq!(
+            bounded_tool_output("short output", MAX_TRACE_TOOL_OUTPUT_BYTES),
+            "short output"
+        );
+    }
+
+    #[test]
+    fn trace_tool_output_truncation_stays_on_a_utf8_boundary() {
+        let content = "я".repeat(100);
+        let bounded = bounded_tool_output(&content, 51);
+        assert!(!bounded.contains('\u{fffd}'));
+        assert_eq!(
+            bounded,
+            format!("{}{}", "я".repeat(25), TOOL_OUTPUT_TRUNCATION_SUFFIX)
+        );
+    }
+
+    #[test]
+    fn bounded_trace_tool_output_still_projects_into_the_conversation_journal() {
+        // Регрессия: tool output в 64 KiB не помещался в bounded conversation
+        // payload, событие терялось и подменялось `conversation.projection_failed`.
+        let content = "y".repeat(MAX_TRACE_TOOL_OUTPUT_BYTES * 2);
+        let event = crate::CoreEvent::ToolOutput {
+            task_id: "task-1".into(),
+            tool_name: "filesystem_read".into(),
+            output: bounded_tool_output(&content, MAX_TRACE_TOOL_OUTPUT_BYTES),
+        };
+        let payload = serde_json::to_vec(&event).expect("tool output serializes");
+        let projected = crate::conversation_event_log::project_core_event("tool.output", &payload)
+            .expect("bounded tool output projects");
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].kind, "tool_output");
+    }
+
+    #[test]
+    fn a_large_file_read_survives_the_model_egress_bound() {
+        // Регрессия инцидента: чтение файла ~65 KiB давало сообщение модели
+        // 66.7 KiB, guardrail отказывал целиком, и задача падала с `task_failed`.
+        let hash = "9df4fb8b1493eb11ad820926c914c3e31ea7af3433dda2705870e2f1b2171f75";
+        let content = "строка файла с текстом\n".repeat(6_000);
+        assert!(content.len() > sensitive_data_guardrails::MAX_INPUT_BYTES);
+        let guarded = redact_boundary_text("tool", &content).expect("tool output is scanned");
+        assert_eq!(guarded.len(), content.len());
+        let observation = model_tool_observation(
+            "filesystem_read",
+            true,
+            &guarded,
+            &serde_json::json!({"content_hash": hash, "revision": 7}),
+        );
+        let (wrapped, _) = evohime_context_budget::scratchpad::wrap_external_output(&observation);
+        let accepted = redact_boundary_text("model", &wrapped).expect("model message is accepted");
+        assert_eq!(accepted.len(), wrapped.len());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-11-14.
+Обновлено: 2026-11-17.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
@@ -33,6 +33,29 @@ suite, `build:shell`, `build:updater` и `check:bundle`. Shell preview успе�
 снимки ниже сохраняются только как evidence исходных запусков.
 Исторические run ID ниже сохранены как evidence на момент их запуска и не
 являются живым статусом.
+
+### Oversized egress payload и bounded tool output (2026-11-17; текущая задача)
+
+- Причина инцидента: чтение `desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx`
+  (~64.7 KiB) давало сообщение модели 66.7 KiB. Guardrail проверял сообщение
+  одним вызовом с лимитом 64 KiB, отказывал целиком, отказ превращался в
+  `sensitive_data_blocked`, а `task.failed` проецировался как generic
+  `task_failed`; транскрипт терял `tool.output` из-за
+  `conversation.projection_failed`.
+- `redact_boundary_text` переведён на чанкованную редакцию по границам строк:
+  большой tool output или сообщение сканируются целиком, а не отвергаются по
+  размеру. `CoreEvent::ToolOutput` ограничен 32 KiB с явным суффиксом
+  `…[tool output truncated; request the rest with a smaller limit or offset]`.
+  Причина отказа guardrail сохраняется в `task.failed`
+  (`sensitive_data_blocked`, `egress_payload_too_large`,
+  `egress_guardrail_unavailable`) и дублируется в model-trace событием
+  `model.egress_blocked` без тела сообщения.
+- Marker: core `0.0.000450` → `0.0.000451`; других публикуемых модулей
+  изменение не касается.
+- Локально выполнены `cargo fmt --all --check` и `git diff --check`.
+  Rust-компиляция и тесты локально не запускались (правило 4); их подтверждает
+  CI после push, а исправление в установленной версии проверяется только после
+  публикации модуля и обновления.
 
 ### Core-Owned Local Model Adaptation v1 (2026-09-26; текущая задача)
 

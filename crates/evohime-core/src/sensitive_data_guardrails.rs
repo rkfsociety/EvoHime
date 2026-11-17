@@ -301,6 +301,105 @@ pub fn redact_text(
     Ok(result)
 }
 
+/// Redacts text of any length by scanning it in bounded, line-aligned chunks.
+///
+/// [`redact_text`] refuses input larger than [`MAX_INPUT_BYTES`] so a single
+/// scan stays bounded. Tool results and command output regularly exceed that
+/// bound, and refusing them turned an ordinary large file read into a terminal
+/// task failure instead of redacted content. This helper keeps every individual
+/// scan bounded while covering the whole text: chunks split on line boundaries,
+/// so a detector match (email, token, bearer header, private key) is never cut
+/// between two scans.
+///
+/// # Errors
+///
+/// Returns [`GuardrailError::Blocked`] when a blocking rule matches,
+/// [`GuardrailError::InputTooLarge`] when one line alone exceeds the chunk
+/// bound, and [`GuardrailError::InvalidPolicy`] for an invalid policy.
+pub fn redact_text_chunked(
+    snapshot: &PolicySnapshot,
+    input: &str,
+) -> Result<RedactionResult, GuardrailError> {
+    if input.len() <= snapshot.policy.max_input_bytes {
+        return redact_text(snapshot, input);
+    }
+    // Каждый чанк укладывается в тот же bound, что проверяет redact_text:
+    // одна строка до MAX_INPUT_BYTES сканируется целиком, более длинная —
+    // по-прежнему fail closed.
+    let chunk_limit = snapshot.policy.max_input_bytes;
+    let mut value = String::with_capacity(input.len());
+    let mut action: Option<Action> = None;
+    let mut rule_ids: Vec<String> = Vec::new();
+    let mut match_count = 0usize;
+    let mut chunk = String::new();
+    for segment in input.split_inclusive('\n') {
+        if segment.len() > chunk_limit {
+            return Err(GuardrailError::InputTooLarge);
+        }
+        if !chunk.is_empty() && chunk.len() + segment.len() > chunk_limit {
+            merge_redaction(
+                &mut value,
+                &mut action,
+                &mut rule_ids,
+                &mut match_count,
+                redact_text(snapshot, &chunk)?,
+            );
+            chunk.clear();
+        }
+        chunk.push_str(segment);
+    }
+    if !chunk.is_empty() {
+        merge_redaction(
+            &mut value,
+            &mut action,
+            &mut rule_ids,
+            &mut match_count,
+            redact_text(snapshot, &chunk)?,
+        );
+    }
+    let output_bytes = value.len();
+    Ok(RedactionResult {
+        value,
+        metadata: RedactionMetadata {
+            contract_version: CONTRACT_VERSION,
+            policy_hash: snapshot.policy_hash.clone(),
+            destination: snapshot.policy.destination.clone(),
+            action,
+            rule_ids,
+            match_count,
+            blocked: false,
+            output_bytes,
+        },
+    })
+}
+
+/// Appends one chunk result and folds its metadata into the chunked total.
+fn merge_redaction(
+    value: &mut String,
+    action: &mut Option<Action>,
+    rule_ids: &mut Vec<String>,
+    match_count: &mut usize,
+    result: RedactionResult,
+) {
+    value.push_str(&result.value);
+    *match_count = match_count.saturating_add(result.metadata.match_count);
+    for rule_id in result.metadata.rule_ids {
+        if !rule_ids.contains(&rule_id) {
+            rule_ids.push(rule_id);
+        }
+    }
+    let strongest = match (*action, result.metadata.action) {
+        (Some(current), Some(next)) => Some(if next.rank() > current.rank() {
+            next
+        } else {
+            current
+        }),
+        (None, next) => next,
+        (current, None) => current,
+    };
+    *action = strongest;
+}
+
 /// Recursively redacts string values in a bounded JSON value.
 pub fn redact_json(
     snapshot: &PolicySnapshot,
@@ -566,6 +665,37 @@ mod tests {
         assert!(
             !result.value.contains("user@example.com") && !tail.value.contains("user@example.com")
         );
+    }
+    #[test]
+    fn oversized_multiline_text_is_redacted_in_bounded_chunks() {
+        let mut input = String::new();
+        for index in 0..3_000 {
+            input.push_str(&format!("row {index} contact user{index}@example.com\n"));
+        }
+        assert!(input.len() > MAX_INPUT_BYTES);
+        let result = redact_text_chunked(&default_policy("tool"), &input).unwrap();
+        assert_eq!(result.metadata.match_count, 3_000);
+        assert!(result.metadata.rule_ids.contains(&"email".to_string()));
+        assert!(!result.value.contains("@example.com"));
+        assert_eq!(result.metadata.output_bytes, result.value.len());
+        assert!(!result.metadata.blocked);
+    }
+    #[test]
+    fn a_blocking_rule_still_blocks_chunked_input() {
+        let mut input = "safe line\n".repeat(10_000);
+        input.push_str("-----BEGIN PRIVATE KEY-----");
+        assert!(matches!(
+            redact_text_chunked(&default_policy("tool"), &input),
+            Err(GuardrailError::Blocked(_))
+        ));
+    }
+    #[test]
+    fn oversized_single_line_fails_closed_instead_of_being_skipped() {
+        let input = "a".repeat(MAX_INPUT_BYTES + 10);
+        assert!(matches!(
+            redact_text_chunked(&default_policy("tool"), &input),
+            Err(GuardrailError::InputTooLarge)
+        ));
     }
     #[test]
     fn restart_is_ephemeral() {

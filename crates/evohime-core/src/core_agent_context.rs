@@ -50,6 +50,53 @@ fn provider_error_reason(error: &ProviderError) -> &'static str {
     }
 }
 
+/// Redacts every outgoing model message and maps guardrail failures to stable
+/// error codes.
+///
+/// A blocked payload must stay terminal: it is never sent to a provider. An
+/// oversized payload, however, has no security meaning of its own, so it keeps
+/// its own code instead of being reported as a secret detection. The trace
+/// record keeps the cause diagnosable without storing the message body.
+fn guarded_provider_messages(
+    task_id: &str,
+    messages: &[ChatMessage],
+) -> Result<Vec<ChatMessage>, AgentRunError> {
+    messages
+        .iter()
+        .map(|message| {
+            let mut message = message.clone();
+            match redact_boundary_text("model", &message.content) {
+                Ok(value) => {
+                    message.content = value;
+                    Ok(message)
+                }
+                Err(error) => {
+                    let error_code = match error {
+                        sensitive_data_guardrails::GuardrailError::Blocked(_) => {
+                            "sensitive_data_blocked"
+                        }
+                        sensitive_data_guardrails::GuardrailError::InputTooLarge => {
+                            "egress_payload_too_large"
+                        }
+                        _ => "egress_guardrail_unavailable",
+                    };
+                    write_model_trace(
+                        "model.egress_blocked",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "error_code": error_code,
+                            "message_bytes": message.content.len(),
+                        }),
+                    );
+                    Err(AgentRunError::Provider(ProviderError::Api(
+                        error_code.into(),
+                    )))
+                }
+            }
+        })
+        .collect()
+}
+
 fn aggregate_sample_usage(
     samples: &[ProvenancedModelResult],
 ) -> Option<evohime_model_gateway::LlmUsage> {
@@ -1244,16 +1291,7 @@ impl ToolAgent {
                 None
             };
 
-            let provider_messages = messages
-                .iter()
-                .map(|message| {
-                    let mut message = message.clone();
-                    message.content = redact_boundary_text("model", &message.content)
-                        .map_err(|_| ProviderError::Http("sensitive_data_blocked".into()))?;
-                    Ok(message)
-                })
-                .collect::<Result<Vec<_>, ProviderError>>()
-                .map_err(AgentRunError::Provider)?;
+            let provider_messages = guarded_provider_messages(task_id, messages)?;
             let strategy_hook = match (&self.journal, request_id.as_ref()) {
                 (Some(journal), Some(request_id)) => Some(CorePromptStrategyRouteHook {
                     journal: journal.clone(),

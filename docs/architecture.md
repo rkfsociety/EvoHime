@@ -661,7 +661,20 @@ renderer-payload'ами, что показывает чат. Чтобы вызо
 bounded guardrail-redacted `arguments` (≤ 8 KiB с суффиксом `…[truncated]`,
 `<sensitive_data_blocked>` при блокировке guardrail) — они проходят тот же
 guardrail, что и сам вызов инструмента, и ограничены, чтобы не выбить событие из
-bounded conversation journal. Промпт, arguments и tool output при этом
+bounded conversation journal. `CoreEvent::ToolOutput` по той же причине несёт не
+больше 32 KiB текста с суффиксом
+`…[tool output truncated; request the rest with a smaller limit or offset]`:
+без этого ограничения один большой вывод инструмента не помещался в
+conversation payload 64 KiB, и событие `tool.output` заменялось маркером
+`conversation.projection_failed`, теряя результат вызова из транскрипта.
+Egress-guardrail сканирует исходящий текст не одним вызовом с лимитом 64 KiB,
+а bounded-чанками по границам строк, поэтому большой tool output или сообщение
+пользователя редактируются целиком, а не отвергаются по размеру. Отказ
+guardrail сохраняет стабильный код в `task.failed`: `sensitive_data_blocked`
+для найденного секрета, `egress_payload_too_large` для строки больше
+chunk-лимита и `egress_guardrail_unavailable` для иной ошибки; причина также
+пишется в model-trace событием `model.egress_blocked` без тела сообщения.
+Промпт, arguments и tool output при этом
 по-прежнему не пересекают projection boundary живого потока и остаются доступны
 только через conversation log; shell-граница `asTraceContent` маскирует URL и
 секретные assignment-поля перед записью файла.
@@ -2001,7 +2014,10 @@ contract version 1. Правила имеют deterministic SHA-256 policy snaps
 precedence `block > hash > mask > redact`; detectors покрывают email,
 secret/bearer tokens и private keys. Structured JSON обходится рекурсивно с
 лимитами depth 16/nodes 512, stream держит bounded carry и обрабатывает
-совпадения между chunks. Unknown/oversized/malformed input fail closed.
+совпадения между chunks. Текстовый input больше 64 KiB сканируется bounded
+чанками по границам строк, поэтому большой tool output или model message
+редактируется целиком; одна строка сверх лимита, неизвестный и структурно
+oversized/malformed input по-прежнему fail closed.
 
 Admission применяется к provider model messages, tool input/output, streaming
 API и `model-trace.jsonl`. Local authoritative records отделены от redacted

@@ -132,7 +132,10 @@ pub(crate) fn redact_boundary_text(
     destination: &str,
     value: &str,
 ) -> Result<String, sensitive_data_guardrails::GuardrailError> {
-    sensitive_data_guardrails::redact_text(
+    // Чанкованная редакция: один tool output или сообщение может быть больше
+    // MAX_INPUT_BYTES, и отказ по размеру не должен превращаться в отказ
+    // отправки модели с подменой причины на sensitive_data_blocked.
+    sensitive_data_guardrails::redact_text_chunked(
         &sensitive_data_guardrails::default_policy(destination),
         value,
     )
