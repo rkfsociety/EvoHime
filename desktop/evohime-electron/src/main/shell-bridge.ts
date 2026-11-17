@@ -36,6 +36,7 @@ import { ChatStoreError, type ChatStore } from './chat-store'
 import { normalizeWorkspacePath } from './workspace-store'
 import { resolveIdentity, resolveRepository } from './identity'
 import {
+  defaultCompatibleProfileSummary,
   normalizeApiKey,
   normalizeBaseUrl,
   isProviderProfileId,
@@ -1710,13 +1711,16 @@ function dispatch(
       const profileIdValue = value['profileId']
       const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
       const currentSummary = providers.summary()
+      // An unsaved vendor profile has no stored settings yet, and it only gets
+      // stored by this very save. Resolve it to its defaults so the first key
+      // of a vendor is not rejected as an unknown profile.
       const currentProfile = provider === null
         ? undefined
         : provider === 'openai_compatible' && profileId
           ? currentSummary.compatibleProfiles?.[profileId]
             ?? (currentSummary.profiles.openai_compatible.profileId === profileId
               ? currentSummary.profiles.openai_compatible
-              : undefined)
+              : defaultCompatibleProfileSummary(profileId))
           : currentSummary.profiles[provider]
       const freeAccessProbePolicy = value['freeAccessProbePolicy'] === undefined
         ? currentProfile?.freeAccessProbePolicy ?? 'disabled'

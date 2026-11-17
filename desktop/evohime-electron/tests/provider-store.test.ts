@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   ProviderStore,
+  defaultCompatibleProfileSummary,
   normalizeApiKey,
   normalizeBaseUrl,
   normalizeModel,
@@ -599,6 +600,27 @@ describe('provider profile endpoints', () => {
       expect(summary?.profiles.openai_compatible.profileId).toBe(profileId)
       expect(summary?.profiles.openai_compatible.baseUrl).toBe(PROVIDER_PROFILE_ENDPOINTS[profileId])
     }
+  })
+
+  it('describes an unsaved vendor profile with its defaults', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+
+    // Nothing is stored yet, so the summary deliberately lists no vendor
+    // profile; the shell falls back to these defaults for the first save.
+    expect(store.summary().compatibleProfiles).toEqual({})
+    expect(defaultCompatibleProfileSummary('deepseek')).toEqual({
+      model: '',
+      baseUrl: 'https://api.deepseek.com/v1',
+      tier: 'free',
+      configured: false,
+      profileId: 'deepseek',
+      freeAccessProbePolicy: 'disabled',
+      requestPacing: { enabled: false, intervalMs: 8_000, freeIntervalMs: 18_948 }
+    })
+    expect(defaultCompatibleProfileSummary('cloudflare_workers_ai')).toMatchObject({
+      baseUrl: '',
+      configured: false
+    })
   })
 })
 

@@ -205,31 +205,14 @@ export class ProviderStore {
       freeAccessRoutingMode: document.freeAccessRoutingMode,
       allowPaidFallback: document.allowPaidFallback,
       requestPacing: active.requestPacing,
-      profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => {
-        const profile = profileFor(document, kind)
-        return [kind, {
-          model: profile.model,
-          baseUrl: profile.baseUrl,
-          tier: profile.tier,
-          configured: configuredProfile(kind, profile),
-          profileId: profile.profileId,
-          ...(profile.accountId ? { accountId: profile.accountId } : {}),
-          freeAccessProbePolicy: profile.freeAccessProbePolicy,
-          requestPacing: profile.requestPacing
-        } satisfies ProviderProfileSummary]
-      })) as Readonly<Record<ProviderKind, ProviderProfileSummary>>,
+      profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => (
+        [kind, profileSummary(kind, profileFor(document, kind))] as const
+      ))) as Readonly<Record<ProviderKind, ProviderProfileSummary>>,
+      // Unsaved vendor profiles stay absent so the renderer can tell a stored
+      // credential apart from its defaults.
       compatibleProfiles: Object.fromEntries(PROVIDER_PROFILE_IDS.flatMap((profileId) => {
         const profile = document.compatibleProfiles[profileId]
-        return profile ? [[profileId, {
-          model: profile.model,
-          baseUrl: profile.baseUrl,
-          tier: profile.tier,
-          configured: configuredProfile('openai_compatible', profile),
-          profileId,
-          ...(profile.accountId ? { accountId: profile.accountId } : {}),
-          freeAccessProbePolicy: profile.freeAccessProbePolicy,
-          requestPacing: profile.requestPacing
-        } satisfies ProviderProfileSummary]] : []
+        return profile ? [[profileId, profileSummary('openai_compatible', profile)] as const] : []
       })) as Partial<Record<ProviderProfileId, ProviderProfileSummary>>
     }
   }
@@ -789,6 +772,32 @@ function providerProfileBaseUrl(profileId: ProviderProfileId, accountId: string,
 
 function configuredProfile(provider: ProviderKind, profile: StoredProfile): boolean {
   return provider === 'ollama' || profile.secret.length > 0
+}
+
+/** Secret-free view of one profile; the credential itself never leaves the store. */
+function profileSummary(provider: ProviderKind, profile: StoredProfile): ProviderProfileSummary {
+  return {
+    model: profile.model,
+    baseUrl: profile.baseUrl,
+    tier: profile.tier,
+    configured: configuredProfile(provider, profile),
+    profileId: profile.profileId,
+    ...(profile.accountId ? { accountId: profile.accountId } : {}),
+    freeAccessProbePolicy: profile.freeAccessProbePolicy,
+    requestPacing: profile.requestPacing
+  }
+}
+
+/**
+ * Defaults of a vendor profile that has no stored settings yet.
+ *
+ * The first save of a vendor credential needs a previous profile to compare
+ * the probe-consent scope with, and a profile only reaches the stored document
+ * through that very save. The shell therefore resolves the missing profile to
+ * these defaults instead of rejecting the first key as an unknown profile.
+ */
+export function defaultCompatibleProfileSummary(profileId: ProviderProfileId): ProviderProfileSummary {
+  return profileSummary('openai_compatible', compatibleProfileFor(EMPTY, profileId))
 }
 
 function normalizeStoredSecret(value: unknown): string {

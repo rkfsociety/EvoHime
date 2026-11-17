@@ -682,6 +682,31 @@ describe('renderer command surface', () => {
     })
   })
 
+  it('saves the first key of a vendor profile that has no stored settings yet', async () => {
+    // A vendor profile only reaches the store through its first save, so the
+    // summary cannot list it beforehand.
+    const outcome = (await invoke('provider.save', {
+      provider: 'openai_compatible',
+      profileId: 'deepseek',
+      apiKey: 'sk-deepseek-secret',
+      model: '',
+      baseUrl: 'https://api.deepseek.com/v1',
+      tier: 'paid'
+    })) as { ok: true; value: { summary: ProviderSummary; restarted: boolean } }
+
+    expect(outcome.ok).toBe(true)
+    expect(providerWrites).toEqual([
+      expect.objectContaining({
+        provider: 'openai_compatible',
+        profileId: 'deepseek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        tier: 'paid',
+        freeAccessProbePolicy: 'disabled'
+      })
+    ])
+    expect(JSON.stringify(sent)).not.toContain('sk-deepseek-secret')
+  })
+
   it('rejects a provider endpoint that would leak the key over plain http', async () => {
     const outcome = (await invoke('provider.save', {
       provider: 'literouter',
