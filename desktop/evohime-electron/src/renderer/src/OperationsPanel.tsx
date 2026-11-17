@@ -208,6 +208,12 @@ interface ChildTimelineItem {
   readonly budget?: { readonly max_tokens?: number; readonly max_time_seconds?: number; readonly max_tool_calls?: number }
   readonly report_status?: string | null
   readonly report_summary?: string | null
+  readonly spawned_subagents?: number
+  readonly planned_ceiling?: number
+  readonly extensions_granted?: number
+  readonly lazy_waiting?: number
+  readonly in_flight_subagents?: number
+  readonly extension_requested?: boolean
 }
 
 interface RetainedChildProjection {
@@ -1004,6 +1010,17 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
                 <code>{translate(item.role ?? 'child')} · {translate(item.state ?? event.eventType)}{item.report_status ? ` · ${translate(item.report_status)}` : ''}</code>
                 <span>{translate(item.child_task_id ?? translate("идентификатор скрыт"))} · depth={item.depth ?? 1}{translate(item.depth === 2 ? ' · hop 2' : '')} · rev {translate(item.revision ?? 0)}{translate(item.reason_code ? ` · ${item.reason_code}` : '')}{translate(item.dead_letter ? ' · dead-letter' : '')}</span>
                 {item.report_summary ? <small>{translate(item.report_summary)}</small> : null}
+                {item.planned_ceiling ? (
+                  <small>
+                    {translate(`подагенты ${item.spawned_subagents ?? 0} / ${item.planned_ceiling}`)}
+                    {item.extensions_granted ? ` · ${translate('расширений')} ${item.extensions_granted}` : ''}
+                    {item.in_flight_subagents ? ` · ${translate('в работе')} ${item.in_flight_subagents}` : ''}
+                    {item.lazy_waiting ? ` · ${translate('ожиданий')} ${item.lazy_waiting}` : ''}
+                  </small>
+                ) : null}
+                {item.extension_requested ? (
+                  <small>{translate('ожидает решения')} · {translate("расширение grant'а запрошено")}</small>
+                ) : null}
               </li>
             ))}
           </ol>

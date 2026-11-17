@@ -557,4 +557,32 @@ describe('operations panel', () => {
     expect(screen.getByText(/partial/)).toBeTruthy()
     expect(screen.getByText('sub-agent result')).toBeTruthy()
   })
+
+  it('показывает ленивое порождение подагентов и ожидание расширения grant', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('child.workflow', {
+            child_task_id: 'run-1:worker',
+            role: 'researcher',
+            state: 'running',
+            depth: 1,
+            planned_ceiling: 8,
+            spawned_subagents: 3,
+            extensions_granted: 0,
+            lazy_waiting: 2,
+            in_flight_subagents: 0,
+            extension_requested: true
+          })
+        ]}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/подагенты 3 \/ 8/)).toBeTruthy()
+    })
+    expect(screen.getByText(/ожиданий 2/)).toBeTruthy()
+    expect(screen.getByText(/ожидает решения/)).toBeTruthy()
+    expect(screen.getByText(/расширение grant'а запрошено/)).toBeTruthy()
+  })
 })
