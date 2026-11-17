@@ -1949,11 +1949,8 @@ body {
 .composer__attachment button { padding: 0; border: 0; background: transparent; color: var(--fg-faint); cursor: pointer; font-size: 15px; line-height: 1; }
 .composer__attachment button:hover { color: var(--fg); }
 .composer__mode-hint { margin: 5px 4px 0; color: var(--fg-muted); font-size: 11px; }
-.composer__shortcut { color: var(--fg-faint); font-size: 10px; white-space: nowrap; }
-.composer__shortcut kbd { padding: 0; border: 0; color: inherit; font: inherit; }
 .composer__footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 16px; padding: 5px 2px 0; }
 .composer__footer .shell__reason { margin: 0; color: #d4aa45; font-size: 11px; }
-.composer__footer > span:first-child:not(.composer__shortcut) { flex: 1; }
 .composer__hint { display: none; }
 
 @media (max-width: 1080px) {
@@ -1965,7 +1962,6 @@ body {
   .composer__inner { padding: 6px; border-radius: 14px; }
   .composer__controls { margin: 0; }
   .composer__footer .shell__reason { max-width: 52%; }
-  .composer__shortcut { font-size: 9px; }
 }
 .composer__hint {
   display: none;
@@ -2013,7 +2009,7 @@ body {
 }
 
 .permission-picker__button--read_only { color: var(--success); }
-.permission-picker__button--full { color: var(--warning); }
+.permission-picker__button--full { color: var(--danger); }
 .permission-picker__chevron { color: var(--fg-faint); font-size: 9px; }
 
 .permission-picker__menu {
@@ -6042,6 +6038,33 @@ body {
   box-shadow: none;
 }
 
+/* In the composer the access mode stays an icon-only chip: the mode name is
+   still announced through the button aria-label and its title tooltip. */
+.composer__control-group .permission-picker__button > span:nth-child(2) {
+  display: none;
+}
+
+.composer__control-group .permission-picker__chevron {
+  flex: 0 0 auto;
+}
+
+.composer__control-group .permission-picker__button {
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.composer__control-group .permission-picker__button--full {
+  color: var(--danger);
+}
+
+.composer__control-group:has(.permission-picker__button--full) > .composer__control-icon {
+  color: var(--danger);
+}
+
+.composer__control-group:has(.permission-picker__button--read_only) > .composer__control-icon {
+  color: var(--success);
+}
+
 .composer__control-group .model-picker,
 .composer__control-group .model-picker__button {
   min-width: 0;
@@ -6103,6 +6126,12 @@ body {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+/* The hint lives on the wrapper so it also shows while the button is disabled. */
+.composer__send-wrap {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
 .composer__send:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 84%, white);
   transform: translateY(-1px);
@@ -6153,22 +6182,6 @@ body {
   flex: 0 1 auto;
   gap: 8px;
   min-width: 0;
-}
-
-.composer__footer .composer__shortcut {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.composer__shortcut kbd {
-  padding: 1px 5px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-sunken);
-  color: var(--fg-muted);
-  font: 10px/1.3 var(--mono);
 }
 
 .statusbar {

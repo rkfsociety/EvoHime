@@ -934,15 +934,6 @@ export function TaskTimeline({
               <ComposerIcon name="folder" className="composer__control-icon" />
               <strong>{translate(workspace ? basename(workspace) : translate("Без проекта"))}</strong>
             </div>
-            <div className="composer__control-group">
-              <ComposerIcon name="lock" className="composer__control-icon" />
-              <PermissionModePicker
-                connection={connection}
-                workspace={workspace}
-                open={toolsMenuOpen}
-                onOpenChange={setToolsMenuOpen}
-              />
-            </div>
           </div>
           <div className="composer__box">
             <div className="composer__prompt-row">
@@ -1014,18 +1005,25 @@ export function TaskTimeline({
               >
                 <ComposerIcon name="globe" />
               </button>
-              <button
-                type="button"
-                className={`composer__send${running ? ' composer__send--stop' : ''}`}
-                aria-label={running ? (stopRequested ? translate("Остановка задачи") : translate("Остановить задачу")) : translate("Запустить задачу")}
-                onClick={() => {
-                  if (running) void stop()
-                  else if (canStart) void start()
-                }}
-                disabled={running ? stopRequested || !connected : !canStart}
+              <span
+                className="composer__send-wrap"
+                title={running
+                  ? (stopRequested ? translate("Остановка задачи") : translate("Остановить задачу"))
+                  : `Enter ${translate("— отправить ·")} Shift + Enter ${translate("— новая строка ·")} Ctrl + V ${translate("— вставить файлы")}`}
               >
-                {running ? <UiIcon name="stop" size={15} className="composer__icon" /> : <ComposerIcon name="send" />}
-              </button>
+                <button
+                  type="button"
+                  className={`composer__send${running ? ' composer__send--stop' : ''}`}
+                  aria-label={running ? (stopRequested ? translate("Остановка задачи") : translate("Остановить задачу")) : translate("Запустить задачу")}
+                  onClick={() => {
+                    if (running) void stop()
+                    else if (canStart) void start()
+                  }}
+                  disabled={running ? stopRequested || !connected : !canStart}
+                >
+                  {running ? <UiIcon name="stop" size={15} className="composer__icon" /> : <ComposerIcon name="send" />}
+                </button>
+              </span>
             </div>
           </div>
 
@@ -1065,9 +1063,17 @@ export function TaskTimeline({
                 <ComposerIcon name="box" className="composer__control-icon" />
                 <ModelPicker connection={connection} events={events} provider={providerMode} use="agent" />
               </div>
+              <div className="composer__control-group">
+                <ComposerIcon name="lock" className="composer__control-icon" />
+                <PermissionModePicker
+                  connection={connection}
+                  workspace={workspace}
+                  open={toolsMenuOpen}
+                  onOpenChange={setToolsMenuOpen}
+                />
+              </div>
               {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : null}
             </div>
-            <span className="composer__shortcut"><kbd>Enter</kbd> {translate("— отправить ·")}{' '}<kbd>Shift + Enter</kbd> {translate("— новая строка ·")}{' '}<kbd>Ctrl + V</kbd> {translate("— вставить файлы")}</span>
           </div>
 
           {commandError ? <p role="alert" className="shell__reason">{translate(commandError)}</p> : null}
