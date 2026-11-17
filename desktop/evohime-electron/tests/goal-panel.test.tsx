@@ -11,7 +11,7 @@ const goal: GoalProjection = {
   goalId: 'goal-1',
   version: 2,
   workspaceId: 'workspace-1',
-  chatId: '',
+  chatId: 'chat-1',
   objective: 'Подготовить релиз',
   successCriteria: [{
     id: 'criterion-1',
@@ -68,11 +68,24 @@ afterEach(() => {
 })
 
 describe('GoalPanel', () => {
-  it('renders only the bounded Core projection and requests the list', async () => {
+  it('does not render a goal projected for another chat', () => {
+    installApi()
+    const otherChatGoal = { ...goal, chatId: 'chat-2' }
+    render(<GoalPanel connection="connected" events={[listEvent({ schemaVersion: 1, goals: [otherChatGoal], errorCode: '', truncated: false })]} workspace={'C:\\workspace'} chatId="chat-1" />)
+
+    expect(screen.queryByText('Подготовить релиз')).toBeNull()
+    expect(screen.getByText('В этом чате пока нет цели.')).toBeTruthy()
+  })
+
+  it('renders only the current chat projection and requests its goal list', async () => {
     const invoke = installApi()
-    render(<GoalPanel connection="connected" events={[listEvent({ schemaVersion: 1, goals: [goal], errorCode: '', truncated: false })]} workspace={'C:\\workspace'} />)
+    render(<GoalPanel connection="connected" events={[listEvent({ schemaVersion: 1, goals: [goal], errorCode: '', truncated: false })]} workspace={'C:\\workspace'} chatId="chat-1" />)
 
     expect(await vi.waitFor(() => invoke.mock.calls.some(([command]) => command === 'core.listGoals'))).toBe(true)
+    expect(invoke).toHaveBeenCalledWith('core.listGoals', {
+      workspacePath: 'C:\\workspace', chatId: 'chat-1', limit: 64
+    })
+    expect(invoke).toHaveBeenCalledWith('core.listGoals', { workspacePath: 'C:\\workspace', chatId: 'chat-1', limit: 64 })
     expect(screen.getByText('Подготовить релиз')).toBeTruthy()
     expect(screen.getByText('Проверки проходят')).toBeTruthy()
     expect(screen.getByText('Бюджет: tokens 1000 · cost — · продолжений 1')).toBeTruthy()
@@ -85,7 +98,7 @@ describe('GoalPanel', () => {
 
   it('sends creation, transition, and criterion verification through typed commands', async () => {
     const invoke = installApi()
-    render(<GoalPanel connection="connected" events={[listEvent({ schemaVersion: 1, goals: [goal], errorCode: '', truncated: false })]} workspace={'C:\\workspace'} />)
+    render(<GoalPanel connection="connected" events={[listEvent({ schemaVersion: 1, goals: [goal], errorCode: '', truncated: false })]} workspace={'C:\\workspace'} chatId="chat-1" />)
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Новая цель' }), { target: { value: 'Новая поставка' } })
     fireEvent.change(screen.getByRole('textbox', { name: 'Критерий успеха' }), { target: { value: 'Артефакт опубликован' } })
@@ -94,6 +107,7 @@ describe('GoalPanel', () => {
     expect(await vi.waitFor(() => invoke.mock.calls.some(([command]) => command === 'core.createGoal'))).toBe(true)
     expect(invoke.mock.calls.find(([command]) => command === 'core.createGoal')?.[1]).toMatchObject({
       workspacePath: 'C:\\workspace',
+      chatId: 'chat-1',
       objective: 'Новая поставка',
       successCriteria: [{ id: 'criterion-1', kind: 'manual', statement: 'Артефакт опубликован' }]
     })

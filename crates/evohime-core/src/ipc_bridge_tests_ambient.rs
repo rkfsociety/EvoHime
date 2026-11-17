@@ -136,6 +136,31 @@ async fn persistent_goal_ipc_is_typed_bounded_and_recoverable() {
     assert_eq!(projection.remaining_criteria, vec!["criterion-1"]);
     assert!(!projection.workspace_id.contains("evohime-goal-workspace"));
 
+    let mut no_chat_create = generated::CreateGoal {
+        goal_id: "goal-no-chat".into(),
+        workspace_path: workspace.to_string_lossy().into_owned(),
+        objective: "Цель без чата запрещена".into(),
+        success_criteria: vec![generated::GoalCriterionInput {
+            id: "criterion-1".into(),
+            kind: "manual".into(),
+            statement: "Не должна сохраняться".into(),
+        }],
+        idempotency_key: "goal-create-no-chat".into(),
+        ..Default::default()
+    };
+    no_chat_create.chat_id.clear();
+    let rejected = typed_goal_call(
+        &bridge,
+        "goal-create-no-chat-request",
+        generated::command_envelope::Command::CreateGoal(no_chat_create),
+    )
+    .await;
+    let rejected = match rejected.event {
+        Some(generated::event_envelope::Event::GoalAction(result)) => result,
+        other => panic!("expected typed rejection for goal without chat, got {other:?}"),
+    };
+    assert_eq!(rejected.error_code, "invalid_argument");
+
     let replay = typed_goal_call(
         &bridge,
         "goal-create-request",
@@ -155,6 +180,7 @@ async fn persistent_goal_ipc_is_typed_bounded_and_recoverable() {
         generated::command_envelope::Command::ListGoals(generated::ListGoals {
             workspace_path: workspace.to_string_lossy().into_owned(),
             limit: 16,
+            chat_id: "chat-1".into(),
         }),
     )
     .await;
@@ -164,6 +190,22 @@ async fn persistent_goal_ipc_is_typed_bounded_and_recoverable() {
     };
     assert_eq!(listed.goals.len(), 1);
     assert_eq!(listed.goals[0].objective, "Проверить typed Goal");
+
+    let other_chat = typed_goal_call(
+        &bridge,
+        "goal-list-other-chat-request",
+        generated::command_envelope::Command::ListGoals(generated::ListGoals {
+            workspace_path: workspace.to_string_lossy().into_owned(),
+            limit: 16,
+            chat_id: "chat-2".into(),
+        }),
+    )
+    .await;
+    let other_chat = match other_chat.event {
+        Some(generated::event_envelope::Event::GoalList(result)) => result,
+        other => panic!("expected typed GoalList for another chat, got {other:?}"),
+    };
+    assert!(other_chat.goals.is_empty());
 
     let fetched = typed_goal_call(
         &bridge,

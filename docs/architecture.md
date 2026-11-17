@@ -258,10 +258,17 @@ queen-side `lazy_delegation::extend_delegation` и только в предел�
 показывает её на отдельной вкладке «Улей». Budget-секция агрегирует за
 скользящие минуту/час/сутки только committed dispatch-маркеры выбранной модели
 и RPM/RPH/RPD из активной route configuration; нулевой cap означает
-«без настроенного лимита». Для DeepSeek Core сохраняет prompt/completion и
-provider-reported cache-hit tokens в append-only `context_ledger_usage`; snapshot
-суммирует текущие UTC-сутки по модели `deepseek-flash` или `deepseek-v4-pro`,
-учитывая peak/off-peak по времени отправки каждого запроса и публичный тариф. Это оценка
+«без настроенного лимита». Провайдер в проекции — это выбранный профиль
+(`deepseek`, `literouter`, `openrouter`, …); счётчики запросов запрашиваются по
+транспорту и точной модели, потому что именно транспорт записывает immutable
+provenance ledger. Для DeepSeek Core сохраняет
+prompt/completion и provider-reported cache-hit tokens в append-only
+`context_ledger_usage`; snapshot суммирует текущие UTC-сутки по модели
+`deepseek-flash` или `deepseek-v4-pro` (retired-написания `deepseek-v4-flash` и
+`deepseek-v4-flash-vision-exp` считаются по тарифу Flash), учитывая
+peak/off-peak по времени отправки каждого запроса и публичный тариф. Строки
+выбираются по провайдеру и точной модели из immutable ledger, поэтому смена
+маршрута не смешивает расходы. Это оценка
 по фактическому usage, а не billing statement; отсутствующий cache-hit считается
 cache miss, unknown model или недоступная история не отображаются как нулевой
 расход. Peak hours: 01:00–04:00 и 06:00–10:00 UTC в будни, кроме официальных
@@ -1405,10 +1412,11 @@ oneof tags 17–19. Electron main валидирует bounds и traversal, rend
 показывает metadata и запрашивает полный документ только по явному клику;
 generic payload и authority в UI не используются.
 
-### Persistent Goals
+### Chat-scoped Goals
 
-Persistent Goal v1 — Core-owned durable projection цели, переживающая model
-turn, чат и перезапуск Core. Контракт и `GoalStore` находятся в
+Goal v1 — Core-owned progress projection, привязанная к одному чату. Она может
+переживать отдельные model turns и перезапуск Core, пока существует связанная
+история чата, но не является постоянной workspace/user goal. Контракт и `GoalStore` находятся в
 `evohime-local-storage::goal`, runtime facade — в `evohime-core::goal`; общая
 SQLite schema — v33. Projection хранит только bounded objective, criteria,
 статус, progress, blockers, next action, budgets и ссылки на workflow/child/
@@ -1433,10 +1441,12 @@ bounded warning и не повторяет неизвестный внешний
 `VerifyGoalCriterion` и `LinkGoalReference` (tags 142–150). Typed
 `GoalProjection`, `GoalListProjection` и `GoalActionResult` используют
 EventEnvelope oneof tags 20–22; список ограничивается фактическим protobuf
-размером и сообщает `projection_truncated` до записи во frame. Electron
-main/preload только проверяет форму и маршрутизирует команды; `GoalPanel` в
-Overview отображает Core projection и посылает явные
-create/pause/resume/cancel/verify actions. Goal не является
+размером и сообщает `projection_truncated` до записи во frame. `ListGoals`
+обязательно принимает `chat_id`; Core и SQLite возвращают только цели именно
+этого workspace/chat. Создание из агента без активного чата отклоняется.
+Electron main/preload только проверяет форму и маршрутизирует команды; цель
+отображается в панели соответствующего чата, а общий Overview больше не
+показывает workspace-список целей. Goal не является
 scheduler: автоматического создания или продолжения задач из одного сообщения
 нет.
 

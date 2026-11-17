@@ -1054,6 +1054,7 @@ impl ToolAgent {
         ledger: &evohime_context_budget::ledger::ContextLedgerEntry,
         actual_prompt_tokens: u32,
         actual_completion_tokens: u32,
+        cache_read_input_tokens: Option<u32>,
     ) {
         let Some(journal) = &self.journal else {
             return;
@@ -1067,6 +1068,7 @@ impl ToolAgent {
                 ledger_id: ledger.id.clone(),
                 actual_prompt_tokens,
                 actual_completion_tokens,
+                cache_read_input_tokens,
                 estimator_drift: drift.relative,
                 recorded_at: task_memory::now_millis() as i64,
             })

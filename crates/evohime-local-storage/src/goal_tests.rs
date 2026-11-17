@@ -92,6 +92,33 @@ fn transitions_and_evidence_are_core_authoritative() {
 }
 
 #[test]
+fn goal_list_is_scoped_to_the_requested_chat() {
+    let connection = Connection::open_in_memory().unwrap();
+    install_schema(&connection).unwrap();
+    let store = GoalStore::new(&connection);
+    store
+        .create(
+            &goal().seal().unwrap(),
+            GoalCommand::new("shell", "request-chat-1", &"1".repeat(64)),
+        )
+        .unwrap();
+    let mut other_chat_goal = goal();
+    other_chat_goal.id = "goal-2".into();
+    other_chat_goal.chat_id = Some("chat-2".into());
+    store
+        .create(
+            &other_chat_goal.seal().unwrap(),
+            GoalCommand::new("shell", "request-chat-2", &"2".repeat(64)),
+        )
+        .unwrap();
+
+    let listed = store.list_for_chat("workspace-1", "chat-1", 16).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, "goal-1");
+    assert_eq!(listed[0].chat_id.as_deref(), Some("chat-1"));
+}
+
+#[test]
 fn storage_is_transactional_idempotent_and_rejects_stale_writes() {
     let connection = Connection::open_in_memory().unwrap();
     install_schema(&connection).unwrap();

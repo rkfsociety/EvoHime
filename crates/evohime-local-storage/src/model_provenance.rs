@@ -125,6 +125,23 @@ pub struct ModelResponseRecord {
     pub completed_at: Option<i64>,
 }
 
+/// Dispatched request counts for one route inside three rolling windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DispatchWindowCounts {
+    /// Attempts dispatched inside the rolling minute window.
+    pub last_minute: u64,
+    /// Attempts dispatched inside the hourly window.
+    pub last_hour: u64,
+    /// Attempts dispatched inside the daily window.
+    pub last_day: u64,
+    /// Oldest dispatch still inside the hourly window.
+    pub oldest_hour_ms: Option<i64>,
+    /// Oldest dispatch still inside the daily window.
+    pub oldest_day_ms: Option<i64>,
+    /// Oldest dispatch still inside the minute window.
+    pub oldest_minute_ms: Option<i64>,
+}
+
 /// Model-generated or system-originated tool intent linked to its source request.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolIntentRecord {
@@ -407,7 +424,11 @@ pub fn install_schema(connection: &Connection) -> Result<()> {
            receipt_id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE REFERENCES model_requests(request_id),
            receipt_hash TEXT NOT NULL, canonical_payload BLOB NOT NULL, previous_receipt_hash TEXT,
            key_id TEXT NOT NULL, created_at INTEGER NOT NULL
-         );",
+         );
+         -- The hive polls rolling dispatch windows every two seconds, so the
+         -- counters must not scan the provenance table on each tick.
+         CREATE INDEX IF NOT EXISTS idx_model_requests_route_dispatch
+           ON model_requests(provider, model, dispatch_at);",
     )?;
     Ok(())
 }
@@ -853,6 +874,46 @@ impl<'a> ModelProvenanceRepository<'a> {
             self.redact_request(id, "retention_pruned")?;
         }
         Ok(ids.len())
+    }
+
+    /// Counts dispatched attempts of one route inside three rolling windows.
+    ///
+    /// A row counts once its dispatch marker was committed, so a retried attempt
+    /// is counted separately: the provider rate limit is hit per request, not
+    /// per logical operation. The oldest dispatch inside each window is returned
+    /// with the counters so a caller can compute the exact reset moment instead
+    /// of guessing it.
+    pub fn dispatch_windows(
+        &self,
+        provider: &str,
+        model: &str,
+        now_ms: i64,
+        minute_window_ms: i64,
+        hour_window_ms: i64,
+        day_window_ms: i64,
+    ) -> Result<DispatchWindowCounts> {
+        let window = |span: i64| -> Result<(u64, Option<i64>)> {
+            let from = now_ms.saturating_sub(span.max(0));
+            let row: (i64, Option<i64>) = self.connection.query_row(
+                "SELECT COUNT(*), MIN(dispatch_at) FROM model_requests
+                 WHERE provider=?1 AND model=?2 AND dispatch_at IS NOT NULL
+                   AND dispatch_at >= ?3 AND dispatch_at <= ?4",
+                params![provider, model, from, now_ms],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            Ok((row.0.max(0) as u64, row.1))
+        };
+        let (last_minute, oldest_minute_ms) = window(minute_window_ms)?;
+        let (last_hour, oldest_hour_ms) = window(hour_window_ms)?;
+        let (last_day, oldest_day_ms) = window(day_window_ms)?;
+        Ok(DispatchWindowCounts {
+            last_minute,
+            last_hour,
+            last_day,
+            oldest_minute_ms,
+            oldest_hour_ms,
+            oldest_day_ms,
+        })
     }
 
     /// Создаёт замкнутый bounded bundle в staging-каталоге и публикует его

@@ -43,6 +43,23 @@ pub const LEDGER_WRITE_FAILED: &str = "ledger_write_failed";
 /// Maximum byte length of a compaction idempotency key.
 pub const COMPACTION_OPERATION_KEY_BYTES: usize = 128;
 
+/// One provider usage row used to calculate the current UTC day's model cost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DailyModelUsage {
+    /// Provider model identifier from the immutable context ledger.
+    pub model: String,
+    /// Total input tokens reported by the provider.
+    pub prompt_tokens: u32,
+    /// Output tokens reported by the provider.
+    pub completion_tokens: u32,
+    /// Cached input tokens, when the provider reported the cache-hit count.
+    pub cache_read_input_tokens: Option<u32>,
+    /// Unix milliseconds when the model request was assembled and dispatched.
+    pub request_at: i64,
+    /// Unix milliseconds when the provider response usage was recorded.
+    pub recorded_at: i64,
+}
+
 /// Durable progress and result metadata for one context compaction operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompactionOperation {
@@ -371,17 +388,61 @@ impl<'a> ContextLedgerStore<'a> {
         self.connection.execute(
             "INSERT INTO context_ledger_usage (
                 ledger_id, actual_prompt_tokens, actual_completion_tokens,
-                estimator_drift, recorded_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                cache_read_input_tokens, estimator_drift, recorded_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![
                 usage.ledger_id,
                 usage.actual_prompt_tokens,
                 usage.actual_completion_tokens,
+                usage.cache_read_input_tokens,
                 usage.estimator_drift,
                 usage.recorded_at,
             ],
         )?;
         Ok(())
+    }
+
+    /// Loads bounded usage of one dispatched route since the supplied UTC-day start.
+    ///
+    /// The row is selected by the immutable ledger's provider and model, so the
+    /// caller prices exactly the route that was dispatched. A request whose
+    /// ledger was assembled before the day boundary is excluded even when its
+    /// usage was recorded after midnight.
+    pub fn deepseek_usage_since(
+        &self,
+        start_ms: i64,
+        provider: &str,
+        model: &str,
+    ) -> Result<Vec<DailyModelUsage>, StorageError> {
+        let mut statement = self.connection.prepare_cached(
+            "SELECT ledger.model, usage.actual_prompt_tokens,
+                    usage.actual_completion_tokens, usage.cache_read_input_tokens,
+                    usage.recorded_at, ledger.created_at
+             FROM context_ledger_usage AS usage
+             JOIN context_ledger AS ledger ON ledger.id = usage.ledger_id
+             WHERE ledger.provider = ?1
+               AND ledger.model = ?2
+               AND ledger.created_at >= ?3
+               AND usage.recorded_at >= ?3
+             ORDER BY usage.recorded_at ASC LIMIT 100001",
+        )?;
+        let rows = statement.query_map(rusqlite::params![provider, model, start_ms], |row| {
+            Ok(DailyModelUsage {
+                model: row.get(0)?,
+                prompt_tokens: row.get(1)?,
+                completion_tokens: row.get(2)?,
+                cache_read_input_tokens: row.get(3)?,
+                recorded_at: row.get(4)?,
+                request_at: row.get(5)?,
+            })
+        })?;
+        let usage = rows.collect::<Result<Vec<_>, _>>()?;
+        if usage.len() > 100_000 {
+            return Err(StorageError::InvalidInput(
+                "deepseek daily usage exceeds projection bound".into(),
+            ));
+        }
+        Ok(usage)
     }
 
     /// Регистрация ссылки receipt из 03.4. Записи с неэкспортированным receipt

@@ -25,7 +25,98 @@ impl IpcBridge {
         }
         let projections: Vec<_> = by_child.into_values().collect();
         let roles = self.persistent_agent_roles().await;
-        crate::hive_state::HiveStateSnapshot::from_projection(&settings, &projections, &roles)
+        let observation = self.hive_observation().await;
+        crate::hive_state::HiveStateSnapshot::from_observation(
+            &settings,
+            &projections,
+            &roles,
+            &observation,
+        )
+    }
+
+    /// Collects configured provider limits for the model selected on the active route.
+    ///
+    /// The projection is additive: a missing route configuration leaves caps
+    /// unset; an unreadable provenance row preserves known caps but marks the
+    /// counters unavailable so the UI cannot mistake missing history for zero.
+    async fn hive_observation(&self) -> crate::hive_state::HiveObservation {
+        let mut observation = crate::hive_state::HiveObservation {
+            now_ms: crate::task_memory::now_millis() as i64,
+            ..crate::hive_state::HiveObservation::default()
+        };
+        let Some(config) = self.gateway_config.as_ref() else {
+            return observation;
+        };
+        let Some(route) = config.routes.get(&config.default_route) else {
+            return observation;
+        };
+        // The ledger records the transport kind, so dispatch counters must be
+        // queried by that exact value. The vendor profile is the readable
+        // identity and decides whether the DeepSeek tariff applies.
+        let transport = route.provider.as_str();
+        let profile = route.provider_profile_id;
+        let provider = profile
+            .map_or(transport, |profile| profile.as_str())
+            .to_owned();
+        // The user-selected model overrides the configured default, so the caps
+        // and counters must follow the model that will actually be dispatched.
+        let selected_model = self
+            .selected_model
+            .get()
+            .map(|value| value.to_string())
+            .filter(|value| !value.trim().is_empty());
+        let model = crate::core_agent::effective_model_name(
+            &route.literouter.model,
+            selected_model.as_deref(),
+        );
+        let limits = route.model_rate_limits.get(&model);
+        observation.provider = provider;
+        observation.model = model.clone();
+        if profile == Some(evohime_model_gateway::ProviderProfileId::DeepSeek) {
+            let day_start_ms = observation
+                .now_ms
+                .div_euclid(crate::hive_state::HIVE_DAY_WINDOW_MS)
+                * crate::hive_state::HIVE_DAY_WINDOW_MS;
+            if let Ok(usage) = self
+                .journal
+                .deepseek_usage_since(day_start_ms, transport, &model)
+                .await
+            {
+                observation.daily_cost_nano_usd =
+                    crate::hive_state::deepseek_daily_cost_nano_usd(&model, &usage);
+                observation.daily_cost_available = observation.daily_cost_nano_usd.is_some();
+            }
+        }
+        observation.minute_cap = limits
+            .filter(|limits| limits.enabled)
+            .map_or(0, |limits| limits.rpm);
+        observation.hour_cap = limits
+            .filter(|limits| limits.enabled)
+            .map_or(0, |limits| limits.rph);
+        observation.day_cap = limits
+            .filter(|limits| limits.enabled)
+            .map_or(0, |limits| limits.rpd);
+        if let Ok(windows) = self
+            .journal
+            .model_dispatch_windows(
+                transport,
+                &model,
+                observation.now_ms,
+                crate::hive_state::HIVE_MINUTE_WINDOW_MS,
+                crate::hive_state::HIVE_HOUR_WINDOW_MS,
+                crate::hive_state::HIVE_DAY_WINDOW_MS,
+            )
+            .await
+        {
+            observation.history_available = true;
+            observation.requests_last_minute = windows.last_minute;
+            observation.requests_last_hour = windows.last_hour;
+            observation.requests_last_day = windows.last_day;
+            observation.oldest_minute_dispatch_ms = windows.oldest_minute_ms;
+            observation.oldest_hour_dispatch_ms = windows.oldest_hour_ms;
+            observation.oldest_day_dispatch_ms = windows.oldest_day_ms;
+        }
+        observation
     }
 
     /// Lists active role profiles from the persistent agent registry.

@@ -8,7 +8,7 @@ impl IpcBridge {
     ) -> generated::GoalActionResult {
         let invalid = !valid_goal_token(&request.goal_id)
             || !valid_checkpoint_workspace(&request.workspace_path)
-            || (!request.chat_id.is_empty() && !valid_goal_token(&request.chat_id))
+            || !valid_goal_token(&request.chat_id)
             || request.objective.trim().is_empty()
             || request.success_criteria.len() > crate::goal::GOAL_MAX_CRITERIA
             || !valid_goal_token(&request.idempotency_key);
@@ -110,6 +110,7 @@ impl IpcBridge {
             request.limit as usize
         };
         if !valid_checkpoint_workspace(&request.workspace_path)
+            || !valid_goal_token(&request.chat_id)
             || limit > crate::goal::GOAL_MAX_READ_LIMIT
         {
             return generated::GoalListProjection {
@@ -121,7 +122,9 @@ impl IpcBridge {
         let workspace_id = crate::goal::workspace_id_from_path(&request.workspace_path);
         let runtime = crate::goal::GoalRuntime::new(self.journal.clone());
         match (
-            runtime.list(&workspace_id, limit).await,
+            runtime
+                .list_for_chat(&workspace_id, &request.chat_id, limit)
+                .await,
             runtime.recovery(&workspace_id).await,
         ) {
             (Ok(goals), Ok(recovery)) => {

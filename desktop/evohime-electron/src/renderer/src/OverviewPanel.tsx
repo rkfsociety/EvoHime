@@ -4,7 +4,6 @@ import { useState } from 'react'
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
-import { GoalPanel } from './GoalPanel'
 import { HardwareFitEvidencePanel } from './HardwareFitEvidencePanel'
 
 interface Props {
@@ -45,7 +44,6 @@ export function OverviewPanel({ connection, events, workspace }: Props): React.J
 
   return (
     <section className="panel overview-panel" aria-label={translate("Обзор состояния")}>
-      <GoalPanel connection={connection} events={events} workspace={workspace} />
       <HardwareFitEvidencePanel />
       <div className="panel__header overview-panel__heading">
         <div>

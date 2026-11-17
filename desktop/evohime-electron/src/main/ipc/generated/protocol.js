@@ -34270,6 +34270,7 @@ export const evohime = $root.evohime = (() => {
                  * @typedef {Object} evohime.desktop.v1.ListGoals.$Properties
                  * @property {string|null} [workspacePath] ListGoals workspacePath
                  * @property {number|null} [limit] ListGoals limit
+                 * @property {string|null} [chatId] ListGoals chatId
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -34318,6 +34319,14 @@ export const evohime = $root.evohime = (() => {
                 ListGoals.prototype.limit = 0;
 
                 /**
+                 * ListGoals chatId.
+                 * @member {string} chatId
+                 * @memberof evohime.desktop.v1.ListGoals
+                 * @instance
+                 */
+                ListGoals.prototype.chatId = "";
+
+                /**
                  * Encodes the specified ListGoals message. Does not implicitly {@link evohime.desktop.v1.ListGoals.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.ListGoals
@@ -34337,6 +34346,8 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 1, wireType 2 =*/10).string(message.workspacePath);
                     if (message.limit != null && $Object.hasOwnProperty.call(message, "limit") && message.limit !== 0)
                         writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.limit);
+                    if (message.chatId != null && $Object.hasOwnProperty.call(message, "chatId") && message.chatId !== "")
+                        writer.uint32(/* id 3, wireType 2 =*/26).string(message.chatId);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -34397,6 +34408,15 @@ export const evohime = $root.evohime = (() => {
                                     message.limit = value;
                                 else
                                     delete message.limit;
+                                continue;
+                            }
+                        case 3: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.chatId = value;
+                                else
+                                    delete message.chatId;
                                 continue;
                             }
                         }

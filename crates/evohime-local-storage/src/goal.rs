@@ -1,4 +1,4 @@
-//! Durable Core-owned Goal contract and storage (plan 25.1).
+//! Core-owned, chat-scoped Goal contract and storage (plan 25.1).
 //!
 //! A Goal is a durable objective and a bounded progress projection. It is not
 //! a scheduler and it never contains capabilities, credentials, prompts or
@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use crate::StorageError;
 
-/// Version of the durable Goal table schema.
+/// Version of the Core Goal table schema.
 pub const GOAL_SCHEMA_VERSION: u32 = 1;
 /// Maximum canonical serialized Goal size in bytes.
 pub const GOAL_MAX_BYTES: usize = 256 * 1024;
@@ -30,7 +30,7 @@ pub const GOAL_MAX_TEXT_CHARS: usize = 4_096;
 /// Maximum number of Goals returned by a read operation.
 pub const GOAL_MAX_READ_LIMIT: usize = 128;
 
-/// Validation, lifecycle, and persistence errors for durable Goals.
+/// Validation, lifecycle, and persistence errors for chat-scoped Goals.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GoalError {
     /// The supplied Goal schema version is not supported.
@@ -129,7 +129,7 @@ impl GoalError {
     }
 }
 
-/// Lifecycle state of a durable Goal.
+/// Lifecycle state of a chat-scoped Goal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GoalStatus {
@@ -661,6 +661,8 @@ pub fn install_schema(connection: &Connection) -> rusqlite::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_goals_workspace_status
             ON goals(workspace_id, status, updated_at_ms DESC, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_goals_workspace_chat
+            ON goals(workspace_id, chat_id, updated_at_ms DESC, id DESC);
         CREATE TABLE IF NOT EXISTS goal_revisions (
             goal_id TEXT NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
             version INTEGER NOT NULL,
@@ -744,6 +746,31 @@ impl<'a> GoalStore<'a> {
         )?;
         let rows = statement.query_map(
             params![workspace_id, limit.min(GOAL_MAX_READ_LIMIT) as i64],
+            read_goal_row,
+        )?;
+        rows.map(|row| row.map_err(StorageError::from).and_then(decode_stored))
+            .collect()
+    }
+
+    /// Lists validated Goals belonging to one chat in a workspace.
+    pub fn list_for_chat(
+        &self,
+        workspace_id: &str,
+        chat_id: &str,
+        limit: usize,
+    ) -> Result<Vec<GoalV1>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, version, workspace_id, chat_id, objective, status,
+                    progress_summary, completed_criteria_json, remaining_criteria_json,
+                    blockers_json, next_action, workflow_run_ids_json, child_run_ids_json,
+                    checkpoint_id, token_budget, cost_budget_micros, continuation_budget,
+                    created_at_ms, updated_at_ms, created_by, updated_by, content_hash,
+                    canonical_json
+             FROM goals WHERE workspace_id = ?1 AND chat_id = ?2
+             ORDER BY updated_at_ms DESC, id DESC LIMIT ?3",
+        )?;
+        let rows = statement.query_map(
+            params![workspace_id, chat_id, limit.min(GOAL_MAX_READ_LIMIT) as i64],
             read_goal_row,
         )?;
         rows.map(|row| row.map_err(StorageError::from).and_then(decode_stored))

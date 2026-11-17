@@ -286,6 +286,8 @@ pub struct ContextLedgerUsage {
     pub actual_prompt_tokens: u32,
     /// Provider-reported completion token count.
     pub actual_completion_tokens: u32,
+    /// Input tokens served from the provider cache, when reported by the provider.
+    pub cache_read_input_tokens: Option<u32>,
     /// Относительная погрешность оценки.
     pub estimator_drift: f64,
     /// unix ms.

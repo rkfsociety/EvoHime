@@ -57,6 +57,14 @@ completion is available in non-thinking mode only. The model ID is picked from
 the provider's live catalog; if discovery is unsupported, the ID is entered
 manually as shown above.
 
+Prompt caching is automatic: a repeated prefix is served from DeepSeek's cache
+and billed at the cache-hit rate, while the response reports
+`prompt_cache_hit_tokens` (and `prompt_tokens_details.cached_tokens` on the
+combined usage object). EvoHime stores the reported prompt, completion and
+cache-hit counts in the append-only `context_ledger_usage` row, and the Hive
+budget projection prices the current UTC day with peak/off-peak tariffs. A
+missing cache-hit count is treated as a cache miss, never as a discount.
+
 DeepSeek also exposes an Anthropic-format endpoint at
 `https://api.deepseek.com/anthropic`. EvoHime currently talks to DeepSeek only
 through the OpenAI-compatible chat transport.

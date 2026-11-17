@@ -301,3 +301,33 @@ fn failed_lineage_does_not_leave_rows() {
         0
     );
 }
+
+#[test]
+fn dispatch_windows_count_attempts_and_return_oldest_timestamp() {
+    let db = db();
+    db.execute(
+        "INSERT INTO context_ledger VALUES('l',?1)",
+        ["a".repeat(64)],
+    )
+    .unwrap();
+    let repo = ModelProvenanceRepository::new(&db);
+    for (index, at) in [(1, 100_000_i64), (2, 205_000), (3, 250_000), (4, 300_000)] {
+        let mut request = envelope();
+        request.request_id = format!("request-{index}");
+        request.logical_request_id = format!("logical-{index}");
+        let record = repo
+            .commit_envelope(&request, CommitMode::FullForDispatch)
+            .unwrap();
+        repo.mark_dispatch(&record.request_id, at).unwrap();
+    }
+
+    let counts = repo
+        .dispatch_windows("mock", "m", 260_000, 60_000, 3_600_000, 86_400_000)
+        .unwrap();
+    assert_eq!(counts.last_minute, 2);
+    assert_eq!(counts.oldest_minute_ms, Some(205_000));
+    assert_eq!(counts.last_hour, 3);
+    assert_eq!(counts.oldest_hour_ms, Some(100_000));
+    assert_eq!(counts.last_day, 3);
+    assert_eq!(counts.oldest_day_ms, Some(100_000));
+}

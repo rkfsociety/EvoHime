@@ -1849,7 +1849,7 @@ export interface CommandPayloads {
   'core.createGoal': {
     goalId: string
     workspacePath: string
-    chatId?: string | null
+    chatId: string
     objective: string
     successCriteria: readonly { id: string; kind: 'manual' | 'gate' | 'workflow_evidence' | 'artifact'; statement: string }[]
     tokenBudget?: number
@@ -1858,7 +1858,7 @@ export interface CommandPayloads {
     idempotencyKey: string
   }
   'core.getGoal': { goalId: string }
-  'core.listGoals': { workspacePath: string; limit?: number }
+  'core.listGoals': { workspacePath: string; chatId: string; limit?: number }
   'core.pauseGoal': { goalId: string; expectedVersion: number; idempotencyKey: string }
   'core.resumeGoal': { goalId: string; expectedVersion: number; idempotencyKey: string }
   'core.cancelGoal': { goalId: string; expectedVersion: number; idempotencyKey: string }

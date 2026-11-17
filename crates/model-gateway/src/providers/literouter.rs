@@ -92,21 +92,6 @@ impl LiteRouterProvider {
         Self::build(config, retry, None, pacing, model_rate_limits)
     }
 
-    pub(crate) fn without_auth_with_reasoning_effort(
-        config: LiteRouterConfig,
-        retry: RetryPolicy,
-        reasoning_effort: &'static str,
-        pacing: RequestPacingConfig,
-    ) -> Result<Self, ProviderError> {
-        Self::build(
-            config,
-            retry,
-            Some(reasoning_effort),
-            pacing,
-            HashMap::new(),
-        )
-    }
-
     pub(crate) fn with_model_limits_without_auth_with_reasoning_effort(
         config: LiteRouterConfig,
         retry: RetryPolicy,
@@ -345,10 +330,8 @@ impl LiteRouterProvider {
         loop {
             let mut delay = self.pacing.interval_for_model(model).and_then(|base| {
                 let interval = gate.min_interval.map_or(base, |learned| learned.max(base));
-                gate.last_request.and_then(|previous| {
-                    let elapsed = previous.elapsed();
-                    (elapsed < interval).then_some(interval - elapsed)
-                })
+                gate.last_request
+                    .and_then(|previous| interval.checked_sub(previous.elapsed()))
             });
             if let Some(limits) = self.model_rate_limits.get(model).filter(|limits| {
                 limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
@@ -842,16 +825,30 @@ struct ApiUsage {
     completion_tokens: u32,
     #[serde(default)]
     total_tokens: u32,
+    #[serde(default)]
+    prompt_cache_hit_tokens: Option<u32>,
+    #[serde(default)]
+    prompt_tokens_details: Option<ApiPromptTokenDetails>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ApiPromptTokenDetails {
+    #[serde(default)]
+    cached_tokens: Option<u32>,
 }
 
 impl ApiUsage {
     fn into_llm_usage(self) -> LlmUsage {
+        let cache_read_input_tokens = self.prompt_cache_hit_tokens.or_else(|| {
+            self.prompt_tokens_details
+                .and_then(|details| details.cached_tokens)
+        });
         let mut usage = LlmUsage {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             total_tokens: self.total_tokens,
             cache_creation_input_tokens: None,
-            cache_read_input_tokens: None,
+            cache_read_input_tokens,
             thinking_tokens: None,
         };
         if usage.total_tokens == 0 {
@@ -1169,6 +1166,41 @@ mod tests {
     }
 
     #[test]
+    fn parses_deepseek_prompt_cache_hit_usage() {
+        let result = parse_sse_line(
+            r#"data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_tokens_details":{"cached_tokens":65},"prompt_cache_hit_tokens":65,"prompt_cache_miss_tokens":35}}"#,
+        )
+        .expect("parsed")
+        .expect("ok");
+
+        assert_eq!(
+            result,
+            ChatStreamItem::Usage(LlmUsage {
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                total_tokens: 120,
+                cache_read_input_tokens: Some(65),
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn parses_cached_tokens_fallback_when_top_level_cache_field_is_missing() {
+        let response: CompletionResponse = serde_json::from_str(
+            r#"{"choices":[],"usage":{"prompt_tokens":40,"completion_tokens":2,"total_tokens":42,"prompt_tokens_details":{"cached_tokens":12}}}"#,
+        )
+        .expect("usage parses");
+        assert_eq!(
+            response
+                .into_chat_result()
+                .usage
+                .map(|usage| usage.cache_read_input_tokens),
+            Some(Some(12))
+        );
+    }
+
+    #[test]
     fn ignores_done_marker() {
         assert!(parse_sse_line("data: [DONE]").is_none());
     }
@@ -1193,6 +1225,8 @@ mod tests {
                 prompt_tokens: 100,
                 completion_tokens: 20,
                 total_tokens: 120,
+                prompt_cache_hit_tokens: None,
+                prompt_tokens_details: None,
             }),
         };
         let result = payload.into_chat_result();

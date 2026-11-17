@@ -87,7 +87,7 @@ describe('PinnedGoalBar', () => {
 
     expect(container.firstChild).toBeNull()
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('core.listGoals', { workspacePath: 'D:/repo', limit: 32 })
+      expect(invoke).toHaveBeenCalledWith('core.listGoals', { workspacePath: 'D:/repo', chatId: 'chat-1', limit: 32 })
     })
   })
 
@@ -115,7 +115,7 @@ describe('PinnedGoalBar', () => {
     )
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('core.listGoals', { workspacePath: 'D:/repo', limit: 32 })
+      expect(invoke).toHaveBeenCalledWith('core.listGoals', { workspacePath: 'D:/repo', chatId: 'chat-1', limit: 32 })
     })
   })
 

@@ -1,9 +1,11 @@
 //! Read-only aggregated snapshot of the hive for the operations panel.
 //!
 //! The snapshot is a *projection*, never an authority: it is derived from the
-//! bounded child projections Core already journals and from the validated
-//! [`crate::hive_settings::HiveSettings`]. It never starts, stops, or retargets
-//! an agent, and it never exposes prompts, reports, or tool output.
+//! bounded child projections Core already journals, from the validated
+//! [`crate::hive_settings::HiveSettings`], and from committed provider
+//! observations in [`HiveObservation`](crate::hive_state::HiveObservation). It
+//! never starts, stops, or retargets an
+//! agent, and it never exposes prompts, reports, or tool output.
 //!
 //! Safe defaults are part of the contract. An empty registry or a journal with
 //! no child events produces zero/empty metrics rather than an error, so the UI
@@ -15,7 +17,7 @@ use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
-pub const HIVE_STATE_SCHEMA_VERSION: u32 = 1;
+pub const HIVE_STATE_SCHEMA_VERSION: u32 = 3;
 /// Name shown for the single queen in the local hive.
 pub const DEFAULT_QUEEN_NAME: &str = "EvoHime";
 /// Maximum number of departments rendered at once.
@@ -23,14 +25,34 @@ pub const MAX_HIVE_DEPARTMENTS: usize = 16;
 /// Maximum number of active agents rendered at once.
 pub const MAX_HIVE_ACTIVE_AGENTS: usize = 64;
 
+/// Rolling window the per-model minute cap is enforced over, in milliseconds.
+pub const HIVE_MINUTE_WINDOW_MS: i64 = 60_000;
+/// Rolling window the per-model hourly cap is enforced over, in milliseconds.
+pub const HIVE_HOUR_WINDOW_MS: i64 = 3_600_000;
+/// Rolling window the per-model daily cap is enforced over, in milliseconds.
+pub const HIVE_DAY_WINDOW_MS: i64 = 86_400_000;
+/// Queen status: the hive is working.
+pub const HIVE_QUEEN_ACTIVE: &str = "active";
+/// Queen status: no child task is running.
+pub const HIVE_QUEEN_IDLE: &str = "idle";
+/// Queen status: the configured rolling request cap for the model is reached.
+pub const HIVE_QUEEN_BUDGET_EXHAUSTED: &str = "budget_exhausted";
+
 /// Queen status line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HiveQueenState {
-    /// `active` while at least one child task is running, `idle` otherwise.
+    /// `active` while at least one child task is running, `idle` otherwise;
+    /// `budget_exhausted` when the durable dispatch projection reaches a cap.
     pub status: String,
     /// Display name of the queen.
     pub name: String,
+    /// Stable reason code for a non-working status, empty while working.
+    pub reason: String,
+    /// Unix milliseconds at which the blocking limit is known to reset.
+    ///
+    /// `None` when Core cannot compute the reset moment instead of guessing it.
+    pub wake_at_ms: Option<i64>,
 }
 
 /// Aggregate counters shown above the department grid.
@@ -102,6 +124,93 @@ pub struct HiveLimits {
     pub max_parallel_subagents: u16,
 }
 
+/// Request budget actually enforced for the active model.
+///
+/// The counters come from durable dispatch records and the caps from the route
+/// configuration; a cap of `0` keeps the existing meaning of "unlimited", so the
+/// panel must render it as such instead of inventing a ceiling.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HiveBudget {
+    /// Provider profile identifier shown to the user, without credentials.
+    pub provider: String,
+    /// Whether durable dispatch history was read successfully.
+    pub history_available: bool,
+    /// Model identifier the counters belong to.
+    pub model: String,
+    /// Dispatches observed in the rolling minute window.
+    pub requests_last_minute: u32,
+    /// Dispatches observed in the rolling hour window.
+    pub requests_last_hour: u32,
+    /// Dispatches observed in the rolling day window.
+    pub requests_last_day: u32,
+    /// Configured minute cap; `0` means no minute cap.
+    pub minute_cap: u32,
+    /// Configured hourly cap; `0` means no hourly cap.
+    pub hour_cap: u32,
+    /// Configured daily cap; `0` means no daily cap.
+    pub day_cap: u32,
+    /// Whether the minute cap is reached.
+    pub minute_exhausted: bool,
+    /// Whether the hourly cap is reached.
+    pub hour_exhausted: bool,
+    /// Whether the daily cap is reached.
+    pub day_exhausted: bool,
+    /// Whether the daily DeepSeek cost projection was read and priced completely.
+    pub daily_cost_available: bool,
+    /// Estimated DeepSeek API cost for the current UTC day, in nano-USD.
+    pub daily_cost_nano_usd: Option<u64>,
+}
+
+impl HiveBudget {
+    /// Whether any configured cap is reached.
+    pub fn exhausted(&self) -> bool {
+        self.minute_exhausted || self.hour_exhausted || self.day_exhausted
+    }
+}
+
+/// Bounded, read-only observations Core publishes with the hive snapshot.
+///
+/// Every field is already-committed state: dispatch counters from the durable
+/// provenance table and caps from the active route configuration. The hive
+/// never derives a limit from a guess.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HiveObservation {
+    /// Provider profile identifier of the active route.
+    pub provider: String,
+    /// Whether durable dispatch history was read successfully.
+    pub history_available: bool,
+    /// Model identifier of the active route.
+    pub model: String,
+    /// Dispatches inside [`HIVE_MINUTE_WINDOW_MS`].
+    pub requests_last_minute: u64,
+    /// Dispatches inside [`HIVE_HOUR_WINDOW_MS`].
+    pub requests_last_hour: u64,
+    /// Dispatches inside [`HIVE_DAY_WINDOW_MS`].
+    pub requests_last_day: u64,
+    /// Oldest dispatch still inside the minute window.
+    pub oldest_minute_dispatch_ms: Option<i64>,
+    /// Oldest dispatch still inside the hour window.
+    ///
+    /// Used to compute the exact moment the hourly cap frees a slot; a missing
+    /// timestamp means Core cannot promise a reset and reports none.
+    pub oldest_hour_dispatch_ms: Option<i64>,
+    /// Oldest dispatch still inside the day window.
+    pub oldest_day_dispatch_ms: Option<i64>,
+    /// Configured hourly cap of the active model; `0` means unlimited.
+    pub hour_cap: u32,
+    /// Configured minute cap of the active model; `0` means unlimited.
+    pub minute_cap: u32,
+    /// Configured daily cap of the active model; `0` means unlimited.
+    pub day_cap: u32,
+    /// Reference time used to compute rolling window boundaries.
+    pub now_ms: i64,
+    /// Whether current UTC-day DeepSeek usage was read and priced completely.
+    pub daily_cost_available: bool,
+    /// Estimated DeepSeek API cost for the current UTC day, in nano-USD.
+    pub daily_cost_nano_usd: Option<u64>,
+}
+
 /// Aggregated, serializable hive state for the operations panel.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -120,6 +229,8 @@ pub struct HiveStateSnapshot {
     pub task_flow: HiveTaskFlow,
     /// Active fan-out limits.
     pub limits: HiveLimits,
+    /// Active request budget for the current model.
+    pub budget: HiveBudget,
 }
 
 impl Default for HiveStateSnapshot {
@@ -134,18 +245,7 @@ impl HiveStateSnapshot {
     /// Limits are still reported: the panel shows the configured ceilings even
     /// before the first task starts.
     pub fn empty(settings: &HiveSettings) -> Self {
-        Self {
-            schema_version: HIVE_STATE_SCHEMA_VERSION,
-            queen: HiveQueenState {
-                status: "idle".into(),
-                name: DEFAULT_QUEEN_NAME.into(),
-            },
-            metrics: HiveMetrics::default(),
-            departments: Vec::new(),
-            active_agents: Vec::new(),
-            task_flow: HiveTaskFlow::default(),
-            limits: limits_for(settings),
-        }
+        Self::from_observation(settings, &[], &[], &HiveObservation::default())
     }
 
     /// Aggregates the latest child projections into one snapshot.
@@ -158,6 +258,25 @@ impl HiveStateSnapshot {
         settings: &HiveSettings,
         projections: &[ChildProjection],
         registry_roles: &[String],
+    ) -> Self {
+        Self::from_observation(
+            settings,
+            projections,
+            registry_roles,
+            &HiveObservation::default(),
+        )
+    }
+
+    /// Aggregates child projections and the committed provider observations.
+    ///
+    /// Running work makes her `active`, while a reached configured rolling cap
+    /// reports its reason and exact reset moment when dispatch history allows
+    /// Core to compute one.
+    pub fn from_observation(
+        settings: &HiveSettings,
+        projections: &[ChildProjection],
+        registry_roles: &[String],
+        observation: &HiveObservation,
     ) -> Self {
         let capacity = bounded_u16(settings.effective_worker_ceiling() as usize).max(1);
         let mut departments: std::collections::BTreeMap<&str, u16> =
@@ -209,12 +328,10 @@ impl HiveStateSnapshot {
             .collect();
         departments.sort_by(|left, right| left.role.cmp(&right.role));
         let total = active_agents.len();
+        let budget = budget_from(observation);
         Self {
             schema_version: HIVE_STATE_SCHEMA_VERSION,
-            queen: HiveQueenState {
-                status: if total > 0 { "active" } else { "idle" }.into(),
-                name: DEFAULT_QUEEN_NAME.into(),
-            },
+            queen: queen_state(total, &budget, observation),
             metrics: HiveMetrics {
                 total_agents_online: bounded_u16(total),
                 active_tasks: bounded_u16(processing as usize),
@@ -229,8 +346,230 @@ impl HiveStateSnapshot {
                 generating_plan: bounded_u8(generating_plan as usize),
             },
             limits: limits_for(settings),
+            budget,
         }
     }
+}
+
+/// Projects the committed provider observations into the request budget.
+fn budget_from(observation: &HiveObservation) -> HiveBudget {
+    let minute_cap = observation.minute_cap;
+    let hour_cap = observation.hour_cap;
+    let day_cap = observation.day_cap;
+    HiveBudget {
+        provider: bounded_id(&observation.provider),
+        history_available: observation.history_available,
+        model: bounded_id(&observation.model),
+        requests_last_minute: bounded_u32(observation.requests_last_minute),
+        requests_last_hour: bounded_u32(observation.requests_last_hour),
+        requests_last_day: bounded_u32(observation.requests_last_day),
+        minute_cap,
+        hour_cap,
+        day_cap,
+        // A cap of zero is the configured "unlimited" value, never "reached".
+        minute_exhausted: minute_cap > 0
+            && observation.requests_last_minute >= u64::from(minute_cap),
+        hour_exhausted: hour_cap > 0 && observation.requests_last_hour >= u64::from(hour_cap),
+        day_exhausted: day_cap > 0 && observation.requests_last_day >= u64::from(day_cap),
+        daily_cost_available: observation.daily_cost_available,
+        daily_cost_nano_usd: observation.daily_cost_nano_usd,
+    }
+}
+
+/// DeepSeek tariff for one model, in nano-USD per token.
+struct DeepSeekTariff {
+    cache_hit_peak: u64,
+    cache_hit_off_peak: u64,
+    cache_miss_peak: u64,
+    cache_miss_off_peak: u64,
+    output_peak: u64,
+    output_off_peak: u64,
+}
+
+/// Resolves the published tariff of a DeepSeek model.
+///
+/// Prices come from <https://api-docs.deepseek.com/quick_start/pricing/> and are
+/// converted from USD per million tokens to nano-USD per token. The retired
+/// `deepseek-v4-flash` spellings are still accepted by the provider and billed
+/// at the Flash rate. Any other identifier returns `None` instead of applying a
+/// possibly incorrect rate.
+fn deepseek_tariff(model: &str) -> Option<DeepSeekTariff> {
+    match model.trim().to_ascii_lowercase().as_str() {
+        "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4-flash-vision-exp" => {
+            Some(DeepSeekTariff {
+                cache_hit_peak: 6,
+                cache_hit_off_peak: 3,
+                cache_miss_peak: 300,
+                cache_miss_off_peak: 150,
+                output_peak: 1_200,
+                output_off_peak: 600,
+            })
+        }
+        "deepseek-v4-pro" => Some(DeepSeekTariff {
+            cache_hit_peak: 44,
+            cache_hit_off_peak: 22,
+            cache_miss_peak: 1_320,
+            cache_miss_off_peak: 660,
+            output_peak: 3_960,
+            output_off_peak: 1_980,
+        }),
+        _ => None,
+    }
+}
+
+/// Calculates the DeepSeek model charge using reported prompt/cache usage and the UTC tariff window.
+///
+/// `model` identifies the tariff, so a day without usage still reports a known
+/// zero for a priced model and `None` for an unsupported one. Each row is
+/// priced at the moment its request was dispatched, not when the response
+/// arrived.
+pub fn deepseek_daily_cost_nano_usd(
+    model: &str,
+    usage: &[evohime_local_storage::context_ledger_store::DailyModelUsage],
+) -> Option<u64> {
+    let tariff = deepseek_tariff(model)?;
+    usage.iter().try_fold(0_u64, |total, row| {
+        let peak = deepseek_peak_period(row.request_at)?;
+        let cache_hit_tokens = row
+            .cache_read_input_tokens
+            .unwrap_or(0)
+            .min(row.prompt_tokens);
+        let uncached_tokens = row.prompt_tokens.saturating_sub(cache_hit_tokens);
+        let cache_rate = if peak {
+            tariff.cache_hit_peak
+        } else {
+            tariff.cache_hit_off_peak
+        };
+        let input_rate = if peak {
+            tariff.cache_miss_peak
+        } else {
+            tariff.cache_miss_off_peak
+        };
+        let output_rate = if peak {
+            tariff.output_peak
+        } else {
+            tariff.output_off_peak
+        };
+        let row_cost = u64::from(cache_hit_tokens)
+            .saturating_mul(cache_rate)
+            .saturating_add(u64::from(uncached_tokens).saturating_mul(input_rate))
+            .saturating_add(u64::from(row.completion_tokens).saturating_mul(output_rate));
+        Some(total.saturating_add(row_cost))
+    })
+}
+
+/// Peak interval is weekdays 01:00–04:00 and 06:00–10:00 UTC, excluding Chinese public holidays.
+fn deepseek_peak_period(at_ms: i64) -> Option<bool> {
+    let at = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at_ms)?;
+    use chrono::{Datelike, Timelike, Weekday};
+    if !matches!(
+        at.weekday(),
+        Weekday::Mon | Weekday::Tue | Weekday::Wed | Weekday::Thu | Weekday::Fri
+    ) {
+        return Some(false);
+    }
+    if deepseek_china_public_holiday(at.year(), at.month(), at.day())? {
+        return Some(false);
+    }
+    let hour = at.hour();
+    Some((1..4).contains(&hour) || (6..10).contains(&hour))
+}
+
+/// Official mainland-China public-holiday dates used by the verified tariff calendar.
+fn deepseek_china_public_holiday(year: i32, month: u32, day: u32) -> Option<bool> {
+    if year != 2026 {
+        return None;
+    }
+    Some(matches!(
+        (month, day),
+        (1, 1..=3)
+            | (2, 15..=23)
+            | (4, 4..=6)
+            | (5, 1..=5)
+            | (6, 19..=21)
+            | (9, 25..=27)
+            | (10, 1..=7)
+    ))
+}
+
+/// Derives the queen status from running work and the committed limits.
+fn queen_state(total: usize, budget: &HiveBudget, observation: &HiveObservation) -> HiveQueenState {
+    if total > 0 {
+        return HiveQueenState {
+            status: HIVE_QUEEN_ACTIVE.into(),
+            name: DEFAULT_QUEEN_NAME.into(),
+            reason: String::new(),
+            wake_at_ms: None,
+        };
+    }
+    if budget.history_available && budget.exhausted() {
+        let reset_moments = [
+            if budget.minute_exhausted {
+                dispatch_window_reset(observation.oldest_minute_dispatch_ms, HIVE_MINUTE_WINDOW_MS)
+                    .map(|at| (at, "provider_minute_cap_reached"))
+            } else {
+                None
+            },
+            if budget.hour_exhausted {
+                dispatch_window_reset(observation.oldest_hour_dispatch_ms, HIVE_HOUR_WINDOW_MS)
+                    .map(|at| (at, "provider_hour_cap_reached"))
+            } else {
+                None
+            },
+            if budget.day_exhausted {
+                dispatch_window_reset(observation.oldest_day_dispatch_ms, HIVE_DAY_WINDOW_MS)
+                    .map(|at| (at, "provider_day_cap_reached"))
+            } else {
+                None
+            },
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        // All configured windows must have a free slot before dispatch can
+        // proceed. Therefore the first usable moment is the latest reset among
+        // every currently-exhausted window, not the earliest one.
+        let next_slot = reset_moments.into_iter().max_by_key(|(at, _)| *at);
+        let reason = next_slot.map_or_else(
+            || {
+                // The cap is known even when the oldest dispatch is not: report
+                // the narrowest exhausted window instead of a vague status.
+                if budget.minute_exhausted {
+                    "provider_minute_cap_reached"
+                } else if budget.hour_exhausted {
+                    "provider_hour_cap_reached"
+                } else {
+                    "provider_day_cap_reached"
+                }
+            },
+            |(_, reason)| reason,
+        );
+        return HiveQueenState {
+            status: HIVE_QUEEN_BUDGET_EXHAUSTED.into(),
+            name: DEFAULT_QUEEN_NAME.into(),
+            reason: reason.into(),
+            wake_at_ms: next_slot.map(|(at, _)| at),
+        };
+    }
+    HiveQueenState {
+        status: HIVE_QUEEN_IDLE.into(),
+        name: DEFAULT_QUEEN_NAME.into(),
+        reason: String::new(),
+        wake_at_ms: None,
+    }
+}
+
+/// Computes the first millisecond at which the oldest counted dispatch leaves a
+/// rolling window.
+///
+/// The provenance windows are inclusive (`dispatch_at >= now - span`), so the
+/// slot frees one millisecond after the oldest dispatch plus the window length.
+fn dispatch_window_reset(oldest_ms: Option<i64>, window_ms: i64) -> Option<i64> {
+    oldest_ms.and_then(|at| at.checked_add(window_ms)?.checked_add(1))
+}
+
+fn bounded_u32(value: u64) -> u32 {
+    value.min(u64::from(u32::MAX)) as u32
 }
 
 fn limits_for(settings: &HiveSettings) -> HiveLimits {
@@ -337,6 +676,159 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_flash_cost_uses_cached_input_and_utc_peak_rate() {
+        let usage = [
+            evohime_local_storage::context_ledger_store::DailyModelUsage {
+                model: "deepseek-flash".into(),
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                cache_read_input_tokens: Some(50),
+                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+            },
+        ];
+        assert_eq!(
+            deepseek_daily_cost_nano_usd("deepseek-flash", &usage),
+            Some(39_300)
+        );
+    }
+
+    #[test]
+    fn deepseek_cost_is_calculated_at_request_time_not_later_response_time() {
+        let usage = [
+            evohime_local_storage::context_ledger_store::DailyModelUsage {
+                model: "deepseek-flash".into(),
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                cache_read_input_tokens: Some(50),
+                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T10:15:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+            },
+        ];
+        assert_eq!(
+            deepseek_daily_cost_nano_usd("deepseek-flash", &usage),
+            Some(39_300)
+        );
+    }
+
+    #[test]
+    fn deepseek_v4_pro_cost_uses_off_peak_rates_on_weekends() {
+        let usage = [
+            evohime_local_storage::context_ledger_store::DailyModelUsage {
+                model: "deepseek-v4-pro".into(),
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                cache_read_input_tokens: Some(50),
+                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-15T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-15T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+            },
+        ];
+        assert_eq!(
+            deepseek_daily_cost_nano_usd("deepseek-v4-pro", &usage),
+            Some(73_700)
+        );
+    }
+
+    #[test]
+    fn deepseek_pricing_does_not_guess_for_a_model_outside_the_published_tariff() {
+        assert_eq!(deepseek_daily_cost_nano_usd("other-model", &[]), None);
+    }
+
+    #[test]
+    fn deepseek_pricing_reports_zero_for_a_successfully_read_empty_day() {
+        assert_eq!(deepseek_daily_cost_nano_usd("deepseek-flash", &[]), Some(0));
+    }
+
+    #[test]
+    fn retired_flash_spellings_are_billed_at_the_flash_rate() {
+        let usage = [
+            evohime_local_storage::context_ledger_store::DailyModelUsage {
+                model: "deepseek-v4-flash".into(),
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                cache_read_input_tokens: Some(50),
+                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+            },
+        ];
+        assert_eq!(
+            deepseek_daily_cost_nano_usd("deepseek-v4-flash", &usage),
+            Some(39_300)
+        );
+        assert_eq!(
+            deepseek_daily_cost_nano_usd("deepseek-v4-flash-vision-exp", &usage),
+            Some(39_300)
+        );
+    }
+
+    #[test]
+    fn deepseek_cache_hits_cannot_exceed_reported_prompt_tokens() {
+        let usage = [
+            evohime_local_storage::context_ledger_store::DailyModelUsage {
+                model: "deepseek-flash".into(),
+                prompt_tokens: 10,
+                completion_tokens: 0,
+                cache_read_input_tokens: Some(50),
+                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                    .expect("valid timestamp")
+                    .timestamp_millis(),
+            },
+        ];
+        assert_eq!(
+            deepseek_daily_cost_nano_usd("deepseek-flash", &usage),
+            Some(60)
+        );
+    }
+
+    #[test]
+    fn deepseek_peak_rate_excludes_public_holidays_and_the_boundary_hour() {
+        let holiday = chrono::DateTime::parse_from_rfc3339("2026-01-02T02:00:00Z")
+            .expect("valid timestamp")
+            .timestamp_millis();
+        let peak_end = chrono::DateTime::parse_from_rfc3339("2026-11-16T04:00:00Z")
+            .expect("valid timestamp")
+            .timestamp_millis();
+        let peak_start = chrono::DateTime::parse_from_rfc3339("2026-11-16T06:00:00Z")
+            .expect("valid timestamp")
+            .timestamp_millis();
+        assert_eq!(deepseek_peak_period(holiday), Some(false));
+        assert_eq!(deepseek_peak_period(peak_end), Some(false));
+        assert_eq!(deepseek_peak_period(peak_start), Some(true));
+    }
+
+    #[test]
+    fn hive_budget_carries_the_daily_cost_projection_from_core_observation() {
+        let observation = HiveObservation {
+            daily_cost_available: true,
+            daily_cost_nano_usd: Some(39_300),
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert!(snapshot.budget.daily_cost_available);
+        assert_eq!(snapshot.budget.daily_cost_nano_usd, Some(39_300));
+    }
+
+    #[test]
     fn hive_state_snapshot_aggregates_active_agents_by_role() {
         let settings = HiveSettings::default();
         let projections = vec![
@@ -412,5 +904,148 @@ mod tests {
         assert_eq!(snapshot.departments[0].role, "researcher");
         assert_eq!(snapshot.departments[0].active_count, 0);
         assert!(snapshot.active_agents.is_empty());
+    }
+
+    #[test]
+    fn provider_failures_alone_do_not_claim_the_queen_is_paused() {
+        // The snapshot deliberately has no last-provider-error heuristic. The
+        // gateway can retry, route elsewhere, or accept more work; only known
+        // configured caps are represented as a blocking status here.
+        let snapshot = HiveStateSnapshot::from_observation(
+            &HiveSettings::default(),
+            &[],
+            &[],
+            &HiveObservation::default(),
+        );
+        assert_eq!(snapshot.queen.status, HIVE_QUEEN_IDLE);
+        assert!(snapshot.queen.reason.is_empty());
+        assert_eq!(snapshot.queen.wake_at_ms, None);
+    }
+
+    #[test]
+    fn reached_minute_cap_reports_the_exact_reset_moment() {
+        let now_ms = 50_000_000;
+        let observation = HiveObservation {
+            now_ms,
+            history_available: true,
+            requests_last_minute: 5,
+            oldest_minute_dispatch_ms: Some(now_ms - 20_000),
+            minute_cap: 5,
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert_eq!(snapshot.queen.status, HIVE_QUEEN_BUDGET_EXHAUSTED);
+        assert_eq!(snapshot.queen.reason, "provider_minute_cap_reached");
+        assert_eq!(
+            snapshot.queen.wake_at_ms,
+            Some(now_ms - 20_000 + HIVE_MINUTE_WINDOW_MS + 1)
+        );
+        assert!(snapshot.budget.minute_exhausted);
+    }
+
+    #[test]
+    fn reached_hourly_cap_reports_the_exact_reset_moment() {
+        let now_ms = 50_000_000;
+        let observation = HiveObservation {
+            now_ms,
+            history_available: true,
+            provider: "literouter".into(),
+            model: "model".into(),
+            requests_last_hour: 190,
+            requests_last_day: 400,
+            oldest_hour_dispatch_ms: Some(now_ms - 600_000),
+            oldest_day_dispatch_ms: Some(now_ms - 1_000),
+            hour_cap: 190,
+            day_cap: 1_000,
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert_eq!(snapshot.queen.status, HIVE_QUEEN_BUDGET_EXHAUSTED);
+        assert_eq!(snapshot.queen.reason, "provider_hour_cap_reached");
+        assert_eq!(
+            snapshot.queen.wake_at_ms,
+            Some(now_ms - 600_000 + HIVE_HOUR_WINDOW_MS + 1)
+        );
+        assert_eq!(snapshot.budget.requests_last_hour, 190);
+        assert_eq!(snapshot.budget.hour_cap, 190);
+        assert!(snapshot.budget.hour_exhausted);
+        assert!(!snapshot.budget.day_exhausted);
+    }
+
+    #[test]
+    fn simultaneous_caps_report_the_last_blocking_reset() {
+        let now_ms = 50_000_000;
+        let observation = HiveObservation {
+            now_ms,
+            history_available: true,
+            requests_last_minute: 5,
+            requests_last_hour: 10,
+            oldest_minute_dispatch_ms: Some(now_ms - 50_000),
+            oldest_hour_dispatch_ms: Some(now_ms - 60_000),
+            minute_cap: 5,
+            hour_cap: 10,
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert_eq!(snapshot.queen.reason, "provider_hour_cap_reached");
+        assert_eq!(
+            snapshot.queen.wake_at_ms,
+            Some(now_ms - 60_000 + HIVE_HOUR_WINDOW_MS + 1)
+        );
+    }
+
+    #[test]
+    fn unlimited_caps_are_never_reported_as_reached() {
+        let observation = HiveObservation {
+            now_ms: 1_000,
+            history_available: true,
+            requests_last_hour: 10_000,
+            requests_last_day: 10_000,
+            hour_cap: 0,
+            day_cap: 0,
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert!(!snapshot.budget.exhausted());
+        assert_eq!(snapshot.queen.status, HIVE_QUEEN_IDLE);
+        assert_eq!(snapshot.queen.wake_at_ms, None);
+    }
+
+    #[test]
+    fn minute_cap_can_be_the_first_exhausted_budget_window() {
+        let observation = HiveObservation {
+            history_available: true,
+            requests_last_minute: 2,
+            requests_last_hour: 2,
+            requests_last_day: 2,
+            minute_cap: 2,
+            hour_cap: 10,
+            day_cap: 20,
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert!(snapshot.budget.exhausted());
+        assert!(snapshot.budget.minute_exhausted);
+        assert!(!snapshot.budget.hour_exhausted);
+        assert!(!snapshot.budget.day_exhausted);
+        assert_eq!(snapshot.queen.reason, "provider_minute_cap_reached");
+        assert_eq!(snapshot.queen.wake_at_ms, None);
+    }
+
+    #[test]
+    fn snapshot_round_trips_through_json_with_the_budget_contract() {
+        let snapshot = HiveStateSnapshot::from_projection(&HiveSettings::default(), &[], &[]);
+        let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
+        let decoded: HiveStateSnapshot =
+            serde_json::from_slice(&encoded).expect("snapshot deserializes");
+        assert_eq!(decoded, snapshot);
+        let value: serde_json::Value = serde_json::from_slice(&encoded).expect("valid json");
+        assert!(value["budget"]["hour_cap"].is_number());
+        assert_eq!(value["queen"]["reason"], "");
     }
 }

@@ -88,6 +88,7 @@ fn usage_is_recorded_without_touching_the_immutable_entry() {
             ledger_id: "ledger-1".to_string(),
             actual_prompt_tokens: 290,
             actual_completion_tokens: 50,
+            cache_read_input_tokens: Some(120),
             estimator_drift: 0.034,
             recorded_at: 2_000,
         })
@@ -101,6 +102,91 @@ fn usage_is_recorded_without_touching_the_immutable_entry() {
         })
         .expect("count");
     assert_eq!(usage_rows, 1);
+    let recorded_cache_hit: Option<u32> = database
+        .connection()
+        .query_row(
+            "SELECT cache_read_input_tokens FROM context_ledger_usage",
+            [],
+            |row| row.get(0),
+        )
+        .expect("cache-hit count");
+    assert_eq!(recorded_cache_hit, Some(120));
+}
+
+#[test]
+fn deepseek_daily_usage_projection_includes_actual_cache_hits_and_model() {
+    let database = database("deepseek-daily-usage");
+    let store = ContextLedgerStore::new(database.connection()).expect("store opens");
+    let mut written = entry("deepseek-ledger", "session-1", 1_000);
+    written.provider = "openai_compatible".into();
+    written.model = "deepseek-flash".into();
+    written.created_at = 2_000;
+    written.finalize_hash();
+    store.append(&written).expect("append succeeds");
+    store
+        .record_usage(&ContextLedgerUsage {
+            ledger_id: written.id,
+            actual_prompt_tokens: 100,
+            actual_completion_tokens: 20,
+            cache_read_input_tokens: Some(65),
+            estimator_drift: 0.0,
+            recorded_at: 2_000,
+        })
+        .expect("usage recorded");
+
+    let usage = store
+        .deepseek_usage_since(1_500, "openai_compatible", "deepseek-flash")
+        .expect("daily usage");
+    assert_eq!(usage.len(), 1);
+    assert_eq!(usage[0].model, "deepseek-flash");
+    assert_eq!(usage[0].prompt_tokens, 100);
+    assert_eq!(usage[0].completion_tokens, 20);
+    assert_eq!(usage[0].cache_read_input_tokens, Some(65));
+    assert_eq!(usage[0].recorded_at, 2_000);
+    assert_eq!(usage[0].request_at, 2_000);
+}
+
+#[test]
+fn deepseek_daily_usage_excludes_other_routes_and_pre_midnight_requests() {
+    let database = database("deepseek-daily-scope");
+    let store = ContextLedgerStore::new(database.connection()).expect("store opens");
+    let mut before_midnight = entry("before-midnight", "session-1", 1_000);
+    before_midnight.provider = "openai_compatible".into();
+    before_midnight.model = "deepseek-flash".into();
+    before_midnight.created_at = 1_000;
+    before_midnight.finalize_hash();
+    store.append(&before_midnight).expect("append succeeds");
+    let mut other_route = entry("other-route", "session-1", 1_000);
+    other_route.provider = "literouter".into();
+    other_route.model = "deepseek-flash".into();
+    other_route.created_at = 2_000;
+    other_route.finalize_hash();
+    store.append(&other_route).expect("append succeeds");
+    let mut current = entry("current", "session-1", 1_000);
+    current.provider = "openai_compatible".into();
+    current.model = "deepseek-flash".into();
+    current.created_at = 2_000;
+    current.finalize_hash();
+    store.append(&current).expect("append succeeds");
+    for ledger_id in [before_midnight.id, other_route.id, current.id] {
+        store
+            .record_usage(&ContextLedgerUsage {
+                ledger_id,
+                actual_prompt_tokens: 10,
+                actual_completion_tokens: 1,
+                cache_read_input_tokens: None,
+                estimator_drift: 0.0,
+                recorded_at: 2_000,
+            })
+            .expect("usage recorded");
+    }
+
+    let usage = store
+        .deepseek_usage_since(1_500, "openai_compatible", "deepseek-flash")
+        .expect("daily usage");
+    assert_eq!(usage.len(), 1);
+    assert_eq!(usage[0].request_at, 2_000);
+    assert_eq!(usage[0].recorded_at, 2_000);
 }
 
 #[test]
@@ -182,6 +268,7 @@ fn rotation_removes_old_entries_together_with_their_usage_rows() {
             ledger_id: "stale".to_string(),
             actual_prompt_tokens: 1,
             actual_completion_tokens: 1,
+            cache_read_input_tokens: None,
             estimator_drift: 0.0,
             recorded_at: old,
         })

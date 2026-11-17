@@ -1379,6 +1379,7 @@ impl ToolAgent {
                     assembled.ledger(),
                     usage.prompt_tokens,
                     usage.completion_tokens,
+                    usage.cache_read_input_tokens,
                 )
                 .await;
             }
@@ -2001,6 +2002,14 @@ impl ToolAgent {
                         }
                     } else if call.name == "goal_create" {
                         let result = async {
+                            let chat_id = conversation_id
+                                .as_deref()
+                                .filter(|id| !id.is_empty())
+                                .ok_or_else(|| {
+                                    evohime_tool_runtime::ToolError::Execution(
+                                        "goal_create requires an active chat".into(),
+                                    )
+                                })?;
                             let journal = self.journal.as_ref().ok_or_else(|| {
                                 evohime_tool_runtime::ToolError::Execution(
                                     "goal_create requires the Core journal".into(),
@@ -2036,7 +2045,7 @@ impl ToolAgent {
                                 id: goal_id.clone(),
                                 version: 1,
                                 workspace_id: crate::goal::workspace_id_from_path(&workspace_path),
-                                chat_id: conversation_id.clone(),
+                                chat_id: Some(chat_id.to_owned()),
                                 objective: parsed.objective.clone(),
                                 success_criteria: criteria,
                                 status: crate::goal::GoalStatus::Active,

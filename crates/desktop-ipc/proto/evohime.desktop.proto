@@ -1435,6 +1435,7 @@ message GetGoal { string goal_id = 1; }
 message ListGoals {
   string workspace_path = 1;
   uint32 limit = 2;
+  string chat_id = 3;
 }
 
 message GoalAction {

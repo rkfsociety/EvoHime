@@ -281,6 +281,34 @@ impl EventJournal {
         .map_err(|error| StorageError::Context(error.to_string()))
     }
 
+    /// Counts dispatched attempts of one route inside minute, hour, and day windows.
+    ///
+    /// Dispatch markers are committed before the provider call, so the counters
+    /// describe requests actually sent, not merely planned ones.
+    pub async fn model_dispatch_windows(
+        &self,
+        provider: &str,
+        model: &str,
+        now_ms: i64,
+        minute_window_ms: i64,
+        hour_window_ms: i64,
+        day_window_ms: i64,
+    ) -> Result<evohime_local_storage::domains::receipts::DispatchWindowCounts, StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::domains::receipts::ModelProvenanceRepository::new(
+            database.connection(),
+        )
+        .dispatch_windows(
+            provider,
+            model,
+            now_ms,
+            minute_window_ms,
+            hour_window_ms,
+            day_window_ms,
+        )
+        .map_err(|error| StorageError::Context(error.to_string()))
+    }
+
     /// Append-only запись фактического usage провайдера.
     pub async fn record_context_usage(
         &self,
@@ -291,6 +319,22 @@ impl EventJournal {
             database.connection(),
         )?;
         store.record_usage(usage)
+    }
+
+    /// Loads the bounded usage of one dispatched route needed for the current
+    /// UTC-day DeepSeek cost estimate.
+    pub async fn deepseek_usage_since(
+        &self,
+        start_ms: i64,
+        provider: &str,
+        model: &str,
+    ) -> Result<Vec<evohime_local_storage::context_ledger_store::DailyModelUsage>, StorageError>
+    {
+        let database = self.database.lock().await;
+        let store = evohime_local_storage::context_ledger_store::ContextLedgerStore::new(
+            database.connection(),
+        )?;
+        store.deepseek_usage_since(start_ms, provider, model)
     }
 
     /// Bounded projection ledger задачи для UI (этап 01.5).

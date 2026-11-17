@@ -13582,6 +13582,9 @@ export namespace evohime {
                 /** ListGoals limit. */
                 limit: number;
 
+                /** ListGoals chatId. */
+                chatId: string;
+
                 /**
                  * Encodes the specified ListGoals message. Does not implicitly {@link evohime.desktop.v1.ListGoals.verify|verify} messages.
                  * @param message ListGoals message or plain object to encode
@@ -13618,6 +13621,9 @@ export namespace evohime {
 
                     /** ListGoals limit */
                     limit?: (number|null);
+
+                    /** ListGoals chatId */
+                    chatId?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

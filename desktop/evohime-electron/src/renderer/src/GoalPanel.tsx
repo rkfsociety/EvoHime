@@ -21,15 +21,16 @@ interface Props {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
   readonly workspace: string | null
+  readonly chatId?: string | null
 }
 
 /**
- * Bounded Core projection of durable Goals. The renderer never decides that
+ * Bounded Core projection of chat-scoped Goals. The renderer never decides that
  * a criterion passed: the manual button sends an explicit user-decision
  * command and displays the typed result returned by Core. Evidence is minted
  * by Core, never supplied by this renderer.
  */
-export function GoalPanel({ connection, events, workspace }: Props): React.JSX.Element {
+export function GoalPanel({ connection, events, workspace, chatId = null }: Props): React.JSX.Element {
   const api = useShellApi()
   const [goals, setGoals] = useState<readonly GoalProjection[]>([])
   const [objective, setObjective] = useState('')
@@ -49,34 +50,35 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
   useEffect(() => {
     setGoals([])
     setMessage(null)
-  }, [workspace])
+  }, [chatId, workspace])
 
   useEffect(() => {
     if (listProjection) {
-      setGoals(listProjection.goals)
+      setGoals(listProjection.goals.filter((goal) => goal.chatId === chatId))
       if (listProjection.errorCode) setMessage(`Список целей: ${listProjection.errorCode}`)
     }
-  }, [listProjection])
+  }, [chatId, listProjection])
 
   useEffect(() => {
     const goal = actionEvent?.goal
-    if (goal) setGoals((current) => mergeGoal(current, goal))
+    if (goal?.chatId === chatId) setGoals((current) => mergeGoal(current, goal))
     if (actionEvent?.errorCode) setMessage(`Core: ${actionEvent.errorMessage || actionEvent.errorCode}`)
-  }, [actionEvent])
+  }, [actionEvent, chatId])
 
   useEffect(() => {
-    if (!api || !workspace || !CONNECTED_STATES.includes(connection)) return
-    void api.invoke('core.listGoals', { workspacePath: workspace, limit: 64 })
-  }, [api, connection, workspace])
+    if (!api || !workspace || !chatId || !CONNECTED_STATES.includes(connection)) return
+    void api.invoke('core.listGoals', { workspacePath: workspace, chatId, limit: 64 })
+  }, [api, chatId, connection, workspace])
 
   const createGoal = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
-    if (!api || !workspace || objective.trim() === '' || criterion.trim() === '') return
+    if (!api || !workspace || !chatId || objective.trim() === '' || criterion.trim() === '') return
     setBusy(true)
     setMessage(null)
     const outcome = await api.invoke('core.createGoal', {
       goalId: `goal-${makeId()}`,
       workspacePath: workspace,
+      chatId,
       objective: objective.trim(),
       successCriteria: [{ id: 'criterion-1', kind: 'manual', statement: criterion.trim() }],
       idempotencyKey: `goal:create:${makeId()}`
@@ -118,16 +120,16 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
   }
 
   return (
-    <section className="goal-panel" aria-label={translate("Постоянные цели")}>
+    <section className="goal-panel" aria-label={translate("Цели чата")}>
       <div className="goal-panel__header">
         <div>
           <span className="goal-panel__eyebrow">Core Goal v1</span>
-          <h3>{translate("Постоянные цели")}</h3>
+          <h3>{translate("Цели чата")}</h3>
         </div>
         <span className="goal-panel__count">{translate(goals.length || '—')}</span>
       </div>
 
-      {workspace ? (
+      {workspace && chatId ? (
         <form className="goal-create" onSubmit={(event) => void createGoal(event)}>
           <input
             aria-label={translate("Новая цель")}
@@ -145,7 +147,7 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
           />
           <button type="submit" disabled={busy || objective.trim() === '' || criterion.trim() === ''}>{translate("Создать цель")}</button>
         </form>
-      ) : <p className="empty-state">{translate("Выбери workspace, чтобы создать или открыть цели.")}</p>}
+      ) : <p className="empty-state">{translate("Открой чат, чтобы создать или открыть его цель.")}</p>}
 
       {listProjection?.truncated ? <p className="goal-card__warning" role="status">{translate("Список целей ограничен размером IPC-проекции; открой цель отдельно для полного состояния.")}</p> : null}
 
@@ -194,7 +196,7 @@ export function GoalPanel({ connection, events, workspace }: Props): React.JSX.E
             </article>
           ))}
         </div>
-      ) : <p className="empty-state">{translate("Сохранённых целей пока нет.")}</p>}
+      ) : <p className="empty-state">{translate("В этом чате пока нет цели.")}</p>}
 
       {message ? <p className="goal-panel__message" role="status">{translate(message)}</p> : null}
     </section>

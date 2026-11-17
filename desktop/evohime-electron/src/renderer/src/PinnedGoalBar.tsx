@@ -87,26 +87,26 @@ export function PinnedGoalBar({
     setGoals([])
     setNotice(null)
     setExpanded(false)
-  }, [workspace])
+  }, [chatId, workspace])
 
   useEffect(() => {
     if (listProjection) {
-      setGoals(listProjection.goals)
+      setGoals(listProjection.goals.filter((goal) => goal.chatId === chatId))
     }
-  }, [listProjection])
+  }, [chatId, listProjection])
 
   useEffect(() => {
     const goal = actionEvent?.goal
-    if (goal) setGoals((current) => mergeGoal(current, goal))
+    if (goal?.chatId === chatId) setGoals((current) => mergeGoal(current, goal))
     if (actionEvent?.errorCode) {
       setNotice(actionEvent.errorMessage || actionEvent.errorCode)
     }
-  }, [actionEvent])
+  }, [actionEvent, chatId])
 
   useEffect(() => {
-    if (!api || !workspace || !connected) return
-    void api.invoke('core.listGoals', { workspacePath: workspace, limit: 32 })
-  }, [api, connected, workspace, latestGoalNotificationSeq])
+    if (!api || !workspace || !chatId || !connected) return
+    void api.invoke('core.listGoals', { workspacePath: workspace, chatId, limit: 32 })
+  }, [api, chatId, connected, workspace, latestGoalNotificationSeq])
 
   const pinnedGoal = useMemo(() => {
     const visible = goals.filter((goal) => !dismissedGoalIds.includes(goal.goalId))
@@ -115,12 +115,11 @@ export function PinnedGoalBar({
     const inFlight = (goal: GoalProjection): boolean =>
       goal.status === 'active' || goal.status === 'paused' || goal.status === 'blocked' || goal.status === 'budget_limited'
     return visible.find((goal) => inFlight(goal) && byChat(goal))
-      ?? visible.find((goal) => inFlight(goal))
       ?? visible.find((goal) => goal.status === 'completed' && byChat(goal))
       ?? null
   }, [chatId, dismissedGoalIds, goals])
 
-  if (!workspace) return null
+  if (!workspace || !chatId) return null
 
   const transition = async (
     goal: GoalProjection,

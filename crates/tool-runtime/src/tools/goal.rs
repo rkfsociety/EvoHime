@@ -10,7 +10,7 @@ pub const CREATE_NAME: &str = "goal_create";
 /// Input and output summary exposed in tool catalogs.
 pub const DESCRIPTION: &str = "Verify and mark a criterion of the active Core Goal as completed after checking its result with tools. Input: { goal_id, criterion_id, evidence_summary }.";
 /// Input and output summary for `goal_create`.
-pub const CREATE_DESCRIPTION: &str = "Create and pin a durable Core Goal for multi-step or long-running work so it persists in the UI and continues until all criteria are verified. Input: { objective, success_criteria?: string[], continuation_budget?: integer }.";
+pub const CREATE_DESCRIPTION: &str = "Create and pin a Core Goal for multi-step work in the current chat. The goal belongs only to that chat and is not a workspace-wide standing goal. Input: { objective, success_criteria?: string[], continuation_budget?: integer }.";
 /// Permissions required before requesting goal verification (none; Core validates ownership).
 pub const PERMISSIONS: &[Permission] = &[];
 /// Permissions required before requesting goal creation (none; Core validates workspace).

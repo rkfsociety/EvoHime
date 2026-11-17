@@ -812,9 +812,7 @@ function dispatch(
       const value = asRecord(payload)
       const goalId = asGoalToken(value['goalId'])
       const workspacePath = asBoundedString(value['workspacePath'])
-      const chatId = value['chatId'] === undefined || value['chatId'] === null || value['chatId'] === ''
-        ? ''
-        : asGoalToken(value['chatId'])
+      const chatId = asGoalToken(value['chatId'])
       const objective = asBoundedString(value['objective'])
       const successCriteria = asGoalCriteria(value['successCriteria'])
       const tokenBudget = asOptionalGoalBudget(value['tokenBudget'])
@@ -837,9 +835,10 @@ function dispatch(
     case 'core.listGoals': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])
+      const chatId = asGoalToken(value['chatId'])
       const limit = value['limit'] === undefined ? 0 : asOptionalLimit(value['limit'], 128)
-      if (workspacePath === null || limit === null) return failure('invalid-payload', 'Некорректный список целей.')
-      return accepted(client.send({ listGoals: { workspacePath, limit } }))
+      if (workspacePath === null || chatId === null || limit === null) return failure('invalid-payload', 'Некорректный список целей.')
+      return accepted(client.send({ listGoals: { workspacePath, chatId, limit } }))
     }
 
     case 'core.pauseGoal':

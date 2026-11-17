@@ -1,4 +1,4 @@
-//! Core runtime boundary for the durable Goal contract (plan 25.2).
+//! Core runtime boundary for the chat-scoped Goal contract (plan 25.2).
 //!
 //! Storage owns validation and atomic persistence. Core is the only caller
 //! that can create authoritative criteria evidence or change a Goal state.
@@ -14,7 +14,7 @@ pub use evohime_local_storage::goal::{
 use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
 
-/// Core-authorized runtime operations for durable goals.
+/// Core-authorized runtime operations for chat-scoped goals.
 #[derive(Clone)]
 pub struct GoalRuntime {
     journal: crate::EventJournal,
@@ -43,6 +43,17 @@ impl GoalRuntime {
     ) -> Result<Vec<GoalV1>, evohime_local_storage::StorageError> {
         let database = self.journal.database().lock().await;
         GoalStore::new(database.connection()).list(workspace_id, limit)
+    }
+
+    /// Lists goals belonging to one chat in a workspace.
+    pub async fn list_for_chat(
+        &self,
+        workspace_id: &str,
+        chat_id: &str,
+        limit: usize,
+    ) -> Result<Vec<GoalV1>, evohime_local_storage::StorageError> {
+        let database = self.journal.database().lock().await;
+        GoalStore::new(database.connection()).list_for_chat(workspace_id, chat_id, limit)
     }
 
     /// Returns recovery projections enriched with warnings from linked runs.
