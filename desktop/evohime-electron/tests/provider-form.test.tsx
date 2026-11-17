@@ -190,6 +190,23 @@ describe('provider form', () => {
     })
   })
 
+  it('offers per-model limits from the selected provider catalog instead of a text input', async () => {
+    renderProviderForm([{
+      sequenceId: 4,
+      taskId: '',
+      eventType: 'model.catalog',
+      payload: JSON.stringify({ models: ['deepseek:free', 'qwen:free'] })
+    }])
+
+    const model = await screen.findByLabelText('ID модели') as HTMLSelectElement
+    expect(model.tagName).toBe('SELECT')
+    expect(Array.from(model.options).map((option) => option.value)).toEqual(['deepseek:free', 'qwen:free'])
+    expect(screen.queryByRole('textbox', { name: 'ID модели' })).toBeNull()
+
+    await userEvent.selectOptions(model, 'qwen:free')
+    expect(model.value).toBe('qwen:free')
+  })
+
   it('loads and saves per-provider request pacing', async () => {
     providerGetSummary = {
       provider: 'literouter',

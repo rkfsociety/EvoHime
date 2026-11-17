@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   PROVIDER_KINDS,
@@ -136,6 +136,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [pacingInterval, setPacingInterval] = useState('8000')
   const [pacingFreeInterval, setPacingFreeInterval] = useState('18948')
   const [limitModel, setLimitModel] = useState('')
+  const [catalogModels, setCatalogModels] = useState<readonly string[]>([])
   const [modelLimitsEnabled, setModelLimitsEnabled] = useState(false)
   const [modelRpm, setModelRpm] = useState('0')
   const [modelRph, setModelRph] = useState('0')
@@ -206,6 +207,18 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     const projection = asRecord(parsed['provider_catalog'])
     const catalog = asRecord(projection?.['catalog'])
     const providerProjection = asRecord(projection?.['provider'])
+    const expectedProvider = provider === 'openai_compatible' ? profileId : provider
+    const catalogProvider = typeof providerProjection?.['profile_id'] === 'string'
+      ? providerProjection['profile_id']
+      : typeof providerProjection?.['id'] === 'string' ? providerProjection['id'] : null
+    if (catalogProvider !== null && catalogProvider !== expectedProvider) {
+      setCatalogModels([])
+      return
+    }
+    const models = Array.isArray(parsed['models'])
+      ? parsed['models'].filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
+    setCatalogModels([...new Set(models)])
     const freeAccess = asRecord(parsed['free_access'])
     const state = typeof catalog?.['state'] === 'string' ? catalog['state'] : null
     const failureCode = typeof catalog?.['failure_code'] === 'string'
@@ -216,7 +229,13 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       : null
     setCatalogStatus(state ? catalogStatusLabel(state, credentialStatus, failureCode) : null)
     setFreeEvidenceStatus(freeAccess ? freeAccessStatusLabel(freeAccess) : null)
-  }, [events])
+  }, [events, profileId, provider])
+
+  useEffect(() => {
+    if (!api || !['connected', 'replaying', 'resyncing'].includes(connection)) return
+    setCatalogModels([])
+    void api.invoke('core.listModelCatalog', { mode: tier })
+  }, [api, connection, provider, tier])
 
   useEffect(() => {
     const event = [...events].reverse().find((item) => item.eventType === 'free_access.probe')
@@ -422,6 +441,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const showProbe = supportsFreeAccessProbe(provider, profileId) || probePolicy !== 'disabled'
   const showRouting = supportsEvidenceRouting(provider, profileId) || routingMode !== 'any'
   const showPacing = needsRequestPacing(provider) || !pacingIsDefault
+  const limitModelOptions = useMemo(() => {
+    const options = [...catalogModels]
+    if (limitModel.trim() && !options.includes(limitModel.trim())) options.unshift(limitModel.trim())
+    return options
+  }, [catalogModels, limitModel])
 
   return (
     <section className="shell__panel provider-form" aria-label={translate("Ключ провайдера")}>
@@ -646,10 +670,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       <fieldset className="provider-form__tier" aria-label={translate("Лимиты запросов модели")}>
         <legend>{translate("Лимиты запросов модели")}</legend>
         <label htmlFor="provider-limit-model">{translate("ID модели")}
-          <input id="provider-limit-model" value={limitModel} onChange={(event) => {
+          <select id="provider-limit-model" value={limitModel} onChange={(event) => {
             setLimitModel(event.target.value)
             applyModelLimits(selectedProfile?.modelRateLimits, event.target.value)
-          }} maxLength={128} spellCheck={false} disabled={busy} placeholder={translate("точный ID из каталога")} />
+          }} disabled={busy || limitModelOptions.length === 0}>
+            {limitModelOptions.length === 0 ? <option value="">{translate("Каталог моделей ещё не загружен")}</option> : null}
+            {limitModel.trim() && !catalogModels.includes(limitModel.trim()) ? (
+              <option value={limitModel.trim()}>{limitModel.trim()} ({translate("текущая, не найдена в каталоге")})</option>
+            ) : null}
+            {catalogModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
+          </select>
         </label>
         <label>
           <input type="checkbox" checked={modelLimitsEnabled} onChange={(event) => setModelLimitsEnabled(event.target.checked)} disabled={busy || !limitModel.trim()} />
