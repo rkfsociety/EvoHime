@@ -220,6 +220,12 @@ impl IpcBridge {
                     task_id: reconciliation_task_id,
                     session_id: None,
                     progress_tx: None,
+                    eva_workspace_root: None,
+                    self_development_profile: None,
+                    agent_depth: 1,
+                    self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                        evohime_tool_runtime::self_development::TestGate::default(),
+                    )),
                 };
                 let (scope, preview) = match tools
                     .preflight(&context, &request.tool_name, &input)

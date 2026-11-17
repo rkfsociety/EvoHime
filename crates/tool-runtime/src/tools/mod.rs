@@ -36,6 +36,8 @@ pub mod patch;
 pub mod process;
 /// Sandboxed workspace content search.
 pub mod search;
+/// Isolated Queen self-development tools.
+pub mod self_development;
 /// Policy-bound direct program execution.
 pub mod shell;
 /// Core-owned durable workflow orchestration entry points.

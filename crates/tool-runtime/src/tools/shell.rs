@@ -283,6 +283,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: Some(tx),
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
         // Use a portable-ish program: on Windows shell interpreters are blocked; use git.
         // `git` is usually present in this repo's CI/dev machines.
@@ -329,6 +335,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let result = execute(
@@ -356,6 +368,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         for input in [
@@ -481,6 +499,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         // Use git's deterministic invalid-option exit instead of POSIX `false`.
@@ -518,6 +542,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         // Use git's portable version query instead of POSIX `true`.

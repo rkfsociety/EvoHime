@@ -89,6 +89,9 @@ pub struct HiveSettings {
     /// `0` means no budget at all: a background cycle must not start a task.
     #[serde(default = "default_daily_budget_usd")]
     pub daily_budget_usd: f64,
+    /// Optional isolated Git checkout used only by Queen self-development.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eva_workspace_path: Option<String>,
 }
 
 fn default_schema_version() -> u32 {
@@ -112,6 +115,7 @@ impl Default for HiveSettings {
             max_total_subagents_per_workflow: DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW,
             pulse_interval_secs: DEFAULT_PULSE_INTERVAL_SECS,
             daily_budget_usd: DEFAULT_DAILY_BUDGET_USD,
+            eva_workspace_path: None,
         }
     }
 }
@@ -159,6 +163,9 @@ impl HiveSettings {
                 value: self.daily_budget_usd,
                 max: MAX_DAILY_BUDGET_USD,
             });
+        }
+        if let Some(path) = self.eva_workspace_path.as_deref() {
+            validate_eva_workspace_path(path)?;
         }
         Ok(())
     }
@@ -270,7 +277,8 @@ impl HiveSettings {
                 {"name": "max_parallel_subagents", "type": "u32", "zero": "unbounded_up_to_worker_ceiling"},
                 {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"},
                 {"name": "pulse_interval_secs", "type": "u64", "zero": "invalid"},
-                {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"}
+                {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"},
+                {"name": "eva_workspace_path", "type": "optional_existing_git_directory", "default": null}
             ],
             "note": "ceilings are safety guards, not a spawn plan",
             "max_child_depth": MAX_CHILD_DEPTH
@@ -280,9 +288,22 @@ impl HiveSettings {
     }
 }
 
+fn validate_eva_workspace_path(path: &str) -> Result<(), HiveSettingsError> {
+    let workspace = evohime_tool_runtime::self_development::EvaWorkspace::open(path)
+        .map_err(|error| HiveSettingsError::InvalidEvaWorkspace(error.to_string()))?;
+    if !workspace.root().is_absolute() {
+        return Err(HiveSettingsError::InvalidEvaWorkspace(
+            "path must resolve to an absolute directory".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Invalid hive safety settings.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HiveSettingsError {
+    /// The configured isolated self-development checkout is invalid.
+    InvalidEvaWorkspace(String),
     /// The persisted contract version is not supported.
     UnsupportedVersion(u32),
     /// The per-worker ceiling exceeds the hard implementation limit.
@@ -352,6 +373,7 @@ pub enum HiveSettingsError {
 impl std::fmt::Display for HiveSettingsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidEvaWorkspace(message) => write!(f, "invalid eva workspace: {message}"),
             Self::UnsupportedVersion(version) => {
                 write!(f, "unsupported hive settings version: {version}")
             }
@@ -556,6 +578,28 @@ mod tests {
             HiveSettings::from_json(invalid),
             Err(HiveSettingsError::MissingWorkflowGuard)
         ));
+    }
+
+    #[test]
+    fn eva_workspace_path_validation() {
+        let missing = HiveSettings {
+            eva_workspace_path: Some("C:\\definitely\\missing\\eva-workspace".into()),
+            ..HiveSettings::default()
+        };
+        assert!(matches!(
+            missing.validate(),
+            Err(HiveSettingsError::InvalidEvaWorkspace(_))
+        ));
+        let plain = tempfile::tempdir().expect("directory");
+        let not_git = HiveSettings {
+            eva_workspace_path: Some(plain.path().to_string_lossy().into_owned()),
+            ..HiveSettings::default()
+        };
+        assert!(matches!(
+            not_git.validate(),
+            Err(HiveSettingsError::InvalidEvaWorkspace(_))
+        ));
+        assert!(HiveSettings::default().validate().is_ok());
     }
 
     #[test]

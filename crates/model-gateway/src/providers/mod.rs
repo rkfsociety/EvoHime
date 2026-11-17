@@ -188,7 +188,7 @@ pub enum ProviderError {
     #[error("api error: {0}")]
     Api(String),
     /// Provider rejected a request and supplied bounded structured diagnostics.
-    #[error("api error: {error_code}")]
+    #[error("{message}")]
     ApiWithDiagnostics {
         /// Fixed safe status summary, without provider-controlled message text.
         message: String,
@@ -197,7 +197,7 @@ pub enum ProviderError {
         /// HTTP status retained separately from the provider-controlled payload.
         status: u16,
         /// Bounded provider metadata retained for Core's redacted trace projection.
-        diagnostics: ProviderErrorDiagnostic,
+        diagnostics: Box<ProviderErrorDiagnostic>,
     },
     /// Provider output stream failed or was malformed.
     #[error("streaming error: {0}")]
@@ -289,9 +289,16 @@ impl ProviderError {
                 .to_ascii_lowercase()
         );
         let code = match status {
-            401 | 403 => "provider_auth_rejected",
+            401 => "provider_auth_rejected",
+            403 if provider_markers.contains("rate limit")
+                || structured_markers.contains("rate_limit") =>
+            {
+                "provider_rate_limited"
+            }
+            403 => "provider_auth_rejected",
             402 => "provider_quota_exhausted",
             408 => "provider_timeout",
+            429 if provider_markers.contains("quota") => "provider_quota_exhausted",
             429 => "provider_rate_limited",
             500..=599 => "provider_unavailable",
             404 => "provider_model_not_found",
@@ -325,31 +332,37 @@ impl ProviderError {
             _ if structured_markers.contains("unsupported_parameter") => {
                 "provider_unsupported_parameter"
             }
+            _ if status == 400 => "provider_request_rejected_http_400",
             _ => "provider_request_rejected",
         };
         let safe_message = match code {
             "provider_model_not_found" => "provider model not found",
             "provider_context_length_exceeded" => "provider context length exceeded",
             "provider_unsupported_parameter" => "provider rejected unsupported parameter",
-            "provider_quota_exhausted" => "provider quota rejected",
+            "provider_quota_exhausted" => "provider quota exhausted",
             "provider_auth_rejected" => "provider authentication rejected",
             "provider_timeout" => "provider request timed out",
-            "provider_rate_limited" => "provider rate limited",
+            "provider_rate_limited" => "provider rate limit exceeded",
             "provider_unavailable" => "provider unavailable",
-            _ => "provider request failed",
+            "provider_request_rejected_http_400" => "provider request rejected (HTTP 400)",
+            _ => "provider request rejected",
         };
         Self::ApiWithDiagnostics {
-            message: safe_message.into(),
+            message: if code == "provider_request_rejected" {
+                format!("{safe_message} (HTTP {status})")
+            } else {
+                safe_message.into()
+            },
             error_code: code,
             status,
-            diagnostics: diagnostics.clone(),
+            diagnostics: Box::new(diagnostics.clone()),
         }
     }
 
     /// Returns structured diagnostics attached by an HTTP response adapter.
     pub fn diagnostics(&self) -> Option<ProviderErrorDiagnostic> {
         match self {
-            Self::ApiWithDiagnostics { diagnostics, .. } => Some(diagnostics.clone()),
+            Self::ApiWithDiagnostics { diagnostics, .. } => Some((**diagnostics).clone()),
             _ => None,
         }
     }
@@ -538,7 +551,7 @@ pub type ImageOutputFuture<'a> =
 
 #[cfg(test)]
 mod failure_code_tests {
-    use super::ProviderError;
+    use super::{ProviderError, ProviderErrorDiagnostic};
 
     #[test]
     fn reads_http_status_only_from_adapter_prefixed_messages() {
@@ -644,17 +657,11 @@ mod failure_code_tests {
         let error = ProviderError::api_with_diagnostics(400, &diagnostics);
         assert_eq!(error.http_status(), Some(400));
         assert_eq!(error.failure_code(), "provider_context_length_exceeded");
-        assert!(error
-            .to_string()
-            .contains("provider_context_length_exceeded"));
+        assert_eq!(error.to_string(), "provider context length exceeded");
         assert_eq!(error.diagnostics(), Some(diagnostics));
-        assert!(error
-            .to_string()
-            .contains("provider_context_length_exceeded"));
+        assert!(format!("{error:?}").contains("provider_context_length_exceeded"));
         assert!(!error.to_string().contains("context_length_exceeded"));
         assert!(!format!("{error:?}").contains("maximum context length"));
-        assert!(!format!("{error:?}").contains("context_length_exceeded"));
-        assert!(format!("{error:?}").contains("provider_context_length_exceeded"));
     }
 
     #[test]
@@ -672,7 +679,7 @@ mod failure_code_tests {
         };
         let error = ProviderError::api_with_diagnostics(400, &diagnostics);
         assert_eq!(error.failure_code(), "provider_model_not_found");
-        assert!(error.to_string().contains("provider_model_not_found"));
+        assert_eq!(error.to_string(), "provider model not found");
         assert_eq!(
             ProviderError::api_with_diagnostics(404, &diagnostics).failure_code(),
             "provider_model_not_found"

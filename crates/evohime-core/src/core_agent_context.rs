@@ -1370,7 +1370,9 @@ impl ToolAgent {
                     "task_id": task_id,
                     "attempt": attempt + 1,
                     "model_attempt_id": logical_request_id,
-                    "model": provider_model_for_trace(self.selected_model.get()),
+                    "model": provider_model_for_trace(
+                        self.selected_model.get().map(|model| model.to_string()),
+                    ),
                     "timeout_secs": config.model_timeout_secs,
                     "resilience_policy": model_resilience_policy::CONTRACT_ID,
                     "resilience_policy_hash": resilience_hash.clone(),
@@ -1569,7 +1571,9 @@ impl ToolAgent {
                                 "task_id": task_id,
                                 "attempt": attempt + 1,
                                 "model_attempt_id": logical_request_id,
-                                "model": provider_model_for_trace(self.selected_model.get()),
+                                "model": provider_model_for_trace(
+                                    self.selected_model.get().map(|model| model.to_string()),
+                                ),
                                 "purpose": purpose.as_str(),
                                 "error_code": error_code,
                                 "failure_class": format!("{failure:?}"),
@@ -1589,7 +1593,9 @@ impl ToolAgent {
                             "task_id": task_id,
                             "attempt": attempt + 1,
                             "model_attempt_id": logical_request_id,
-                            "model": provider_model_for_trace(self.selected_model.get()),
+                            "model": provider_model_for_trace(
+                                self.selected_model.get().map(|model| model.to_string()),
+                            ),
                             "purpose": purpose.as_str(),
                             "error_code": error_code,
                             "failure_class": format!("{failure:?}"),

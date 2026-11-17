@@ -98,5 +98,7 @@ pub use tools::mcp;
 pub use tools::memory;
 /// Process management tool adapter.
 pub use tools::process;
+/// Queen self-development tools and their safety gates.
+pub use tools::self_development;
 /// Patch, search, shell, and file-writing adapters.
 pub use tools::{patch, search, shell, write};

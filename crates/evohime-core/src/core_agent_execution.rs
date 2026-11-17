@@ -548,11 +548,28 @@ impl ToolAgent {
                 uuid::Uuid::new_v4()
             }
         };
+        let eva_workspace_path = match &self.journal {
+            Some(journal) => journal
+                .hive_settings()
+                .await
+                .ok()
+                .and_then(|settings| settings.eva_workspace_path),
+            None => None,
+        };
+        let eva_workspace_configured = eva_workspace_path.as_deref().and_then(|path| {
+            evohime_tool_runtime::self_development::EvaWorkspace::open(path)
+                .ok()
+                .map(|workspace| workspace.root().to_path_buf())
+        });
         let context = ToolContext {
             workspace_root: workspace_root.into(),
             task_id: task_uuid,
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: eva_workspace_configured,
+            self_development_profile: Some("queen".into()),
+            agent_depth: 0,
+            self_development_test_gate: Default::default(),
         };
         let (
             project_instruction_context,
@@ -570,6 +587,19 @@ impl ToolAgent {
         // must get them and keep mutation delivery regardless of prompt wording.
         let mut preflight = Vec::new();
         for tool in self.tools.list() {
+            if tool
+                .name
+                .starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX)
+                && context.eva_workspace_root.is_none()
+            {
+                preflight.push((
+                    tool.name,
+                    Ok(evohime_tool_runtime::ToolPreflightDecision::Denied(
+                        evohime_permissions::Permission::GitWrite,
+                    )),
+                ));
+                continue;
+            }
             let decision = self
                 .tools
                 .preflight(&context, tool.name, &catalog_preflight_input(tool.name))
@@ -632,6 +662,14 @@ impl ToolAgent {
         required_ids.push("goal_verify");
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
+            if context.eva_workspace_root.is_some() {
+                required_ids.extend_from_slice(&[
+                    evohime_tool_runtime::self_development::TOOL_READ_FILE,
+                    evohime_tool_runtime::self_development::TOOL_WRITE_FILE,
+                    evohime_tool_runtime::self_development::TOOL_RUN_COMMAND,
+                    evohime_tool_runtime::self_development::TOOL_GIT,
+                ]);
+            }
         }
         for required in required_ids {
             if selected.iter().any(|manifest| manifest.tool_id == required) {
@@ -732,7 +770,15 @@ impl ToolAgent {
         }
         let system_prompt = format!(
             "{}\n\n{}\nProject instruction snapshot: {}",
-            build_agent_system_prompt(&tool_names),
+            build_agent_system_prompt(&tool_names).replace(
+                "{eva_workspace_path}",
+                context
+                    .eva_workspace_root
+                    .as_deref()
+                    .map(|path| path.to_string_lossy().as_ref().to_owned())
+                    .unwrap_or("(не настроен; инструменты саморазвития недоступны)".into())
+                    .as_str(),
+            ),
             project_instruction_context,
             project_instruction_snapshot_hash
         );
@@ -2839,6 +2885,12 @@ mod tests {
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                evohime_tool_runtime::self_development::TestGate::default(),
+            )),
         };
 
         let catalog = agent
@@ -2927,6 +2979,12 @@ mod tests {
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                evohime_tool_runtime::self_development::TestGate::default(),
+            )),
         };
 
         for tool_name in ["workflow_status", "workflow_cancel"] {
@@ -3278,6 +3336,12 @@ mod tests {
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                evohime_tool_runtime::self_development::TestGate::default(),
+            )),
         };
         let registry = ToolRegistry::bootstrap();
         let decision = Ok(registry
@@ -3330,6 +3394,12 @@ mod tests {
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                evohime_tool_runtime::self_development::TestGate::default(),
+            )),
         };
         let registry = ToolRegistry::bootstrap();
         let probe = super::super::catalog_preflight_input("filesystem_patch");

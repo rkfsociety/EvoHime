@@ -252,8 +252,26 @@ impl LiteRouterProvider {
                     let mut diagnostics = body.diagnostics;
                     diagnostics.provider_attempts = attempt.saturating_add(1);
                     let text = body.text;
+                    // Retain only fixed safe classification hints. Raw provider
+                    // text is discarded before constructing any user-visible error.
+                    let rate_limit_hint = classify_rate_limit(status, &text);
+                    let quota_hint = text.to_ascii_lowercase().contains("quota");
                     let cloudflare_code = cloudflare_typed_error_code(&self.config.base_url, &text);
-                    let rate_limit = classify_rate_limit(status, &text);
+                    let rate_limit = rate_limit_hint;
+                    if rate_limit.is_some() {
+                        diagnostics.error_type = Some("rate_limit_error".into());
+                        diagnostics.message = Some("rate limit exceeded".into());
+                        if matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
+                            diagnostics.code = Some("quota_exhausted".into());
+                        }
+                    } else if status.as_u16() == 400 {
+                        diagnostics.error_type = Some("invalid_request_error".into());
+                    }
+                    // Carry a bounded internal hint for legacy safe wording
+                    // selection; never attach the provider's raw body.
+                    if quota_hint && matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
+                        diagnostics.code = Some("quota_exhausted".into());
+                    }
                     // The provider may state how long its tier needs between
                     // messages; both this retry and later requests honor it.
                     let pacing_hint = parse_rate_limit_delay(&text);

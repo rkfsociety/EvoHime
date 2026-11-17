@@ -401,6 +401,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let hash = hex::encode(sha2::Sha256::digest(b"content"));
@@ -427,6 +433,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let hash = hex::encode(sha2::Sha256::digest(b"content"));
@@ -452,6 +464,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let result = stat(&ctx, json!({"path": "test.txt"})).await.expect("stat");
@@ -477,6 +495,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
         let error = copy(
             &ctx,

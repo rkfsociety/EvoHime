@@ -69,6 +69,11 @@ pub const READ_ONLY_CAPABILITIES: &[&str] = &[
 /// empty capability.
 pub(crate) fn canonical_capability(value: &str) -> Option<&'static str> {
     match value.split(':').next().unwrap_or(value) {
+        "eva_self_development"
+        | "eva_workspace_read_file"
+        | "eva_workspace_write_file"
+        | "eva_workspace_run_command"
+        | "eva_workspace_git" => None,
         "fs.read" | "workspace.read" | "filesystem_read" | "filesystem_list" => {
             Some("workspace.read")
         }
@@ -773,6 +778,12 @@ impl RegisteredChildExecutor {
             task_id: uuid::Uuid::from_bytes(task_bytes),
             session_id: session.and_then(|session| uuid::Uuid::parse_str(session).ok()),
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                evohime_tool_runtime::self_development::TestGate::default(),
+            )),
         };
         let plan = role_tool_plan(&role.effective_grants, request);
         let mut output = RoleRunOutput {
@@ -2474,6 +2485,10 @@ mod tests {
             );
         }
         let profile = builtin_profile("coordinator").expect("coordinator profile");
+        assert!(profile
+            .tools
+            .iter()
+            .all(|tool| !tool.starts_with("eva_workspace_")));
         assert!(profile
             .constraints
             .iter()

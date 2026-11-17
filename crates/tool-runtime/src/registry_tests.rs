@@ -48,6 +48,44 @@ fn legacy_dotted_name_resolves_to_the_canonical_manifest() {
 }
 
 #[test]
+fn self_development_tools_are_only_available_to_the_queen() {
+    run_async_test_with_large_stack(async {
+        let registry = ToolRegistry::bootstrap();
+        let dir = tempfile::tempdir().expect("workspace");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::new_v4(),
+            session_id: None,
+            progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: Some("researcher".into()),
+            agent_depth: 1,
+            self_development_test_gate: Default::default(),
+        };
+        assert!(matches!(
+            registry
+                .execute(
+                    &context,
+                    "eva_workspace_read_file",
+                    serde_json::json!({"path":"x.rs"})
+                )
+                .await,
+            Err(ToolError::PermissionDenied(_))
+        ));
+        assert!(matches!(
+            registry
+                .preflight(
+                    &context,
+                    "eva_workspace_read_file",
+                    &serde_json::json!({"path":"x.rs"})
+                )
+                .await,
+            Ok(ToolPreflightDecision::Denied(_))
+        ));
+    });
+}
+
+#[test]
 fn bootstrap_registers_filesystem_read() {
     let registry = ToolRegistry::bootstrap();
     let tools = registry.list();
@@ -114,6 +152,10 @@ fn bootstrap_registers_filesystem_read() {
         "workflow_start",
         "workflow_status",
         "workflow_cancel",
+        "eva_workspace_read_file",
+        "eva_workspace_write_file",
+        "eva_workspace_run_command",
+        "eva_workspace_git",
     ] {
         assert!(
             tools.iter().any(|tool| tool.name == name),
@@ -137,6 +179,12 @@ async fn parallel_calls_complete_independently_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let results = registry
         .execute_parallel(
@@ -179,6 +227,12 @@ async fn cancellation_stops_call_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let token = tokio_util::sync::CancellationToken::new();
     token.cancel();
@@ -225,6 +279,12 @@ async fn cancellation_propagates_into_shell_execution_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let token = CancellationToken::new();
     let (program, args) = if cfg!(windows) {
@@ -290,6 +350,12 @@ async fn cancellation_stops_non_shell_tool_in_parallel_execution_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let token = CancellationToken::new();
     let cancel = token.clone();
@@ -348,6 +414,12 @@ async fn registry_dispatches_browser_open_when_allowed_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let result = registry
         .execute(
@@ -451,6 +523,12 @@ async fn policy_denies_shell_subject_after_cd_prefix_is_resolved_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let error = registry
         .execute(
@@ -497,6 +575,12 @@ async fn policy_denies_canonical_path_despite_relative_alias_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
 
     let error = registry
@@ -536,6 +620,12 @@ async fn policy_uses_a_separate_subject_for_git_push_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let error = registry
         .execute(
@@ -572,6 +662,12 @@ async fn ask_mode_creates_scoped_approval_inner() {
         task_id: Uuid::nil(),
         session_id: Some(session_id),
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let err = registry
         .execute(
@@ -609,6 +705,12 @@ async fn approval_is_bound_to_exact_call_and_rechecks_deny_inner() {
         task_id: Uuid::new_v4(),
         session_id: Some(Uuid::new_v4()),
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let original = serde_json::json!({
         "path": "notes/todo.txt",
@@ -697,6 +799,12 @@ async fn denied_approval_is_rejected_when_rechecked_inner() {
         task_id: request.task_id,
         session_id: request.session_id,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
 
     assert!(matches!(
@@ -736,6 +844,12 @@ async fn granted_approval_is_consumed_before_execution_and_cannot_replay_inner()
         task_id: Uuid::new_v4(),
         session_id: Some(Uuid::new_v4()),
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
     let input = serde_json::json!({
         "path": "notes/once.txt",
@@ -820,6 +934,12 @@ async fn post_approval_path_revalidates_patch_input_inner() {
         task_id,
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
 
     assert!(matches!(
@@ -857,6 +977,12 @@ async fn oversized_patch_is_rejected_before_approval_inner() {
         task_id: Uuid::nil(),
         session_id: Some(Uuid::new_v4()),
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            crate::tools::self_development::TestGate::default(),
+        )),
     };
 
     let error = registry
@@ -980,6 +1106,12 @@ fn registry_without_kernel_host_fails_closed() {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
         let error = registry
             .execute(
@@ -1015,6 +1147,12 @@ fn kernel_host_survives_clone_and_receives_task_binding() {
             task_id,
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
         let result = cloned
             .execute(
@@ -1047,6 +1185,12 @@ fn analysis_run_rejects_invalid_shape_before_reaching_the_host() {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
         let error = registry
             .execute(

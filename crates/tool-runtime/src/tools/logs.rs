@@ -374,6 +374,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let result = tail(&ctx, json!({"path": "test.log", "lines": 10}))
@@ -396,6 +402,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
         let result = tail(&ctx, json!({"path": "large.log", "lines": 50}))
             .await
@@ -419,6 +431,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let result = grep(&ctx, json!({"pattern": "error", "path": "test.log"}))
@@ -440,6 +458,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let error = grep(&ctx, json!({"pattern": "x", "path": "oversized.log"}))
@@ -461,6 +485,12 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let result = grep(&ctx, json!({"pattern": "x"}))

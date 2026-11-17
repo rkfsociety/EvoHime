@@ -42,6 +42,22 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
         // Declared kernel surface keeps one source of truth: the tool module
         // owns the schema, and the manifest derives it instead of a stub.
         "analysis_run" => crate::tools::analysis::input_schema(),
+        "eva_workspace_read_file" => object(
+            serde_json::json!({"path":string("Path relative to the isolated Eva workspace")}),
+            &["path"],
+        ),
+        "eva_workspace_write_file" => object(
+            serde_json::json!({"path":string("Path relative to the isolated Eva workspace"),"content":string("Complete UTF-8 file contents")}),
+            &["path", "content"],
+        ),
+        "eva_workspace_run_command" => object(
+            serde_json::json!({"command":string("Single allow-listed command; shell composition is forbidden")}),
+            &["command"],
+        ),
+        "eva_workspace_git" => object(
+            serde_json::json!({"action":{"type":"string","enum":["status","diff","commit","push"]},"message":string("Commit message; required only for commit")}),
+            &["action"],
+        ),
         "workflow_catalog" => object(serde_json::json!({}), &[]),
         "workflow_start" => object(
             serde_json::json!({
@@ -533,6 +549,28 @@ mod tests {
         assert_eq!(
             start["properties"]["inputs"]["additionalProperties"]["type"],
             "string"
+        );
+    }
+
+    #[test]
+    fn self_development_schemas_are_explicit_and_closed() {
+        for (tool, required) in [
+            ("eva_workspace_read_file", serde_json::json!(["path"])),
+            (
+                "eva_workspace_write_file",
+                serde_json::json!(["path", "content"]),
+            ),
+            ("eva_workspace_run_command", serde_json::json!(["command"])),
+            ("eva_workspace_git", serde_json::json!(["action"])),
+        ] {
+            let schema = builtin_input_schema(tool);
+            assert_eq!(schema["type"], "object");
+            assert_eq!(schema["additionalProperties"], false);
+            assert_eq!(schema["required"], required);
+        }
+        assert_eq!(
+            builtin_input_schema("eva_workspace_git")["properties"]["action"]["enum"],
+            serde_json::json!(["status", "diff", "commit", "push"])
         );
     }
 

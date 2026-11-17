@@ -140,6 +140,12 @@ mod tests {
             task_id: uuid::Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
         let result = execute(&ctx, json!({ "path": "demo.txt" }))
             .await
@@ -180,6 +186,12 @@ mod tests {
             task_id: uuid::Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let error = execute(&ctx, json!({ "path": ".." }))
@@ -200,6 +212,12 @@ mod tests {
             task_id: uuid::Uuid::nil(),
             session_id: None,
             progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::tools::self_development::TestGate::default(),
+            )),
         };
 
         let error = execute(&ctx, json!({ "path": "missing.txt" }))

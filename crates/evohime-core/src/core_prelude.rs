@@ -61,7 +61,11 @@ pub(crate) const TOOL_FILESYSTEM_READ: &str = "filesystem_read";
 pub(crate) const TOOL_FILESYSTEM_SEARCH: &str = "filesystem_search";
 /// Tools that can perform a required workspace mutation. The delivery gate
 /// drops a mutation requirement when none of them is in the active loadout.
-pub(crate) const DELIVERY_MUTATION_TOOLS: &[&str] = &["filesystem_write", "filesystem_patch"];
+pub(crate) const DELIVERY_MUTATION_TOOLS: &[&str] = &[
+    "filesystem_write",
+    "filesystem_patch",
+    "eva_workspace_write_file",
+];
 /// Tool that runs the required verification command (tests, build, diff check).
 pub(crate) const DELIVERY_VERIFICATION_TOOL: &str = "shell_execute";
 /// Tool that records the required commit after a successful verification.
@@ -82,6 +86,10 @@ pub(crate) const FULL_ACCESS_WORKING_SET: &[&str] = &[
     "git_status",
     "git_diff",
     "git_commit",
+    "eva_workspace_read_file",
+    "eva_workspace_write_file",
+    "eva_workspace_run_command",
+    "eva_workspace_git",
 ];
 
 /// Идентификатор встроенной политики разрешений Core.
@@ -594,6 +602,13 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
         }),
         "workflow_start" => serde_json::json!({ "template_id": "probe", "inputs": {} }),
         "workflow_status" | "workflow_cancel" => serde_json::json!({ "run_id": "probe" }),
+        "eva_workspace_read_file" => serde_json::json!({ "path": "Cargo.toml" }),
+        "eva_workspace_write_file" => serde_json::json!({
+            "path": ".evohime-catalog-probe",
+            "content": ""
+        }),
+        "eva_workspace_run_command" => serde_json::json!({ "command": "cargo test --lib" }),
+        "eva_workspace_git" => serde_json::json!({ "action": "status" }),
         _ => serde_json::json!({}),
     }
 }
@@ -719,6 +734,15 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
         "- Если пользователь не сформулировал конкретное поручение, не исследуй workspace и не имитируй выполненную работу: задай один короткий уточняющий вопрос и дождись задачи.".into(),
         "- За один ответ вызывай только один инструмент и жди его результата перед следующим вызовом.".into(),
     ];
+    if has(evohime_tool_runtime::self_development::TOOL_READ_FILE)
+        && has(evohime_tool_runtime::self_development::TOOL_WRITE_FILE)
+        && has(evohime_tool_runtime::self_development::TOOL_RUN_COMMAND)
+        && has(evohime_tool_runtime::self_development::TOOL_GIT)
+    {
+        rules.push(
+            "Ты — Королева Ева. Твой исходный код находится в {eva_workspace_path}. Если пользователь просит развивать EvoHime, используй `eva_workspace_*`: сначала прочитай файлы, затем запиши изменения, запусти проверки и только после успешной проверки сделай коммит, затем push. При неудачной проверке исправь ошибку и повтори тесты. Обычные пользовательские задачи не превращай в саморазработку. Работай только в изолированном checkout и никогда не изменяй исполняемый файл запущенной системы.".into(),
+        );
+    }
     if has("filesystem_list") {
         rules.push(
             "- Если пользователь просит изучить, проверить, найти или объяснить проект, сначала вызови filesystem_list с path точкой (.).".into(),

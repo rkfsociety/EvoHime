@@ -35,6 +35,12 @@ async fn write_creates_and_updates_nested_file_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            evohime_tool_runtime::self_development::TestGate::default(),
+        )),
     };
     let first = write::execute(&ctx, json!({"path":"nested/a.txt","content":"one"}))
         .await
@@ -63,6 +69,12 @@ async fn patch_rejects_context_mismatch_without_mutation_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            evohime_tool_runtime::self_development::TestGate::default(),
+        )),
     };
     let result = patch::execute(
         &ctx,
@@ -89,6 +101,12 @@ async fn patch_returns_the_new_file_revision_metadata_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            evohime_tool_runtime::self_development::TestGate::default(),
+        )),
     };
     let before = evohime_tool_runtime::filesystem::execute(&ctx, json!({"path":"a.txt"}))
         .await
@@ -134,6 +152,12 @@ async fn registry_requires_approval_for_write_inner() {
                 task_id: Uuid::nil(),
                 session_id: None,
                 progress_tx: None,
+                eva_workspace_root: None,
+                self_development_profile: None,
+                agent_depth: 1,
+                self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                    evohime_tool_runtime::self_development::TestGate::default(),
+                )),
             },
             "filesystem_write",
             json!({"path":"a.txt","content":"x"}),
@@ -158,6 +182,12 @@ async fn shell_runs_direct_executable_and_rejects_wrapper_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            evohime_tool_runtime::self_development::TestGate::default(),
+        )),
     };
     let (program, args) = if cfg!(windows) {
         ("rustc", vec!["--version"])
@@ -189,6 +219,12 @@ async fn shell_times_out_and_reports_timeout_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            evohime_tool_runtime::self_development::TestGate::default(),
+        )),
     };
     let (program, args) = if cfg!(windows) {
         ("ping", vec!["-n", "5", "127.0.0.1"])
@@ -217,6 +253,12 @@ async fn test_filesystem_read_only_behavior_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            evohime_tool_runtime::self_development::TestGate::default(),
+        )),
     };
 
     let before = std::fs::read_to_string(dir.path().join("test.txt")).unwrap();
@@ -254,6 +296,12 @@ async fn patch_context_recovery_on_wrong_hunk_start_inner() {
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
+        eva_workspace_root: None,
+        self_development_profile: None,
+        agent_depth: 1,
+        self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+            evohime_tool_runtime::self_development::TestGate::default(),
+        )),
     };
     let result = patch::execute(
         &ctx,

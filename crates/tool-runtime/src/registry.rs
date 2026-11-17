@@ -96,6 +96,15 @@ pub struct ToolContext {
     pub session_id: Option<Uuid>,
     /// Optional live progress channel (e.g. shell stdout/stderr chunks).
     pub progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ToolProgress>>,
+    /// Separately configured checkout reserved for Queen self-development.
+    pub eva_workspace_root: Option<PathBuf>,
+    /// Trusted runtime role; never derived from model tool arguments.
+    pub self_development_profile: Option<String>,
+    /// Child nesting depth; only the top-level Queen/coordinator may self-develop.
+    pub agent_depth: u32,
+    /// Per-task proof that a test command passed before a push.
+    pub self_development_test_gate:
+        std::sync::Arc<tokio::sync::Mutex<tools::self_development::TestGate>>,
 }
 
 impl ToolContext {
@@ -151,6 +160,7 @@ impl ToolDefinition {
             self.name,
             crate::tools::workflow::START_NAME | crate::tools::workflow::CANCEL_NAME
         );
+        let is_self_development = self.name.starts_with(tools::self_development::TOOL_PREFIX);
         let is_local_computation = is_utility || is_analysis_kernel;
         crate::ToolManifest {
             kind: crate::MANIFEST_KIND.into(),
@@ -160,7 +170,9 @@ impl ToolDefinition {
             description: self.description.into(),
             input_schema: crate::builtin_input_schema(self.name),
             output_schema: serde_json::json!({"type":"object"}),
-            capability_class: if is_local_computation {
+            capability_class: if is_self_development {
+                tools::self_development::CAPABILITY_CLASS.into()
+            } else if is_local_computation {
                 "local_computation".into()
             } else {
                 self.permissions
@@ -168,7 +180,11 @@ impl ToolDefinition {
                     .map(|p| format!("{p:?}"))
                     .unwrap_or_else(|| "none".into())
             },
-            side_effect: if is_workflow_mutation
+            side_effect: if is_self_development
+                && self.name == tools::self_development::TOOL_READ_FILE
+            {
+                crate::SideEffectClass::ReadOnly
+            } else if is_workflow_mutation
                 || self.permissions.iter().any(|p| {
                     matches!(
                         p,
@@ -176,7 +192,8 @@ impl ToolDefinition {
                             | Permission::ShellExecute
                             | Permission::GitWrite
                     )
-                }) {
+                })
+            {
                 crate::SideEffectClass::Mutating
             } else {
                 crate::SideEffectClass::ReadOnly
@@ -656,6 +673,45 @@ impl ToolRegistry {
             registry.register(tools::workflow::definition(name));
         }
 
+        for (name, description, permissions, timeout) in [
+            (
+                tools::self_development::TOOL_READ_FILE,
+                "Read a file from the isolated Eva workspace",
+                tools::self_development::READ_PERMISSIONS,
+                tools::self_development::READ_TIMEOUT,
+            ),
+            (
+                tools::self_development::TOOL_WRITE_FILE,
+                "Write a file in the isolated Eva workspace",
+                tools::self_development::WRITE_PERMISSIONS,
+                tools::self_development::WRITE_TIMEOUT,
+            ),
+            (
+                tools::self_development::TOOL_RUN_COMMAND,
+                "Run an allow-listed command in the isolated Eva workspace",
+                tools::self_development::COMMAND_PERMISSIONS,
+                tools::self_development::COMMAND_TIMEOUT,
+            ),
+            (
+                tools::self_development::TOOL_GIT,
+                "Inspect, commit and guarded-push the isolated Eva workspace",
+                tools::self_development::GIT_PERMISSIONS,
+                tools::self_development::GIT_TIMEOUT,
+            ),
+        ] {
+            let timeout = if name == tools::self_development::TOOL_RUN_COMMAND {
+                tools::self_development::COMMAND_TIMEOUT
+            } else {
+                timeout
+            };
+            registry.register(ToolDefinition {
+                name,
+                description,
+                permissions,
+                timeout,
+            });
+        }
+
         registry
     }
 
@@ -752,6 +808,23 @@ impl ToolRegistry {
         input: &Value,
     ) -> Result<ToolPreflightDecision, ToolError> {
         let name = self.resolve_tool_id(name).unwrap_or(name);
+        if name.starts_with(tools::self_development::TOOL_PREFIX)
+            && !tools::self_development::profile_permitted(
+                ctx.self_development_profile.as_deref().unwrap_or_default(),
+                ctx.agent_depth,
+            )
+        {
+            return Ok(ToolPreflightDecision::Denied(
+                tools::self_development::DENIED_PERMISSION,
+            ));
+        }
+        if name.starts_with(tools::self_development::TOOL_PREFIX)
+            && ctx.eva_workspace_root.is_none()
+        {
+            return Ok(ToolPreflightDecision::Denied(
+                tools::self_development::DENIED_PERMISSION,
+            ));
+        }
         let definition = self
             .tools
             .get(name)
@@ -759,8 +832,8 @@ impl ToolRegistry {
         if name == tools::patch::NAME {
             tools::patch::validate_input(input)?;
         }
-        let scope = scope_from_input(name, input);
-        let command = command_from_input(name, input);
+        let scope = scope_from_context(ctx, name, input)?;
+        let command = command_from_context(ctx, name, input)?;
         let subject = canonical_policy_subject(ctx, name, input, command.as_deref())?;
         let preview = approval_preview(name, &scope, command.as_deref(), input);
         for permission in definition.permissions {
@@ -814,6 +887,23 @@ impl ToolRegistry {
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
         let name = self.resolve_tool_id(name).unwrap_or(name);
+        if name.starts_with(tools::self_development::TOOL_PREFIX)
+            && !tools::self_development::profile_permitted(
+                ctx.self_development_profile.as_deref().unwrap_or_default(),
+                ctx.agent_depth,
+            )
+        {
+            return Err(ToolError::PermissionDenied(
+                tools::self_development::DENIED_PERMISSION,
+            ));
+        }
+        if name.starts_with(tools::self_development::TOOL_PREFIX)
+            && ctx.eva_workspace_root.is_none()
+        {
+            return Err(ToolError::PermissionDenied(
+                tools::self_development::DENIED_PERMISSION,
+            ));
+        }
         let definition = self
             .tools
             .get(name)
@@ -823,8 +913,8 @@ impl ToolRegistry {
             tools::patch::validate_input(&input)?;
         }
 
-        let scope = scope_from_input(name, &input);
-        let command = command_from_input(name, &input);
+        let scope = scope_from_context(ctx, name, &input)?;
+        let command = command_from_context(ctx, name, &input)?;
         let canonical_subject = canonical_policy_subject(ctx, name, &input, command.as_deref())?;
         let preview = approval_preview(name, &scope, command.as_deref(), &input);
         for permission in definition.permissions {
@@ -874,6 +964,10 @@ impl ToolRegistry {
 
         let execution = async {
             match name {
+                name if name.starts_with(tools::self_development::TOOL_PREFIX) => {
+                    let mut gate = ctx.self_development_test_gate.lock().await;
+                    tools::self_development::execute(ctx, name, input, &mut gate).await
+                }
                 name if crate::developer_utilities::ALL_NAMES.contains(&name) => {
                     crate::developer_utilities::execute(ctx, name, input).await
                 }
@@ -1006,6 +1100,23 @@ impl ToolRegistry {
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
         let name = self.resolve_tool_id(name).unwrap_or(name);
+        if name.starts_with(tools::self_development::TOOL_PREFIX)
+            && !tools::self_development::profile_permitted(
+                ctx.self_development_profile.as_deref().unwrap_or_default(),
+                ctx.agent_depth,
+            )
+        {
+            return Err(ToolError::PermissionDenied(
+                tools::self_development::DENIED_PERMISSION,
+            ));
+        }
+        if name.starts_with(tools::self_development::TOOL_PREFIX)
+            && ctx.eva_workspace_root.is_none()
+        {
+            return Err(ToolError::PermissionDenied(
+                tools::self_development::DENIED_PERMISSION,
+            ));
+        }
         let definition = self
             .tools
             .get(name)
@@ -1016,8 +1127,8 @@ impl ToolRegistry {
         if name == tools::patch::NAME {
             tools::patch::validate_input(&input)?;
         }
-        let scope = scope_from_input(name, &input);
-        let command = command_from_input(name, &input);
+        let scope = scope_from_context(ctx, name, &input)?;
+        let command = command_from_context(ctx, name, &input)?;
         let canonical_subject = canonical_policy_subject(ctx, name, &input, command.as_deref())?;
         for permission in definition.permissions {
             let check = evohime_permissions::PermissionCheck {
@@ -1039,6 +1150,10 @@ impl ToolRegistry {
         }
         let execution = async {
             match name {
+                name if name.starts_with(tools::self_development::TOOL_PREFIX) => {
+                    let mut gate = ctx.self_development_test_gate.lock().await;
+                    tools::self_development::execute(ctx, name, input, &mut gate).await
+                }
                 name if crate::developer_utilities::ALL_NAMES.contains(&name) => {
                     crate::developer_utilities::execute(ctx, name, input).await
                 }
@@ -1302,6 +1417,73 @@ fn scope_from_input(tool_name: &str, input: &Value) -> String {
         return "browser".to_string();
     }
     "workspace".to_string()
+}
+
+fn scope_from_context(
+    ctx: &ToolContext,
+    tool_name: &str,
+    input: &Value,
+) -> Result<String, ToolError> {
+    if tool_name.starts_with(tools::self_development::TOOL_PREFIX) {
+        let root = ctx
+            .eva_workspace_root
+            .as_deref()
+            .ok_or(ToolError::PermissionDenied(
+                tools::self_development::DENIED_PERMISSION,
+            ))?;
+        if tool_name == tools::self_development::TOOL_GIT
+            || tool_name == tools::self_development::TOOL_RUN_COMMAND
+        {
+            let workspace = tools::self_development::EvaWorkspace::open(&root.to_string_lossy())
+                .map_err(|error| ToolError::Execution(error.to_string()))?;
+            return Ok(workspace.root().to_string_lossy().replace('\\', "/"));
+        }
+        let path = input
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let workspace = tools::self_development::EvaWorkspace::open(&root.to_string_lossy())
+            .map_err(|error| ToolError::Execution(error.to_string()))?;
+        let resolved = workspace
+            .resolve(path)
+            .map_err(|error| ToolError::Execution(error.to_string()))?;
+        return Ok(resolved.to_string_lossy().replace('\\', "/"));
+    }
+    Ok(scope_from_input(tool_name, input))
+}
+
+fn command_from_context(
+    ctx: &ToolContext,
+    tool_name: &str,
+    input: &Value,
+) -> Result<Option<String>, ToolError> {
+    if tool_name == tools::self_development::TOOL_RUN_COMMAND {
+        let command = input
+            .get("command")
+            .and_then(Value::as_str)
+            .ok_or_else(|| ToolError::InvalidInput {
+                tool: tool_name.into(),
+                message: "command is required".into(),
+            })?;
+        tools::self_development::validate_command(command).map_err(|error| {
+            ToolError::InvalidInput {
+                tool: tool_name.into(),
+                message: error.to_string(),
+            }
+        })?;
+        return Ok(Some(command.to_owned()));
+    }
+    if tool_name.starts_with(tools::self_development::TOOL_PREFIX) {
+        return Ok(Some(
+            input
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or(tool_name)
+                .to_string(),
+        ));
+    }
+    let _ = ctx;
+    Ok(command_from_input(tool_name, input))
 }
 
 /// Build the subject matched by permission rules.
