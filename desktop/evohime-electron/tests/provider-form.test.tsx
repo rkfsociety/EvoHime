@@ -514,4 +514,62 @@ describe('provider form', () => {
     await userEvent.selectOptions(profile, 'literouter')
     expect(screen.queryByText('Какие модели показывать')).toBeTruthy()
   })
+
+  it('hides free-access evidence and pacing controls that cannot affect the selected provider', async () => {
+    renderProviderForm()
+
+    const provider = await screen.findByLabelText('Провайдер')
+    // LiteRouter owns the tier window but has no pricing authority for probes.
+    expect(screen.getByText('Пауза между запросами')).toBeTruthy()
+    expect(screen.queryByText('Проверка бесплатного доступа')).toBeNull()
+    expect(screen.queryByText('Маршрутизация по evidence')).toBeNull()
+
+    await userEvent.selectOptions(provider, 'deepseek')
+    expect(screen.queryByText('Проверка бесплатного доступа')).toBeNull()
+    expect(screen.queryByText('Маршрутизация по evidence')).toBeNull()
+    expect(screen.queryByText('Пауза между запросами')).toBeNull()
+
+    await userEvent.selectOptions(provider, 'openrouter')
+    expect(await screen.findByText('Проверка бесплатного доступа')).toBeTruthy()
+    expect(screen.getByText('Маршрутизация по evidence')).toBeTruthy()
+  })
+
+  it('keeps a non-default routing mode visible so it can be undone', async () => {
+    providerGetSummary = {
+      provider: 'literouter',
+      model: '',
+      baseUrl: '',
+      tier: 'free',
+      configured: false,
+      freeAccessRoutingMode: 'free_only'
+    }
+    renderProviderForm()
+
+    expect(await screen.findByText('Маршрутизация по evidence')).toBeTruthy()
+    expect((screen.getByLabelText('Режим') as HTMLSelectElement).value).toBe('free_only')
+  })
+
+  it('keeps an explicitly enabled pause visible for a non-LiteRouter provider', async () => {
+    providerGetSummary = {
+      provider: 'openai_compatible',
+      model: 'deepseek-chat',
+      baseUrl: 'https://api.deepseek.com/v1',
+      tier: 'paid',
+      configured: true,
+      profileId: 'deepseek',
+      profiles: {
+        openai_compatible: {
+          model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1', tier: 'paid',
+          configured: true, profileId: 'deepseek',
+          requestPacing: { enabled: true, intervalMs: 4321, freeIntervalMs: 18948 }
+        }
+      }
+    }
+    renderProviderForm()
+
+    const interval = await screen.findByLabelText('Интервал для платных моделей, мс') as HTMLInputElement
+    await waitFor(() => expect(interval.value).toBe('4321'))
+    // The tier-window explanation belongs to LiteRouter only.
+    expect(screen.queryByText(/LiteRouter ограничивает/)).toBeNull()
+  })
 })

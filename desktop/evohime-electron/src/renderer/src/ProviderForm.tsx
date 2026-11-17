@@ -71,6 +71,30 @@ function defaultProbePolicy(provider: ProviderKind, profileId: ProviderProfileId
   return provider === 'openai_compatible' && profileId === 'openrouter' ? 'on_first_use' : 'disabled'
 }
 
+/**
+ * Core can only turn a probe into strict evidence where the profile has an
+ * authoritative free-access source: OpenRouter pricing detail, or the bounded
+ * Cloudflare activation/quota observations. Every other vendor always reports
+ * `authority_unavailable`, so the probe controls would be dead switches.
+ */
+function supportsFreeAccessProbe(provider: ProviderKind, profileId: ProviderProfileId): boolean {
+  return provider === 'openai_compatible'
+    && (profileId === 'openrouter' || profileId === 'cloudflare_workers_ai')
+}
+
+/**
+ * Evidence routing picks between free and paid routes of one catalogue. Only
+ * the OpenRouter profile produces the strict-free evidence it filters on.
+ */
+function supportsEvidenceRouting(provider: ProviderKind, profileId: ProviderProfileId): boolean {
+  return provider === 'openai_compatible' && profileId === 'openrouter'
+}
+
+/** The per-provider pause exists for the LiteRouter tier window. */
+function needsRequestPacing(provider: ProviderKind): boolean {
+  return provider === 'literouter'
+}
+
 /** Parses a millisecond interval typed by the user, or reports it invalid. */
 function parsePacingInterval(value: string): number | null {
   const trimmed = value.trim()
@@ -346,6 +370,16 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const displayBaseUrl = profileId === 'cloudflare_workers_ai' && cloudflareAccountValid
     ? `https://api.cloudflare.com/client/v4/accounts/${accountId.trim()}/ai/v1`
     : baseUrl
+  // Controls that Core cannot act on for the selected vendor stay out of the
+  // common path. A non-default saved option is still shown, otherwise the user
+  // could not inspect or undo a value that keeps affecting requests.
+  const pacingDefaults = defaultRequestPacing(provider)
+  const pacingIsDefault = !pacingEnabled
+    && pacingInterval === String(pacingDefaults.intervalMs)
+    && pacingFreeInterval === String(pacingDefaults.freeIntervalMs)
+  const showProbe = supportsFreeAccessProbe(provider, profileId) || probePolicy !== 'disabled'
+  const showRouting = supportsEvidenceRouting(provider, profileId) || routingMode !== 'any'
+  const showPacing = needsRequestPacing(provider) || !pacingIsDefault
 
   return (
     <section className="shell__panel provider-form" aria-label={translate("Ключ провайдера")}>
@@ -462,7 +496,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         ))}
       </fieldset> : null}
 
-      <fieldset className="provider-form__tier">
+      {showProbe ? <fieldset className="provider-form__tier">
         <legend>{translate("Проверка бесплатного доступа")}</legend>
         <label htmlFor="free-access-probe-policy">
           {translate("Как собирать данные")}<select
@@ -494,9 +528,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
               {translate("Я отдельно разрешаю автоматическую проверку с возможным расходом для этого профиля и ключа")}</label>
           </>
         ) : null}
-      </fieldset>
+      </fieldset> : null}
 
-      <fieldset className="provider-form__tier">
+      {showRouting ? <fieldset className="provider-form__tier">
         <legend>{translate("Маршрутизация по evidence")}</legend>
         <label htmlFor="free-access-routing-mode">
           {translate("Режим")}<select
@@ -521,9 +555,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
             />
             {translate("Разрешить платный fallback, если подтверждённая бесплатная модель недоступна")}</label>
         ) : null}
-      </fieldset>
+      </fieldset> : null}
 
-      <fieldset className="provider-form__tier">
+      {showPacing ? <fieldset className="provider-form__tier">
         <legend>{translate("Пауза между запросами")}</legend>
         <label>
           <input
@@ -562,8 +596,10 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
             </label>
           </>
         ) : null}
-        <p className="provider-form__hint">{translate("LiteRouter ограничивает частоту сообщений по тарифу, поэтому пауза включена по умолчанию. Для остальных провайдеров она по умолчанию выключена; настройка хранится отдельно для каждого провайдера.")}</p>
-      </fieldset>
+        {needsRequestPacing(provider) ? (
+          <p className="provider-form__hint">{translate("LiteRouter ограничивает частоту сообщений по тарифу, поэтому пауза включена по умолчанию. Для остальных провайдеров она по умолчанию выключена; настройка хранится отдельно для каждого провайдера.")}</p>
+        ) : null}
+      </fieldset> : null}
 
       <div className="provider-form__actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
