@@ -224,6 +224,8 @@ pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
 pub mod hive_settings;
+/// Read-only aggregated hive visualization snapshot for the operations panel.
+pub mod hive_state;
 pub mod host_resource_telemetry;
 pub mod human_work_items;
 pub(crate) mod incremental_change_protocol;

@@ -471,6 +471,15 @@ impl IpcBridge {
                 self.write_response(writer, "retained_child.list", payload)
                     .await?;
             }
+            Some(generated::command_envelope::Command::HiveState(_)) => {
+                let snapshot = self.hive_state_snapshot().await;
+                self.write_response(
+                    writer,
+                    "hive_state.snapshot",
+                    serde_json::to_vec(&snapshot)?,
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::GetRetainedChild(request)) => {
                 let (reply, response) = oneshot::channel();
                 let coordinator = self

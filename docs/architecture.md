@@ -243,6 +243,19 @@ queen-side `lazy_delegation::extend_delegation` и только в предел�
 `extension_requested`; старые projection без этих полей воспроизводятся с
 нулями.
 
+Визуализация улья — отдельная read-only проекция: `hive_state::HiveStateSnapshot`
+(`crates/evohime-core/src/hive_state.rs`) агрегирует последние `child.workflow`
+записи журнала (окно не больше 512 событий), настройки `HiveSettings` и роли
+активных записей `persistent_agent_registry`. Snapshot содержит статус королевы,
+счётчики (`total_agents_online`, `active_tasks`, `efficiency_percent`), департаменты
+по ролям, активных агентов с глубиной и прогрессом подагентов, `task_flow` и
+текущие лимиты. Это производная проекция, а не второй источник правды: она не
+запускает и не останавливает агентов, не содержит prompt, отчётов или вывода
+инструментов, а пустой журнал или реестр дают пустые массивы и нули вместо
+ошибки. Electron запрашивает её командой `core.getHiveState` (proto command 286,
+ответ — событие `hive_state.snapshot`) и обновляет `OperationsPanel` раз в 2
+секунды.
+
 Поле `parent_is_child` само по себе — утверждение вызывающей стороны, а не
 доказательство. Доверие к нему проверяется по runtime-маркеру
 `child_execution_context::ChildExecutionContext`: `RegisteredChildExecutor`

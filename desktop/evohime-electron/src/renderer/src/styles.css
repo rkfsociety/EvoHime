@@ -7198,3 +7198,147 @@ body {
 .human-questions__hint {
   color: var(--fg-muted);
 }
+
+/* Hive state snapshot for the operations panel. */
+
+.operations-section--hive {
+  gap: 14px;
+}
+
+.hive-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.hive-metric {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+}
+
+.hive-metric span {
+  color: var(--fg-faint);
+  font: 10px var(--mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.hive-metric strong {
+  font-size: 18px;
+}
+
+.hive-metric small,
+.hive-agents small {
+  color: var(--fg-muted);
+}
+
+.hive-subsection {
+  display: grid;
+  gap: 8px;
+}
+
+.hive-subsection h4 {
+  margin: 0;
+  color: var(--fg-muted);
+  font: 11px var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.hive-departments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.hive-department {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+}
+
+.hive-department__topline,
+.hive-agent__topline {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hive-department__topline span,
+.hive-agent__topline span {
+  color: var(--fg-muted);
+  font: 11px var(--mono);
+}
+
+.hive-progress {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--border) 65%, transparent);
+}
+
+.hive-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #6fbf73);
+  transition: width 240ms ease;
+}
+
+.hive-agents {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hive-agents li {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+}
+
+.hive-flow {
+  display: grid;
+  gap: 8px;
+}
+
+.hive-flow__row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 10px;
+}
+
+.hive-flow__row > span {
+  color: var(--fg-muted);
+  font: 11px var(--mono);
+}
+
+.hive-flow__row > strong {
+  font: 12px var(--mono);
+  text-align: right;
+}
+
+@media (max-width: 640px) {
+  .hive-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .hive-flow__row {
+    grid-template-columns: 90px minmax(0, 1fr) 32px;
+  }
+}

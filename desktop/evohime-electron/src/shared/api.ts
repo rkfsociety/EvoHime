@@ -1469,6 +1469,7 @@ export const RENDERER_COMMANDS = [
   'core.retainChild',
   'core.sendChildFollowUp',
   'core.deleteRetainedChild',
+  'core.getHiveState',
   'core.stopTask',
   'core.resolveApproval',
   'core.resolveRoutingDecision',
@@ -1888,6 +1889,7 @@ export interface CommandPayloads {
     mode?: 'follow_up' | 'steer' | 'auto'; correlationId: string
   }
   'core.deleteRetainedChild': { childId: string; expectedRegistryVersion?: number }
+  'core.getHiveState': Record<string, never>
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
@@ -2459,6 +2461,7 @@ export interface CommandResults {
   'core.retainChild': { accepted: boolean }
   'core.sendChildFollowUp': { accepted: boolean }
   'core.deleteRetainedChild': { accepted: boolean }
+  'core.getHiveState': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
   'core.resolveRoutingDecision': { accepted: boolean }

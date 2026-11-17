@@ -11,7 +11,7 @@ pub const MANIFEST_KIND: &str = "tool/manifest/v1";
 ///
 /// The rewrite is lexical: it does not check whether the id is registered.
 /// Callers that need a real tool must resolve the result against
-/// [`ToolRegistry`], which fails closed for unknown names.
+/// [`crate::ToolRegistry`], which fails closed for unknown names.
 pub fn canonical_tool_id(name: &str) -> String {
     if name.contains('.') {
         name.replace('.', "_")

@@ -488,6 +488,17 @@ Executor и legacy `SubmitChildRequest`/`SubmitChildReport` используют
 projection несёт `report_status` из enum и `report_summary` не длиннее 512
 символов.
 
+`OperationsPanel` получил отдельную секцию «Состояние улья», которая раз в 2
+секунды запрашивает read-only команду `core.getHiveState` и отображает
+`HiveStateSnapshot` (`crates/evohime-core/src/hive_state.rs`): королеву, число
+агентов и активных задач, сетку департаментов `active_count / max_capacity` с
+полосками прогресса, список активных агентов с ролью, текущим действием,
+глубиной и прогрессом подагентов, а также поток задач Processing / Analyzing /
+Plan. Snapshot собирается из bounded-окна `child.workflow` в журнале, активных
+записей `persistent_agent_registry` и `HiveSettings`; это производная проекция
+без prompt, отчётов и вывода инструментов. Пустой журнал или реестр дают пустые
+массивы и нулевые метрики, а не ошибку.
+
 Внутренние runtime-контракты, execution backends, безопасность, диагностика и
 организация агентов не представлены отдельными вкладками: это Core/agent/model
 поверхность, которой управляет ядро. В верхней панели доступны только контекстные

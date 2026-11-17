@@ -1004,6 +1004,10 @@ function dispatch(
       return accepted(client.send({ deleteRetainedChild: { parentId: '', childId, expectedRegistryVersion } }))
     }
 
+    case 'core.getHiveState': {
+      return accepted(client.send({ hiveState: { schemaVersion: 1, requestId: '' } }))
+    }
+
     case 'core.listSkills': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])

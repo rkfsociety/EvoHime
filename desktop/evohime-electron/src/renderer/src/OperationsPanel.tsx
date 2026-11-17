@@ -230,6 +230,32 @@ interface RetainedChildProjection {
   readonly last_delivery_outcome?: string
 }
 
+/** Normalized, bounded view of Core's `hive_state.snapshot` payload. */
+interface HiveStateView {
+  readonly queen: { readonly status: string; readonly name: string }
+  readonly metrics: {
+    readonly totalAgentsOnline: number
+    readonly activeTasks: number
+    readonly averageTaskTimeSec: number
+    readonly efficiencyPercent: number
+  }
+  readonly departments: readonly {
+    readonly role: string
+    readonly activeCount: number
+    readonly maxCapacity: number
+  }[]
+  readonly activeAgents: readonly {
+    readonly id: string
+    readonly role: string
+    readonly currentAction: string
+    readonly depth: number
+    readonly spawnedSubagents: number
+    readonly ceiling: number
+  }[]
+  readonly taskFlow: { readonly processing: number; readonly analyzing: number; readonly generatingPlan: number }
+  readonly limits: { readonly maxSubagentsPerWorker: number; readonly maxParallelSubagents: number }
+}
+
 const KIND_LABELS: Record<string, string> = {
   preference: 'предпочтение',
   constraint: 'ограничение',
@@ -316,6 +342,78 @@ function parseMemoryExtractionDiagnostic(event: CoreEvent): MemoryExtractionDiag
   }
 }
 
+/**
+ * Parses Core's hive snapshot defensively.
+ *
+ * The payload crosses IPC from Core, but the renderer still clamps every number
+ * and string: a malformed or oversized projection must render as safe defaults
+ * instead of escaping into the DOM.
+ */
+function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
+  if (!event) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(event.payload)
+  } catch {
+    return null
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const root = parsed as Record<string, unknown>
+  const record = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {}
+  const text = (value: unknown, max = 128): string =>
+    typeof value === 'string' ? value.slice(0, max) : ''
+  const count = (value: unknown, max: number): number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? Math.min(value, max) : 0
+  const list = (value: unknown, max: number): readonly Record<string, unknown>[] =>
+    Array.isArray(value)
+      ? value.filter((item) => item !== null && typeof item === 'object' && !Array.isArray(item)).slice(0, max) as Record<string, unknown>[]
+      : []
+  const queen = record(root['queen'])
+  const metrics = record(root['metrics'])
+  const taskFlow = record(root['task_flow'])
+  const limits = record(root['limits'])
+  return {
+    queen: { status: text(queen['status'], 32), name: text(queen['name'], 64) },
+    metrics: {
+      totalAgentsOnline: count(metrics['total_agents_online'], 65_535),
+      activeTasks: count(metrics['active_tasks'], 65_535),
+      averageTaskTimeSec: count(metrics['average_task_time_sec'], 86_400),
+      efficiencyPercent: count(metrics['efficiency_percent'], 100)
+    },
+    departments: list(root['departments'], 16).map((item) => ({
+      role: text(item['role']),
+      activeCount: count(item['active_count'], 65_535),
+      maxCapacity: count(item['max_capacity'], 65_535)
+    })),
+    activeAgents: list(root['active_agents'], 64).map((item) => ({
+      id: text(item['id']),
+      role: text(item['role']),
+      currentAction: text(item['current_action'], 64),
+      depth: count(item['depth'], 255),
+      spawnedSubagents: count(item['spawned_subagents'], 65_535),
+      ceiling: count(item['ceiling'], 65_535)
+    })),
+    taskFlow: {
+      processing: count(taskFlow['processing'], 255),
+      analyzing: count(taskFlow['analyzing'], 255),
+      generatingPlan: count(taskFlow['generating_plan'], 255)
+    },
+    limits: {
+      maxSubagentsPerWorker: count(limits['max_subagents_per_worker'], 65_535),
+      maxParallelSubagents: count(limits['max_parallel_subagents'], 65_535)
+    }
+  }
+}
+
+/** Percentage of a hive counter against its ceiling, clamped to 0–100. */
+function hivePercent(value: number, ceiling: number): number {
+  if (ceiling <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((value / ceiling) * 100)))
+}
+
 // `events` holds the newest event first (App.tsx prepends on receipt), so
 // the latest match is the FIRST one found here — not the last.
 function latest(events: readonly CoreEvent[], eventType: string): CoreEvent | undefined {
@@ -370,6 +468,9 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
   const toolCalls = count('tool.started')
   const toolOutputs = count('tool.output')
   const approvalRequests = count('approval.required')
+
+  const hiveEvent = latest(events, 'hive_state.snapshot')
+  const hive = useMemo(() => parseHiveState(hiveEvent), [hiveEvent])
 
   const pendingEvent = latest(events, 'memory.pending')
   const pending = useMemo(
@@ -449,6 +550,18 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
     if (!api || !connected) return
     void api.invoke('core.listRetainedChildren', { limit: 16 })
     void api.invoke('core.listRefinementCandidates', { ownerScope: 'workspace', limit: 32 })
+  }, [api, connected])
+
+  // Snapshot polling is read-only and bounded by the fixed interval. Core
+  // answers with `hive_state.snapshot`, which the event list already carries.
+  useEffect(() => {
+    if (!api || !connected) return
+    const request = (): void => {
+      void api.invoke('core.getHiveState', {})
+    }
+    request()
+    const timer = window.setInterval(request, 2_000)
+    return () => window.clearInterval(timer)
   }, [api, connected])
 
   const refinementList = useMemo(
@@ -743,6 +856,112 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           <small>{translate(projectionReady ? `${toolOutputs} результатов · ${approvalRequests} запросов approval` : translate("Core недоступен — ожидается актуальная проекция"))}</small>
         </article>
       </div>
+
+      <section className="operations-section operations-section--hive" aria-label={translate("Состояние улья")}>
+        <div className="operations-section__header">
+          <div>
+            <p className="panel__eyebrow">Hive state</p>
+            <h3>{translate("Состояние улья")}</h3>
+          </div>
+          <span className="operations-section__hint">
+            {translate(hive ? `обновление 2 с · лимит ${hive.limits.maxSubagentsPerWorker}/${hive.limits.maxParallelSubagents}` : projectionReady ? 'ожидание первого снимка' : 'Core недоступен')}
+          </span>
+        </div>
+        <div className="hive-metrics">
+          <div className="hive-metric">
+            <span>{translate("Королева")}</span>
+            <strong>{hive?.queen.name || '—'}</strong>
+            <small>{hive ? translate(hive.queen.status) : translate("нет данных")}</small>
+          </div>
+          <div className="hive-metric">
+            <span>{translate("Всего агентов")}</span>
+            <strong>{hive?.metrics.totalAgentsOnline ?? '—'}</strong>
+            <small>{translate("в сети")}</small>
+          </div>
+          <div className="hive-metric">
+            <span>{translate("Задач в работе")}</span>
+            <strong>{hive?.metrics.activeTasks ?? '—'}</strong>
+            <small>{hive ? translate(`эффективность ${hive.metrics.efficiencyPercent}%`) : translate("нет данных")}</small>
+          </div>
+        </div>
+        <div className="hive-subsection">
+          <h4>{translate("Департаменты")}</h4>
+          {hive && hive.departments.length > 0 ? (
+            <div className="hive-departments">
+              {hive.departments.map((department) => (
+                <article key={department.role} className="hive-department">
+                  <div className="hive-department__topline">
+                    <strong>{department.role || 'unknown'}</strong>
+                    <span>{department.activeCount} / {department.maxCapacity}</span>
+                  </div>
+                  <div
+                    className="hive-progress"
+                    role="progressbar"
+                    aria-label={department.role}
+                    aria-valuemin={0}
+                    aria-valuemax={Math.max(department.maxCapacity, 1)}
+                    aria-valuenow={department.activeCount}
+                  >
+                    <span style={{ width: `${hivePercent(department.activeCount, department.maxCapacity)}%` }} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : <p>{translate("Департаменты появятся после первого события Core.")}</p>}
+        </div>
+        <div className="hive-subsection">
+          <h4>{translate("Активные агенты")}</h4>
+          {hive && hive.activeAgents.length > 0 ? (
+            <ul className="hive-agents">
+              {hive.activeAgents.map((agent) => (
+                <li key={agent.id}>
+                  <div className="hive-agent__topline">
+                    <strong>{agent.role || 'unknown'}</strong>
+                    <span>depth {agent.depth}</span>
+                  </div>
+                  <small>{agent.currentAction || translate("ожидание")}</small>
+                  <div
+                    className="hive-progress"
+                    role="progressbar"
+                    aria-label={`${agent.role} subagents`}
+                    aria-valuemin={0}
+                    aria-valuemax={Math.max(agent.ceiling, 1)}
+                    aria-valuenow={agent.spawnedSubagents}
+                  >
+                    <span style={{ width: `${hivePercent(agent.spawnedSubagents, agent.ceiling)}%` }} />
+                  </div>
+                  <small>{agent.spawnedSubagents} / {agent.ceiling}</small>
+                </li>
+              ))}
+            </ul>
+          ) : <p>{translate("Активных агентов нет.")}</p>}
+        </div>
+        <div className="hive-subsection">
+          <h4>{translate("Поток задач")}</h4>
+          <div className="hive-flow">
+            {([
+              [translate("Processing"), hive?.taskFlow.processing ?? 0, hive?.metrics.totalAgentsOnline ?? 0],
+              [translate("Analyzing"), hive?.taskFlow.analyzing ?? 0, hive?.metrics.totalAgentsOnline ?? 0],
+              [translate("Plan"), hive?.taskFlow.generatingPlan ?? 0, hive?.metrics.totalAgentsOnline ?? 0]
+            ] as const).map(([label, value, total]) => (
+              <div key={label} className="hive-flow__row">
+                <span>{label}</span>
+                <div
+                  className="hive-progress"
+                  role="progressbar"
+                  aria-label={label}
+                  aria-valuemin={0}
+                  aria-valuemax={Math.max(total, 1)}
+                  aria-valuenow={value}
+                >
+                  <span style={{ width: `${hivePercent(value, total)}%` }} />
+                </div>
+                <strong>{value}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       <section className="operations-section operations-section--knowledge" aria-label={translate("Локальный индекс workspace")}>
         <div className="operations-section__header">

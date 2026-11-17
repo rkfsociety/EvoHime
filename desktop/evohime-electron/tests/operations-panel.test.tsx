@@ -585,4 +585,61 @@ describe('operations panel', () => {
     expect(screen.getByText(/ожидает решения/)).toBeTruthy()
     expect(screen.getByText(/расширение grant'а запрошено/)).toBeTruthy()
   })
+
+  it('renders hive department cards and active agents from the Core snapshot', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', {
+            schema_version: 1,
+            queen: { status: 'active', name: 'EvoHime' },
+            metrics: {
+              total_agents_online: 2,
+              active_tasks: 2,
+              average_task_time_sec: 0,
+              efficiency_percent: 50
+            },
+            departments: [
+              { role: 'researcher', active_count: 1, max_capacity: 4 },
+              { role: 'reviewer', active_count: 1, max_capacity: 4 }
+            ],
+            active_agents: [
+              {
+                id: 'run-1:worker',
+                role: 'researcher',
+                current_action: 'executing',
+                depth: 1,
+                spawned_subagents: 2,
+                ceiling: 4
+              },
+              {
+                id: 'run-1:worker:hop2',
+                role: 'reviewer',
+                current_action: 'validating report',
+                depth: 2,
+                spawned_subagents: 0,
+                ceiling: 1
+              }
+            ],
+            task_flow: { processing: 2, analyzing: 2, generating_plan: 0 },
+            limits: { max_subagents_per_worker: 16, max_parallel_subagents: 4 }
+          })
+        ]}
+      />
+    )
+
+    expect(await screen.findByText('Состояние улья')).toBeTruthy()
+    expect(screen.getAllByText('researcher').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('executing')).toBeTruthy()
+    expect(screen.getByText('validating report')).toBeTruthy()
+    expect(screen.getByText('2 / 4')).toBeTruthy()
+    expect(screen.getAllByText('1 / 4')).toHaveLength(2)
+    expect(screen.getByText('depth 2')).toBeTruthy()
+    expect(screen.getAllByRole('progressbar').length).toBeGreaterThanOrEqual(5)
+    expect(screen.getByText(/эффективность 50%/)).toBeTruthy()
+    await waitFor(() => {
+      expect(calls.some((call) => call.command === 'core.getHiveState')).toBe(true)
+    })
+  })
 })

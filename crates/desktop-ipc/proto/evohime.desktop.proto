@@ -1973,7 +1973,16 @@ message CommandEnvelope {
     GetCapabilityRecipeRun get_capability_recipe_run = 283;
     ForkCapabilityRecipeRun fork_capability_recipe_run = 284;
     ImageGenerationCommand image_generation = 285;
+    HiveStateCommand hive_state = 286;
   }
+}
+
+// Read-only aggregated hive visualization state for the operations panel. The
+// response carries bounded JSON metadata only: no prompts, reports, or tool
+// output. Missing journal state yields an empty snapshot, never an error.
+message HiveStateCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
 }
 
 // Plan 135: bounded Core-owned review target/findings projection.

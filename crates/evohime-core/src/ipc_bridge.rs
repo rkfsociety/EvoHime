@@ -22,6 +22,8 @@ pub(crate) use ipc_bridge_projections::*;
 mod ipc_bridge_event_trigger;
 #[path = "ipc_bridge_extension_commands.rs"]
 mod ipc_bridge_extension_commands;
+#[path = "ipc_bridge_hive_state.rs"]
+mod ipc_bridge_hive_state;
 #[path = "ipc_bridge_local_model_adaptation_scheduler.rs"]
 mod ipc_bridge_local_model_adaptation_scheduler;
 
