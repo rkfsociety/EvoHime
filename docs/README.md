@@ -19,6 +19,7 @@
 | Проверить пользовательское self-repair/self-update | [`current-state.md`](current-state.md), [`architecture.md`](architecture.md), [`release-evidence.md`](release-evidence.md) | Ручной repair-run, обязательные provider/model, CI gates, health-check и rollback |
 | Проверить границы безопасности | [`../SECURITY.md`](../SECURITY.md) | Угрозы, доверие, диагностика и релизные проверки |
 | Документировать Rust API | [`../AGENTS.md`](../AGENTS.md), [`../.github/workflows/rustdoc.yml`](../.github/workflows/rustdoc.yml) | Предметные `///`-описания, проверка полноты library API и doc-tests workspace |
+| Вызывать инструменты без отказов Core | [`agent-tool-playbook.md`](agent-tool-playbook.md) | Канонические аргументы вызовов, причины отклонений, порядок правки файлов и локальные ограничения нагрузки |
 
 ## Справочные разделы
 
