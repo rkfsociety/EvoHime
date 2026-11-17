@@ -852,9 +852,11 @@ pub(crate) fn classify_gateway_error(
 ) -> FreeProbeFailureCode {
     match error {
         ProviderError::Api(message) => {
-            let status = message
-                .split_once(':')
-                .and_then(|(prefix, _)| prefix.trim().parse::<u16>().ok());
+            let status = error.http_status().or_else(|| {
+                message
+                    .split_once(':')
+                    .and_then(|(prefix, _)| prefix.trim().parse::<u16>().ok())
+            });
             let provider_code = if provider_id == "cloudflare_workers_ai" {
                 message
                     .split_once(": ")
@@ -867,11 +869,39 @@ pub(crate) fn classify_gateway_error(
             };
             classify_provider_failure(provider_id, status, provider_code)
         }
+        ProviderError::ApiWithDiagnostics { message, .. } => {
+            let diagnostics = error.diagnostics();
+            let provider_code = diagnostics.as_ref().and_then(|value| {
+                value
+                    .code
+                    .as_deref()
+                    .filter(|code| matches!(*code, "5035" | "3036"))
+                    .or_else(|| {
+                        value
+                            .message
+                            .as_deref()
+                            .and_then(|message| cloudflare_typed_code_from_message(message))
+                    })
+            });
+            let provider_code = provider_code.or_else(|| {
+                (provider_id == "cloudflare_workers_ai")
+                    .then_some(message.as_str())
+                    .and_then(cloudflare_typed_code_from_message)
+            });
+            classify_provider_failure(provider_id, error.http_status(), provider_code)
+        }
         ProviderError::Config(_)
         | ProviderError::ImagePreflightRejected
         | ProviderError::ImageCapabilityStale => FreeProbeFailureCode::ConsentOrCredentialRequired,
         ProviderError::Http(_) | ProviderError::Stream(_) => FreeProbeFailureCode::TransportFailure,
     }
+}
+
+fn cloudflare_typed_code_from_message(message: &str) -> Option<&str> {
+    message
+        .split_once("Cloudflare Workers AI error code ")
+        .map(|(_, code)| code)
+        .filter(|code| matches!(*code, "5035" | "3036"))
 }
 
 fn validate_semantic_completion(result: &ChatResult) -> Result<(), FreeProbeFailureCode> {

@@ -187,6 +187,18 @@ pub enum ProviderError {
     /// Provider returned an API-level error response.
     #[error("api error: {0}")]
     Api(String),
+    /// Provider rejected a request and supplied bounded structured diagnostics.
+    #[error("api error: {error_code}")]
+    ApiWithDiagnostics {
+        /// Fixed safe status summary, without provider-controlled message text.
+        message: String,
+        /// Stable safe failure code for task result projection.
+        error_code: &'static str,
+        /// HTTP status retained separately from the provider-controlled payload.
+        status: u16,
+        /// Bounded provider metadata retained for Core's redacted trace projection.
+        diagnostics: ProviderErrorDiagnostic,
+    },
     /// Provider output stream failed or was malformed.
     #[error("streaming error: {0}")]
     Stream(String),
@@ -198,18 +210,171 @@ pub enum ProviderError {
     ImageCapabilityStale,
 }
 
+/// Bounded, structured diagnostics extracted from a rejected provider response.
+///
+/// Values are provider-controlled and must be redacted before persistent logging.
+/// Request/response bodies and credentials are never attached as fields.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderErrorDiagnostic {
+    /// Stable error type reported by an OpenAI-compatible provider.
+    pub error_type: Option<String>,
+    /// Stable provider error code, when supplied.
+    pub code: Option<String>,
+    /// Request parameter the provider rejected, when supplied.
+    pub param: Option<String>,
+    /// Bounded provider message; redact before persistence.
+    pub message: Option<String>,
+    /// Provider-issued request identifier, if it has a safe bounded form.
+    pub request_id: Option<String>,
+    /// Number of response-body bytes captured, capped by the adapter read limit.
+    pub response_body_bytes: usize,
+    /// Whether the adapter reached its response-body read limit.
+    pub response_body_truncated: bool,
+    /// Whether the response body parsed as JSON.
+    pub response_body_is_json: bool,
+    /// Number of provider HTTP requests made for this call, including retries.
+    pub provider_attempts: u32,
+}
+
+impl std::fmt::Debug for ProviderErrorDiagnostic {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderErrorDiagnostic")
+            .field("error_type_present", &self.error_type.is_some())
+            .field("code_present", &self.code.is_some())
+            .field("param_present", &self.param.is_some())
+            .field("message_present", &self.message.is_some())
+            .field("request_id_present", &self.request_id.is_some())
+            .field("response_body_bytes", &self.response_body_bytes)
+            .field("response_body_truncated", &self.response_body_truncated)
+            .field("response_body_is_json", &self.response_body_is_json)
+            .field("provider_attempts", &self.provider_attempts)
+            .finish()
+    }
+}
+
 /// Maximum length of the provider message prefix inspected for an HTTP status.
 const HTTP_STATUS_PREFIX_CHARS: usize = 3;
 
 impl ProviderError {
-    /// Returns the HTTP status code the adapter embedded in the error text.
+    /// Creates an API error with bounded structured diagnostics attached for Core.
     ///
-    /// Adapters format API failures as `"<status>: message"`. Transport
-    /// failures, configuration errors and provider text without that prefix
-    /// have no status, so callers must treat `None` as "unknown".
+    /// The supplied diagnostic fields remain internal to this error variant;
+    /// formatted and debug representations contain only stable safe codes.
+    pub fn api_with_diagnostics(status: u16, diagnostics: &ProviderErrorDiagnostic) -> Self {
+        if !(100..=599).contains(&status) {
+            return Self::Api("provider request failed".into());
+        }
+        let provider_markers = [
+            diagnostics.code.as_deref(),
+            diagnostics.error_type.as_deref(),
+            diagnostics.message.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+        let structured_markers = format!(
+            "{} {}",
+            diagnostics
+                .code
+                .as_deref()
+                .unwrap_or_default()
+                .to_ascii_lowercase(),
+            diagnostics
+                .error_type
+                .as_deref()
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+        );
+        let code = match status {
+            401 | 403 => "provider_auth_rejected",
+            402 => "provider_quota_exhausted",
+            408 => "provider_timeout",
+            429 => "provider_rate_limited",
+            500..=599 => "provider_unavailable",
+            404 => "provider_model_not_found",
+            _ if structured_markers.contains("model_not_found")
+                || structured_markers.contains("model_not_exist") =>
+            {
+                "provider_model_not_found"
+            }
+            _ if [
+                "context_length",
+                "too_many_tokens",
+                "max_tokens",
+                "context_window",
+                "request_too_large",
+            ]
+            .iter()
+            .any(|marker| structured_markers.contains(marker))
+                || [
+                    "context length",
+                    "too many tokens",
+                    "maximum context",
+                    "context window",
+                    "token limit",
+                    "too large",
+                ]
+                .iter()
+                .any(|marker| provider_markers.contains(marker)) =>
+            {
+                "provider_context_length_exceeded"
+            }
+            _ if structured_markers.contains("unsupported_parameter") => {
+                "provider_unsupported_parameter"
+            }
+            _ => "provider_request_rejected",
+        };
+        let safe_message = match code {
+            "provider_model_not_found" => "provider model not found",
+            "provider_context_length_exceeded" => "provider context length exceeded",
+            "provider_unsupported_parameter" => "provider rejected unsupported parameter",
+            "provider_quota_exhausted" => "provider quota rejected",
+            "provider_auth_rejected" => "provider authentication rejected",
+            "provider_timeout" => "provider request timed out",
+            "provider_rate_limited" => "provider rate limited",
+            "provider_unavailable" => "provider unavailable",
+            _ => "provider request failed",
+        };
+        Self::ApiWithDiagnostics {
+            message: safe_message.into(),
+            error_code: code,
+            status,
+            diagnostics: diagnostics.clone(),
+        }
+    }
+
+    /// Returns structured diagnostics attached by an HTTP response adapter.
+    pub fn diagnostics(&self) -> Option<ProviderErrorDiagnostic> {
+        match self {
+            Self::ApiWithDiagnostics { diagnostics, .. } => Some(diagnostics.clone()),
+            _ => None,
+        }
+    }
+
+    /// Returns a lowercased message used only for internal failure classification.
+    fn classification_message(&self) -> Option<String> {
+        let message = match self {
+            Self::Http(message) | Self::Api(message) | Self::Stream(message) => {
+                Some(message.as_str())
+            }
+            Self::ApiWithDiagnostics { diagnostics, .. } => diagnostics.message.as_deref(),
+            Self::Config(_) | Self::ImagePreflightRejected | Self::ImageCapabilityStale => None,
+        }?;
+        Some(message.to_ascii_lowercase())
+    }
+
+    /// Returns the HTTP status supplied by an adapter, when available.
+    ///
+    /// Structured HTTP errors retain status separately. Legacy errors may
+    /// provide it as a numeric message prefix; transport/configuration errors
+    /// without such a prefix have no status.
     pub fn http_status(&self) -> Option<u16> {
         let message = match self {
             Self::Http(message) | Self::Api(message) | Self::Stream(message) => message,
+            Self::ApiWithDiagnostics { status, .. } => return Some(*status),
             Self::Config(_) | Self::ImagePreflightRejected | Self::ImageCapabilityStale => {
                 return None
             }
@@ -227,16 +392,16 @@ impl ProviderError {
     /// Returns the bounded stable failure code shown in diagnostics and the UI.
     ///
     /// The code never contains provider text: only fixed tokens derived from
-    /// the adapter error class, the embedded HTTP status and a small set of
-    /// well-known provider markers. Unrecognized failures fall back to the
-    /// adapter-level codes so they stay distinguishable.
+    /// the adapter error class, embedded HTTP status and bounded diagnostic
+    /// message markers. Unrecognized failures fall back to adapter-level codes.
     pub fn failure_code(&self) -> &'static str {
         match self {
             Self::Config(_) => "provider_configuration",
             Self::ImagePreflightRejected => "image_preflight_rejected",
             Self::ImageCapabilityStale => "image_capability_stale",
-            Self::Http(message) | Self::Api(message) | Self::Stream(message) => {
-                classify_failure_message(self, message)
+            Self::ApiWithDiagnostics { error_code, .. } => error_code,
+            Self::Http(_) | Self::Api(_) | Self::Stream(_) => {
+                classify_failure_message(self, &self.classification_message().unwrap_or_default())
             }
         }
     }
@@ -461,5 +626,135 @@ mod failure_code_tests {
         assert_eq!(error.failure_code(), "provider_auth_rejected");
         assert!(!error.failure_code().contains("provider.test"));
         assert!(!error.failure_code().contains("secret"));
+    }
+
+    #[test]
+    fn structured_provider_diagnostics_preserve_status_and_failure_classification() {
+        let diagnostics = ProviderErrorDiagnostic {
+            error_type: Some("invalid_request_error".into()),
+            code: Some("context_length_exceeded".into()),
+            param: Some("messages".into()),
+            message: Some("maximum context length is 65536 tokens".into()),
+            request_id: Some("req_123".into()),
+            response_body_bytes: 128,
+            response_body_truncated: false,
+            response_body_is_json: true,
+            provider_attempts: 1,
+        };
+        let error = ProviderError::api_with_diagnostics(400, &diagnostics);
+        assert_eq!(error.http_status(), Some(400));
+        assert_eq!(error.failure_code(), "provider_context_length_exceeded");
+        assert!(error
+            .to_string()
+            .contains("provider_context_length_exceeded"));
+        assert_eq!(error.diagnostics(), Some(diagnostics));
+        assert!(error
+            .to_string()
+            .contains("provider_context_length_exceeded"));
+        assert!(!error.to_string().contains("context_length_exceeded"));
+        assert!(!format!("{error:?}").contains("maximum context length"));
+        assert!(!format!("{error:?}").contains("context_length_exceeded"));
+        assert!(format!("{error:?}").contains("provider_context_length_exceeded"));
+    }
+
+    #[test]
+    fn diagnostic_message_improves_request_rejection_classification() {
+        let diagnostics = ProviderErrorDiagnostic {
+            error_type: Some("invalid_request_error".into()),
+            code: Some("model_not_found".into()),
+            param: Some("model".into()),
+            message: Some("The model does not exist".into()),
+            request_id: None,
+            response_body_bytes: 64,
+            response_body_truncated: false,
+            response_body_is_json: true,
+            provider_attempts: 1,
+        };
+        let error = ProviderError::api_with_diagnostics(400, &diagnostics);
+        assert_eq!(error.failure_code(), "provider_model_not_found");
+        assert!(error.to_string().contains("provider_model_not_found"));
+        assert_eq!(
+            ProviderError::api_with_diagnostics(404, &diagnostics).failure_code(),
+            "provider_model_not_found"
+        );
+    }
+
+    #[test]
+    fn context_limit_and_unsupported_parameter_have_actionable_codes() {
+        let mut diagnostics = ProviderErrorDiagnostic {
+            error_type: Some("invalid_request_error".into()),
+            code: Some("context_length_exceeded".into()),
+            param: Some("messages".into()),
+            message: Some("maximum context length exceeded".into()),
+            request_id: None,
+            response_body_bytes: 64,
+            response_body_truncated: false,
+            response_body_is_json: true,
+            provider_attempts: 1,
+        };
+        assert_eq!(
+            ProviderError::api_with_diagnostics(400, &diagnostics).failure_code(),
+            "provider_context_length_exceeded"
+        );
+        diagnostics.code = Some("unsupported_parameter".into());
+        diagnostics.message = Some("unsupported parameter: reasoning_effort".into());
+        assert_eq!(
+            ProviderError::api_with_diagnostics(400, &diagnostics).failure_code(),
+            "provider_unsupported_parameter"
+        );
+    }
+
+    #[test]
+    fn retryable_http_statuses_keep_their_resilience_classification() {
+        let diagnostics = ProviderErrorDiagnostic {
+            error_type: None,
+            code: None,
+            param: None,
+            message: Some("temporary provider error".into()),
+            request_id: None,
+            response_body_bytes: 32,
+            response_body_truncated: false,
+            response_body_is_json: false,
+            provider_attempts: 1,
+        };
+        for status in [408, 429, 500, 502, 503, 504] {
+            let error = ProviderError::api_with_diagnostics(status, &diagnostics);
+            assert!(matches!(
+                crate::provider_contract::classify_provider_error(&error),
+                crate::provider_contract::FailureCategory::Timeout
+                    | crate::provider_contract::FailureCategory::RateLimited
+                    | crate::provider_contract::FailureCategory::ServerError
+            ));
+        }
+        assert_eq!(
+            ProviderError::api_with_diagnostics(429, &diagnostics).failure_code(),
+            "provider_rate_limited"
+        );
+        assert_eq!(
+            ProviderError::api_with_diagnostics(503, &diagnostics).failure_code(),
+            "provider_unavailable"
+        );
+    }
+
+    #[test]
+    fn diagnostic_error_formatting_never_contains_provider_supplied_text() {
+        let diagnostics = ProviderErrorDiagnostic {
+            error_type: Some("invalid_request_error".into()),
+            code: Some("context_length_exceeded".into()),
+            param: Some("api_key=secret".into()),
+            message: Some(
+                "token=secret at https://provider.test/?key=leak Authorization: Bearer xyz".into(),
+            ),
+            request_id: Some("secret-request-id".into()),
+            response_body_bytes: 256,
+            response_body_truncated: false,
+            response_body_is_json: true,
+            provider_attempts: 2,
+        };
+        let error = ProviderError::api_with_diagnostics(400, &diagnostics);
+        assert!(!error.to_string().contains("secret"));
+        assert!(!error.to_string().contains("provider.test"));
+        assert!(!format!("{error:?}").contains("secret"));
+        assert!(!format!("{error:?}").contains("provider.test"));
     }
 }

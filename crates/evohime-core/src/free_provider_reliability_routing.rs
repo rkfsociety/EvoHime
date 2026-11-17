@@ -1927,6 +1927,28 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
         | ProviderError::Http(message)
         | ProviderError::Api(message)
         | ProviderError::Stream(message) => message.to_ascii_lowercase(),
+        ProviderError::ApiWithDiagnostics {
+            message,
+            diagnostics,
+            ..
+        } => {
+            let diagnostic_fields = [
+                diagnostics.code.as_deref(),
+                diagnostics.error_type.as_deref(),
+                diagnostics.message.as_deref(),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_lowercase();
+            let diagnostic_message = diagnostics
+                .message
+                .as_deref()
+                .unwrap_or(message)
+                .to_ascii_lowercase();
+            format!("{message} {diagnostic_fields} {diagnostic_message}")
+        }
         ProviderError::ImagePreflightRejected => "image preflight rejected".into(),
         ProviderError::ImageCapabilityStale => "image capability stale".into(),
     };
@@ -1946,32 +1968,44 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
             CatalogFailureCode::Timeout
         }
         ProviderError::Http(_) | ProviderError::Stream(_) => CatalogFailureCode::Network,
-        ProviderError::Api(_) if message.contains("401") || message.contains("403") => {
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. }
+            if message.contains("401") || message.contains("403") =>
+        {
             CatalogFailureCode::CredentialRejected
         }
-        ProviderError::Api(_) if message.contains("429") || message.contains("rate") => {
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. }
+            if message.contains("429") || message.contains("rate") =>
+        {
             CatalogFailureCode::RateLimited
         }
-        ProviderError::Api(_)
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. }
             if message.contains("model not found") || message.contains("model_not_found") =>
         {
             CatalogFailureCode::ModelNotFound
         }
-        ProviderError::Api(_) if message.contains("404") => {
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. }
+            if message.contains("404") =>
+        {
             CatalogFailureCode::DiscoveryUnsupported
         }
-        ProviderError::Api(_)
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. }
             if message.contains("exceeds size") || message.contains("too large") =>
         {
             CatalogFailureCode::ResponseTooLarge
         }
-        ProviderError::Api(_) if message.contains("too many") || message.contains("entries") => {
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. }
+            if message.contains("too many") || message.contains("entries") =>
+        {
             CatalogFailureCode::EntryLimitExceeded
         }
-        ProviderError::Api(_) if message.contains("invalid") || message.contains("malformed") => {
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. }
+            if message.contains("invalid") || message.contains("malformed") =>
+        {
             CatalogFailureCode::MalformedResponse
         }
-        ProviderError::Api(_) => CatalogFailureCode::ProtocolMismatch,
+        ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. } => {
+            CatalogFailureCode::ProtocolMismatch
+        }
     }
 }
 

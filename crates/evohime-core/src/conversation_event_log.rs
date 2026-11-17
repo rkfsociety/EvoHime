@@ -536,6 +536,8 @@ const PROVIDER_FAILURE_CODES: &[&str] = &[
     "provider_auth_rejected",
     "provider_quota_exhausted",
     "provider_model_not_found",
+    "provider_context_length_exceeded",
+    "provider_unsupported_parameter",
     "provider_rate_limited",
     "provider_request_rejected",
     "provider_timeout",
@@ -689,6 +691,14 @@ mod tests {
             (
                 "api error: provider_model_not_found",
                 "provider_model_not_found",
+            ),
+            (
+                "api error: provider_context_length_exceeded",
+                "provider_context_length_exceeded",
+            ),
+            (
+                "api error: provider_unsupported_parameter",
+                "provider_unsupported_parameter",
             ),
             ("api error: provider_rate_limited", "provider_rate_limited"),
             ("api error: provider_timeout", "provider_timeout"),

@@ -320,6 +320,18 @@ pub fn classify_provider_error(error: &crate::providers::ProviderError) -> Failu
         ProviderError::Http(message)
         | ProviderError::Api(message)
         | ProviderError::Stream(message) => message,
+        ProviderError::ApiWithDiagnostics { .. } => {
+            if error.failure_code() == "provider_rate_limited" {
+                return FailureCategory::RateLimited;
+            }
+            return match error.http_status() {
+                Some(408) => FailureCategory::Timeout,
+                Some(429) => FailureCategory::RateLimited,
+                Some(500..=599) => FailureCategory::ServerError,
+                Some(400..=499) => FailureCategory::InvalidRequest,
+                _ => FailureCategory::ServerError,
+            };
+        }
     };
     let lower = message.to_ascii_lowercase();
     let status = error.http_status();
@@ -1800,6 +1812,22 @@ mod tests {
                 "error sending request: connect error".into()
             )),
             FailureCategory::ConnectionRefused
+        );
+
+        let diagnostics = crate::providers::ProviderErrorDiagnostic {
+            error_type: Some("invalid_request_error".into()),
+            code: Some("context_length_exceeded".into()),
+            param: Some("messages".into()),
+            message: Some("maximum context length exceeded".into()),
+            request_id: Some("req_123".into()),
+            response_body_bytes: 100,
+            response_body_truncated: false,
+            response_body_is_json: true,
+            provider_attempts: 1,
+        };
+        assert_eq!(
+            classify_provider_error(&ProviderError::api_with_diagnostics(400, &diagnostics)),
+            FailureCategory::InvalidRequest
         );
     }
 }

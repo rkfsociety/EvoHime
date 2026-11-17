@@ -2091,6 +2091,18 @@ Authenticated additive IPC использует `SensitiveDataGuardrailsCommand`
 Electron показывает только destination, policy hash, action/count/status;
 raw input/output, credentials и rule bodies в renderer не попадают.
 
+Ошибки HTTP-провайдера диагностируются отдельным bounded-контрактом
+`ProviderErrorDiagnostic`: adapter читает не более 16 KiB тела ответа и
+извлекает только `type`, `code`, `param`, `message`, безопасный request ID и
+число HTTP-попыток. Core trace связывает событие также с номером попытки,
+model-attempt ID, выбранной моделью и purpose вызова.
+Полное тело, заголовки авторизации и URL в trace не сохраняются. Перед записью
+в `model-trace.jsonl` текстовые поля проходят Core redaction, а URL и типовые
+формы credential-полей удаляются отдельным sanitizer; trace
+дополнительно фиксирует размер/обрезание тела и факт JSON-декодирования. Это
+позволяет отличить, например, неизвестную модель, неверный параметр и лимит
+контекста, не превращая provider response в источник утечки.
+
 ## Execution Policy Profiles v1
 
 `evohime-tool-runtime::execution_policy_profiles` — единственный resolver для

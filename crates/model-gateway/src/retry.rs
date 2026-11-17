@@ -9,8 +9,9 @@
 //! - `EVOHIME_LLM_RETRY_MAX_MS` (default 5000)
 
 use futures_util::StreamExt;
-use reqwest::header::{HeaderMap, RETRY_AFTER};
+use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
 use reqwest::StatusCode;
+use serde_json::Value;
 use std::time::Duration;
 
 pub(crate) const MAX_RATE_LIMIT_BODY_BYTES: usize = 16 * 1024;
@@ -119,32 +120,160 @@ pub fn parse_rate_limit_delay(body: &str) -> Option<Duration> {
     None
 }
 
-/// Read only a small prefix used to classify a rate-limit response.
+/// Reads a bounded provider error body for classification and structured diagnostics.
 ///
-/// The provider body is deliberately not returned from this helper's callers:
-/// it may contain URLs, credentials or other provider diagnostics. The bound
-/// also prevents an error response from becoming an unbounded allocation.
-pub(crate) async fn read_bounded_rate_limit_body(response: reqwest::Response) -> String {
+/// Raw body text is returned only to the adapter for in-memory rate-limit
+/// classification. Diagnostics retain bounded fields only, and provider error
+/// bodies cannot make allocation unbounded.
+pub(crate) struct BoundedProviderErrorBody {
+    pub(crate) text: String,
+    pub(crate) diagnostics: crate::providers::ProviderErrorDiagnostic,
+}
+
+pub(crate) async fn read_bounded_provider_error_body(
+    response: reqwest::Response,
+) -> BoundedProviderErrorBody {
+    let request_id = response
+        .headers()
+        .get("x-request-id")
+        .or_else(|| response.headers().get("request-id"))
+        .or_else(|| response.headers().get("x-ds-trace-id"))
+        .or_else(|| response.headers().get("cf-ray"))
+        .and_then(safe_request_id);
+    let declared_body_bytes = response.content_length();
     let mut body = Vec::with_capacity(
-        response
-            .content_length()
+        declared_body_bytes
             .unwrap_or_default()
             .try_into()
             .unwrap_or(0)
             .min(MAX_RATE_LIMIT_BODY_BYTES),
     );
     let mut stream = response.bytes_stream();
+    let mut truncated = false;
     while let Some(chunk) = stream.next().await {
         let Ok(chunk) = chunk else {
             break;
         };
         let remaining = MAX_RATE_LIMIT_BODY_BYTES.saturating_sub(body.len());
         if remaining == 0 {
+            truncated = !chunk.is_empty();
             break;
         }
-        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+        let accepted = chunk.len().min(remaining);
+        body.extend_from_slice(&chunk[..accepted]);
+        if accepted < chunk.len() {
+            truncated = true;
+            break;
+        }
     }
-    String::from_utf8_lossy(&body).into_owned()
+    let text = String::from_utf8_lossy(&body).into_owned();
+    let truncated =
+        truncated || declared_body_bytes.is_some_and(|declared| declared > body.len() as u64);
+    let diagnostics = provider_error_diagnostics(&text, body.len(), truncated, request_id);
+    BoundedProviderErrorBody { text, diagnostics }
+}
+
+fn provider_error_diagnostics(
+    text: &str,
+    body_bytes: usize,
+    truncated: bool,
+    request_id: Option<String>,
+) -> crate::providers::ProviderErrorDiagnostic {
+    let parsed = serde_json::from_str::<Value>(text).ok();
+    let error = parsed
+        .as_ref()
+        .and_then(|value| value.get("error"))
+        .unwrap_or_else(|| parsed.as_ref().unwrap_or(&Value::Null));
+    let request_id = request_id.or_else(|| {
+        parsed
+            .as_ref()
+            .and_then(|value| value.get("request_id"))
+            .and_then(Value::as_str)
+            .and_then(|value| {
+                (!value.is_empty()
+                    && value.len() <= 128
+                    && value.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
+                    }))
+                .then(|| value.to_owned())
+            })
+    });
+    crate::providers::ProviderErrorDiagnostic {
+        error_type: json_string(error, "type"),
+        code: json_scalar_string(error, "code"),
+        param: json_scalar_string(error, "param"),
+        message: json_string(error, "message"),
+        request_id,
+        response_body_bytes: body_bytes,
+        response_body_truncated: truncated,
+        response_body_is_json: parsed.is_some(),
+        provider_attempts: 0,
+    }
+}
+
+fn json_string(value: &Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(|value| value.chars().take(512).collect())
+}
+
+fn json_scalar_string(value: &Value, key: &str) -> Option<String> {
+    value.get(key).and_then(|value| match value {
+        Value::String(value) => Some(value.chars().take(128).collect()),
+        Value::Number(value) => Some(value.to_string()),
+        _ => None,
+    })
+}
+
+fn safe_request_id(value: &HeaderValue) -> Option<String> {
+    let value = value.to_str().ok()?;
+    (!value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')))
+    .then(|| value.to_owned())
+}
+
+#[cfg(test)]
+mod provider_error_body_tests {
+    use super::*;
+    use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn bounded_reader_extracts_diagnostics_without_retaining_unknown_body_fields() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(400)
+                    .insert_header("x-request-id", "req_safe-123")
+                    .set_body_raw(
+                        r#"{"error":{"type":"invalid_request_error","code":"context_length_exceeded","param":"messages","message":"too many tokens"},"debug":"do not copy"}"#,
+                        "application/json",
+                    ),
+            )
+            .mount(&server)
+            .await;
+        let response = reqwest::Client::new()
+            .get(server.uri())
+            .send()
+            .await
+            .expect("mock response");
+
+        let bounded = read_bounded_provider_error_body(response).await;
+        assert!(bounded.text.contains("do not copy"));
+        assert_eq!(
+            bounded.diagnostics.code.as_deref(),
+            Some("context_length_exceeded")
+        );
+        assert_eq!(
+            bounded.diagnostics.request_id.as_deref(),
+            Some("req_safe-123")
+        );
+        let unsafe_header = HeaderValue::from_static("req/with?secret=1");
+        assert!(safe_request_id(&unsafe_header).is_none());
+    }
 }
 
 impl RetryPolicy {
@@ -252,6 +381,34 @@ mod tests {
         assert!(is_retryable_status(StatusCode::GATEWAY_TIMEOUT));
         assert!(!is_retryable_status(StatusCode::BAD_REQUEST));
         assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
+    }
+
+    #[test]
+    fn extracts_only_bounded_openai_error_fields() {
+        let body = r#"{"error":{"type":"invalid_request_error","code":"context_length_exceeded","param":"messages","message":"Request too large"},"debug":"must not persist"}"#;
+        let diagnostic =
+            provider_error_diagnostics(body, body.len(), false, Some("req_123".into()));
+        assert_eq!(
+            diagnostic.error_type.as_deref(),
+            Some("invalid_request_error")
+        );
+        assert_eq!(diagnostic.code.as_deref(), Some("context_length_exceeded"));
+        assert_eq!(diagnostic.param.as_deref(), Some("messages"));
+        assert_eq!(diagnostic.message.as_deref(), Some("Request too large"));
+        assert_eq!(diagnostic.request_id.as_deref(), Some("req_123"));
+        assert!(diagnostic.response_body_is_json);
+        assert!(!diagnostic.response_body_truncated);
+        let serialized = serde_json::to_string(&diagnostic).expect("diagnostics serialize");
+        assert!(!serialized.contains("must not persist"));
+    }
+
+    #[test]
+    fn malformed_or_truncated_error_body_retains_read_metadata() {
+        let diagnostic = provider_error_diagnostics("not-json", 16_384, true, None);
+        assert_eq!(diagnostic.response_body_bytes, 16_384);
+        assert!(diagnostic.response_body_truncated);
+        assert!(!diagnostic.response_body_is_json);
+        assert!(diagnostic.message.is_none());
     }
 
     #[test]

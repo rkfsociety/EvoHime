@@ -737,12 +737,9 @@ Kernel уже существовал как Core-owned runtime, но не был
 
 ## Provider failure classification
 
-Задача `4ad79c10-6bdf-43ab-9934-d1e0de261c3f` в установленной версии упала с
-общим `task.failed`: провайдер DeepSeek вернул ошибку на все четыре попытки
-(`provider.error_retriable` ×4 в `model-trace.jsonl`). Ни HTTP status, ни
-причина в проекцию не попадали, поэтому UI не мог объяснить отказ, а
-клиентская ошибка (например, неверный ключ или неизвестная модель) расходовала
-retry budget и открывала circuit как серверный сбой.
+Исторический сбой `4ad79c10-6bdf-43ab-9934-d1e0de261c3f` показал, что общего
+`task.failed` и кода классификации недостаточно для диагностики: provider body
+и безопасные поля JSON error терялись до записи trace.
 
 Исправлено в исходниках:
 
@@ -759,7 +756,14 @@ retry budget и открывала circuit как серверный сбой.
   `task.failed` projection и в trace (`http_status` в `provider.error_*`);
 - renderer показывает по этому коду понятную причину и подсказку в баннере
   восстановления и в ленте диалога (единый `failureReasonText`), а неизвестный
-  код по-прежнему выводится как есть.
+  код по-прежнему выводится как есть;
+- adapter теперь сохраняет для `provider.error_*` bounded
+  `provider_diagnostics`: JSON error type/code/param/message, безопасный request
+  ID и метаданные размера тела. Сырые response bodies, authorization headers и
+  URL не пишутся; текстовые поля проходят Core redaction перед trace. Событие
+  дополнительно связывает отказ с номером попытки, выбранной моделью и
+  назначением вызова. Для известных причин (модель не найдена, лимит контекста,
+  неподдерживаемый параметр) Core также публикует отдельный actionable code.
 
 ## Delivery requirements и tool loadout
 

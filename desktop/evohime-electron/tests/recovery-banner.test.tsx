@@ -94,6 +94,8 @@ describe('recovery contract', () => {
       ['provider_auth_rejected', 'ключ доступа'],
       ['provider_quota_exhausted', 'квота'],
       ['provider_model_not_found', 'модель'],
+      ['provider_context_length_exceeded', 'контекст'],
+      ['provider_unsupported_parameter', 'параметр'],
       ['provider_unavailable', 'недоступен']
     ]
     for (const [errorCode, expected] of cases) {

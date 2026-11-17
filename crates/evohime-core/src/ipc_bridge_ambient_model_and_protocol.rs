@@ -53,6 +53,13 @@ fn safe_model_catalog_error_code(
                 "catalog_response_invalid"
             }
         }
+        evohime_model_gateway::providers::ProviderError::ApiWithDiagnostics { .. } => {
+            match error.failure_code() {
+                "provider_model_not_found" => "catalog_model_not_found",
+                "provider_timeout" => "provider_timeout",
+                _ => "catalog_response_invalid",
+            }
+        }
         evohime_model_gateway::providers::ProviderError::Stream(_) => "catalog_stream_error",
         evohime_model_gateway::providers::ProviderError::ImagePreflightRejected => {
             "catalog_preflight_rejected"

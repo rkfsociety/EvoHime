@@ -8,7 +8,7 @@ use crate::providers::{
 use crate::rate_limit_signal::{clear_rate_limit, record_rate_limit_for};
 use crate::retry::{
     classify_rate_limit, compute_backoff, is_retryable_status, parse_rate_limit_delay,
-    parse_retry_after_seconds, read_bounded_rate_limit_body, RateLimitClass, RetryPolicy,
+    parse_retry_after_seconds, read_bounded_provider_error_body, RateLimitClass, RetryPolicy,
 };
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
@@ -248,17 +248,23 @@ impl LiteRouterProvider {
                 Ok(response) => {
                     let status = response.status();
                     let retry_after = parse_retry_after_seconds(response.headers());
-                    let text = read_bounded_rate_limit_body(response).await;
-                    if let Some(code) = cloudflare_typed_error_code(&self.config.base_url, &text) {
-                        return Err(ProviderError::Api(format!(
-                            "{}: Cloudflare Workers AI error code {code}",
-                            status.as_u16()
-                        )));
-                    }
+                    let body = read_bounded_provider_error_body(response).await;
+                    let mut diagnostics = body.diagnostics;
+                    diagnostics.provider_attempts = attempt.saturating_add(1);
+                    let text = body.text;
+                    let cloudflare_code = cloudflare_typed_error_code(&self.config.base_url, &text);
                     let rate_limit = classify_rate_limit(status, &text);
                     // The provider may state how long its tier needs between
                     // messages; both this retry and later requests honor it.
                     let pacing_hint = parse_rate_limit_delay(&text);
+                    if cloudflare_code.is_some() {
+                        diagnostics.code = cloudflare_code.map(|code| code.to_string());
+                        diagnostics.error_type = Some("cloudflare_workers_ai_error".into());
+                        return Err(ProviderError::api_with_diagnostics(
+                            status.as_u16(),
+                            &diagnostics,
+                        ));
+                    }
                     if let Some(class) = rate_limit {
                         // Publish the cooldown before returning: background
                         // work must sleep instead of repeating the failed
@@ -270,10 +276,10 @@ impl LiteRouterProvider {
                         record_rate_limit_for(model, cooldown);
                     }
                     if matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
-                        return Err(ProviderError::Api(format!(
-                            "{}: provider quota exhausted",
-                            status.as_u16()
-                        )));
+                        return Err(ProviderError::api_with_diagnostics(
+                            status.as_u16(),
+                            &diagnostics,
+                        ));
                     }
                     if let Some(hint) = pacing_hint {
                         self.learn_request_interval(hint).await;
@@ -305,15 +311,15 @@ impl LiteRouterProvider {
                         continue;
                     }
                     if rate_limit.is_some() {
-                        return Err(ProviderError::Api(format!(
-                            "{}: rate limit",
-                            status.as_u16()
-                        )));
+                        return Err(ProviderError::api_with_diagnostics(
+                            status.as_u16(),
+                            &diagnostics,
+                        ));
                     }
-                    return Err(ProviderError::Api(format!(
-                        "{}: provider request failed",
-                        status.as_u16()
-                    )));
+                    return Err(ProviderError::api_with_diagnostics(
+                        status.as_u16(),
+                        &diagnostics,
+                    ));
                 }
                 Err(error) => {
                     if attempt < max_retries {

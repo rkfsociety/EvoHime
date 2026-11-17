@@ -50,6 +50,196 @@ fn provider_error_reason(error: &ProviderError) -> &'static str {
     }
 }
 
+/// Projects adapter-extracted provider diagnostics through the Core redaction
+/// boundary before they enter the persistent model trace.
+fn provider_error_diagnostics_for_trace(error: &ProviderError) -> serde_json::Value {
+    let Some(diagnostics) = error.diagnostics() else {
+        return serde_json::Value::Null;
+    };
+    let redact = |value: Option<String>| {
+        value.and_then(|value| {
+            let value = strip_provider_credentials(&strip_provider_urls(&value));
+            redact_boundary_text("model_trace", &value)
+                .ok()
+                .map(|value| value.chars().take(512).collect::<String>())
+        })
+    };
+    serde_json::json!({
+        "error_type": redact(diagnostics.error_type.filter(|value| safe_provider_diagnostic_token(value))),
+        "code": redact(diagnostics.code.filter(|value| safe_provider_diagnostic_token(value))),
+        "param": redact(diagnostics.param.filter(|value| safe_provider_diagnostic_token(value))),
+        "message": redact(diagnostics.message),
+        "request_id": redact(diagnostics.request_id),
+        "response_body_bytes": diagnostics.response_body_bytes,
+        "response_body_truncated": diagnostics.response_body_truncated,
+        "response_body_is_json": diagnostics.response_body_is_json,
+        "provider_attempts": diagnostics.provider_attempts,
+    })
+}
+
+fn provider_model_for_trace(model: Option<String>) -> Option<String> {
+    model
+        .and_then(|model| {
+            let model = strip_provider_credentials(&strip_provider_urls(&model));
+            redact_boundary_text("model_trace", &model).ok()
+        })
+        .map(|model| model.chars().take(128).collect())
+}
+
+fn strip_provider_urls(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    loop {
+        let lowered = remaining.to_ascii_lowercase();
+        let start = [
+            lowered.find("http://").map(|index| (index, 7)),
+            lowered.find("https://").map(|index| (index, 8)),
+            lowered.find("www.").map(|index| (index, 4)),
+        ]
+        .into_iter()
+        .flatten()
+        .min_by_key(|(index, _)| *index);
+        let Some((start, scheme_len)) = start else {
+            output.push_str(remaining);
+            break;
+        };
+        output.push_str(&remaining[..start]);
+        output.push_str("<url>");
+        let end = remaining[start + scheme_len..]
+            .find(|character: char| {
+                character.is_whitespace() || matches!(character, ')' | ']' | '}' | '>' | '"' | '\'')
+            })
+            .map(|index| start + scheme_len + index)
+            .unwrap_or(remaining.len());
+        remaining = &remaining[end..];
+    }
+    output
+}
+
+fn strip_provider_credentials(value: &str) -> String {
+    const MARKERS: &[&str] = &[
+        "api_key=",
+        "api_key:",
+        "api key=",
+        "api key:",
+        "api-key=",
+        "api-key:",
+        "apikey=",
+        "access_token=",
+        "access_token:",
+        "token=",
+        "token:",
+        "client_secret=",
+        "client_secret:",
+        "secret=",
+        "secret:",
+        "password=",
+        "password:",
+        "bearer ",
+        "authorization:",
+    ];
+
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    loop {
+        let lowered = remaining.to_ascii_lowercase();
+        let next = MARKERS
+            .iter()
+            .filter_map(|marker| lowered.find(marker).map(|index| (index, *marker)))
+            .min_by_key(|(index, _)| *index);
+        let Some((start, marker)) = next else {
+            output.push_str(remaining);
+            break;
+        };
+        output.push_str(&remaining[..start]);
+        output.push_str(marker);
+        output.push_str("<redacted>");
+        let mut value_start = start + marker.len();
+        if marker == "authorization:" {
+            let after_space = remaining[value_start..].trim_start();
+            let leading_space = remaining[value_start..].len() - after_space.len();
+            value_start += leading_space;
+            let scheme_end = remaining[value_start..]
+                .find(char::is_whitespace)
+                .map(|index| value_start + index);
+            if let Some(scheme_end) = scheme_end {
+                value_start = remaining[scheme_end..]
+                    .find(|character: char| !character.is_whitespace())
+                    .map(|index| scheme_end + index)
+                    .unwrap_or(remaining.len());
+            }
+        }
+        let end = remaining[value_start..]
+            .find(|character: char| {
+                character.is_whitespace() || matches!(character, '&' | ';' | ',' | '"' | '\'')
+            })
+            .map(|index| value_start + index)
+            .unwrap_or(remaining.len());
+        remaining = &remaining[end..];
+    }
+    output
+}
+
+fn safe_provider_diagnostic_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'/'))
+}
+
+#[cfg(test)]
+mod provider_error_diagnostic_tests {
+    use super::*;
+
+    #[test]
+    fn provider_diagnostics_are_redacted_before_trace_projection() {
+        let error = ProviderError::api_with_diagnostics(
+            400,
+            &evohime_model_gateway::providers::ProviderErrorDiagnostic {
+                error_type: Some("invalid_request_error".into()),
+                code: Some("context_length_exceeded".into()),
+                param: Some("messages".into()),
+                message: Some(
+                    "rejected sk-testsecret at https://provider.test/path?token=leak".into(),
+                ),
+                request_id: Some("req_123".into()),
+                response_body_bytes: 256,
+                response_body_truncated: false,
+                response_body_is_json: true,
+                provider_attempts: 1,
+            },
+        );
+
+        let projection = provider_error_diagnostics_for_trace(&error);
+        let serialized = projection.to_string();
+        assert!(serialized.contains("context_length_exceeded"));
+        assert!(serialized.contains("req_123"));
+        assert!(!serialized.contains("sk-testsecret"));
+        assert!(!serialized.contains("provider.test"));
+        assert!(!serialized.contains("token=leak"));
+        assert!(serialized.contains("<sha256:"));
+        assert!(serialized.contains("<url>"));
+        let sanitized =
+            strip_provider_credentials("api_key=secret token=abc Authorization: Bearer xyz");
+        assert!(!sanitized.contains("secret"));
+        assert!(!sanitized.contains("abc"));
+        assert!(!sanitized.contains("xyz"));
+        let embedded_url = strip_provider_urls("provider returned (https://provider.test/path).");
+        assert_eq!(embedded_url, "provider returned (<url>).");
+    }
+
+    #[test]
+    fn provider_model_trace_projection_removes_urls_and_credentials() {
+        let model = provider_model_for_trace(Some(
+            "https://provider.test/v1?api_key=secret model-x".into(),
+        ));
+        let model = model.unwrap_or_default();
+        assert!(!model.contains("provider.test"));
+        assert!(!model.contains("secret"));
+    }
+}
+
 /// Redacts every outgoing model message and maps guardrail failures to stable
 /// error codes.
 ///
@@ -1179,6 +1369,8 @@ impl ToolAgent {
                 serde_json::json!({
                     "task_id": task_id,
                     "attempt": attempt + 1,
+                    "model_attempt_id": logical_request_id,
+                    "model": provider_model_for_trace(self.selected_model.get()),
                     "timeout_secs": config.model_timeout_secs,
                     "resilience_policy": model_resilience_policy::CONTRACT_ID,
                     "resilience_policy_hash": resilience_hash.clone(),
@@ -1375,35 +1567,40 @@ impl ToolAgent {
                             "provider.error_terminal",
                             serde_json::json!({
                                 "task_id": task_id,
+                                "attempt": attempt + 1,
+                                "model_attempt_id": logical_request_id,
+                                "model": provider_model_for_trace(self.selected_model.get()),
+                                "purpose": purpose.as_str(),
                                 "error_code": error_code,
                                 "failure_class": format!("{failure:?}"),
                                 "http_status": error.http_status(),
                                 "reason": provider_error_reason(&error),
+                                "provider_diagnostics": provider_error_diagnostics_for_trace(&error),
                             }),
                         );
                         // Surface the stable failure code instead of the raw
                         // provider text so the conversation projection and UI
                         // can explain the cause without leaking diagnostics.
-                        return Err(AgentRunError::Provider(ProviderError::Api(
-                            error_code.into(),
-                        )));
+                        return Err(AgentRunError::Provider(error));
                     }
                     write_model_trace(
                         "provider.error_retriable",
                         serde_json::json!({
                             "task_id": task_id,
+                            "attempt": attempt + 1,
+                            "model_attempt_id": logical_request_id,
+                            "model": provider_model_for_trace(self.selected_model.get()),
+                            "purpose": purpose.as_str(),
                             "error_code": error_code,
                             "failure_class": format!("{failure:?}"),
                             "http_status": error.http_status(),
+                            "provider_diagnostics": provider_error_diagnostics_for_trace(&error),
                             "policy_outcome": policy_metadata.as_ref().map(|value| format!("{:?}", value.outcome)),
-                            "attempt": attempt + 1,
                             "will_retry": attempt < config.retry_max,
                         }),
                     );
                     if attempt >= config.retry_max {
-                        return Err(AgentRunError::Provider(ProviderError::Api(
-                            error_code.into(),
-                        )));
+                        return Err(AgentRunError::Provider(error));
                     }
                 }
                 Ok(result) => {

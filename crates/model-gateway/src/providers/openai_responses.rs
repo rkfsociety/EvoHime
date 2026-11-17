@@ -9,7 +9,9 @@ use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ChatRole, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
 };
-use crate::retry::{compute_backoff, is_retryable_status, RetryPolicy};
+use crate::retry::{
+    compute_backoff, is_retryable_status, read_bounded_provider_error_body, RetryPolicy,
+};
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use futures_util::StreamExt;
@@ -190,9 +192,13 @@ impl OpenAIResponsesProvider {
                         attempt = attempt.saturating_add(1);
                         continue;
                     }
-                    return Err(ProviderError::Api(format!(
-                        "{status}: Responses API request failed"
-                    )));
+                    let body = read_bounded_provider_error_body(response).await;
+                    let mut diagnostics = body.diagnostics;
+                    diagnostics.provider_attempts = attempt.saturating_add(1);
+                    return Err(ProviderError::api_with_diagnostics(
+                        status.as_u16(),
+                        &diagnostics,
+                    ));
                 }
                 Err(error) if attempt < max_retries => {
                     tokio::time::sleep(compute_backoff(attempt, &self.retry, None)).await;

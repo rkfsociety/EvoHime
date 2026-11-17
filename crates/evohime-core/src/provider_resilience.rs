@@ -49,6 +49,15 @@ pub fn is_retriable_error(error: &ProviderError) -> bool {
                 || msg.contains("rate limit")
                 || msg.contains("overload")
         }
+        ProviderError::ApiWithDiagnostics { .. } => {
+            matches!(
+                error.failure_code(),
+                "provider_rate_limited"
+                    | "provider_timeout"
+                    | "provider_unavailable"
+                    | "provider_unreachable"
+            )
+        }
         ProviderError::Config(_)
         | ProviderError::ImagePreflightRejected
         | ProviderError::ImageCapabilityStale => false, // Configuration and image preflight errors are terminal.
