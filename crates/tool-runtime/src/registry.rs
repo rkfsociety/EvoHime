@@ -142,7 +142,7 @@ impl ToolDefinition {
     /// остаются source-of-truth до полной миграции деклараций инструментов;
     /// схема при этом всегда явная и fail-closed.
     pub fn manifest(&self) -> crate::ToolManifest {
-        let is_utility = self.name.starts_with("utility.");
+        let is_utility = crate::tool_namespace(self.name) == "utility";
         // The declared kernel tool grants no filesystem, network or shell
         // authority: it is local computation scoped to the task, and its
         // object writes stay inside the Core-owned kernel session.
@@ -188,7 +188,9 @@ impl ToolDefinition {
             } else {
                 crate::ApprovalMode::OnPermission
             },
-            workspace_scope: if is_analysis_kernel || self.name.starts_with("workflow.") {
+            workspace_scope: if is_analysis_kernel
+                || crate::tool_namespace(self.name) == "workflow"
+            {
                 "task".into()
             } else {
                 "workspace".into()
@@ -711,8 +713,33 @@ impl ToolRegistry {
             .collect()
     }
 
+    /// Resolves a caller-supplied tool name to a registered canonical id.
+    ///
+    /// Canonical ids match exactly. A historical dotted name (`git.status`) is
+    /// accepted when the same id with `_` separators is registered, so durable
+    /// receipts, continuation gates, and older clients keep resolving while
+    /// every new record stores the canonical spelling. An unknown name stays
+    /// unknown: the alias never registers or enables a tool.
+    pub fn resolve_tool_id(&self, name: &str) -> Option<&'static str> {
+        if let Some((canonical, _)) = self.tools.get_key_value(name) {
+            return Some(*canonical);
+        }
+        if !name.contains('.') {
+            return None;
+        }
+        let rewritten = name.replace('.', "_");
+        self.tools
+            .get_key_value(rewritten.as_str())
+            .map(|(canonical, _)| *canonical)
+    }
+
     /// Returns a cloned manifest for a registered tool, if present.
+    ///
+    /// The lookup accepts the historical dotted spelling through
+    /// [`Self::resolve_tool_id`]; the returned manifest always carries the
+    /// canonical tool id.
     pub fn manifest_for(&self, name: &str) -> Option<crate::ToolManifest> {
+        let name = self.resolve_tool_id(name)?;
         self.manifest_cache.get(name).cloned()
     }
 
@@ -725,6 +752,7 @@ impl ToolRegistry {
         name: &str,
         input: &Value,
     ) -> Result<ToolPreflightDecision, ToolError> {
+        let name = self.resolve_tool_id(name).unwrap_or(name);
         let definition = self
             .tools
             .get(name)
@@ -786,6 +814,7 @@ impl ToolRegistry {
         input: Value,
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
+        let name = self.resolve_tool_id(name).unwrap_or(name);
         let definition = self
             .tools
             .get(name)
@@ -977,6 +1006,7 @@ impl ToolRegistry {
         input: Value,
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
+        let name = self.resolve_tool_id(name).unwrap_or(name);
         let definition = self
             .tools
             .get(name)
@@ -1136,6 +1166,7 @@ impl ToolRegistry {
         approval_id: Uuid,
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
+        let name = self.resolve_tool_id(name).unwrap_or(name);
         let definition = self
             .tools
             .get(name)
@@ -1268,7 +1299,7 @@ fn scope_from_input(tool_name: &str, input: &Value) -> String {
     if let Some(url) = input.get("url").and_then(Value::as_str) {
         return url.to_string();
     }
-    if tool_name.starts_with("browser.") {
+    if crate::tool_namespace(tool_name) == "browser" {
         return "browser".to_string();
     }
     "workspace".to_string()

@@ -814,25 +814,27 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
         || has("git_pull")
         || has("git_push")
     {
-        let mut git = Vec::new();
+        let mut git_rules = Vec::new();
         if has("git_status") {
-            git_push("сначала git_status");
+            git_rules.push("сначала git_status");
         }
         if has("git_diff") {
-            git_push("затем git_diff для проверки изменений");
+            git_rules.push("затем git_diff для проверки изменений");
         }
         if has("git_commit") {
-            git_push("git_commit — только с task-only сообщением и после успешной проверки");
+            git_rules.push("git_commit — только с task-only сообщением и после успешной проверки");
         }
         if has("git_pull") {
-            git_push("git_pull — для обновления checkout");
+            git_rules.push("git_pull — для обновления checkout");
         }
         if has("git_push") {
-            git_push("git_push — только если пользователь явно попросил опубликовать изменения");
+            git_rules.push(
+                "git_push — только если пользователь явно попросил опубликовать изменения",
+            );
         }
         rules.push(format!(
             "- Для Git используй специализированные инструменты: {}. Не заменяй эти вызовы shell_execute и не выполняй git-команды из неправильной директории.",
-            git.join("; ")
+            git_rules.join("; ")
         ));
     } else {
         rules.push(

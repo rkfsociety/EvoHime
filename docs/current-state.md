@@ -761,21 +761,49 @@ Exact-SHA CI по этому изменению ожидает результа�
   схему, отправляла `{"input":{}}` в `git_status` и получала
   `this tool does not accept input`. Теперь явные схемы объявлены для
   `git_status`/`git_changed_files` (пустой объект), каждого git-инструмента,
-  `filesystem_stat`/`mkdir`, `logs.*`, `cargo.*`, `archive.*` и legacy
-  `browser.session.*`; тест
+  `filesystem_stat`/`filesystem_mkdir`, `logs_*`, `cargo_*`, `archive_*` и legacy
+  `browser_session_*`; тест
   `no_registered_builtin_tool_falls_back_to_the_generic_input_schema` не даёт
   вернуть заглушку.
-- `git_diff` делил схему с `git_log`/`show`/`blame`/`pull`/`push` и объявлял
-  `reference`, `remote`, `branch`, `force`, `max_count`, которых его исполнитель
-  не читает. Схемы разделены, а `DiffInput` отвергает неизвестные поля через
-  `serde(deny_unknown_fields)`: вызов с `reference` больше не превращается в
-  diff всего дерева.
+- `git_diff` делил схему с `git_log`/`git_show`/`git_blame`/`git_pull`/`git_push`
+  и объявлял `reference`, `remote`, `branch`, `force`, `max_count`, которых его
+  исполнитель не читает. Схемы разделены, а `DiffInput` отвергает неизвестные
+  поля через `serde(deny_unknown_fields)`: вызов с `reference` больше не
+  превращается в diff всего дерева.
 - `RecentToolCalls::forget_reads` существовал, но не вызывался, поэтому повтор
   `filesystem_read` или `git_status` после правки удалялся как дубликат с
   guidance «Его повтор удалён Core». Теперь успешная правка или коммит
   сбрасывают окно read-only сигнатур, включая `git_status` и `git_diff`.
 - Recovery-подсказка для инструмента без аргументов требует передать `{}`
   вместо вывода бесполезной схемы `{"type":"object"}`.
+
+### Канонический лексикон tool id
+
+Имена инструментов больше не подменяются перед отправкой провайдеру: id равен
+`filesystem_read`, `git_status`, `git_worktree_create` и попадает в prompt,
+provider-запрос, журнал и receipt без преобразований.
+
+- `provider_function_name` удалён из `crates/model-gateway/src/tools.rs`;
+  `wire_tools` и `response_tool` только снимают Core-owned `manifest_hash` и
+  schema-ключи, которые не принимает upstream.
+- `adaptive_tool_catalog::resolve_tool_call_name` заменил
+  `canonical_tool_call_name` и принимает историческую точечную форму только
+  внутри активного loadout: алиас не расширяет authority.
+- `ToolRegistry::resolve_tool_id` и `manifest_for` принимают `git.diff` для
+  durable записей и старых клиентов; `preflight` и все пути `execute*`
+  разрешают имя через него, поэтому историческая строка не становится
+  доступом к незарегистрированному инструменту.
+- `canonical_tool_id` нормализует списки в сохранённых capability, skill и
+  prompt-strategy пакетах; `legacy_parser` канонизирует имя разобранного
+  текстового вызова, поэтому в новое состояние не попадает точечная форма.
+- Эвристики, выводившие смысл из позиции точки, переведены на
+  `tool_namespace` (`context_budget`, `registry`, `trace_diagnostics`,
+  `conversation_event_log`, `legacy_parser`, continuation gate). Имена
+  событий IPC (`git.status`, `memory.search`, `workflow.started`) остались в
+  прежней форме: это отдельный лексикон, а не tool id.
+- `permissions.json`, `workspaces.json` и `chats.json` миграции не требуют:
+  первые адресуют `Permission`-enum, остальные tool id не хранят.
+  `EXPECTED_TOOL_COUNT = 74` не изменился — переименованы имена, не состав.
 
 ## Подтверждённые проверки checkout
 

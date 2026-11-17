@@ -37,7 +37,8 @@ use evohime_model_gateway::{
 /// Инструменты, которые обязаны быть доступны всегда: отмена, статус и
 /// approval/policy semantics. Конкретные имена берутся из registry, а не
 /// зашиваются в router: здесь перечислены только capability-признаки.
-const MANDATORY_CAPABILITY_MARKERS: [&str; 3] = ["task.", "approval", "policy"];
+/// Маркеры ищутся в каноническом id, поэтому разделитель — `_`, не точка.
+const MANDATORY_CAPABILITY_MARKERS: [&str; 3] = ["task_", "approval", "policy"];
 
 /// Bounded projection результата сборки для события `ModelContext` (этап 01.5).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -726,7 +727,9 @@ fn registry_from_specs(specs: &[ToolSpec]) -> Vec<ToolRegistryEntry> {
         .iter()
         .map(|spec| {
             let name = spec.function.name.clone();
-            let capability = name.split('.').next().unwrap_or(name.as_str()).to_string();
+            // Capability = namespace сегмента канонического id. Историческая
+            // точка тоже принимается, чтобы старые события не теряли группу.
+            let capability = evohime_tool_runtime::tool_namespace(&name).to_string();
             let mutation = is_mutation_tool(&name);
             let mandatory = MANDATORY_CAPABILITY_MARKERS
                 .iter()

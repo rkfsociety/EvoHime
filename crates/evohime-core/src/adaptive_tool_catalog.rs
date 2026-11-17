@@ -140,22 +140,25 @@ pub fn build_projection(
     })
 }
 
-/// Resolves a provider-returned function name only to one exact tool in the
-/// active allow-listed loadout. Providers that replace dots with underscores
-/// can therefore round-trip builtin ids without gaining access to other tools.
-pub(crate) fn canonical_tool_call_name(name: &str, allowed_tool_ids: &[String]) -> Option<String> {
+/// Resolves a model-supplied tool name to a canonical id from the active
+/// allow-listed loadout.
+///
+/// A canonical id is returned unchanged. A dotted name is accepted only when
+/// the same id with `_` separators is in the loadout, so a model that still
+/// remembers the pre-rename spelling dispatches to that tool and cannot reach
+/// anything outside the loadout. Everything else returns `None`.
+pub(crate) fn resolve_tool_call_name(name: &str, allowed_tool_ids: &[String]) -> Option<String> {
     if allowed_tool_ids.iter().any(|tool_id| tool_id == name) {
         return Some(name.to_owned());
     }
-
-    let mut aliases = allowed_tool_ids
-        .iter()
-        .filter(|tool_id| tool_id.replace('.', "_") == name);
-    let canonical = aliases.next()?;
-    if aliases.next().is_some() {
+    if !name.contains('.') {
         return None;
     }
-    Some(canonical.clone())
+    let legacy_rewritten = name.replace('.', "_");
+    allowed_tool_ids
+        .iter()
+        .find(|tool_id| **tool_id == legacy_rewritten)
+        .cloned()
 }
 
 pub fn select_deterministic(
@@ -355,30 +358,33 @@ mod tests {
     }
 
     #[test]
-    fn canonical_tool_call_name_accepts_only_unique_aliases_from_the_loadout() {
+    fn resolve_tool_call_name_accepts_the_legacy_dotted_spelling_from_the_loadout() {
         let allowed = vec!["filesystem_list".to_string(), "git_status".to_string()];
 
         assert_eq!(
-            canonical_tool_call_name("filesystem_list", &allowed).as_deref(),
+            resolve_tool_call_name("filesystem_list", &allowed).as_deref(),
             Some("filesystem_list")
         );
+        // Pre-rename spelling from a cached prompt or an older model answer.
         assert_eq!(
-            canonical_tool_call_name("filesystem_list", &allowed).as_deref(),
-            Some("filesystem_list")
+            resolve_tool_call_name("git.status", &allowed).as_deref(),
+            Some("git_status")
         );
-        assert_eq!(canonical_tool_call_name("filesystem_read", &allowed), None);
+        // A tool outside the loadout stays unknown; the alias never grants it.
+        assert_eq!(resolve_tool_call_name("filesystem.read", &allowed), None);
+        assert_eq!(resolve_tool_call_name("shell_execute", &allowed), None);
     }
 
     #[test]
-    fn canonical_tool_call_name_preserves_exact_name_and_rejects_ambiguous_aliases() {
-        let exact_preferred = vec!["filesystem_list".to_string(), "filesystem_list".to_string()];
+    fn resolve_tool_call_name_requires_a_dotted_legacy_form() {
+        let allowed = vec!["filesystem_list".to_string()];
         assert_eq!(
-            canonical_tool_call_name("filesystem_list", &exact_preferred).as_deref(),
+            resolve_tool_call_name("filesystem_list", &allowed).as_deref(),
             Some("filesystem_list")
         );
-
-        let ambiguous = vec!["a.b_c".to_string(), "a_b.c".to_string()];
-        assert_eq!(canonical_tool_call_name("a_b_c", &ambiguous), None);
+        // Underscore names are matched exactly; no fuzzy rewriting happens.
+        assert_eq!(resolve_tool_call_name("filesystem", &allowed), None);
+        assert_eq!(resolve_tool_call_name("filesystem.list.extra", &allowed), None);
     }
 
     #[test]

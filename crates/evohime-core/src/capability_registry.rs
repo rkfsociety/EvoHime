@@ -564,16 +564,24 @@ fn reject_prompt_injection(value: &str) -> Result<(), RegistryError> {
 }
 
 fn contains_all(available: &[String], required: &[String]) -> bool {
-    required
-        .iter()
-        .all(|item| available.iter().any(|v| v == item))
+    // Durable manifests may list the pre-rename dotted spelling; compare on the
+    // canonical form so an old capability keeps resolving.
+    required.iter().all(|item| {
+        let item = evohime_tool_runtime::canonical_tool_id(item);
+        available
+            .iter()
+            .any(|v| evohime_tool_runtime::canonical_tool_id(v) == item)
+    })
 }
 
 fn intersection(left: &[String], right: &[String]) -> Vec<String> {
-    let right = right.iter().collect::<BTreeSet<_>>();
+    let right = right
+        .iter()
+        .map(|v| evohime_tool_runtime::canonical_tool_id(v))
+        .collect::<BTreeSet<_>>();
     let mut values = left
         .iter()
-        .filter(|v| right.contains(v))
+        .filter(|v| right.contains(&evohime_tool_runtime::canonical_tool_id(v)))
         .cloned()
         .collect::<Vec<_>>();
     values.sort();

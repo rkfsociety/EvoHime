@@ -17,8 +17,8 @@
    строк `manifest.rs` и `legacy_parser.rs`: строки сдвинутся, ссылки должны
    остаться рабочими.
 3. Evals и фикстуры: `tests/evals/fixtures/**` (5 файлов) и описательные
-   `forbidden_tool_calls`/`required_tool_calls`; вымышленные имена вроде
-   `filesystem.read_outside_workspace` остаются как есть — они не резолвятся в
+   `forbidden_tool_calls`/`required_tool_calls`; вымышленное имя
+   `filesystem.read_outside_workspace` остаётся как есть — оно не резолвится в
    реестр.
 4. Электронные тесты: 9 TS-файлов с точными id (`transcript`, `activity-line`,
    `task-timeline`, `chat-summary-panel`, `adaptive-tool-catalog-panel`,

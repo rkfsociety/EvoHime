@@ -339,7 +339,7 @@ export function buildChatSummary(
 }
 
 export function parseGitStatusEvent(events: readonly CoreEvent[]): GitStatusSummary | null {
-  const latest = events.find((event) => event.eventType === 'git_status')
+  const latest = events.find((event) => event.eventType === 'git.status')
   if (!latest) return null
   const record = parseJsonRecord(latest.payload)
   if (!record) return null
@@ -376,7 +376,7 @@ export function parseGitStatusEvent(events: readonly CoreEvent[]): GitStatusSumm
 }
 
 export function parseGitDiffEvent(events: readonly CoreEvent[]): GitDiffSummary | null {
-  const latest = events.find((event) => event.eventType === 'git_diff')
+  const latest = events.find((event) => event.eventType === 'git.diff')
   if (!latest) return null
   const record = parseJsonRecord(latest.payload)
   if (!record) return null
@@ -442,13 +442,31 @@ export function parseBackgroundRunsEvent(events: readonly CoreEvent[]): readonly
   return runs
 }
 
+/**
+ * Normalizes only the tool id inside a synthetic shell name.
+ *
+ * The command text after `: ` belongs to the user and must survive verbatim:
+ * `shell.execute: pwsh -File check.ps1` keeps its `.ps1` extension. Only the id
+ * before the separator may carry the historical dotted spelling.
+ */
+function normalizeToolName(toolName: string): string {
+  const separator = toolName.indexOf(': ')
+  if (separator === -1) return toolName.replace(/\./g, '_')
+  const id = toolName.slice(0, separator).replace(/\./g, '_')
+  return `${id}${toolName.slice(separator)}`
+}
+
+const SHELL_COMMAND_PREFIX = 'shell_execute: '
+
 function isShellTool(toolName: string): boolean {
-  return toolName === 'shell_execute' || toolName.startsWith('shell_execute:') || toolName === 'terminal.execute'
+  const name = normalizeToolName(toolName)
+  return name === 'shell_execute' || name.startsWith('shell_execute:') || name === 'terminal_execute'
 }
 
 function extractShellCommand(toolName: string, root: Record<string, unknown> | null): string {
-  if (toolName.startsWith('shell_execute: ')) {
-    return toolName.slice('shell_execute: '.length).trim()
+  const name = normalizeToolName(toolName)
+  if (name.startsWith(SHELL_COMMAND_PREFIX)) {
+    return name.slice(SHELL_COMMAND_PREFIX.length).trim()
   }
   const program = readString(root, ['program', 'command', 'cmd'])
   if (program) {
@@ -467,13 +485,14 @@ function extractTouchedFile(
   toolName: string,
   root: Record<string, unknown> | null
 ): { readonly path: string; readonly action: 'read' | 'write' } | null {
+  const name = normalizeToolName(toolName)
   const isWrite =
-    toolName.startsWith('filesystem_write')
-    || toolName.startsWith('filesystem_patch')
-    || toolName.startsWith('filesystem.create')
-    || toolName.startsWith('filesystem_delete')
-    || toolName === 'apply_patch'
-  const isRead = toolName.startsWith('filesystem_read')
+    name.startsWith('filesystem_write')
+    || name.startsWith('filesystem_patch')
+    || name.startsWith('filesystem_create')
+    || name.startsWith('filesystem_delete')
+    || name === 'apply_patch'
+  const isRead = name.startsWith('filesystem_read')
   if (!isWrite && !isRead) return null
 
   const path = readString(root, ['path', 'relative_path', 'file_path', 'target_path'])
@@ -495,8 +514,9 @@ function findLastRunningShellIndex(
   taskId: string,
   toolName: string
 ): number {
-  const normalizedCmd = toolName.startsWith('shell_execute: ')
-    ? toolName.slice('shell_execute: '.length).trim()
+  const name = normalizeToolName(toolName)
+  const normalizedCmd = name.startsWith(SHELL_COMMAND_PREFIX)
+    ? name.slice(SHELL_COMMAND_PREFIX.length).trim()
     : null
   for (let idx = shells.length - 1; idx >= 0; idx -= 1) {
     const item = shells[idx]

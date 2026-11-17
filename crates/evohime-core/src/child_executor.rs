@@ -75,6 +75,13 @@ pub(crate) fn canonical_capability(value: &str) -> Option<&'static str> {
         "workspace.search" | "filesystem_search" => Some("workspace.search"),
         "git_diff" => Some("git_diff"),
         "git_status" => Some("git_status"),
+        // Durable child requests, receipts, and grants written before the tool
+        // ids were renamed still carry the dotted spelling. They resolve to the
+        // same read-only capability and never grant anything else.
+        "filesystem.read" | "filesystem.list" => Some("workspace.read"),
+        "filesystem.search" => Some("workspace.search"),
+        "git.diff" => Some("git_diff"),
+        "git.status" => Some("git_status"),
         _ => None,
     }
 }

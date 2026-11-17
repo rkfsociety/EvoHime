@@ -602,7 +602,13 @@ pub fn resolve_strategy(input: ResolverInput<'_>) -> Result<ResolvedStrategy, Pr
             StrategyComposition::ToolUse { required_tool_ids } => input
                 .available_tool_ids
                 .iter()
-                .filter(|id| required_tool_ids.iter().any(|required| required == *id))
+                .filter(|id| {
+                    // A stored profile may name the pre-rename dotted id.
+                    let id = evohime_tool_runtime::canonical_tool_id(id.as_str());
+                    required_tool_ids
+                        .iter()
+                        .any(|required| evohime_tool_runtime::canonical_tool_id(required) == id)
+                })
                 .cloned()
                 .collect(),
             _ => input.available_tool_ids.to_vec(),
@@ -644,9 +650,12 @@ fn composition_compatible(
         StrategyComposition::ToolUse { required_tool_ids } => {
             trust_is_authoritative(trust)
                 && supports_tool_calls
-                && required_tool_ids
-                    .iter()
-                    .all(|required| available_tool_ids.iter().any(|granted| granted == required))
+                && required_tool_ids.iter().all(|required| {
+                    let required = evohime_tool_runtime::canonical_tool_id(required);
+                    available_tool_ids.iter().any(|granted| {
+                        evohime_tool_runtime::canonical_tool_id(granted) == required
+                    })
+                })
         }
         StrategyComposition::StructuredOutput { .. } => {
             trust_is_authoritative(trust) && supports_structured_output

@@ -74,7 +74,11 @@ export function PinnedGoalBar({
       || event.eventType === 'task.completed'
       || event.eventType === 'task.failed'
       || (event.eventType === 'tool.output'
-        && (event.payload.includes('"goal_create"') || event.payload.includes('"goal_verify"')))
+        && (event.payload.includes('"goal_create"')
+          || event.payload.includes('"goal_verify"')
+          // Transcripts recorded before the rename still carry the dotted id.
+          || event.payload.includes('"goal.create"')
+          || event.payload.includes('"goal.verify"')))
     )
     return match?.sequenceId ?? 0
   }, [events])

@@ -522,8 +522,13 @@ impl SkillRegistry {
             .metadata
             .allowed_tools
             .iter()
-            .filter(|tool| parent_tools.contains(*tool))
-            .cloned()
+            .map(|tool| evohime_tool_runtime::canonical_tool_id(tool))
+            .filter(|tool| {
+                // Parent tools may still carry the historical dotted spelling.
+                parent_tools
+                    .iter()
+                    .any(|parent| evohime_tool_runtime::canonical_tool_id(parent) == *tool)
+            })
             .collect::<Vec<_>>();
         allowed_tools.sort();
         allowed_tools.dedup();
@@ -788,7 +793,10 @@ fn parse_document(
             reason: "unknown scope".into(),
         });
     }
-    let allowed_tools = parse_list(fields.get("allowed-tools"), "allowed-tools")?;
+    let allowed_tools = parse_list(fields.get("allowed-tools"), "allowed-tools")?
+        .into_iter()
+        .map(|tool| evohime_tool_runtime::canonical_tool_id(&tool))
+        .collect();
     let required_capabilities =
         parse_list(fields.get("required-capabilities"), "required-capabilities")?;
     let disable_model_invocation = fields
@@ -1149,7 +1157,9 @@ mod tests {
         let permissions = registry
             .effective_permissions("reader", &tools, &caps)
             .unwrap();
-        assert_eq!(permissions.allowed_tools, ["workspace.list"]);
+        // The frontmatter uses the historical dotted name; the registry stores
+        // the canonical id that Core writes into new state.
+        assert_eq!(permissions.allowed_tools, ["workspace_list"]);
         assert_eq!(
             registry
                 .load_reference("reader", "references/guide.md")

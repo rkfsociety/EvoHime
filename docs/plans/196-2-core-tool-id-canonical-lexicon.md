@@ -3,26 +3,37 @@
 Статус: active implementation contract. Этап следует после 196.1.
 
 ## Scope и изменяемые контракты
-1. Добавить в `tool-runtime` единственный резолвер
-   `resolve_tool_id(name: &str) -> Option<&'static str>`:
-   - точное совпадение с зарегистрированным id;
-   - иначе legacy-форма с точкой, если она однозначно соответствует одному id;
-   - иначе `None`. Неоднозначность (`a_b.c` против `a.b_c`) не разрешается
-     угадыванием.
-2. Применять резолвер на каждой входной границе, где имя приходит извне:
-   - `ToolRegistry::manifest_for`, `preflight`, `execute_with_cancellation`;
-   - текстовые tool-call (`legacy_parser.rs`);
-   - имя, возвращённое провайдером (`core_agent_execution.rs`);
-   - `ReconcilePendingReceiptAction.tool_name` (IPC);
-   - `SkillMetadata.allowed_tools` и `SkillRegistry` frontmatter;
-   - `GateV1.capability_ref` континуации (`ipc_bridge_ambient_transport.rs`);
-   - workspace-set grants и `CapabilityManifest.allowed_tools`;
-   - `prompt_strategy` профили `required_tool_ids`.
+1. Резолвер живёт в `tool-runtime` и состоит из трёх функций:
+   - `ToolRegistry::resolve_tool_id(name) -> Option<&'static str>` — точное
+     совпадение с зарегистрированным id, иначе лексическая замена `.` на `_` с
+     повторной проверкой по реестру, иначе `None`. Алиас не может включить
+     незарегистрированный инструмент.
+   - `canonical_tool_id(name) -> String` — лексическая нормализация списков в
+     сохранённых пакетах (capability, skill, prompt-strategy).
+   - `tool_namespace(name) -> &str` — namespace для группировки и фильтров;
+     принимает обе формы, поэтому историческое событие не теряет категорию.
+2. Резолвер применяется на каждой входной границе, где имя приходит извне:
+   - `ToolRegistry::manifest_for`, `preflight`, `execute_with_cancellation`,
+     `execute_after_durable_approval`, `execute_after_approval`;
+   - текстовые tool-call (`legacy_parser.rs`): `canonical_tool_name`
+     нормализует имя до создания `NativeToolCall`;
+   - имя, возвращённое провайдером (`core_agent_execution.rs`) —
+     `adaptive_tool_catalog::resolve_tool_call_name`, только активный loadout;
+   - `ReconcilePendingReceiptAction.tool_name` (IPC) — через реестр;
+   - `SkillMetadata.allowed_tools` и frontmatter `allowed-tools`;
+   - `GateV1.capability_ref` континуации (`ipc_bridge_ambient_transport.rs`) —
+     через `manifest_for` и namespace-проверку `shell`;
+   - workspace-set grants (значение допустимо, исполнение идёт через реестр);
+   - `CapabilityManifest.allowed_tools`/`required_tools` и
+     `prompt_strategy` `required_tool_ids` — сравнение по
+     `canonical_tool_id`;
+   - capability-имена дочерних задач (`child_executor::canonical_capability`
+     сохраняет точечные алиасы для durable запросов).
 3. Запись legacy-формы в новое состояние запрещена: канонизация выполняется
    до journal/receipt insert, поэтому `tool_intents.tool_name` и
    `receipt_actions.tool_name` получают только канонический id.
-4. Ошибка неизвестного имени остаётся `UnknownTool` и называет каноническую
-   форму, если legacy-алиас существует.
+4. Неизвестное имя остаётся `UnknownTool`. Резолвер не подсказывает и не
+   угадывает каноническую форму: он либо знает id, либо отказывает.
 
 ## Зависимости
 ### Блокирующие
@@ -39,13 +50,15 @@ Rollback удаляет резолвер и оставляет 196.1 — код 
 имена, что видно в тестах и не портит данные.
 
 ## Verification
-- Unit: точное имя, одна legacy-форма, неоднозначная пара, неизвестное имя.
-- Test: резолв ограничен активным loadout — legacy-имя выключенного инструмента
-  не становится доступным.
-- Test: `link_tool_receipt` находит цель и для legacy-строки в истории.
+- Unit: точное имя, legacy-форма, имя вне реестра, точечное имя без
+  соответствующего id (`git.unknown`).
+- Unit: `canonical_tool_id` меняет только разделитель.
+- Unit: `resolve_tool_call_name` не возвращает id вне активного loadout.
+- Test: `manifest_for("git.diff")` отдаёт манифест `git_diff`.
 - Test: continuation policy с точечным `capability_ref` резолвится, а не даёт
   `gate_unavailable`.
-- Test: skill/capability пакет с `allowed-tools: filesystem_patch` загружается.
+- Test: skill/capability пакет с `allowed-tools: filesystem.patch` загружается
+  и пересекается с каноническим loadout.
 
 ## Release evidence
 Таблица legacy→canonical, результаты тестов резолвера, replay исторической
@@ -53,8 +66,9 @@ receipt-цепочки и вывод CI по `evohime-core`, `evohime-receipts`,
 `evohime-local-storage`.
 
 ## Критерии выхода
-- [ ] Резолвер один и живёт в `tool-runtime`.
-- [ ] Legacy-имя принимается на каждой входной границе и не пишется в новое
+- [x] Резолвер один и живёт в `tool-runtime`.
+- [x] Legacy-имя принимается на каждой входной границе и не пишется в новое
       состояние.
-- [ ] Неоднозначная legacy-форма отклоняется.
-- [ ] Historical receipts и continuation policies остаются рабочими.
+- [x] Неоднозначности нет: замена разделителя инъективна, а имя вне реестра
+      отклоняется.
+- [ ] Historical receipts и continuation policies подтверждены тестами CI.

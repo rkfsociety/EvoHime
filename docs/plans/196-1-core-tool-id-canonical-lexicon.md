@@ -18,17 +18,20 @@
    вызовы в `providers/literouter.rs` и `providers/openai_responses.rs`.
    Заменить тест замены точки тестом тождества: имя в wire-запросе равно
    `manifest.tool_id`.
-5. Удалить `canonical_tool_call_name` и вызов в
-   `core_agent_execution.rs`; на этом этапе точные имена совпадают, поэтому
-   резолв не нужен. Появление legacy-входа обрабатывает этап 2.
+5. Заменить `canonical_tool_call_name` узким
+   `adaptive_tool_catalog::resolve_tool_call_name`: канонический id
+   возвращается как есть, точечная форма принимается только если тот же id с
+   `_` есть в активном loadout, всё остальное — `None`.
 6. Исправить эвристики, выводившие смысл из точки, — не механической заменой:
    - `context_budget.rs`: `capability = name.split('.').next()` и маркеры
-     `MANDATORY_CAPABILITY_MARKERS`/`MUTATION_MARKERS`;
-   - `registry.rs`: `starts_with("utility.")` / `starts_with("workflow.")`;
+     `MANDATORY_CAPABILITY_MARKERS`/`MUTATION_MARKERS` → `tool_namespace`;
+   - `registry.rs`: `starts_with("utility.")` / `starts_with("workflow.")` /
+     `starts_with("browser.")` → `tool_namespace`;
    - `trace_diagnostics.rs`: единственная точка, где уже принимались обе формы;
-   - `conversation_event_log.rs`: категории по префиксам;
-   - `legacy_parser.rs`: `!name.starts_with("git.")`;
+   - `conversation_event_log.rs`: категории по префиксам → namespace;
+   - `legacy_parser.rs`: `!name.starts_with("git.")` → namespace;
    - `ipc_bridge_ambient_transport.rs`: сравнение `capability_ref` с `shell`;
+   - `core_agent_execution.rs`: `call.name.starts_with("workflow.")` → namespace;
    - `core_agent.rs`: синтетическое `"shell_execute: {cmd}"`;
    - renderer `chat-summary.ts`, `tool-names.ts`.
 7. Обновить in-crate тесты, где id — литерал: `core_tests.rs`,

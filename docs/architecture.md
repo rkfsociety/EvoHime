@@ -1939,11 +1939,22 @@ revision/registry/policy/grant/query/selector/limit и инвалидирует�
 `model.context` event — единственная client projection; Electron panel не имеет
 доступа к Core, storage или full schemas.
 
-Имена инструментов Core остаются в dotted-форме (`git_status`), а провайдеру
-уходит `git_status`: `provider_function_name` в
-`crates/model-gateway/src/tools.rs` заменяет точки, а
-`adaptive_tool_catalog::canonical_tool_call_name` возвращает id только из
-активного loadout, поэтому обратная подстановка не расширяет authority.
+Имена инструментов Core и имя функции в provider-запросе — один и тот же id:
+`filesystem_read`, `git_status`. Провайдерские ограничения
+(`^[a-zA-Z0-9_-]+$` у OpenAI и DeepSeek) выполняются самим форматом id, поэтому
+шага преобразования имён больше нет. `wire_tools` в
+`crates/model-gateway/src/providers/literouter.rs` снимает только Core-owned
+`manifest_hash` и schema-ключи, которые не принимает upstream; имя функции он
+не трогает. Обратный резолв `adaptive_tool_catalog::resolve_tool_call_name`
+остаётся только для исторической точечной формы из старых prompt-кэшей и
+работает лишь внутри активного loadout.
+
+Легаси-совместимость держится на входных границах, а не на подмене перед
+отправкой: `ToolRegistry::resolve_tool_id` принимает `git.diff` для durable
+записей (receipts, continuation gates, старые IPC-клиенты),
+`canonical_tool_id` нормализует списки в сохранённых capability/skill/profile
+пакетах, а новое состояние пишется только в канонической форме.
+
 Дедупликация повторов (`recovery::RecentToolCalls`) удаляет повтор
 мутирующего вызова в окне шести сигнатур; успешная правка или коммит сбрасывают
 это окно для read-only инструментов (`git_status`, `git_diff`,

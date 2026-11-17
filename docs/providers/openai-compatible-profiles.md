@@ -31,11 +31,16 @@ only the `custom` entry accepts a user-supplied HTTPS or loopback URL.
 | Rout | `https://api.rout.my/v1` |
 | AnyModel | `https://anymodel.org/v1` |
 
-Core tool ids contain dots (`filesystem_read`). OpenAI-compatible endpoints
-accept only `[a-zA-Z0-9_-]` in a function name, so EvoHime sends
-`filesystem_read` and maps the returned function name back to the canonical
-tool id. Core-only metadata such as the manifest hash is stripped from the
-request.
+Core tool ids are provider-safe by construction: `filesystem_read`,
+`git_status`. The declared function name is sent unchanged, so a returned
+tool call needs no reverse mapping and the same spelling appears in the prompt,
+the request, the receipts, and the logs. Only Core-owned metadata such as the
+manifest hash is stripped from the request.
+
+Durable records written before the rename still carry the dotted spelling
+(`filesystem.read`). Those are accepted on input boundaries
+(`ToolRegistry::resolve_tool_id`, `canonical_tool_id`) and never written to new
+state.
 
 ## DeepSeek
 

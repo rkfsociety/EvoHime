@@ -49,8 +49,8 @@ pub use kernel_host::{
 };
 /// Manifest validation, side effect, and origin contracts.
 pub use manifest::{
-    builtin_input_schema, ApprovalMode, ManifestError, SideEffectClass, ToolManifest, ToolOrigin,
-    MANIFEST_KIND,
+    builtin_input_schema, canonical_tool_id, tool_namespace, ApprovalMode, ManifestError,
+    SideEffectClass, ToolManifest, ToolOrigin, MANIFEST_KIND,
 };
 /// Registry, tool context, preflight, and result contracts.
 pub use registry::{

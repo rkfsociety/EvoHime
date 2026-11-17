@@ -32,8 +32,27 @@ pub(crate) const LEGACY_TOOL_NAMES: &[&str] = &[
     "http_fetch",
 ];
 
+/// Принимает и канонический id, и историческую форму с точками.
+///
+/// Модель могла напечатать вызов по старой памяти, а сохранённый ответ —
+/// хранить точечное имя. Разделитель нормализуется до проверки по списку,
+/// поэтому legacy-вызов не теряется и не расширяет набор инструментов.
+fn canonical_tool_name(name: &str) -> Option<&'static str> {
+    if let Some(canonical) = LEGACY_TOOL_NAMES
+        .iter()
+        .find(|candidate| **candidate == name)
+    {
+        return Some(*canonical);
+    }
+    let rewritten = name.replace('.', "_");
+    LEGACY_TOOL_NAMES
+        .iter()
+        .find(|candidate| **candidate == rewritten)
+        .copied()
+}
+
 fn is_supported_tool_name(name: &str) -> bool {
-    LEGACY_TOOL_NAMES.contains(&name)
+    canonical_tool_name(name).is_some()
 }
 
 fn xml_unescape(value: &str) -> String {
@@ -107,19 +126,18 @@ pub(crate) fn parse_legacy_function_calls(content: &str, iteration: usize) -> Ve
                 else {
                     continue;
                 };
-                if !is_supported_tool_name(name) {
-                    continue;
+                if let Some(canonical) = canonical_tool_name(name) {
+                    let arguments = item
+                        .get("arguments")
+                        .or_else(|| item.get("parameters"))
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    calls.push(NativeToolCall {
+                        id: format!("legacy-json-{iteration}-{}", calls.len()),
+                        name: canonical.to_string(),
+                        arguments: arguments.to_string(),
+                    });
                 }
-                let arguments = item
-                    .get("arguments")
-                    .or_else(|| item.get("parameters"))
-                    .cloned()
-                    .unwrap_or_else(|| serde_json::json!({}));
-                calls.push(NativeToolCall {
-                    id: format!("legacy-json-{iteration}-{}", calls.len()),
-                    name: name.to_string(),
-                    arguments: arguments.to_string(),
-                });
             }
         }
         json_cursor = end + "</function_calls>".len();
@@ -136,7 +154,7 @@ pub(crate) fn parse_legacy_function_calls(content: &str, iteration: usize) -> Ve
             cursor = tag_end + 1;
             continue;
         };
-        let supported = is_supported_tool_name(&name);
+        let supported = canonical_tool_name(&name);
         let body_start = tag_end + 1;
         let Some(body_end_relative) = content[body_start..].find("</invoke>") else {
             break;
@@ -167,10 +185,10 @@ pub(crate) fn parse_legacy_function_calls(content: &str, iteration: usize) -> Ve
             );
             parameter_cursor = value_end + "</parameter>".len();
         }
-        if supported {
+        if let Some(canonical) = supported {
             calls.push(NativeToolCall {
                 id: format!("legacy-{iteration}-{}", calls.len()),
-                name,
+                name: canonical.to_string(),
                 arguments: serde_json::Value::Object(arguments).to_string(),
             });
         }
@@ -304,10 +322,11 @@ pub(crate) fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<
 }
 
 pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
-    let name = LEGACY_TOOL_NAMES
-        .iter()
-        .find(|candidate| content.lines().any(|line| line.trim() == **candidate))
-        .copied()?;
+    // Строка целиком — имя инструмента. Принимается и каноническая форма, и
+    // историческая с точками: модель могла напечатать старое имя по памяти.
+    let name = content
+        .lines()
+        .find_map(|line| canonical_tool_name(line.trim()))?;
     let argument_keys = [
         "path",
         "query",
@@ -370,7 +389,7 @@ pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<N
         parsed_arguments.insert(key.to_string(), json_value);
     }
     if parsed_arguments.is_empty()
-        && !name.starts_with("git.")
+        && evohime_tool_runtime::tool_namespace(&name) != "git"
         && !matches!(name, "browser_session_read" | "browser_session_close")
     {
         return None;

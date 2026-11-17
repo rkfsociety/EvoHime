@@ -399,17 +399,13 @@ fn tool_category(value: &serde_json::Value) -> &'static str {
         .get("tool_name")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    if tool.starts_with("browser.") {
-        "browser"
-    } else if tool.starts_with("filesystem.") || tool.starts_with("git.") {
-        "file"
-    } else if tool.starts_with("shell.")
-        || tool.starts_with("process.")
-        || tool.starts_with("terminal.")
-    {
-        "command"
-    } else {
-        "tool"
+    // Namespace, а не префикс с точкой: событие в журнале могло быть записано
+    // до переименования и хранит старую форму.
+    match evohime_tool_runtime::tool_namespace(tool) {
+        "browser" => "browser",
+        "filesystem" | "git" => "file",
+        "shell" | "process" | "terminal" => "command",
+        _ => "tool",
     }
 }
 

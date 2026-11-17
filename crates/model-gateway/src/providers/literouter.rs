@@ -7,9 +7,7 @@ use crate::retry::{
     classify_rate_limit, compute_backoff, is_retryable_status, parse_rate_limit_delay,
     parse_retry_after_seconds, read_bounded_rate_limit_body, RateLimitClass, RetryPolicy,
 };
-use crate::tools::{
-    provider_function_name, ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec,
-};
+use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -348,19 +346,18 @@ fn cloudflare_typed_error_code(base_url: &str, body: &str) -> Option<u64> {
     }
 }
 
-/// Rewrites Core tool declarations into the OpenAI-compatible wire shape.
+/// Adapts Core tool declarations to the OpenAI-compatible wire shape.
 ///
-/// Function names must match `^[a-zA-Z0-9_-]+$`; OpenAI and DeepSeek reject
-/// dotted Core ids such as `filesystem_read` with HTTP 400. The manifest hash
-/// is Core-owned metadata and is not part of the provider schema. The request
-/// may be translated to Gemini, whose function declarations reject the common
-/// `additionalProperties` keyword.
+/// The function name is the Core tool id and is sent unchanged: ids already
+/// match `^[a-z][a-z0-9_]*$`, which is what OpenAI and DeepSeek require. Only
+/// Core-owned metadata and schema keywords the upstream rejects are removed.
+/// The request may be translated to Gemini, whose function declarations reject
+/// the common `additionalProperties` keyword.
 fn wire_tools(specs: &[ToolSpec]) -> Vec<ToolSpec> {
     specs
         .iter()
         .cloned()
         .map(|mut spec| {
-            spec.function.name = provider_function_name(&spec.function.name);
             spec.function.manifest_hash = None;
             strip_gemini_unsupported_schema_fields(&mut spec.function.parameters);
             spec
@@ -958,7 +955,7 @@ mod tests {
     }
 
     #[test]
-    fn wire_tools_use_provider_safe_function_names() {
+    fn wire_tools_keep_the_core_tool_id_and_strip_provider_unsafe_metadata() {
         let mut spec = ToolSpec::function(
             "filesystem_read",
             "Read a file",
@@ -968,6 +965,8 @@ mod tests {
 
         let wire = wire_tools(&[spec]);
 
+        // The wire name equals the Core id: no separator rewriting, so a
+        // provider-returned call needs no reverse mapping.
         assert_eq!(wire[0].function.name, "filesystem_read");
         assert!(wire[0].function.manifest_hash.is_none());
         assert!(wire[0]

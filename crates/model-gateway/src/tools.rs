@@ -33,16 +33,6 @@ impl ToolSpec {
     }
 }
 
-/// Rewrites a Core tool id into a provider-safe function name.
-///
-/// OpenAI-compatible endpoints accept only `[a-zA-Z0-9_-]` in function names,
-/// while Core ids use dots (`filesystem_read`). Core resolves the sanitized
-/// name back to the canonical id, so declarations and tool-call results stay
-/// paired without leaking the dotted id into a provider request.
-pub fn provider_function_name(name: &str) -> String {
-    name.replace('.', "_")
-}
-
 /// Function name and parameter schema sent to a compatible provider.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FunctionSpec {
@@ -144,13 +134,19 @@ pub enum ChatStreamItem {
 
 #[cfg(test)]
 mod tests {
-    use super::provider_function_name;
+    use super::ToolSpec;
 
     #[test]
-    fn provider_function_name_replaces_only_the_dot_separator() {
-        assert_eq!(provider_function_name("filesystem_read"), "filesystem_read");
-        assert_eq!(provider_function_name("goal_verify"), "goal_verify");
-        assert_eq!(provider_function_name("git-status"), "git-status");
-        assert_eq!(provider_function_name("plain"), "plain");
+    fn declared_function_name_is_the_core_tool_id() {
+        // The wire name is the canonical Core id: no dots, no rewriting step,
+        // and no reverse lookup when the model answers. Providers that accept
+        // only `[a-zA-Z0-9_-]` get an id that already satisfies them.
+        let spec = ToolSpec::function(
+            "filesystem_read",
+            "Read a file",
+            serde_json::json!({"type": "object", "properties": {}}),
+        );
+        assert_eq!(spec.function.name, "filesystem_read");
+        assert!(!spec.function.name.contains('.'));
     }
 }

@@ -34,7 +34,7 @@ pub(crate) fn classify_tool_path(
     arguments: &str,
     workspace_root: &Path,
 ) -> Option<PathTraceMetadata> {
-    if !tool_name.starts_with("filesystem.") && !tool_name.starts_with("filesystem_") {
+    if evohime_tool_runtime::tool_namespace(tool_name) != "filesystem" {
         return None;
     }
     let value = serde_json::from_str::<Value>(arguments).ok()?;

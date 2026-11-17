@@ -19,13 +19,16 @@
    `required_tools`: старый shell-клиент присылает точки, Core резолвит их
    этапом 2. Изменение требует согласованной правки обеих сторон и
    `npm run check:protocol`.
-5. UI-словарь: `tool-names.ts` (21 запись) и `chat-summary.ts` получают
-   канонические id и сохраняют legacy-подписи для старых событий, чтобы
-   история чатов не показывала сырой id.
-6. Approval binding: `canonical_call_hash(tool_name, scope, input)` хеширует
+5. UI-словарь: `tool-names.ts` (24 записи) и `chat-summary.ts` получают
+   канонические id и нормализуют разделитель при чтении, поэтому история чатов
+   с точечными именами показывает подпись, а не сырой id.
+6. Имена IPC-событий (`git.status`, `git.diff`, `memory.search`) и команд
+   Electron (`workflow.start`, `workflow.cancel`) не переименовываются: это
+   отдельный лексикон, и смена сломала бы протокол и историю событий.
+7. Approval binding: `canonical_call_hash(tool_name, scope, input)` хеширует
    имя, поэтому одобрение, выданное до смены словаря, не совпадает — это
-   допустимо, потому что approvals краткоживущие; явно указать это в
-   комментарии и покрыть тестом, что повторное одобрение выдаётся на новое имя.
+   допустимо, потому что approvals краткоживущие; повторное одобрение
+   запрашивается на канонический id.
 
 ## Зависимости
 ### Блокирующие
@@ -43,10 +46,10 @@ Electron renderer tests.
 
 ## Verification
 - Receipt replay: цепочка, записанная до переименования, проходит сверку.
-- Test: `sampled_read_only` одинаково трактует `filesystem_read` и
-  `filesystem_read`.
+- Test: `sampled_read_only` считает read-only только канонический id новой
+  записи; историческая строка сохраняет собственное значение.
 - `npm run check:protocol` и Electron vitest-набор зелёные.
-- Test: история чата с событием `git_status` отображается корректной подписью.
+- Test: история чата с событием `git.status` отображается корректной подписью.
 
 ## Release evidence
 Результаты `check:protocol`, Electron test summary, replay отчёт по

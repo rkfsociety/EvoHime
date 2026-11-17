@@ -1361,7 +1361,7 @@ impl ToolAgent {
             let mut tool_calls = result.tool_calls.clone();
             for call in &mut tool_calls {
                 if let Some(canonical_name) =
-                    adaptive_tool_catalog::canonical_tool_call_name(&call.name, &tool_names)
+                    adaptive_tool_catalog::resolve_tool_call_name(&call.name, &tool_names)
                 {
                     call.name = canonical_name;
                 }
@@ -1924,7 +1924,7 @@ impl ToolAgent {
                             ],
                         );
                     }
-                    match if call.name.starts_with("workflow.") {
+                    match if evohime_tool_runtime::tool_namespace(&call.name) == "workflow" {
                         tokio::select! {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                             result = self.execute_workflow_tool(&context, &task_id, &call.name, input) => result,

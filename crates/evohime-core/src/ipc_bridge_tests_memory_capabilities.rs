@@ -179,7 +179,7 @@ async fn memory_create_list_search_archive_forget_round_trip_against_real_storag
         }),
     )
     .await;
-    assert_eq!(search.event_type, "memory_search");
+    assert_eq!(search.event_type, "memory.search");
     let searched: serde_json::Value =
         serde_json::from_slice(&search.payload).expect("search payload is valid json");
     let hits = searched["records"].as_array().expect("records array");

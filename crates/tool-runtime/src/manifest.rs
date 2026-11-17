@@ -7,6 +7,30 @@ use thiserror::Error;
 /// Discriminator identifying the supported tool manifest schema.
 pub const MANIFEST_KIND: &str = "tool/manifest/v1";
 
+/// Rewrites a historical dotted tool id to its canonical underscore form.
+///
+/// The rewrite is lexical: it does not check whether the id is registered.
+/// Callers that need a real tool must resolve the result against
+/// [`ToolRegistry`], which fails closed for unknown names.
+pub fn canonical_tool_id(name: &str) -> String {
+    if name.contains('.') {
+        name.replace('.', "_")
+    } else {
+        name.to_owned()
+    }
+}
+
+/// Returns the namespace segment of a tool id.
+///
+/// Builtin ids are `<namespace>_<action>[_<detail>]` (`filesystem_read`), and
+/// historical records may still carry the dotted spelling (`filesystem.read`).
+/// Both forms split on the same boundary, so grouping and filtering by tool
+/// family never depends on the separator that happens to be in the record.
+pub fn tool_namespace(tool_id: &str) -> &str {
+    let end = tool_id.find(['_', '.']).unwrap_or(tool_id.len());
+    tool_id.get(..end).unwrap_or(tool_id)
+}
+
 /// Canonical input-schema catalog for builtin tools.  The registry and Core
 /// both consume this function; tool implementations remain responsible for
 /// semantic validation after the structural contract has been checked.
@@ -192,7 +216,7 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"server_id":string("Core-owned MCP server identity"),"tool_name":string("Allowlisted MCP tool"),"params":{},"timeout_ms":integer()}),
             &["server_id", "tool_name"],
         ),
-        "browser_open" | "browser_session_navigate" | "http_fetch" => object(
+        "browser_open" | "http_fetch" => object(
             serde_json::json!({"url":string("URL resolved by policy"),"max_chars":integer(),"timeout_ms":integer()}),
             &["url"],
         ),
@@ -544,6 +568,25 @@ mod tests {
                 manifest.tool_id
             );
         }
+    }
+
+    #[test]
+    fn canonical_tool_id_rewrites_only_the_historical_separator() {
+        assert_eq!(canonical_tool_id("git.status"), "git_status");
+        assert_eq!(canonical_tool_id("git.worktree.create"), "git_worktree_create");
+        assert_eq!(canonical_tool_id("git_status"), "git_status");
+        assert_eq!(canonical_tool_id("plain"), "plain");
+    }
+
+    #[test]
+    fn tool_namespace_splits_both_canonical_and_historical_ids() {
+        assert_eq!(tool_namespace("filesystem_read"), "filesystem");
+        assert_eq!(tool_namespace("filesystem.read"), "filesystem");
+        assert_eq!(tool_namespace("git_worktree_create"), "git");
+        assert_eq!(tool_namespace("git.worktree.create"), "git");
+        assert_eq!(tool_namespace("shell_execute"), "shell");
+        // An id without a separator is its own namespace.
+        assert_eq!(tool_namespace("plain"), "plain");
     }
 
     #[test]

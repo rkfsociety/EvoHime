@@ -20,6 +20,31 @@ where
 }
 
 #[test]
+fn resolve_tool_id_accepts_the_historical_dotted_spelling_only() {
+    let registry = ToolRegistry::bootstrap();
+
+    assert_eq!(registry.resolve_tool_id("git.status"), Some("git_status"));
+    assert_eq!(registry.resolve_tool_id("filesystem.read"), Some("filesystem_read"));
+    assert_eq!(registry.resolve_tool_id("git_status"), Some("git_status"));
+
+    // No alias is invented: an unregistered name stays unknown, and a dotted
+    // name that does not map onto a registered id is rejected.
+    assert_eq!(registry.resolve_tool_id("git.unknown"), None);
+    assert_eq!(registry.resolve_tool_id("shell.run"), None);
+    assert_eq!(registry.resolve_tool_id("plain"), None);
+}
+
+#[test]
+fn legacy_dotted_name_resolves_to_the_canonical_manifest() {
+    let registry = ToolRegistry::bootstrap();
+    let manifest = registry
+        .manifest_for("git.diff")
+        .expect("historical dotted id still resolves");
+    assert_eq!(manifest.tool_id, "git_diff");
+    assert!(registry.manifest_for("git.diff.extra").is_none());
+}
+
+#[test]
 fn bootstrap_registers_filesystem_read() {
     let registry = ToolRegistry::bootstrap();
     let tools = registry.list();

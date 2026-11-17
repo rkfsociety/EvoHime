@@ -932,8 +932,10 @@ impl IpcBridge {
                     self.tools
                         .as_ref()
                         .is_some_and(|tools| tools.manifest_for(&gate.capability_ref).is_some())
-                        && gate.capability_ref != "shell"
-                        && !gate.capability_ref.starts_with("shell.")
+                        // A continuation gate may name one concrete tool, never
+                        // blanket shell authority. The namespace check rejects
+                        // `shell`, `shell.execute`, and `shell_execute` alike.
+                        && evohime_tool_runtime::tool_namespace(&gate.capability_ref) != "shell"
                 }
                 crate::continuation::GateKind::Workflow => {
                     crate::workflow_templates::template(&gate.capability_ref).is_some()

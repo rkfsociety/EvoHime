@@ -10,9 +10,7 @@ use crate::providers::{
     ProviderKind, TokenStream,
 };
 use crate::retry::{compute_backoff, is_retryable_status, RetryPolicy};
-use crate::tools::{
-    provider_function_name, ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec,
-};
+use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -277,7 +275,9 @@ fn response_input(message: &ChatMessage) -> Value {
 }
 
 fn response_tool(tool: &ToolSpec) -> Value {
-    json!({ "type": "function", "name": provider_function_name(&tool.function.name), "description": tool.function.description, "parameters": tool.function.parameters, "strict": tool.function.strict.unwrap_or(false) })
+    // The declared name is already the canonical Core id, so it goes to the
+    // provider unchanged and a returned call needs no reverse lookup.
+    json!({ "type": "function", "name": tool.function.name, "description": tool.function.description, "parameters": tool.function.parameters, "strict": tool.function.strict.unwrap_or(false) })
 }
 
 fn parse_stream_event(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {

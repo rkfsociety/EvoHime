@@ -92,8 +92,8 @@ describe('chat summary', () => {
   it('renders compact summary widget rows, git changes, context compression and shells', async () => {
     const user = userEvent.setup()
     const events: CoreEvent[] = [
-      makeEvent(10, 'git_status', '', { output: ' M src/App.tsx\n?? src/New.tsx', truncated: false }),
-      makeEvent(9, 'git_diff', '', { output: '+added line', structured: { path: 'src/App.tsx' }, truncated: false }),
+      makeEvent(10, 'git.status', '', { output: ' M src/App.tsx\n?? src/New.tsx', truncated: false }),
+      makeEvent(9, 'git.diff', '', { output: '+added line', structured: { path: 'src/App.tsx' }, truncated: false }),
       makeEvent(8, 'context.ledger', 'task-1', {
         entries: [{ id: 'e1', kind: 'pinned', summary: 'Архитектура панели', tokens: 500, pinned: true }]
       }),
