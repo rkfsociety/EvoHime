@@ -327,8 +327,21 @@ impl LiteRouterProvider {
         }
     }
 
+    /// Whether a rolling cap is actually configured for this model.
+    fn tracks_model_limits(&self, model: &str) -> bool {
+        self.model_rate_limits.get(model).is_some_and(|limits| {
+            limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+        })
+    }
+
     async fn wait_for_request_slot(&self, model: &str) {
         let mut gate = self.request_gate.lock().await;
+        if !self.tracks_model_limits(model) {
+            // Timestamps for a model without an active cap are not a budget:
+            // dropping them keeps a disabled or removed limit from leaving
+            // stale rolling history behind.
+            gate.model_requests.remove(model);
+        }
         loop {
             let mut delay = self.pacing.interval_for_model(model).and_then(|base| {
                 let interval = gate.min_interval.map_or(base, |learned| learned.max(base));
@@ -379,9 +392,7 @@ impl LiteRouterProvider {
             }
             let now = Instant::now();
             gate.last_request = Some(now);
-            if self.model_rate_limits.get(model).is_some_and(|limits| {
-                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-            }) {
+            if self.tracks_model_limits(model) {
                 gate.model_requests
                     .entry(model.to_owned())
                     .or_default()

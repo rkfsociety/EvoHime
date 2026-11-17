@@ -176,6 +176,17 @@ impl RetryPolicy {
     }
 }
 
+impl Default for RetryPolicy {
+    /// Documented retry defaults, independent of the current environment.
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            base_delay: Duration::from_millis(250),
+            max_delay: Duration::from_millis(5_000),
+        }
+    }
+}
+
 /// Reports whether an HTTP status is eligible for an initial-request retry.
 pub fn is_retryable_status(status: StatusCode) -> bool {
     matches!(status.as_u16(), 408 | 429 | 500 | 502 | 503 | 504)
