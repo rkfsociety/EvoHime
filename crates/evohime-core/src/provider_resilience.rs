@@ -93,7 +93,7 @@ pub fn handle_provider_error(
 pub fn default_tool_specs() -> Vec<evohime_model_gateway::ToolSpec> {
     vec![
         evohime_model_gateway::ToolSpec::function(
-            "filesystem.list",
+            "filesystem_list",
             "List directory contents",
             serde_json::json!({
                 "type": "object",
@@ -101,7 +101,7 @@ pub fn default_tool_specs() -> Vec<evohime_model_gateway::ToolSpec> {
             }),
         ),
         evohime_model_gateway::ToolSpec::function(
-            "filesystem.read",
+            "filesystem_read",
             "Read file contents",
             serde_json::json!({
                 "type": "object",
@@ -110,7 +110,7 @@ pub fn default_tool_specs() -> Vec<evohime_model_gateway::ToolSpec> {
             }),
         ),
         evohime_model_gateway::ToolSpec::function(
-            "filesystem.search",
+            "filesystem_search",
             "Search file contents",
             serde_json::json!({
                 "type": "object",
@@ -129,15 +129,15 @@ pub fn filter_readonly_tools(
     tools: &[evohime_model_gateway::ToolSpec],
 ) -> Vec<evohime_model_gateway::ToolSpec> {
     let readonly_names = [
-        "filesystem.list",
-        "filesystem.read",
-        "filesystem.search",
-        "git.status",
-        "git.diff",
-        "git.log",
-        "git.show",
-        "git.blame",
-        "git.changed_files",
+        "filesystem_list",
+        "filesystem_read",
+        "filesystem_search",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_show",
+        "git_blame",
+        "git_changed_files",
     ];
     tools
         .iter()
@@ -192,33 +192,33 @@ mod tests {
     #[test]
     fn default_specs_include_readonly_tools() {
         let specs = default_tool_specs();
-        assert!(specs.iter().any(|s| s.function.name == "filesystem.list"));
-        assert!(specs.iter().any(|s| s.function.name == "filesystem.read"));
-        assert!(specs.iter().any(|s| s.function.name == "filesystem.search"));
+        assert!(specs.iter().any(|s| s.function.name == "filesystem_list"));
+        assert!(specs.iter().any(|s| s.function.name == "filesystem_read"));
+        assert!(specs.iter().any(|s| s.function.name == "filesystem_search"));
     }
 
     #[test]
     fn readonly_filter_removes_mutation_tools() {
         let all_specs = vec![
             evohime_model_gateway::ToolSpec::function(
-                "filesystem.list",
+                "filesystem_list",
                 "List",
                 serde_json::json!({}),
             ),
             evohime_model_gateway::ToolSpec::function(
-                "filesystem.write",
+                "filesystem_write",
                 "Write",
                 serde_json::json!({}),
             ),
             evohime_model_gateway::ToolSpec::function(
-                "shell.execute",
+                "shell_execute",
                 "Execute",
                 serde_json::json!({}),
             ),
         ];
         let readonly = filter_readonly_tools(&all_specs);
         assert_eq!(readonly.len(), 1);
-        assert_eq!(readonly[0].function.name, "filesystem.list");
+        assert_eq!(readonly[0].function.name, "filesystem_list");
     }
 
     #[test]
@@ -315,26 +315,26 @@ mod tests {
     fn readonly_filter_preserves_read_only_tools_in_order() {
         let all_specs = vec![
             evohime_model_gateway::ToolSpec::function(
-                "filesystem.search",
+                "filesystem_search",
                 "Search",
                 serde_json::json!({}),
             ),
             evohime_model_gateway::ToolSpec::function(
-                "filesystem.read",
+                "filesystem_read",
                 "Read",
                 serde_json::json!({}),
             ),
             evohime_model_gateway::ToolSpec::function(
-                "filesystem.list",
+                "filesystem_list",
                 "List",
                 serde_json::json!({}),
             ),
         ];
         let readonly = filter_readonly_tools(&all_specs);
         assert_eq!(readonly.len(), 3);
-        assert_eq!(readonly[0].function.name, "filesystem.search");
-        assert_eq!(readonly[1].function.name, "filesystem.read");
-        assert_eq!(readonly[2].function.name, "filesystem.list");
+        assert_eq!(readonly[0].function.name, "filesystem_search");
+        assert_eq!(readonly[1].function.name, "filesystem_read");
+        assert_eq!(readonly[2].function.name, "filesystem_list");
     }
 
     #[test]

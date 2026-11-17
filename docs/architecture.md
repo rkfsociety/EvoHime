@@ -303,7 +303,7 @@ dynamic import в контракте отсутствуют как поняти�
 Core-owned подграфы. `WorkflowRegistry::validate_bindings` отклоняет неизвестный
 блок, несовпадение версии или схемы блока, неизвестный инструмент или сервер,
 инструмент вне allowlist сервера, недоступный транспорт (`transport_unavailable`
-— поддержан только remote JSON-RPC поверх существующего Core tool `mcp.call`),
+— поддержан только remote JSON-RPC поверх существующего Core tool `mcp_call`),
 host вне `EVOHIME_MCP_ALLOWED_HOSTS`, провайдера сверх зарегистрированного
 бюджета и любую попытку child получить grants, бюджет или контекст шире
 родительских. `NodeType::Subgraph` — не nested child delegation: Core
@@ -319,8 +319,8 @@ Core: `repository-research`, `plan-implement-review`,
 `once`/`interval`, а шаблон с обязательным approval помечен `unavailable`.
 
 Отдельного раздела составных задач в Electron-навигации нет. Через обычный чат
-Core предоставляет агенту закрытые инструменты `workflow.catalog`,
-`workflow.start`, `workflow.status` и `workflow.cancel`; registry adapter
+Core предоставляет агенту закрытые инструменты `workflow_catalog`,
+`workflow_start`, `workflow_status` и `workflow_cancel`; registry adapter
 отказывает вне Core agent runtime. `child`-узлы исполняет Core-owned
 `child_executor::RegisteredChildExecutor`: он выбирает только зарегистрированный
 профиль роли (persisted Agent Role Profile или Core-owned built-in), повторно
@@ -847,9 +847,9 @@ audit log (`crate::audit::contains_secret`), а не всегда пустой �
 
 **Compression и pruning.** `duplicate` — совпадение `content_hash`, `superseded` — новая ревизия того же ключа при другом содержимом, `expired` — истёкший TTL или retention. Иерархия прав: safety и approval выше system instructions, те выше явных ограничений пользователя, далее confirmed facts, history и данные инструментов, ниже всего recovered и unverified. Recency и trust решают исход только внутри одного уровня. Summarizer — отдельный Core-вызов того же model gateway с собственным `summary_budget` и входным лимитом на prompt, без инструментов и без повторов; недоступность, превышение бюджета или невалидный результат дают deterministic fallback без каскадного повтора. Исходные item остаются source of truth, а summary хранит связь `summary_id -> source_ids`.
 
-**Tool loadout.** Инструменты делятся на обязательные, read-only и mutation. Deterministic intent router нормализует prompt текущей задачи и активные `open_questions`, сопоставляет их с versioned таблицей capability keywords и применяет deny-правила. Явное mutation-action-слово (неотрицаемый keyword, которого нет в read-only правилах) важнее числа совпадений: запрос вида «найди, проверь и добавь переключатель» получает mutation-loadout, иначе модель видит только inspect-набор, а delivery gate требует отсутствующий `filesystem.write`. Без такого слова при конфликте правил выбирается более безопасный read-only результат, при неопределённом intent — read-only fallback loadout. Отрицание («не добавляй») распознаётся общим предикатом `contains_unnegated_keyword`, который используют и intent router, и классификатор требований поставки. История диалога не участвует в классификации: intent берётся только из prompt текущего запуска, иначе old read-only обмен понижал бы loadout нового mutation-запроса. Обязательные инструменты входят всегда и расходуют отдельный `mandatory_schema_reserve`, остальные ограничены `tool_schema_reserve`. Adaptive catalog добавляет к лексическому top-N уже авторизованные инструменты, без которых требование поставки невыполнимо (`filesystem.write`/`filesystem.patch`, `shell.execute`, `git.commit`); добавление никогда не расширяет authority, потому что берётся только из permission preflight. Permission preflight — источник истины по mutation: когда write-инструменты разрешены без approval (режим полного доступа), шаг получает их независимо от формулировки prompt (`mutation_authorized`), поэтому полный доступ в композере не ограничивает модель по словам запроса; каталог дополнительно сохраняет рабочий набор агента (filesystem list/read/search/write/patch/mkdir/stat, shell.execute, git status/diff/commit). В режиме подтверждения write-инструменты предлагаются при явном mutation-action-слове, иначе задача остаётся исследовательской (`task.delivery_mutation_skipped`). Требования, которые выданная сессия не может выполнить, не приводят к отказу: Core снимает их и пишет bounded trace `task.delivery_requirements_degraded`, а модель отвечает тем, что реально может сделать. Проверка без изменения и без явной команды тестов считается осмотром и не образует обязательство прогонять сборку; сама проверка распознаётся по фактической команде (cargo, dotnet, ctest, gradle, maven, npm/pnpm/yarn, pytest, go, `git diff --check`), а не по тексту prompt. Три одинаковых gate-запроса подряд означают, что модель не продвигается: Core перестаёт требовать продолжение и отдаёт пользователю её ответ, фиксируя невыполненные требования в `task.delivery_gate.stalled`. Permission и approval semantics выбранного инструмента остаются видимыми, а вызов вне loadout Core отклоняет до эффекта с bounded diagnostic `loadout_miss`: deny/intent-отказ остаётся policy denial, а вытеснение по `tool_schema_reserve` даёт исправимый `InvalidInput` (`tool_omitted_by_budget`). Системный prompt перечисляет и требует только инструменты из набора текущей сессии; вызов инструмента, которого в этом наборе нет, даёт исправимый `InvalidInput` со списком доступных инструментов (`tool.session_miss`), а не отказ политики и не остановку задачи. Код `tool_iteration_limit` попадает в redacted `task.failed` projection и показывается в UI вместо общего `task_failed`.
+**Tool loadout.** Инструменты делятся на обязательные, read-only и mutation. Deterministic intent router нормализует prompt текущей задачи и активные `open_questions`, сопоставляет их с versioned таблицей capability keywords и применяет deny-правила. Явное mutation-action-слово (неотрицаемый keyword, которого нет в read-only правилах) важнее числа совпадений: запрос вида «найди, проверь и добавь переключатель» получает mutation-loadout, иначе модель видит только inspect-набор, а delivery gate требует отсутствующий `filesystem_write`. Без такого слова при конфликте правил выбирается более безопасный read-only результат, при неопределённом intent — read-only fallback loadout. Отрицание («не добавляй») распознаётся общим предикатом `contains_unnegated_keyword`, который используют и intent router, и классификатор требований поставки. История диалога не участвует в классификации: intent берётся только из prompt текущего запуска, иначе old read-only обмен понижал бы loadout нового mutation-запроса. Обязательные инструменты входят всегда и расходуют отдельный `mandatory_schema_reserve`, остальные ограничены `tool_schema_reserve`. Adaptive catalog добавляет к лексическому top-N уже авторизованные инструменты, без которых требование поставки невыполнимо (`filesystem_write`/`filesystem_patch`, `shell_execute`, `git_commit`); добавление никогда не расширяет authority, потому что берётся только из permission preflight. Permission preflight — источник истины по mutation: когда write-инструменты разрешены без approval (режим полного доступа), шаг получает их независимо от формулировки prompt (`mutation_authorized`), поэтому полный доступ в композере не ограничивает модель по словам запроса; каталог дополнительно сохраняет рабочий набор агента (filesystem list/read/search/write/patch/mkdir/stat, shell_execute, git status/diff/commit). В режиме подтверждения write-инструменты предлагаются при явном mutation-action-слове, иначе задача остаётся исследовательской (`task.delivery_mutation_skipped`). Требования, которые выданная сессия не может выполнить, не приводят к отказу: Core снимает их и пишет bounded trace `task.delivery_requirements_degraded`, а модель отвечает тем, что реально может сделать. Проверка без изменения и без явной команды тестов считается осмотром и не образует обязательство прогонять сборку; сама проверка распознаётся по фактической команде (cargo, dotnet, ctest, gradle, maven, npm/pnpm/yarn, pytest, go, `git diff --check`), а не по тексту prompt. Три одинаковых gate-запроса подряд означают, что модель не продвигается: Core перестаёт требовать продолжение и отдаёт пользователю её ответ, фиксируя невыполненные требования в `task.delivery_gate.stalled`. Permission и approval semantics выбранного инструмента остаются видимыми, а вызов вне loadout Core отклоняет до эффекта с bounded diagnostic `loadout_miss`: deny/intent-отказ остаётся policy denial, а вытеснение по `tool_schema_reserve` даёт исправимый `InvalidInput` (`tool_omitted_by_budget`). Системный prompt перечисляет и требует только инструменты из набора текущей сессии; вызов инструмента, которого в этом наборе нет, даёт исправимый `InvalidInput` со списком доступных инструментов (`tool.session_miss`), а не отказ политики и не остановку задачи. Код `tool_iteration_limit` попадает в redacted `task.failed` projection и показывается в UI вместо общего `task_failed`.
 
-**Гарантия завершения.** Сверх лимита tool-итераций цикл делает один дополнительный tool-free вызов: инструменты в него не передаются, модель обязана вернуть текст, а tool call, напечатанный даже без схем, не исполняется и фиксируется в `task.iteration_limit_tool_calls_ignored`. Поэтому лимит шагов больше не завершает задачу красным `task.failed` без итога. Для задачи с обязательным изменением Core дополнительно считает успешные шаги без правки и на 6-м, 12-м и 18-м шаге добавляет в историю bounded guidance с требованием перейти к `filesystem.patch` или `filesystem.write` (`task.delivery_mutation_nudge`); после трёх подсказок они прекращаются, чтобы не вытеснять контекст. `filesystem.patch` объявляет `expected_hash` обязательным в объявленной схеме и runtime, а catalog probe передаёт для него placeholder: без этого probe не проходил preflight, инструмент молча выпадал из набора модели, и правка существующих файлов становилась недоступной даже в полном доступе. Core подставляет хеш последнего чтения того же логического пути, если модель опустила поле.
+**Гарантия завершения.** Сверх лимита tool-итераций цикл делает один дополнительный tool-free вызов: инструменты в него не передаются, модель обязана вернуть текст, а tool call, напечатанный даже без схем, не исполняется и фиксируется в `task.iteration_limit_tool_calls_ignored`. Поэтому лимит шагов больше не завершает задачу красным `task.failed` без итога. Для задачи с обязательным изменением Core дополнительно считает успешные шаги без правки и на 6-м, 12-м и 18-м шаге добавляет в историю bounded guidance с требованием перейти к `filesystem_patch` или `filesystem_write` (`task.delivery_mutation_nudge`); после трёх подсказок они прекращаются, чтобы не вытеснять контекст. `filesystem_patch` объявляет `expected_hash` обязательным в объявленной схеме и runtime, а catalog probe передаёт для него placeholder: без этого probe не проходил preflight, инструмент молча выпадал из набора модели, и правка существующих файлов становилась недоступной даже в полном доступе. Core подставляет хеш последнего чтения того же логического пути, если модель опустила поле.
 
 **IPC и UI.** Событие `ModelContext` расширено additive-полем `context` с bounded projection: бюджет, ids выбранных item, причины сокращения, `context_ledger_hash`, compression summary, loadout и отказ сборки. Старый клиент игнорирует неизвестное поле, major bump не требуется. Команды `GetContextLedger`, `ListTaskScratchpad`, `ClearTaskScratchpad`, `SummarizeContextNow`, `PinContextItem` и `ReadContextArtifact` аддитивны; каждая mutation получает запись аудита и подчиняется rate limit, посчитанному по журналу и потому переживающему перезапуск Core. `SummarizeContextNow` действует только на текущую task-scoped сборку и не меняет долговременную память. `PinContextItem` повышает приоритет, но не гарантирует включение: при нехватке бюджета pinned item отбрасывается последним и с явной причиной. `ForgetMemory` каскадно удаляет производные заметки и task artifacts, сохраняя redacted факт удаления. UI не получает prompt, тело памяти, raw tool output и неограниченные списки ids.
 
@@ -978,7 +978,7 @@ fork request и metadata-only projection.
 - **Клик, а не микрофон.** По умолчанию услышанная команда становится карточкой в очереди `VoiceCommandRegistry` (в памяти, 5 минут жизни, не больше 8 штук, повтор заменяет карточку вместо второй). Открывает приложение клик. Автозапуск существует, но только как явный выбор в ambient-политике: поля `voice_commands` и `voice_commands_autorun`, по умолчанию «распознавать, но спрашивать». Пауза слушания и выключенные команды останавливают разбор целиком.
 - **Событие и заголовок врозь.** Шестое ambient-событие журнала — `ambient.voice_command` с полями `command_id`, `kind`, `app_id`, `command_state`. Ни фразы, ни её обрывка в нём нет: `app_id` — ключ каталога, то есть выбор Core из заранее известного списка. Человекочитаемый заголовок renderer получает командой `ListVoiceCommands` — тем же способом, каким читается текст карточки предложения.
 - **Две additive-команды.** `ListVoiceCommands` (127) и `ResolveVoiceCommand` (128); ответы — `ambient.voice_commands` и `ambient.voice_command_resolved`. Карточка снимается с очереди до запуска, поэтому двойной клик не открывает два окна: второй ответ — `not_found`. Голосовые поля `AmbientPolicy` объявлены `optional bool`: клиент, не знающий о них, их не шлёт, и Core подставляет сохранённое значение вместо того, чтобы выключить настройку молчанием.
-- **Инструменты `app.open` и `app.list`.** Тот же каталог доступен агенту из чата. Вход `app.open` — название, а не путь; разрешение — `shell_execute`, риск — `Medium` (произвольной командной строки, в отличие от `shell.execute`, здесь нет), превью подтверждения — `app_open`. `app.list` только читает каталог и классифицирован как `None`.
+- **Инструменты `app_open` и `app_list`.** Тот же каталог доступен агенту из чата. Вход `app_open` — название, а не путь; разрешение — `shell_execute`, риск — `Medium` (произвольной командной строки, в отличие от `shell_execute`, здесь нет), превью подтверждения — `app_open`. `app_list` только читает каталог и классифицирован как `None`.
 - **Открытое приложение переживает Core.** Запуск идёт с `CREATE_BREAKAWAY_FROM_JOB`, а job object супервизора получил `JOB_OBJECT_LIMIT_BREAKAWAY_OK`. Это не ослабление `KILL_ON_JOB_CLOSE`: `SILENT_BREAKAWAY` не выставлен, поэтому отвязывается только процесс, созданный с явным флагом, а дерево самого Core по-прежнему умирает вместе с ним. Если отвязка запрещена, запуск повторяется без флага — приложение всё равно откроется.
 
 - **Разрешения в UI.** `SafetyPanel` перечисляет разрешения по отдельности и переключает единственное, которое не подчиняется общему режиму, — `microphone_listen`; включение идёт той же командой `SetAmbientListening`, которая в ядре делает именованный вызов `set_mode(Permission::MicrophoneListen, …)`. Общий режим по-прежнему меняется в `PermissionModePicker`, и `set_all_modes` микрофон не трогает.
@@ -1217,7 +1217,7 @@ LRU-кэш с ключом из запроса, snapshot, поколения hea
 Каждый builtin/toolkit tool описывается versioned `tool/manifest/v1` в
 `crates/tool-runtime/src/manifest.rs`. Canonical hash манифеста прикрепляется
 к model loadout; input schema для registry, model и recovery берётся из
-единого `builtin_input_schema`, без таблицы схем в Core. `mcp.call` получает от
+единого `builtin_input_schema`, без таблицы схем в Core. `mcp_call` получает от
 модели только `server_id`, `tool_name` и `params`; endpoint разрешается Core
 `WorkflowRegistry` по allowlist сервера.
 
@@ -1567,10 +1567,10 @@ authority: Core владеет `AnalysisKernelSessionV1`, лимитами, obje
 ephemeral и не сериализуется. Лимиты включают lifetime/idle timeout, request
 rate и output budget; чувствительные inline markers fail-closed.
 
-### Declared agent surface: `analysis.run`
+### Declared agent surface: `analysis_run`
 
 Агент не получает доступ к `KernelRuntime` напрямую. Единственный путь —
-объявленный инструмент `analysis.run` в `crates/tool-runtime`, чья схема и
+объявленный инструмент `analysis_run` в `crates/tool-runtime`, чья схема и
 host-контракт описаны ниже; второй dispatch в Core не создаётся.
 
 - **Декларация.** `crates/tool-runtime/src/tools/analysis.rs` владеет id,
@@ -1600,7 +1600,7 @@ host-контракт описаны ниже; второй dispatch в Core н�
   вызов возвращает `ToolError::Execution("analysis_kernel_unavailable")`.
   In-process fallback, обходящий supervisor worker, отсутствует. `Clone`
   сохраняет host, потому что копируется `Arc`.
-- **Каталог.** `catalog_preflight_input("analysis.run")` возвращает
+- **Каталог.** `catalog_preflight_input("analysis_run")` возвращает
   `{"operation":"json_parse","args":"{}"}`, поэтому side-effect-free
   инструмент проходит preflight и остаётся в авторизованном snapshot; probe
   проверяется той же схемой в Core tests.
@@ -1939,15 +1939,15 @@ revision/registry/policy/grant/query/selector/limit и инвалидирует�
 `model.context` event — единственная client projection; Electron panel не имеет
 доступа к Core, storage или full schemas.
 
-Имена инструментов Core остаются в dotted-форме (`git.status`), а провайдеру
+Имена инструментов Core остаются в dotted-форме (`git_status`), а провайдеру
 уходит `git_status`: `provider_function_name` в
 `crates/model-gateway/src/tools.rs` заменяет точки, а
 `adaptive_tool_catalog::canonical_tool_call_name` возвращает id только из
 активного loadout, поэтому обратная подстановка не расширяет authority.
 Дедупликация повторов (`recovery::RecentToolCalls`) удаляет повтор
 мутирующего вызова в окне шести сигнатур; успешная правка или коммит сбрасывают
-это окно для read-only инструментов (`git.status`, `git.diff`,
-`filesystem.read` и соседних), чтобы модель могла перечитать изменённое
+это окно для read-only инструментов (`git_status`, `git_diff`,
+`filesystem_read` и соседних), чтобы модель могла перечитать изменённое
 состояние, не получая «повтор удалён Core».
 ## Structured Response Contract v1
 
@@ -1992,7 +1992,7 @@ raw input/output, credentials и rule bodies в renderer не попадают.
 ## Execution Policy Profiles v1
 
 `evohime-tool-runtime::execution_policy_profiles` — единственный resolver для
-зарегистрированных `shell.execute` и `process.run`. Versioned profile содержит
+зарегистрированных `shell_execute` и `process_run`. Versioned profile содержит
 explicit network/environment policy, bounded timeout/output, mandatory process
 tree cleanup и backend requirement; command text и user `env` не выбирают
 policy. Environment наследуется только через scrubbed allow-list.
@@ -2314,9 +2314,9 @@ Existing-file mutations требуют expected hash; fuzzy patch fallback уд�
 uploads immutable. Внешнее изменение обнаруживается при следующей mediated
 operation и даёт stale outcome. UI surface показывает только bounded ref/preview
 по project scope; мутации остаются в approval-пути Core tools.
-После filesystem.read Core передаёт модели санитизированный preview и точные
-content_hash, ready-to-copy expected_hash и revision. Для filesystem.write и
-filesystem.patch Core подставляет хеш последнего успешного чтения того же
+После filesystem_read Core передаёт модели санитизированный preview и точные
+content_hash, ready-to-copy expected_hash и revision. Для filesystem_write и
+filesystem_patch Core подставляет хеш последнего успешного чтения того же
 логического пути, если модель пропустила поле; внешний конфликт всё равно
 отклоняется проверкой хеша на границе записи. Оба mutating-инструмента возвращают
 новый content_hash и revision после успешного изменения.
@@ -2325,7 +2325,7 @@ filesystem.patch Core подставляет хеш последнего усп�
 
 Task worktree registry хранит Core-owned binding `task_id → worktree_id` с
 versioned lifecycle `planned → ready → integrating → cleanup_pending` и
-idempotency fence в SQLite schema v59. Approved tool `git.worktree.create`
+idempotency fence в SQLite schema v59. Approved tool `git_worktree_create`
 создаёт bounded detached worktree только внутри repository workspace; ref
 injection, arbitrary destination, merge, force/reset и push запрещены. Cleanup
 не удаляет dirty worktree. При старте задачи Core использует binding только
@@ -2853,7 +2853,7 @@ Core хранит versioned SEARCH/REPLACE, bounded patch, structured JSON и
 whole-file протоколы с `model_profile_id`. Каждое определение требует SHA-256
 precondition; parse и dry-run выполняются до effect, stale/ambiguous edits
 отклоняются fail-closed. Repair feedback ограничен тремя попытками. Реальная
-запись делегируется approved `filesystem.write`/`filesystem.patch` через
+запись делегируется approved `filesystem_write`/`filesystem_patch` через
 Revision-Safe Workspace Files, а IPC 245/event 90 и Electron показывают только
 redacted metadata.
 

@@ -10,11 +10,11 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 // ============================================================================
-// archive.create: Create tar/zip archive
+// archive_create: Create tar/zip archive
 // ============================================================================
 
 /// Registry identifier for archive creation.
-pub const CREATE_NAME: &str = "archive.create";
+pub const CREATE_NAME: &str = "archive_create";
 /// Catalog summary for archive creation.
 pub const CREATE_DESCRIPTION: &str = "Create a tar.gz or zip archive";
 /// Permissions needed to read source entries and write the archive.
@@ -145,11 +145,11 @@ pub async fn create(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 }
 
 // ============================================================================
-// archive.extract: Extract archive
+// archive_extract: Extract archive
 // ============================================================================
 
 /// Registry identifier for archive extraction.
-pub const EXTRACT_NAME: &str = "archive.extract";
+pub const EXTRACT_NAME: &str = "archive_extract";
 /// Catalog summary for archive extraction.
 pub const EXTRACT_DESCRIPTION: &str = "Extract a tar.gz or zip archive";
 /// Permission required to create extracted files in the workspace.
@@ -439,11 +439,11 @@ fn reserve_extraction(total: &mut u64, bytes: u64) -> io::Result<()> {
 }
 
 // ============================================================================
-// archive.list: List archive contents
+// archive_list: List archive contents
 // ============================================================================
 
 /// Registry identifier for archive entry listing.
-pub const LIST_NAME: &str = "archive.list";
+pub const LIST_NAME: &str = "archive_list";
 /// Catalog summary for archive entry listing.
 pub const LIST_DESCRIPTION: &str = "List contents of an archive";
 /// Permission required to read the archive from the workspace.

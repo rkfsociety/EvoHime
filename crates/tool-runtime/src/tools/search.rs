@@ -8,7 +8,7 @@ use tokio::process::{Child, Command};
 use unicode_normalization::UnicodeNormalization;
 
 /// Registry identifier for workspace text search.
-pub const NAME: &str = "filesystem.search";
+pub const NAME: &str = "filesystem_search";
 /// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str =
     "Search text in workspace files (ripgrep when available, built-in walk fallback otherwise)";

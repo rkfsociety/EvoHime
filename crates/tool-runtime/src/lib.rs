@@ -15,7 +15,7 @@ pub mod app_catalog;
 pub mod developer_utilities;
 /// Named execution policy profiles and their resolution.
 pub mod execution_policy_profiles;
-/// Core-owned kernel host contract used by the `analysis.run` tool.
+/// Core-owned kernel host contract used by the `analysis_run` tool.
 pub mod kernel_host;
 /// Tool manifest schema and validation contracts.
 pub mod manifest;
@@ -42,7 +42,7 @@ pub use app_catalog::{AppCatalog, AppEntry, Resolution as AppResolution, CATALOG
 pub use execution_policy_profiles::{
     ExecutionPolicyError, ExecutionPolicyProfile, ResolvedExecutionProfile,
 };
-/// Kernel host contract for the declared `analysis.run` tool.
+/// Kernel host contract for the declared `analysis_run` tool.
 pub use kernel_host::{
     AnalysisOperation, AnalysisSensitivity, KernelHost, KernelTaskBinding, KernelToolError,
     KernelToolObjectRef, KernelToolRequest, KernelToolResult,

@@ -10,7 +10,7 @@
 1. Прогнать focused gates: contract/schema тесты `tool-runtime`, Core
    kernel-host и recovery тесты, IPC-проекцию, renderer-тесты вкладки.
 2. Проверить, что в `core_agent_execution.rs` не появился дублирующий dispatch
-   и что `memory.search`-подобная подмена не скопирована для `analysis.run`.
+   и что `memory_search`-подобная подмена не скопирована для `analysis_run`.
 3. Проверить security-границы: нет файлового/сетевого/shell/credential доступа
    из kernel, нет значений объектов и inline result в UI, trace, логах и
    release evidence, нет обхода approval/receipt пути.

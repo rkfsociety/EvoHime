@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for the workspace text-file reader.
-pub const NAME: &str = "filesystem.read";
+pub const NAME: &str = "filesystem_read";
 /// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Read a UTF-8 text file from the workspace";
 /// Permission required before the tool can read workspace files.

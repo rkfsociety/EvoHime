@@ -24,7 +24,7 @@ fn approval_is_one_shot() {
         let request = engine
             .create_approval(
                 task_id,
-                "filesystem.write",
+                "filesystem_write",
                 Permission::FilesystemWrite,
                 "a.txt",
             )
@@ -54,7 +54,7 @@ fn approval_call_hash_is_canonical_and_scope_is_normalized() {
             .create_approval_scoped_for_call(
                 Uuid::new_v4(),
                 None,
-                "filesystem.write",
+                "filesystem_write",
                 Permission::FilesystemWrite,
                 r#".\src\main.rs"#,
                 &input,
@@ -69,7 +69,7 @@ fn approval_call_hash_is_canonical_and_scope_is_normalized() {
                     CallIdentity {
                         task_id: request.task_id,
                         session_id: None,
-                        tool_name: "filesystem.write",
+                        tool_name: "filesystem_write",
                         permission: Permission::FilesystemWrite,
                         scope: "src/main.rs",
                         input: &equivalent,
@@ -91,7 +91,7 @@ fn claimed_approval_is_removed_atomically() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "filesystem.write",
+                "filesystem_write",
                 Permission::FilesystemWrite,
                 "a.txt",
                 &input,
@@ -106,7 +106,7 @@ fn claimed_approval_is_removed_atomically() {
                     CallIdentity {
                         task_id,
                         session_id: None,
-                        tool_name: "filesystem.write",
+                        tool_name: "filesystem_write",
                         permission: Permission::FilesystemWrite,
                         scope: "a.txt",
                         input: &input,
@@ -122,7 +122,7 @@ fn claimed_approval_is_removed_atomically() {
                     CallIdentity {
                         task_id,
                         session_id: None,
-                        tool_name: "filesystem.write",
+                        tool_name: "filesystem_write",
                         permission: Permission::FilesystemWrite,
                         scope: "a.txt",
                         input: &input,
@@ -215,7 +215,7 @@ fn grant_remembers_path_for_session() {
             .create_approval_scoped(
                 task,
                 Some(session),
-                "filesystem.write",
+                "filesystem_write",
                 Permission::FilesystemWrite,
                 "tmp/note.txt",
             )
@@ -259,7 +259,7 @@ fn audit_sender_receives_pending_and_resolved() {
         let request = engine
             .create_approval(
                 Uuid::new_v4(),
-                "shell.execute",
+                "shell_execute",
                 Permission::ShellExecute,
                 "workspace",
             )
@@ -688,7 +688,7 @@ fn approval_matches_detects_different_inputs() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "shell.execute",
+                "shell_execute",
                 Permission::ShellExecute,
                 "workspace",
                 &input1,
@@ -704,7 +704,7 @@ fn approval_matches_detects_different_inputs() {
         );
 
         // Different input has different hash
-        let different_hash = canonical_call_hash("shell.execute", "workspace", &input2);
+        let different_hash = canonical_call_hash("shell_execute", "workspace", &input2);
         assert_ne!(request.call_hash, different_hash);
         assert!(!engine.approval_matches(request.id, &different_hash).await);
     });
@@ -721,7 +721,7 @@ fn approval_matches_rejects_denied_approval() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "shell.execute",
+                "shell_execute",
                 Permission::ShellExecute,
                 "workspace",
                 &input,
@@ -749,7 +749,7 @@ fn approval_matches_rejects_pending_approval() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "filesystem.write",
+                "filesystem_write",
                 Permission::FilesystemWrite,
                 "file.txt",
                 &input,
@@ -777,7 +777,7 @@ fn approval_for_git_commit_rejects_different_message() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "git.commit",
+                "git_commit",
                 Permission::GitWrite,
                 "workspace",
                 &input1,
@@ -786,7 +786,7 @@ fn approval_for_git_commit_rejects_different_message() {
         engine.resolve(request.id, true).await.expect("granted");
 
         // Different commit message has different hash
-        let different_hash = canonical_call_hash("git.commit", "workspace", &input2);
+        let different_hash = canonical_call_hash("git_commit", "workspace", &input2);
         assert!(!engine.approval_matches(request.id, &different_hash).await);
     });
 }
@@ -804,7 +804,7 @@ fn approval_for_file_write_rejects_different_content() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "filesystem.write",
+                "filesystem_write",
                 Permission::FilesystemWrite,
                 "src/main.rs",
                 &input1,
@@ -813,7 +813,7 @@ fn approval_for_file_write_rejects_different_content() {
         engine.resolve(request.id, true).await.expect("granted");
 
         // Same path but different content should not match
-        let different_hash = canonical_call_hash("filesystem.write", "src/main.rs", &input2);
+        let different_hash = canonical_call_hash("filesystem_write", "src/main.rs", &input2);
         assert!(!engine.approval_matches(request.id, &different_hash).await);
     });
 }
@@ -830,7 +830,7 @@ fn call_hash_is_stable_across_json_key_order() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "mcp.call",
+                "mcp_call",
                 Permission::McpCall,
                 "workspace",
                 &input1,
@@ -839,7 +839,7 @@ fn call_hash_is_stable_across_json_key_order() {
         engine.resolve(request.id, true).await.expect("granted");
 
         // Same input with different key order should have same hash
-        let equivalent_hash = canonical_call_hash("mcp.call", "workspace", &input2);
+        let equivalent_hash = canonical_call_hash("mcp_call", "workspace", &input2);
         assert_eq!(request.call_hash, equivalent_hash);
         assert!(engine.approval_matches(request.id, &equivalent_hash).await);
     });
@@ -857,7 +857,7 @@ fn hard_deny_policy_stops_granted_approval_execution() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "shell.execute",
+                "shell_execute",
                 Permission::ShellExecute,
                 "workspace",
                 &input,
@@ -914,7 +914,7 @@ fn approval_scope_normalization_consistent_with_hash() {
             .create_approval_scoped_for_call(
                 task_id,
                 None,
-                "filesystem.write",
+                "filesystem_write",
                 Permission::FilesystemWrite,
                 r".\src\main.rs",
                 &input,
@@ -926,7 +926,7 @@ fn approval_scope_normalization_consistent_with_hash() {
         assert!(request.scope.contains("src/main.rs"));
 
         // And hash should match
-        let expected_hash = canonical_call_hash("filesystem.write", &request.scope, &input);
+        let expected_hash = canonical_call_hash("filesystem_write", &request.scope, &input);
         assert_eq!(request.call_hash, expected_hash);
         assert!(engine.approval_matches(request.id, &expected_hash).await);
     });

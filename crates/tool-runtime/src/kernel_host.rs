@@ -1,4 +1,4 @@
-//! Kernel host contract used by the declared `analysis.run` tool.
+//! Kernel host contract used by the declared `analysis_run` tool.
 //!
 //! The tool runtime only knows this trait and the bounded request/result
 //! vocabulary below. Session ownership, admission, limits, idempotency and

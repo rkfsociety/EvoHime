@@ -1,4 +1,4 @@
-//! Environment scrubbing for `shell.execute` (Stage 7.6).
+//! Environment scrubbing for `shell_execute` (Stage 7.6).
 //!
 //! Default: allowlist of OS/tooling vars only (no API keys / DB URLs).
 //! Always strip secret-looking names, even with inherit escape hatch.

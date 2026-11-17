@@ -11,7 +11,7 @@ use tokio::process::Command;
 // ============================================================================
 
 /// Stable registry identifier for branch operations.
-pub const BRANCH_NAME: &str = "git.branch";
+pub const BRANCH_NAME: &str = "git_branch";
 /// User-facing description of branch operations.
 pub const BRANCH_DESCRIPTION: &str = "Create, switch, list, or delete git branches";
 /// Permission required to change or list branches.
@@ -159,7 +159,7 @@ pub async fn branch(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // ============================================================================
 
 /// Stable registry identifier for branch merges.
-pub const MERGE_NAME: &str = "git.merge";
+pub const MERGE_NAME: &str = "git_merge";
 /// User-facing description of the merge operation.
 pub const MERGE_DESCRIPTION: &str = "Merge a branch into the current branch";
 /// Permission required to merge repository branches.
@@ -226,7 +226,7 @@ pub async fn merge(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 // ============================================================================
 
 /// Stable registry identifier for resetting repository state.
-pub const RESET_NAME: &str = "git.reset";
+pub const RESET_NAME: &str = "git_reset";
 /// User-facing description of the reset operation.
 pub const RESET_DESCRIPTION: &str = "Reset HEAD to a previous commit (soft/mixed/hard)";
 /// Permission required to reset repository state.
@@ -295,7 +295,7 @@ pub async fn reset(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 // ============================================================================
 
 /// Stable registry identifier for reverting a commit.
-pub const REVERT_NAME: &str = "git.revert";
+pub const REVERT_NAME: &str = "git_revert";
 /// User-facing description of the revert operation.
 pub const REVERT_DESCRIPTION: &str =
     "Create a new commit that undoes changes from a previous commit";
@@ -354,7 +354,7 @@ pub async fn revert(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // ============================================================================
 
 /// Stable registry identifier for applying another commit.
-pub const CHERRY_PICK_NAME: &str = "git.cherry_pick";
+pub const CHERRY_PICK_NAME: &str = "git_cherry_pick";
 /// User-facing description of the cherry-pick operation.
 pub const CHERRY_PICK_DESCRIPTION: &str = "Apply a commit from another branch";
 /// Permission required to apply a commit to the current branch.
@@ -408,7 +408,7 @@ pub async fn cherry_pick(ctx: &ToolContext, input: Value) -> Result<ToolResult, 
 // ============================================================================
 
 /// Stable registry identifier for rebasing the current branch.
-pub const REBASE_NAME: &str = "git.rebase";
+pub const REBASE_NAME: &str = "git_rebase";
 /// User-facing description of the rebase operation.
 pub const REBASE_DESCRIPTION: &str = "Rebase current branch onto another branch";
 /// Permission required to rewrite local branch history.
@@ -469,7 +469,7 @@ pub async fn rebase(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // ============================================================================
 
 /// Stable registry identifier for repository tag operations.
-pub const TAG_NAME: &str = "git.tag";
+pub const TAG_NAME: &str = "git_tag";
 /// User-facing description of tag operations.
 pub const TAG_DESCRIPTION: &str = "Create, list, or delete git tags";
 /// Permission required to modify or list repository tags.
@@ -536,7 +536,7 @@ pub async fn tag(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErro
 // ============================================================================
 
 /// Stable registry identifier for stash operations.
-pub const STASH_NAME: &str = "git.stash";
+pub const STASH_NAME: &str = "git_stash";
 /// User-facing description of stash operations.
 pub const STASH_DESCRIPTION: &str = "List, save, apply, pop, or drop git stashes";
 /// Permission required to inspect or modify stashes.
@@ -597,7 +597,7 @@ pub async fn stash(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 // ============================================================================
 
 /// Stable registry identifier for remote configuration operations.
-pub const REMOTE_NAME: &str = "git.remote";
+pub const REMOTE_NAME: &str = "git_remote";
 /// User-facing description of remote operations.
 pub const REMOTE_DESCRIPTION: &str = "List, add, or remove git remotes";
 /// Permission required to inspect or change remote configuration.

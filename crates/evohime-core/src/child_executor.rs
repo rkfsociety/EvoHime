@@ -58,8 +58,8 @@ pub const CHILD_MAX_SECONDS: u64 = 180;
 pub const READ_ONLY_CAPABILITIES: &[&str] = &[
     "workspace.read",
     "workspace.search",
-    "git.diff",
-    "git.status",
+    "git_diff",
+    "git_status",
 ];
 
 /// Maps a grant or capability name to its canonical read-only capability.
@@ -69,12 +69,12 @@ pub const READ_ONLY_CAPABILITIES: &[&str] = &[
 /// empty capability.
 pub(crate) fn canonical_capability(value: &str) -> Option<&'static str> {
     match value.split(':').next().unwrap_or(value) {
-        "fs.read" | "workspace.read" | "filesystem.read" | "filesystem.list" => {
+        "fs.read" | "workspace.read" | "filesystem_read" | "filesystem_list" => {
             Some("workspace.read")
         }
-        "workspace.search" | "filesystem.search" => Some("workspace.search"),
-        "git.diff" => Some("git.diff"),
-        "git.status" => Some("git.status"),
+        "workspace.search" | "filesystem_search" => Some("workspace.search"),
+        "git_diff" => Some("git_diff"),
+        "git_status" => Some("git_status"),
         _ => None,
     }
 }
@@ -90,59 +90,59 @@ pub(crate) fn builtin_profile(role: &str) -> Option<AgentRoleProfile> {
         "coordinator" => (
             "Coordinate bounded read-only child work",
             vec![
-                "filesystem.search",
-                "filesystem.list",
-                "git.status",
-                "git.diff",
+                "filesystem_search",
+                "filesystem_list",
+                "git_status",
+                "git_diff",
             ],
         ),
         "researcher" => (
             "Gather and summarize bounded repository evidence",
             vec![
-                "filesystem.search",
-                "filesystem.list",
-                "git.status",
-                "git.diff",
+                "filesystem_search",
+                "filesystem_list",
+                "git_status",
+                "git_diff",
             ],
         ),
         "planner" => (
             "Draft a bounded plan without applying changes",
-            vec!["filesystem.search", "filesystem.list"],
+            vec!["filesystem_search", "filesystem_list"],
         ),
         "implementer" => (
             "Prepare an authorized change without writing as a child",
             vec![
-                "filesystem.search",
-                "filesystem.list",
-                "git.status",
-                "git.diff",
+                "filesystem_search",
+                "filesystem_list",
+                "git_status",
+                "git_diff",
             ],
         ),
         "tester" => (
             "Review a bounded test plan without executing it",
             vec![
-                "filesystem.search",
-                "filesystem.list",
-                "git.status",
-                "git.diff",
+                "filesystem_search",
+                "filesystem_list",
+                "git_status",
+                "git_diff",
             ],
         ),
         "reviewer" => (
             "Review bounded changes against requirements",
             vec![
-                "filesystem.search",
-                "filesystem.list",
-                "git.status",
-                "git.diff",
+                "filesystem_search",
+                "filesystem_list",
+                "git_status",
+                "git_diff",
             ],
         ),
         "security-reviewer" => (
             "Review bounded trust boundaries without mutating state",
             vec![
-                "filesystem.search",
-                "filesystem.list",
-                "git.status",
-                "git.diff",
+                "filesystem_search",
+                "filesystem_list",
+                "git_status",
+                "git_diff",
             ],
         ),
         _ => return None,
@@ -1522,7 +1522,7 @@ fn role_tool_plan(
         .any(|capability| capability == "workspace.search")
     {
         plan.push((
-            "filesystem.search",
+            "filesystem_search",
             json!({ "query": query, "limit": 8, "ignore_case": true }),
         ));
     }
@@ -1530,23 +1530,23 @@ fn role_tool_plan(
         .iter()
         .any(|capability| capability == "workspace.read")
     {
-        plan.push(("filesystem.list", json!({ "path": "." })));
+        plan.push(("filesystem_list", json!({ "path": "." })));
     }
     if effective
         .iter()
-        .any(|capability| capability == "git.status")
+        .any(|capability| capability == "git_status")
     {
-        plan.push(("git.status", json!({})));
+        plan.push(("git_status", json!({})));
     }
-    if effective.iter().any(|capability| capability == "git.diff") {
-        plan.push(("git.diff", json!({})));
+    if effective.iter().any(|capability| capability == "git_diff") {
+        plan.push(("git_diff", json!({})));
     }
     plan
 }
 
 fn collect_tool_evidence(output: &mut RoleRunOutput, tool_name: &str, structured: &Value) {
     match tool_name {
-        "filesystem.search" => {
+        "filesystem_search" => {
             let count = structured
                 .get("matches")
                 .and_then(Value::as_array)
@@ -1554,7 +1554,7 @@ fn collect_tool_evidence(output: &mut RoleRunOutput, tool_name: &str, structured
                 .unwrap_or_default();
             output
                 .findings
-                .push(format!("filesystem.search: совпадений {count}"));
+                .push(format!("filesystem_search: совпадений {count}"));
             if let Some(matches) = structured.get("matches").and_then(Value::as_array) {
                 for item in matches.iter().take(crate::child_contracts::MAX_SOURCES) {
                     let path = item.get("path").and_then(Value::as_str).unwrap_or("");
@@ -1573,20 +1573,20 @@ fn collect_tool_evidence(output: &mut RoleRunOutput, tool_name: &str, structured
                 }
             }
         }
-        "filesystem.list" => {
+        "filesystem_list" => {
             output
                 .findings
-                .push("filesystem.list: каталог workspace прочитан".into());
+                .push("filesystem_list: каталог workspace прочитан".into());
             output.sources.push("workspace:.".into());
         }
-        "git.status" => {
+        "git_status" => {
             output
                 .findings
-                .push("git.status: состояние репозитория прочитано".into());
+                .push("git_status: состояние репозитория прочитано".into());
             output.sources.push("git:status".into());
         }
-        "git.diff" => {
-            output.findings.push("git.diff: изменения прочитаны".into());
+        "git_diff" => {
+            output.findings.push("git_diff: изменения прочитаны".into());
             output.sources.push("git:diff".into());
         }
         _ => output
@@ -1776,7 +1776,7 @@ mod tests {
 
     /// Worker request with a budget wide enough to finance a lazy fan-out.
     fn worker_with_ceiling(ceiling: u32, tool_calls: u64) -> TypedChildTaskRequest {
-        request("researcher", &["fs.read", "filesystem.search"])
+        request("researcher", &["fs.read", "filesystem_search"])
             .with_budget(
                 ChildBudget::new()
                     .with_tokens(16_000)
@@ -1786,7 +1786,7 @@ mod tests {
             .with_delegation(DelegationGrant {
                 max_children: ceiling,
                 ..delegation_grant(
-                    &["filesystem.search"],
+                    &["filesystem_search"],
                     Some(
                         ChildBudget::new()
                             .with_tokens(4_000)
@@ -1990,9 +1990,9 @@ mod tests {
         let workspace = workspace_with_file();
         let executor = RegisteredChildExecutor::new(journal.clone(), workspace.path())
             .with_tools(Some(Arc::new(ToolRegistry::bootstrap())));
-        let hop1 = request("researcher", &["fs.read", "filesystem.search"])
+        let hop1 = request("researcher", &["fs.read", "filesystem_search"])
             .with_delegation(delegation_grant(
-                &["filesystem.search"],
+                &["filesystem_search"],
                 Some(
                     ChildBudget::new()
                         .with_tokens(4_000)
@@ -2332,13 +2332,13 @@ mod tests {
         let (journal, _database_dir) = journal();
         let workspace = workspace_with_file();
         let executor = RegisteredChildExecutor::new(journal, workspace.path());
-        let hop1 = request("researcher", &["fs.read", "filesystem.search"]);
+        let hop1 = request("researcher", &["fs.read", "filesystem_search"]);
         let remaining =
             executor.remaining_budget(&hop1, &finished_run(1), std::time::Duration::ZERO);
         assert_eq!(remaining.max_tool_calls, Some(3), "one call already spent");
 
         let grant = delegation_grant(
-            &["filesystem.search"],
+            &["filesystem_search"],
             Some(
                 ChildBudget::new()
                     .with_tokens(4_000)
@@ -2361,7 +2361,7 @@ mod tests {
         assert!(nested.delegation.is_none());
         assert!(nested.grants_are_subset_of(&hop1.grants));
         assert_eq!(nested.grants.len(), 1);
-        assert_eq!(nested.grants[0].grant_type, "filesystem.search");
+        assert_eq!(nested.grants[0].grant_type, "filesystem_search");
         let budget = nested.budget.as_ref().expect("nested budget");
         assert_eq!(budget.max_tokens, Some(4_000));
         assert_eq!(budget.max_tool_calls, Some(2));
@@ -2374,7 +2374,7 @@ mod tests {
         let (journal, _database_dir) = journal();
         let workspace = workspace_with_file();
         let executor = RegisteredChildExecutor::new(journal, workspace.path());
-        let hop1 = request("researcher", &["fs.read", "filesystem.search"]);
+        let hop1 = request("researcher", &["fs.read", "filesystem_search"]);
         let remaining =
             executor.remaining_budget(&hop1, &finished_run(0), std::time::Duration::ZERO);
         let context = crate::child_execution_context::ChildExecutionContext::new(
@@ -2401,7 +2401,7 @@ mod tests {
             delegated_request(
                 &hop1,
                 &delegation_grant(
-                    &["filesystem.search"],
+                    &["filesystem_search"],
                     Some(
                         ChildBudget::new()
                             .with_tokens(9_000)
@@ -2423,7 +2423,7 @@ mod tests {
     async fn hop_two_cannot_request_write_shell_network_or_elevation() {
         for capability in [
             "workspace.write",
-            "shell.execute",
+            "shell_execute",
             "network.fetch",
             "elevation",
         ] {
@@ -2459,7 +2459,7 @@ mod tests {
             "child.spawn",
             "child.dispatch",
             "agent.spawn",
-            "workflow.start",
+            "workflow_start",
             "workflow.create",
         ] {
             assert!(
@@ -2516,7 +2516,7 @@ mod tests {
         for capability in [
             "workspace.write",
             "fs.write",
-            "shell.execute",
+            "shell_execute",
             "network.fetch",
             "elevation",
         ] {

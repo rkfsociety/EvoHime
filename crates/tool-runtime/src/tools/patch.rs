@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for unified-diff file patching.
-pub const NAME: &str = "filesystem.patch";
+pub const NAME: &str = "filesystem_patch";
 /// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Apply a unified diff to one workspace file";
 /// Permission required to modify workspace contents.

@@ -109,12 +109,12 @@ impl IpcBridge {
                 let payload = self
                     .dispatch_git_read(
                         request.workspace_path,
-                        "git.status",
+                        "git_status",
                         serde_json::Value::Null,
                         request.max_bytes,
                     )
                     .await?;
-                self.write_response(writer, "git.status", payload).await?;
+                self.write_response(writer, "git_status", payload).await?;
             }
             Some(generated::command_envelope::Command::GitDiff(request)) => {
                 let input = if request.relative_path.is_empty() {
@@ -123,9 +123,9 @@ impl IpcBridge {
                     serde_json::json!({"path": request.relative_path})
                 };
                 let payload = self
-                    .dispatch_git_read(request.workspace_path, "git.diff", input, request.max_bytes)
+                    .dispatch_git_read(request.workspace_path, "git_diff", input, request.max_bytes)
                     .await?;
-                self.write_response(writer, "git.diff", payload).await?;
+                self.write_response(writer, "git_diff", payload).await?;
             }
             Some(generated::command_envelope::Command::TerminalExecute(request)) => {
                 self.dispatch_terminal_execute(request, writer).await?;
@@ -205,7 +205,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::SearchMemory(request)) => {
                 let result = self.dispatch_search_memory(request).await?;
-                self.write_response(writer, "memory.search", result).await?;
+                self.write_response(writer, "memory_search", result).await?;
             }
             Some(generated::command_envelope::Command::ArchiveMemory(request)) => {
                 let result = self.dispatch_archive_memory(request).await?;

@@ -1208,22 +1208,22 @@ mod tests {
     fn conversation_trace_exposes_bounded_tool_metadata_without_payloads() {
         let started = conversation_bound_trace_payload(
             "tool.started",
-            br#"{"ToolStarted":{"task_id":"task-1","tool_name":"filesystem.search"}}"#,
+            br#"{"ToolStarted":{"task_id":"task-1","tool_name":"filesystem_search"}}"#,
         );
         let started_value: Value =
             serde_json::from_slice(&started).expect("valid start projection");
         assert_eq!(started_value["projection_version"], 3);
         assert_eq!(started_value["projection_kind"], "tool_started");
-        assert_eq!(started_value["tool_name"], "filesystem.search");
+        assert_eq!(started_value["tool_name"], "filesystem_search");
         assert_eq!(started_value["phase"], "started");
 
         let output = conversation_bound_trace_payload(
             "tool.output",
-            br#"{"ToolOutput":{"task_id":"task-1","tool_name":"filesystem.search","output":"private https://example.test token sk-test"}}"#,
+            br#"{"ToolOutput":{"task_id":"task-1","tool_name":"filesystem_search","output":"private https://example.test token sk-test"}}"#,
         );
         let output_value: Value = serde_json::from_slice(&output).expect("valid output projection");
         assert_eq!(output_value["projection_kind"], "tool_output");
-        assert_eq!(output_value["tool_name"], "filesystem.search");
+        assert_eq!(output_value["tool_name"], "filesystem_search");
         assert_eq!(output_value["output_redacted"], true);
         assert!(output_value.get("output").is_none());
         let serialized = serde_json::to_string(&output_value).unwrap();
@@ -1235,11 +1235,11 @@ mod tests {
     fn conversation_trace_exposes_safe_telemetry_and_routing_metadata() {
         let telemetry = conversation_bound_trace_payload(
             "tool.telemetry",
-            br#"{"tool_name":"filesystem.read","iteration":2,"ok":false,"failure_kind":"denied_policy","path_form":"absolute","path_scope":"outside_workspace","path_boundary_reason":"absolute_path_not_allowed","output_bytes":17,"recovery_hint":true,"escalated":false,"secret":"sk-test"}"#,
+            br#"{"tool_name":"filesystem_read","iteration":2,"ok":false,"failure_kind":"denied_policy","path_form":"absolute","path_scope":"outside_workspace","path_boundary_reason":"absolute_path_not_allowed","output_bytes":17,"recovery_hint":true,"escalated":false,"secret":"sk-test"}"#,
         );
         let telemetry_value: Value =
             serde_json::from_slice(&telemetry).expect("valid telemetry projection");
-        assert_eq!(telemetry_value["tool_name"], "filesystem.read");
+        assert_eq!(telemetry_value["tool_name"], "filesystem_read");
         assert_eq!(telemetry_value["iteration"], 2);
         assert_eq!(telemetry_value["ok"], false);
         assert_eq!(telemetry_value["failure_kind"], "denied_policy");

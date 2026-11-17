@@ -254,7 +254,7 @@ pub async fn run_bounded(
 ) -> Result<Vec<serde_json::Value>, BootstrapManifestError> {
     validate_manifest(manifest)?;
     let profile = evohime_tool_runtime::execution_policy_profiles::ExecutionPolicyProfile::resolve(
-        "process.run",
+        "process_run",
     )
     .map_err(|_| BootstrapManifestError::UnsupportedEffect)?;
     let mut results = Vec::with_capacity(manifest.steps.len());

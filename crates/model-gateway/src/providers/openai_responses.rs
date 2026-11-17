@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn response_tool_declaration_uses_provider_safe_name() {
-        let tool = ToolSpec::function("filesystem.read", "Read a file", json!({"type": "object"}));
+        let tool = ToolSpec::function("filesystem_read", "Read a file", json!({"type": "object"}));
         let value = response_tool(&tool);
         assert_eq!(value["name"], "filesystem_read");
     }

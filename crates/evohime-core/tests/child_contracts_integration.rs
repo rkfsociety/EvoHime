@@ -68,7 +68,7 @@ fn test_full_child_workflow() {
 fn test_grant_subset_validation() {
     let parent_grants = vec![
         Grant::new("workspace.read").unwrap(),
-        Grant::new("git.status").unwrap(),
+        Grant::new("git_status").unwrap(),
     ];
 
     let child_grants = vec![Grant::new("workspace.read").unwrap()];

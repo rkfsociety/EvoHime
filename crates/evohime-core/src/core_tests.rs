@@ -127,7 +127,7 @@ mod tests {
         let content = concat!(
             "Прочитаю документ.\n",
             "<function_calls>\n",
-            "<invoke name=\"filesystem.read\">\n",
+            "<invoke name=\"filesystem_read\">\n",
             "<parameter name=\"path\">README.md</parameter>\n",
             "</invoke>\n",
             "</function_calls>\n",
@@ -226,10 +226,10 @@ mod tests {
     #[test]
     fn agent_system_prompt_explains_workspace_research_flow() {
         let prompt =
-            super::build_agent_system_prompt(&["filesystem.list".into(), "filesystem.read".into()]);
+            super::build_agent_system_prompt(&["filesystem_list".into(), "filesystem_read".into()]);
         assert!(!prompt.contains("C:\\Projects\\demo"));
         assert!(!prompt.contains("C:\\Users\\"));
-        assert!(prompt.contains("filesystem.list"));
+        assert!(prompt.contains("filesystem_list"));
         assert!(prompt.contains("не сформулировал конкретное поручение"));
         assert!(prompt.contains("Не проси пользователя прислать структуру"));
         assert!(prompt.contains("до успешного результата"));
@@ -238,76 +238,76 @@ mod tests {
     #[test]
     fn agent_system_prompt_only_names_tools_available_in_the_session() {
         let prompt = super::build_agent_system_prompt(&[
-            "filesystem.read".into(),
-            "filesystem.write".into(),
+            "filesystem_read".into(),
+            "filesystem_write".into(),
         ]);
         assert!(prompt.contains("Используй только инструменты из списка ниже"));
-        assert!(prompt.contains("filesystem.read — {\"path\":\"README.md\"}"));
-        assert!(!prompt.contains("filesystem.list"));
-        assert!(!prompt.contains("filesystem.search"));
+        assert!(prompt.contains("filesystem_read — {\"path\":\"README.md\"}"));
+        assert!(!prompt.contains("filesystem_list"));
+        assert!(!prompt.contains("filesystem_search"));
         assert!(prompt.contains("Git-инструментов в этой сессии нет"));
 
         let research = super::build_agent_system_prompt(&[
-            "filesystem.list".into(),
-            "filesystem.read".into(),
-            "filesystem.search".into(),
+            "filesystem_list".into(),
+            "filesystem_read".into(),
+            "filesystem_search".into(),
         ]);
-        assert!(research.contains("сначала вызови filesystem.list"));
-        assert!(research.contains("filesystem.search — {\"query\":\"pattern\",\"path\":\".\"}"));
+        assert!(research.contains("сначала вызови filesystem_list"));
+        assert!(research.contains("filesystem_search — {\"query\":\"pattern\",\"path\":\".\"}"));
 
         let workflow = super::build_agent_system_prompt(&[
-            "workflow.catalog".into(),
-            "workflow.start".into(),
-            "workflow.status".into(),
-            "workflow.cancel".into(),
+            "workflow_catalog".into(),
+            "workflow_start".into(),
+            "workflow_status".into(),
+            "workflow_cancel".into(),
         ]);
-        assert!(workflow.contains("сначала вызови workflow.catalog"));
+        assert!(workflow.contains("сначала вызови workflow_catalog"));
         assert!(workflow.contains("available=true"));
     }
 
     #[test]
     fn catalog_preflight_uses_safe_workspace_arguments_for_filesystem_tools() {
         assert_eq!(
-            super::catalog_preflight_input("filesystem.list"),
+            super::catalog_preflight_input("filesystem_list"),
             serde_json::json!({ "path": "." })
         );
         assert_eq!(
-            super::catalog_preflight_input("filesystem.read"),
+            super::catalog_preflight_input("filesystem_read"),
             serde_json::json!({ "path": "." })
         );
         assert_eq!(
-            super::catalog_preflight_input("filesystem.search"),
+            super::catalog_preflight_input("filesystem_search"),
             serde_json::json!({ "query": "EvoHime", "path": "." })
         );
         // The declared kernel tool must stay in the authorized snapshot: its
         // probe input has to satisfy the same schema the model sees.
-        let analysis_probe = super::catalog_preflight_input("analysis.run");
+        let analysis_probe = super::catalog_preflight_input("analysis_run");
         assert_eq!(
             analysis_probe,
             serde_json::json!({ "operation": "json_parse", "args": "{}" })
         );
-        let schema = evohime_tool_runtime::builtin_input_schema("analysis.run");
-        let compiled = jsonschema::validator_for(&schema).expect("analysis.run schema compiles");
+        let schema = evohime_tool_runtime::builtin_input_schema("analysis_run");
+        let compiled = jsonschema::validator_for(&schema).expect("analysis_run schema compiles");
         assert!(
             compiled.validate(&analysis_probe).is_ok(),
-            "catalog probe must satisfy the declared analysis.run schema"
+            "catalog probe must satisfy the declared analysis_run schema"
         );
-        // filesystem.patch must stay in the authorized snapshot too: an
+        // filesystem_patch must stay in the authorized snapshot too: an
         // existing-file edit is impossible without it, and a probe rejected by
         // the runtime removes the tool from the model catalog silently.
-        let patch_probe = super::catalog_preflight_input("filesystem.patch");
-        let patch_schema = evohime_tool_runtime::builtin_input_schema("filesystem.patch");
+        let patch_probe = super::catalog_preflight_input("filesystem_patch");
+        let patch_schema = evohime_tool_runtime::builtin_input_schema("filesystem_patch");
         let patch_compiled =
-            jsonschema::validator_for(&patch_schema).expect("filesystem.patch schema compiles");
+            jsonschema::validator_for(&patch_schema).expect("filesystem_patch schema compiles");
         assert!(
             patch_compiled.validate(&patch_probe).is_ok(),
-            "catalog probe must satisfy the declared filesystem.patch schema"
+            "catalog probe must satisfy the declared filesystem_patch schema"
         );
         assert!(super::requires_workspace_research_catalog(
             "Изучи проект и расскажи, как он устроен"
         ));
         assert!(super::model_is_waiting_instead_of_reporting(
-            "Жду результата от filesystem.list"
+            "Жду результата от filesystem_list"
         ));
         assert!(!super::model_is_waiting_instead_of_reporting(
             "Проект состоит из Android-приложения и Gradle-модуля."
@@ -317,20 +317,20 @@ mod tests {
     #[test]
     fn git_tool_contract_exposes_safe_repository_workflow() {
         let prompt = super::build_agent_system_prompt(&[
-            "git.status".into(),
-            "git.diff".into(),
-            "git.commit".into(),
-            "git.pull".into(),
-            "git.push".into(),
+            "git_status".into(),
+            "git_diff".into(),
+            "git_commit".into(),
+            "git_pull".into(),
+            "git_push".into(),
         ]);
-        assert!(prompt.contains("git.pull"));
-        assert!(prompt.contains("git.push"));
+        assert!(prompt.contains("git_pull"));
+        assert!(prompt.contains("git_push"));
         assert!(prompt.contains("только если пользователь явно попросил"));
 
-        let pull = evohime_tool_runtime::builtin_input_schema("git.pull");
+        let pull = evohime_tool_runtime::builtin_input_schema("git_pull");
         assert_eq!(pull["properties"]["remote"]["type"], "string");
         assert_eq!(pull["additionalProperties"], false);
-        let push = evohime_tool_runtime::builtin_input_schema("git.push");
+        let push = evohime_tool_runtime::builtin_input_schema("git_push");
         assert_eq!(push["properties"]["force"]["type"], "boolean");
         assert_eq!(push["additionalProperties"], false);
     }
@@ -339,8 +339,8 @@ mod tests {
     fn parses_legacy_git_mutation_calls() {
         let content = r#"
 <function_calls>
-[{"tool_name":"git.pull","arguments":{"remote":"origin","branch":"main"}},
- {"tool_name":"git.push","arguments":{"remote":"origin","branch":"main","force":false}}]
+[{"tool_name":"git_pull","arguments":{"remote":"origin","branch":"main"}},
+ {"tool_name":"git_push","arguments":{"remote":"origin","branch":"main","force":false}}]
 </function_calls>
         "#;
         let calls = super::parse_legacy_function_calls(content, 5);
@@ -349,7 +349,7 @@ mod tests {
                 .iter()
                 .map(|call| call.name.as_str())
                 .collect::<Vec<_>>(),
-            ["git.pull", "git.push"]
+            ["git_pull", "git_push"]
         );
         assert!(calls[0].arguments.contains("origin"));
         assert!(calls[1].arguments.contains("force"));
@@ -362,13 +362,13 @@ mod tests {
             8,
         )
         .expect("plain git status call");
-        assert_eq!(status.name, "git.status");
+        assert_eq!(status.name, "git_status");
         assert_eq!(status.arguments, "{}");
 
         let pull =
             super::parse_plain_tool_call("Выполняю обновление.\n\ngit.pull\n\nЖду результата.", 9)
                 .expect("plain git pull call");
-        assert_eq!(pull.name, "git.pull");
+        assert_eq!(pull.name, "git_pull");
         assert_eq!(pull.arguments, "{}");
     }
 
@@ -392,13 +392,13 @@ mod tests {
             10,
         )
         .expect("plain browser read call");
-        assert_eq!(call.name, "browser.session.read");
+        assert_eq!(call.name, "browser_session_read");
         assert_eq!(call.arguments, "{}");
 
         let xml =
-            super::parse_xml_named_tool_call("<browser.session.close></browser.session.close>", 11)
+            super::parse_xml_named_tool_call("<browser_session_close></browser_session_close>", 11)
                 .expect("xml browser close call");
-        assert_eq!(xml.name, "browser.session.close");
+        assert_eq!(xml.name, "browser_session_close");
         assert_eq!(xml.arguments, "{}");
     }
 
@@ -406,19 +406,19 @@ mod tests {
     fn parses_legacy_text_function_calls() {
         let content = r#"
 <function_calls>
-<invoke name="filesystem.list">
+<invoke name="filesystem_list">
 <parameter name="path">.</parameter>
 </invoke>
-<invoke name="shell.execute">
+<invoke name="shell_execute">
 <parameter name="command">dir /B</parameter>
 </invoke>
         </function_calls>
 "#;
         let calls = super::parse_legacy_function_calls(content, 2);
         assert_eq!(calls.len(), 2);
-        assert_eq!(calls[0].name, "filesystem.list");
+        assert_eq!(calls[0].name, "filesystem_list");
         assert_eq!(calls[0].arguments, r#"{"path":"."}"#);
-        assert_eq!(calls[1].name, "shell.execute");
+        assert_eq!(calls[1].name, "shell_execute");
         assert_eq!(calls[1].arguments, r#"{"command":"dir /B"}"#);
     }
 
@@ -426,26 +426,26 @@ mod tests {
     fn parses_json_function_call_blocks_for_mutating_tools() {
         let content = r#"
 <function_calls>
-[{"tool_name":"filesystem.patch","arguments":{"path":"tests/a.rs","patch":"--- a/tests/a.rs\n+++ b/tests/a.rs\n@@"}}]
+[{"tool_name":"filesystem_patch","arguments":{"path":"tests/a.rs","patch":"--- a/tests/a.rs\n+++ b/tests/a.rs\n@@"}}]
 </function_calls>
 "#;
         let calls = super::parse_legacy_function_calls(content, 4);
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].name, "filesystem.patch");
+        assert_eq!(calls[0].name, "filesystem_patch");
         assert!(calls[0].arguments.contains("tests/a.rs"));
     }
 
     #[test]
     fn parses_explicit_natural_filesystem_intent() {
         let call = super::parse_natural_tool_intent(
-            "Продолжу изучение. Вызываю filesystem.list для папки `crates`.",
+            "Продолжу изучение. Вызываю filesystem_list для папки `crates`.",
             3,
         )
         .expect("filesystem intent");
-        assert_eq!(call.name, "filesystem.list");
+        assert_eq!(call.name, "filesystem_list");
         assert_eq!(call.arguments, r#"{"path":"crates"}"#);
         assert!(
-            super::parse_natural_tool_intent("Инструмент filesystem.list доступен.", 3).is_none()
+            super::parse_natural_tool_intent("Инструмент filesystem_list доступен.", 3).is_none()
         );
     }
 
@@ -454,12 +454,12 @@ mod tests {
         let call = super::parse_natural_tool_intent(
             r#"Продолжу изучение.
 ```json
-{"tool":"filesystem.read","arguments":{"path":"Cargo.toml"}}
+{"tool":"filesystem_read","arguments":{"path":"Cargo.toml"}}
 ```"#,
             4,
         )
         .expect("filesystem intent");
-        assert_eq!(call.name, "filesystem.read");
+        assert_eq!(call.name, "filesystem_read");
         assert_eq!(call.arguments, r#"{"path":"Cargo.toml"}"#);
     }
 
@@ -497,7 +497,7 @@ mod tests {
                 let _ = events
                     .send(CoreEvent::ToolStarted {
                         task_id: task_id.clone(),
-                        tool_name: "filesystem.list".into(),
+                        tool_name: "filesystem_list".into(),
                         arguments: r#"{"path":"."}"#.into(),
                     })
                     .await;
@@ -550,12 +550,12 @@ mod tests {
         assert_eq!(tool_call.event_id, "tool.started");
         assert_eq!(
             tool_call.fields.get("tool_name").map(String::as_str),
-            Some("filesystem.list")
+            Some("filesystem_list")
         );
 
         let jsonl = coordinator.audit_jsonl().await;
         assert!(jsonl.contains("\"kind\":\"tool_call\""));
-        assert!(jsonl.contains("filesystem.list"));
+        assert!(jsonl.contains("filesystem_list"));
     }
 
     #[tokio::test]
@@ -674,7 +674,7 @@ mod tests {
     #[test]
     fn strips_legacy_function_blocks_from_user_facing_message() {
         let message = super::strip_legacy_function_blocks(
-            "Готово.\n<function_calls><invoke name=\"filesystem.read\" /></function_calls>",
+            "Готово.\n<function_calls><invoke name=\"filesystem_read\" /></function_calls>",
         );
         assert_eq!(message, "Готово.");
     }
@@ -841,7 +841,7 @@ mod tests {
                 research_has_search: true,
             },
         )
-        .contains("filesystem.patch"));
+        .contains("filesystem_patch"));
         assert!(super::delivery_next_step(
             super::DeliveryRequirements {
                 research: true,
@@ -865,7 +865,7 @@ mod tests {
     fn reported_composer_request_counts_as_a_required_mutation() {
         // Regression: this prompt requested an edit but the intent router saw
         // more inspection keywords than the edit marker, so the delivery gate
-        // demanded filesystem.write from a read-only loadout.
+        // demanded filesystem_write from a read-only loadout.
         let requirements = super::DeliveryRequirements::from_prompt(
             "Изучи исходный код EvoHime. Найди композер и конфигурацию моделей. \
              Проверь, есть ли в API параметр thinking, покажи отчёт и добавь \
@@ -931,8 +931,8 @@ mod tests {
             ..Default::default()
         };
         let dropped = requirements.degrade_unavailable(&[
-            "filesystem.read".to_string(),
-            "filesystem.search".to_string(),
+            "filesystem_read".to_string(),
+            "filesystem_search".to_string(),
         ]);
         assert!(dropped.contains(&"mutation"));
         assert!(dropped.contains(&"verification"));
@@ -944,7 +944,7 @@ mod tests {
             ..Default::default()
         };
         assert!(supported
-            .degrade_unavailable(&["filesystem.write".to_string()])
+            .degrade_unavailable(&["filesystem_write".to_string()])
             .is_empty());
         assert!(supported.mutation);
     }
@@ -958,7 +958,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            requirements.degrade_unavailable(&["filesystem.read".to_string()]),
+            requirements.degrade_unavailable(&["filesystem_read".to_string()]),
             vec!["verification"]
         );
         assert!(!requirements.verification);
@@ -970,7 +970,7 @@ mod tests {
             ..Default::default()
         };
         assert!(supported
-            .degrade_unavailable(&["shell.execute".to_string()])
+            .degrade_unavailable(&["shell_execute".to_string()])
             .is_empty());
         assert!(supported.verification);
     }
@@ -982,7 +982,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            requirements.degrade_unavailable(&["git.commit".to_string()]),
+            requirements.degrade_unavailable(&["git_commit".to_string()]),
             vec!["commit"]
         );
         assert!(!requirements.commit);
@@ -992,7 +992,7 @@ mod tests {
             ..Default::default()
         };
         assert!(supported
-            .degrade_unavailable(&["git.commit".to_string(), "shell.execute".to_string()])
+            .degrade_unavailable(&["git_commit".to_string(), "shell_execute".to_string()])
             .is_empty());
         assert!(supported.commit);
     }
@@ -1000,35 +1000,35 @@ mod tests {
     #[test]
     fn parses_tagged_tool_call_format() {
         let call = super::parse_tagged_tool_call(
-            r#"<tool_call>filesystem.read(path="README.md")</tool_call>"#,
+            r#"<tool_call>filesystem_read(path="README.md")</tool_call>"#,
             4,
         )
         .expect("tagged tool call");
-        assert_eq!(call.name, "filesystem.read");
+        assert_eq!(call.name, "filesystem_read");
         assert_eq!(call.arguments, r#"{"path":"README.md"}"#);
         let xml_call = super::parse_tagged_tool_call(
-            "<tool_name>filesystem.read</tool_name><tool_input>{\"path\": \"README.md\"}</tool_input>",
+            "<tool_name>filesystem_read</tool_name><tool_input>{\"path\": \"README.md\"}</tool_input>",
             5,
         )
         .expect("structured tool call");
-        assert_eq!(xml_call.name, "filesystem.read");
+        assert_eq!(xml_call.name, "filesystem_read");
         assert_eq!(xml_call.arguments, r#"{"path":"README.md"}"#);
         let code_call = super::parse_tagged_tool_call(
-            r#"<tool_code>filesystem.read(path="README.md")</tool_code>"#,
+            r#"<tool_code>filesystem_read(path="README.md")</tool_code>"#,
             6,
         )
         .expect("tool code call");
-        assert_eq!(code_call.name, "filesystem.read");
-        let plain_call = super::parse_plain_tool_call("filesystem.read\npath: README.md", 7)
+        assert_eq!(code_call.name, "filesystem_read");
+        let plain_call = super::parse_plain_tool_call("filesystem_read\npath: README.md", 7)
             .expect("plain tool call");
-        assert_eq!(plain_call.name, "filesystem.read");
+        assert_eq!(plain_call.name, "filesystem_read");
         assert_eq!(plain_call.arguments, r#"{"path":"README.md"}"#);
         let xml_named = super::parse_xml_named_tool_call(
-            "<filesystem.read><parameter>path>README.md</parameter></filesystem.read>",
+            "<filesystem_read><parameter>path>README.md</parameter></filesystem_read>",
             8,
         )
         .expect("xml named tool call");
-        assert_eq!(xml_named.name, "filesystem.read");
+        assert_eq!(xml_named.name, "filesystem_read");
         assert_eq!(xml_named.arguments, r#"{"path":"README.md"}"#);
     }
 
@@ -1139,7 +1139,7 @@ mod tests {
                     thinking: None,
                     tool_calls: vec![NativeToolCall {
                         id: "call-1".into(),
-                        name: "filesystem.search".into(),
+                        name: "filesystem_search".into(),
                         arguments: r#"{"query":"needle"}"#.into(),
                     }],
                     usage: None,
@@ -1222,7 +1222,7 @@ mod tests {
                     thinking: None,
                     tool_calls: vec![NativeToolCall {
                         id: "call-1".into(),
-                        name: "filesystem.list".into(),
+                        name: "filesystem_list".into(),
                         arguments: r#"{"path":"."}"#.into(),
                     }],
                     usage: None,
@@ -1282,7 +1282,7 @@ mod tests {
             .position(|event| matches!(
                 event,
                 CoreEvent::ToolOutput { tool_name, output, .. }
-                    if tool_name == "filesystem.list" && output.contains("workspace boundary denied")
+                    if tool_name == "filesystem_list" && output.contains("workspace boundary denied")
             ))
             .expect("sandbox boundary rejection is reported");
         let retry_success = observed
@@ -1291,7 +1291,7 @@ mod tests {
                 matches!(
                     event,
                     CoreEvent::ToolOutput { tool_name, output, .. }
-                        if tool_name == "filesystem.read" && output.contains("inside workspace")
+                        if tool_name == "filesystem_read" && output.contains("inside workspace")
                 )
             })
             .expect("model retries with an in-workspace file");
@@ -1638,7 +1638,7 @@ mod tests {
             .permissions()
             .create_approval(
                 task_id,
-                "filesystem.write",
+                "filesystem_write",
                 evohime_permissions::Permission::FilesystemWrite,
                 "notes.txt",
             )
@@ -1958,7 +1958,7 @@ mod tests {
         )
         .unwrap();
         let payload = observability::HookPayload::new([
-            ("tool_name".into(), "git.commit".to_owned()),
+            ("tool_name".into(), "git_commit".to_owned()),
             ("iteration".into(), "3".to_owned()),
         ])
         .unwrap();

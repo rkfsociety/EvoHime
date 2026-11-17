@@ -4,7 +4,7 @@
 
 ## Scope и изменяемые контракты
 
-Подключить `analysis.run` к существующему kernel runtime и сделать сессии,
+Подключить `analysis_run` к существующему kernel runtime и сделать сессии,
 созданные агентом, обычными Core-owned сессиями — с теми же лимитами,
 идемпотентностью и recovery, что и у IPC-команд.
 
@@ -40,7 +40,7 @@
    ответственность существующего recovery.
 6. Recovery: `recover_analysis_kernels` уже fencing-ит running-сессии в
    `Crashed`; agent-path не должен обходить это и повторять blind retry.
-   Повторный `analysis.run` после краха создаёт новую сессию только явным
+   Повторный `analysis_run` после краха создаёт новую сессию только явным
    следующим шагом агента, который видит typed `crashed`/`unavailable`.
 7. Idempotency: `idempotency_key` формируется Core из
    `(task_id, kernel_id, operation, request_hash)`; повтор одного и того же

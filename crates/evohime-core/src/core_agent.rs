@@ -710,7 +710,7 @@ pub(crate) fn codex_command_tool_name(command: &str) -> String {
     } else {
         compact
     };
-    format!("shell.execute: {compact}")
+    format!("shell_execute: {compact}")
 }
 
 pub(crate) fn resolve_codex_executable() -> PathBuf {

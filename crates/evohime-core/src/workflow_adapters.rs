@@ -7,7 +7,7 @@
 //! |--------------------|----------------------------------------------------|
 //! | `child`            | `child_contracts::TypedChildTaskRequest` и report   |
 //! | `tool`             | `ToolRegistry` с существующим approval path         |
-//! | `mcp_tool`         | тот же `ToolRegistry`, Core-owned tool `mcp.call`   |
+//! | `mcp_tool`         | тот же `ToolRegistry`, Core-owned tool `mcp_call`   |
 //! | `context_provider` | read-only источники с проверкой свежести            |
 //! | `research`         | сохранённые research evidence                       |
 //! | `condition`/`transform` | deterministic-операции Core                   |

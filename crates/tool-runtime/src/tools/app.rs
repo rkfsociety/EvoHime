@@ -2,7 +2,7 @@
 //!
 //! Инструмент не принимает путь: на вход идёт название, а путь берётся из
 //! каталога ([`crate::app_catalog`]). Это не удобство, а граница — иначе через
-//! `app.open` можно было бы запустить любой файл на диске, обойдя и allow-list,
+//! `app_open` можно было бы запустить любой файл на диске, обойдя и allow-list,
 //! и разбор команды.
 
 use crate::{ToolContext, ToolError, ToolResult};
@@ -11,18 +11,18 @@ use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
 
-pub const OPEN_NAME: &str = "app.open";
+pub const OPEN_NAME: &str = "app_open";
 pub const OPEN_DESCRIPTION: &str =
     "Open a desktop application from the local application catalog by name";
 pub const OPEN_PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
 pub const OPEN_TIMEOUT: Duration = Duration::from_secs(15);
 
-pub const LIST_NAME: &str = "app.list";
-pub const LIST_DESCRIPTION: &str = "List the applications that app.open can open";
+pub const LIST_NAME: &str = "app_list";
+pub const LIST_DESCRIPTION: &str = "List the applications that app_open can open";
 pub const LIST_PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
 pub const LIST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Сколько записей возвращает `app.list` без явного запроса: каталог машины
+/// Сколько записей возвращает `app_list` без явного запроса: каталог машины
 /// может быть в сотни строк, а контекст модели — нет.
 const DEFAULT_LIST_LIMIT: usize = 60;
 

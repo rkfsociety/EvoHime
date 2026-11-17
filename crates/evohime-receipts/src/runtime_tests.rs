@@ -18,7 +18,7 @@ fn request(policy: PolicyDecision) -> ActionRequest {
         action_id: Uuid::now_v7(),
         task_id: "task-1".into(),
         run_id: "run-1".into(),
-        tool_name: "filesystem.write".into(),
+        tool_name: "filesystem_write".into(),
         policy_id: "policy-v1".into(),
         normalized_scope: "workspace".into(),
         input: json!({"path":"a.txt","content":"x"}),
@@ -370,7 +370,7 @@ fn reconciliation_completion_links_old_and_new_actions_atomically() {
     runtime.mark_pending_recovery(old_id, "unknown").unwrap();
     let mut new = request(PolicyDecision::Allow);
     new.action_id = Uuid::now_v7();
-    new.tool_name = "filesystem.read".into();
+    new.tool_name = "filesystem_read".into();
     runtime.prepare(new.clone()).unwrap();
     runtime.mark_started(new.action_id).unwrap();
     runtime.mark_returned(new.action_id).unwrap();
@@ -393,17 +393,17 @@ fn sampling_is_deterministic_and_zero_does_not_sample() {
     assert_eq!(
         sampled_read_only(
             "018f0f2a-2222-7222-8222-222222222222",
-            "filesystem.read",
+            "filesystem_read",
             10
         ),
         sampled_read_only(
             "018f0f2a-2222-7222-8222-222222222222",
-            "filesystem.read",
+            "filesystem_read",
             10
         )
     );
-    assert!(!sampled_read_only("action", "filesystem.read", 0));
-    assert!(sampled_read_only("action", "filesystem.read", 100));
+    assert!(!sampled_read_only("action", "filesystem_read", 0));
+    assert!(sampled_read_only("action", "filesystem_read", 100));
 }
 
 #[test]
@@ -599,7 +599,7 @@ fn approval_gc_deletes_only_terminal_intents_past_ttl_and_spares_pending_recover
 fn startup_recovery_quarantines_started_without_pre_and_preserves_unknown_result() {
     let mut db = Connection::open_in_memory().unwrap();
     install_schema(&db).unwrap();
-    db.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state) VALUES(1,?1,'task','run','shell.execute','workspace',1,?2,'policy','allow','prepared','started')", params![Uuid::now_v7().to_string(), "a".repeat(64)]).unwrap();
+    db.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state) VALUES(1,?1,'task','run','shell_execute','workspace',1,?2,'policy','allow','prepared','started')", params![Uuid::now_v7().to_string(), "a".repeat(64)]).unwrap();
     let action_id = db
         .query_row("SELECT action_id FROM receipt_actions LIMIT 1", [], |row| {
             row.get::<_, String>(0)

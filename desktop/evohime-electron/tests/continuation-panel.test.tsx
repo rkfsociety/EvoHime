@@ -45,7 +45,7 @@ describe('ContinuationPanel', () => {
         costUsedMicros: 0,
         stopReason: '',
         errorCode: '',
-        gates: [{ gateId: 'gate-1', kind: 'tool', capabilityRef: 'git.diff', status: 'passed', evidenceRef: 'gate:gate-1', errorCode: '' }]
+        gates: [{ gateId: 'gate-1', kind: 'tool', capabilityRef: 'git_diff', status: 'passed', evidenceRef: 'gate:gate-1', errorCode: '' }]
       }
     }
     render(<ContinuationPanel connection="connected" events={[event]} />)

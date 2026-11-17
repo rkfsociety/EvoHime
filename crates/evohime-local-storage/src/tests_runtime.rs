@@ -672,7 +672,7 @@ fn round_trips_typed_snapshot_contracts() {
             schema_version: 1,
             policy_version: 3,
             effective_permissions_hash: "permissions-hash".into(),
-            canonical_json: br#"{"tools":["filesystem.read"]}"#.to_vec(),
+            canonical_json: br#"{"tools":["filesystem_read"]}"#.to_vec(),
         },
         model_route: ModelRouteSnapshot {
             requested_route: "local-first".into(),

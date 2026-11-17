@@ -130,7 +130,7 @@ pub type NodeFuture<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<NodeSuccess, NodeError>> + Send + 'a>,
 >;
 
-/// Выполняет реальную работу узла: child request, tool call, `mcp.call`,
+/// Выполняет реальную работу узла: child request, tool call, `mcp_call`,
 /// контекстный провайдер или deterministic-операция Core.
 pub trait NodeAdapter: Send + Sync {
     fn execute<'a>(&'a self, invocation: NodeInvocation<'a>) -> NodeFuture<'a>;

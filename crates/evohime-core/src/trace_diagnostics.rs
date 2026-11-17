@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn distinguishes_absolute_external_path_without_retaining_it() {
         let metadata = classify_tool_path(
-            "filesystem.read",
+            "filesystem_read",
             &serde_json::json!({"path": external_path()}).to_string(),
             &workspace(),
         )
@@ -194,7 +194,7 @@ mod tests {
             "/work/Bombox/README.md"
         };
         let metadata = classify_tool_path(
-            "filesystem.read",
+            "filesystem_read",
             &serde_json::json!({"path": path}).to_string(),
             &workspace(),
         )
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn identifies_traversal_secret_and_logical_paths() {
         let traversal = classify_tool_path(
-            "filesystem.read",
+            "filesystem_read",
             r#"{"path":"workspace/../secret.txt"}"#,
             &workspace(),
         )
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(traversal.path_boundary_reason, "parent_traversal");
 
         let secret = classify_tool_path(
-            "filesystem.read",
+            "filesystem_read",
             r#"{"path":"config/.env.local"}"#,
             &workspace(),
         )
@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(secret.path_boundary_reason, "secret_path");
 
         let logical = classify_tool_path(
-            "filesystem.read",
+            "filesystem_read",
             r#"{"path":"uploads/trace.md"}"#,
             &workspace(),
         )
@@ -235,8 +235,8 @@ mod tests {
 
     #[test]
     fn ignores_non_filesystem_tools_and_malformed_arguments() {
-        assert!(classify_tool_path("shell.execute", r#"{"path":"x"}"#, &workspace()).is_none());
-        assert!(classify_tool_path("filesystem.read", "not-json", &workspace()).is_none());
+        assert!(classify_tool_path("shell_execute", r#"{"path":"x"}"#, &workspace()).is_none());
+        assert!(classify_tool_path("filesystem_read", "not-json", &workspace()).is_none());
     }
 
     #[test]

@@ -240,7 +240,7 @@ fn creates_schema_and_reports_version() {
     let id = database
         .record_tool_metric(ToolMetricInput {
             task_id: "task-1",
-            tool_name: "filesystem.read",
+            tool_name: "filesystem_read",
             iteration: 2,
             ok: false,
             failure_kind: Some("not_found"),

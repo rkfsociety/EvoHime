@@ -1,4 +1,4 @@
-//! Core-owned analysis kernel host for the declared `analysis.run` tool.
+//! Core-owned analysis kernel host for the declared `analysis_run` tool.
 //!
 //! This implementation reuses the existing IPC kernel runtime, session storage,
 //! and supervisor worker. It does not create a second runtime, duplicate dispatch,
@@ -24,7 +24,7 @@ use sha2::Digest;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-/// Canonical hash of the `analysis.run` tool manifest for use in session policy.
+/// Canonical hash of the `analysis_run` tool manifest for use in session policy.
 ///
 /// This is a deterministically computed SHA-256 digest of the canonical JSON
 /// representation of the tool's manifest. It is computed once and used to bind
@@ -37,12 +37,12 @@ pub fn analysis_run_manifest_hash() -> &'static str {
             Some(manifest) => match manifest.canonical_hash() {
                 Ok(hash) => hash,
                 Err(error) => {
-                    tracing::warn!(%error, "failed to compute canonical hash for analysis.run manifest; using agent policy hash");
+                    tracing::warn!(%error, "failed to compute canonical hash for analysis_run manifest; using agent policy hash");
                     AGENT_KERNEL_POLICY_HASH.to_string()
                 }
             },
             None => {
-                tracing::warn!("analysis.run tool manifest not found; using agent policy hash");
+                tracing::warn!("analysis_run tool manifest not found; using agent policy hash");
                 AGENT_KERNEL_POLICY_HASH.to_string()
             }
         };

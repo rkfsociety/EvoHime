@@ -15,12 +15,12 @@ ToolManifest, manifest schemas и permission owner; второго реестр�
 возвращает id обратно по активному loadout. Проверка подтвердила: OpenAI и
 DeepSeek отклоняют точечные имена с HTTP 400, поэтому трансляция была не
 косметикой, а обходом ограничения провайдера. Пара функций создаёт класс ошибок
-«модель вернула `filesystem_read`, Core ищет `filesystem.read`» и делает логи,
+«модель вернула `filesystem_read`, Core ищет `filesystem_read`» и делает логи,
 prompt и provider-запрос разными словарями.
 
 ## Граница
 - Канонический id — lowercase `[a-z0-9_]+`, разделитель `_`; точки запрещены.
-- `filesystem.patch` → `filesystem_patch` и аналогично для всех 64
+- `filesystem_patch` → `filesystem_patch` и аналогично для всех 64
   зарегистрированных инструментов и 9 `utility.*`.
 - Приём legacy-форм — только на входных границах и только на чтение.
 - Новые записи в SQLite, receipts, журналы и provider-запросы содержат
@@ -41,7 +41,7 @@ prompt и provider-запрос разными словарями.
   маркеры), `registry` (`starts_with("utility.")`/`"workflow."`),
   `trace_diagnostics`, `conversation_event_log`, `legacy_parser`,
   `chat-summary.ts`, `tool-names.ts`, `core_agent` (синтетическое
-  `shell.execute: …`).
+  `shell_execute: …`).
 
 ## Зависимости
 ### Блокирующие
@@ -72,7 +72,7 @@ Rollback — возврат предыдущей версии модуля; dura
 - [ ] `provider_function_name` и `canonical_tool_call_name` удалены, их тесты
       заменены проверкой тождества id.
 - [ ] `permissions.json` и `workspaces.json`/`chats.json` не требуют миграции.
-- [ ] Legacy `filesystem.read` принимается на каждой входной границе и никогда
+- [ ] Legacy `filesystem_read` принимается на каждой входной границе и никогда
       не пишется в новое состояние.
 - [ ] Ни одна эвристика не выводит capability из позиции точки.
 - [ ] Документация, планы 191–195 и eval-фикстуры согласованы с новым id.

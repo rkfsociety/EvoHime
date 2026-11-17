@@ -255,7 +255,7 @@ impl ToolRegistry {
     ///
     /// ```
     /// let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
-    /// assert!(registry.list().iter().any(|tool| tool.name == "filesystem.read"));
+    /// assert!(registry.list().iter().any(|tool| tool.name == "filesystem_read"));
     /// ```
     pub fn bootstrap() -> Self {
         Self::bootstrap_with_permissions(PermissionEngine::new())
@@ -676,7 +676,7 @@ impl ToolRegistry {
     /// Attaches the Core-owned analysis kernel host to this registry.
     ///
     /// The builder keeps existing constructors source-compatible: a registry
-    /// without a host still registers `analysis.run`, but every call fails
+    /// without a host still registers `analysis_run`, but every call fails
     /// closed with `analysis_kernel_unavailable` instead of executing in
     /// process. `Clone` preserves the host because it is an `Arc`.
     pub fn with_kernel_host(mut self, host: std::sync::Arc<dyn crate::KernelHost>) -> Self {

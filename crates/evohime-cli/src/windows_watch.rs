@@ -187,7 +187,7 @@ mod tests {
             payload: serde_json::to_vec(&serde_json::json!({
                 "ApprovalRequired": {
                     "approval_id": "4b67fc86-a06a-4ce6-b08a-4b856e1e4197",
-                    "tool_name": "filesystem.write",
+                    "tool_name": "filesystem_write",
                     "permission": "FilesystemWrite",
                     "scope": "/tmp/project/hello.py",
                     "preview": {
@@ -203,7 +203,7 @@ mod tests {
         let request = pending_approval(&event).expect("valid approval request");
 
         assert_eq!(request.approval_id, "4b67fc86-a06a-4ce6-b08a-4b856e1e4197");
-        assert_eq!(request.tool_name, "filesystem.write");
+        assert_eq!(request.tool_name, "filesystem_write");
         assert_eq!(request.permission, "FilesystemWrite");
         assert_eq!(request.scope, "/tmp/project/hello.py");
         assert_eq!(request.summary.as_deref(), Some("Create hello.py"));
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn rejects_malformed_approval_payloads_without_an_approval_id() {
         let event = generated::EventEnvelope {
-            payload: br#"{"ApprovalRequired":{"tool_name":"filesystem.write"}}"#.to_vec(),
+            payload: br#"{"ApprovalRequired":{"tool_name":"filesystem_write"}}"#.to_vec(),
             ..Default::default()
         };
 

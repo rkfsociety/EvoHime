@@ -15,7 +15,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 /// Registry identifier for direct program execution.
-pub const NAME: &str = "shell.execute";
+pub const NAME: &str = "shell_execute";
 /// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Execute a program directly inside the workspace";
 /// Permission required before a process may be started.

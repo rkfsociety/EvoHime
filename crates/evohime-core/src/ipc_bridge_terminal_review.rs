@@ -63,11 +63,11 @@ impl IpcBridge {
             policy_id: "policy:terminal-v1".into(),
             policy_version: 1,
             policy_hash: evohime_receipts::sha256_hex(b"policy:terminal-v1"),
-            manifest_hash: evohime_receipts::sha256_hex(b"builtin:shell.execute:v1"),
+            manifest_hash: evohime_receipts::sha256_hex(b"builtin:shell_execute:v1"),
             workspace_anchors: vec![context.workspace_root.to_string_lossy().into_owned()],
             operation_scopes: vec![scope.to_owned()],
             permissions: vec!["shell_execute".into()],
-            tool_identities: vec!["shell.execute".into()],
+            tool_identities: vec!["shell_execute".into()],
             network_routes: vec![],
             adapter_scopes: vec![],
             secret_refs: vec![],
@@ -97,7 +97,7 @@ impl IpcBridge {
                 "Terminal tools are not configured".into(),
             ));
         };
-        match tools.preflight(context, "shell.execute", &input).await? {
+        match tools.preflight(context, "shell_execute", &input).await? {
             evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
                 let scope = tools
                     .permissions()
@@ -107,7 +107,7 @@ impl IpcBridge {
                     action_id: uuid::Uuid::now_v7(),
                     task_id: context.task_id.to_string(),
                     run_id: context.task_id.to_string(),
-                    tool_name: "shell.execute".into(),
+                    tool_name: "shell_execute".into(),
                     policy_id: "permission:ShellExecute".into(),
                     normalized_scope: scope.clone(),
                     input: input.clone(),
@@ -213,7 +213,7 @@ impl IpcBridge {
                     evohime_tool_runtime::ToolError::Execution(decision.reason_code)
                 })?;
                 let result = tools
-                    .execute_with_cancellation(context, "shell.execute", input, cancellation)
+                    .execute_with_cancellation(context, "shell_execute", input, cancellation)
                     .await;
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
@@ -359,7 +359,7 @@ impl IpcBridge {
                 // creates the approval request and returns NeedsApproval;
                 // dispatching the implementation here would bypass policy.
                 tools
-                    .execute_with_cancellation(context, "shell.execute", input, cancellation)
+                    .execute_with_cancellation(context, "shell_execute", input, cancellation)
                     .await
             }
         }
@@ -509,7 +509,7 @@ impl IpcBridge {
                         action_id,
                         task_id: task_id.to_string(),
                         run_id: task_id.to_string(),
-                        tool_name: "shell.execute".into(),
+                        tool_name: "shell_execute".into(),
                         policy_id: "permission:ShellExecute".into(),
                         normalized_scope: receipt_scope,
                         input: input.clone(),
@@ -592,7 +592,7 @@ impl IpcBridge {
                 record_ledger_tool_call(&database, &receipt_request, None);
             }
             match tools
-                .execute_after_durable_approval(&context, "shell.execute", input, cancellation)
+                .execute_after_durable_approval(&context, "shell_execute", input, cancellation)
                 .await
             {
                 Ok(result) => {

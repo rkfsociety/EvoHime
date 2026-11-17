@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://evohime.local/tools/git.pull.json",
-  "title": "git.pull",
+  "$id": "https://evohime.local/tools/git_pull.json",
+  "title": "git_pull",
   "type": "object",
   "properties": {
     "remote": {

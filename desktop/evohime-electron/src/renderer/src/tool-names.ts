@@ -1,42 +1,42 @@
 /**
  * Human-readable names for Core tools.
  *
- * The transcript is read by a person, not by an operator: `filesystem.read`
+ * The transcript is read by a person, not by an operator: `filesystem_read`
  * says nothing to someone watching the agent work. An unknown identifier falls
  * through unchanged, so a newly added tool shows up as itself rather than
  * disappearing behind a wrong label.
  */
 
 const TOOL_LABELS: Record<string, string> = {
-  'agent.run': 'Запускаю подзадачу',
-  'analysis.run': 'Считаю во встроенном вычислителе',
-  'browser.extract': 'Извлекаю данные со страницы',
-  'browser.open': 'Открываю страницу',
-  'browser.session.click': 'Нажимаю на странице',
-  'browser.session.close': 'Закрываю вкладку',
-  'browser.session.navigate': 'Перехожу по адресу',
-  'browser.session.read': 'Читаю страницу',
-  'browser.session.screenshot': 'Делаю снимок страницы',
-  'browser.session.type': 'Ввожу текст на странице',
-  'filesystem.list': 'Смотрю содержимое папки',
-  'filesystem.patch': 'Правлю файл',
-  'filesystem.read': 'Читаю файл',
-  'filesystem.search': 'Ищу по файлам',
-  'filesystem.write': 'Записываю файл',
-  'git.commit': 'Создаю коммит',
-  'git.diff': 'Смотрю изменения',
-  'git.pull': 'Забираю изменения из репозитория',
-  'git.push': 'Отправляю коммиты',
-  'git.status': 'Проверяю состояние репозитория',
-  'http.fetch': 'Запрашиваю данные по сети',
-  'mcp.call': 'Обращаюсь к внешнему сервису',
-  'memory.search': 'Ищу в памяти',
-  'shell.execute': 'Выполняю команду'
+  'agent_run': 'Запускаю подзадачу',
+  'analysis_run': 'Считаю во встроенном вычислителе',
+  'browser_extract': 'Извлекаю данные со страницы',
+  'browser_open': 'Открываю страницу',
+  'browser_session_click': 'Нажимаю на странице',
+  'browser_session_close': 'Закрываю вкладку',
+  'browser_session_navigate': 'Перехожу по адресу',
+  'browser_session_read': 'Читаю страницу',
+  'browser_session_screenshot': 'Делаю снимок страницы',
+  'browser_session_type': 'Ввожу текст на странице',
+  'filesystem_list': 'Смотрю содержимое папки',
+  'filesystem_patch': 'Правлю файл',
+  'filesystem_read': 'Читаю файл',
+  'filesystem_search': 'Ищу по файлам',
+  'filesystem_write': 'Записываю файл',
+  'git_commit': 'Создаю коммит',
+  'git_diff': 'Смотрю изменения',
+  'git_pull': 'Забираю изменения из репозитория',
+  'git_push': 'Отправляю коммиты',
+  'git_status': 'Проверяю состояние репозитория',
+  'http_fetch': 'Запрашиваю данные по сети',
+  'mcp_call': 'Обращаюсь к внешнему сервису',
+  'memory_search': 'Ищу в памяти',
+  'shell_execute': 'Выполняю команду'
 }
 
 export function toolLabel(tool: string): string {
-  if (tool.startsWith('shell.execute: ')) {
-    return `Выполняю команду: ${tool.slice('shell.execute: '.length)}`
+  if (tool.startsWith('shell_execute: ')) {
+    return `Выполняю команду: ${tool.slice('shell_execute: '.length)}`
   }
   return TOOL_LABELS[tool] ?? tool
 }

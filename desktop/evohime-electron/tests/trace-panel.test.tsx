@@ -418,16 +418,16 @@ describe('trace panel', () => {
 
   it('adds bounded event and tool summaries without exporting tool payloads', () => {
     const trace = formatTrace(null, 'G:/github/EvoHime', [
-      { sequenceId: 10, taskId: 'task-1', eventType: 'tool.started', payload: '{"tool_name":"filesystem.search"}' },
-      { sequenceId: 11, taskId: 'task-1', eventType: 'tool.output', payload: '{"tool_name":"filesystem.search","output":"private context"}' },
-      { sequenceId: 12, taskId: 'task-1', eventType: 'tool.telemetry', payload: '{"tool_name":"filesystem.search","iteration":1,"ok":true}' },
+      { sequenceId: 10, taskId: 'task-1', eventType: 'tool.started', payload: '{"tool_name":"filesystem_search"}' },
+      { sequenceId: 11, taskId: 'task-1', eventType: 'tool.output', payload: '{"tool_name":"filesystem_search","output":"private context"}' },
+      { sequenceId: 12, taskId: 'task-1', eventType: 'tool.telemetry', payload: '{"tool_name":"filesystem_search","iteration":1,"ok":true}' },
       { sequenceId: 13, taskId: 'task-1', eventType: 'task.completed', payload: '{"final_message":"готово"}' }
     ])
 
     expect(trace).toContain('summary:')
     expect(trace).toContain('sequence_range=10..13 unique=4 contiguous=yes')
     expect(trace).toContain('task_outcome=completed:1 failed:0 stopped:0')
-    expect(trace).toContain('tool=filesystem.search started=1 outputs=1 telemetry=1 ok=1 failed=0 pending=0')
+    expect(trace).toContain('tool=filesystem_search started=1 outputs=1 telemetry=1 ok=1 failed=0 pending=0')
     expect(trace).toContain('tool.output=1')
   })
 
@@ -437,7 +437,7 @@ describe('trace panel', () => {
         sequenceId: 20,
         taskId: 'task-1',
         eventType: 'tool.telemetry',
-        payload: '{"tool_name":"filesystem.read","iteration":3,"ok":false,"failure_kind":"denied_policy","path_form":"absolute","path_scope":"outside_workspace","path_boundary_reason":"absolute_path_not_allowed"}'
+        payload: '{"tool_name":"filesystem_read","iteration":3,"ok":false,"failure_kind":"denied_policy","path_form":"absolute","path_scope":"outside_workspace","path_boundary_reason":"absolute_path_not_allowed"}'
       },
       {
         sequenceId: 21,
@@ -448,7 +448,7 @@ describe('trace panel', () => {
     ])
 
     expect(trace).toContain('tool_failures:')
-    expect(trace).toContain('tool=filesystem.read iteration=3 failure_kind=denied_policy path_form=absolute path_scope=outside_workspace path_boundary_reason=absolute_path_not_allowed')
+    expect(trace).toContain('tool=filesystem_read iteration=3 failure_kind=denied_policy path_form=absolute path_scope=outside_workspace path_boundary_reason=absolute_path_not_allowed')
     expect(trace).toContain('"path_form": "absolute"')
     expect(trace).not.toContain('C:\\Users\\roman')
   })
@@ -460,8 +460,8 @@ describe('trace transcript', () => {
       conversationEvent(1, 'user_message_accepted', { content: 'проверь репозиторий' }),
       conversationEvent(2, 'assistant_message_delta', { content: 'смотрю ' }),
       conversationEvent(3, 'assistant_message_delta', { content: 'файлы' }),
-      conversationEvent(4, 'tool_started', { tool_name: 'filesystem.search', arguments: '{"query":"retry"}' }),
-      conversationEvent(5, 'tool_output', { tool_name: 'filesystem.search', output: 'src/retry.rs' }),
+      conversationEvent(4, 'tool_started', { tool_name: 'filesystem_search', arguments: '{"query":"retry"}' }),
+      conversationEvent(5, 'tool_output', { tool_name: 'filesystem_search', output: 'src/retry.rs' }),
       conversationEvent(6, 'assistant_message_failed', {
         error_code: 'permission_denied',
         source: 'core',
@@ -479,9 +479,9 @@ describe('trace transcript', () => {
     expect(transcript).toContain('### Пользователь (task=task-1)')
     expect(transcript).toContain('проверь репозиторий')
     expect(transcript).toContain('### Ассистент\nсмотрю файлы')
-    expect(transcript).toContain('#### → filesystem.search')
+    expect(transcript).toContain('#### → filesystem_search')
     expect(transcript).toContain('{"query":"retry"}')
-    expect(transcript).toContain('#### ← filesystem.search')
+    expect(transcript).toContain('#### ← filesystem_search')
     expect(transcript).toContain('src/retry.rs')
     expect(transcript).toContain('error_code=permission_denied source=core operation=task.execute')
     expect(transcript.match(/Ошибка задачи/g)).toHaveLength(1)
@@ -515,8 +515,8 @@ describe('trace transcript', () => {
   it('adds the transcript to the exported trace and reports its size', () => {
     const trace = formatTrace(null, 'G:/github/EvoHime', [], null, [], [
       conversationEvent(1, 'user_message_accepted', { content: 'привет' }),
-      conversationEvent(2, 'tool_started', { tool_name: 'filesystem.list', arguments: '{"path":"."}' }),
-      conversationEvent(3, 'tool_output', { tool_name: 'filesystem.list', output: 'Cargo.toml' })
+      conversationEvent(2, 'tool_started', { tool_name: 'filesystem_list', arguments: '{"path":"."}' }),
+      conversationEvent(3, 'tool_output', { tool_name: 'filesystem_list', output: 'Cargo.toml' })
     ])
     expect(trace).toContain('conversation_events: 3')
     expect(trace).toContain('transcript:')
@@ -527,7 +527,7 @@ describe('trace transcript', () => {
 
   it('keeps the export boundary: a URL in tool output is masked, not rejected', () => {
     const trace = formatTrace(null, null, [], null, [], [
-      conversationEvent(1, 'tool_output', { tool_name: 'browser.open', output: 'opened https://example.test/page' })
+      conversationEvent(1, 'tool_output', { tool_name: 'browser_open', output: 'opened https://example.test/page' })
     ])
     expect(trace).toContain('opened [URL]')
     expect(trace).not.toContain('example.test')
@@ -542,7 +542,7 @@ describe('trace transcript', () => {
         onClose={() => {}}
         events={[conversationPage([
           conversationEvent(1, 'user_message_accepted', { content: 'проверь репозиторий' }),
-          conversationEvent(2, 'tool_started', { tool_name: 'filesystem.list', arguments: '{"path":"."}' })
+          conversationEvent(2, 'tool_started', { tool_name: 'filesystem_list', arguments: '{"path":"."}' })
         ])]}
       />
     )

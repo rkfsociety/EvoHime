@@ -8,7 +8,7 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
 /// Stable registry identifier for repository status reads.
-pub const STATUS_NAME: &str = "git.status";
+pub const STATUS_NAME: &str = "git_status";
 /// User-facing description of the repository status tool.
 pub const STATUS_DESCRIPTION: &str = "Show repository status";
 /// Permission required to inspect repository status.
@@ -17,7 +17,7 @@ pub const STATUS_PERMISSIONS: &[Permission] = &[Permission::GitRead];
 pub const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Stable registry identifier for repository diff reads.
-pub const DIFF_NAME: &str = "git.diff";
+pub const DIFF_NAME: &str = "git_diff";
 /// User-facing description of the repository diff tool.
 pub const DIFF_DESCRIPTION: &str = "Show repository diff";
 /// Permission required to inspect repository diffs.
@@ -26,7 +26,7 @@ pub const DIFF_PERMISSIONS: &[Permission] = &[Permission::GitRead];
 pub const DIFF_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Stable registry identifier for committing workspace changes.
-pub const COMMIT_NAME: &str = "git.commit";
+pub const COMMIT_NAME: &str = "git_commit";
 /// User-facing description of the commit tool.
 pub const COMMIT_DESCRIPTION: &str = "Create a git commit";
 /// Permission required to stage and commit repository changes.
@@ -35,7 +35,7 @@ pub const COMMIT_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
 pub const COMMIT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Stable registry identifier for fast-forward-only pulls.
-pub const PULL_NAME: &str = "git.pull";
+pub const PULL_NAME: &str = "git_pull";
 /// User-facing description of the pull tool.
 pub const PULL_DESCRIPTION: &str = "Pull updates from the configured remote";
 /// Permission required to update the local repository from a remote.
@@ -44,7 +44,7 @@ pub const PULL_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
 pub const PULL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Stable registry identifier for publishing commits to a remote.
-pub const PUSH_NAME: &str = "git.push";
+pub const PUSH_NAME: &str = "git_push";
 /// User-facing description of the push tool.
 pub const PUSH_DESCRIPTION: &str = "Push commits to the configured remote";
 /// Permission required to publish repository changes.
@@ -53,7 +53,7 @@ pub const PUSH_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
 pub const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Stable registry identifier for repository history reads.
-pub const LOG_NAME: &str = "git.log";
+pub const LOG_NAME: &str = "git_log";
 /// User-facing description of the repository history tool.
 pub const LOG_DESCRIPTION: &str = "Show bounded repository history";
 /// Permission required to inspect repository history.
@@ -62,7 +62,7 @@ pub const LOG_PERMISSIONS: &[Permission] = &[Permission::GitRead];
 pub const LOG_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Stable registry identifier for showing a commit or object.
-pub const SHOW_NAME: &str = "git.show";
+pub const SHOW_NAME: &str = "git_show";
 /// User-facing description of the object display tool.
 pub const SHOW_DESCRIPTION: &str = "Show a bounded commit or object diff";
 /// Permission required to inspect repository objects.
@@ -71,7 +71,7 @@ pub const SHOW_PERMISSIONS: &[Permission] = &[Permission::GitRead];
 pub const SHOW_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Stable registry identifier for line ownership reads.
-pub const BLAME_NAME: &str = "git.blame";
+pub const BLAME_NAME: &str = "git_blame";
 /// User-facing description of the line ownership tool.
 pub const BLAME_DESCRIPTION: &str = "Show line ownership for a workspace file range";
 /// Permission required to inspect repository line history.
@@ -80,7 +80,7 @@ pub const BLAME_PERMISSIONS: &[Permission] = &[Permission::GitRead];
 pub const BLAME_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Stable registry identifier for changed-file listings.
-pub const CHANGED_FILES_NAME: &str = "git.changed_files";
+pub const CHANGED_FILES_NAME: &str = "git_changed_files";
 /// User-facing description of the changed-file listing tool.
 pub const CHANGED_FILES_DESCRIPTION: &str = "List changed files with status";
 /// Permission required to inspect changed-file status.
@@ -702,12 +702,12 @@ mod tests {
     async fn diff_rejects_arguments_that_belong_to_git_show() {
         let (_dir, ctx, _) = init_repo();
 
-        // `git.show` accepts `reference` and `stat_only`; `git.diff` does not.
+        // `git_show` accepts `reference` and `stat_only`; `git_diff` does not.
         // Ignoring them silently would return a whole-tree diff for a request
         // that asked for one revision.
         let error = diff(&ctx, json!({"reference": "HEAD", "stat_only": true}))
             .await
-            .expect_err("git.diff must reject git.show arguments");
+            .expect_err("git_diff must reject git_show arguments");
         assert!(
             matches!(&error, ToolError::InvalidInput { .. }),
             "unexpected error: {error:?}"

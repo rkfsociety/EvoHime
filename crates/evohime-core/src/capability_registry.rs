@@ -681,7 +681,7 @@ mod tests {
                 version: "1".into(),
                 content_hash: "abcdef0123456789abcdef0123456789".into(),
             }],
-            allowed_tools: vec!["filesystem.read".into(), "git.diff".into()],
+            allowed_tools: vec!["filesystem_read".into(), "git_diff".into()],
             allowed_domains: vec!["docs.example.com".into()],
             protected_paths: vec!["src".into()],
             risk_class: RiskClass::Medium,
@@ -710,13 +710,13 @@ mod tests {
     fn derives_intersection_without_escalating_risk() {
         let value = manifest("reviewer");
         let request = EffectivePermissions {
-            allowed_tools: vec!["git.diff".into(), "shell.execute".into()],
+            allowed_tools: vec!["git_diff".into(), "shell_execute".into()],
             allowed_domains: vec!["docs.example.com".into()],
             protected_paths: vec!["tests".into()],
             risk_class: RiskClass::Low,
         };
         let result = value.effective_permissions(&request).unwrap();
-        assert_eq!(result.allowed_tools, vec!["git.diff"]);
+        assert_eq!(result.allowed_tools, vec!["git_diff"]);
         assert_eq!(result.protected_paths, vec!["src", "tests"]);
         let mut elevated = request;
         elevated.risk_class = RiskClass::High;
@@ -730,7 +730,7 @@ mod tests {
     fn matcher_is_bounded_and_deterministic() {
         let query = MatchQuery {
             intent: "review reviewer".into(),
-            required_tools: vec!["git.diff".into()],
+            required_tools: vec!["git_diff".into()],
             required_domains: vec!["docs.example.com".into()],
             requested_risk: RiskClass::Low,
         };

@@ -212,7 +212,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     }
                     let current = evohime_local_storage::domains::workflow::get(connection.connection(), &worktree_id).map_err(|e| e.to_string())?.ok_or_else(|| "worktree not found".to_string())?;
                     if operation == "ready" && !std::path::PathBuf::from(&project.workspace_path).join(&current.root_ref).is_dir() {
-                        return Err("worktree root is not present; create it through the approved git.worktree.create tool".to_string());
+                        return Err("worktree root is not present; create it through the approved git_worktree_create tool".to_string());
                     }
                     let ok = evohime_local_storage::domains::workflow::transition(connection.connection(), &worktree_id, expected_version, &operation, crate::task_memory::now_millis() as i64).map_err(|e| e.to_string())?;
                     if !ok { return Err("stale or unknown worktree transition".to_string()); }

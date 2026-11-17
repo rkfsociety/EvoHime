@@ -676,7 +676,7 @@ async fn reconciliation_command_executes_only_new_read_only_action_inner() {
             action_id: old_action_id,
             task_id: task_id.to_string(),
             run_id: task_id.to_string(),
-            tool_name: "shell.execute".into(),
+            tool_name: "shell_execute".into(),
             policy_id: "permission:ShellExecute".into(),
             normalized_scope: "workspace".into(),
             input: serde_json::json!({"program":"echo","args":[]}),
@@ -702,7 +702,7 @@ async fn reconciliation_command_executes_only_new_read_only_action_inner() {
             generated::command_envelope::Command::ReconcilePendingReceiptAction(
                 generated::ReconcilePendingReceiptAction {
                     old_action_id: old_action_id.to_string(),
-                    tool_name: "filesystem.read".into(),
+                    tool_name: "filesystem_read".into(),
                     input_json: r#"{"path":"observed.txt"}"#.into(),
                     workspace_path: root.display().to_string(),
                 },
@@ -768,7 +768,7 @@ async fn serves_bounded_git_status_and_diff_through_core_tools() {
     let status_payload = bridge
         .dispatch_git_read(
             root.display().to_string(),
-            "git.status",
+            "git_status",
             serde_json::Value::Null,
             128,
         )
@@ -785,7 +785,7 @@ async fn serves_bounded_git_status_and_diff_through_core_tools() {
     let diff_payload = bridge
         .dispatch_git_read(
             root.display().to_string(),
-            "git.diff",
+            "git_diff",
             serde_json::json!({"path": "notes.txt"}),
             8,
         )

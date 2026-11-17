@@ -5,7 +5,7 @@ use std::path::Path;
 
 fn visible_text_benchmark(c: &mut Criterion) {
     let response =
-        "Проверяю проект. <function_calls>[{\"name\":\"filesystem.list\"}]</function_calls>";
+        "Проверяю проект. <function_calls>[{\"name\":\"filesystem_list\"}]</function_calls>";
     c.bench_function("legacy_visible_agent_text", |benchmark| {
         benchmark.iter(|| visible_agent_text(black_box(response)))
     });

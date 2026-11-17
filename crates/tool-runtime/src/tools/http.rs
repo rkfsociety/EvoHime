@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::time::Duration;
 
-pub const NAME: &str = "http.fetch";
+pub const NAME: &str = "http_fetch";
 pub const DESCRIPTION: &str = "Fetch an HTTP resource with SSRF protection";
 pub const PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
 pub const TIMEOUT: Duration = Duration::from_secs(20);
@@ -51,7 +51,7 @@ pub async fn fetch(ctx: &ToolContext, value: serde_json::Value) -> Result<ToolRe
                 attempt.stop()
             }
         }))
-        .user_agent("EvoHime/0.1 http.fetch")
+        .user_agent("EvoHime/0.1 http_fetch")
         .build()
         .map_err(|error| ToolError::Execution(format!("client setup failed: {error}")))?;
     let response = client

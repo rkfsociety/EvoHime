@@ -22,12 +22,12 @@ use crate::workflow::{
 };
 
 /// Переменная окружения host allowlist, которую уже использует Core-owned
-/// инструмент `mcp.call`. Реестр обязан согласовываться с ней, иначе запуск
+/// инструмент `mcp_call`. Реестр обязан согласовываться с ней, иначе запуск
 /// узла упёрся бы в SSRF-проверку уже после dispatch marker.
 pub const MCP_ALLOWED_HOSTS_ENV: &str = "EVOHIME_MCP_ALLOWED_HOSTS";
 
 /// Единственный исполнитель `mcp_tool`: существующий Core tool.
-pub const MCP_TOOL_NAME: &str = "mcp.call";
+pub const MCP_TOOL_NAME: &str = "mcp_call";
 
 /// Транспорты MCP. Поддержан только удалённый JSON-RPC: остальные записи
 /// валидны в контракте, но помечаются `transport_unavailable` и не могут быть
@@ -309,7 +309,7 @@ pub struct WorkflowRegistry {
     providers: BTreeMap<String, ContextProviderEntry>,
     tools: BTreeSet<String>,
     subgraphs: BTreeMap<String, WorkflowGraph>,
-    /// Host allowlist, уже применённый к `mcp.call`. `None` — переменная не
+    /// Host allowlist, уже применённый к `mcp_call`. `None` — переменная не
     /// задана, и Core полагается на SSRF-проверку самого инструмента.
     mcp_host_allowlist: Option<BTreeSet<String>>,
 }
@@ -344,8 +344,8 @@ impl WorkflowRegistry {
             "workspace.read",
             "workspace.write",
             "workspace.search",
-            "git.status",
-            "git.diff",
+            "git_status",
+            "git_diff",
             "research.fetch",
             MCP_TOOL_NAME,
         ] {
@@ -910,7 +910,7 @@ fn bootstrap_blocks() -> Vec<BlockDescriptor> {
             block_id: "core.mcp.call".into(),
             block_version: 1,
             display_name: "Вызов MCP-инструмента".into(),
-            description: "Удалённый JSON-RPC вызов через Core-owned mcp.call".into(),
+            description: "Удалённый JSON-RPC вызов через Core-owned mcp_call".into(),
             action_kind: "mcp_tool".into(),
             inputs: vec![],
             outputs: vec![BlockPort {

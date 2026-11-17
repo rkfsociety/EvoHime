@@ -9,7 +9,7 @@ use tokio::fs;
 use tokio::io::AsyncReadExt;
 
 /// Registry identifier for reading the end of a log file.
-pub const TAIL_NAME: &str = "logs.tail";
+pub const TAIL_NAME: &str = "logs_tail";
 /// User-facing description of the log tail action.
 pub const TAIL_DESCRIPTION: &str = "Read last N lines from a log file";
 /// Permission required to read a log file.
@@ -21,7 +21,7 @@ const MAX_TAIL_LINE_BYTES: usize = 64 * 1024;
 const MAX_TAIL_OUTPUT_BYTES: usize = 1024 * 1024;
 
 /// Registry identifier for searching log files.
-pub const GREP_NAME: &str = "logs.grep";
+pub const GREP_NAME: &str = "logs_grep";
 /// User-facing description of the log search action.
 pub const GREP_DESCRIPTION: &str = "Search log files for a pattern";
 /// Permission required to read searched log files.
@@ -34,7 +34,7 @@ const MAX_GREP_LINE_CHARS: usize = 16 * 1024;
 const MAX_GREP_OUTPUT_BYTES: usize = 1024 * 1024;
 
 // ============================================================================
-// logs.tail: Read last N lines
+// logs_tail: Read last N lines
 // ============================================================================
 
 #[derive(Debug, Deserialize)]
@@ -126,7 +126,7 @@ fn append_tail_line(
 }
 
 // ============================================================================
-// logs.grep: Search in logs
+// logs_grep: Search in logs
 // ============================================================================
 
 #[derive(Debug, Deserialize)]

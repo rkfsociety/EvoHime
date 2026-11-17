@@ -457,19 +457,19 @@ mod skill_selection {
     pub fn correct_skill_wins_near_miss() -> Result<(), String> {
         let code_reviewer = manifest(
             "code-reviewer",
-            &["git.diff", "filesystem.read"],
+            &["git_diff", "filesystem_read"],
             &["docs.example.com"],
             RiskClass::Medium,
         );
         let release_notes = manifest(
             "release-notes-writer",
-            &["git.diff", "filesystem.read"],
+            &["git_diff", "filesystem_read"],
             &["docs.example.com"],
             RiskClass::Medium,
         );
         let query = MatchQuery {
             intent: "please have the code-reviewer look at this diff before merge".into(),
-            required_tools: vec!["git.diff".into()],
+            required_tools: vec!["git_diff".into()],
             required_domains: vec![],
             requested_risk: RiskClass::Low,
         };
@@ -495,11 +495,11 @@ mod skill_selection {
     /// A skill missing a required tool must never be offered, even if its
     /// name closely matches the intent text.
     pub fn skill_lacking_required_tool_is_excluded() -> Result<(), String> {
-        let has_shell = manifest("ops-runner", &["shell.execute"], &[], RiskClass::High);
-        let read_only = manifest("ops-inspector", &["filesystem.read"], &[], RiskClass::Low);
+        let has_shell = manifest("ops-runner", &["shell_execute"], &[], RiskClass::High);
+        let read_only = manifest("ops-inspector", &["filesystem_read"], &[], RiskClass::Low);
         let query = MatchQuery {
             intent: "run the ops runner to execute the deployment script".into(),
-            required_tools: vec!["shell.execute".into()],
+            required_tools: vec!["shell_execute".into()],
             required_domains: vec![],
             requested_risk: RiskClass::High,
         };
@@ -508,7 +508,7 @@ mod skill_selection {
         require(matches.len() == 1, "expected exactly one eligible skill")?;
         require(
             matches[0].manifest_name == "ops-runner",
-            "the read-only skill must not be offered for a shell.execute intent",
+            "the read-only skill must not be offered for a shell_execute intent",
         )
     }
 
@@ -516,10 +516,10 @@ mod skill_selection {
     /// lower than what it requests -- and a request above a skill's ceiling
     /// must be rejected outright rather than silently downgraded.
     pub fn risk_escalation_above_manifest_is_rejected() -> Result<(), String> {
-        let low_risk_only = manifest("doc-formatter", &["filesystem.write"], &[], RiskClass::Low);
+        let low_risk_only = manifest("doc-formatter", &["filesystem_write"], &[], RiskClass::Low);
         let query = MatchQuery {
             intent: "format the documentation".into(),
-            required_tools: vec!["filesystem.write".into()],
+            required_tools: vec!["filesystem_write".into()],
             required_domains: vec![],
             requested_risk: RiskClass::High,
         };
@@ -609,8 +609,8 @@ mod tooling {
     pub fn manifest_hash_changes_when_schema_changes() -> Result<(), String> {
         let registry = evohime_tool_runtime::ToolRegistry::bootstrap();
         let mut manifest = registry
-            .manifest_for("filesystem.read")
-            .ok_or("filesystem.read manifest missing")?;
+            .manifest_for("filesystem_read")
+            .ok_or("filesystem_read manifest missing")?;
         let original = manifest
             .canonical_hash()
             .map_err(|error| error.to_string())?;

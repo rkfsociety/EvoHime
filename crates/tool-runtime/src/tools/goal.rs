@@ -4,12 +4,12 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for Core goal criterion verification.
-pub const NAME: &str = "goal.verify";
+pub const NAME: &str = "goal_verify";
 /// Registry identifier for Core goal creation by the agent.
-pub const CREATE_NAME: &str = "goal.create";
+pub const CREATE_NAME: &str = "goal_create";
 /// Input and output summary exposed in tool catalogs.
 pub const DESCRIPTION: &str = "Verify and mark a criterion of the active Core Goal as completed after checking its result with tools. Input: { goal_id, criterion_id, evidence_summary }.";
-/// Input and output summary for `goal.create`.
+/// Input and output summary for `goal_create`.
 pub const CREATE_DESCRIPTION: &str = "Create and pin a durable Core Goal for multi-step or long-running work so it persists in the UI and continues until all criteria are verified. Input: { objective, success_criteria?: string[], continuation_budget?: integer }.";
 /// Permissions required before requesting goal verification (none; Core validates ownership).
 pub const PERMISSIONS: &[Permission] = &[];
@@ -17,12 +17,12 @@ pub const PERMISSIONS: &[Permission] = &[];
 pub const CREATE_PERMISSIONS: &[Permission] = &[];
 /// Maximum duration advertised to the tool registry.
 pub const TIMEOUT: Duration = Duration::from_secs(15);
-/// Maximum duration advertised for `goal.create`.
+/// Maximum duration advertised for `goal_create`.
 pub const CREATE_TIMEOUT: Duration = Duration::from_secs(15);
-/// Default criterion statement used when `goal.create` omits `success_criteria`.
+/// Default criterion statement used when `goal_create` omits `success_criteria`.
 pub const DEFAULT_CRITERION_STATEMENT: &str = "Цель полностью выполнена и проверена.";
 
-/// Validated input for `goal.create`.
+/// Validated input for `goal_create`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoalCreateInput {
     /// Human-readable goal objective.
@@ -33,7 +33,7 @@ pub struct GoalCreateInput {
     pub continuation_budget: Option<u32>,
 }
 
-/// Validated input for `goal.verify`.
+/// Validated input for `goal_verify`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoalVerifyInput {
     /// Core Goal identifier.
@@ -50,7 +50,7 @@ pub struct GoalVerifyInput {
 /// does not own the Core goal database.
 pub async fn execute(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, ToolError> {
     Err(ToolError::Execution(
-        "goal.verify is executed by the Core goal runtime".into(),
+        "goal_verify is executed by the Core goal runtime".into(),
     ))
 }
 
@@ -60,11 +60,11 @@ pub async fn execute(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, To
 /// does not own the Core goal database.
 pub async fn execute_create(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, ToolError> {
     Err(ToolError::Execution(
-        "goal.create is executed by the Core goal runtime".into(),
+        "goal_create is executed by the Core goal runtime".into(),
     ))
 }
 
-/// Parses and validates `goal.create` arguments.
+/// Parses and validates `goal_create` arguments.
 ///
 /// # Errors
 ///
@@ -154,7 +154,7 @@ pub fn format_create_result(
         .collect::<Vec<_>>()
         .join("; ");
     let output = format!(
-        "goal.create: created goal '{goal_id}' (status: {goal_status}) for objective '{objective}'. Criteria: {criteria_summary}. Verify each criterion with goal.verify after checking the result."
+        "goal_create: created goal '{goal_id}' (status: {goal_status}) for objective '{objective}'. Criteria: {criteria_summary}. Verify each criterion with goal_verify after checking the result."
     );
     ToolResult {
         output,
@@ -170,7 +170,7 @@ pub fn format_create_result(
     }
 }
 
-/// Parses and validates `goal.verify` arguments.
+/// Parses and validates `goal_verify` arguments.
 ///
 /// # Errors
 ///
@@ -208,11 +208,11 @@ pub fn format_result(
 ) -> ToolResult {
     let output = if remaining_ids.is_empty() {
         format!(
-            "goal.verify: criterion '{criterion_id}' verified on goal '{goal_id}'. Goal status: {goal_status} ({completed_count}/{total_count} criteria completed). All criteria are complete."
+            "goal_verify: criterion '{criterion_id}' verified on goal '{goal_id}'. Goal status: {goal_status} ({completed_count}/{total_count} criteria completed). All criteria are complete."
         )
     } else {
         format!(
-            "goal.verify: criterion '{criterion_id}' verified on goal '{goal_id}'. Goal status: {goal_status} ({completed_count}/{total_count} criteria completed). Remaining criteria: {}.",
+            "goal_verify: criterion '{criterion_id}' verified on goal '{goal_id}'. Goal status: {goal_status} ({completed_count}/{total_count} criteria completed). Remaining criteria: {}.",
             remaining_ids.join(", ")
         )
     };

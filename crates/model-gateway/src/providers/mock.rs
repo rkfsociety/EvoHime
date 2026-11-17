@@ -135,13 +135,13 @@ mod tests {
             vec![],
             vec![NativeToolCall {
                 id: "c1".into(),
-                name: "filesystem.read".into(),
+                name: "filesystem_read".into(),
                 arguments: r#"{"path":"a.txt"}"#.into(),
             }],
         );
         let result = provider.chat_with_tools(None, &[], &[]).await.expect("ok");
         assert_eq!(result.tool_calls.len(), 1);
-        assert_eq!(result.tool_calls[0].name, "filesystem.read");
+        assert_eq!(result.tool_calls[0].name, "filesystem_read");
     }
 
     #[tokio::test]
@@ -154,7 +154,7 @@ mod tests {
                     thinking: None,
                     tool_calls: vec![NativeToolCall {
                         id: "c1".into(),
-                        name: "filesystem.read".into(),
+                        name: "filesystem_read".into(),
                         arguments: r#"{"path":"a.txt"}"#.into(),
                     }],
                     usage: None,

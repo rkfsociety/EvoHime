@@ -351,7 +351,7 @@ fn cloudflare_typed_error_code(base_url: &str, body: &str) -> Option<u64> {
 /// Rewrites Core tool declarations into the OpenAI-compatible wire shape.
 ///
 /// Function names must match `^[a-zA-Z0-9_-]+$`; OpenAI and DeepSeek reject
-/// dotted Core ids such as `filesystem.read` with HTTP 400. The manifest hash
+/// dotted Core ids such as `filesystem_read` with HTTP 400. The manifest hash
 /// is Core-owned metadata and is not part of the provider schema. The request
 /// may be translated to Gemini, whose function declarations reject the common
 /// `additionalProperties` keyword.
@@ -960,7 +960,7 @@ mod tests {
     #[test]
     fn wire_tools_use_provider_safe_function_names() {
         let mut spec = ToolSpec::function(
-            "filesystem.read",
+            "filesystem_read",
             "Read a file",
             json!({"type": "object", "properties": {}, "additionalProperties": false}),
         );
@@ -1039,7 +1039,7 @@ mod tests {
                     tool_calls: vec![ApiToolCall {
                         id: Some("call_1".into()),
                         function: Some(ApiFunctionCall {
-                            name: Some("filesystem.read".into()),
+                            name: Some("filesystem_read".into()),
                             arguments: Some(r#"{"path":"README.md"}"#.into()),
                         }),
                     }],
@@ -1054,7 +1054,7 @@ mod tests {
         let result = payload.into_chat_result();
         assert!(result.content.is_empty());
         assert_eq!(result.tool_calls.len(), 1);
-        assert_eq!(result.tool_calls[0].name, "filesystem.read");
+        assert_eq!(result.tool_calls[0].name, "filesystem_read");
         assert!(result.tool_calls[0].arguments.contains("README.md"));
         assert_eq!(
             result.usage,
@@ -1070,13 +1070,13 @@ mod tests {
     #[test]
     fn tool_spec_serializes_openai_shape() {
         let spec = ToolSpec::function(
-            "filesystem.read",
+            "filesystem_read",
             "Read a file",
             json!({"type":"object","properties":{"path":{"type":"string"}}}),
         );
         let value = serde_json::to_value(&spec).expect("serialize");
         assert_eq!(value["type"], "function");
-        assert_eq!(value["function"]["name"], "filesystem.read");
+        assert_eq!(value["function"]["name"], "filesystem_read");
     }
 
     #[test]

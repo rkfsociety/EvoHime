@@ -9,7 +9,7 @@ fn model_tool_observation(
     if !succeeded
         || !matches!(
             tool_name,
-            TOOL_FILESYSTEM_READ | "filesystem.write" | "filesystem.patch"
+            TOOL_FILESYSTEM_READ | "filesystem_write" | "filesystem_patch"
         )
     {
         return guarded_output.to_owned();
@@ -49,7 +49,7 @@ fn inject_observed_expected_hash(
     input: &mut serde_json::Value,
     observed_revisions: &std::collections::HashMap<String, String>,
 ) -> bool {
-    if !matches!(tool_name, "filesystem.write" | "filesystem.patch") {
+    if !matches!(tool_name, "filesystem_write" | "filesystem_patch") {
         return false;
     }
     let Some(object) = input.as_object_mut() else {
@@ -88,7 +88,7 @@ fn update_observed_file_revision(
 ) {
     if !matches!(
         tool_name,
-        TOOL_FILESYSTEM_READ | "filesystem.write" | "filesystem.patch"
+        TOOL_FILESYSTEM_READ | "filesystem_write" | "filesystem_patch"
     ) {
         return;
     }
@@ -140,7 +140,7 @@ fn iteration_limit_final_answer(iteration: usize, max_iterations: usize) -> bool
 
 /// Serializes guardrail-redacted tool arguments for the conversation trace and
 /// bounds them so one oversized value (for example an entire file body passed
-/// to `filesystem.write`) cannot push the `tool.started` event past the bounded
+/// to `filesystem_write`) cannot push the `tool.started` event past the bounded
 /// conversation payload limit and drop it from the journal.
 fn bounded_tool_arguments(input: &serde_json::Value) -> String {
     const MAX_TOOL_ARGUMENT_BYTES: usize = 8 * 1024;
@@ -176,12 +176,12 @@ fn mutation_nudge_message(available: &[String], steps_without_mutation: usize) -
     if tools.is_empty() {
         return None;
     }
-    let has_patch = tools.contains(&"filesystem.patch");
-    let has_write = tools.contains(&"filesystem.write");
+    let has_patch = tools.contains(&"filesystem_patch");
+    let has_write = tools.contains(&"filesystem_write");
     let mutation_guidance = match (has_patch, has_write) {
-        (true, true) => " Для точечной правки уже прочитанного файла используй filesystem.patch с контекстом его строк; для нового файла или полной замены — filesystem.write.",
-        (true, false) => " Для точечной правки уже прочитанного файла используй filesystem.patch с контекстом его строк.",
-        (false, true) => " Для нового файла или полной замены используй filesystem.write.",
+        (true, true) => " Для точечной правки уже прочитанного файла используй filesystem_patch с контекстом его строк; для нового файла или полной замены — filesystem_write.",
+        (true, false) => " Для точечной правки уже прочитанного файла используй filesystem_patch с контекстом его строк.",
+        (false, true) => " Для нового файла или полной замены используй filesystem_write.",
         (false, false) => "",
     };
     Some(format!(
@@ -241,7 +241,7 @@ impl ToolAgent {
         let workspace_path = canonical_workspace.to_string_lossy().into_owned();
 
         match tool_name {
-            "workflow.catalog" => {
+            "workflow_catalog" => {
                 if !input.as_object().is_some_and(serde_json::Map::is_empty) {
                     return Err(failure());
                 }
@@ -264,7 +264,7 @@ impl ToolAgent {
                     structured: serde_json::json!({ "templates": templates }),
                 })
             }
-            "workflow.start" => {
+            "workflow_start" => {
                 let Some(journal) = &self.journal else {
                     return Ok(rejected("workflow_runtime_unavailable"));
                 };
@@ -377,7 +377,7 @@ impl ToolAgent {
                     structured: serde_json::json!({ "run_id": run_id, "state": "pending", "error_code": "" }),
                 })
             }
-            "workflow.status" | "workflow.cancel" => {
+            "workflow_status" | "workflow_cancel" => {
                 let Some(journal) = &self.journal else {
                     return Ok(rejected("workflow_runtime_unavailable"));
                 };
@@ -415,7 +415,7 @@ impl ToolAgent {
                         self.selected_model.get().as_deref().unwrap_or("configured")
                     ),
                 );
-                if tool_name == "workflow.status" {
+                if tool_name == "workflow_status" {
                     let Some(projection) = runtime
                         .projection(&request.run_id)
                         .await
@@ -594,9 +594,9 @@ impl ToolAgent {
             required_ids.extend_from_slice(&WORKFLOW_TOOL_IDS);
         }
         if !has_active_goal {
-            required_ids.push("goal.create");
+            required_ids.push("goal_create");
         }
-        required_ids.push("goal.verify");
+        required_ids.push("goal_verify");
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
         }
@@ -1380,7 +1380,7 @@ impl ToolAgent {
                     // Legacy models often print an entire future plan in one
                     // response. Respect the one-tool-per-step contract and
                     // execute only the first new, valid safe call. The
-                    // directory read below is also invalid for filesystem.read.
+                    // directory read below is also invalid for filesystem_read.
                     if let Some(call) = parsed_legacy_calls.into_iter().find(|call| {
                         let invalid_directory_read = call.name == TOOL_FILESYSTEM_READ
                             && serde_json::from_str::<serde_json::Value>(&call.arguments)
@@ -1488,7 +1488,7 @@ impl ToolAgent {
             });
             if let Some(tool_name) = duplicate_tool_call {
                 let duplicate_guidance = format!(
-                    "Ты уже выполняла точно такой вызов {tool_name}. Его повтор удалён Core. Самостоятельно выбери следующий новый шаг: используй другой подтверждённый путь или filesystem.search, затем продолжи исследование/реализацию. Не повторяй последний вызов и не завершай задачу отчётом."
+                    "Ты уже выполняла точно такой вызов {tool_name}. Его повтор удалён Core. Самостоятельно выбери следующий новый шаг: используй другой подтверждённый путь или filesystem_search, затем продолжи исследование/реализацию. Не повторяй последний вызов и не завершай задачу отчётом."
                 );
                 if tool_calls.is_empty() && iteration + 1 < self.max_iterations {
                     write_model_trace(
@@ -1601,7 +1601,7 @@ impl ToolAgent {
                     }
                 }
                 let goal_verify_available =
-                    specs.iter().any(|spec| spec.function.name == "goal.verify");
+                    specs.iter().any(|spec| spec.function.name == "goal_verify");
                 if has_active_goal
                     && goal_verify_available
                     && !goal_verified_in_run
@@ -1620,7 +1620,7 @@ impl ToolAgent {
                     messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
                     messages.push(ChatMessage::text(
                         ChatRole::User,
-                        "Перед итоговым ответом подтверди выполненные критерии активной цели через tool `goal.verify` (передав `goal_id`, `criterion_id` и `evidence_summary`). Если критерий действительно ещё не выполнен, продолжай работу.",
+                        "Перед итоговым ответом подтверди выполненные критерии активной цели через tool `goal_verify` (передав `goal_id`, `criterion_id` и `evidence_summary`). Если критерий действительно ещё не выполнен, продолжай работу.",
                     ));
                     continue;
                 }
@@ -1782,7 +1782,7 @@ impl ToolAgent {
                         "arguments": call.arguments
                     }),
                 );
-                if call.name == "mcp.call" {
+                if call.name == "mcp_call" {
                     input = match resolve_model_mcp_input(&self.workflow_registry, input) {
                         Ok(value) => value,
                         Err(error) => {
@@ -1816,7 +1816,7 @@ impl ToolAgent {
                         &observed_file_revisions,
                     );
                 }
-                let commit_blocked = call.name == "git.commit"
+                let commit_blocked = call.name == "git_commit"
                     && delivery_requirements.commit
                     && (!verification_test_passed
                         || (delivery_requirements.diff_check && !diff_check_passed));
@@ -1909,11 +1909,11 @@ impl ToolAgent {
                 } else if commit_blocked {
                     recovery::ToolOutcome::from_error(
                         evohime_tool_runtime::ToolError::Execution(
-                            "git.commit blocked: сначала успешно выполни обязательную проверку и git diff --check".to_string(),
+                            "git_commit blocked: сначала успешно выполни обязательную проверку и git diff --check".to_string(),
                         ),
                     )
                 } else {
-                    if call.name == "git.commit" {
+                    if call.name == "git_commit" {
                         write_observability_hook(
                             &task_id,
                             hook_sequence,
@@ -1929,11 +1929,11 @@ impl ToolAgent {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                             result = self.execute_workflow_tool(&context, &task_id, &call.name, input) => result,
                         }
-                    } else if call.name == "memory.search" {
+                    } else if call.name == "memory_search" {
                         let result = async {
                             let journal = self.journal.as_ref().ok_or_else(|| {
                                 evohime_tool_runtime::ToolError::Execution(
-                                    "memory.search requires the Core journal".into(),
+                                    "memory_search requires the Core journal".into(),
                                 )
                             })?;
                             let (query, limit) = evohime_tool_runtime::memory::parse_input(&input)?;
@@ -1966,11 +1966,11 @@ impl ToolAgent {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                             result = result => result,
                         }
-                    } else if call.name == "goal.create" {
+                    } else if call.name == "goal_create" {
                         let result = async {
                             let journal = self.journal.as_ref().ok_or_else(|| {
                                 evohime_tool_runtime::ToolError::Execution(
-                                    "goal.create requires the Core journal".into(),
+                                    "goal_create requires the Core journal".into(),
                                 )
                             })?;
                             let parsed = evohime_tool_runtime::goal::parse_create_input(&input)?;
@@ -2013,7 +2013,7 @@ impl ToolAgent {
                                 remaining_criteria: Vec::new(),
                                 blockers: Vec::new(),
                                 next_action: Some(
-                                    "Выполнить критерии и подтвердить каждый через goal.verify."
+                                    "Выполнить критерии и подтвердить каждый через goal_verify."
                                         .into(),
                                 ),
                                 workflow_run_ids: Vec::new(),
@@ -2067,11 +2067,11 @@ impl ToolAgent {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                             result = result => result,
                         }
-                    } else if call.name == "goal.verify" {
+                    } else if call.name == "goal_verify" {
                         let result = async {
                             let journal = self.journal.as_ref().ok_or_else(|| {
                                 evohime_tool_runtime::ToolError::Execution(
-                                    "goal.verify requires the Core journal".into(),
+                                    "goal_verify requires the Core journal".into(),
                                 )
                             })?;
                             let parsed = evohime_tool_runtime::goal::parse_input(&input)?;
@@ -2157,7 +2157,7 @@ impl ToolAgent {
                         }
                     } {
                         Ok(result) => {
-                            if call.name == "goal.create" {
+                            if call.name == "goal_create" {
                                 if let Some(goal_id) = result
                                     .structured
                                     .get("goal_id")
@@ -2165,7 +2165,7 @@ impl ToolAgent {
                                 {
                                     created_goal_id_in_run = Some(goal_id.to_owned());
                                 }
-                            } else if call.name == "goal.verify" {
+                            } else if call.name == "goal_verify" {
                                 goal_verified_in_run = true;
                             }
                             recovery::ToolOutcome::success(result)
@@ -2416,7 +2416,7 @@ impl ToolAgent {
                         .get("status")
                         .and_then(serde_json::Value::as_str)
                         != Some("nothing_to_commit");
-                if call.name == "shell.execute" {
+                if call.name == "shell_execute" {
                     let arguments = call.arguments.to_lowercase();
                     let legacy_diff = arguments.contains("diff") && arguments.contains("check");
                     let legacy_test = arguments.contains("test")
@@ -2459,7 +2459,7 @@ impl ToolAgent {
                 }
                 verification_done = verification_test_passed
                     && (!delivery_requirements.diff_check || diff_check_passed);
-                // Temporary exception: patch context is typed by filesystem.patch in wave III.
+                // Temporary exception: patch context is typed by filesystem_patch in wave III.
                 // Until then this hint may inspect only that specific recovery marker.
                 let patch_context_mismatch = outcome
                     .output
@@ -2585,18 +2585,18 @@ impl ToolAgent {
                         })
                         .unwrap_or_default();
                     if patch_context_mismatch {
-                        recovery.push_str(" Сначала вызови git.diff или filesystem.read для актуального файла, затем сформируй новый patch по фактическому содержимому.");
+                        recovery.push_str(" Сначала вызови git_diff или filesystem_read для актуального файла, затем сформируй новый patch по фактическому содержимому.");
                     }
                     let mut retry_examples: Vec<String> = Vec::new();
                     if tool_names.iter().any(|name| name == TOOL_FILESYSTEM_LIST) {
-                        retry_examples.push("filesystem.list={\"path\":\".\"}".into());
+                        retry_examples.push("filesystem_list={\"path\":\".\"}".into());
                     }
                     if tool_names.iter().any(|name| name == TOOL_FILESYSTEM_READ) {
-                        retry_examples.push("filesystem.read={\"path\":\"README.md\"}".into());
+                        retry_examples.push("filesystem_read={\"path\":\"README.md\"}".into());
                     }
                     if tool_names.iter().any(|name| name == TOOL_FILESYSTEM_SEARCH) {
                         retry_examples.push(
-                            "filesystem.search={\"query\":\"нужный текст\",\"path\":\".\"}".into(),
+                            "filesystem_search={\"query\":\"нужный текст\",\"path\":\".\"}".into(),
                         );
                     }
                     let retry_hint = if retry_examples.is_empty() {
@@ -2747,11 +2747,11 @@ mod tests {
         let prompt = "Создай файл hello.py с одной строкой print hello.";
         let query = adaptive_catalog_query(prompt, request_allows_mutation(prompt));
 
-        assert!(query.contains("filesystem.write"));
-        assert!(query.contains("filesystem.patch"));
-        assert!(query.contains("filesystem.mkdir"));
-        assert!(query.contains("shell.execute"));
-        assert!(query.contains("filesystem.read"));
+        assert!(query.contains("filesystem_write"));
+        assert!(query.contains("filesystem_patch"));
+        assert!(query.contains("filesystem_mkdir"));
+        assert!(query.contains("shell_execute"));
+        assert!(query.contains("filesystem_read"));
     }
 
     #[test]
@@ -2760,10 +2760,10 @@ mod tests {
         {
             let query = adaptive_catalog_query(prompt, false);
             for tool in [
-                "workflow.catalog",
-                "workflow.start",
-                "workflow.status",
-                "workflow.cancel",
+                "workflow_catalog",
+                "workflow_start",
+                "workflow_status",
+                "workflow_cancel",
             ] {
                 assert!(query.contains(tool), "{tool} missing for {prompt}");
             }
@@ -2800,7 +2800,7 @@ mod tests {
             .execute_workflow_tool(
                 &context,
                 "task-workflow-test",
-                "workflow.catalog",
+                "workflow_catalog",
                 serde_json::json!({}),
             )
             .await
@@ -2815,7 +2815,7 @@ mod tests {
             .execute_workflow_tool(
                 &context,
                 "task-workflow-test",
-                "workflow.start",
+                "workflow_start",
                 serde_json::json!({
                     "template_id": "repository-research",
                     "inputs": { "question": "Check the repository" }
@@ -2884,7 +2884,7 @@ mod tests {
             progress_tx: None,
         };
 
-        for tool_name in ["workflow.status", "workflow.cancel"] {
+        for tool_name in ["workflow_status", "workflow_cancel"] {
             let result = agent
                 .execute_workflow_tool(
                     &context,
@@ -2926,7 +2926,7 @@ mod tests {
 
             let query = adaptive_catalog_query(prompt, mutation_intent);
             assert!(
-                query.contains("shell.execute"),
+                query.contains("shell_execute"),
                 "command tool missing: {query}"
             );
         }
@@ -2940,8 +2940,8 @@ mod tests {
             "add request was classified read-only: {prompt}"
         );
         let query = adaptive_catalog_query(prompt, true);
-        assert!(query.contains("filesystem.patch"));
-        assert!(query.contains("filesystem.write"));
+        assert!(query.contains("filesystem_patch"));
+        assert!(query.contains("filesystem_write"));
     }
 
     #[test]
@@ -2970,7 +2970,7 @@ mod tests {
         });
 
         let observation = model_tool_observation(
-            "filesystem.read",
+            "filesystem_read",
             true,
             "<sensitive_data_blocked>",
             &structured,
@@ -2994,15 +2994,15 @@ mod tests {
         let missing_hash = serde_json::json!({"revision": 42});
 
         assert_eq!(
-            model_tool_observation("filesystem.read", false, "read failed", &complete),
+            model_tool_observation("filesystem_read", false, "read failed", &complete),
             "read failed"
         );
         assert_eq!(
-            model_tool_observation("filesystem.read", true, "read output", &missing_hash),
+            model_tool_observation("filesystem_read", true, "read output", &missing_hash),
             "read output"
         );
         assert_eq!(
-            model_tool_observation("filesystem.search", true, "search output", &complete),
+            model_tool_observation("filesystem_search", true, "search output", &complete),
             "search output"
         );
     }
@@ -3015,7 +3015,7 @@ mod tests {
 
         let mut same_path = serde_json::json!({"path":"workspace/README.md","content":"updated"});
         assert!(inject_observed_expected_hash(
-            "filesystem.write",
+            "filesystem_write",
             &mut same_path,
             &observed
         ));
@@ -3023,7 +3023,7 @@ mod tests {
 
         let mut different_path = serde_json::json!({"path":"Cargo.toml","content":"updated"});
         assert!(!inject_observed_expected_hash(
-            "filesystem.write",
+            "filesystem_write",
             &mut different_path,
             &observed
         ));
@@ -3035,7 +3035,7 @@ mod tests {
             "expected_hash":"caller-supplied"
         });
         assert!(!inject_observed_expected_hash(
-            "filesystem.write",
+            "filesystem_write",
             &mut explicit_hash,
             &observed
         ));
@@ -3048,7 +3048,7 @@ mod tests {
         let mut observed = std::collections::HashMap::new();
 
         update_observed_file_revision(
-            "filesystem.read",
+            "filesystem_read",
             r#"{"path":"README.md"}"#,
             true,
             &serde_json::json!({"content_hash":hash}),
@@ -3057,7 +3057,7 @@ mod tests {
         assert_eq!(observed.get("workspace:README.md"), Some(&hash.to_owned()));
 
         update_observed_file_revision(
-            "filesystem.write",
+            "filesystem_write",
             r#"{"path":"README.md"}"#,
             false,
             &serde_json::Value::Null,
@@ -3105,7 +3105,7 @@ mod tests {
                     thinking: None,
                     tool_calls: vec![NativeToolCall {
                         id: "read-1".into(),
-                        name: "filesystem.read".into(),
+                        name: "filesystem_read".into(),
                         arguments: r#"{"path":"README.md"}"#.into(),
                     }],
                     usage: None,
@@ -3115,7 +3115,7 @@ mod tests {
                     thinking: None,
                     tool_calls: vec![NativeToolCall {
                         id: "write-1".into(),
-                        name: "filesystem.write".into(),
+                        name: "filesystem_write".into(),
                         arguments: r#"{"path":"README.md","content":"updated"}"#.into(),
                     }],
                     usage: None,
@@ -3158,7 +3158,7 @@ mod tests {
         assert!(observed.iter().any(|event| matches!(
             event,
             crate::CoreEvent::ToolOutput { tool_name, output, .. }
-                if tool_name == "filesystem.write" && output == "updated README.md"
+                if tool_name == "filesystem_write" && output == "updated README.md"
         )));
     }
 
@@ -3175,7 +3175,7 @@ mod tests {
         let decision = Ok(registry
             .preflight(
                 &context,
-                "filesystem.write",
+                "filesystem_write",
                 &serde_json::json!({"path":"hello.py","content":"print(1)"}),
             )
             .await
@@ -3201,7 +3201,7 @@ mod tests {
         let decision = Ok(denied
             .preflight(
                 &context,
-                "filesystem.write",
+                "filesystem_write",
                 &serde_json::json!({"path":"hello.py","content":"print(1)"}),
             )
             .await
@@ -3214,7 +3214,7 @@ mod tests {
     async fn catalog_probe_keeps_filesystem_patch_available_for_existing_file_edits() {
         // Regression: the runtime required expected_hash, but the catalog probe
         // (and the declared schema) omitted it, so preflight rejected the probe
-        // and filesystem.patch silently left the model catalog. The model could
+        // and filesystem_patch silently left the model catalog. The model could
         // not edit an existing file and kept re-reading it.
         let workspace = tempfile::tempdir().expect("workspace tempdir");
         let context = ToolContext {
@@ -3224,9 +3224,9 @@ mod tests {
             progress_tx: None,
         };
         let registry = ToolRegistry::bootstrap();
-        let probe = super::super::catalog_preflight_input("filesystem.patch");
+        let probe = super::super::catalog_preflight_input("filesystem_patch");
         let decision = registry
-            .preflight(&context, "filesystem.patch", &probe)
+            .preflight(&context, "filesystem_patch", &probe)
             .await
             .expect("patch preflight runs");
 
@@ -3260,15 +3260,15 @@ mod conversation_history_tests {
     #[test]
     fn tools_outside_the_session_catalog_produce_a_recoverable_hint() {
         let available = vec![
-            "filesystem.read".to_string(),
-            "filesystem.write".to_string(),
+            "filesystem_read".to_string(),
+            "filesystem_write".to_string(),
         ];
-        assert!(session_tool_miss("filesystem.read", &available).is_none());
-        let miss = session_tool_miss("filesystem.list", &available).expect("missing tool");
+        assert!(session_tool_miss("filesystem_read", &available).is_none());
+        let miss = session_tool_miss("filesystem_list", &available).expect("missing tool");
         assert!(!miss.ok);
         assert_eq!(miss.kind, Some(recovery::ToolFailureKind::InvalidInput));
-        assert!(miss.output.contains("filesystem.list"));
-        assert!(miss.output.contains("filesystem.read, filesystem.write"));
+        assert!(miss.output.contains("filesystem_list"));
+        assert!(miss.output.contains("filesystem_read, filesystem_write"));
         assert_eq!(miss.structured["error_code"], "tool_not_in_session");
     }
 
@@ -3304,28 +3304,28 @@ mod conversation_history_tests {
     #[test]
     fn mutation_nudge_names_only_tools_available_in_the_session() {
         let with_patch = vec![
-            "filesystem.read".to_string(),
-            "filesystem.write".to_string(),
-            "filesystem.patch".to_string(),
+            "filesystem_read".to_string(),
+            "filesystem_write".to_string(),
+            "filesystem_patch".to_string(),
         ];
         let message = mutation_nudge_message(&with_patch, 6).expect("nudge");
-        assert!(message.contains("filesystem.patch"));
-        assert!(message.contains("filesystem.write"));
+        assert!(message.contains("filesystem_patch"));
+        assert!(message.contains("filesystem_write"));
         assert!(message.contains("6"));
 
         let without_patch = vec![
-            "filesystem.read".to_string(),
-            "filesystem.write".to_string(),
+            "filesystem_read".to_string(),
+            "filesystem_write".to_string(),
         ];
         let message = mutation_nudge_message(&without_patch, 6).expect("nudge");
-        assert!(!message.contains("filesystem.patch"));
+        assert!(!message.contains("filesystem_patch"));
 
-        let patch_only = vec!["filesystem.patch".to_string()];
+        let patch_only = vec!["filesystem_patch".to_string()];
         let message = mutation_nudge_message(&patch_only, 6).expect("nudge");
-        assert!(message.contains("filesystem.patch"));
-        assert!(!message.contains("filesystem.write"));
+        assert!(message.contains("filesystem_patch"));
+        assert!(!message.contains("filesystem_write"));
 
-        let read_only = vec!["filesystem.read".to_string()];
+        let read_only = vec!["filesystem_read".to_string()];
         assert!(mutation_nudge_message(&read_only, 6).is_none());
     }
 

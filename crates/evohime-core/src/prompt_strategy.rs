@@ -2571,7 +2571,7 @@ mod tests {
             CapabilityTrust::Unknown,
             false,
             false,
-            &["filesystem.read".into()],
+            &["filesystem_read".into()],
         ));
     }
 

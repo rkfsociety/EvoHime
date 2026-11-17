@@ -711,7 +711,7 @@ mod tests {
     fn tool_started_projection_keeps_bounded_arguments_and_masks_secrets() {
         let projected = project_core_event(
             "tool.started",
-            br#"{"ToolStarted":{"task_id":"task-1","tool_name":"filesystem.search","arguments":"{\"path\":\"src\",\"query\":\"sk-12345678901234567890\"}"}}"#,
+            br#"{"ToolStarted":{"task_id":"task-1","tool_name":"filesystem_search","arguments":"{\"path\":\"src\",\"query\":\"sk-12345678901234567890\"}"}}"#,
         )
         .unwrap();
         assert_eq!(projected.len(), 1);
@@ -720,7 +720,7 @@ mod tests {
         assert_eq!(projected[0].sensitivity, "tool_content");
         let payload: serde_json::Value =
             serde_json::from_slice(&projected[0].renderer_payload).expect("renderer JSON");
-        assert_eq!(payload["tool_name"], "filesystem.search");
+        assert_eq!(payload["tool_name"], "filesystem_search");
         let arguments = payload["arguments"].as_str().expect("arguments are text");
         assert!(arguments.contains("src"));
         assert!(!arguments.contains("sk-12345678901234567890"));

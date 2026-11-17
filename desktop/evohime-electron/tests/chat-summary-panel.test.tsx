@@ -69,10 +69,10 @@ describe('chat summary', () => {
 
   it('aggregates tasks, context usage, touched files and active shells for the chat', () => {
     const events: CoreEvent[] = [
-      makeEvent(6, 'tool.started', 'task-1', { tool_name: 'shell.execute: npm test' }),
-      makeEvent(5, 'tool.started', 'task-1', { tool_name: 'filesystem.patch', path: 'src/App.tsx' }),
-      makeEvent(4, 'tool.output', 'task-1', { tool_name: 'shell.execute: git status', output: 'M src/App.tsx' }),
-      makeEvent(3, 'tool.started', 'task-1', { tool_name: 'shell.execute: git status' }),
+      makeEvent(6, 'tool.started', 'task-1', { tool_name: 'shell_execute: npm test' }),
+      makeEvent(5, 'tool.started', 'task-1', { tool_name: 'filesystem_patch', path: 'src/App.tsx' }),
+      makeEvent(4, 'tool.output', 'task-1', { tool_name: 'shell_execute: git status', output: 'M src/App.tsx' }),
+      makeEvent(3, 'tool.started', 'task-1', { tool_name: 'shell_execute: git status' }),
       makeEvent(2, 'model.context', 'task-1', { estimated_tokens: 25_000, context_limit_tokens: 100_000 }),
       makeEvent(1, 'task.started', 'task-1', { model: 'gemini-pro', provider: 'cloud' })
     ]
@@ -92,12 +92,12 @@ describe('chat summary', () => {
   it('renders compact summary widget rows, git changes, context compression and shells', async () => {
     const user = userEvent.setup()
     const events: CoreEvent[] = [
-      makeEvent(10, 'git.status', '', { output: ' M src/App.tsx\n?? src/New.tsx', truncated: false }),
-      makeEvent(9, 'git.diff', '', { output: '+added line', structured: { path: 'src/App.tsx' }, truncated: false }),
+      makeEvent(10, 'git_status', '', { output: ' M src/App.tsx\n?? src/New.tsx', truncated: false }),
+      makeEvent(9, 'git_diff', '', { output: '+added line', structured: { path: 'src/App.tsx' }, truncated: false }),
       makeEvent(8, 'context.ledger', 'task-1', {
         entries: [{ id: 'e1', kind: 'pinned', summary: 'Архитектура панели', tokens: 500, pinned: true }]
       }),
-      makeEvent(7, 'tool.started', 'task-1', { tool_name: 'shell.execute: pwsh -File check.ps1' }),
+      makeEvent(7, 'tool.started', 'task-1', { tool_name: 'shell_execute: pwsh -File check.ps1' }),
       makeEvent(6, 'model.context', 'task-1', { estimated_tokens: 40_000, context_limit_tokens: 100_000 }),
       makeEvent(5, 'task.started', 'task-1', { model: 'claude-sonnet' })
     ]

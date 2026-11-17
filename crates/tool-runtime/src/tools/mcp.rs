@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for remote MCP JSON-RPC calls.
-pub const NAME: &str = "mcp.call";
+pub const NAME: &str = "mcp_call";
 /// Short user-facing summary shown in tool catalogs.
 pub const DESCRIPTION: &str = "Call a remote MCP JSON-RPC endpoint";
 /// Permission required to call an MCP endpoint.

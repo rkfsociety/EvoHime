@@ -510,7 +510,7 @@ fn validate_text(field: &'static str, value: &str, max: usize) -> Result<(), Chi
 fn is_read_only_capability(capability: &str) -> bool {
     matches!(
         capability,
-        "workspace.read" | "workspace.search" | "git.diff" | "git.status"
+        "workspace.read" | "workspace.search" | "git_diff" | "git_status"
     )
 }
 
@@ -547,7 +547,7 @@ mod tests {
             kind: ChildTaskKind::CodeSearch,
             reduced_context: vec!["inspect src".into()],
             max_output_bytes: 4096,
-            requested_capabilities: vec!["workspace.read".into(), "git.diff".into()],
+            requested_capabilities: vec!["workspace.read".into(), "git_diff".into()],
             parent_is_child: false,
         }
     }

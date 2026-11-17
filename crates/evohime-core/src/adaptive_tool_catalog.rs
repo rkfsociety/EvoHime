@@ -342,36 +342,36 @@ mod tests {
     fn deterministic_selection_is_bounded_and_stable() {
         let projection = build_projection(
             &[
-                manifest("filesystem.read", "read files"),
-                manifest("git.status", "show status"),
+                manifest("filesystem_read", "read files"),
+                manifest("git_status", "show status"),
             ],
             "p",
             "g",
         )
         .unwrap();
         let result = select_deterministic(&projection, "read file", 1).unwrap();
-        assert_eq!(result.selected_ids, ["filesystem.read"]);
+        assert_eq!(result.selected_ids, ["filesystem_read"]);
         assert!(result.cache_key.starts_with("sha256:"));
     }
 
     #[test]
     fn canonical_tool_call_name_accepts_only_unique_aliases_from_the_loadout() {
-        let allowed = vec!["filesystem.list".to_string(), "git.status".to_string()];
+        let allowed = vec!["filesystem_list".to_string(), "git_status".to_string()];
 
         assert_eq!(
-            canonical_tool_call_name("filesystem.list", &allowed).as_deref(),
-            Some("filesystem.list")
+            canonical_tool_call_name("filesystem_list", &allowed).as_deref(),
+            Some("filesystem_list")
         );
         assert_eq!(
             canonical_tool_call_name("filesystem_list", &allowed).as_deref(),
-            Some("filesystem.list")
+            Some("filesystem_list")
         );
         assert_eq!(canonical_tool_call_name("filesystem_read", &allowed), None);
     }
 
     #[test]
     fn canonical_tool_call_name_preserves_exact_name_and_rejects_ambiguous_aliases() {
-        let exact_preferred = vec!["filesystem.list".to_string(), "filesystem_list".to_string()];
+        let exact_preferred = vec!["filesystem_list".to_string(), "filesystem_list".to_string()];
         assert_eq!(
             canonical_tool_call_name("filesystem_list", &exact_preferred).as_deref(),
             Some("filesystem_list")
@@ -385,7 +385,7 @@ mod tests {
     fn model_ids_cannot_escalate_or_duplicate() {
         let projection = build_projection(&[manifest("safe.read", "read")], "p", "g").unwrap();
         assert!(matches!(
-            validate_model_ids(&projection, &["shell.execute".into()], "x", 8),
+            validate_model_ids(&projection, &["shell_execute".into()], "x", 8),
             Err(CatalogError::UnknownSelectedTool(_))
         ));
         assert!(matches!(

@@ -14,8 +14,8 @@
    (`файл/read`, `правка/patch`, `поиск/search`, `тест/test`, `сборка/build`,
    `коммит/commit`, `ветка/branch`, `лог/log`). Словарь — данные, не код-условия.
 2. Заменить алфавитный fallback на курируемый core-set, ограниченный уже
-   авторизованным snapshot: `filesystem.list`, `filesystem.read`,
-   `filesystem.search`, `git.status`, `git.diff`, `shell.execute` — те, что
+   авторизованным snapshot: `filesystem_list`, `filesystem_read`,
+   `filesystem_search`, `git_status`, `git_diff`, `shell_execute` — те, что
    действительно присутствуют в проекции. Fallback не расширяет authority.
 3. Подключить `SelectionCache` к runtime-пути: ключ остаётся производным от
    policy/registry/grant/query, но проекция и хеши манифестов не пересчитываются

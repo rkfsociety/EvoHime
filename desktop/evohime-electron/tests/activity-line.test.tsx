@@ -15,10 +15,10 @@ afterEach(() => cleanup())
 
 describe('activity line', () => {
   it('names the running tool in Russian', () => {
-    render(<ActivityLine calls={[{ tool: 'filesystem.read', output: null, running: true }]} running />)
+    render(<ActivityLine calls={[{ tool: 'filesystem_read', output: null, running: true }]} running />)
 
     expect(screen.getByText('Выполняю: Читаю файл')).toBeTruthy()
-    expect(screen.queryByText('filesystem.read')).toBeNull()
+    expect(screen.queryByText('filesystem_read')).toBeNull()
   })
 
   it('sums a finished stretch into one line and opens details on click', async () => {
@@ -26,8 +26,8 @@ describe('activity line', () => {
       <ActivityLine
         running={false}
         calls={[
-          { tool: 'filesystem.list', output: 'src', running: false },
-          { tool: 'filesystem.read', output: '# EvoHime', running: false }
+          { tool: 'filesystem_list', output: 'src', running: false },
+          { tool: 'filesystem_read', output: '# EvoHime', running: false }
         ]}
       />
     )
@@ -48,7 +48,7 @@ describe('activity line', () => {
   })
 
   it('counts with the right Russian plural', () => {
-    const call = { tool: 'filesystem.read', output: 'x', running: false } as const
+    const call = { tool: 'filesystem_read', output: 'x', running: false } as const
     const { rerender } = render(<ActivityLine calls={[call]} running={false} />)
     expect(screen.getByText(/^1 действие/)).toBeTruthy()
 

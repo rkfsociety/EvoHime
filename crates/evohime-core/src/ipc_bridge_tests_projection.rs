@@ -712,7 +712,7 @@ fn tool_request_redaction_flags_secret_shaped_input_and_clears_ordinary_input() 
         action_id: uuid::Uuid::now_v7(),
         task_id: "task-1".into(),
         run_id: "task-1".into(),
-        tool_name: "shell.execute".into(),
+        tool_name: "shell_execute".into(),
         policy_id: "permission:ShellExecute".into(),
         normalized_scope: "workspace".into(),
         input: serde_json::json!({"program": "curl", "args": ["-H", "Authorization: Bearer sk-abc123"]}),

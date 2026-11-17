@@ -10,11 +10,11 @@ use tokio::process::Command;
 const MAX_CARGO_OUTPUT_BYTES: usize = 1024 * 1024;
 
 // ============================================================================
-// cargo.build: Build Rust project
+// cargo_build: Build Rust project
 // ============================================================================
 
 /// Registry identifier for the Cargo build action.
-pub const BUILD_NAME: &str = "cargo.build";
+pub const BUILD_NAME: &str = "cargo_build";
 /// Human-readable description shown for the Cargo build action.
 pub const BUILD_DESCRIPTION: &str = "Build Rust project (cargo build)";
 /// Permission required before invoking Cargo build.
@@ -83,11 +83,11 @@ pub async fn build(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
 }
 
 // ============================================================================
-// cargo.test: Run tests
+// cargo_test: Run tests
 // ============================================================================
 
 /// Registry identifier for the Cargo test action.
-pub const TEST_NAME: &str = "cargo.test";
+pub const TEST_NAME: &str = "cargo_test";
 /// Human-readable description shown for the Cargo test action.
 pub const TEST_DESCRIPTION: &str = "Run Rust tests (cargo test)";
 /// Permission required before invoking Cargo test.
@@ -162,11 +162,11 @@ pub async fn test(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 }
 
 // ============================================================================
-// cargo.fmt: Format code
+// cargo_fmt: Format code
 // ============================================================================
 
 /// Registry identifier for the Cargo formatting action.
-pub const FMT_NAME: &str = "cargo.fmt";
+pub const FMT_NAME: &str = "cargo_fmt";
 /// Human-readable description shown for the Cargo formatting action.
 pub const FMT_DESCRIPTION: &str = "Format Rust code (cargo fmt)";
 /// Permission required because formatting may write workspace files.
@@ -225,11 +225,11 @@ pub async fn fmt(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErro
 }
 
 // ============================================================================
-// cargo.clippy: Linting
+// cargo_clippy: Linting
 // ============================================================================
 
 /// Registry identifier for the Clippy action.
-pub const CLIPPY_NAME: &str = "cargo.clippy";
+pub const CLIPPY_NAME: &str = "cargo_clippy";
 /// Human-readable description shown for the Clippy action.
 pub const CLIPPY_DESCRIPTION: &str = "Run Rust linter (cargo clippy)";
 /// Permission required before invoking Clippy.
@@ -291,11 +291,11 @@ pub async fn clippy(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 }
 
 // ============================================================================
-// cargo.check: Type-check without building
+// cargo_check: Type-check without building
 // ============================================================================
 
 /// Registry identifier for the Cargo check action.
-pub const CHECK_NAME: &str = "cargo.check";
+pub const CHECK_NAME: &str = "cargo_check";
 /// Human-readable description shown for the Cargo check action.
 pub const CHECK_DESCRIPTION: &str = "Type-check Rust code without building (cargo check)";
 /// Permission required before invoking Cargo check.

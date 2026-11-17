@@ -3,14 +3,14 @@ use evohime_core::policy_aware_tool_result_cache as cache;
 #[test]
 fn mutating_manifest_defaults_to_never_and_expired_entry_is_not_reused() {
     let metadata = cache::metadata(
-        "filesystem.write".into(),
+        "filesystem_write".into(),
         "1".into(),
         cache::Cacheability::Never,
     )
     .unwrap();
     assert!(cache::cache_key(&metadata, "input", "workspace", "account", "policy").is_err());
     let metadata = cache::metadata(
-        "filesystem.read".into(),
+        "filesystem_read".into(),
         "1".into(),
         cache::Cacheability::ReadOnly,
     )
@@ -19,7 +19,7 @@ fn mutating_manifest_defaults_to_never_and_expired_entry_is_not_reused() {
     let entry = cache::CacheEntry {
         schema_version: 1,
         key,
-        tool_id: "filesystem.read".into(),
+        tool_id: "filesystem_read".into(),
         tool_version: "1".into(),
         resource_scope: "workspace".into(),
         authority_scope: "account".into(),

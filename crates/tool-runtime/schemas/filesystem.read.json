@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://evohime.local/tools/filesystem.read.json",
-  "title": "filesystem.read",
+  "$id": "https://evohime.local/tools/filesystem_read.json",
+  "title": "filesystem_read",
   "type": "object",
   "required": ["path"],
   "properties": {

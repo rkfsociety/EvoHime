@@ -13,36 +13,36 @@
 | «повтор удалён Core» | второй идентичный вызов **мутирующего** инструмента в окне 6 шагов | не повторять тот же вызов: сменить аргумент, инструмент или шаг; read-only вызовы повторяются свободно |
 | `path not found` / отказ сандбокса | путь не существует либо выходит за workspace | сначала получить листинг родительского каталога |
 | пустой результат поиска | литеральный режим без `regex` и другое написание | попробовать другой термин, `ignore_case` или `regex` (нужен ripgrep) |
-| таймаут | превышен `TIMEOUT` инструмента (для `filesystem.search` — 15 с) | сузить `path`, `glob` или `query` |
+| таймаут | превышен `TIMEOUT` инструмента (для `filesystem_search` — 15 с) | сузить `path`, `glob` или `query` |
 
 ## 2. Канонические форматы вызовов
 
 Все пути — workspace-relative. Абсолютный путь в `path` даёт отказ сандбокса.
 
 ```text
-filesystem.list   {"path":"."}
-filesystem.read   {"path":"docs/README.md"}            # опционально limit/offset
-filesystem.search {"query":"ripgrep","path":"crates","glob":"*.rs","limit":50}
-filesystem.write  {"path":"docs/new.md","content":"..."}
-filesystem.patch  {"path":"a/b.rs","patch":"--- a/...","expected_hash":"<hash>"}
-filesystem.mkdir  {"path":"docs/new-dir"}
-filesystem.stat   {"path":"docs/README.md"}
-git.status        {}                                    # без обёртки input
-git.diff          {"path":"crates/tool-runtime"}        # единственное поле — path
-git.commit        {"message":"..."}                     # сам выполняет git add -A
-process.run       {"command":"git","args":["diff","--check"],"cwd":"."}
-shell.execute     {"program":"git","args":["status"],"cwd":"."}
+filesystem_list   {"path":"."}
+filesystem_read   {"path":"docs/README.md"}            # опционально limit/offset
+filesystem_search {"query":"ripgrep","path":"crates","glob":"*.rs","limit":50}
+filesystem_write  {"path":"docs/new.md","content":"..."}
+filesystem_patch  {"path":"a/b.rs","patch":"--- a/...","expected_hash":"<hash>"}
+filesystem_mkdir  {"path":"docs/new-dir"}
+filesystem_stat   {"path":"docs/README.md"}
+git_status        {}                                    # без обёртки input
+git_diff          {"path":"crates/tool-runtime"}        # единственное поле — path
+git_commit        {"message":"..."}                     # сам выполняет git add -A
+process_run       {"command":"git","args":["diff","--check"],"cwd":"."}
+shell_execute     {"program":"git","args":["status"],"cwd":"."}
 ```
 
-`git.diff` принимает только `path`. Поля `reference` и `stat_only`
-принадлежат `git.show`; `git.diff` отклоняет их с `InvalidInput`, а не
+`git_diff` принимает только `path`. Поля `reference` и `stat_only`
+принадлежат `git_show`; `git_diff` отклоняет их с `InvalidInput`, а не
 игнорирует, поэтому вызов не подменится целым diff рабочего дерева.
 
-`git.status` не принимает аргументов: передавай ровно `{}`. При любой обёртке
+`git_status` не принимает аргументов: передавай ровно `{}`. При любой обёртке
 (`{"input":{}}`), лишнем поле или непустом объекте Core вернёт `InvalidInput`
 с подсказкой передать пустой объект.
 
-`filesystem.search` дополнительно принимает синонимы `pattern` и `text` для
+`filesystem_search` дополнительно принимает синонимы `pattern` и `text` для
 `query`, строку или массив в `glob`, и флаг `regex`. Поиск литеральный по
 умолчанию: без ripgrep `regex: true` возвращает `InvalidInput`, поэтому для
 регулярных выражений проверяй наличие `rg` заранее.
@@ -50,29 +50,29 @@ shell.execute     {"program":"git","args":["status"],"cwd":"."}
 ## 3. Одно изменение за шаг
 
 Если задача требует правки файлов, чтение — это подготовка, а не результат.
-После исчерпания подготовки следующим вызовом идёт `filesystem.write`,
-`filesystem.patch` или `git.commit`.
+После исчерпания подготовки следующим вызовом идёт `filesystem_write`,
+`filesystem_patch` или `git_commit`.
 
 Повторные чтения больше не блокируются: дедупликация Core удаляет только
 повтор **мутирующего** вызова в окне шести сигнатур, а успешная правка или
-коммит сбрасывают окно read-only вызовов. Поэтому `filesystem.read` того же
-пути после `filesystem.patch` — нормальный способ убедиться, что изменение
+коммит сбрасывают окно read-only вызовов. Поэтому `filesystem_read` того же
+пути после `filesystem_patch` — нормальный способ убедиться, что изменение
 применилось.
 
 ## 4. Перед правкой существующего файла
 
-1. `filesystem.read` — получить `content_hash`;
-2. `filesystem.patch` с этим `expected_hash` и контекстом реальных строк;
-3. при полной замене допустим `filesystem.write` с тем же `expected_hash`.
+1. `filesystem_read` — получить `content_hash`;
+2. `filesystem_patch` с этим `expected_hash` и контекстом реальных строк;
+3. при полной замене допустим `filesystem_write` с тем же `expected_hash`.
 
 Хеш никогда не вычисляется самостоятельно и не переиспользуется после чужой
 правки: после неудачного патча файл нужно прочитать заново.
 
 ## 5. Порядок исследования проекта
 
-`filesystem.list(".")` → manifest-файлы (`Cargo.toml`, `package.json`) →
-`docs/README.md` и профильные документы → `filesystem.search` по коду.
-`shell.execute` для чтения кода не нужен: read-only файловые инструменты
+`filesystem_list(".")` → manifest-файлы (`Cargo.toml`, `package.json`) →
+`docs/README.md` и профильные документы → `filesystem_search` по коду.
+`shell_execute` для чтения кода не нужен: read-only файловые инструменты
 безопаснее и информативнее.
 
 ## 6. Локальная нагрузка

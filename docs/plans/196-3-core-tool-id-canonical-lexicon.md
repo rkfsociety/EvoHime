@@ -12,7 +12,7 @@
    исторических цепочек; `runtime_payload` продолжает подписывать сохранённую
    строку без перезаписи.
 3. Проверить `ipc_bridge_terminal_review.rs`: литерал
-   `builtin:shell.execute:v1` заменяется каноническим именем, хеш
+   `builtin:shell_execute:v1` заменяется каноническим именем, хеш
    пересчитывается осознанно, а не случайно.
 4. IPC proto (`evohime.desktop.proto`) не меняет типы полей
    `ReconcilePendingReceiptAction.tool_name`, `SkillMetadata.allowed_tools`,
@@ -43,10 +43,10 @@ Electron renderer tests.
 
 ## Verification
 - Receipt replay: цепочка, записанная до переименования, проходит сверку.
-- Test: `sampled_read_only` одинаково трактует `filesystem.read` и
+- Test: `sampled_read_only` одинаково трактует `filesystem_read` и
   `filesystem_read`.
 - `npm run check:protocol` и Electron vitest-набор зелёные.
-- Test: история чата с событием `git.status` отображается корректной подписью.
+- Test: история чата с событием `git_status` отображается корректной подписью.
 
 ## Release evidence
 Результаты `check:protocol`, Electron test summary, replay отчёт по

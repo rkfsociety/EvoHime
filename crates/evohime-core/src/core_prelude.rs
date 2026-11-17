@@ -54,34 +54,34 @@ pub const AGENT_IDENTITY_PROMPT: &str =
 
 /// Канонические имена read-only filesystem-инструментов, используемые в
 /// policy preflight и в проверках обязательного исследовательского пути.
-pub(crate) const TOOL_FILESYSTEM_LIST: &str = "filesystem.list";
+pub(crate) const TOOL_FILESYSTEM_LIST: &str = "filesystem_list";
 /// Read-only filesystem tool used to inspect file contents.
-pub(crate) const TOOL_FILESYSTEM_READ: &str = "filesystem.read";
+pub(crate) const TOOL_FILESYSTEM_READ: &str = "filesystem_read";
 /// Read-only filesystem tool used to search workspace content.
-pub(crate) const TOOL_FILESYSTEM_SEARCH: &str = "filesystem.search";
+pub(crate) const TOOL_FILESYSTEM_SEARCH: &str = "filesystem_search";
 /// Tools that can perform a required workspace mutation. The delivery gate
 /// drops a mutation requirement when none of them is in the active loadout.
-pub(crate) const DELIVERY_MUTATION_TOOLS: &[&str] = &["filesystem.write", "filesystem.patch"];
+pub(crate) const DELIVERY_MUTATION_TOOLS: &[&str] = &["filesystem_write", "filesystem_patch"];
 /// Tool that runs the required verification command (tests, build, diff check).
-pub(crate) const DELIVERY_VERIFICATION_TOOL: &str = "shell.execute";
+pub(crate) const DELIVERY_VERIFICATION_TOOL: &str = "shell_execute";
 /// Tool that records the required commit after a successful verification.
-pub(crate) const DELIVERY_COMMIT_TOOL: &str = "git.commit";
+pub(crate) const DELIVERY_COMMIT_TOOL: &str = "git_commit";
 /// Рабочий набор агента для режима полного доступа. Каждый id добавляется в
 /// loadout только если permission preflight уже разрешил его без approval, так
 /// что список не расширяет authority. Полный доступ в композере означает, что
 /// модель не должна угадывать, какие её инструменты «разрешены по словам».
 pub(crate) const FULL_ACCESS_WORKING_SET: &[&str] = &[
-    "filesystem.list",
-    "filesystem.read",
-    "filesystem.search",
-    "filesystem.write",
-    "filesystem.patch",
-    "filesystem.mkdir",
-    "filesystem.stat",
-    "shell.execute",
-    "git.status",
-    "git.diff",
-    "git.commit",
+    "filesystem_list",
+    "filesystem_read",
+    "filesystem_search",
+    "filesystem_write",
+    "filesystem_patch",
+    "filesystem_mkdir",
+    "filesystem_stat",
+    "shell_execute",
+    "git_status",
+    "git_diff",
+    "git_commit",
 ];
 
 /// Идентификатор встроенной политики разрешений Core.
@@ -574,11 +574,11 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
             "query": "EvoHime",
             "path": "."
         }),
-        "filesystem.write" => serde_json::json!({
+        "filesystem_write" => serde_json::json!({
             "path": ".evohime-catalog-probe",
             "content": ""
         }),
-        "filesystem.patch" => serde_json::json!({
+        "filesystem_patch" => serde_json::json!({
             // Preflight resolves the policy subject but does not apply a patch.
             // Use the existing workspace root so the tool stays in the catalog
             // even when the workspace has no files yet.
@@ -586,14 +586,14 @@ pub(crate) fn catalog_preflight_input(tool_name: &str) -> serde_json::Value {
             "patch": "--- a/.\n+++ b/.\n@@\n",
             "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
         }),
-        // Probe input must satisfy the declared `analysis.run` schema, otherwise
+        // Probe input must satisfy the declared `analysis_run` schema, otherwise
         // the side-effect-free kernel tool drops out of the authorized snapshot.
-        "analysis.run" => serde_json::json!({
+        "analysis_run" => serde_json::json!({
             "operation": "json_parse",
             "args": "{}"
         }),
-        "workflow.start" => serde_json::json!({ "template_id": "probe", "inputs": {} }),
-        "workflow.status" | "workflow.cancel" => serde_json::json!({ "run_id": "probe" }),
+        "workflow_start" => serde_json::json!({ "template_id": "probe", "inputs": {} }),
+        "workflow_status" | "workflow_cancel" => serde_json::json!({ "run_id": "probe" }),
         _ => serde_json::json!({}),
     }
 }
@@ -614,7 +614,7 @@ pub(crate) fn requires_workspace_research_catalog(prompt: &str) -> bool {
     .any(|marker| prompt_lower.contains(marker));
     // Intent router и catalog query должны согласованно считать research
     // read-only исследованием: иначе модель получает research-intent без
-    // filesystem.list/search и вынуждена вызывать недоступные инструменты.
+    // filesystem_list/search и вынуждена вызывать недоступные инструменты.
     explicit
         || evohime_context_budget::loadout::route_intent(
             &crate::context_budget::default_intent_rules(),
@@ -640,10 +640,10 @@ pub(crate) fn request_allows_mutation(prompt: &str) -> bool {
 /// же список: расхождение отнимает у модели `workflow.*` ровно тогда, когда
 /// задача без них невыполнима.
 pub(crate) const WORKFLOW_TOOL_IDS: [&str; 4] = [
-    "workflow.catalog",
-    "workflow.start",
-    "workflow.status",
-    "workflow.cancel",
+    "workflow_catalog",
+    "workflow_start",
+    "workflow_status",
+    "workflow_cancel",
 ];
 
 /// Определяет workflow-intent запроса по устойчивым маркерам.
@@ -660,7 +660,7 @@ pub(crate) fn request_mentions_workflow(prompt: &str) -> bool {
 pub(crate) fn adaptive_catalog_query(prompt: &str, mutation_intent: bool) -> String {
     let mut query = prompt.to_owned();
     if requires_workspace_research_catalog(prompt) {
-        query.push_str(" filesystem.list filesystem.read filesystem.search");
+        query.push_str(" filesystem_list filesystem_read filesystem_search");
     }
     if request_mentions_workflow(prompt) {
         query.push(' ');
@@ -668,7 +668,7 @@ pub(crate) fn adaptive_catalog_query(prompt: &str, mutation_intent: bool) -> Str
     }
     if mutation_intent {
         query.push_str(
-            " filesystem.read filesystem.write filesystem.patch filesystem.mkdir shell.execute",
+            " filesystem_read filesystem_write filesystem_patch filesystem_mkdir shell_execute",
         );
     }
     query
@@ -719,41 +719,41 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
         "- Если пользователь не сформулировал конкретное поручение, не исследуй workspace и не имитируй выполненную работу: задай один короткий уточняющий вопрос и дождись задачи.".into(),
         "- За один ответ вызывай только один инструмент и жди его результата перед следующим вызовом.".into(),
     ];
-    if has("filesystem.list") {
+    if has("filesystem_list") {
         rules.push(
-            "- Если пользователь просит изучить, проверить, найти или объяснить проект, сначала вызови filesystem.list с path точкой (.).".into(),
+            "- Если пользователь просит изучить, проверить, найти или объяснить проект, сначала вызови filesystem_list с path точкой (.).".into(),
         );
     }
-    if has("filesystem.read") || has("filesystem.search") {
-        let reader = if has("filesystem.read") {
+    if has("filesystem_read") || has("filesystem_search") {
+        let reader = if has("filesystem_read") {
             "прочитай подходящие manifest-файлы и документацию (например Cargo.toml, package.json, README и архитектурные документы)"
         } else {
             "прочитай подходящие файлы доступным инструментом"
         };
-        let search = if has("filesystem.search") {
-            ", а для поиска по коду используй filesystem.search"
+        let search = if has("filesystem_search") {
+            ", а для поиска по коду используй filesystem_search"
         } else {
             ""
         };
         rules.push(format!("- Затем {reader}{search}."));
     }
-    if has("shell.execute") && (has("filesystem.list") || has("filesystem.search")) {
+    if has("shell_execute") && (has("filesystem_list") || has("filesystem_search")) {
         rules.push(
-            "- Для изучения проекта не используй shell.execute: read-only filesystem-инструменты безопаснее и достаточно информативны.".into(),
+            "- Для изучения проекта не используй shell_execute: read-only filesystem-инструменты безопаснее и достаточно информативны.".into(),
         );
     }
     rules.push("- Не проси пользователя прислать структуру проекта, путь или команды, если workspace уже указан.".into());
     rules.push("- Не утверждай, что изучила файл или выполнила действие, пока соответствующий инструмент не вернул результат.".into());
     rules.push("- Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.".into());
     let mut examples: Vec<String> = Vec::new();
-    if has("filesystem.list") {
-        examples.push("filesystem.list — {\"path\":\".\"}".into());
+    if has("filesystem_list") {
+        examples.push("filesystem_list — {\"path\":\".\"}".into());
     }
-    if has("filesystem.read") {
-        examples.push("filesystem.read — {\"path\":\"README.md\"}".into());
+    if has("filesystem_read") {
+        examples.push("filesystem_read — {\"path\":\"README.md\"}".into());
     }
-    if has("filesystem.search") {
-        examples.push("filesystem.search — {\"query\":\"pattern\",\"path\":\".\"}".into());
+    if has("filesystem_search") {
+        examples.push("filesystem_search — {\"query\":\"pattern\",\"path\":\".\"}".into());
     }
     if examples.is_empty() {
         rules.push(
@@ -765,36 +765,36 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
             examples.join("; ")
         ));
     }
-    if has("filesystem.read") {
+    if has("filesystem_read") {
         rules.push(
-            "- Результат успешного filesystem.read содержит content_hash и готовый к копированию expected_hash — это один и тот же точный хеш файла. При изменении существующего файла передавай expected_hash из последнего чтения этого файла; Core подставит его, если ты пропустишь поле, но только для того же логического пути. Никогда не выдумывай и не пересчитывай хеш.".into(),
+            "- Результат успешного filesystem_read содержит content_hash и готовый к копированию expected_hash — это один и тот же точный хеш файла. При изменении существующего файла передавай expected_hash из последнего чтения этого файла; Core подставит его, если ты пропустишь поле, но только для того же логического пути. Никогда не выдумывай и не пересчитывай хеш.".into(),
         );
     }
-    if has("goal.create") {
+    if has("goal_create") {
         rules.push(
-            "- Если задача многоэтапная, требует длительной автономной работы до результата или пользователь просит поставить цель, зафиксируй её через goal.create (с понятной формулировкой objective и конкретными success_criteria), а затем подтверждай каждый критерий через goal.verify после фактической проверки.".into(),
+            "- Если задача многоэтапная, требует длительной автономной работы до результата или пользователь просит поставить цель, зафиксируй её через goal_create (с понятной формулировкой objective и конкретными success_criteria), а затем подтверждай каждый критерий через goal_verify после фактической проверки.".into(),
         );
     }
-    if has("workflow.catalog") {
+    if has("workflow_catalog") {
         rules.push(
-            "- Если пользователь просит запустить или проверить составной сценарий, сначала вызови workflow.catalog и выбирай только шаблоны с available=true. Если шаблон недоступен, сообщи указанный unavailable_reason; не обещай запуск и не подменяй сценарий ручным запуском узлов.".into(),
+            "- Если пользователь просит запустить или проверить составной сценарий, сначала вызови workflow_catalog и выбирай только шаблоны с available=true. Если шаблон недоступен, сообщи указанный unavailable_reason; не обещай запуск и не подменяй сценарий ручным запуском узлов.".into(),
         );
-        if has("workflow.start") {
+        if has("workflow_start") {
             rules.push(
-                "- Запускай только фиксированный шаблон через workflow.start; не создавай и не редактируй графы. Для продолжения используй run_id из ответа, workflow.status или workflow.cancel.".into(),
+                "- Запускай только фиксированный шаблон через workflow_start; не создавай и не редактируй графы. Для продолжения используй run_id из ответа, workflow_status или workflow_cancel.".into(),
             );
         }
     }
     rules.push("- Если инструмент вернул ошибку, не завершай задачу: исправь аргументы по тексту ошибки и повтори вызов.".into());
-    if has("filesystem.patch") {
+    if has("filesystem_patch") {
         rules.push(
-            "- filesystem.patch принимает только JSON с path, patch и expected_hash, например {\"path\":\"relative/file.rs\",\"expected_hash\":\"точный content_hash из filesystem.read\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}; поля edits и patches недопустимы.".into(),
+            "- filesystem_patch принимает только JSON с path, patch и expected_hash, например {\"path\":\"relative/file.rs\",\"expected_hash\":\"точный content_hash из filesystem_read\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}; поля edits и patches недопустимы.".into(),
         );
     }
     rules.push(
-        "- Если вызов инструмента отклонён, сверь аргументы с его JSON-схемой: инструменту без аргументов (git.status) отправляй ровно {}, не оборачивай поля в input, не добавляй чужие поля (reference у git.diff) и не повторяй тот же мутирующий вызов. Полный разбор форматов — docs/agent-tool-playbook.md в исходниках проекта.".into(),
+        "- Если вызов инструмента отклонён, сверь аргументы с его JSON-схемой: инструменту без аргументов (git_status) отправляй ровно {}, не оборачивай поля в input, не добавляй чужие поля (reference у git_diff) и не повторяй тот же мутирующий вызов. Полный разбор форматов — docs/agent-tool-playbook.md в исходниках проекта.".into(),
     );
-    let mutation_tools: Vec<&str> = ["filesystem.patch", "filesystem.write", "git.commit"]
+    let mutation_tools: Vec<&str> = ["filesystem_patch", "filesystem_write", "git_commit"]
         .into_iter()
         .filter(|name| has(name))
         .collect();
@@ -804,39 +804,39 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
         );
     } else {
         rules.push(format!(
-            "- Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через {}; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git.commit. Не выдавай план за результат.",
+            "- Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через {}; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git_commit. Не выдавай план за результат.",
             mutation_tools.join(" или ")
         ));
     }
-    if has("git.status")
-        || has("git.diff")
-        || has("git.commit")
-        || has("git.pull")
-        || has("git.push")
+    if has("git_status")
+        || has("git_diff")
+        || has("git_commit")
+        || has("git_pull")
+        || has("git_push")
     {
         let mut git = Vec::new();
-        if has("git.status") {
-            git.push("сначала git.status");
+        if has("git_status") {
+            git_push("сначала git_status");
         }
-        if has("git.diff") {
-            git.push("затем git.diff для проверки изменений");
+        if has("git_diff") {
+            git_push("затем git_diff для проверки изменений");
         }
-        if has("git.commit") {
-            git.push("git.commit — только с task-only сообщением и после успешной проверки");
+        if has("git_commit") {
+            git_push("git_commit — только с task-only сообщением и после успешной проверки");
         }
-        if has("git.pull") {
-            git.push("git.pull — для обновления checkout");
+        if has("git_pull") {
+            git_push("git_pull — для обновления checkout");
         }
-        if has("git.push") {
-            git.push("git.push — только если пользователь явно попросил опубликовать изменения");
+        if has("git_push") {
+            git_push("git_push — только если пользователь явно попросил опубликовать изменения");
         }
         rules.push(format!(
-            "- Для Git используй специализированные инструменты: {}. Не заменяй эти вызовы shell.execute и не выполняй git-команды из неправильной директории.",
+            "- Для Git используй специализированные инструменты: {}. Не заменяй эти вызовы shell_execute и не выполняй git-команды из неправильной директории.",
             git.join("; ")
         ));
     } else {
         rules.push(
-            "- Git-инструментов в этой сессии нет: не вызывай git.* и не выполняй git-команды через shell.execute.".into(),
+            "- Git-инструментов в этой сессии нет: не вызывай git.* и не выполняй git-команды через shell_execute.".into(),
         );
     }
     rules.push("- Все улучшения EvoHime выполняй самостоятельно через доступные инструменты Евы. Если попытка не удалась, не завершай задачу: зафиксируй причину в trace, дождись следующего шага настройки и повтори работу через инструменты до успешного результата.".into());
@@ -862,9 +862,9 @@ pub(crate) fn resolve_model_mcp_input(
     input: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     let input: ModelMcpCallInput = serde_json::from_value(input)
-        .map_err(|error| format!("mcp.call invalid input: {error}"))?;
+        .map_err(|error| format!("mcp_call invalid input: {error}"))?;
     if input.url.is_some() {
-        return Err("mcp.call model input cannot contain url".into());
+        return Err("mcp_call model input cannot contain url".into());
     }
     let endpoint = registry
         .resolve_mcp_call(&input.server_id, &input.tool_name)
@@ -875,7 +875,7 @@ pub(crate) fn resolve_model_mcp_input(
         params: input.params.unwrap_or(serde_json::Value::Null),
         timeout_ms: input.timeout_ms.unwrap_or(serde_json::Value::Null),
     })
-    .map_err(|error| format!("mcp.call output serialization failed: {error}"))
+    .map_err(|error| format!("mcp_call output serialization failed: {error}"))
 }
 
 /// Budget for a whole task: many model calls plus tool runs, so it has to be
@@ -1031,7 +1031,7 @@ pub(crate) struct DeliveryReconciliation {
 /// Read-only loadout отклоняет write-вызов как policy denial, поэтому
 /// требование изменения без mutation intent превращало бы задачу в
 /// недостижимый gate. Обязательный commit, наоборот, всегда требует проверки:
-/// `git.commit` блокируется до успешного verification. Проверка без изменения
+/// `git_commit` блокируется до успешного verification. Проверка без изменения
 /// и без явной команды тестов — это обычный исследовательский запрос «проверь»,
 /// а не обязательство прогнать сборку.
 pub(crate) fn reconcile_delivery_requirements(
@@ -1172,22 +1172,22 @@ pub(crate) fn delivery_next_step(
 ) -> &'static str {
     if requirements.research && !progress.research_done {
         if !progress.research_has_overview {
-            "НЕМЕДЛЕННО вызови read-only filesystem.list с полным JSON {\"path\":\".\"}. Не пиши отчёт."
+            "НЕМЕДЛЕННО вызови read-only filesystem_list с полным JSON {\"path\":\".\"}. Не пиши отчёт."
         } else if !progress.research_has_content {
-            "НЕМЕДЛЕННО прочитай один из ключевых файлов: filesystem.read с JSON {\"path\":\"Cargo.toml\"} или {\"path\":\"README.md\"}. Не повторяй filesystem.list и не пиши отчёт."
+            "НЕМЕДЛЕННО прочитай один из ключевых файлов: filesystem_read с JSON {\"path\":\"Cargo.toml\"} или {\"path\":\"README.md\"}. Не повторяй filesystem_list и не пиши отчёт."
         } else if !progress.research_has_search {
-            "НЕМЕДЛЕННО вызови filesystem.search с полным JSON {\"query\":\"TODO\",\"path\":\".\"} или найди по коду ключевой компонент. Не используй предположения о структуре вроде crates; путь должен существовать в текущем workspace. Не повторяй уже выполненное чтение и не пиши отчёт."
+            "НЕМЕДЛЕННО вызови filesystem_search с полным JSON {\"query\":\"TODO\",\"path\":\".\"} или найди по коду ключевой компонент. Не используй предположения о структуре вроде crates; путь должен существовать в текущем workspace. Не повторяй уже выполненное чтение и не пиши отчёт."
         } else if progress.research_observations < 3 {
-            "НЕМЕДЛЕННО прочитай ещё один конкретный архитектурный файл через filesystem.read, например docs/architecture.md или docs/current-state.md. Не пиши отчёт."
+            "НЕМЕДЛЕННО прочитай ещё один конкретный архитектурный файл через filesystem_read, например docs/architecture.md или docs/current-state.md. Не пиши отчёт."
         } else {
             "НЕМЕДЛЕННО подготовь итоговый отчёт по уже собранным данным. Не вызывай инструменты."
         }
     } else if !progress.mutation_done && requirements.mutation {
-        "НЕМЕДЛЕННО вызови filesystem.patch или filesystem.write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
+        "НЕМЕДЛЕННО вызови filesystem_patch или filesystem_write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
     } else if !progress.verification_done && requirements.verification {
-        "НЕМЕДЛЕННО вызови shell.execute с полным JSON-объектом, например {\"program\":\"cargo\",\"args\":[\"test\"],\"cwd\":\".\"}. Не вызывай shell.execute с пустыми аргументами и не пиши отчёт."
+        "НЕМЕДЛЕННО вызови shell_execute с полным JSON-объектом, например {\"program\":\"cargo\",\"args\":[\"test\"],\"cwd\":\".\"}. Не вызывай shell_execute с пустыми аргументами и не пиши отчёт."
     } else if !progress.commit_done && requirements.commit {
-        "НЕМЕДЛЕННО вызови git.commit с task-only сообщением. Не пиши отчёт."
+        "НЕМЕДЛЕННО вызови git_commit с task-only сообщением. Не пиши отчёт."
     } else {
         "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
     }

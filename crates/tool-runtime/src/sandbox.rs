@@ -56,7 +56,7 @@ impl WorkspaceSandbox {
     pub fn resolve_for_write(&self, path: &str) -> Result<PathBuf, ToolError> {
         let candidate = self.root.join(path);
         let parent = candidate.parent().ok_or_else(|| ToolError::InvalidInput {
-            tool: "filesystem.write".into(),
+            tool: "filesystem_write".into(),
             message: "path has no parent".into(),
         })?;
         let mut existing_parent = parent;
@@ -80,7 +80,7 @@ impl WorkspaceSandbox {
                 candidate
                     .file_name()
                     .ok_or_else(|| ToolError::InvalidInput {
-                        tool: "filesystem.write".into(),
+                        tool: "filesystem_write".into(),
                         message: "path is empty".into(),
                     })?,
             );
@@ -121,7 +121,7 @@ impl WorkspaceSandbox {
             entries.join(", ")
         };
         format!(
-            "запрошенный workspace-relative путь `{requested}` не найден; проверь путь через filesystem.list для `{relative_directory}`. Доступные записи: {available}"
+            "запрошенный workspace-relative путь `{requested}` не найден; проверь путь через filesystem_list для `{relative_directory}`. Доступные записи: {available}"
         )
     }
 
@@ -206,7 +206,7 @@ mod tests {
             .resolve_existing("docs/missing/plan.md")
             .unwrap_err();
         let message = error.to_string();
-        assert!(message.contains("filesystem.list"));
+        assert!(message.contains("filesystem_list"));
         assert!(message.contains("docs"));
         assert!(message.contains("plan.md"));
     }

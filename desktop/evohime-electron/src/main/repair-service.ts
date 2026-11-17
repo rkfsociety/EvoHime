@@ -330,13 +330,13 @@ function extractTests(payload: string): RepairTestResult[] {
 }
 
 function repairPrompt(summary: string, baseCommit: string): string {
-  return `Пользователь запустил repair-run EvoHime для собственного репозитория. Базовый commit: ${baseCommit}. Найди и исправь причину накопившихся ошибок: ${summary}. Работай только в текущем workspace. Сначала изучи фактические файлы и git status/diff, затем внеси минимальный patch через filesystem.patch или filesystem.write, запусти подходящие тесты и git diff --check. Не выполняй git.commit, git.push, удаление веток, изменение GitHub Actions, policy, updater, supervisor, receipt-кода или секретных файлов: commit и push будут отдельными действиями пользователя. Не объявляй успех без фактического результата тестов.`
+  return `Пользователь запустил repair-run EvoHime для собственного репозитория. Базовый commit: ${baseCommit}. Найди и исправь причину накопившихся ошибок: ${summary}. Работай только в текущем workspace. Сначала изучи фактические файлы и git status/diff, затем внеси минимальный patch через filesystem_patch или filesystem_write, запусти подходящие тесты и git diff --check. Не выполняй git_commit, git_push, удаление веток, изменение GitHub Actions, policy, updater, supervisor, receipt-кода или секретных файлов: commit и push будут отдельными действиями пользователя. Не объявляй успех без фактического результата тестов.`
 }
 
 function commitPrompt(branch: string): string {
-  return `Пользователь подтвердил commit repair-run в ветке ${branch}. Проверь git.status и git.diff, убедись, что изменены только относящиеся к ошибке файлы, запусти обязательные targeted checks и git diff --check. Затем выполни git.commit с task-only сообщением. Не выполняй git.push и не меняй release/security policy.`
+  return `Пользователь подтвердил commit repair-run в ветке ${branch}. Проверь git_status и git_diff, убедись, что изменены только относящиеся к ошибке файлы, запусти обязательные targeted checks и git diff --check. Затем выполни git_commit с task-only сообщением. Не выполняй git_push и не меняй release/security policy.`
 }
 
 function pushPrompt(): string {
-  return 'Пользователь отдельно подтвердил публикацию repair commit в origin/main. Проверь текущий commit и remote, затем выполни только обычный git.push с remote=origin и branch=main. Force push, no-verify, удаление веток и изменение содержимого запрещены. После push сообщи точный commit SHA и не считай CI успешным без проверки GitHub Actions.'
+  return 'Пользователь отдельно подтвердил публикацию repair commit в origin/main. Проверь текущий commit и remote, затем выполни только обычный git_push с remote=origin и branch=main. Force push, no-verify, удаление веток и изменение содержимого запрещены. После push сообщи точный commit SHA и не считай CI успешным без проверки GitHub Actions.'
 }

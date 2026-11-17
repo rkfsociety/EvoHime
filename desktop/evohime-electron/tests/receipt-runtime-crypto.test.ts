@@ -15,7 +15,7 @@ describe('runtime receipt signatures', () => {
       timestamp: '2026-08-17T10:00:00.000Z',
       task_id: 'task-1',
       run_id: 'run-1',
-      tool_name: 'filesystem.write',
+      tool_name: 'filesystem_write',
       tool_args_hash: 'a'.repeat(64),
       policy_id: 'policy-v1',
       policy_decision: 'allow',

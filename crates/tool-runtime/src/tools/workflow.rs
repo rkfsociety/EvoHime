@@ -4,13 +4,13 @@ use serde_json::Value;
 use std::time::Duration;
 
 /// Registry identifier for reading the Core-owned workflow template catalog.
-pub const CATALOG_NAME: &str = "workflow.catalog";
+pub const CATALOG_NAME: &str = "workflow_catalog";
 /// Registry identifier for requesting a fixed Core-owned workflow template.
-pub const START_NAME: &str = "workflow.start";
+pub const START_NAME: &str = "workflow_start";
 /// Registry identifier for reading a workflow run in the current workspace.
-pub const STATUS_NAME: &str = "workflow.status";
+pub const STATUS_NAME: &str = "workflow_status";
 /// Registry identifier for cooperatively cancelling a run in the current workspace.
-pub const CANCEL_NAME: &str = "workflow.cancel";
+pub const CANCEL_NAME: &str = "workflow_cancel";
 
 const PERMISSIONS: &[Permission] = &[];
 const TIMEOUT: Duration = Duration::from_secs(10);

@@ -697,7 +697,7 @@ mod tests {
     #[test]
     fn tools_probe_reports_unavailable_tools_without_hiding_names() {
         let mut value = snapshot();
-        value.tools.unavailable_tools = vec!["shell.execute".into()];
+        value.tools.unavailable_tools = vec!["shell_execute".into()];
         let report = DoctorReport::from_snapshot(&value).unwrap();
         let tools_check = report
             .checks
@@ -709,7 +709,7 @@ mod tests {
             .details
             .as_deref()
             .unwrap()
-            .contains("shell.execute"));
+            .contains("shell_execute"));
     }
 
     #[test]

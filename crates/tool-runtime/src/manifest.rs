@@ -17,9 +17,9 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
     match tool_id {
         // Declared kernel surface keeps one source of truth: the tool module
         // owns the schema, and the manifest derives it instead of a stub.
-        "analysis.run" => crate::tools::analysis::input_schema(),
-        "workflow.catalog" => object(serde_json::json!({}), &[]),
-        "workflow.start" => object(
+        "analysis_run" => crate::tools::analysis::input_schema(),
+        "workflow_catalog" => object(serde_json::json!({}), &[]),
+        "workflow_start" => object(
             serde_json::json!({
                 "template_id": string("Stable ID of a fixed Core-owned workflow template"),
                 "inputs": {
@@ -31,81 +31,81 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             }),
             &["template_id", "inputs"],
         ),
-        "workflow.status" | "workflow.cancel" => object(
+        "workflow_status" | "workflow_cancel" => object(
             serde_json::json!({"run_id":string("Durable workflow run ID in the current workspace")}),
             &["run_id"],
         ),
-        "utility.base64.encode"
-        | "utility.base64.decode"
-        | "utility.hash.sha256"
-        | "utility.hash.sha512"
-        | "utility.json.format"
-        | "utility.json.minify" => object(
+        "utility_base64_encode"
+        | "utility_base64_decode"
+        | "utility_hash_sha256"
+        | "utility_hash_sha512"
+        | "utility_json_format"
+        | "utility_json_minify" => object(
             serde_json::json!({"text":string("Bounded UTF-8 input")}),
             &["text"],
         ),
-        "utility.uuid.v4" => object(serde_json::json!({}), &[]),
-        "utility.token.generate" => object(
+        "utility_uuid_v4" => object(serde_json::json!({}), &[]),
+        "utility_token_generate" => object(
             serde_json::json!({"bytes":{"type":"integer","minimum":1,"maximum":128}}),
             &[],
         ),
-        "utility.text.case_convert" => object(
+        "utility_text_case_convert" => object(
             serde_json::json!({"text":string("Bounded UTF-8 input"),"mode":{"type":"string","enum":["lower","upper","snake","kebab","camel"]}}),
             &["text"],
         ),
-        "filesystem.read" => object(
+        "filesystem_read" => object(
             serde_json::json!({"path":string("Workspace-relative file path"),"offset":{"type":"integer","minimum":1,"description":"1-based first line to return (default 1)"},"limit":{"type":"integer","minimum":1,"maximum":2000,"description":"Maximum lines to return (default 200)"}}),
             &["path"],
         ),
-        "filesystem.write" => object(
-            serde_json::json!({"path":string("Logical namespace/path"),"content":string("Complete UTF-8 content"),"expected_hash":string("SHA-256 hash from filesystem.read")}),
+        "filesystem_write" => object(
+            serde_json::json!({"path":string("Logical namespace/path"),"content":string("Complete UTF-8 content"),"expected_hash":string("SHA-256 hash from filesystem_read")}),
             &["path", "content"],
         ),
-        "filesystem.patch" => object(
-            serde_json::json!({"path":string("Logical namespace/path"),"patch":string("Unified diff"),"expected_hash":string("SHA-256 hash from filesystem.read")}),
+        "filesystem_patch" => object(
+            serde_json::json!({"path":string("Logical namespace/path"),"patch":string("Unified diff"),"expected_hash":string("SHA-256 hash from filesystem_read")}),
             &["path", "patch", "expected_hash"],
         ),
-        "filesystem.delete" => object(
+        "filesystem_delete" => object(
             serde_json::json!({"path":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the file before deletion")}),
             &["path"],
         ),
-        "git.worktree.create" => object(
+        "git_worktree_create" => object(
             serde_json::json!({"worktree_id":string("Core-generated task worktree identity"),"base_commit":string("Validated Git commit/ref")}),
             &["worktree_id", "base_commit"],
         ),
-        "git.worktree.remove" => object(
+        "git_worktree_remove" => object(
             serde_json::json!({"worktree_id":string("Core-generated task worktree identity")}),
             &["worktree_id"],
         ),
-        "git.worktree.preflight" => object(
+        "git_worktree_preflight" => object(
             serde_json::json!({"worktree_id":string("Core-generated task worktree identity"),"base_commit":string("Pinned base commit")}),
             &["worktree_id", "base_commit"],
         ),
-        "filesystem.move" | "filesystem.copy" => object(
+        "filesystem_move" | "filesystem_copy" => object(
             serde_json::json!({"from":string("Logical namespace/path"),"to":string("Logical namespace/path"),"recursive":{"type":"boolean"},"expected_hash":string("SHA-256 hash of the source file")}),
             &["from", "to"],
         ),
-        "filesystem.search" => object(
+        "filesystem_search" => object(
             serde_json::json!({"query":string("Literal text (or ripgrep regex when regex=true)"),"path":string("Optional workspace path"),"glob":string("Optional glob"),"limit":integer(),"regex":{"type":"boolean","description":"Treat query as a regular expression (requires ripgrep); default false"},"ignore_case":{"type":"boolean","description":"Case-insensitive match; default false"}}),
             &["query"],
         ),
-        "filesystem.list" => object(
+        "filesystem_list" => object(
             serde_json::json!({"path":string("Workspace-relative directory")}),
             &[],
         ),
-        "filesystem.stat" | "filesystem.mkdir" => object(
+        "filesystem_stat" | "filesystem_mkdir" => object(
             serde_json::json!({"path":string("Workspace-relative path")}),
             &["path"],
         ),
-        "agent.run" => object(
+        "agent_run" => object(
             serde_json::json!({"prompt":string("Task prompt"),"max_steps":integer(),"timeout_ms":integer(),"model_route":string("Optional model route")}),
             &["prompt"],
         ),
-        "memory.search" => object(
+        "memory_search" => object(
             serde_json::json!({"query":string("Search query"),"limit":integer()}),
             &["query"],
         ),
-        "goal.create" => object(
+        "goal_create" => object(
             serde_json::json!({
                 "objective": string("Clear, measurable goal objective"),
                 "success_criteria": {
@@ -116,155 +116,155 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             }),
             &["objective"],
         ),
-        "goal.verify" => object(
+        "goal_verify" => object(
             serde_json::json!({"goal_id":string("Active Core Goal ID"),"criterion_id":string("Criterion ID to mark verified"),"evidence_summary":string("Concise summary of verified tool output")}),
             &["goal_id", "criterion_id", "evidence_summary"],
         ),
-        "git.commit" => object(
+        "git_commit" => object(
             serde_json::json!({"message":string("Commit message")}),
             &["message"],
         ),
         // Each Git tool declares its own closed schema. A shared superset used
-        // to promise `reference`/`stat_only` on `git.diff`, so a model could
+        // to promise `reference`/`stat_only` on `git_diff`, so a model could
         // build a call the executor then rejected.
-        "git.status" | "git.changed_files" => object(serde_json::json!({}), &[]),
-        "git.diff" => object(
+        "git_status" | "git_changed_files" => object(serde_json::json!({}), &[]),
+        "git_diff" => object(
             serde_json::json!({"path":string("Optional workspace path to limit the diff")}),
             &[],
         ),
-        "git.log" => object(
+        "git_log" => object(
             serde_json::json!({"max_count":integer(),"path":string("Optional workspace path")}),
             &[],
         ),
-        "git.show" => object(
+        "git_show" => object(
             serde_json::json!({"reference":string("Optional revision, defaults to HEAD"),"stat_only":{"type":"boolean"}}),
             &[],
         ),
-        "git.blame" => object(
+        "git_blame" => object(
             serde_json::json!({"path":string("Workspace-relative file path"),"start_line":integer(),"end_line":integer()}),
             &["path"],
         ),
-        "git.pull" => object(
+        "git_pull" => object(
             serde_json::json!({"remote":string("Optional configured remote"),"branch":string("Optional branch")}),
             &[],
         ),
-        "git.push" => object(
+        "git_push" => object(
             serde_json::json!({"remote":string("Optional configured remote"),"branch":string("Optional branch"),"force":{"type":"boolean"}}),
             &[],
         ),
-        "git.branch" => object(
+        "git_branch" => object(
             serde_json::json!({"action":string("create, switch, list, delete, or rename"),"name":string("Branch name"),"from":string("Optional base reference")}),
             &["action"],
         ),
-        "git.merge" => object(
+        "git_merge" => object(
             serde_json::json!({"branch":string("Branch to merge"),"strategy":string("Optional merge strategy"),"no_ff":{"type":"boolean"}}),
             &["branch"],
         ),
-        "git.reset" => object(
+        "git_reset" => object(
             serde_json::json!({"commit":string("Target revision"),"mode":string("soft, mixed, or hard")}),
             &["commit"],
         ),
-        "git.revert" => object(
+        "git_revert" => object(
             serde_json::json!({"commit":string("Commit to revert"),"message":string("Optional commit message")}),
             &["commit"],
         ),
-        "git.cherry_pick" => object(
+        "git_cherry_pick" => object(
             serde_json::json!({"commit":string("Commit to apply")}),
             &["commit"],
         ),
-        "git.rebase" => object(
+        "git_rebase" => object(
             serde_json::json!({"onto":string("Base revision to rebase onto"),"interactive":{"type":"boolean"}}),
             &["onto"],
         ),
-        "git.tag" => object(
+        "git_tag" => object(
             serde_json::json!({"action":string("create, list, or delete"),"name":string("Tag name"),"commit":string("Optional target revision"),"message":string("Optional annotated tag message")}),
             &["action"],
         ),
-        "git.stash" => object(
+        "git_stash" => object(
             serde_json::json!({"action":string("list, save, apply, pop, or drop"),"message":string("Optional stash message"),"index":string("Optional stash index"),"include_untracked":{"type":"boolean"}}),
             &["action"],
         ),
-        "git.remote" => object(
+        "git_remote" => object(
             serde_json::json!({"action":string("list, add, or remove"),"name":string("Remote name"),"url":string("Remote URL")}),
             &["action"],
         ),
-        "mcp.call" => object(
+        "mcp_call" => object(
             serde_json::json!({"server_id":string("Core-owned MCP server identity"),"tool_name":string("Allowlisted MCP tool"),"params":{},"timeout_ms":integer()}),
             &["server_id", "tool_name"],
         ),
-        "browser.open" | "browser.session.navigate" | "http.fetch" => object(
+        "browser_open" | "browser_session_navigate" | "http_fetch" => object(
             serde_json::json!({"url":string("URL resolved by policy"),"max_chars":integer(),"timeout_ms":integer()}),
             &["url"],
         ),
-        "browser.extract" => object(
+        "browser_extract" => object(
             serde_json::json!({"url":string("URL"),"selector":string("CSS selector"),"attribute":string("Optional attribute"),"limit":integer(),"timeout_ms":integer()}),
             &["url", "selector"],
         ),
-        "app.open" => object(
+        "app_open" => object(
             serde_json::json!({"app":string("Application name or alias from the local catalog")}),
             &["app"],
         ),
-        "app.list" => object(
+        "app_list" => object(
             serde_json::json!({"query":string("Optional substring filter"),"limit":integer()}),
             &[],
         ),
-        "process.run" => object(
+        "process_run" => object(
             serde_json::json!({"command":string("Executable name; launched directly without a shell"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory inside the task workspace"),"timeout_ms":integer()}),
             &["command"],
         ),
-        "shell.execute" | "process.spawn" => object(
+        "shell_execute" | "process.spawn" => object(
             serde_json::json!({"program":string("Executable"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory"),"timeout_ms":integer()}),
             &["program"],
         ),
-        "logs.tail" => object(
+        "logs_tail" => object(
             serde_json::json!({"path":string("Workspace-relative log path"),"lines":integer()}),
             &["path"],
         ),
-        "logs.grep" => object(
+        "logs_grep" => object(
             serde_json::json!({"pattern":string("Literal text to find"),"path":string("Optional file or directory"),"case_insensitive":{"type":"boolean"},"invert_match":{"type":"boolean"},"context_lines":integer()}),
             &["pattern"],
         ),
-        "cargo.build" => object(
+        "cargo_build" => object(
             serde_json::json!({"release":{"type":"boolean"},"package":string("Optional package"),"features":string("Optional comma-separated features")}),
             &[],
         ),
-        "cargo.test" => object(
+        "cargo_test" => object(
             serde_json::json!({"test_name":string("Optional test filter"),"package":string("Optional package"),"lib":{"type":"boolean"},"doc":{"type":"boolean"}}),
             &[],
         ),
-        "cargo.fmt" => object(
+        "cargo_fmt" => object(
             serde_json::json!({"check":{"type":"boolean"}}),
             &[],
         ),
-        "cargo.clippy" => object(
+        "cargo_clippy" => object(
             serde_json::json!({"package":string("Optional package"),"all_targets":{"type":"boolean"}}),
             &[],
         ),
-        "cargo.check" => object(
+        "cargo_check" => object(
             serde_json::json!({"package":string("Optional package")}),
             &[],
         ),
-        "archive.create" => object(
+        "archive_create" => object(
             serde_json::json!({"source":string("Workspace path to archive"),"destination":string("Output archive path"),"format":string("tar, gz, tar.gz, or zip")}),
             &["source", "destination"],
         ),
-        "archive.extract" => object(
+        "archive_extract" => object(
             serde_json::json!({"archive":string("Workspace archive path"),"destination":string("Optional output directory")}),
             &["archive"],
         ),
-        "archive.list" => object(
+        "archive_list" => object(
             serde_json::json!({"archive":string("Workspace archive path")}),
             &["archive"],
         ),
         // Retired raw CDP names stay registered for diagnostics only: the
         // executor always fails closed with `legacy_disabled`, and the typed
         // Core IPC browser surface is the supported path.
-        "browser.session.navigate"
-        | "browser.session.read"
-        | "browser.session.click"
-        | "browser.session.screenshot"
-        | "browser.session.type"
-        | "browser.session.close" => object(serde_json::json!({}), &[]),
+        "browser_session_navigate"
+        | "browser_session_read"
+        | "browser_session_click"
+        | "browser_session_screenshot"
+        | "browser_session_type"
+        | "browser_session_close" => object(serde_json::json!({}), &[]),
         _ => object(
             serde_json::json!({"input":{"type":"object","description":"Tool-specific structured input"}}),
             &[],
@@ -444,7 +444,7 @@ mod tests {
             description: "Read".into(),
             input_schema: serde_json::json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}),
             output_schema: serde_json::json!({"type":"object"}),
-            capability_class: "filesystem.read".into(),
+            capability_class: "filesystem_read".into(),
             side_effect: SideEffectClass::ReadOnly,
             provider_identity: "builtin".into(),
             required_permissions: vec![Permission::FilesystemRead],
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn process_run_schema_matches_the_direct_executor_input() {
-        let schema = builtin_input_schema("process.run");
+        let schema = builtin_input_schema("process_run");
 
         assert_eq!(schema["required"], serde_json::json!(["command"]));
         assert_eq!(schema["properties"]["command"]["type"], "string");
@@ -495,20 +495,20 @@ mod tests {
     #[test]
     fn workflow_tool_schemas_are_explicit_and_closed() {
         for (tool, required) in [
-            ("workflow.catalog", serde_json::json!([])),
+            ("workflow_catalog", serde_json::json!([])),
             (
-                "workflow.start",
+                "workflow_start",
                 serde_json::json!(["template_id", "inputs"]),
             ),
-            ("workflow.status", serde_json::json!(["run_id"])),
-            ("workflow.cancel", serde_json::json!(["run_id"])),
+            ("workflow_status", serde_json::json!(["run_id"])),
+            ("workflow_cancel", serde_json::json!(["run_id"])),
         ] {
             let schema = builtin_input_schema(tool);
             assert_eq!(schema["type"], "object");
             assert_eq!(schema["additionalProperties"], false);
             assert_eq!(schema["required"], required);
         }
-        let start = builtin_input_schema("workflow.start");
+        let start = builtin_input_schema("workflow_start");
         assert_eq!(
             start["properties"]["inputs"]["additionalProperties"]["type"],
             "string"
@@ -519,8 +519,8 @@ mod tests {
     fn patch_schema_requires_the_revision_precondition_the_executor_reads() {
         // tools/patch.rs deserializes expected_hash as a required field. The
         // declared schema must say the same, otherwise the catalog probe is
-        // rejected and filesystem.patch silently leaves the model catalog.
-        let schema = builtin_input_schema("filesystem.patch");
+        // rejected and filesystem_patch silently leaves the model catalog.
+        let schema = builtin_input_schema("filesystem_patch");
 
         assert_eq!(
             schema["required"],
@@ -548,23 +548,23 @@ mod tests {
 
     #[test]
     fn git_readers_declare_exactly_the_fields_their_executors_accept() {
-        let status = builtin_input_schema("git.status");
+        let status = builtin_input_schema("git_status");
         assert_eq!(status["additionalProperties"], false);
         assert!(
             status["properties"]
                 .as_object()
                 .is_none_or(|properties| properties.is_empty()),
-            "git.status takes no arguments"
+            "git_status takes no arguments"
         );
 
-        let diff = builtin_input_schema("git.diff");
+        let diff = builtin_input_schema("git_diff");
         assert_eq!(diff["properties"]["path"]["type"], "string");
         assert!(
             diff["properties"].get("reference").is_none(),
-            "git.diff must not advertise the git.show `reference` field"
+            "git_diff must not advertise the git_show `reference` field"
         );
 
-        let show = builtin_input_schema("git.show");
+        let show = builtin_input_schema("git_show");
         assert_eq!(show["properties"]["reference"]["type"], "string");
         assert_eq!(show["properties"]["stat_only"]["type"], "boolean");
     }

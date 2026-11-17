@@ -1814,19 +1814,19 @@ fn capability_name_is_bounded(capability: &str) -> bool {
         "workspace.read"
             | "workspace.search"
             | "workspace.write"
-            | "git.diff"
-            | "git.status"
+            | "git_diff"
+            | "git_status"
             | "test.execute"
     )
 }
 
 fn role_allows_capability(role: &str, capability: &str) -> bool {
     match role {
-        "implementer" => !matches!(capability, "test.execute" | "git.commit" | "git.push"),
-        "tester" => !matches!(capability, "workspace.write" | "git.commit" | "git.push"),
+        "implementer" => !matches!(capability, "test.execute" | "git_commit" | "git_push"),
+        "tester" => !matches!(capability, "workspace.write" | "git_commit" | "git_push"),
         "researcher" | "reviewer" | "coordinator" => !matches!(
             capability,
-            "workspace.write" | "test.execute" | "git.commit" | "git.push"
+            "workspace.write" | "test.execute" | "git_commit" | "git_push"
         ),
         _ => {
             capability_name_is_bounded(capability)
@@ -2000,7 +2000,7 @@ mod tests {
         let request = create_test_request()
             .with_grants(vec![
                 Grant::new("workspace.read").unwrap(),
-                Grant::new("git.status").unwrap(),
+                Grant::new("git_status").unwrap(),
             ])
             .unwrap()
             .with_budget(ChildBudget::new().with_tokens(4_000).with_tool_calls(4));
@@ -2066,7 +2066,7 @@ mod tests {
     fn test_grant_validation() {
         let parent_grants = vec![
             Grant::new("workspace.read").unwrap(),
-            Grant::new("git.status").unwrap(),
+            Grant::new("git_status").unwrap(),
         ];
 
         let child_grants = vec![Grant::new("workspace.read").unwrap()];

@@ -10,7 +10,7 @@
 `crates/tool-runtime`, — и определить, как Runtime получает доступ к
 Core-owned kernel host, не заводя вторую реализацию dispatch.
 
-1. Объявить инструмент `analysis.run` с явной input schema:
+1. Объявить инструмент `analysis_run` с явной input schema:
    `operation` (`json_parse` | `json_select` | `csv_summary` | `object_put`),
    `args` (bounded string для `csv_summary`/`json_parse` либо объект для
    `json_select`/`object_put`), опциональные `logical_name`, `type_hint`,
@@ -48,7 +48,7 @@ Core-owned kernel host, не заводя вторую реализацию disp
    чтобы approval/receipt/recovery semantics остались неизменными. Отдельное
    permission не вводится: kernel-вызов не расширяет authority, а
    вычислительные операции side-effect-free.
-6. `analysis.run` попадает в
+6. `analysis_run` попадает в
    `crates/evohime-core/src/core_prelude.rs::catalog_preflight_input` с
    probe-аргументами, проходящими объявленную схему (`{"operation":
    "json_parse", "args": "{}"}`), иначе безопасный инструмент выпадет из
@@ -68,7 +68,7 @@ Core-owned kernel host, не заводя вторую реализацию disp
 
 ### Опциональные
 
-Разделение `analysis.run` на два инструмента при конфликте формы `args`.
+Разделение `analysis_run` на два инструмента при конфликте формы `args`.
 Курируемый fallback из плана 191.2 — не блокирует.
 
 ## Recovery и rollback
@@ -82,9 +82,9 @@ kernel IPC-команды продолжают работать.
 ## Verification
 
 Unit: объявленная схема проходит `validate`, не является заглушкой, не
-содержит `additionalProperties: true`; `catalog_preflight_input("analysis.run")`
+содержит `additionalProperties: true`; `catalog_preflight_input("analysis_run")`
 проходит ту же схему; реестр без `kernel_host` возвращает `unavailable`;
-`registry.list()` содержит `analysis.run` ровно один раз; `ToolRegistry::clone`
+`registry.list()` содержит `analysis_run` ровно один раз; `ToolRegistry::clone`
 сохраняет host; существующие тесты `registry_tests.rs` не фиксируют литерал
 числа инструментов.
 
@@ -95,9 +95,9 @@ Unit: объявленная схема проходит `validate`, не явл
 исполняет, отвергает `parse_input` с `InvalidInput` до вызова host; это
 закреплено тестом `operation_args_pairing_is_enforced_by_the_adapter`.
 
-Static: ссылки на `analysis.run` присутствуют в декларации, в
+Static: ссылки на `analysis_run` присутствуют в декларации, в
 `catalog_preflight_input` и в проекции каталога; в
-`core_agent_execution.rs` нет нового `if call.name == "analysis.run"`.
+`core_agent_execution.rs` нет нового `if call.name == "analysis_run"`.
 
 ## Release evidence
 
@@ -108,7 +108,7 @@ Static: ссылки на `analysis.run` присутствуют в декла�
 
 ### Этап 1 — фактическое evidence
 
-- Инструмент: `analysis.run`, manifest `version = "1.0.0"`,
+- Инструмент: `analysis_run`, manifest `version = "1.0.0"`,
   `capability_class = "local_computation"`, `side_effect = read_only`,
   `approval = never`, `workspace_scope = "task"`, `required_permissions = []`,
   `network_domains = []`, `secret_references = []`. Exact canonical hash
@@ -134,7 +134,7 @@ Static: ссылки на `analysis.run` присутствуют в декла�
 
 ## Критерии выхода
 
-- [x] `analysis.run` объявлен в единственном месте и валиден.
+- [x] `analysis_run` объявлен в единственном месте и валиден.
       `crates/tool-runtime/src/tools/analysis.rs` — единственный источник
       id/схемы; `ToolDefinition::manifest` и `builtin_input_schema` только
       делегируют. `registry_tests::analysis_run_is_declared_once_with_a_closed_manifest`
@@ -155,6 +155,6 @@ Static: ссылки на `analysis.run` присутствуют в декла�
 ## Открытые пункты после этапа 1
 
 Реализация host внутри Core (сессии, admission, worker, recovery) — этап 192.2;
-IPC-команда списка и вкладка «Анализ» — этап 192.3. До них `analysis.run`
+IPC-команда списка и вкладка «Анализ» — этап 192.3. До них `analysis_run`
 виден модели в авторизованном snapshot, но любой вызов завершается typed
 `analysis_kernel_unavailable`, а не скрытым исполнением в процессе Core.

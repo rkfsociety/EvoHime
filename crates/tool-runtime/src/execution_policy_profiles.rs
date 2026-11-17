@@ -120,11 +120,11 @@ impl ExecutionPolicyProfile {
     ///
     /// ```
     /// use evohime_tool_runtime::execution_policy_profiles::ExecutionPolicyProfile;
-    /// let profile = ExecutionPolicyProfile::default_for("shell.execute").unwrap();
+    /// let profile = ExecutionPolicyProfile::default_for("shell_execute").unwrap();
     /// assert!(profile.validate().is_ok());
     /// ```
     pub fn default_for(tool: &str) -> Result<Self, ExecutionPolicyError> {
-        if !matches!(tool, "shell.execute" | "process.run") {
+        if !matches!(tool, "shell_execute" | "process_run") {
             return Err(ExecutionPolicyError::UnsupportedTool);
         }
         Ok(Self {
@@ -241,7 +241,7 @@ pub fn validate_program_name(program: &str) -> Result<(), ExecutionPolicyError> 
         )
     {
         return Err(ExecutionPolicyError::InvalidProfile(
-            "program must be a direct executable name (script interpreters like node/python are disallowed; use filesystem.patch or filesystem.write to edit files)",
+            "program must be a direct executable name (script interpreters like node/python are disallowed; use filesystem_patch or filesystem_write to edit files)",
         ));
     }
     Ok(())
@@ -449,7 +449,7 @@ mod tests {
 
     #[test]
     fn profile_is_bounded_and_hashed() {
-        let resolved = ExecutionPolicyProfile::resolve("shell.execute").unwrap();
+        let resolved = ExecutionPolicyProfile::resolve("shell_execute").unwrap();
         assert_eq!(resolved.profile.schema_version, 1);
         assert_eq!(resolved.profile_hash.len(), 64);
         assert_eq!(resolved.profile.network, NetworkPolicy::Deny);

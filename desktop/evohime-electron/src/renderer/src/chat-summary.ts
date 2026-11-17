@@ -339,7 +339,7 @@ export function buildChatSummary(
 }
 
 export function parseGitStatusEvent(events: readonly CoreEvent[]): GitStatusSummary | null {
-  const latest = events.find((event) => event.eventType === 'git.status')
+  const latest = events.find((event) => event.eventType === 'git_status')
   if (!latest) return null
   const record = parseJsonRecord(latest.payload)
   if (!record) return null
@@ -376,7 +376,7 @@ export function parseGitStatusEvent(events: readonly CoreEvent[]): GitStatusSumm
 }
 
 export function parseGitDiffEvent(events: readonly CoreEvent[]): GitDiffSummary | null {
-  const latest = events.find((event) => event.eventType === 'git.diff')
+  const latest = events.find((event) => event.eventType === 'git_diff')
   if (!latest) return null
   const record = parseJsonRecord(latest.payload)
   if (!record) return null
@@ -443,12 +443,12 @@ export function parseBackgroundRunsEvent(events: readonly CoreEvent[]): readonly
 }
 
 function isShellTool(toolName: string): boolean {
-  return toolName === 'shell.execute' || toolName.startsWith('shell.execute:') || toolName === 'terminal.execute'
+  return toolName === 'shell_execute' || toolName.startsWith('shell_execute:') || toolName === 'terminal.execute'
 }
 
 function extractShellCommand(toolName: string, root: Record<string, unknown> | null): string {
-  if (toolName.startsWith('shell.execute: ')) {
-    return toolName.slice('shell.execute: '.length).trim()
+  if (toolName.startsWith('shell_execute: ')) {
+    return toolName.slice('shell_execute: '.length).trim()
   }
   const program = readString(root, ['program', 'command', 'cmd'])
   if (program) {
@@ -468,12 +468,12 @@ function extractTouchedFile(
   root: Record<string, unknown> | null
 ): { readonly path: string; readonly action: 'read' | 'write' } | null {
   const isWrite =
-    toolName.startsWith('filesystem.write')
-    || toolName.startsWith('filesystem.patch')
+    toolName.startsWith('filesystem_write')
+    || toolName.startsWith('filesystem_patch')
     || toolName.startsWith('filesystem.create')
-    || toolName.startsWith('filesystem.delete')
+    || toolName.startsWith('filesystem_delete')
     || toolName === 'apply_patch'
-  const isRead = toolName.startsWith('filesystem.read')
+  const isRead = toolName.startsWith('filesystem_read')
   if (!isWrite && !isRead) return null
 
   const path = readString(root, ['path', 'relative_path', 'file_path', 'target_path'])
@@ -495,8 +495,8 @@ function findLastRunningShellIndex(
   taskId: string,
   toolName: string
 ): number {
-  const normalizedCmd = toolName.startsWith('shell.execute: ')
-    ? toolName.slice('shell.execute: '.length).trim()
+  const normalizedCmd = toolName.startsWith('shell_execute: ')
+    ? toolName.slice('shell_execute: '.length).trim()
     : null
   for (let idx = shells.length - 1; idx >= 0; idx -= 1) {
     const item = shells[idx]

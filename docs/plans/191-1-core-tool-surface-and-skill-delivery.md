@@ -15,20 +15,20 @@ timeouts; меняется только способ объявления и п�
 
 1. Заполнить явные input schemas для всех инструментов, у которых сейчас
    срабатывает заглушка `{"input":{...}}`: `cargo.*`, `archive.*`, `logs.*`,
-   `git.status`, `git.log`, `git.show`, `git.blame`, `git.changed_files`,
-   `git.branch`, `git.merge`, `git.rebase`, `git.reset`, `git.revert`,
-   `git.stash`, `git.tag`, `git.remote`, `filesystem.stat`, `filesystem.mkdir`,
-   `app.*`, `browser.*`, `utility.*`, `process.run`, `shell.execute`, `mcp.call`,
-   `memory.search`, `agent.run`.
+   `git_status`, `git_log`, `git_show`, `git_blame`, `git_changed_files`,
+   `git_branch`, `git_merge`, `git_rebase`, `git_reset`, `git_revert`,
+   `git_stash`, `git_tag`, `git_remote`, `filesystem_stat`, `filesystem_mkdir`,
+   `app.*`, `browser.*`, `utility.*`, `process_run`, `shell_execute`, `mcp_call`,
+   `memory_search`, `agent_run`.
 2. Сверить каждую схему с полями, которые реально разбирает адаптер; для
-   `filesystem.patch` добавить обязательный `expected_hash`, для
-   `filesystem.write` сохранить опциональность, но описать инъекцию Core.
+   `filesystem_patch` добавить обязательный `expected_hash`, для
+   `filesystem_write` сохранить опциональность, но описать инъекцию Core.
 3. Убрать из объявлений инструменты без исполнения: `process.spawn` (нет
-   регистрации) и `browser.session.*` / `agent.run`, если backend не появляется
+   регистрации) и `browser.session.*` / `agent_run`, если backend не появляется
    в этом этапе. Удаление регистрации, реестровые записи и `legacy_parser.rs`
    правятся одним изменением, чтобы не осталось имён, которые модель может
    вызвать.
-4. Отделить `git.commit`: `git add -A` заменяется на явную индексацию только
+4. Отделить `git_commit`: `git add -A` заменяется на явную индексацию только
    переданных путей либо на отказ, если индекс пуст и пути не заданы; поведение
    при пустом наборе изменений сохраняет текущий `nothing_to_commit`.
 5. Вывести ожидаемое число инструментов из каталога и передать его в
@@ -40,11 +40,11 @@ timeouts; меняется только способ объявления и п�
 
 `ToolManifest::validate` и `builtin_input_schema` как существующий контракт;
 `PermissionEngine`-права на уровне адаптеров; правило `AGENTS.md` о
-task-only commit для формы `git.commit`.
+task-only commit для формы `git_commit`.
 
 ### Опциональные
 
-Восстановление `agent.run` через backend и `browser.session.*` через настоящий
+Восстановление `agent_run` через backend и `browser.session.*` через настоящий
 session runtime не блокируют этап; при их отсутствии инструменты просто не
 объявляются.
 
@@ -53,7 +53,7 @@ session runtime не блокируют этап; при их отсутстви
 Удаление неисполнимых инструментов не ломает сохранённые approvals: они
 привязаны к `tool_name + input hash`, а неисполнимый вызов до этого всегда
 завершался ошибкой. Неизвестный идентификатор инструмента остаётся typed
-`ToolError::UnknownTool`. Изменение формы `git.commit` не должно оставлять
+`ToolError::UnknownTool`. Изменение формы `git_commit` не должно оставлять
 проиндексированные посторонние файлы: при отказе валидации путей индекс не
 модифицируется. Rollback возвращает прежнюю регистрацию целиком; миграций
 данных нет.
@@ -63,7 +63,7 @@ session runtime не блокируют этап; при их отсутстви
 Unit: каждая зарегистрированная схема проходит `validate`, не является
 заглушкой, не содержит `additionalProperties: true`, все `required`-поля
 принимаются адаптером; неизвестный инструмент не попадает в `list()`;
-`git.commit` с посторонними изменениями в рабочем дереве не индексирует их.
+`git_commit` с посторонними изменениями в рабочем дереве не индексирует их.
 Static: `registry_tests` больше не фиксирует литерал 66, а сравнивает с длиной
 каталога; ссылки на удалённые имена отсутствуют в `legacy_parser.rs` и
 `manifest.rs`.
@@ -83,5 +83,5 @@ Static: `registry_tests` больше не фиксирует литерал 66,
       ошибочен.
 - [ ] Ожидаемое число инструментов не является литералом и сигналит о
       расхождении.
-- [ ] `git.commit` не захватывает чужие изменения.
+- [ ] `git_commit` не захватывает чужие изменения.
 - [ ] Внутренние ссылки разрешаются, `git diff --check` проходит.

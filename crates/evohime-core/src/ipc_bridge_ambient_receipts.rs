@@ -149,14 +149,14 @@ impl IpcBridge {
                     evohime_receipts::runtime::MAX_CALL_INPUT_BYTES;
                 let read_only = matches!(
                     request.tool_name.as_str(),
-                    "filesystem.read"
-                        | "filesystem.list"
-                        | "git.status"
-                        | "git.diff"
-                        | "git.log"
-                        | "git.show"
-                        | "git.blame"
-                        | "git.changed_files"
+                    "filesystem_read"
+                        | "filesystem_list"
+                        | "git_status"
+                        | "git_diff"
+                        | "git_log"
+                        | "git_show"
+                        | "git_blame"
+                        | "git_changed_files"
                         | "workspace.list"
                         | "workspace.read"
                         | "workspace.search"

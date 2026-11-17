@@ -868,7 +868,7 @@ describe('task timeline', () => {
     view.rerender(
       <TaskTimeline
         connection="connected"
-        events={[event('tool.started', { tool_name: 'filesystem.read' }, taskId)]}
+        events={[event('tool.started', { tool_name: 'filesystem_read' }, taskId)]}
         workspace="C:\\work\\repo"
         chatId="chat-1"
         onChatTouched={() => {}}
@@ -954,7 +954,7 @@ describe('task timeline', () => {
         connection="connected"
         events={[event('approval.required', {
           approval_id: 'approval-1',
-          tool_name: 'filesystem.write',
+          tool_name: 'filesystem_write',
           permission: 'FilesystemWrite',
           scope: 'src/app.ts',
           preview: { kind: 'file_write', summary: 'Записать файл (42 байт)', path: 'src/app.ts' }
@@ -962,7 +962,7 @@ describe('task timeline', () => {
       />
     )
 
-    expect(await screen.findByText('Нужно разрешение: filesystem.write')).toBeTruthy()
+    expect(await screen.findByText('Нужно разрешение: filesystem_write')).toBeTruthy()
     expect(screen.getByText('Записать файл (42 байт)')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Разрешить' }))
     await waitFor(() => expect(calls.at(-1)).toEqual({

@@ -4,9 +4,9 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for agent subtask delegation.
-pub const NAME: &str = "agent.run";
+pub const NAME: &str = "agent_run";
 /// Input contract and fan-out guidance shown in tool catalogs.
-pub const DESCRIPTION: &str = "Spawn a budgeted subagent with its own prompt. Input: { prompt, max_steps?, timeout_ms?, model_route? }. Fan-out by scheduling multiple agent.run steps without depends_on.";
+pub const DESCRIPTION: &str = "Spawn a budgeted subagent with its own prompt. Input: { prompt, max_steps?, timeout_ms?, model_route? }. Fan-out by scheduling multiple agent_run steps without depends_on.";
 /// No additional tool permission is checked by this registry adapter.
 pub const PERMISSIONS: &[Permission] = &[];
 /// Maximum advertised wall-clock budget for agent delegation.
@@ -18,7 +18,7 @@ pub const TIMEOUT: Duration = Duration::from_secs(180);
 /// second agent runtime from the tool process.
 pub async fn execute(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, ToolError> {
     Err(ToolError::Execution(
-        "agent.run is executed by the agent subagent backend".into(),
+        "agent_run is executed by the agent subagent backend".into(),
     ))
 }
 
@@ -77,7 +77,7 @@ pub fn parse_input(input: &Value) -> Result<AgentRunInput, ToolError> {
 pub fn format_result(summary: &str, steps_run: usize, truncated: bool, depth: u32) -> ToolResult {
     ToolResult {
         output: format!(
-            "agent.run (depth={depth}, steps={steps_run}{}):\n{summary}",
+            "agent_run (depth={depth}, steps={steps_run}{}):\n{summary}",
             if truncated { ", truncated" } else { "" }
         ),
         structured: json!({

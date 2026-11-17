@@ -41,7 +41,7 @@
   недостижимо из UI.
 - Прецедент подмены исполнения в Core:
   `crates/evohime-core/src/core_agent_execution.rs:1375` отдельно обрабатывает
-  `memory.search`, а `crates/tool-runtime/src/tools/memory.rs:23` остаётся
+  `memory_search`, а `crates/tool-runtime/src/tools/memory.rs:23` остаётся
   заглушкой. Это тот же дублирующий dispatch, который план 191.1 удаляет,
   поэтому копировать его нельзя.
 - Авторизованный snapshot инструментов строится в
@@ -131,7 +131,7 @@ in-process исполнение в обход worker.
 
 ## Критерии готовности
 
-- [x] Этап 192.1: агент видит `analysis.run` в авторизованном snapshot;
+- [x] Этап 192.1: агент видит `analysis_run` в авторизованном snapshot;
       вызов без Core-owned host даёт typed `analysis_kernel_unavailable`.
 - [ ] Агент получает осмысленный typed результат
       `json_parse`/`json_select`/`csv_summary` (этап 192.2).

@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Stable registry identifier for workspace file writes.
-pub const NAME: &str = "filesystem.write";
+pub const NAME: &str = "filesystem_write";
 /// User-facing description of the write operation.
 pub const DESCRIPTION: &str = "Write UTF-8 text inside the workspace";
 /// Permission required to modify workspace files.

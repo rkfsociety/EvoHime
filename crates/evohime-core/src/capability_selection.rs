@@ -234,7 +234,7 @@ mod tests {
                 version: "1".into(),
                 content_hash: "abcdef0123456789abcdef0123456789".into(),
             }],
-            allowed_tools: vec!["filesystem.read".into(), "git.diff".into()],
+            allowed_tools: vec!["filesystem_read".into(), "git_diff".into()],
             allowed_domains: vec!["docs.example.com".into()],
             protected_paths: vec!["src".into()],
             risk_class: RiskClass::Medium,
@@ -250,7 +250,7 @@ mod tests {
     fn query() -> MatchQuery {
         MatchQuery {
             intent: "review reviewer".into(),
-            required_tools: vec!["git.diff".into()],
+            required_tools: vec!["git_diff".into()],
             required_domains: vec!["docs.example.com".into()],
             requested_risk: RiskClass::Low,
         }
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(view.manifest_name, "reviewer");
         assert_eq!(view.version, "1.0.0");
         assert!(!view.reasons.is_empty());
-        assert_eq!(view.permissions.allowed_tools, vec!["git.diff".to_string()]);
+        assert_eq!(view.permissions.allowed_tools, vec!["git_diff".to_string()]);
         assert!(!view.acceptance_criteria.is_empty());
         assert!(!view.pinned);
     }
@@ -323,7 +323,7 @@ mod tests {
         );
 
         let mut high_risk_query = query();
-        high_risk_query.required_tools = vec!["shell.execute".into()];
+        high_risk_query.required_tools = vec!["shell_execute".into()];
         assert_eq!(
             replace(&manifests, &high_risk_query, "reviewer"),
             Err(SelectionError::UnknownManifest)

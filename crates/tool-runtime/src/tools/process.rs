@@ -10,10 +10,10 @@ use std::time::Duration;
 use tokio::io::AsyncRead;
 
 /// Stable identifier used to register this direct-process tool.
-pub const NAME: &str = "process.run";
+pub const NAME: &str = "process_run";
 /// User-facing description of the direct-process tool.
 pub const DESCRIPTION: &str =
-    "Run a process with improved timeout and streaming (replaces shell.execute)";
+    "Run a process with improved timeout and streaming (replaces shell_execute)";
 /// Permission required before the process can be started.
 pub const PERMISSIONS: &[Permission] = &[Permission::ShellExecute];
 /// Default maximum runtime for the process tool.
@@ -233,7 +233,7 @@ mod tests {
         match result {
             Err(ToolError::InvalidInput { message, .. }) => {
                 assert!(message.contains("program must be a direct executable name"));
-                assert!(message.contains("filesystem.patch"));
+                assert!(message.contains("filesystem_patch"));
             }
             other => panic!("ожидался InvalidInput, получено {other:?}"),
         }

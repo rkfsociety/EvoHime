@@ -70,12 +70,12 @@ pub fn recovery_hint(
 ) -> String {
     match kind {
         ToolFailureKind::NotFound => format!(
-            "Путь не найден. Используй filesystem.search по фрагменту имени `{tool_name}`; пути должны быть workspace-relative."
+            "Путь не найден. Используй filesystem_search по фрагменту имени `{tool_name}`; пути должны быть workspace-relative."
         ),
         ToolFailureKind::InvalidInput => {
-            if matches!(tool_name, "process.run" | "shell.execute") {
+            if matches!(tool_name, "process_run" | "shell_execute") {
                 format!(
-                    "Проверь ограничения и схему {tool_name}: для изменения или создания файлов используй `filesystem.patch` или `filesystem.write` (не запускай `node`, `python` и другие скриптовые интерпретаторы через `{tool_name}` и не передавай `env`). Схема: {schema}"
+                    "Проверь ограничения и схему {tool_name}: для изменения или создания файлов используй `filesystem_patch` или `filesystem_write` (не запускай `node`, `python` и другие скриптовые интерпретаторы через `{tool_name}` и не передавай `env`). Схема: {schema}"
                 )
             } else if schema.get("additionalProperties") == Some(&Value::Bool(true)) {
                 format!("Проверь обязательные поля инструмента {tool_name}: {description}")
@@ -99,7 +99,7 @@ pub fn recovery_hint(
             "Вызов запрещён политикой; не повторяй тот же вызов, выбери разрешённый путь или сообщи хозяину о требуемом permission.".into()
         }
         ToolFailureKind::Denied(DenialSource::WorkspaceBoundary) => {
-            "Запрошенный путь вышел за выбранный workspace и не был прочитан или изменён. Продолжай только внутри выбранного workspace: используй workspace-relative путь, при необходимости начни с filesystem.list с {\"path\":\".\"}; не используй абсолютный путь или `..` и не пытайся обходить границу.".into()
+            "Запрошенный путь вышел за выбранный workspace и не был прочитан или изменён. Продолжай только внутри выбранного workspace: используй workspace-relative путь, при необходимости начни с filesystem_list с {\"path\":\".\"}; не используй абсолютный путь или `..` и не пытайся обходить границу.".into()
         }
         ToolFailureKind::Denied(DenialSource::User) => {
             "Хозяин отклонил этот вызов; не повторяй его без изменения способа или явного нового разрешения.".into()
@@ -115,10 +115,10 @@ pub fn recovery_hint(
                 .get("stderr")
                 .and_then(Value::as_str)
                 .unwrap_or("<stderr отсутствует>");
-            if tool_name == "shell.execute"
+            if tool_name == "shell_execute"
                 && stderr.contains("could not find `Cargo.toml`")
             {
-                return "Cargo не нашёл Cargo.toml в выбранном workspace. Не повторяй cargo с теми же аргументами: сначала вызови filesystem.list с {\"path\":\".\"}, прочитай подходящие файлы и создай Cargo.toml через filesystem.write, если это должен быть новый Rust-проект; затем повтори проверку из workspace-relative cwd.".into();
+                return "Cargo не нашёл Cargo.toml в выбранном workspace. Не повторяй cargo с теми же аргументами: сначала вызови filesystem_list с {\"path\":\".\"}, прочитай подходящие файлы и создай Cargo.toml через filesystem_write, если это должен быть новый Rust-проект; затем повтори проверку из workspace-relative cwd.".into();
             }
             format!("Команда завершилась с ошибкой. Первые строки stderr: {}", stderr.lines().take(5).collect::<Vec<_>>().join("\n"))
         }
@@ -156,19 +156,19 @@ fn canonical_json(value: &Value) -> String {
 /// Signature prefixes of read-only tools whose results a mutation invalidates.
 ///
 /// The prefix is the tool id plus the `:` that `canonical_call_signature`
-/// inserts, so a tool named `git.status` is matched exactly and never
+/// inserts, so a tool named `git_status` is matched exactly and never
 /// shadowed by a longer id.
 const READ_ONLY_SIGNATURE_PREFIXES: &[&str] = &[
-    "filesystem.read:",
-    "filesystem.list:",
-    "filesystem.search:",
-    "filesystem.stat:",
-    "git.status:",
-    "git.diff:",
-    "git.log:",
-    "git.show:",
-    "git.blame:",
-    "git.changed_files:",
+    "filesystem_read:",
+    "filesystem_list:",
+    "filesystem_search:",
+    "filesystem_stat:",
+    "git_status:",
+    "git_diff:",
+    "git_log:",
+    "git_show:",
+    "git_blame:",
+    "git_changed_files:",
 ];
 
 /// Bounded set of recent tool-call signatures used to suppress duplicate work.
@@ -227,40 +227,40 @@ mod recent_tests {
     #[test]
     fn canonical_signatures_ignore_object_spacing_and_key_order() {
         assert_eq!(
-            canonical_call_signature("filesystem.read", r#"{"path": "a", "line": 1}"#),
-            canonical_call_signature("filesystem.read", r#"{"line":1,"path":"a"}"#)
+            canonical_call_signature("filesystem_read", r#"{"path": "a", "line": 1}"#),
+            canonical_call_signature("filesystem_read", r#"{"line":1,"path":"a"}"#)
         );
     }
 
     #[test]
     fn recent_window_allows_rework_after_eviction_and_forgets_reads() {
         let mut recent = RecentToolCalls::new(2);
-        assert!(recent.remember("filesystem.read:{\"path\":\"a\"}".into()));
-        assert!(!recent.remember("filesystem.read:{\"path\":\"a\"}".into()));
-        recent.remember("git.status:null".into());
+        assert!(recent.remember("filesystem_read:{\"path\":\"a\"}".into()));
+        assert!(!recent.remember("filesystem_read:{\"path\":\"a\"}".into()));
+        recent.remember("git_status:null".into());
         recent.forget_reads();
-        assert!(recent.remember("filesystem.read:{\"path\":\"a\"}".into()));
+        assert!(recent.remember("filesystem_read:{\"path\":\"a\"}".into()));
     }
 
     #[test]
     fn mutation_forgets_git_observation_signatures_and_keeps_mutations_deduped() {
         let mut recent = RecentToolCalls::new(6);
-        assert!(recent.remember("git.status:null".into()));
-        assert!(recent.remember("git.diff:{\"path\":\"a\"}".into()));
-        assert!(recent.remember("git.commit:{\"message\":\"x\"}".into()));
+        assert!(recent.remember("git_status:null".into()));
+        assert!(recent.remember("git_diff:{\"path\":\"a\"}".into()));
+        assert!(recent.remember("git_commit:{\"message\":\"x\"}".into()));
 
         recent.forget_reads();
 
         assert!(
-            recent.remember("git.status:null".into()),
+            recent.remember("git_status:null".into()),
             "status must be repeatable after a mutation"
         );
         assert!(
-            recent.remember("git.diff:{\"path\":\"a\"}".into()),
+            recent.remember("git_diff:{\"path\":\"a\"}".into()),
             "diff must be repeatable after a mutation"
         );
         assert!(
-            !recent.remember("git.commit:{\"message\":\"x\"}".into()),
+            !recent.remember("git_commit:{\"message\":\"x\"}".into()),
             "a mutation keeps its duplicate window"
         );
     }
@@ -433,7 +433,7 @@ mod tests {
     fn errors_keep_their_typed_category() {
         assert_eq!(
             ToolOutcome::from_error(ToolError::NotFound {
-                tool: "filesystem.read".into(),
+                tool: "filesystem_read".into(),
                 path: "missing.txt".into(),
                 hint: String::new(),
             })
@@ -466,11 +466,11 @@ mod tests {
     fn classify_toolerror_notfound_priority_1() {
         let outcome = classify_tool_outcome(
             Err(ToolError::NotFound {
-                tool: "filesystem.read".into(),
+                tool: "filesystem_read".into(),
                 path: "missing.txt".into(),
                 hint: "файл не найден".into(),
             }),
-            "resource not found for filesystem.read: missing.txt".into(),
+            "resource not found for filesystem_read: missing.txt".into(),
         );
         assert!(!outcome.ok);
         assert_eq!(outcome.kind, Some(ToolFailureKind::NotFound));
@@ -480,10 +480,10 @@ mod tests {
     fn classify_toolerror_invalidinput_priority_2() {
         let outcome = classify_tool_outcome(
             Err(ToolError::InvalidInput {
-                tool: "shell.execute".into(),
+                tool: "shell_execute".into(),
                 message: "program is required".into(),
             }),
-            "invalid input for shell.execute: program is required".into(),
+            "invalid input for shell_execute: program is required".into(),
         );
         assert!(!outcome.ok);
         assert_eq!(outcome.kind, Some(ToolFailureKind::InvalidInput));
@@ -600,13 +600,13 @@ mod tests {
     #[test]
     fn recovery_hint_notfound_recommends_search() {
         let hint = recovery_hint(
-            "filesystem.read",
+            "filesystem_read",
             ToolFailureKind::NotFound,
             &json!({"path": "src/missing.rs"}),
             &json!({"type": "object", "properties": {"path": {"type": "string"}}}),
             "читать файл",
         );
-        assert!(hint.contains("filesystem.search"));
+        assert!(hint.contains("filesystem_search"));
         assert!(hint.contains("workspace-relative"));
     }
 
@@ -621,7 +621,7 @@ mod tests {
             "required": ["path", "content"]
         });
         let hint = recovery_hint(
-            "filesystem.write",
+            "filesystem_write",
             ToolFailureKind::InvalidInput,
             &json!({"path": "test.txt"}),
             &schema,
@@ -632,10 +632,10 @@ mod tests {
 
     #[test]
     fn recovery_hint_invalidinput_for_no_argument_tool_names_the_empty_object() {
-        // git.status declares `additionalProperties: false` with no properties.
+        // git_status declares `additionalProperties: false` with no properties.
         // Echoing that schema back does not tell a model what to send.
         let hint = recovery_hint(
-            "git.status",
+            "git_status",
             ToolFailureKind::InvalidInput,
             &json!({"input": {}}),
             &json!({"type": "object", "additionalProperties": false}),
@@ -658,7 +658,7 @@ mod tests {
     #[test]
     fn recovery_hint_denied_policy_refuses_retry() {
         let hint = recovery_hint(
-            "shell.execute",
+            "shell_execute",
             ToolFailureKind::Denied(DenialSource::Policy),
             &json!({}),
             &json!({"type": "object"}),
@@ -671,7 +671,7 @@ mod tests {
     #[test]
     fn recovery_hint_denied_user_says_ask_again() {
         let hint = recovery_hint(
-            "git.commit",
+            "git_commit",
             ToolFailureKind::Denied(DenialSource::User),
             &json!({}),
             &json!({"type": "object"}),
@@ -683,7 +683,7 @@ mod tests {
     #[test]
     fn recovery_hint_nonzero_exit_shows_stderr() {
         let hint = recovery_hint(
-            "shell.execute",
+            "shell_execute",
             ToolFailureKind::NonZeroExit,
             &json!({"stderr": "error: undefined reference\nerror: failed to link\nother"}),
             &json!({"type": "object"}),
@@ -695,7 +695,7 @@ mod tests {
     #[test]
     fn recovery_hint_cargo_missing_manifest_requires_setup_before_retry() {
         let hint = recovery_hint(
-            "shell.execute",
+            "shell_execute",
             ToolFailureKind::NonZeroExit,
             &json!({
                 "stderr": "error: could not find `Cargo.toml` in `C:\\workspace` or any parent directory"
@@ -704,15 +704,15 @@ mod tests {
             "выполнить cargo test",
         );
         assert!(hint.contains("Не повторяй cargo"));
-        assert!(hint.contains("filesystem.list"));
+        assert!(hint.contains("filesystem_list"));
         assert!(hint.contains("Cargo.toml"));
-        assert!(hint.contains("filesystem.write"));
+        assert!(hint.contains("filesystem_write"));
     }
 
     #[test]
     fn recovery_hint_timeout_suggests_narrowing() {
         let hint = recovery_hint(
-            "shell.execute",
+            "shell_execute",
             ToolFailureKind::Timeout,
             &json!({}),
             &json!({"type": "object"}),
@@ -725,7 +725,7 @@ mod tests {
     #[test]
     fn recovery_hint_denial_escalation_describes_block() {
         let hint = recovery_hint(
-            "filesystem.patch",
+            "filesystem_patch",
             ToolFailureKind::Denied(DenialSource::Escalation),
             &json!({}),
             &json!({"type": "object"}),
@@ -738,13 +738,13 @@ mod tests {
     #[test]
     fn recovery_hint_invalidinput_for_process_run_points_to_filesystem_tools() {
         let hint = recovery_hint(
-            "process.run",
+            "process_run",
             ToolFailureKind::InvalidInput,
             &Value::Null,
             &json!({"type": "object", "properties": {"command": {"type": "string"}}}),
             "запустить процесс",
         );
-        assert!(hint.contains("filesystem.patch"));
-        assert!(hint.contains("filesystem.write"));
+        assert!(hint.contains("filesystem_patch"));
+        assert!(hint.contains("filesystem_write"));
     }
 }

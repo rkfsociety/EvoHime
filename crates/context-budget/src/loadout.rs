@@ -167,8 +167,8 @@ pub fn contains_unnegated_keyword(haystack: &str, keyword: &str) -> bool {
 ///
 /// Explicit mutation action word (unnegated keyword unique to a mutation rule)
 /// wins over a read-only research/inspection stage even when the read-only
-/// keywords matched more often: a loadout without `filesystem.write` or
-/// `shell.execute` cannot satisfy a request that asks for an edit. Without such
+/// keywords matched more often: a loadout without `filesystem_write` or
+/// `shell_execute` cannot satisfy a request that asks for an edit. Without such
 /// an action word the previous policy applies and conflicting rules resolve to
 /// the safer read-only result.
 pub fn route_intent(
@@ -211,7 +211,7 @@ pub fn route_intent(
     // (например, «изучи проект, затем создай файл»). Если у mutation-правила
     // есть собственное action-слово, оно должно победить read-only этап, иначе
     // модель увидит только inspect-loadout и будет вынуждена вызывать
-    // отсутствующие filesystem.write/shell.execute.
+    // отсутствующие filesystem_write/shell_execute.
     let non_mutation_keywords: std::collections::HashSet<&str> = rules
         .rules
         .iter()

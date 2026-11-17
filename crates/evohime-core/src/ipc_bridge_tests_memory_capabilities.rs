@@ -179,7 +179,7 @@ async fn memory_create_list_search_archive_forget_round_trip_against_real_storag
         }),
     )
     .await;
-    assert_eq!(search.event_type, "memory.search");
+    assert_eq!(search.event_type, "memory_search");
     let searched: serde_json::Value =
         serde_json::from_slice(&search.payload).expect("search payload is valid json");
     let hits = searched["records"].as_array().expect("records array");
@@ -790,7 +790,7 @@ fn capability_manifest_json(name: &str, version: &str, risk_class: &str) -> Stri
             "content_hash": "abcdef0123456789abcdef0123456789"
         }],
         "skills": [],
-        "allowed_tools": ["filesystem.read", "git.diff"],
+        "allowed_tools": ["filesystem_read", "git_diff"],
         "allowed_domains": ["docs.example.com"],
         "protected_paths": ["src"],
         "risk_class": risk_class,
@@ -975,7 +975,7 @@ async fn capability_install_list_match_remove_round_trip_against_real_storage() 
         "capability-match-1",
         generated::command_envelope::Command::MatchCapabilities(generated::MatchCapabilities {
             intent: "review reviewer".into(),
-            required_tools: vec!["git.diff".into()],
+            required_tools: vec!["git_diff".into()],
             required_domains: vec!["docs.example.com".into()],
             requested_risk: "low".into(),
         }),
@@ -1113,7 +1113,7 @@ async fn capability_selection_get_pin_replace_round_trip_against_real_storage() 
     let query_fields = || generated::GetCapabilitySelection {
         task_id: "task-1".into(),
         intent: "review reviewer".into(),
-        required_tools: vec!["git.diff".into()],
+        required_tools: vec!["git_diff".into()],
         required_domains: vec!["docs.example.com".into()],
         requested_risk: "low".into(),
     };
@@ -1187,7 +1187,7 @@ async fn capability_selection_get_pin_replace_round_trip_against_real_storage() 
                 task_id: "task-1".into(),
                 manifest_name: "planner".into(),
                 intent: "review reviewer".into(),
-                required_tools: vec!["git.diff".into()],
+                required_tools: vec!["git_diff".into()],
                 required_domains: vec!["docs.example.com".into()],
                 requested_risk: "low".into(),
             },
@@ -1376,7 +1376,7 @@ async fn child_handoff_request_report_security_boundary_against_real_storage() {
             kind: "code_search".into(),
             reduced_context: vec!["inspect src".into()],
             max_output_bytes: 4096,
-            requested_capabilities: vec!["workspace.read".into(), "git.diff".into()],
+            requested_capabilities: vec!["workspace.read".into(), "git_diff".into()],
             parent_is_child: false,
         }),
     )
@@ -1515,7 +1515,7 @@ async fn list_verify_and_export_receipts_over_ipc() {
             action_id,
             task_id: "receipts-task".into(),
             run_id: "receipts-run".into(),
-            tool_name: "filesystem.read".into(),
+            tool_name: "filesystem_read".into(),
             policy_id: "permission:FilesystemRead".into(),
             normalized_scope: "workspace".into(),
             input: serde_json::json!({"path":"a.txt"}),

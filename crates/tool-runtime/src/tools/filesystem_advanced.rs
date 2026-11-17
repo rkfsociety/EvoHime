@@ -10,7 +10,7 @@ use tokio::fs;
 // ============================================================================
 
 /// Registry identifier for sandboxed workspace deletion.
-pub const DELETE_NAME: &str = "filesystem.delete";
+pub const DELETE_NAME: &str = "filesystem_delete";
 /// Catalog summary for deletion; callers must obtain the configured approval.
 pub const DELETE_DESCRIPTION: &str = "Delete a file or directory (with confirmation required)";
 /// Permission required to delete workspace entries.
@@ -83,7 +83,7 @@ pub async fn delete(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 // ============================================================================
 
 /// Registry identifier for sandboxed file or directory moves.
-pub const MOVE_NAME: &str = "filesystem.move";
+pub const MOVE_NAME: &str = "filesystem_move";
 /// Catalog summary for moving or renaming a workspace entry.
 pub const MOVE_DESCRIPTION: &str = "Move or rename a file or directory";
 /// Permission required to move workspace entries.
@@ -136,7 +136,7 @@ pub async fn move_file(ctx: &ToolContext, input: Value) -> Result<ToolResult, To
 // ============================================================================
 
 /// Registry identifier for workspace copying.
-pub const COPY_NAME: &str = "filesystem.copy";
+pub const COPY_NAME: &str = "filesystem_copy";
 /// Catalog summary for copying workspace files or directories.
 pub const COPY_DESCRIPTION: &str = "Copy a file or directory";
 /// Permission required to create copied workspace content.
@@ -268,7 +268,7 @@ async fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std
 // ============================================================================
 
 /// Registry identifier for workspace file metadata lookup.
-pub const STAT_NAME: &str = "filesystem.stat";
+pub const STAT_NAME: &str = "filesystem_stat";
 /// Catalog summary for file and directory metadata lookup.
 pub const STAT_DESCRIPTION: &str = "Get file or directory metadata (size, modified, permissions)";
 /// Permission required to inspect workspace metadata.
@@ -343,7 +343,7 @@ pub async fn stat(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 // ============================================================================
 
 /// Registry identifier for creating workspace directories.
-pub const MKDIR_NAME: &str = "filesystem.mkdir";
+pub const MKDIR_NAME: &str = "filesystem_mkdir";
 /// Catalog summary for directory creation.
 pub const MKDIR_DESCRIPTION: &str = "Create a directory (with parent directories if needed)";
 /// Permission required to create workspace directories.

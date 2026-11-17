@@ -762,10 +762,10 @@ fn registry_from_specs(specs: &[ToolSpec]) -> Vec<ToolRegistryEntry> {
 }
 
 fn is_mutation_tool(name: &str) -> bool {
-    // `agent.run` делегирует bounded-задачу в отдельный backend. Сам вызов не
+    // `agent_run` делегирует bounded-задачу в отдельный backend. Сам вызов не
     // меняет workspace и не должен исчезать из read-only loadout только из-за
     // слова `run`; дочерний backend повторно проверяет свои capabilities.
-    if name == "agent.run" {
+    if name == "agent_run" {
         return false;
     }
 
@@ -1101,7 +1101,7 @@ mod tests {
             ChatMessage::text(ChatRole::System, "системная политика"),
             ChatMessage::text(ChatRole::User, "проверь репозиторий"),
         ];
-        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem.read")]);
+        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem_read")]);
         assert!(assembled.is_ready());
         assert_eq!(assembled.messages.len(), 2);
         assert_eq!(assembled.messages[0].role, ChatRole::System);
@@ -1116,13 +1116,13 @@ mod tests {
             ChatMessage::text(ChatRole::System, "системная политика"),
             ChatMessage::text(ChatRole::User, "Изучи проект и расскажи, как он устроен"),
         ];
-        let assembled = assemble(&mut runtime, &messages, &[spec("agent.run")]);
+        let assembled = assemble(&mut runtime, &messages, &[spec("agent_run")]);
 
-        assert!(assembled.check_tool_call("agent.run").is_ok());
+        assert!(assembled.check_tool_call("agent_run").is_ok());
         assert!(assembled
             .tool_specs
             .iter()
-            .any(|tool| tool.function.name == "agent.run"));
+            .any(|tool| tool.function.name == "agent_run"));
     }
 
     /// Окно, названное провайдером, должно доходить до планировщика: без этого
@@ -1165,7 +1165,7 @@ mod tests {
             ChatMessage::text(ChatRole::User, secret),
             ChatMessage::text(ChatRole::Tool, format!("вывод инструмента {secret}")),
         ];
-        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem.read")]);
+        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem_read")]);
         let serialized =
             serde_json::to_string(&assembled.projection()).expect("projection serializes");
         assert!(!serialized.contains(secret));
@@ -1206,12 +1206,12 @@ mod tests {
                 "вызываю",
                 vec![NativeToolCall {
                     id: "call-1".to_string(),
-                    name: "filesystem.read".to_string(),
+                    name: "filesystem_read".to_string(),
                     arguments: "{}".to_string(),
                 }],
             ),
         ];
-        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem.read")]);
+        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem_read")]);
         let parts: Vec<&str> = assembled
             .ledger()
             .mandatory_parts
@@ -1231,13 +1231,13 @@ mod tests {
                 "вызываю",
                 vec![NativeToolCall {
                     id: "call-1".to_string(),
-                    name: "filesystem.read".to_string(),
+                    name: "filesystem_read".to_string(),
                     arguments: "{}".to_string(),
                 }],
             ),
             ChatMessage::tool_observation("call-1", "результат"),
         ];
-        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem.read")]);
+        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem_read")]);
         let parts: Vec<&str> = assembled
             .ledger()
             .mandatory_parts
@@ -1286,7 +1286,7 @@ mod tests {
             model: "gpt-4o-mini",
             now: 1_000_000,
             messages: &messages,
-            specs: &[spec("filesystem.read")],
+            specs: &[spec("filesystem_read")],
             intent_prompt: task_prompt(&messages),
             mutation_authorized: false,
             open_questions: &[],
@@ -1352,8 +1352,8 @@ mod tests {
         ];
         let specs = vec![
             spec("task.status"),
-            spec("filesystem.read"),
-            spec("filesystem.write"),
+            spec("filesystem_read"),
+            spec("filesystem_write"),
         ];
         let assembled = assemble(&mut runtime, &messages, &specs);
         let names: Vec<&str> = assembled
@@ -1365,9 +1365,9 @@ mod tests {
             names.contains(&"task.status"),
             "обязательные всегда в loadout"
         );
-        assert!(names.contains(&"filesystem.read"));
+        assert!(names.contains(&"filesystem_read"));
         assert!(
-            !names.contains(&"filesystem.write"),
+            !names.contains(&"filesystem_write"),
             "read-only intent не даёт mutation-инструмент"
         );
     }
@@ -1382,14 +1382,14 @@ mod tests {
         let assembled = assemble(
             &mut runtime,
             &messages,
-            &[spec("filesystem.read"), spec("filesystem.write")],
+            &[spec("filesystem_read"), spec("filesystem_write")],
         );
         let miss = assembled
-            .check_tool_call("filesystem.write")
+            .check_tool_call("filesystem_write")
             .expect_err("mutation is out of loadout");
-        assert_eq!(miss.tool_id, "filesystem.write");
+        assert_eq!(miss.tool_id, "filesystem_write");
         assert!(!miss.policy_reason.is_empty());
-        assert!(assembled.check_tool_call("filesystem.read").is_ok());
+        assert!(assembled.check_tool_call("filesystem_read").is_ok());
     }
 
     #[test]
@@ -1402,7 +1402,7 @@ mod tests {
         let assembled = assemble_with_full_access(
             &mut runtime,
             &messages,
-            &[spec("filesystem.read"), spec("filesystem.write")],
+            &[spec("filesystem_read"), spec("filesystem_write")],
         );
         let names: Vec<&str> = assembled
             .tool_specs
@@ -1410,10 +1410,10 @@ mod tests {
             .map(|spec| spec.function.name.as_str())
             .collect();
         assert!(
-            names.contains(&"filesystem.write"),
+            names.contains(&"filesystem_write"),
             "полный доступ не должен зависеть от формулировки prompt"
         );
-        assert!(assembled.check_tool_call("filesystem.write").is_ok());
+        assert!(assembled.check_tool_call("filesystem_write").is_ok());
     }
 
     #[test]
@@ -1426,14 +1426,14 @@ mod tests {
         let assembled = assemble(
             &mut runtime,
             &messages,
-            &[spec("filesystem.read"), spec("filesystem.write")],
+            &[spec("filesystem_read"), spec("filesystem_write")],
         );
-        assert!(assembled.check_tool_call("filesystem.write").is_ok());
+        assert!(assembled.check_tool_call("filesystem_write").is_ok());
         let write = assembled
             .loadout
             .tools
             .iter()
-            .find(|tool| tool.id == "filesystem.write")
+            .find(|tool| tool.id == "filesystem_write")
             .expect("mutation tool selected");
         assert!(write.approval_required);
         assert!(write.permission_label.contains("approval"));
@@ -1445,7 +1445,7 @@ mod tests {
             ChatMessage::text(ChatRole::System, "системная политика"),
             ChatMessage::text(ChatRole::User, "проверь репозиторий"),
         ];
-        let specs = vec![spec("filesystem.read")];
+        let specs = vec![spec("filesystem_read")];
         let left = assemble(&mut runtime(), &messages, &specs);
         let right = assemble(&mut runtime(), &messages, &specs);
         assert_eq!(
@@ -1465,7 +1465,7 @@ mod tests {
         for _ in 0..12 {
             messages.push(ChatMessage::text(ChatRole::Tool, block.clone()));
         }
-        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem.read")]);
+        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem_read")]);
         assert!(assembled.is_ready());
         assert!(assembled.messages.len() < messages.len());
         let ledger = assembled.ledger();
@@ -1504,14 +1504,14 @@ mod tests {
             ChatMessage::text(ChatRole::System, "системная политика"),
             ChatMessage::text(ChatRole::User, "проверь репозиторий"),
         ];
-        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem.read")]);
+        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem_read")]);
         let event = crate::CoreEvent::ModelContext {
             task_id: "task".to_string(),
             workspace_path: "C:/work".to_string(),
             model: "gpt-4o-mini".to_string(),
             system_prompt: evohime_model_provenance::OMITTED_SYSTEM_PROMPT_MARKER.into(),
             user_prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
-            tools: vec!["filesystem.read".to_string()],
+            tools: vec!["filesystem_read".to_string()],
             estimated_tokens: 42,
             context_limit_tokens: 128_000,
             context: Some(Box::new(assembled.projection())),
@@ -1545,7 +1545,7 @@ mod tests {
             legacy.user_prompt,
             evohime_model_provenance::OMITTED_MESSAGE_MARKER
         );
-        assert_eq!(legacy.tools, vec!["filesystem.read".to_string()]);
+        assert_eq!(legacy.tools, vec!["filesystem_read".to_string()]);
         assert_eq!(legacy.estimated_tokens, 42);
         assert_eq!(legacy.context_limit_tokens, 128_000);
     }
@@ -1679,7 +1679,7 @@ mod tests {
             model: "gpt-4o-mini",
             now: 1_000_000,
             messages: &messages,
-            specs: &[spec("filesystem.read"), spec("filesystem.write")],
+            specs: &[spec("filesystem_read"), spec("filesystem_write")],
             intent_prompt: "поработай над интерфейсом и создай скилы",
             mutation_authorized: false,
             open_questions: &[],
@@ -1690,7 +1690,7 @@ mod tests {
             summarizer: &mut NoSummarizer,
         });
         assert_eq!(assembled.loadout.decision.intent, "edit");
-        assert!(assembled.check_tool_call("filesystem.write").is_ok());
+        assert!(assembled.check_tool_call("filesystem_write").is_ok());
     }
 
     #[test]
@@ -1708,7 +1708,7 @@ mod tests {
             model: "gpt-4o-mini",
             now: 1_000_000,
             messages: &messages,
-            specs: &[spec("filesystem.read"), spec("filesystem.write")],
+            specs: &[spec("filesystem_read"), spec("filesystem_write")],
             intent_prompt: task_prompt(&messages),
             mutation_authorized: false,
             open_questions: &["нужно исправь конфигурацию".to_string()],
@@ -1719,7 +1719,7 @@ mod tests {
             summarizer: &mut NoSummarizer,
         });
         assert_eq!(assembled.loadout.decision.intent, "edit");
-        assert!(assembled.check_tool_call("filesystem.write").is_ok());
+        assert!(assembled.check_tool_call("filesystem_write").is_ok());
     }
 
     #[test]

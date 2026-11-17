@@ -450,7 +450,7 @@ mod tests {
                 kind: RootKind::PlainFolder,
                 vcs: None,
                 grants: vec![RootGrant {
-                    capability: "filesystem.read".into(),
+                    capability: "filesystem_read".into(),
                     mode: GrantMode::ReadOnly,
                 }],
                 execution_policy_ref: None,
@@ -482,7 +482,7 @@ mod tests {
             alias: "frontend".into(),
             kind: RootKind::ReadOnlyReferenceRoot,
             grants: vec![RootGrant {
-                capability: "filesystem.write".into(),
+                capability: "filesystem_write".into(),
                 mode: GrantMode::ReadWrite,
             }],
             ..set.roots[0].clone()

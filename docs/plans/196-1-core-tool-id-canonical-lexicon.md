@@ -29,7 +29,7 @@
    - `conversation_event_log.rs`: категории по префиксам;
    - `legacy_parser.rs`: `!name.starts_with("git.")`;
    - `ipc_bridge_ambient_transport.rs`: сравнение `capability_ref` с `shell`;
-   - `core_agent.rs`: синтетическое `"shell.execute: {cmd}"`;
+   - `core_agent.rs`: синтетическое `"shell_execute: {cmd}"`;
    - renderer `chat-summary.ts`, `tool-names.ts`.
 7. Обновить in-crate тесты, где id — литерал: `core_tests.rs`,
    `registry_tests.rs`, `tools/*` тесты, `model-gateway` provider-тесты.

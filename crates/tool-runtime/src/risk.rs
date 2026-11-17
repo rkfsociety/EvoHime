@@ -30,44 +30,44 @@ impl ToolRiskLevel {
 /// execution begins.
 pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
     match tool_name {
-        "filesystem.read"
-        | "filesystem.search"
-        | "filesystem.list"
-        | "git.status"
-        | "git.diff"
-        | "git.log"
-        | "git.show"
-        | "git.blame"
-        | "git.changed_files"
-        | "browser.open"
-        | "browser.extract"
-        | "browser.session.read"
-        | "browser.session.screenshot"
-        | "memory.search"
-        | "goal.create"
-        | "goal.verify"
-        | "app.list"
-        // `analysis.run` лишь считает по уже переданным аргументам: у него нет
+        "filesystem_read"
+        | "filesystem_search"
+        | "filesystem_list"
+        | "git_status"
+        | "git_diff"
+        | "git_log"
+        | "git_show"
+        | "git_blame"
+        | "git_changed_files"
+        | "browser_open"
+        | "browser_extract"
+        | "browser_session_read"
+        | "browser_session_screenshot"
+        | "memory_search"
+        | "goal_create"
+        | "goal_verify"
+        | "app_list"
+        // `analysis_run` лишь считает по уже переданным аргументам: у него нет
         // ни файловых, ни сетевых, ни shell-прав, а объекты остаются внутри
         // task-scoped kernel-сессии.
-        | "analysis.run"
-        | "http.fetch" => ToolRiskLevel::None,
+        | "analysis_run"
+        | "http_fetch" => ToolRiskLevel::None,
 
-        "git.pull" | "browser.session.navigate" => ToolRiskLevel::Low,
+        "git_pull" | "browser_session_navigate" => ToolRiskLevel::Low,
 
-        "filesystem.write"
-        | "filesystem.patch"
-        | "git.commit"
-        | "mcp.call"
-        | "browser.session.click"
-        | "browser.session.type"
-        | "agent.run"
+        "filesystem_write"
+        | "filesystem_patch"
+        | "git_commit"
+        | "mcp_call"
+        | "browser_session_click"
+        | "browser_session_type"
+        | "agent_run"
         // Запуск приложения меняет состояние рабочего стола, но не трогает
         // ни файлы, ни сеть от имени пользователя: это `Medium`, а не `High`
-        // уровень `shell.execute`, у которого произвольная командная строка.
-        | "app.open" => ToolRiskLevel::Medium,
+        // уровень `shell_execute`, у которого произвольная командная строка.
+        | "app_open" => ToolRiskLevel::Medium,
 
-        "shell.execute" | "git.push" => ToolRiskLevel::High,
+        "shell_execute" | "git_push" => ToolRiskLevel::High,
 
         _ => ToolRiskLevel::Medium,
     }
@@ -81,17 +81,17 @@ mod tests {
     #[test]
     fn classifies_read_only_tools_as_none() {
         for tool in [
-            "filesystem.read",
-            "filesystem.search",
-            "filesystem.list",
-            "git.status",
-            "git.diff",
-            "browser.open",
-            "browser.extract",
-            "browser.session.read",
-            "browser.session.screenshot",
-            "memory.search",
-            "analysis.run",
+            "filesystem_read",
+            "filesystem_search",
+            "filesystem_list",
+            "git_status",
+            "git_diff",
+            "browser_open",
+            "browser_extract",
+            "browser_session_read",
+            "browser_session_screenshot",
+            "memory_search",
+            "analysis_run",
         ] {
             assert_eq!(
                 classify_call_risk(tool, &json!({})),
@@ -103,16 +103,16 @@ mod tests {
 
     #[test]
     fn classifies_http_fetch_as_none_because_it_is_get_only() {
-        // http.fetch's Input struct has no `method` field — it can never mutate.
+        // http_fetch's Input struct has no `method` field — it can never mutate.
         assert_eq!(
-            classify_call_risk("http.fetch", &json!({"url": "https://example.com"})),
+            classify_call_risk("http_fetch", &json!({"url": "https://example.com"})),
             ToolRiskLevel::None
         );
     }
 
     #[test]
     fn classifies_low_risk_tools() {
-        for tool in ["git.pull", "browser.session.navigate"] {
+        for tool in ["git_pull", "browser_session_navigate"] {
             assert_eq!(classify_call_risk(tool, &json!({})), ToolRiskLevel::Low);
         }
     }
@@ -120,13 +120,13 @@ mod tests {
     #[test]
     fn classifies_medium_risk_tools() {
         for tool in [
-            "filesystem.write",
-            "filesystem.patch",
-            "git.commit",
-            "mcp.call",
-            "browser.session.click",
-            "browser.session.type",
-            "agent.run",
+            "filesystem_write",
+            "filesystem_patch",
+            "git_commit",
+            "mcp_call",
+            "browser_session_click",
+            "browser_session_type",
+            "agent_run",
         ] {
             assert_eq!(classify_call_risk(tool, &json!({})), ToolRiskLevel::Medium);
         }
@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn classifies_high_risk_tools() {
-        for tool in ["shell.execute", "git.push"] {
+        for tool in ["shell_execute", "git_push"] {
             assert_eq!(classify_call_risk(tool, &json!({})), ToolRiskLevel::High);
         }
     }

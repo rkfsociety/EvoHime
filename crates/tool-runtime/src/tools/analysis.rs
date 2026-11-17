@@ -1,4 +1,4 @@
-//! Declared `analysis.run` tool: bounded access to the Core-owned analysis kernel.
+//! Declared `analysis_run` tool: bounded access to the Core-owned analysis kernel.
 //!
 //! This module only shapes and validates input and formats the bounded result.
 //! Execution is delegated to the [`crate::KernelHost`] attached to the registry,
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Registry identifier for the declared analysis kernel tool.
-pub const NAME: &str = "analysis.run";
+pub const NAME: &str = "analysis_run";
 /// Input and output summary exposed in tool catalogs.
 pub const DESCRIPTION: &str = "Run one bounded computation in the Core-owned Persistent Analysis Kernel. Input: { operation: json_parse|csv_summary|json_select|object_put, args, logical_name?, type_hint?, sensitivity? }. No filesystem, network, shell or credential access.";
 /// The kernel grants no extra authority, so the tool declares no permissions.
@@ -30,7 +30,7 @@ pub const OPERATIONS: &[&str] = &["json_parse", "json_select", "csv_summary", "o
 /// Sensitivity names accepted by the declared input schema.
 pub const SENSITIVITIES: &[&str] = &["public", "internal", "sensitive"];
 
-/// Builds the canonical, non-permissive input schema for `analysis.run`.
+/// Builds the canonical, non-permissive input schema for `analysis_run`.
 ///
 /// `args` carries the operation payload, which is text for `json_parse`/
 /// `csv_summary` and an object for `json_select`/`object_put`. The two branches
@@ -231,7 +231,7 @@ pub async fn execute(
     if let Some(inline) = inline {
         structured["result"] = inline.clone();
         let output = format!(
-            "analysis.run {} on kernel {}: {}",
+            "analysis_run {} on kernel {}: {}",
             operation.as_str(),
             response.kernel_id,
             inline
@@ -244,7 +244,7 @@ pub async fn execute(
         .unwrap_or("object");
     Ok(ToolResult {
         output: format!(
-            "analysis.run {} on kernel {}: object '{}' stored without inlining its value",
+            "analysis_run {} on kernel {}: object '{}' stored without inlining its value",
             operation.as_str(),
             response.kernel_id,
             name
@@ -283,7 +283,7 @@ mod tests {
     /// probe both see, so schema drift fails here instead of at runtime.
     fn schema_accepts(input: &Value) -> bool {
         let schema = input_schema();
-        let compiled = jsonschema::validator_for(&schema).expect("analysis.run schema compiles");
+        let compiled = jsonschema::validator_for(&schema).expect("analysis_run schema compiles");
         compiled.validate(input).is_ok()
     }
 

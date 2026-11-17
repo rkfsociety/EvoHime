@@ -33,59 +33,59 @@ fn bootstrap_registers_filesystem_read() {
         tools.len()
     );
     for name in [
-        "agent.run",
-        "analysis.run",
-        "app.list",
-        "app.open",
-        "archive.create",
-        "archive.extract",
-        "archive.list",
-        "browser.extract",
-        "browser.open",
-        "cargo.build",
-        "cargo.check",
-        "cargo.clippy",
-        "cargo.fmt",
-        "cargo.test",
-        "filesystem.copy",
-        "filesystem.delete",
-        "filesystem.list",
-        "filesystem.mkdir",
-        "filesystem.move",
-        "filesystem.patch",
-        "filesystem.read",
-        "filesystem.search",
-        "filesystem.stat",
-        "filesystem.write",
-        "git.blame",
-        "git.branch",
-        "git.changed_files",
-        "git.cherry_pick",
-        "git.commit",
-        "git.diff",
-        "git.log",
-        "git.merge",
-        "git.pull",
-        "git.push",
-        "git.rebase",
-        "git.remote",
-        "git.reset",
-        "git.revert",
-        "git.show",
-        "git.stash",
-        "git.status",
-        "git.tag",
-        "http.fetch",
-        "logs.grep",
-        "logs.tail",
-        "mcp.call",
-        "memory.search",
-        "process.run",
-        "shell.execute",
-        "workflow.catalog",
-        "workflow.start",
-        "workflow.status",
-        "workflow.cancel",
+        "agent_run",
+        "analysis_run",
+        "app_list",
+        "app_open",
+        "archive_create",
+        "archive_extract",
+        "archive_list",
+        "browser_extract",
+        "browser_open",
+        "cargo_build",
+        "cargo_check",
+        "cargo_clippy",
+        "cargo_fmt",
+        "cargo_test",
+        "filesystem_copy",
+        "filesystem_delete",
+        "filesystem_list",
+        "filesystem_mkdir",
+        "filesystem_move",
+        "filesystem_patch",
+        "filesystem_read",
+        "filesystem_search",
+        "filesystem_stat",
+        "filesystem_write",
+        "git_blame",
+        "git_branch",
+        "git_changed_files",
+        "git_cherry_pick",
+        "git_commit",
+        "git_diff",
+        "git_log",
+        "git_merge",
+        "git_pull",
+        "git_push",
+        "git_rebase",
+        "git_remote",
+        "git_reset",
+        "git_revert",
+        "git_show",
+        "git_stash",
+        "git_status",
+        "git_tag",
+        "http_fetch",
+        "logs_grep",
+        "logs_tail",
+        "mcp_call",
+        "memory_search",
+        "process_run",
+        "shell_execute",
+        "workflow_catalog",
+        "workflow_start",
+        "workflow_status",
+        "workflow_cancel",
     ] {
         assert!(
             tools.iter().any(|tool| tool.name == name),
@@ -115,11 +115,11 @@ async fn parallel_calls_complete_independently_inner() {
             &context,
             vec![
                 (
-                    "filesystem.read".into(),
+                    "filesystem_read".into(),
                     serde_json::json!({"path":"a.txt"}),
                 ),
                 (
-                    "filesystem.read".into(),
+                    "filesystem_read".into(),
                     serde_json::json!({"path":"b.txt"}),
                 ),
             ],
@@ -157,7 +157,7 @@ async fn cancellation_stops_call_inner() {
     let result = registry
         .execute_cancellable(
             &context,
-            "filesystem.read",
+            "filesystem_read",
             serde_json::json!({"path":"a.txt"}),
             token,
         )
@@ -212,7 +212,7 @@ async fn cancellation_propagates_into_shell_execution_inner() {
             registry
                 .execute_cancellable(
                     &context,
-                    "shell.execute",
+                    "shell_execute",
                     serde_json::json!({"program":program,"args":args}),
                     token,
                 )
@@ -270,7 +270,7 @@ async fn cancellation_stops_non_shell_tool_in_parallel_execution_inner() {
             .execute_parallel(
                 &context,
                 vec![(
-                    "browser.open".into(),
+                    "browser_open".into(),
                     serde_json::json!({ "url": format!("{}/slow", server.uri()) }),
                 )],
                 token,
@@ -324,11 +324,11 @@ async fn registry_dispatches_browser_open_when_allowed_inner() {
     let result = registry
         .execute(
             &context,
-            "browser.open",
+            "browser_open",
             serde_json::json!({ "url": format!("{}/page", server.uri()) }),
         )
         .await
-        .expect("browser.open should dispatch");
+        .expect("browser_open should dispatch");
     assert!(result.output.to_lowercase().contains("hi") || result.output.contains("hello"));
 }
 
@@ -336,24 +336,24 @@ async fn registry_dispatches_browser_open_when_allowed_inner() {
 fn scope_from_input_prefers_path_then_cwd_then_url() {
     assert_eq!(
         scope_from_input(
-            "filesystem.write",
+            "filesystem_write",
             &serde_json::json!({ "path": "src\\main.rs" })
         ),
         "src/main.rs"
     );
     assert_eq!(
-        scope_from_input("shell.execute", &serde_json::json!({ "cwd": "scripts" })),
+        scope_from_input("shell_execute", &serde_json::json!({ "cwd": "scripts" })),
         "scripts"
     );
     assert_eq!(
         scope_from_input(
-            "browser.open",
+            "browser_open",
             &serde_json::json!({ "url": "https://example.com" })
         ),
         "https://example.com"
     );
     assert_eq!(
-        scope_from_input("git.status", &serde_json::json!({})),
+        scope_from_input("git_status", &serde_json::json!({})),
         "workspace"
     );
 }
@@ -427,7 +427,7 @@ async fn policy_denies_shell_subject_after_cd_prefix_is_resolved_inner() {
     let error = registry
         .execute(
             &context,
-            "shell.execute",
+            "shell_execute",
             serde_json::json!({"command": "cd nested && rm -rf target"}),
         )
         .await
@@ -474,7 +474,7 @@ async fn policy_denies_canonical_path_despite_relative_alias_inner() {
     let error = registry
         .execute(
             &context,
-            "filesystem.read",
+            "filesystem_read",
             serde_json::json!({ "path": "secrets/../secrets/token.txt" }),
         )
         .await
@@ -512,7 +512,7 @@ async fn policy_uses_a_separate_subject_for_git_push_inner() {
     let error = registry
         .execute(
             &context,
-            "git.push",
+            "git_push",
             serde_json::json!({"remote": "origin", "branch": "main"}),
         )
         .await
@@ -548,7 +548,7 @@ async fn ask_mode_creates_scoped_approval_inner() {
     let err = registry
         .execute(
             &context,
-            "filesystem.write",
+            "filesystem_write",
             serde_json::json!({ "path": "notes/todo.txt", "content": "x" }),
         )
         .await
@@ -587,7 +587,7 @@ async fn approval_is_bound_to_exact_call_and_rechecks_deny_inner() {
         "content": "approved"
     });
     let approval_id = match registry
-        .execute(&context, "filesystem.write", original.clone())
+        .execute(&context, "filesystem_write", original.clone())
         .await
         .expect_err("ask mode should require approval")
     {
@@ -607,7 +607,7 @@ async fn approval_is_bound_to_exact_call_and_rechecks_deny_inner() {
         registry
             .execute_after_approval(
                 &context,
-                "filesystem.write",
+                "filesystem_write",
                 changed,
                 approval_id,
                 CancellationToken::new(),
@@ -627,7 +627,7 @@ async fn approval_is_bound_to_exact_call_and_rechecks_deny_inner() {
         registry
             .execute_after_approval(
                 &context,
-                "filesystem.write",
+                "filesystem_write",
                 original,
                 approval_id,
                 CancellationToken::new(),
@@ -652,7 +652,7 @@ async fn denied_approval_is_rejected_when_rechecked_inner() {
         .create_approval_scoped_for_call(
             Uuid::new_v4(),
             None,
-            "filesystem.write",
+            "filesystem_write",
             evohime_permissions::Permission::FilesystemWrite,
             "notes/todo.txt",
             &input,
@@ -675,7 +675,7 @@ async fn denied_approval_is_rejected_when_rechecked_inner() {
         registry
             .execute_after_approval(
                 &context,
-                "filesystem.write",
+                "filesystem_write",
                 input,
                 request.id,
                 CancellationToken::new(),
@@ -714,7 +714,7 @@ async fn granted_approval_is_consumed_before_execution_and_cannot_replay_inner()
         "content": "written once"
     });
     let approval_id = match registry
-        .execute(&context, "filesystem.write", input.clone())
+        .execute(&context, "filesystem_write", input.clone())
         .await
         .expect_err("ask mode should require approval")
     {
@@ -729,14 +729,14 @@ async fn granted_approval_is_consumed_before_execution_and_cannot_replay_inner()
     let (first, second) = tokio::join!(
         registry.execute_after_approval(
             &context,
-            "filesystem.write",
+            "filesystem_write",
             input.clone(),
             approval_id,
             CancellationToken::new(),
         ),
         registry.execute_after_approval(
             &context,
-            "filesystem.write",
+            "filesystem_write",
             input,
             approval_id,
             CancellationToken::new(),
@@ -775,7 +775,7 @@ async fn post_approval_path_revalidates_patch_input_inner() {
         .create_approval_scoped_for_call(
             task_id,
             None,
-            "filesystem.patch",
+            "filesystem_patch",
             evohime_permissions::Permission::FilesystemWrite,
             "notes/todo.txt",
             &malformed,
@@ -798,7 +798,7 @@ async fn post_approval_path_revalidates_patch_input_inner() {
         registry
             .execute_after_approval(
                 &context,
-                "filesystem.patch",
+                "filesystem_patch",
                 malformed,
                 request.id,
                 CancellationToken::new(),
@@ -834,7 +834,7 @@ async fn oversized_patch_is_rejected_before_approval_inner() {
     let error = registry
         .execute(
             &context,
-            "filesystem.patch",
+            "filesystem_patch",
             serde_json::json!({
                 "path": "file.txt",
                 "patch": "a".repeat(tools::patch::MAX_PATCH_BYTES + 1)
@@ -899,16 +899,16 @@ fn analysis_run_is_declared_once_with_a_closed_manifest() {
     let registered = registry
         .list()
         .into_iter()
-        .filter(|tool| tool.name == "analysis.run")
+        .filter(|tool| tool.name == "analysis_run")
         .count();
-    assert_eq!(registered, 1, "analysis.run must be declared exactly once");
+    assert_eq!(registered, 1, "analysis_run must be declared exactly once");
 
     let manifest = registry
-        .manifest_for("analysis.run")
-        .expect("analysis.run has a manifest");
+        .manifest_for("analysis_run")
+        .expect("analysis_run has a manifest");
     manifest
         .validate()
-        .expect("analysis.run manifest validates");
+        .expect("analysis_run manifest validates");
     assert_eq!(manifest.capability_class, "local_computation");
     assert_eq!(manifest.side_effect, crate::SideEffectClass::ReadOnly);
     assert_eq!(manifest.approval, crate::ApprovalMode::Never);
@@ -922,10 +922,10 @@ fn analysis_run_is_declared_once_with_a_closed_manifest() {
     );
     let properties = manifest.input_schema["properties"]
         .as_object()
-        .expect("analysis.run schema declares properties");
+        .expect("analysis_run schema declares properties");
     assert!(
         !properties.contains_key("input"),
-        "analysis.run must not fall back to the generic input stub"
+        "analysis_run must not fall back to the generic input stub"
     );
 }
 
@@ -933,7 +933,7 @@ fn analysis_run_is_declared_once_with_a_closed_manifest() {
 fn workflow_mutation_tools_are_marked_mutating_in_the_manifest() {
     let registry = ToolRegistry::bootstrap();
 
-    for name in ["workflow.start", "workflow.cancel"] {
+    for name in ["workflow_start", "workflow_cancel"] {
         let manifest = registry.manifest_for(name).expect("workflow manifest");
         assert_eq!(manifest.side_effect, crate::SideEffectClass::Mutating);
         assert_eq!(manifest.workspace_scope, "task");
@@ -956,7 +956,7 @@ fn registry_without_kernel_host_fails_closed() {
         let error = registry
             .execute(
                 &context,
-                "analysis.run",
+                "analysis_run",
                 serde_json::json!({"operation": "json_parse", "args": "{}"}),
             )
             .await
@@ -991,7 +991,7 @@ fn kernel_host_survives_clone_and_receives_task_binding() {
         let result = cloned
             .execute(
                 &context,
-                "analysis.run",
+                "analysis_run",
                 serde_json::json!({"operation": "csv_summary", "args": "a,b\n1,2\n"}),
             )
             .await
@@ -1023,7 +1023,7 @@ fn analysis_run_rejects_invalid_shape_before_reaching_the_host() {
         let error = registry
             .execute(
                 &context,
-                "analysis.run",
+                "analysis_run",
                 serde_json::json!({"operation": "filesystem"}),
             )
             .await

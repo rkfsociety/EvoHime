@@ -3,33 +3,33 @@ use std::borrow::Cow;
 
 /// Имена инструментов, которые допускаются в legacy-тексте ответа модели.
 pub(crate) const LEGACY_TOOL_NAMES: &[&str] = &[
-    "agent.run",
-    "filesystem.list",
-    "filesystem.read",
-    "filesystem.search",
-    "filesystem.write",
-    "filesystem.patch",
-    "shell.execute",
-    "git.status",
-    "git.diff",
-    "git.commit",
-    "git.pull",
-    "git.push",
-    "git.log",
-    "git.show",
-    "git.blame",
-    "git.changed_files",
-    "mcp.call",
-    "memory.search",
-    "browser.open",
-    "browser.extract",
-    "browser.session.navigate",
-    "browser.session.read",
-    "browser.session.click",
-    "browser.session.screenshot",
-    "browser.session.type",
-    "browser.session.close",
-    "http.fetch",
+    "agent_run",
+    "filesystem_list",
+    "filesystem_read",
+    "filesystem_search",
+    "filesystem_write",
+    "filesystem_patch",
+    "shell_execute",
+    "git_status",
+    "git_diff",
+    "git_commit",
+    "git_pull",
+    "git_push",
+    "git_log",
+    "git_show",
+    "git_blame",
+    "git_changed_files",
+    "mcp_call",
+    "memory_search",
+    "browser_open",
+    "browser_extract",
+    "browser_session_navigate",
+    "browser_session_read",
+    "browser_session_click",
+    "browser_session_screenshot",
+    "browser_session_type",
+    "browser_session_close",
+    "http_fetch",
 ];
 
 fn is_supported_tool_name(name: &str) -> bool {
@@ -200,7 +200,7 @@ pub(crate) fn parse_natural_tool_intent(content: &str, iteration: usize) -> Opti
             .filter(|value| value.is_object())
             .cloned()
             .unwrap_or(json_body);
-        let arguments = if name == "filesystem.search" || arguments.get("path").is_some() {
+        let arguments = if name == "filesystem_search" || arguments.get("path").is_some() {
             arguments
         } else {
             serde_json::json!({ "path": "." })
@@ -220,10 +220,10 @@ pub(crate) fn parse_natural_tool_intent(content: &str, iteration: usize) -> Opti
         .split('`')
         .nth(1)
         .filter(|value| !value.contains('.'))
-        .unwrap_or(if name == "filesystem.list" { "." } else { "" });
+        .unwrap_or(if name == "filesystem_list" { "." } else { "" });
     let arguments = match name {
-        "filesystem.list" | "filesystem.read" => serde_json::json!({ "path": path }),
-        "filesystem.search" => serde_json::json!({ "query": path }),
+        "filesystem_list" | "filesystem_read" => serde_json::json!({ "path": path }),
+        "filesystem_search" => serde_json::json!({ "query": path }),
         _ => return None,
     };
     Some(NativeToolCall {
@@ -292,7 +292,7 @@ pub(crate) fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<
     };
     if !matches!(
         name.as_str(),
-        "filesystem.list" | "filesystem.read" | "filesystem.search" | "git.status" | "git.diff"
+        "filesystem_list" | "filesystem_read" | "filesystem_search" | "git_status" | "git_diff"
     ) {
         return None;
     }
@@ -371,7 +371,7 @@ pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<N
     }
     if parsed_arguments.is_empty()
         && !name.starts_with("git.")
-        && !matches!(name, "browser.session.read" | "browser.session.close")
+        && !matches!(name, "browser_session_read" | "browser_session_close")
     {
         return None;
     }
@@ -393,7 +393,7 @@ pub(crate) fn parse_xml_named_tool_call(content: &str, iteration: usize) -> Opti
     let start = content.find(&start_marker)? + start_marker.len();
     let end = content[start..].find(&end_marker)? + start;
     let body = &content[start..end];
-    if body.trim().is_empty() && matches!(name, "browser.session.read" | "browser.session.close") {
+    if body.trim().is_empty() && matches!(name, "browser_session_read" | "browser_session_close") {
         return Some(NativeToolCall {
             id: format!("xml-{iteration}"),
             name: name.to_string(),

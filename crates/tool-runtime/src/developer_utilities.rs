@@ -24,23 +24,23 @@ pub const MAX_INPUT_BYTES: usize = 256 * 1024;
 pub const MAX_OUTPUT_BYTES: usize = 512 * 1024;
 
 /// Tool ID for standard Base64 encoding.
-pub const BASE64_ENCODE: &str = "utility.base64.encode";
+pub const BASE64_ENCODE: &str = "utility_base64_encode";
 /// Tool ID for standard Base64 decoding to UTF-8 text.
-pub const BASE64_DECODE: &str = "utility.base64.decode";
+pub const BASE64_DECODE: &str = "utility_base64_decode";
 /// Tool ID for SHA-256 text hashing.
-pub const HASH_SHA256: &str = "utility.hash.sha256";
+pub const HASH_SHA256: &str = "utility_hash_sha256";
 /// Tool ID for SHA-512 text hashing.
-pub const HASH_SHA512: &str = "utility.hash.sha512";
+pub const HASH_SHA512: &str = "utility_hash_sha512";
 /// Tool ID for pretty-printing valid JSON.
-pub const JSON_FORMAT: &str = "utility.json.format";
+pub const JSON_FORMAT: &str = "utility_json_format";
 /// Tool ID for compacting valid JSON.
-pub const JSON_MINIFY: &str = "utility.json.minify";
+pub const JSON_MINIFY: &str = "utility_json_minify";
 /// Tool ID for generating a random UUID v4.
-pub const UUID_V4: &str = "utility.uuid.v4";
+pub const UUID_V4: &str = "utility_uuid_v4";
 /// Tool ID for generating a cryptographically random token.
-pub const TOKEN_GENERATE: &str = "utility.token.generate";
+pub const TOKEN_GENERATE: &str = "utility_token_generate";
 /// Tool ID for converting text between supported case styles.
-pub const TEXT_CASE: &str = "utility.text.case_convert";
+pub const TEXT_CASE: &str = "utility_text_case_convert";
 
 /// All utility tool IDs supported by [`execute`].
 pub const ALL_NAMES: &[&str] = &[

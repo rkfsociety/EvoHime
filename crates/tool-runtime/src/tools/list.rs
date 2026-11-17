@@ -5,7 +5,7 @@ use serde_json::json;
 use std::{io::ErrorKind, time::Duration};
 use tokio::fs;
 
-pub const NAME: &str = "filesystem.list";
+pub const NAME: &str = "filesystem_list";
 pub const DESCRIPTION: &str = "List files and directories in the workspace";
 pub const PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
 pub const TIMEOUT: Duration = Duration::from_secs(10);

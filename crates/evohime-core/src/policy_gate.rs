@@ -198,7 +198,7 @@ mod tests {
             workspace_anchors: vec!["workspace".into()],
             operation_scopes: vec!["workspace".into()],
             permissions: vec!["shell_execute".into()],
-            tool_identities: vec!["shell.execute".into()],
+            tool_identities: vec!["shell_execute".into()],
             network_routes: vec![],
             adapter_scopes: vec![],
             secret_refs: Vec::<SecretRefPurpose>::new(),
@@ -224,7 +224,7 @@ mod tests {
         let binding = gate
             .preflight(
                 "action",
-                "shell.execute",
+                "shell_execute",
                 "workspace",
                 &input,
                 PolicyOutcome::Allowed,
@@ -233,7 +233,7 @@ mod tests {
         assert!(gate
             .recheck_before_effect(
                 &binding,
-                "shell.execute",
+                "shell_execute",
                 "workspace",
                 &serde_json::json!({"program":"del","args":[]}),
                 PolicyOutcome::Allowed
@@ -247,7 +247,7 @@ mod tests {
         let decision = gate
             .preflight(
                 "action",
-                "shell.execute",
+                "shell_execute",
                 "workspace",
                 &serde_json::json!({}),
                 PolicyOutcome::Denied,
@@ -264,7 +264,7 @@ mod tests {
         let binding = gate
             .preflight(
                 "action",
-                "shell.execute",
+                "shell_execute",
                 "workspace",
                 &input,
                 PolicyOutcome::Allowed,

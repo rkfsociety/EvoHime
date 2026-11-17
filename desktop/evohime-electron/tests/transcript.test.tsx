@@ -85,10 +85,10 @@ describe('transcript', () => {
   it('collapses a run of tool calls into one activity line', () => {
     const { entries } = buildTranscript(
       stream(
-        event('ToolStarted', { tool_name: 'filesystem.list' }),
-        event('ToolOutput', { tool_name: 'filesystem.list', output: 'src\nCargo.toml' }),
-        event('ToolStarted', { tool_name: 'filesystem.read' }),
-        event('ToolOutput', { tool_name: 'filesystem.read', output: '# EvoHime' })
+        event('ToolStarted', { tool_name: 'filesystem_list' }),
+        event('ToolOutput', { tool_name: 'filesystem_list', output: 'src\nCargo.toml' }),
+        event('ToolStarted', { tool_name: 'filesystem_read' }),
+        event('ToolOutput', { tool_name: 'filesystem_read', output: '# EvoHime' })
       )
     )
 
@@ -96,18 +96,18 @@ describe('transcript', () => {
     expect(entries[0]).toMatchObject({ kind: 'activity', running: false })
     const activity = entries[0] as Extract<(typeof entries)[number], { kind: 'activity' }>
     expect(activity.calls).toEqual([
-      { tool: 'filesystem.list', output: 'src\nCargo.toml', running: false },
-      { tool: 'filesystem.read', output: '# EvoHime', running: false }
+      { tool: 'filesystem_list', output: 'src\nCargo.toml', running: false },
+      { tool: 'filesystem_read', output: '# EvoHime', running: false }
     ])
   })
 
   it('starts a new activity line after the model speaks', () => {
     const { entries } = buildTranscript(
       stream(
-        event('ToolStarted', { tool_name: 'filesystem.list' }),
-        event('ToolOutput', { tool_name: 'filesystem.list', output: '.' }),
+        event('ToolStarted', { tool_name: 'filesystem_list' }),
+        event('ToolOutput', { tool_name: 'filesystem_list', output: '.' }),
         event('AssistantDelta', { content: 'Вижу Rust-проект.' }),
-        event('ToolStarted', { tool_name: 'filesystem.read' })
+        event('ToolStarted', { tool_name: 'filesystem_read' })
       )
     )
 
@@ -117,7 +117,7 @@ describe('transcript', () => {
 
   it('keeps a running call visible until its output arrives', () => {
     const { entries, finished } = buildTranscript(
-      stream(event('ToolStarted', { tool_name: 'shell.execute' }))
+      stream(event('ToolStarted', { tool_name: 'shell_execute' }))
     )
 
     expect(finished).toBe(false)
@@ -202,19 +202,19 @@ describe('transcript', () => {
       stream(
         event('ApprovalRequired', {
           approval_id: 'approval-1',
-          tool_name: 'filesystem.write',
+          tool_name: 'filesystem_write',
           permission: 'write',
           scope: 'src/main.rs'
         })
       )
     )
-    expect(pending.approval).toMatchObject({ approvalId: 'approval-1', toolName: 'filesystem.write' })
+    expect(pending.approval).toMatchObject({ approvalId: 'approval-1', toolName: 'filesystem_write' })
 
     const done = buildTranscript(
       stream(
         event('ApprovalRequired', {
           approval_id: 'approval-1',
-          tool_name: 'filesystem.write',
+          tool_name: 'filesystem_write',
           permission: 'write',
           scope: 'src/main.rs'
         }),
@@ -227,7 +227,7 @@ describe('transcript', () => {
   it('keeps the structured approval preview for the safety UI', () => {
     const { approval } = buildTranscript(stream(event('ApprovalRequired', {
       approval_id: 'approval-2',
-      tool_name: 'shell.execute',
+      tool_name: 'shell_execute',
       permission: 'ShellExecute',
       scope: 'crates',
       preview: {

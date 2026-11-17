@@ -91,14 +91,14 @@ describe('PinnedGoalBar', () => {
     })
   })
 
-  it('refreshes goals when the model executes goal.create', async () => {
+  it('refreshes goals when the model executes goal_create', async () => {
     const invoke = installApi()
     const onRunGoal = vi.fn().mockResolvedValue(undefined)
     const toolOutputEvent = {
       sequenceId: 7,
       taskId: 'task-1',
       eventType: 'tool.output',
-      payload: JSON.stringify({ tool_name: 'goal.create', output: 'created' }),
+      payload: JSON.stringify({ tool_name: 'goal_create', output: 'created' }),
       executionEvent: null
     } as unknown as CoreEvent
 

@@ -45,7 +45,7 @@ Rollback удаляет резолвер и оставляет 196.1 — код 
 - Test: `link_tool_receipt` находит цель и для legacy-строки в истории.
 - Test: continuation policy с точечным `capability_ref` резолвится, а не даёт
   `gate_unavailable`.
-- Test: skill/capability пакет с `allowed-tools: filesystem.patch` загружается.
+- Test: skill/capability пакет с `allowed-tools: filesystem_patch` загружается.
 
 ## Release evidence
 Таблица legacy→canonical, результаты тестов резолвера, replay исторической

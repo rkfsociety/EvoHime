@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for structured memory search.
-pub const NAME: &str = "memory.search";
+pub const NAME: &str = "memory_search";
 /// Input and output summary exposed in tool catalogs.
 pub const DESCRIPTION: &str =
     "Search structured agent memory (facts, constraints, experience, playbooks) by query. Input: { query, limit? }.";
@@ -20,7 +20,7 @@ pub const TIMEOUT: Duration = Duration::from_secs(30);
 /// runtime does not own the memory database.
 pub async fn execute(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, ToolError> {
     Err(ToolError::Execution(
-        "memory.search is executed by the agent memory backend".into(),
+        "memory_search is executed by the agent memory backend".into(),
     ))
 }
 
@@ -57,7 +57,7 @@ pub fn parse_input(input: &Value) -> Result<(String, usize), ToolError> {
 pub fn format_results(query: &str, entries: &[(String, String, String, f64)]) -> ToolResult {
     if entries.is_empty() {
         return ToolResult {
-            output: format!("memory.search: no matches for {query:?}"),
+            output: format!("memory_search: no matches for {query:?}"),
             structured: json!({
                 "query": query,
                 "count": 0,
@@ -66,7 +66,7 @@ pub fn format_results(query: &str, entries: &[(String, String, String, f64)]) ->
         };
     }
     let mut lines = vec![format!(
-        "memory.search ({query}): {} match(es)",
+        "memory_search ({query}): {} match(es)",
         entries.len()
     )];
     let matches: Vec<Value> = entries

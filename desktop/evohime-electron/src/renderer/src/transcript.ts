@@ -107,7 +107,7 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {  con
       case 'tool.output': {
         const tool = text_(payload, 'tool_name') || 'инструмент'
         // The raw JSONL stream is retained in Trace. The chat receives the
-        // projected shell.execute events emitted for each Codex command.
+        // projected shell_execute events emitted for each Codex command.
         if (tool === 'codex.execute') break
         const output = clamp(text_(payload, 'output'))
         const index = findLastIndex(entries, (entry) => entry.kind === 'activity')

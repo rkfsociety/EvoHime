@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 /// Registry identifier for opening and summarizing a web page.
-pub const OPEN_NAME: &str = "browser.open";
+pub const OPEN_NAME: &str = "browser_open";
 /// Short catalog description for [`open`].
 pub const OPEN_DESCRIPTION: &str = "Open a web page and summarize its contents";
 /// Permission required to fetch a page for [`open`].
@@ -16,7 +16,7 @@ pub const OPEN_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
 pub const OPEN_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Registry identifier for extracting selected page elements.
-pub const EXTRACT_NAME: &str = "browser.extract";
+pub const EXTRACT_NAME: &str = "browser_extract";
 /// Short catalog description for [`extract`].
 pub const EXTRACT_DESCRIPTION: &str = "Extract data from a web page using a CSS selector";
 /// Permission required to fetch a page for [`extract`].
@@ -386,7 +386,7 @@ mod tests {
                       <body>
                         <main>
                           <h1>Hello browser</h1>
-                          <p>This is a sample page for browser.open.</p>
+                          <p>This is a sample page for browser_open.</p>
                           <a href="/docs">Docs</a>
                         </main>
                       </body>

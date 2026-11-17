@@ -31,7 +31,7 @@ only the `custom` entry accepts a user-supplied HTTPS or loopback URL.
 | Rout | `https://api.rout.my/v1` |
 | AnyModel | `https://anymodel.org/v1` |
 
-Core tool ids contain dots (`filesystem.read`). OpenAI-compatible endpoints
+Core tool ids contain dots (`filesystem_read`). OpenAI-compatible endpoints
 accept only `[a-zA-Z0-9_-]` in a function name, so EvoHime sends
 `filesystem_read` and maps the returned function name back to the canonical
 tool id. Core-only metadata such as the manifest hash is stripped from the

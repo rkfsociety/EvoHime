@@ -109,7 +109,7 @@ capability and otherwise shows its unavailable state.
 
 ## Актуальный code baseline
 
-`shell.execute` и `process.run` перед созданием процесса совместно проверяют
+`shell_execute` и `process_run` перед созданием процесса совместно проверяют
 имя executable и аргументы: известные сетевые клиенты/туннели, домены
 `*.trycloudflare.com` и комбинации ссылок на `.env*`, SSH/AWS/Solana credentials,
 keystore или сигнатур секретов с upload/POST-признаками отклоняются fail-closed.
@@ -665,19 +665,19 @@ Kernel уже существовал как Core-owned runtime, но не был
 инструментом, поэтому агент не мог его вызвать. Этап 192.1 добавляет
 декларацию и host-контракт без второй реализации dispatch:
 
-- `crates/tool-runtime/src/tools/analysis.rs` объявляет `analysis.run`
+- `crates/tool-runtime/src/tools/analysis.rs` объявляет `analysis_run`
   (canonical schema, пустые permissions, `ReadOnly`, `approval = Never`,
   `workspace_scope = "task"`, bounded inline размер), а
   `builtin_input_schema` возвращает эту схему вместо заглушки;
 - `crates/tool-runtime/src/kernel_host.rs` объявляет трейт `KernelHost` и
   bounded типы запроса/результата с stable typed кодами ошибок;
 - `ToolRegistry` получает `Option<Arc<dyn KernelHost>>`, builder
-  `with_kernel_host` и accessor; без host `analysis.run` зарегистрирован, но
+  `with_kernel_host` и accessor; без host `analysis_run` зарегистрирован, но
   каждый вызов возвращает `analysis_kernel_unavailable` — in-process fallback
   отсутствует;
-- `catalog_preflight_input("analysis.run")` проходит объявленную схему, поэтому
+- `catalog_preflight_input("analysis_run")` проходит объявленную схему, поэтому
   инструмент остаётся в авторизованном snapshot;
-- `classify_call_risk("analysis.run")` = `None`.
+- `classify_call_risk("analysis_run")` = `None`.
 
 Этап не создаёт Core-side host-реализацию, IPC-проекцию и вкладку «Анализ»:
 они остаются этапами 192.2–192.4, и до их реализации вызов из агента
@@ -716,7 +716,7 @@ retry budget и открывала circuit как серверный сбой.
 блокер: intent router классифицировал смешанный запрос как `inspect` (слова
 «проверь/найди/покажи» перевесили «добавь»), adaptive catalog выдал только
 read-only инструменты, а delivery gate продолжал требовать
-`filesystem.write`, пока не исчерпались 32 итерации; в UI оставался общий
+`filesystem_write`, пока не исчерпались 32 итерации; в UI оставался общий
 `task_failed`.
 
 Исправлено в исходниках:
@@ -743,13 +743,13 @@ Exact-SHA CI по этому изменению ожидает результа�
 
 ### Лимит шагов и недоступный patch
 
-Задача `ac4358e2-09a7-461b-bbbc-9a5487018497` («добавить в композер вложение файлов через ctrl+v») в установленной версии с моделью `glm-5.3-flash-cheap:free` за 32 итерации сделала 31 успешный read-only вызов и ни одной правки, затем завершилась `task.failed` с `error_code=tool_iteration_limit` и без итогового текста. В model trace этой задачи в списке tools отсутствовал `filesystem.patch`: runtime требовал `expected_hash`, а catalog probe и declared schema его не передавали, поэтому probe не проходил preflight и инструмент молча выпадал из набора модели.
+Задача `ac4358e2-09a7-461b-bbbc-9a5487018497` («добавить в композер вложение файлов через ctrl+v») в установленной версии с моделью `glm-5.3-flash-cheap:free` за 32 итерации сделала 31 успешный read-only вызов и ни одной правки, затем завершилась `task.failed` с `error_code=tool_iteration_limit` и без итогового текста. В model trace этой задачи в списке tools отсутствовал `filesystem_patch`: runtime требовал `expected_hash`, а catalog probe и declared schema его не передавали, поэтому probe не проходил preflight и инструмент молча выпадал из набора модели.
 
 Исправлено в исходниках:
 
-- `filesystem.patch` объявляет `expected_hash` обязательным в схеме и runtime, а его catalog probe передаёт placeholder: без этого preflight отклонял probe, инструмент выпадал из набора модели, и правка существующих файлов была недоступна; Core по-прежнему подставляет хеш последнего чтения, если модель опустила поле;
+- `filesystem_patch` объявляет `expected_hash` обязательным в схеме и runtime, а его catalog probe передаёт placeholder: без этого preflight отклонял probe, инструмент выпадал из набора модели, и правка существующих файлов была недоступна; Core по-прежнему подставляет хеш последнего чтения, если модель опустила поле;
 - сверх лимита tool-итераций цикл делает один дополнительный tool-free вызов: инструменты убираются из запроса, напечатанный tool call не исполняется, задача завершается `task.completed` с текстом модели, а не `tool_iteration_limit`;
-- для задачи с обязательным изменением Core считает успешные шаги без правки и на 6/12/18-м шаге добавляет bounded guidance перейти к `filesystem.patch` или `filesystem.write` (`task.delivery_mutation_nudge`), максимум три раза.
+- для задачи с обязательным изменением Core считает успешные шаги без правки и на 6/12/18-м шаге добавляет bounded guidance перейти к `filesystem_patch` или `filesystem_write` (`task.delivery_mutation_nudge`), максимум три раза.
 
 ### Схемы инструментов и ложные повторы
 
@@ -758,22 +758,22 @@ Exact-SHA CI по этому изменению ожидает результа�
 
 - `builtin_input_schema` для 27 зарегистрированных инструментов не имел явной
   ветки и возвращал fallback с единственным полем `input`. Модель видела эту
-  схему, отправляла `{"input":{}}` в `git.status` и получала
+  схему, отправляла `{"input":{}}` в `git_status` и получала
   `this tool does not accept input`. Теперь явные схемы объявлены для
-  `git.status`/`git.changed_files` (пустой объект), каждого git-инструмента,
-  `filesystem.stat`/`mkdir`, `logs.*`, `cargo.*`, `archive.*` и legacy
+  `git_status`/`git_changed_files` (пустой объект), каждого git-инструмента,
+  `filesystem_stat`/`mkdir`, `logs.*`, `cargo.*`, `archive.*` и legacy
   `browser.session.*`; тест
   `no_registered_builtin_tool_falls_back_to_the_generic_input_schema` не даёт
   вернуть заглушку.
-- `git.diff` делил схему с `git.log`/`show`/`blame`/`pull`/`push` и объявлял
+- `git_diff` делил схему с `git_log`/`show`/`blame`/`pull`/`push` и объявлял
   `reference`, `remote`, `branch`, `force`, `max_count`, которых его исполнитель
   не читает. Схемы разделены, а `DiffInput` отвергает неизвестные поля через
   `serde(deny_unknown_fields)`: вызов с `reference` больше не превращается в
   diff всего дерева.
 - `RecentToolCalls::forget_reads` существовал, но не вызывался, поэтому повтор
-  `filesystem.read` или `git.status` после правки удалялся как дубликат с
+  `filesystem_read` или `git_status` после правки удалялся как дубликат с
   guidance «Его повтор удалён Core». Теперь успешная правка или коммит
-  сбрасывают окно read-only сигнатур, включая `git.status` и `git.diff`.
+  сбрасывают окно read-only сигнатур, включая `git_status` и `git_diff`.
 - Recovery-подсказка для инструмента без аргументов требует передать `{}`
   вместо вывода бесполезной схемы `{"type":"object"}`.
 

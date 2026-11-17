@@ -862,7 +862,7 @@ impl IpcBridge {
                 "error_code": "invalid_request"
             });
         }
-        let resolved = match evohime_tool_runtime::ExecutionPolicyProfile::resolve("shell.execute")
+        let resolved = match evohime_tool_runtime::ExecutionPolicyProfile::resolve("shell_execute")
         {
             Ok(value) => value,
             Err(error) => {

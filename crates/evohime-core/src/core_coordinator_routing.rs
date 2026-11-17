@@ -1110,7 +1110,7 @@ fn format_goal_iteration_prompt(
         ));
     }
     format!(
-        "<active_goal id=\"{}\" iteration=\"{}/{}\">\nЦель: {}\nКритерии выполнения:\n{}\nИнструкция: работай над целью до полного выполнения всех критериев. Проверяй результат реальными инструментами и вызывай инструмент `goal.verify` с `goal_id`, `criterion_id` и `evidence_summary` только после того, как критерий действительно выполнен и проверен.\n</active_goal>\n\n{}",
+        "<active_goal id=\"{}\" iteration=\"{}/{}\">\nЦель: {}\nКритерии выполнения:\n{}\nИнструкция: работай над целью до полного выполнения всех критериев. Проверяй результат реальными инструментами и вызывай инструмент `goal_verify` с `goal_id`, `criterion_id` и `evidence_summary` только после того, как критерий действительно выполнен и проверен.\n</active_goal>\n\n{}",
         goal.id,
         iteration.max(1),
         max_iterations.max(1),
@@ -1136,7 +1136,7 @@ fn format_goal_continuation_prompt(
             let excerpt: String = previous.chars().take(1_200).collect();
             prompt.push_str("\n\n<previous_attempt_summary>\n");
             prompt.push_str(&excerpt);
-            prompt.push_str("\n</previous_attempt_summary>\nПродолжай с того места, на котором остановился: не повторяй уже сделанную работу без необходимости, заверши оставшиеся критерии цели и подтверди каждый через `goal.verify`.");
+            prompt.push_str("\n</previous_attempt_summary>\nПродолжай с того места, на котором остановился: не повторяй уже сделанную работу без необходимости, заверши оставшиеся критерии цели и подтверди каждый через `goal_verify`.");
         }
     }
     prompt
@@ -1303,22 +1303,22 @@ mod timeout_tests {
         let provider = MockProvider::with_tool_call_sequence(
             "mock",
             vec![
-                // Attempt 1, iteration 0: model finishes without goal.verify, triggering nudge.
+                // Attempt 1, iteration 0: model finishes without goal_verify, triggering nudge.
                 ChatResult {
                     content: "attempt 1 before nudge".into(),
                     ..ChatResult::default()
                 },
-                // Attempt 1, iteration 1: still finishes without calling goal.verify.
+                // Attempt 1, iteration 1: still finishes without calling goal_verify.
                 ChatResult {
                     content: "attempt 1 after nudge".into(),
                     ..ChatResult::default()
                 },
-                // Attempt 2, iteration 0: model calls goal.verify.
+                // Attempt 2, iteration 0: model calls goal_verify.
                 ChatResult {
                     content: String::new(),
                     tool_calls: vec![NativeToolCall {
                         id: "verify-call-1".into(),
-                        name: "goal.verify".into(),
+                        name: "goal_verify".into(),
                         arguments: serde_json::json!({
                             "goal_id": goal_id,
                             "criterion_id": "c1",

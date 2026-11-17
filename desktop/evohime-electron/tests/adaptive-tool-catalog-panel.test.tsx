@@ -14,12 +14,12 @@ describe('AdaptiveToolCatalogPanel', () => {
       sequenceId: 1,
       taskId: 'task',
       eventType: 'model.context',
-      payload: JSON.stringify({ tools: ['filesystem.read', 'git.status', 'secret.internal'] }),
+      payload: JSON.stringify({ tools: ['filesystem_read', 'git_status', 'secret.internal'] }),
       executionEvent: null
     }
     render(<AdaptiveToolCatalogPanel connection="connected" events={[event]} />)
-    expect(screen.getByText('filesystem.read')).toBeTruthy()
-    expect(screen.getByText('git.status')).toBeTruthy()
+    expect(screen.getByText('filesystem_read')).toBeTruthy()
+    expect(screen.getByText('git_status')).toBeTruthy()
     expect(screen.getByText('secret.internal')).toBeTruthy()
     expect(screen.getByText(/Полные schemas не попадают/)).toBeTruthy()
   })

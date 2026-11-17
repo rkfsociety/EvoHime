@@ -336,8 +336,8 @@ impl ToolAgent {
                     name,
                     TOOL_FILESYSTEM_READ
                         | TOOL_FILESYSTEM_LIST
-                        | "git.status"
-                        | "git.diff"
+                        | "git_status"
+                        | "git_diff"
                         | "workspace.list"
                         | "workspace.read"
                         | "workspace.search"

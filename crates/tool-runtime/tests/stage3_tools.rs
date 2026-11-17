@@ -135,14 +135,14 @@ async fn registry_requires_approval_for_write_inner() {
                 session_id: None,
                 progress_tx: None,
             },
-            "filesystem.write",
+            "filesystem_write",
             json!({"path":"a.txt","content":"x"}),
         )
         .await;
     assert!(matches!(
         result,
         Err(ToolError::NeedsApproval(details))
-            if details.tool == "filesystem.write" && details.input["path"] == "a.txt"
+            if details.tool == "filesystem_write" && details.input["path"] == "a.txt"
     ));
 }
 
@@ -223,7 +223,7 @@ async fn test_filesystem_read_only_behavior_inner() {
 
     let registry = ToolRegistry::bootstrap();
     let _ = registry
-        .execute(&ctx, "filesystem.list", json!({"path": "."}))
+        .execute(&ctx, "filesystem_list", json!({"path": "."}))
         .await
         .unwrap();
     let _ = evohime_tool_runtime::filesystem::execute(&ctx, json!({"path": "test.txt"}))

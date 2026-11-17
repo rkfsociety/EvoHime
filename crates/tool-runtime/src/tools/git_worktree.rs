@@ -6,15 +6,15 @@ use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::process::Command;
 
-pub const CREATE_NAME: &str = "git.worktree.create";
+pub const CREATE_NAME: &str = "git_worktree_create";
 pub const CREATE_DESCRIPTION: &str = "Create a Core-owned detached Git worktree for one task";
 pub const CREATE_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
 pub const CREATE_TIMEOUT: Duration = Duration::from_secs(30);
-pub const REMOVE_NAME: &str = "git.worktree.remove";
+pub const REMOVE_NAME: &str = "git_worktree_remove";
 pub const REMOVE_DESCRIPTION: &str = "Remove a clean Core-owned detached task worktree";
 pub const REMOVE_PERMISSIONS: &[Permission] = &[Permission::FilesystemWrite];
 pub const REMOVE_TIMEOUT: Duration = Duration::from_secs(30);
-pub const PREFLIGHT_NAME: &str = "git.worktree.preflight";
+pub const PREFLIGHT_NAME: &str = "git_worktree_preflight";
 pub const PREFLIGHT_DESCRIPTION: &str =
     "Inspect a task worktree for safe integration without applying changes";
 pub const PREFLIGHT_PERMISSIONS: &[Permission] = &[Permission::FilesystemRead];
