@@ -975,6 +975,17 @@ impl RegisteredChildExecutor {
         request.child_task_id = worker.child_task_id.clone();
         request.parent_task_id = worker.parent_task_id.clone();
         request.validate().map_err(contract_error)?;
+        // Publish the pending request before the queen decides. The authority
+        // call is synchronous, so without this checkpoint the
+        // `extension_requested` flag would never reach a projection.
+        self.persist_checkpoint(
+            worker,
+            CoordinatorState::Running,
+            None,
+            Some("delegation_extension_requested".into()),
+            state.snapshot(),
+        )
+        .await?;
         self.delegation_authority
             .decide_extension(&request, grant, settings, self.workflow_spawned())
             .map_err(contract_error)
@@ -2200,6 +2211,27 @@ mod tests {
             .expect("delegated children");
         assert_eq!(children.len(), 5);
         assert_eq!(children[4]["child_task_id"], json!("run-1:worker:hop2-5"));
+
+        // The pending request is observable before the queen answers, so the
+        // operations panel can show "ожидает решения" instead of only the
+        // final counters.
+        let pending = journal
+            .replay(0, 2048)
+            .await
+            .expect("journal replay")
+            .into_iter()
+            .filter(|record| record.event_type == "child.workflow")
+            .filter_map(|record| {
+                serde_json::from_slice::<crate::child_workflow::ChildProjection>(&record.payload)
+                    .ok()
+            })
+            .find(|projection| {
+                projection.child_task_id == "run-1:worker" && projection.extension_requested
+            })
+            .expect("pending extension request projection");
+        assert_eq!(pending.spawned_subagents, 2);
+        assert_eq!(pending.planned_ceiling, 2);
+        assert_eq!(pending.extensions_granted, 0);
     }
 
     #[tokio::test]

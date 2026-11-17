@@ -354,14 +354,15 @@ impl ChildBudget {
 // Delegation Grant
 // ============================================================================
 
-/// Explicit permission from the queen for exactly one extra delegation hop.
+/// Explicit permission from the queen for one extra delegation hop.
 ///
-/// A worker at depth 1 may spawn one sub-agent at depth 2 only when its own
-/// request carries this grant. The grant is part of the original request and
-/// is never synthesized by the worker: the executor derives the sub-agent
-/// request from this object alone, keeps `parent_is_child = true`, requires a
-/// subset of the worker's grants and budget, and clears the sub-agent's own
-/// delegation flag so depth 3 is impossible.
+/// A worker at depth 1 may spawn up to `max_children` sub-agents at depth 2,
+/// lazily and only when its own request carries this grant. The grant is part
+/// of the original request and is never synthesized by the worker: the
+/// executor derives the sub-agent request from this object alone, keeps
+/// `parent_is_child = true`, requires a subset of the worker's grants and
+/// budget, and clears the sub-agent's own delegation flag so depth 3 is
+/// impossible.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DelegationGrant {
     /// Role assigned to the permitted sub-agents.
@@ -2127,5 +2128,29 @@ mod tests {
     fn test_contract_version_constants() {
         assert_eq!(CONTRACT_VERSION.major, 1);
         assert_eq!(CONTRACT_VERSION.minor, 0);
+    }
+
+    #[test]
+    fn legacy_delegation_payload_defaults_to_a_single_child() {
+        // Payloads written before `max_children` existed must keep the
+        // historical single-hop contract instead of widening the grant.
+        let payload = serde_json::json!({
+            "role": "researcher",
+            "purpose": "inspect one bounded area",
+            "grants": [{ "grant_type": "workspace.read" }],
+            "requested_capabilities": ["workspace.read"],
+        });
+        let grant: DelegationGrant = serde_json::from_value(payload).expect("legacy grant");
+        assert_eq!(grant.max_children, 1);
+        assert!(grant
+            .validate_for_parent(&[Grant::new("workspace.read").expect("grant")], &None)
+            .is_ok());
+
+        let mut zeroed = grant.clone();
+        zeroed.max_children = 0;
+        assert_eq!(
+            zeroed.validate_for_parent(&[Grant::new("workspace.read").expect("grant")], &None),
+            Err(ContractError::InvalidDelegationCeiling(0))
+        );
     }
 }
