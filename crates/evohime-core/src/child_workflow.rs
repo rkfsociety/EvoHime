@@ -520,6 +520,24 @@ pub struct ChildProjection {
     /// [`MAX_PROJECTION_SUMMARY_CHARS`] by [`bounded_report_summary`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_summary: Option<String>,
+    /// Sub-agents the worker actually spawned through its lazy fan-out.
+    #[serde(default)]
+    pub spawned_subagents: u32,
+    /// Queen-authored ceiling in force for the worker.
+    #[serde(default)]
+    pub planned_ceiling: u32,
+    /// Number of queen-approved ceiling extensions.
+    #[serde(default)]
+    pub extensions_granted: u32,
+    /// Number of wait-for-report cycles before a spawn decision.
+    #[serde(default)]
+    pub lazy_waiting: u32,
+    /// Sub-agents currently in flight.
+    #[serde(default)]
+    pub in_flight_subagents: u32,
+    /// Whether the worker asked the queen to widen its ceiling.
+    #[serde(default)]
+    pub extension_requested: bool,
 }
 
 /// Default depth used when replaying an older projection without a depth.
@@ -1028,6 +1046,7 @@ pub(crate) fn child_projection(
     state: CoordinatorState,
     report: Option<&TypedChildReport>,
     reason: Option<String>,
+    lazy: crate::lazy_delegation::LazyDelegationSnapshot,
 ) -> ChildProjection {
     ChildProjection {
         event_id: format!("{}:{}", request.child_task_id, state.as_str()),
@@ -1049,6 +1068,12 @@ pub(crate) fn child_projection(
         report_status: report
             .map(|report| crate::child_executor::report_status_str(report.status).to_owned()),
         report_summary: report.map(|report| bounded_report_summary(&report.summary)),
+        spawned_subagents: lazy.spawned_subagents,
+        planned_ceiling: lazy.planned_ceiling,
+        extensions_granted: lazy.extensions_granted,
+        lazy_waiting: lazy.lazy_waiting,
+        in_flight_subagents: lazy.in_flight_subagents,
+        extension_requested: lazy.extension_requested,
     }
 }
 
@@ -1064,6 +1089,7 @@ pub(crate) async fn persist_child_checkpoint(
     state: CoordinatorState,
     report: Option<&TypedChildReport>,
     reason: Option<String>,
+    lazy: crate::lazy_delegation::LazyDelegationSnapshot,
 ) -> Result<(), ChildLifecycleError> {
     let now_ms = crate::task_memory::now_millis() as i64;
     let record = checkpoint_record(request, state, report, reason.clone(), now_ms)?;
@@ -1073,7 +1099,7 @@ pub(crate) async fn persist_child_checkpoint(
         .map_err(|error| ChildLifecycleError::permanent("child_checkpoint_unavailable", error))?;
     let event = crate::CoreEvent::ChildWorkflowProjection {
         task_id: request.parent_task_id.clone(),
-        projection: child_projection(request, state, report, reason),
+        projection: child_projection(request, state, report, reason, lazy),
     };
     sink.emit(event).await;
     Ok(())
@@ -1166,6 +1192,7 @@ pub(crate) async fn record_accepted_child_report(
     report: &TypedChildReport,
     session: Option<&str>,
     now_ms: i64,
+    lazy: crate::lazy_delegation::LazyDelegationSnapshot,
 ) -> Result<TypedChildReport, ChildLifecycleError> {
     let accepted = journal
         .accept_typed_child_report(request, report, now_ms)
@@ -1179,6 +1206,7 @@ pub(crate) async fn record_accepted_child_report(
         CoordinatorState::Accepted,
         Some(&accepted),
         Some("parent_gate".into()),
+        lazy,
     )
     .await?;
     publish_report_message(request, &accepted, session)?;
@@ -1332,6 +1360,57 @@ mod tests {
         assert_eq!(bounded.chars().count(), MAX_PROJECTION_SUMMARY_CHARS);
         assert_eq!(bounded, "ж".repeat(MAX_PROJECTION_SUMMARY_CHARS));
         assert_eq!(bounded_report_summary("короткий отчёт"), "короткий отчёт");
+    }
+
+    #[test]
+    fn legacy_projection_without_fan_out_fields_replays_with_zeroes() {
+        let legacy = serde_json::json!({
+            "event_id": "child:accepted",
+            "parent_task_id": "parent",
+            "child_task_id": "child",
+            "role": "researcher",
+            "revision": 0,
+            "state": "accepted",
+            "reason_code": "parent_gate",
+            "parent_sequence": 1,
+            "budget": null,
+            "lease_live": false,
+            "dead_letter": false,
+            "depth": 2,
+            "report_status": "complete",
+            "report_summary": "done"
+        });
+        let projection: ChildProjection = serde_json::from_value(legacy).expect("legacy replay");
+        assert_eq!(projection.depth, 2);
+        assert_eq!(projection.spawned_subagents, 0);
+        assert_eq!(projection.planned_ceiling, 0);
+        assert_eq!(projection.extensions_granted, 0);
+        assert_eq!(projection.lazy_waiting, 0);
+        assert_eq!(projection.in_flight_subagents, 0);
+        assert!(!projection.extension_requested);
+    }
+
+    #[test]
+    fn projection_carries_the_lazy_fan_out_snapshot() {
+        let lazy = crate::lazy_delegation::LazyDelegationSnapshot {
+            spawned_subagents: 3,
+            planned_ceiling: 8,
+            extensions_granted: 1,
+            lazy_waiting: 2,
+            in_flight_subagents: 1,
+            extension_requested: true,
+        };
+        let projection = child_projection(&request(), CoordinatorState::Running, None, None, lazy);
+        assert_eq!(projection.spawned_subagents, 3);
+        assert_eq!(projection.planned_ceiling, 8);
+        assert_eq!(projection.extensions_granted, 1);
+        assert_eq!(projection.lazy_waiting, 2);
+        assert_eq!(projection.in_flight_subagents, 1);
+        assert!(projection.extension_requested);
+        let replayed: ChildProjection =
+            serde_json::from_str(&serde_json::to_string(&projection).expect("serialize"))
+                .expect("projection roundtrip");
+        assert_eq!(replayed, projection);
     }
 
     #[test]

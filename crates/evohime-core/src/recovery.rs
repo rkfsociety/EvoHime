@@ -641,7 +641,10 @@ mod tests {
             &json!({"type": "object", "additionalProperties": false}),
             "показать статус",
         );
-        assert!(hint.contains("{}"), "hint must show the empty object: {hint}");
+        assert!(
+            hint.contains("{}"),
+            "hint must show the empty object: {hint}"
+        );
         assert!(
             hint.contains("не принимает аргументов"),
             "hint must state that the tool takes no arguments: {hint}"

@@ -215,6 +215,23 @@ pub struct ToolActionProfile {
     pub arguments: BTreeMap<String, String>,
 }
 
+/// Queen-authored permission for one more delegation hop from this child.
+///
+/// The permission is explicit: a child without it cannot spawn a sub-agent and
+/// the legacy single-hop contract is preserved for older workflow payloads.
+/// When it is enabled, Core picks a bounded ceiling for the worker, and the
+/// worker spawns sub-agents lazily, one at a time.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChildDelegationPolicy {
+    /// Whether the queen permits this child to delegate one more hop.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Optional explicit ceiling. When omitted, Core derives a ceiling from
+    /// the task shape and clamps it to the hive safety settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_children: Option<u32>,
+}
+
 /// Child workflow: роль, цель, output schema, allowlists, grants и бюджет.
 /// Nested child delegation запрещена по контракту: у профиля нет поля,
 /// которым child мог бы объявить собственный child.
@@ -242,6 +259,9 @@ pub struct ChildActionProfile {
     #[serde(default = "default_max_revisions")]
     /// Maximum child result revisions accepted for the action.
     pub max_revisions: u32,
+    #[serde(default)]
+    /// Queen-authored permission for lazy sub-agent fan-out.
+    pub delegation: ChildDelegationPolicy,
 }
 
 fn default_max_revisions() -> u32 {
@@ -2037,6 +2057,7 @@ mod tests {
                 grants: vec!["fs.read".into()],
                 budget: NodeBudget::default(),
                 max_revisions: MAX_CHILD_REVISIONS + 1,
+                delegation: ChildDelegationPolicy::default(),
             },
         };
         let mut workflow = graph(vec![child], vec![]);

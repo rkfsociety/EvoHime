@@ -17,7 +17,10 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
@@ -36,6 +39,11 @@ use crate::child_roles::{
 };
 use crate::child_runtime::{ChildReport, ChildReportStatus, ChildTaskKind, ChildTaskRequest};
 use crate::child_workflow::{Coordinator, CoordinatorState};
+use crate::hive_settings::HiveSettings;
+use crate::lazy_delegation::{
+    DelegationAuthority, DelegationDecision, DelegationExtensionRequest, DelegationProgressPolicy,
+    LazyDelegationSnapshot, LazyDelegationState, QueenDelegationExtension,
+};
 use crate::workflow::NodeBudget;
 use crate::workflow_adapters::{ChildExecutor, ChildFuture, ChildOutcome};
 use crate::workflow_runtime::NodeError;
@@ -174,7 +182,7 @@ struct ResolvedRole {
     effective_grants: Vec<String>,
 }
 
-/// Bounded summary of the single sub-agent the worker was allowed to spawn.
+/// Bounded summary of one sub-agent the worker was allowed to spawn.
 struct DelegatedSummary {
     child_task_id: String,
     status: String,
@@ -188,7 +196,8 @@ struct RoleRunOutput {
     sources: Vec<String>,
     errors: Vec<String>,
     successful_calls: u32,
-    delegated: Option<DelegatedSummary>,
+    delegated: Vec<DelegatedSummary>,
+    lazy: LazyDelegationSnapshot,
 }
 
 impl RoleRunOutput {
@@ -200,6 +209,25 @@ impl RoleRunOutput {
         } else {
             TypedReportStatus::Partial
         }
+    }
+}
+
+/// Default queen authority: never widen a worker ceiling automatically.
+///
+/// A worker that exhausts its ceiling finishes with a partial report. Widening
+/// the grant is a separate, explicit queen decision made through
+/// [`crate::lazy_delegation::extend_delegation`].
+struct DenyDelegationExtensions;
+
+impl DelegationAuthority for DenyDelegationExtensions {
+    fn decide_extension(
+        &self,
+        _request: &DelegationExtensionRequest,
+        _grant: &DelegationGrant,
+        _settings: &HiveSettings,
+        _workflow_spawned: u32,
+    ) -> Result<Option<QueenDelegationExtension>, ContractError> {
+        Ok(None)
     }
 }
 
@@ -215,6 +243,9 @@ pub struct RegisteredChildExecutor {
     parent_capabilities: Vec<String>,
     parent_budget: Option<NodeBudget>,
     capacity: crate::bounded_tasks::BoundedTaskGroup,
+    delegation_authority: Arc<dyn DelegationAuthority>,
+    delegation_policy: DelegationProgressPolicy,
+    workflow_spawned: Option<Arc<AtomicU32>>,
 }
 
 impl RegisteredChildExecutor {
@@ -230,6 +261,52 @@ impl RegisteredChildExecutor {
             capacity: crate::bounded_tasks::BoundedTaskGroup::new(
                 crate::bounded_tasks::DEFAULT_CAPACITY,
             ),
+            delegation_authority: Arc::new(DenyDelegationExtensions),
+            delegation_policy: DelegationProgressPolicy::default(),
+            workflow_spawned: None,
+        }
+    }
+
+    /// Overrides the deterministic progress assessment.
+    ///
+    /// Production uses [`DelegationProgressPolicy::StopOnComplete`]: one
+    /// complete sub-agent report is enough. Other values exist for the queen's
+    /// own assessment and for tests that need a fixed number of spawns.
+    pub fn with_delegation_policy(mut self, policy: DelegationProgressPolicy) -> Self {
+        self.delegation_policy = policy;
+        self
+    }
+
+    /// Installs the queen-side authority consulted when a worker reports that
+    /// its ceiling is exhausted.
+    ///
+    /// The default denies every extension: widening a worker ceiling is an
+    /// explicit queen decision, never an automatic consequence of a request.
+    pub fn with_delegation_authority(mut self, authority: Arc<dyn DelegationAuthority>) -> Self {
+        self.delegation_authority = authority;
+        self
+    }
+
+    /// Shares a workflow-wide sub-agent counter between child executors.
+    ///
+    /// The counter is the last guard in [`HiveSettings`]: every reserved spawn
+    /// increments it, and a worker may not start a sub-agent once the workflow
+    /// ceiling is reached.
+    pub fn with_workflow_subagent_counter(mut self, counter: Arc<AtomicU32>) -> Self {
+        self.workflow_spawned = Some(counter);
+        self
+    }
+
+    fn workflow_spawned(&self) -> u32 {
+        self.workflow_spawned
+            .as_ref()
+            .map(|counter| counter.load(Ordering::Relaxed))
+            .unwrap_or(0)
+    }
+
+    fn note_workflow_spawn(&self) {
+        if let Some(counter) = &self.workflow_spawned {
+            counter.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -566,6 +643,7 @@ impl RegisteredChildExecutor {
         state: CoordinatorState,
         report: Option<&TypedChildReport>,
         reason: Option<String>,
+        lazy: LazyDelegationSnapshot,
     ) -> Result<(), NodeError> {
         crate::child_workflow::persist_child_checkpoint(
             &self.journal,
@@ -574,6 +652,7 @@ impl RegisteredChildExecutor {
             state,
             report,
             reason,
+            lazy,
         )
         .await
         .map_err(crate::child_workflow::ChildLifecycleError::into_node_error)
@@ -585,13 +664,15 @@ impl RegisteredChildExecutor {
         request: &TypedChildTaskRequest,
         next: CoordinatorState,
         reason: Option<String>,
+        lazy: LazyDelegationSnapshot,
     ) -> Result<(), NodeError> {
         coordinator
             .transition(&request.child_task_id, next, reason.clone())
             .map_err(|error| {
                 NodeError::permanent("child_transition_rejected", format!("{error:?}"))
             })?;
-        self.persist_checkpoint(request, next, None, reason).await
+        self.persist_checkpoint(request, next, None, reason, lazy)
+            .await
     }
 
     async fn persist_handoff(
@@ -693,7 +774,8 @@ impl RegisteredChildExecutor {
             sources: Vec::new(),
             errors: Vec::new(),
             successful_calls: 0,
-            delegated: None,
+            delegated: Vec::new(),
+            lazy: LazyDelegationSnapshot::default(),
         };
         for (index, (tool_name, input)) in plan.into_iter().enumerate() {
             if index >= max_calls || Instant::now() >= deadline {
@@ -771,33 +853,131 @@ impl RegisteredChildExecutor {
         budget
     }
 
-    /// Runs the single sub-agent permitted by the queen's delegation grant.
+    /// Runs the lazy delegation loop permitted by the queen's grant.
     ///
-    /// This is strictly sequential: the worker awaits exactly one nested
-    /// execution and never spawns siblings, so it cannot fan out. The nested
-    /// request is derived from the original grant, keeps `parent_is_child`,
-    /// uses a subset of the worker grants and the worker budget remainder, and
-    /// clears its own delegation so depth 3 is unreachable.
-    async fn run_delegated_once(
+    /// The worker never converts the ceiling into a batch. It reserves one
+    /// sub-agent budget share, runs exactly one sub-agent, waits for its
+    /// accepted report, and only then decides:
+    /// - finish when the report solves the task and keep the unused budget;
+    /// - continue while the ceiling and the remainder allow another sub-agent;
+    /// - ask the queen when the ceiling is exhausted, and finish when she
+    ///   declines.
+    ///
+    /// Every reservation is recorded in [`LazyDelegationSnapshot`], which the
+    /// caller projects to the parent. The loop is bounded by the queen ceiling,
+    /// the hive safety guard, and the worker budget remainder, so it always
+    /// terminates.
+    async fn run_delegated_lazily(
         &self,
         request: &TypedChildTaskRequest,
-        run: &RoleRunOutput,
+        run: &mut RoleRunOutput,
         elapsed: Duration,
-    ) -> Result<Option<TypedChildReport>, NodeError> {
-        let Some(grant) = request.delegation.as_ref() else {
+    ) -> Result<(), NodeError> {
+        let Some(grant) = request.delegation.clone() else {
+            return Ok(());
+        };
+        let settings = self
+            .journal
+            .hive_settings()
+            .await
+            .map_err(|error| NodeError::permanent("hive_settings_unavailable", error))?;
+        let capacity = self.remaining_budget(request, run, elapsed);
+        let mut grant = grant;
+        let mut state =
+            LazyDelegationState::new(&grant, capacity.clone(), &settings, self.workflow_spawned())
+                .map_err(contract_error)?;
+        let policy = self.delegation_policy;
+        let mut usages = Vec::new();
+
+        loop {
+            // The workflow-wide guard is the last safety net: another worker
+            // may have spent shared capacity since this worker started.
+            if self.workflow_spawned() >= settings.max_total_subagents_per_workflow {
+                break;
+            }
+            let allocation = match state.try_spawn(grant.budget.clone()) {
+                Ok(allocation) => allocation,
+                // The ceiling or the remainder is the queen-decided stopping
+                // point; the worker finishes with what it already collected.
+                Err(ContractError::DelegationCeilingExceeded { .. })
+                | Err(ContractError::DelegationBudgetExhausted)
+                | Err(ContractError::DelegationParallelLimitExceeded { .. }) => break,
+                Err(error) => return Err(contract_error(error)),
+            };
+            self.note_workflow_spawn();
+            let nested =
+                delegated_request(request, &grant, &capacity, &allocation, state.spawned())?;
+            let started = Instant::now();
+            let outcome = self.run(&nested).await?;
+            let report =
+                serde_json::from_str::<TypedChildReport>(&outcome.report_json).map_err(|_| {
+                    NodeError::permanent(
+                        "child_report_rejected",
+                        "the sub-agent did not return a typed accepted report",
+                    )
+                })?;
+            merge_delegated_output(run, &report);
+            let usage = observed_usage(&allocation, started.elapsed());
+            usages.push(usage.clone());
+            state.complete(&allocation, &usage);
+
+            match state.assess(policy, report.status) {
+                DelegationDecision::Finish => break,
+                DelegationDecision::Continue => {
+                    state.record_lazy_wait();
+                }
+                DelegationDecision::RequestExtension => {
+                    match self
+                        .ask_queen(request, &mut state, &grant, &settings)
+                        .await?
+                    {
+                        Some(extension) => {
+                            grant = extension.grant().clone();
+                            state
+                                .apply_queen_extension(&extension)
+                                .map_err(contract_error)?;
+                        }
+                        None => {
+                            state.cancel_extension_request();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // The consumed budget must stay inside the remainder the worker owned
+        // before the fan-out started, even across an approved extension. Unused
+        // reservations are refunded, so the sum is measured on actual usage.
+        crate::lazy_delegation::validate_allocations_within(&usages, &capacity)
+            .map_err(contract_error)?;
+        run.lazy = state.snapshot();
+        Ok(())
+    }
+
+    /// Asks the queen-side authority whether the worker ceiling may grow.
+    ///
+    /// A worker that cannot even form a request (for example because its
+    /// budget, not its ceiling, is exhausted) gets no extension. The authority
+    /// is explicit: the default executor denies, so a runtime never widens a
+    /// grant on its own.
+    async fn ask_queen(
+        &self,
+        worker: &TypedChildTaskRequest,
+        state: &mut LazyDelegationState,
+        grant: &DelegationGrant,
+        settings: &HiveSettings,
+    ) -> Result<Option<QueenDelegationExtension>, NodeError> {
+        let Ok(mut request) = state.request_extension("worker reached its delegated ceiling")
+        else {
             return Ok(None);
         };
-        let remaining = self.remaining_budget(request, run, elapsed);
-        let nested = delegated_request(request, grant, &remaining)?;
-        let outcome = self.run(&nested).await?;
-        let report =
-            serde_json::from_str::<TypedChildReport>(&outcome.report_json).map_err(|_| {
-                NodeError::permanent(
-                    "child_report_rejected",
-                    "the sub-agent did not return a typed accepted report",
-                )
-            })?;
-        Ok(Some(report))
+        request.child_task_id = worker.child_task_id.clone();
+        request.parent_task_id = worker.parent_task_id.clone();
+        request.validate().map_err(contract_error)?;
+        self.delegation_authority
+            .decide_extension(&request, grant, settings, self.workflow_spawned())
+            .map_err(contract_error)
     }
 
     async fn execute(&self, request: &TypedChildTaskRequest) -> Result<ChildOutcome, NodeError> {
@@ -829,8 +1009,14 @@ impl RegisteredChildExecutor {
             .map_err(|error| {
                 NodeError::permanent("child_checkpoint_rejected", format!("{error:?}"))
             })?;
-        self.persist_checkpoint(request, CoordinatorState::Created, None, None)
-            .await?;
+        self.persist_checkpoint(
+            request,
+            CoordinatorState::Created,
+            None,
+            None,
+            LazyDelegationSnapshot::default(),
+        )
+        .await?;
         self.persist_handoff(
             request,
             &role,
@@ -840,10 +1026,22 @@ impl RegisteredChildExecutor {
             "pending",
         )
         .await?;
-        self.transition(&mut coordinator, request, CoordinatorState::Queued, None)
-            .await?;
-        self.transition(&mut coordinator, request, CoordinatorState::Running, None)
-            .await?;
+        self.transition(
+            &mut coordinator,
+            request,
+            CoordinatorState::Queued,
+            None,
+            LazyDelegationSnapshot::default(),
+        )
+        .await?;
+        self.transition(
+            &mut coordinator,
+            request,
+            CoordinatorState::Running,
+            None,
+            LazyDelegationSnapshot::default(),
+        )
+        .await?;
 
         let started = Instant::now();
         let run = match self
@@ -858,35 +1056,35 @@ impl RegisteredChildExecutor {
                         request,
                         CoordinatorState::Failed,
                         Some(error.code.clone()),
+                        LazyDelegationSnapshot::default(),
                     )
                     .await;
                 return Err(error);
             }
         };
         let mut run = run;
-        match self
-            .run_delegated_once(request, &run, started.elapsed())
+        if let Err(error) = self
+            .run_delegated_lazily(request, &mut run, started.elapsed())
             .await
         {
-            Ok(Some(delegated)) => merge_delegated_output(&mut run, &delegated),
-            Ok(None) => {}
-            Err(error) => {
-                let _ = self
-                    .transition(
-                        &mut coordinator,
-                        request,
-                        CoordinatorState::Failed,
-                        Some(error.code.clone()),
-                    )
-                    .await;
-                return Err(error);
-            }
+            let _ = self
+                .transition(
+                    &mut coordinator,
+                    request,
+                    CoordinatorState::Failed,
+                    Some(error.code.clone()),
+                    LazyDelegationSnapshot::default(),
+                )
+                .await;
+            return Err(error);
         }
+        let lazy = run.lazy;
         self.transition(
             &mut coordinator,
             request,
             CoordinatorState::Validating,
             None,
+            lazy,
         )
         .await?;
 
@@ -903,6 +1101,7 @@ impl RegisteredChildExecutor {
             CoordinatorState::WaitingParentAcceptance,
             Some(&report),
             None,
+            lazy,
         )
         .await?;
         self.transition(
@@ -910,6 +1109,7 @@ impl RegisteredChildExecutor {
             request,
             CoordinatorState::WaitingParentAcceptance,
             None,
+            lazy,
         )
         .await?;
         self.transition(
@@ -917,13 +1117,14 @@ impl RegisteredChildExecutor {
             request,
             CoordinatorState::Accepted,
             Some("parent_gate".into()),
+            lazy,
         )
         .await?;
         // Accepted reports go through the same shared writer as the legacy
         // `SubmitChildReport` command: acceptance, storage, checkpoint,
         // projection, and the bounded collaboration message.
         let report = self
-            .record_accepted_report(request, &report, session.as_deref())
+            .record_accepted_report(request, &report, session.as_deref(), lazy)
             .await?;
         self.persist_handoff(
             request,
@@ -976,6 +1177,17 @@ impl RegisteredChildExecutor {
         crate::child_runtime::accept_report(runtime_request, &runtime_report)
             .map_err(runtime_error)?;
 
+        let delegated_children: Vec<Value> = run
+            .delegated
+            .iter()
+            .map(|delegated| {
+                json!({
+                    "child_task_id": delegated.child_task_id,
+                    "status": delegated.status,
+                    "summary": delegated.summary,
+                })
+            })
+            .collect();
         let output_data = json!({
             "status": match runtime_status {
                 ChildReportStatus::Complete => "complete",
@@ -984,11 +1196,15 @@ impl RegisteredChildExecutor {
             },
             "summary": run.summary.clone(),
             "findings": run.findings.clone(),
-            "delegated_child": run.delegated.as_ref().map(|delegated| json!({
-                "child_task_id": delegated.child_task_id,
-                "status": delegated.status,
-                "summary": delegated.summary,
-            })),
+            // Legacy single-sub-agent field kept for replay compatibility.
+            "delegated_child": delegated_children.first().cloned(),
+            "delegated_children": delegated_children,
+            "spawned_subagents": run.lazy.spawned_subagents,
+            "planned_ceiling": run.lazy.planned_ceiling,
+            "extensions_granted": run.lazy.extensions_granted,
+            "lazy_waiting": run.lazy.lazy_waiting,
+            "in_flight_subagents": run.lazy.in_flight_subagents,
+            "extension_requested": run.lazy.extension_requested,
         })
         .to_string();
         let evidence_hash = Provenance::compute_hash(&run.sources.join("\n"));
@@ -1046,6 +1262,7 @@ impl RegisteredChildExecutor {
         request: &TypedChildTaskRequest,
         report: &TypedChildReport,
         session: Option<&str>,
+        lazy: LazyDelegationSnapshot,
     ) -> Result<TypedChildReport, NodeError> {
         crate::child_workflow::record_accepted_child_report(
             &self.journal,
@@ -1054,6 +1271,7 @@ impl RegisteredChildExecutor {
             report,
             session,
             crate::task_memory::now_millis() as i64,
+            lazy,
         )
         .await
         .map_err(crate::child_workflow::ChildLifecycleError::into_node_error)
@@ -1116,39 +1334,52 @@ fn runtime_kind(role: &str) -> ChildTaskKind {
     }
 }
 
-/// Stable identifier of the single delegated sub-agent.
+/// Stable identifier of one lazily spawned sub-agent.
 ///
+/// The first sub-agent keeps the legacy `:hop2` name so replayed reports and
+/// existing projections stay readable; later siblings get a bounded ordinal.
 /// Colon stays because it already separates task and child segments in the
 /// existing correlation ids. The suffix is bounded so the contract id limit is
 /// never exceeded.
-fn delegated_child_id(parent: &str) -> String {
-    const SUFFIX: &str = ":hop2";
-    let available = crate::child_contracts::MAX_ID_CHARS.saturating_sub(SUFFIX.len());
+fn delegated_child_id(parent: &str, ordinal: u32) -> String {
+    let suffix = if ordinal <= 1 {
+        ":hop2".to_owned()
+    } else {
+        format!(":hop2-{ordinal}")
+    };
+    let available = crate::child_contracts::MAX_ID_CHARS.saturating_sub(suffix.len());
     let mut id: String = parent.chars().take(available).collect();
-    id.push_str(SUFFIX);
+    id.push_str(&suffix);
     id
 }
 
-/// Builds the one permitted sub-agent request from the queen's grant.
+/// Builds one permitted sub-agent request from the queen's grant.
 ///
-/// The worker cannot widen anything: grants and budget are checked as subsets
-/// of the worker's own values, the budget is the worker remainder rather than a
-/// new wallet, and the nested request never carries its own delegation.
+/// The worker cannot widen anything: grants are checked as a subset of the
+/// worker's own grants, the queen grant budget is checked against the worker
+/// budget, and the request budget is the deterministic share reserved by
+/// [`LazyDelegationState::try_spawn`] rather than a new wallet. The nested
+/// request never carries its own delegation, so depth 3 stays unreachable.
 fn delegated_request(
     request: &TypedChildTaskRequest,
     grant: &DelegationGrant,
     remaining: &ChildBudget,
+    allocation: &ChildBudget,
+    ordinal: u32,
 ) -> Result<TypedChildTaskRequest, NodeError> {
     crate::child_contracts::validate_grant_subset(&grant.grants, &request.grants)
         .map_err(contract_error)?;
+    // The queen grant must fit the worker remainder, never exceed it.
     crate::child_contracts::validate_budget_subset(&grant.budget, &Some(remaining.clone()))
         .map_err(contract_error)?;
+    // The reserved allocation is a share of the remainder; narrowing it by the
+    // grant keeps the sub-agent inside both limits.
     let budget = match &grant.budget {
-        Some(grant_budget) => narrow_budget(grant_budget, remaining),
-        None => remaining.clone(),
+        Some(grant_budget) => narrow_budget(grant_budget, allocation),
+        None => allocation.clone(),
     };
 
-    let child_task_id = delegated_child_id(&request.child_task_id);
+    let child_task_id = delegated_child_id(&request.child_task_id, ordinal);
     let correlation = CorrelationContext::new(
         CorrelationId::new(request.child_task_id.clone()).map_err(contract_error)?,
         CorrelationId::new(child_task_id.clone()).map_err(contract_error)?,
@@ -1240,11 +1471,33 @@ fn merge_delegated_output(run: &mut RoleRunOutput, report: &TypedChildReport) {
     .chars()
     .take(crate::child_contracts::MAX_REPORT_CHARS)
     .collect();
-    run.delegated = Some(DelegatedSummary {
-        child_task_id: report.child_task_id.clone(),
-        status,
-        summary,
-    });
+    if run.delegated.len() < crate::hive_settings::MAX_SUBAGENT_HARD_LIMIT as usize {
+        run.delegated.push(DelegatedSummary {
+            child_task_id: report.child_task_id.clone(),
+            status,
+            summary,
+        });
+    }
+}
+
+/// Budget consumed by one finished sub-agent run.
+///
+/// The token and tool-call reservations are treated as fully consumed because
+/// the accepted child report is the only observable boundary; unused wall-clock
+/// time is returned to the worker pool by [`LazyDelegationState::complete`].
+fn observed_usage(allocation: &ChildBudget, elapsed: Duration) -> ChildBudget {
+    let seconds = elapsed.as_secs();
+    ChildBudget {
+        max_tokens: allocation.max_tokens,
+        // The reservation is the cap: bookkeeping overhead of the wait must not
+        // report more wall-clock time than the sub-agent was allowed to spend.
+        max_time_seconds: Some(
+            allocation
+                .max_time_seconds
+                .map_or(seconds, |limit| seconds.min(limit)),
+        ),
+        max_tool_calls: allocation.max_tool_calls,
+    }
 }
 
 fn role_tool_plan(
@@ -1500,6 +1753,7 @@ mod tests {
                 .collect(),
             budget,
             acceptance_criteria: None,
+            max_children: 1,
         }
     }
 
@@ -1507,6 +1761,30 @@ mod tests {
         let directory = tempfile::tempdir().expect("workspace");
         std::fs::write(directory.path().join("main.rs"), "fn main() {}\n").expect("write file");
         directory
+    }
+
+    /// Worker request with a budget wide enough to finance a lazy fan-out.
+    fn worker_with_ceiling(ceiling: u32, tool_calls: u64) -> TypedChildTaskRequest {
+        request("researcher", &["fs.read", "filesystem.search"])
+            .with_budget(
+                ChildBudget::new()
+                    .with_tokens(16_000)
+                    .with_time(120)
+                    .with_tool_calls(tool_calls),
+            )
+            .with_delegation(DelegationGrant {
+                max_children: ceiling,
+                ..delegation_grant(
+                    &["filesystem.search"],
+                    Some(
+                        ChildBudget::new()
+                            .with_tokens(4_000)
+                            .with_time(30)
+                            .with_tool_calls(2),
+                    ),
+                )
+            })
+            .expect("queen delegation grant")
     }
 
     #[tokio::test]
@@ -1583,6 +1861,7 @@ mod tests {
                     grants: vec!["fs.read".into()],
                     budget: NodeBudget::default(),
                     max_revisions: 1,
+                    delegation: crate::workflow::ChildDelegationPolicy::default(),
                 },
             },
             policy.clone(),
@@ -1786,6 +2065,181 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_worker_with_ceiling_eight_stops_after_three_subagents() {
+        use crate::child_workflow::{ChildProjection, CoordinatorState};
+
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal.clone(), workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())))
+            .with_delegation_policy(DelegationProgressPolicy::StopAfter(3));
+
+        let outcome = executor
+            .run(&worker_with_ceiling(8, 16))
+            .await
+            .expect("lazy fan-out");
+        assert_eq!(outcome.status, "accepted");
+
+        let report: TypedChildReport =
+            serde_json::from_str(&outcome.report_json).expect("worker typed report");
+        let output: serde_json::Value =
+            serde_json::from_str(report.output_data.as_deref().expect("output data"))
+                .expect("output json");
+        assert_eq!(output["spawned_subagents"], json!(3));
+        assert_eq!(output["planned_ceiling"], json!(8));
+        assert_eq!(output["extensions_granted"], json!(0));
+        assert_eq!(output["lazy_waiting"], json!(2));
+        let children = output["delegated_children"]
+            .as_array()
+            .expect("delegated children");
+        assert_eq!(children.len(), 3);
+        assert_eq!(children[0]["child_task_id"], json!("run-1:worker:hop2"));
+        assert_eq!(children[2]["child_task_id"], json!("run-1:worker:hop2-3"));
+
+        let worker_projection = journal
+            .replay(0, 1024)
+            .await
+            .expect("journal replay")
+            .into_iter()
+            .filter(|record| record.event_type == "child.workflow")
+            .filter_map(|record| serde_json::from_slice::<ChildProjection>(&record.payload).ok())
+            .filter(|projection| {
+                projection.child_task_id == "run-1:worker"
+                    && projection.state == CoordinatorState::Accepted
+            })
+            .last()
+            .expect("accepted worker projection");
+        assert_eq!(worker_projection.spawned_subagents, 3);
+        assert_eq!(worker_projection.planned_ceiling, 8);
+        assert_eq!(worker_projection.lazy_waiting, 2);
+        assert!(!worker_projection.extension_requested);
+        assert_eq!(worker_projection.in_flight_subagents, 0);
+    }
+
+    #[tokio::test]
+    async fn a_worker_stops_at_the_ceiling_when_the_queen_declines_the_extension() {
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal.clone(), workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())))
+            .with_delegation_policy(DelegationProgressPolicy::StopAfter(5));
+
+        let outcome = executor
+            .run(&worker_with_ceiling(2, 16))
+            .await
+            .expect("ceilings stop the fan-out");
+        assert_eq!(outcome.status, "accepted");
+
+        let report: TypedChildReport =
+            serde_json::from_str(&outcome.report_json).expect("worker typed report");
+        let output: serde_json::Value =
+            serde_json::from_str(report.output_data.as_deref().expect("output data"))
+                .expect("output json");
+        assert_eq!(output["spawned_subagents"], json!(2));
+        assert_eq!(output["planned_ceiling"], json!(2));
+        assert_eq!(output["extensions_granted"], json!(0));
+        // The default queen authority declined: the worker is not waiting.
+        assert_eq!(output["extension_requested"], json!(false));
+        assert_eq!(
+            output["delegated_children"]
+                .as_array()
+                .expect("delegated children")
+                .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn a_queen_can_extend_the_ceiling_from_two_to_five() {
+        use crate::lazy_delegation::{extend_delegation, DelegationExtensionRequest};
+
+        struct QueenExtendsToFive;
+        impl DelegationAuthority for QueenExtendsToFive {
+            fn decide_extension(
+                &self,
+                request: &DelegationExtensionRequest,
+                grant: &DelegationGrant,
+                settings: &HiveSettings,
+                workflow_spawned: u32,
+            ) -> Result<Option<QueenDelegationExtension>, ContractError> {
+                let widened = DelegationExtensionRequest::new(
+                    request.child_task_id.clone(),
+                    request.parent_task_id.clone(),
+                    request.current_ceiling,
+                    5,
+                    request.spawned,
+                    "queen widens the ceiling once",
+                )?;
+                extend_delegation(grant, &widened, settings, workflow_spawned).map(Some)
+            }
+        }
+
+        let (journal, _database_dir) = journal();
+        let workspace = workspace_with_file();
+        let executor = RegisteredChildExecutor::new(journal.clone(), workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())))
+            .with_delegation_authority(Arc::new(QueenExtendsToFive))
+            .with_delegation_policy(DelegationProgressPolicy::StopAfter(5));
+
+        let outcome = executor
+            .run(&worker_with_ceiling(2, 16))
+            .await
+            .expect("queen extension");
+        assert_eq!(outcome.status, "accepted");
+
+        let report: TypedChildReport =
+            serde_json::from_str(&outcome.report_json).expect("worker typed report");
+        let output: serde_json::Value =
+            serde_json::from_str(report.output_data.as_deref().expect("output data"))
+                .expect("output json");
+        assert_eq!(output["spawned_subagents"], json!(5));
+        assert_eq!(output["planned_ceiling"], json!(5));
+        assert_eq!(output["extensions_granted"], json!(1));
+        let children = output["delegated_children"]
+            .as_array()
+            .expect("delegated children");
+        assert_eq!(children.len(), 5);
+        assert_eq!(children[4]["child_task_id"], json!("run-1:worker:hop2-5"));
+    }
+
+    #[tokio::test]
+    async fn the_workflow_guard_stops_fan_out_across_workers() {
+        let (journal, _database_dir) = journal();
+        let settings = HiveSettings {
+            max_subagents_per_worker: 8,
+            max_parallel_subagents: 4,
+            max_total_subagents_per_workflow: 4,
+            ..HiveSettings::default()
+        };
+        journal
+            .save_hive_settings(&settings)
+            .await
+            .expect("persist hive settings");
+        let workspace = workspace_with_file();
+        // Another worker already spent two of the four workflow-wide slots.
+        let counter = Arc::new(AtomicU32::new(2));
+        let executor = RegisteredChildExecutor::new(journal.clone(), workspace.path())
+            .with_tools(Some(Arc::new(ToolRegistry::bootstrap())))
+            .with_delegation_policy(DelegationProgressPolicy::StopAfter(5))
+            .with_workflow_subagent_counter(Arc::clone(&counter));
+
+        let outcome = executor
+            .run(&worker_with_ceiling(4, 16))
+            .await
+            .expect("guarded fan-out");
+        assert_eq!(outcome.status, "accepted");
+        assert_eq!(counter.load(Ordering::Relaxed), 4);
+
+        let report: TypedChildReport =
+            serde_json::from_str(&outcome.report_json).expect("worker typed report");
+        let output: serde_json::Value =
+            serde_json::from_str(report.output_data.as_deref().expect("output data"))
+                .expect("output json");
+        assert_eq!(output["spawned_subagents"], json!(2));
+        assert_eq!(output["planned_ceiling"], json!(2));
+    }
+
+    #[tokio::test]
     async fn a_worker_without_a_delegation_grant_cannot_spawn_hop_two() {
         let (journal, _database_dir) = journal();
         let workspace = workspace_with_file();
@@ -1836,7 +2290,8 @@ mod tests {
             sources: Vec::new(),
             errors: Vec::new(),
             successful_calls,
-            delegated: None,
+            delegated: Vec::new(),
+            lazy: LazyDelegationSnapshot::default(),
         }
     }
 
@@ -1866,7 +2321,7 @@ mod tests {
             true,
         );
         let nested = crate::child_execution_context::scope(context, async {
-            delegated_request(&hop1, &grant, &remaining)
+            delegated_request(&hop1, &grant, &remaining, &remaining, 1)
         })
         .await
         .expect("subset delegation");
@@ -1902,6 +2357,8 @@ mod tests {
                 &hop1,
                 &delegation_grant(&["workspace.write"], None),
                 &remaining,
+                &remaining,
+                1,
             )
         })
         .await
@@ -1921,6 +2378,8 @@ mod tests {
                     ),
                 ),
                 &remaining,
+                &remaining,
+                1,
             )
         })
         .await
@@ -1951,7 +2410,7 @@ mod tests {
                 true,
             );
             let nested = crate::child_execution_context::scope(context.clone(), async {
-                delegated_request(&hop1, &grant, &remaining)
+                delegated_request(&hop1, &grant, &remaining, &remaining, 1)
             })
             .await
             .expect("contract shape is built before the runtime policy check");

@@ -105,6 +105,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     &typed_report,
                     None,
                     task_memory::now_millis() as i64,
+                    crate::lazy_delegation::LazyDelegationSnapshot::default(),
                 )
                 .await
                 .map_err(|error| error.message().to_owned())?;
@@ -323,7 +324,12 @@ mod tests {
         .expect("sources")
         .with_confidence(90);
         executor
-            .record_accepted_report(&request, &report, None)
+            .record_accepted_report(
+                &request,
+                &report,
+                None,
+                crate::lazy_delegation::LazyDelegationSnapshot::default(),
+            )
             .await
             .expect("executor accepted report");
 

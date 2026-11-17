@@ -223,6 +223,7 @@ pub(crate) mod github_public_repository;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
+pub mod hive_settings;
 pub mod host_resource_telemetry;
 pub mod human_work_items;
 pub(crate) mod incremental_change_protocol;
@@ -232,6 +233,7 @@ pub(crate) mod invocation_presets;
 /// Exposes the kernel's capability registry facade.
 pub mod kernel_capability_facade;
 pub mod language_intelligence_runtime;
+pub mod lazy_delegation;
 #[cfg(windows)]
 mod listener_pipe;
 pub mod local_model_performance_calibration;

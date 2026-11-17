@@ -74,6 +74,12 @@ pub const DEFAULT_MAX_REVISIONS: u32 = 2;
 /// one sub-agent (`depth = 2`). A sub-agent at [`MAX_CHILD_DEPTH`] can never
 /// delegate again: there is no depth 3.
 pub const MAX_CHILD_DEPTH: u8 = 2;
+/// Hard implementation bound for a single delegation grant ceiling.
+///
+/// [`crate::hive_settings::HiveSettings`] normally applies a much smaller
+/// product ceiling; this constant only stops corrupt or hostile payloads from
+/// carrying an unbounded fan-out request.
+pub const MAX_DELEGATION_CHILDREN: u32 = 256;
 /// Current major and minor version of child-task contracts.
 pub const CONTRACT_VERSION: ContractVersion = ContractVersion { major: 1, minor: 0 };
 
@@ -358,23 +364,38 @@ impl ChildBudget {
 /// delegation flag so depth 3 is impossible.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DelegationGrant {
-    /// Role assigned to the single permitted sub-agent.
+    /// Role assigned to the permitted sub-agents.
     pub role: String,
-    /// Bounded purpose of the one extra hop.
+    /// Bounded purpose shared by the permitted sub-agents.
     pub purpose: String,
-    /// Grants the worker may pass to the sub-agent; must be a subset of the
+    /// Grants the worker may pass to a sub-agent; must be a subset of the
     /// worker's grants.
     pub grants: Vec<Grant>,
     /// Read-only capabilities requested for the sub-agent.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requested_capabilities: Vec<String>,
-    /// Optional budget ceiling for the sub-agent. It must fit inside the
-    /// worker's remaining budget; when omitted, the remainder itself is used.
+    /// Optional budget ceiling for each sub-agent. It must fit inside the
+    /// worker's remaining budget; when omitted, a deterministic share of the
+    /// worker remainder is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget: Option<ChildBudget>,
     /// Optional acceptance criteria forwarded to the sub-agent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acceptance_criteria: Option<String>,
+    /// Upper ceiling of sub-agents the worker may spawn lazily.
+    ///
+    /// This is a safety ceiling chosen by the queen for the task, not a plan:
+    /// the worker starts one sub-agent at a time and may stop earlier. The
+    /// default of one preserves the legacy single-hop contract for older
+    /// payloads. `max_children` must be positive and is additionally bounded
+    /// by [`crate::hive_settings::HiveSettings`] at execution time.
+    #[serde(default = "default_delegation_max_children")]
+    pub max_children: u32,
+}
+
+/// Legacy default for a delegation grant without an explicit ceiling.
+fn default_delegation_max_children() -> u32 {
+    1
 }
 
 impl DelegationGrant {
@@ -389,6 +410,12 @@ impl DelegationGrant {
     ) -> Result<(), ContractError> {
         validate_text("delegation.role", &self.role, MAX_ROLE_CHARS, true)?;
         validate_text("delegation.purpose", &self.purpose, MAX_PURPOSE_CHARS, true)?;
+        if self.max_children == 0 {
+            return Err(ContractError::InvalidDelegationCeiling(0));
+        }
+        if self.max_children > MAX_DELEGATION_CHILDREN {
+            return Err(ContractError::InvalidDelegationCeiling(self.max_children));
+        }
         if self.grants.len() > MAX_GRANTS {
             return Err(ContractError::TooManyItems {
                 field: "delegation.grants",
@@ -420,6 +447,17 @@ impl DelegationGrant {
             )?;
         }
         Ok(())
+    }
+
+    /// Sets the queen-authored sub-agent ceiling for this grant.
+    ///
+    /// The value is a ceiling, not a target. A worker may spawn fewer
+    /// sub-agents and may stop as soon as the task is solved. A value of zero
+    /// or one above [`MAX_DELEGATION_CHILDREN`] is rejected by
+    /// [`Self::validate`] instead of being silently clamped.
+    pub fn with_max_children(mut self, max_children: u32) -> Self {
+        self.max_children = max_children;
+        self
     }
 }
 
@@ -1582,6 +1620,51 @@ pub enum ContractError {
     ChildDepthExceeded,
     /// A child worker tried to delegate without a queen-issued grant.
     DelegationNotGranted,
+    /// A delegation grant carried a zero or out-of-range ceiling.
+    InvalidDelegationCeiling(u32),
+    /// A worker tried to spawn more sub-agents than its ceiling allows.
+    DelegationCeilingExceeded {
+        /// Sub-agents already spawned by the worker.
+        spawned: u32,
+        /// Queen-authored ceiling.
+        ceiling: u32,
+    },
+    /// A queen-authored ceiling exceeds the hive safety ceiling.
+    DelegationCeilingAboveHiveLimit {
+        /// Requested ceiling.
+        requested: u32,
+        /// Effective hive limit.
+        limit: u32,
+    },
+    /// The workflow-wide sub-agent guard would be exceeded.
+    DelegationWorkflowGuardExceeded,
+    /// The worker tried to keep more sub-agents in flight than allowed.
+    DelegationParallelLimitExceeded {
+        /// Sub-agents currently in flight.
+        in_flight: u32,
+        /// Effective parallel limit.
+        limit: u32,
+    },
+    /// The worker remainder cannot finance another sub-agent.
+    DelegationBudgetExhausted,
+    /// A worker tried to widen its own ceiling instead of asking the queen.
+    DelegationExtensionNotAllowed,
+    /// A delegation extension did not increase the ceiling.
+    DelegationExtensionNotIncreasing {
+        /// Current ceiling.
+        current: u32,
+        /// Requested ceiling.
+        requested: u32,
+    },
+    /// An extension was evaluated against a different ceiling than it names.
+    DelegationCeilingMismatch {
+        /// Ceiling named by the worker request.
+        expected: u32,
+        /// Ceiling currently in force.
+        actual: u32,
+    },
+    /// Hive safety settings rejected the delegation decision.
+    HiveSettingsRejected(String),
 
     // Grant errors
     /// A requested grant exceeds the parent grant.
@@ -1654,6 +1737,41 @@ impl fmt::Display for ContractError {
                 f,
                 "nested delegation requires a queen-issued delegation grant"
             ),
+            Self::InvalidDelegationCeiling(value) => {
+                write!(f, "invalid delegation ceiling: {value}")
+            }
+            Self::DelegationCeilingExceeded { spawned, ceiling } => write!(
+                f,
+                "worker already spawned {spawned} sub-agents, ceiling is {ceiling}"
+            ),
+            Self::DelegationCeilingAboveHiveLimit { requested, limit } => write!(
+                f,
+                "delegation ceiling {requested} exceeds hive limit {limit}"
+            ),
+            Self::DelegationWorkflowGuardExceeded => {
+                write!(f, "workflow-wide sub-agent guard would be exceeded")
+            }
+            Self::DelegationParallelLimitExceeded { in_flight, limit } => write!(
+                f,
+                "worker has {in_flight} sub-agents in flight, limit is {limit}"
+            ),
+            Self::DelegationBudgetExhausted => {
+                write!(f, "worker budget cannot finance another sub-agent")
+            }
+            Self::DelegationExtensionNotAllowed => {
+                write!(f, "only the queen may extend a delegation ceiling")
+            }
+            Self::DelegationExtensionNotIncreasing { current, requested } => write!(
+                f,
+                "delegation extension {requested} does not increase ceiling {current}"
+            ),
+            Self::DelegationCeilingMismatch { expected, actual } => write!(
+                f,
+                "delegation extension names ceiling {expected}, current ceiling is {actual}"
+            ),
+            Self::HiveSettingsRejected(message) => {
+                write!(f, "hive settings rejected delegation: {message}")
+            }
             Self::GrantEscalation { grant } => {
                 write!(f, "grant escalation detected: {grant}")
             }
@@ -1892,6 +2010,7 @@ mod tests {
             requested_capabilities: vec!["workspace.read".into()],
             budget: Some(ChildBudget::new().with_tokens(2_000).with_tool_calls(2)),
             acceptance_criteria: None,
+            max_children: 2,
         };
         assert!(request.clone().with_delegation(grant.clone()).is_ok());
 

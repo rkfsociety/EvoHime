@@ -2400,8 +2400,7 @@ impl ToolAgent {
                         escalation_remaining.insert(call.name.clone(), 2);
                     }
                 }
-                let mutated =
-                    outcome.ok && DELIVERY_MUTATION_TOOLS.contains(&call.name.as_str());
+                let mutated = outcome.ok && DELIVERY_MUTATION_TOOLS.contains(&call.name.as_str());
                 mutation_done |= mutated;
                 let committed = outcome.ok && call.name == DELIVERY_COMMIT_TOOL;
                 if mutated || committed {

@@ -186,13 +186,14 @@ deadline, boot id и holder process id. Transport retry ограничен тр�
 offload запрещён. Чтение artifact каждый раз проверяет текущую parent chain,
 scope grant и выбранный context, поэтому renderer не получает raw transcript.
 `OperationsPanel` отображает typed projection timeline (role, state, revision,
-budget, lease, reason, dead-letter) и глубину child-задачи (`depth=1` для
-рабочего, `depth=2` для единственного подагента), отделяя trace projection от
-audit.
+budget, lease, reason, dead-letter), глубину child-задачи (`depth=1` для
+рабочего, `depth=2` для подагентов) и состояние ленивого fan-out
+(`подагенты N / M`, число ожиданий отчёта, «в работе», «ожидает решения»,
+«расширение grant'а запрошено»), отделяя trace projection от audit.
 
 Глубина child nesting ограничена явной константой `MAX_CHILD_DEPTH = 2`:
-королева делегирует рабочему (`depth = 1`), а рабочий может породить ровно
-одного подагента (`depth = 2`). Подагент уровня 2 не может порождать детей:
+королева делегирует рабочему (`depth = 1`), а рабочий может порождать
+подагентов (`depth = 2`). Подагент уровня 2 не может порождать детей:
 `ChildDepthExceeded` возвращается раньше любой capability-проверки. Глубина 3
 и больше запрещена. `NestedChildForbidden` не снят глобально: он остаётся для
 вложенного запроса без действующего runtime-контекста и для legacy-пути,
@@ -200,17 +201,47 @@ audit.
 
 Один дополнительный hop разрешается только явным delegation grant, выданным
 королевой в исходном `TypedChildTaskRequest` (`DelegationGrant`: роль,
-purpose, grants, бюджет и acceptance criteria). Рабочий не может расширить
-grant или синтезировать новый: executor берёт только исходный grant, проверяет
-`grants ⊆ grants рабочего`, бюджет как остаток рабочего после его собственных
-read-only вызовов и очищает delegation у подагента. Без grant попытка
-вложенного запуска отклоняется типизированной ошибкой
-`delegation_not_granted`. Рабочий порождает ровно одного подагента
-последовательно (`await`), без параллельного fan-out нескольких детей;
-`BoundedTaskGroup` продолжает ограничивать общий пул. Fan-in двухуровневый:
-рабочий принимает accepted `TypedChildReport` подагента, объединяет bounded
-findings/sources с собственным отчётом и возвращает агрегированный отчёт
-королеве через тот же `child_workflow` writer.
+purpose, grants, бюджет, acceptance criteria и `max_children`).
+`max_children` — потолок, а не план: королева выбирает его по форме задачи
+(явное решение или детерминированная эвристика
+`HiveSettings::choose_delegation_ceiling` от длины цели, числа context items и
+независимых областей), а рабочий порождает подагентов по требованию —
+запускает одного, ждёт accepted report, оценивает прогресс по
+`DelegationProgressPolicy` и либо завершается раньше потолка с
+неиспользованным бюджетом, либо запускает следующего. Одновременно в работе не
+больше `max_parallel_subagents`, поэтому несколько детей идут только в этих
+границах.
+
+Рабочий не может расширить grant или синтезировать новый: executor берёт
+только исходный grant, проверяет `grants ⊆ grants рабочего` на каждом spawn,
+выделяет подагенту детерминированную долю остатка
+(`remaining / max(1, slots_left)` с нижней границей 1), возвращает
+неиспользованное время после отчёта и очищает delegation у подагента. Без
+grant попытка вложенного запуска отклоняется типизированной ошибкой
+`delegation_not_granted`. Когда потолок исчерпан, а подзадачи остались, рабочий
+формирует `DelegationExtensionRequest`; увеличить потолок может только
+queen-side `lazy_delegation::extend_delegation` и только в пределах
+`HiveSettings`. Отказ королевы (`DelegationAuthority`, по умолчанию
+`DenyDelegationExtensions`) завершает fan-out частичным результатом, а
+`LazyDelegationState::extend_ceiling` всегда возвращает
+`DelegationExtensionNotAllowed`. `BoundedTaskGroup` продолжает ограничивать
+общий пул. Fan-in двухуровневый: рабочий принимает accepted
+`TypedChildReport` каждого подагента, объединяет bounded findings/sources с
+собственным отчётом и возвращает агрегированный отчёт королеве через тот же
+`child_workflow` writer.
+
+`HiveSettings` (`hive_settings.rs`, scope `hive` в существующем
+`schema_agent_configurations`) — жёсткий страховочный потолок, а не план
+порождения: per-worker 16, parallel 4, workflow-wide 64. Превышение
+отклоняется (`DelegationCeilingAboveHiveLimit`,
+`DelegationWorkflowGuardExceeded`), но дефолт никогда не означает «породи
+столько». `0` для per-worker и parallel означает «без отдельного потолка»
+(действует workflow guard), а `max_total_subagents_per_workflow = 0`
+недопустим. Ceiling и счётчики принадлежат состоянию рабочего, а не UI:
+`ChildProjection` несёт `spawned_subagents`, `planned_ceiling`,
+`extensions_granted`, `lazy_waiting`, `in_flight_subagents` и
+`extension_requested`; старые projection без этих полей воспроизводятся с
+нулями.
 
 Поле `parent_is_child` само по себе — утверждение вызывающей стороны, а не
 доказательство. Доверие к нему проверяется по runtime-маркеру
@@ -299,10 +330,13 @@ Core предоставляет агенту закрытые инструмен
 пишутся общим `child_workflow`-writer'ом, который использует и legacy IPC. Отчёт
 проходит `Validating → WaitingParentAcceptance → Accepted`, сохраняется в child
 store и попадает в fan-in как типизированный `TypedChildReport`; отдельного agent
-loop, dispatch path или board не появляется. Один дополнительный
+loop, dispatch path или board не появляется. Дополнительный
 делегированный hop разрешён только при queen-issued `DelegationGrant` и
-глубине не больше `MAX_CHILD_DEPTH = 2`; глубина 3, параллельный fan-out от
-рабочего и self-spawn невозможны. `NodeType::Subgraph` остаётся статическим
+глубине не больше `MAX_CHILD_DEPTH = 2`; потолок `max_children` выбирает
+королева, рабочий порождает подагентов лениво в пределах этого потолка и
+`HiveSettings`, параллельно не больше `max_parallel_subagents`. Глубина 3,
+self-spawn и расширение потолка самим рабочим невозможны. `NodeType::Subgraph`
+остаётся статическим
 разворачиванием графа до старта. Произвольное редактирование графов через агентские инструменты не
 разрешено. Доступ к durable run и отмене каждый раз ограничен каноническим путём
 текущего workspace, а фоновые драйверы используют общий ограниченный пул задач.

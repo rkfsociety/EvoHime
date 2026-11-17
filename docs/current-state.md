@@ -459,19 +459,28 @@ Core pipe работает fail-closed: отсутствие authenticated conte
 timeline `child.workflow` со статусом роли и кратким отчётом, без prompt и сырого
 вывода инструментов. Run status и cancel доступны только из workspace, в котором
 запуск был создан. Глубина child nesting ограничена `MAX_CHILD_DEPTH = 2`:
-королева → рабочий (`depth=1`) и ровно один подагент рабочего (`depth=2`).
-Подагент уровня 2 не может порождать детей (`child_depth_exceeded`), глубина 3
-и больше запрещена, а параллельный fan-out от рабочего не используется.
-Дополнительный hop разрешён только queen-issued `DelegationGrant`; без grant
-попытка отклоняется как `delegation_not_granted`, grants подагента обязаны быть
-подмножеством grants рабочего, а бюджет — остатком бюджета рабочего.
+королева → рабочий (`depth=1`) и подагенты рабочего (`depth=2`). Подагент
+уровня 2 не может порождать детей (`child_depth_exceeded`), глубина 3 и больше
+запрещена. Дополнительный hop разрешён только queen-issued `DelegationGrant`;
+без grant попытка отклоняется как `delegation_not_granted`, grants подагента
+обязаны быть подмножеством grants рабочего, а бюджет — долей остатка бюджета
+рабочего. `DelegationGrant.max_children` — потолок, а не план: рабочий порождает
+подагентов лениво, по одному, ждёт отчёт и останавливается досрочно при
+решённой задаче, возвращая неиспользованное время; одновременно в работе не
+больше `max_parallel_subagents`. Потолок выбирает королева (явно или
+эвристикой `HiveSettings::choose_delegation_ceiling`), а расширить его может
+только queen-side `extend_delegation` по запросу рабочего и в пределах
+`HiveSettings` (16/4/64 по умолчанию; `0` — без отдельного потолка для
+per-worker и parallel, workflow-wide guard обязан быть положительным).
 `parent_is_child` проверяется не только как поле запроса: executor
 устанавливает runtime-маркер `ChildExecutionContext` с глубиной вокруг
 воркера, поэтому claim без маркера отклоняется как `child_context_missing`, а
 `depth` нельзя подделать из IPC или legacy-команды. `NestedChildForbidden`
 сохраняется для недопустимой вложенности и legacy-пути без grant.
-`OperationsPanel` показывает `depth=1`/`depth=2` и отдельный статус подагента
-в существующем child timeline, без нового agent loop или панели.
+`OperationsPanel` показывает `depth=1`/`depth=2`, отдельный статус подагента и
+ленивый fan-out (`подагенты N / M`, ожидания, «в работе», «ожидает решения»,
+«расширение grant'а запрошено») в существующем child timeline, без нового
+agent loop или панели.
 Executor и legacy `SubmitChildRequest`/`SubmitChildReport` используют один
 `child_workflow` writer для checkpoint, projection, accepted report и handoff —
 одинаковый отчёт даёт одинаковые структуры независимо от пути. TeamSession

@@ -17,8 +17,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::workflow::{
-    ChildActionProfile, NodeBudget, NodeType, Port, PortType, WorkflowEdge, WorkflowGraph,
-    WorkflowNode, MAX_FRESHNESS_MS, MAX_GRAPH_NODES,
+    ChildActionProfile, ChildDelegationPolicy, NodeBudget, NodeType, Port, PortType, WorkflowEdge,
+    WorkflowGraph, WorkflowNode, MAX_FRESHNESS_MS, MAX_GRAPH_NODES,
 };
 
 /// Переменная окружения host allowlist, которую уже использует Core-owned
@@ -930,8 +930,8 @@ fn bootstrap_blocks() -> Vec<BlockDescriptor> {
 mod tests {
     use super::*;
     use crate::workflow::{
-        ApprovalPolicy, CancellationPolicy, ChildActionProfile, ExecutionPolicy, McpActionProfile,
-        RetryPolicy, WorkflowBudget, WORKFLOW_CONTRACT_VERSION,
+        ApprovalPolicy, CancellationPolicy, ChildActionProfile, ChildDelegationPolicy,
+        ExecutionPolicy, McpActionProfile, RetryPolicy, WorkflowBudget, WORKFLOW_CONTRACT_VERSION,
     };
 
     fn policy() -> ExecutionPolicy {
@@ -1070,6 +1070,7 @@ mod tests {
                         max_tool_calls: 5,
                     },
                     max_revisions: 1,
+                    delegation: ChildDelegationPolicy::default(),
                 },
             },
             policy(),

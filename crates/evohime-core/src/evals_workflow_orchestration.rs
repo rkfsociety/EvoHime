@@ -1,9 +1,9 @@
 use super::*;
 
 use crate::workflow::{
-    BatchPolicy, ChildActionProfile, ConcurrencyClass, ContextProviderProfile, FailurePolicy,
-    JoinMode, McpActionProfile, NodeAcceptance, NodeBudget, NodeType, WorkflowBudget,
-    WORKFLOW_CONTRACT_VERSION,
+    BatchPolicy, ChildActionProfile, ChildDelegationPolicy, ConcurrencyClass,
+    ContextProviderProfile, FailurePolicy, JoinMode, McpActionProfile, NodeAcceptance, NodeBudget,
+    NodeType, WorkflowBudget, WORKFLOW_CONTRACT_VERSION,
 };
 use crate::workflow_registry::{
     BindingError, ContextProviderEntry, ContextSourceKind, McpServerEntry, McpTransport,
@@ -558,6 +558,7 @@ pub fn escalation_and_unbounded_shapes_are_rejected_before_any_effect() -> Resul
                     max_tool_calls: 10_000,
                 },
                 max_revisions: 1,
+                delegation: crate::workflow::ChildDelegationPolicy::default(),
             },
         },
         policy(),

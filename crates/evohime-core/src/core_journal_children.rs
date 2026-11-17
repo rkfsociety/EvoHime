@@ -252,4 +252,70 @@ impl EventJournal {
             .upsert_project_policy(project_id, &policy_json, expected_version)
             .map_err(|error| error.to_string())
     }
+
+    /// Loads the persisted hive safety ceiling, or the defaults when unset.
+    ///
+    /// The read-API validates the stored snapshot on the way out: a corrupt or
+    /// out-of-range value is reported instead of silently widening the
+    /// sub-agent ceiling. Callers never receive a partially valid ceiling.
+    ///
+    /// # Errors
+    ///
+    /// Returns a storage or validation error string.
+    pub async fn hive_settings(&self) -> Result<crate::hive_settings::HiveSettings, String> {
+        let database = self.database.lock().await;
+        let stored = evohime_local_storage::schema_driven_agent_configuration_store::load(
+            database.connection(),
+            crate::hive_settings::HIVE_SETTINGS_SCOPE,
+        )
+        .map_err(|error| error.to_string())?;
+        match stored {
+            Some((_schema, snapshot, _revision)) => {
+                crate::hive_settings::HiveSettings::from_json(&snapshot)
+                    .map_err(|error| error.to_string())
+            }
+            None => Ok(crate::hive_settings::HiveSettings::default()),
+        }
+    }
+
+    /// Validates and persists the hive safety ceiling.
+    ///
+    /// Returns the new optimistic revision. A concurrent writer that changed
+    /// the stored revision first makes the save fail rather than last-write-win.
+    ///
+    /// # Errors
+    ///
+    /// Returns a validation, revision-conflict, or storage error string.
+    pub async fn save_hive_settings(
+        &self,
+        settings: &crate::hive_settings::HiveSettings,
+    ) -> Result<u64, String> {
+        settings.validate().map_err(|error| error.to_string())?;
+        let schema = crate::hive_settings::HiveSettings::schema_json();
+        let snapshot = settings.to_json().map_err(|error| error.to_string())?;
+        let now = crate::task_memory::now_millis() as i64;
+        let database = self.database.lock().await;
+        let current = evohime_local_storage::schema_driven_agent_configuration_store::load(
+            database.connection(),
+            crate::hive_settings::HIVE_SETTINGS_SCOPE,
+        )
+        .map_err(|error| error.to_string())?
+        .map(|(_, _, revision)| revision)
+        .unwrap_or(0);
+        let next = current.saturating_add(1);
+        let saved = evohime_local_storage::schema_driven_agent_configuration_store::save(
+            database.connection(),
+            crate::hive_settings::HIVE_SETTINGS_SCOPE,
+            &schema,
+            &snapshot,
+            next,
+            now,
+            current,
+        )
+        .map_err(|error| error.to_string())?;
+        if !saved {
+            return Err("hive settings revision conflict".to_string());
+        }
+        Ok(next)
+    }
 }

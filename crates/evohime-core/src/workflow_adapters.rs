@@ -16,7 +16,7 @@
 //! registry, что и обычные инструменты.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicU32, Arc};
 
 use serde_json::{json, Value};
 
@@ -93,6 +93,7 @@ pub struct CoreNodeAdapter {
     task_id: uuid::Uuid,
     session_id: Option<uuid::Uuid>,
     child_executor: Option<Arc<dyn ChildExecutor>>,
+    workflow_subagents: Arc<AtomicU32>,
     simulation:
         Option<Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>>,
     simulation_mode: Option<crate::tool_simulation_runtime::ToolSimulationMode>,
@@ -118,6 +119,7 @@ impl CoreNodeAdapter {
             task_id: uuid::Uuid::new_v4(),
             session_id: None,
             child_executor: None,
+            workflow_subagents: Arc::new(AtomicU32::new(0)),
             simulation: None,
             simulation_mode: None,
         }
@@ -487,7 +489,10 @@ impl NodeAdapter for CoreNodeAdapter {
                     "подграф обязан быть развёрнут до запуска",
                 )),
                 NodeType::Child { child } => {
-                    let request = self.build_child_request(&invocation, child)?;
+                    let settings = self.journal.hive_settings().await.map_err(|error| {
+                        NodeError::transient("hive_settings_unavailable", error)
+                    })?;
+                    let request = self.build_child_request(&invocation, child, &settings)?;
                     let executor = match &self.child_executor {
                         Some(executor) => Arc::clone(executor),
                         None => Arc::new(
@@ -499,7 +504,8 @@ impl NodeAdapter for CoreNodeAdapter {
                             .with_parent_capabilities(
                                 invocation.parent.grants.iter().cloned(),
                                 Some(invocation.parent.budget),
-                            ),
+                            )
+                            .with_workflow_subagent_counter(Arc::clone(&self.workflow_subagents)),
                         ),
                     };
                     let outcome = executor.run(&request).await?;
@@ -542,9 +548,10 @@ impl CoreNodeAdapter {
         &self,
         invocation: &NodeInvocation<'_>,
         child: &crate::workflow::ChildActionProfile,
+        settings: &crate::hive_settings::HiveSettings,
     ) -> Result<crate::child_contracts::TypedChildTaskRequest, NodeError> {
         use crate::child_contracts::{
-            ChildBudget, CorrelationContext, CorrelationId, Grant, Schema,
+            ChildBudget, CorrelationContext, CorrelationId, DelegationGrant, Grant, Schema,
         };
 
         let child_id = CorrelationId::new(format!(
@@ -625,6 +632,45 @@ impl CoreNodeAdapter {
             request = request.with_output_schema(schema);
         }
         request = request.with_max_revisions(child.max_revisions);
+        // Queen decision for this child: may it spawn read-only sub-agents, and
+        // up to which ceiling? An explicit value is a hard request that the hive
+        // guard may reject; an omitted value lets Core pick a bounded ceiling
+        // from the task shape. The ceiling is never a spawn plan.
+        if child.delegation.enabled {
+            let ceiling = match child.delegation.max_children {
+                Some(requested) => settings.ensure_worker_ceiling(requested).map_err(|error| {
+                    NodeError::permanent("child_delegation_ceiling_rejected", error.to_string())
+                })?,
+                None => {
+                    settings.choose_delegation_ceiling(crate::hive_settings::DelegationComplexity {
+                        goal_chars: child.goal.chars().count(),
+                        context_items: child.context_allowlist.len(),
+                        grant_count: child.grants.len(),
+                        independent_areas: child.grants.len() as u32,
+                    })
+                }
+            };
+            let grant = DelegationGrant {
+                role: child.role.clone(),
+                purpose: child
+                    .goal
+                    .chars()
+                    .take(crate::child_contracts::MAX_PURPOSE_CHARS)
+                    .collect(),
+                grants: request.grants.clone(),
+                requested_capabilities: request.requested_capabilities.clone(),
+                // The living wallet is the worker remainder: the spawn reserves a
+                // deterministic share of it, so the grant never repeats the whole
+                // worker budget (that would fail the subset check after the worker
+                // spent time on its own tool calls).
+                budget: None,
+                acceptance_criteria: None,
+                max_children: ceiling,
+            };
+            request = request.with_delegation(grant).map_err(|error| {
+                NodeError::permanent("invalid_child_delegation", error.to_string())
+            })?;
+        }
         // Вложенная делегация невозможна: узел workflow никогда не объявляет
         // себя child, поэтому дочерний запрос не может породить собственный.
         request.parent_is_child = false;
@@ -782,8 +828,9 @@ fn summarize_inputs(inputs: &BTreeMap<String, Value>) -> String {
 mod tests {
     use super::*;
     use crate::workflow::{
-        ApprovalPolicy, CancellationPolicy, ChildActionProfile, ExecutionPolicy, McpActionProfile,
-        NodeBudget, NodeExecutionContext, RetryPolicy, ToolActionProfile, WorkflowNode,
+        ApprovalPolicy, CancellationPolicy, ChildActionProfile, ChildDelegationPolicy,
+        ExecutionPolicy, McpActionProfile, NodeBudget, NodeExecutionContext, RetryPolicy,
+        ToolActionProfile, WorkflowNode,
     };
     use crate::workflow_registry::{ParentCapabilities, WorkflowRegistry};
     use std::collections::BTreeSet;
@@ -988,6 +1035,7 @@ mod tests {
                     grants: vec!["fs.write".into()],
                     budget: NodeBudget::default(),
                     max_revisions: 1,
+                    delegation: ChildDelegationPolicy::default(),
                 },
             },
             policy(),
@@ -1021,6 +1069,7 @@ mod tests {
                     grants: vec!["fs.read".into()],
                     budget: NodeBudget::default(),
                     max_revisions: 1,
+                    delegation: ChildDelegationPolicy::default(),
                 },
             },
             policy(),
@@ -1031,6 +1080,102 @@ mod tests {
             .expect("degraded result");
         assert!(result.degraded);
         assert_eq!(result.status, "degraded");
+    }
+
+    #[tokio::test]
+    async fn a_child_node_with_a_queen_delegation_runs_one_lazy_sub_agent() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        std::fs::write(directory.path().join("main.rs"), "fn main() {}\n").expect("file");
+        let journal = EventJournal::open(directory.path().join("core.db")).expect("journal");
+        let adapter = CoreNodeAdapter::new(journal.clone(), directory.path())
+            .with_tools(Arc::new(ToolRegistry::bootstrap()));
+        let registry = WorkflowRegistry::empty();
+        let parent = ParentCapabilities {
+            grants: BTreeSet::from(["fs.read".to_string()]),
+            budget: NodeBudget::default(),
+            context_allowlist: BTreeSet::new(),
+        };
+        let node = WorkflowNode::new(
+            "child",
+            NodeType::Child {
+                child: ChildActionProfile {
+                    role: "researcher".into(),
+                    goal: "Проверь main.rs".into(),
+                    output_schema: None,
+                    context_allowlist: vec![],
+                    artifact_allowlist: vec![],
+                    grants: vec!["fs.read".into()],
+                    budget: NodeBudget::default(),
+                    max_revisions: 1,
+                    delegation: ChildDelegationPolicy {
+                        enabled: true,
+                        max_children: Some(2),
+                    },
+                },
+            },
+            policy(),
+        );
+        let result = adapter
+            .execute(invocation(&node, &registry, &parent, BTreeMap::new()))
+            .await
+            .expect("delegated child");
+        assert!(!result.degraded);
+        assert_eq!(result.output["report"]["status"], "complete");
+        let output_data = result.output["report"]["output_data"]
+            .as_str()
+            .expect("typed report output data");
+        let output: Value = serde_json::from_str(output_data).expect("output json");
+        assert_eq!(output["planned_ceiling"], json!(2));
+        assert_eq!(output["spawned_subagents"], json!(1));
+        assert_eq!(
+            output["delegated_children"][0]["child_task_id"],
+            json!("run-1:child:hop2")
+        );
+
+        let sub_agent = journal
+            .get_coordinator_checkpoint("run-1:child:hop2")
+            .await
+            .expect("sub-agent checkpoint query")
+            .expect("sub-agent checkpoint");
+        assert_eq!(sub_agent.state, "accepted");
+    }
+
+    #[tokio::test]
+    async fn a_child_node_delegation_ceiling_above_the_hive_guard_is_rejected() {
+        let (adapter, _dir) = adapter();
+        let registry = WorkflowRegistry::empty();
+        let parent = ParentCapabilities {
+            grants: BTreeSet::from(["fs.read".to_string()]),
+            budget: NodeBudget::default(),
+            context_allowlist: BTreeSet::new(),
+        };
+        let node = WorkflowNode::new(
+            "child",
+            NodeType::Child {
+                child: ChildActionProfile {
+                    role: "researcher".into(),
+                    goal: "Проверь main.rs".into(),
+                    output_schema: None,
+                    context_allowlist: vec![],
+                    artifact_allowlist: vec![],
+                    grants: vec!["fs.read".into()],
+                    budget: NodeBudget::default(),
+                    max_revisions: 1,
+                    delegation: ChildDelegationPolicy {
+                        enabled: true,
+                        max_children: Some(
+                            crate::hive_settings::MAX_SUBAGENT_HARD_LIMIT.saturating_add(1),
+                        ),
+                    },
+                },
+            },
+            policy(),
+        );
+        let error = adapter
+            .execute(invocation(&node, &registry, &parent, BTreeMap::new()))
+            .await
+            .expect_err("ceiling above the hive guard");
+        assert_eq!(error.code, "child_delegation_ceiling_rejected");
     }
 
     #[tokio::test]
@@ -1058,6 +1203,7 @@ mod tests {
                     grants: vec!["fs.read".into()],
                     budget: NodeBudget::default(),
                     max_revisions: 1,
+                    delegation: ChildDelegationPolicy::default(),
                 },
             },
             policy(),

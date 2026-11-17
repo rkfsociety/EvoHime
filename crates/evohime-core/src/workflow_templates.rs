@@ -10,9 +10,10 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::workflow::{
-    ApprovalPolicy, CancellationPolicy, ChildActionProfile, ContextProviderProfile,
-    ExecutionPolicy, JoinMode, NodeBudget, NodeType, PortType, RetryPolicy, WorkflowBudget,
-    WorkflowEdge, WorkflowGraph, WorkflowNode, MAX_TEXT_CHARS, WORKFLOW_CONTRACT_VERSION,
+    ApprovalPolicy, CancellationPolicy, ChildActionProfile, ChildDelegationPolicy,
+    ContextProviderProfile, ExecutionPolicy, JoinMode, NodeBudget, NodeType, PortType, RetryPolicy,
+    WorkflowBudget, WorkflowEdge, WorkflowGraph, WorkflowNode, MAX_TEXT_CHARS,
+    WORKFLOW_CONTRACT_VERSION,
 };
 
 pub const MAX_TEMPLATE_INPUTS: usize = 16;
@@ -235,6 +236,7 @@ fn child_node(id: &str, role: &str, goal: &str, approval: bool) -> WorkflowNode 
                 grants: vec!["fs.read".into()],
                 budget: child_budget(),
                 max_revisions: 1,
+                delegation: ChildDelegationPolicy::default(),
             },
         },
         policy(120_000, approval),
