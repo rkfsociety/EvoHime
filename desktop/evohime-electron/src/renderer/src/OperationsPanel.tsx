@@ -1,16 +1,33 @@
 import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, RepairStatus } from '@shared/api'
+import { PROVIDER_KINDS } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderKind, ProviderProfileId, ProviderProfileSummary, ProviderSummary, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
 import { ImageGenerationPanel } from './ImageGenerationPanel'
+import { PROVIDER_PROFILE_LABELS } from './provider-labels'
+import { UiIcon } from './UiIcon'
+import type { UiIconName } from './UiIcon'
 
 interface Props {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
   readonly repair?: RepairStatus | null
+  readonly resolvedApprovalIds?: readonly string[]
+  readonly onApprovalResolved?: (approvalId: string) => void
+}
+
+interface ApprovalRequestView {
+  readonly approvalId: string
+  readonly taskId: string
+  readonly summary: string
+  readonly permission: string
+  readonly scope: string
+  readonly toolName: string
+  /** Оценка стоимости действия из `preview`; `null`, если Core её не дал. */
+  readonly costUsd: number | null
 }
 
 const REPAIR_PROVIDER_LABELS: Record<ChatProviderMode, string> = {
@@ -232,7 +249,7 @@ interface RetainedChildProjection {
 
 /** Normalized, bounded view of Core's `hive_state.snapshot` payload. */
 interface HiveStateView {
-  readonly queen: { readonly status: string; readonly name: string }
+  readonly queen: { readonly status: string; readonly name: string; readonly reason: string; readonly wakeAtMs: number | null }
   readonly metrics: {
     readonly totalAgentsOnline: number
     readonly activeTasks: number
@@ -254,6 +271,21 @@ interface HiveStateView {
   }[]
   readonly taskFlow: { readonly processing: number; readonly analyzing: number; readonly generatingPlan: number }
   readonly limits: { readonly maxSubagentsPerWorker: number; readonly maxParallelSubagents: number }
+  readonly budget: {
+    readonly provider: string
+    readonly historyAvailable: boolean
+    readonly model: string
+    readonly requestsLastMinute: number
+    readonly requestsLastHour: number
+    readonly requestsLastDay: number
+    readonly minuteCap: number
+    readonly hourCap: number
+    readonly dayCap: number
+    readonly minuteExhausted: boolean
+    readonly exhausted: boolean
+    readonly dailyCostAvailable: boolean
+    readonly dailyCostNanoUsd: number | null
+  }
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -359,6 +391,11 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
   const root = parsed as Record<string, unknown>
+  // Оболочка и Core выпускаются отдельными модулями, поэтому опубликованный
+  // Core может отставать от UI. Известные версии проекции читаются с defaults
+  // для отсутствующих секций; неизвестная версия отклоняется целиком.
+  const version = root['schema_version']
+  if (version !== 1 && version !== 2 && version !== 3) return null
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -375,8 +412,14 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   const metrics = record(root['metrics'])
   const taskFlow = record(root['task_flow'])
   const limits = record(root['limits'])
+  const budget = record(root['budget'])
   return {
-    queen: { status: text(queen['status'], 32), name: text(queen['name'], 64) },
+    queen: {
+      status: text(queen['status'], 32),
+      name: text(queen['name'], 64),
+      reason: text(queen['reason'], 180),
+      wakeAtMs: typeof queen['wake_at_ms'] === 'number' && Number.isSafeInteger(queen['wake_at_ms']) ? queen['wake_at_ms'] : null
+    },
     metrics: {
       totalAgentsOnline: count(metrics['total_agents_online'], 65_535),
       activeTasks: count(metrics['active_tasks'], 65_535),
@@ -404,6 +447,24 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
     limits: {
       maxSubagentsPerWorker: count(limits['max_subagents_per_worker'], 65_535),
       maxParallelSubagents: count(limits['max_parallel_subagents'], 65_535)
+    },
+    budget: {
+      provider: text(budget['provider'], 64),
+      historyAvailable: budget['history_available'] === true,
+      model: text(budget['model'], 128),
+      requestsLastHour: count(budget['requests_last_hour'], 1_000_000),
+      requestsLastMinute: count(budget['requests_last_minute'], 1_000_000),
+      requestsLastDay: count(budget['requests_last_day'], 1_000_000),
+      // A zero cap is Core's "no configured limit", and it must stay zero here.
+      minuteCap: count(budget['minute_cap'], 1_000_000),
+      hourCap: count(budget['hour_cap'], 1_000_000),
+      dayCap: count(budget['day_cap'], 1_000_000),
+      minuteExhausted: budget['minute_exhausted'] === true,
+      exhausted: budget['history_available'] === true && (budget['minute_exhausted'] === true || budget['hour_exhausted'] === true || budget['day_exhausted'] === true),
+      dailyCostAvailable: budget['daily_cost_available'] === true,
+      dailyCostNanoUsd: typeof budget['daily_cost_nano_usd'] === 'number' && Number.isSafeInteger(budget['daily_cost_nano_usd']) && budget['daily_cost_nano_usd'] >= 0
+        ? budget['daily_cost_nano_usd']
+        : null
     }
   }
 }
@@ -418,6 +479,808 @@ function hivePercent(value: number, ceiling: number): number {
 // the latest match is the FIRST one found here — not the last.
 function latest(events: readonly CoreEvent[], eventType: string): CoreEvent | undefined {
   return events.find((event) => event.eventType === eventType)
+}
+
+/**
+ * Канонические карточки департаментов. Core отдаёт роли свободным текстом
+ * (`researcher`, `reviewer`, …), поэтому роль сопоставляется с карточкой по
+ * списку псевдонимов; незнакомая роль не подменяется догадкой, а добавляется
+ * отдельной карточкой с именем роли.
+ */
+interface HiveDepartmentCard {
+  readonly key: string
+  readonly label: string
+  readonly icon: UiIconName
+  readonly aliases: readonly string[]
+}
+
+const HIVE_DEPARTMENT_CARDS: readonly HiveDepartmentCard[] = [
+  { key: 'analytics', label: 'Аналитика', icon: 'activity', aliases: ['analyst', 'analytics', 'analysis', 'review'] },
+  { key: 'development', label: 'Разработка', icon: 'terminal', aliases: ['developer', 'engineer', 'coder', 'implementer', 'dev'] },
+  { key: 'testing', label: 'Тестирование', icon: 'check-circle', aliases: ['qa', 'tester', 'test', 'verifier', 'validation'] },
+  { key: 'planning', label: 'Планирование', icon: 'compass', aliases: ['planner', 'architect', 'plan'] },
+  { key: 'research', label: 'Исследования', icon: 'target', aliases: ['researcher', 'research', 'scout', 'investigator'] },
+  { key: 'integrations', label: 'Интеграции', icon: 'link', aliases: ['integrator', 'integration', 'connector', 'adapter'] },
+  { key: 'documentation', label: 'Документация', icon: 'folder', aliases: ['documenter', 'documentation', 'docs', 'writer'] },
+  { key: 'support', label: 'Поддержка', icon: 'message', aliases: ['support', 'assistant', 'responder', 'helper'] }
+]
+
+interface DepartmentView {
+  readonly key: string
+  readonly label: string
+  readonly icon: UiIconName
+  readonly activeCount: number
+  readonly maxCapacity: number
+}
+
+/** Сопоставляет роли Core с карточками; порядок карточек стабилен. */
+function matchDepartmentCard(role: string): HiveDepartmentCard | null {
+  const normalized = role.trim().toLowerCase()
+  if (normalized.length === 0) return null
+  return HIVE_DEPARTMENT_CARDS.find((card) =>
+    card.aliases.some((alias) => normalized === alias || normalized.includes(alias))
+  ) ?? null
+}
+
+function departmentLabel(role: string): string {
+  return matchDepartmentCard(role)?.label ?? role
+}
+
+function departmentView(departments: HiveStateView['departments']): readonly DepartmentView[] {
+  const buckets = new Map<string, { active: number; max: number }>()
+  const extra: HiveStateView['departments'][number][] = []
+  for (const department of departments) {
+    const card = matchDepartmentCard(department.role)
+    if (!card) {
+      extra.push(department)
+      continue
+    }
+    const bucket = buckets.get(card.key) ?? { active: 0, max: 0 }
+    // Несколько ролей могут попасть в одну карточку: нагрузка складывается,
+    // ёмкость берётся по максимуму — это один и тот же потолок Core.
+    buckets.set(card.key, {
+      active: bucket.active + department.activeCount,
+      max: Math.max(bucket.max, department.maxCapacity)
+    })
+  }
+  const cards: DepartmentView[] = HIVE_DEPARTMENT_CARDS.map((card) => {
+    const bucket = buckets.get(card.key)
+    return {
+      key: card.key,
+      label: card.label,
+      icon: card.icon,
+      activeCount: bucket?.active ?? 0,
+      maxCapacity: bucket?.max ?? 0
+    }
+  })
+  for (const department of extra) {
+    cards.push({
+      key: `role:${department.role}`,
+      label: department.role || 'unknown',
+      icon: 'box',
+      activeCount: department.activeCount,
+      maxCapacity: department.maxCapacity
+    })
+  }
+  return cards
+}
+
+/**
+ * Плейсхолдеры макета. Используются только для величин, которых ещё нет в
+ * `HiveStateSnapshot`; каждое такое место помечено в разметке как «макет»,
+ * чтобы значение из макета нельзя было принять за данные Core.
+ */
+const HIVE_MOCK = {
+  tasksToday: 128,
+  averageTaskTimeSec: 1.2,
+  dailyBudgetUsd: 0.5,
+  approvalCostUsd: 0.05,
+  logs: [
+    { at: '12:14:20', level: 'success' as const, text: 'Агент Dev-01: компонент HiveDashboard.tsx собран' },
+    { at: '12:14:02', level: 'info' as const, text: 'Королева Ева: распределены 3 задачи по департаментам' },
+    { at: '12:13:41', level: 'warning' as const, text: 'Pulse: расписание «ночной аудит» ожидает подтверждения' }
+  ]
+}
+
+const HIVE_INTERVALS = [1000, 2000, 5000, 10000] as const
+const HIVE_PREFERENCE_KEY = 'evohime.hive.dashboard.v1'
+
+interface HivePreference {
+  readonly pulse: boolean
+  readonly intervalMs: number
+}
+
+/** Единственный владелец этого состояния — оболочка: это режим отображения. */
+function loadHivePreference(): HivePreference {
+  try {
+    const stored: unknown = JSON.parse(window.localStorage.getItem(HIVE_PREFERENCE_KEY) ?? 'null')
+    if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
+      return { pulse: true, intervalMs: 2000 }
+    }
+    const record = stored as Record<string, unknown>
+    const interval = typeof record['intervalMs'] === 'number' && (HIVE_INTERVALS as readonly number[]).includes(record['intervalMs'])
+      ? record['intervalMs']
+      : 2000
+    return { pulse: record['pulse'] !== false, intervalMs: interval }
+  } catch {
+    return { pulse: true, intervalMs: 2000 }
+  }
+}
+
+function saveHivePreference(preference: HivePreference): void {
+  try {
+    window.localStorage.setItem(HIVE_PREFERENCE_KEY, JSON.stringify(preference))
+  } catch {
+    // Storage may be unavailable; the in-memory mode stays active.
+  }
+}
+
+const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
+  literouter: 'LiteRouter',
+  openai_compatible: 'OpenAI-compatible API',
+  openai_responses: 'OpenAI Responses',
+  ollama: 'Ollama (локально)'
+}
+
+interface ProviderOption {
+  readonly key: string
+  readonly provider: ProviderKind
+  readonly profileId?: ProviderProfileId
+  readonly label: string
+  readonly configured: boolean
+}
+
+/** Список провайдеров строится по тому, что реально сохранено в оболочке. */
+function providerOptions(summary: ProviderSummary | null): readonly ProviderOption[] {
+  if (!summary) return []
+  const options: ProviderOption[] = []
+  const seen = new Set<string>()
+  const push = (provider: ProviderKind, profileId: ProviderProfileId | undefined, profile: ProviderProfileSummary): void => {
+    const key = profileId ? `${provider}:${profileId}` : provider
+    if (seen.has(key)) return
+    seen.add(key)
+    const name = profileId ? PROVIDER_PROFILE_LABELS[profileId] : PROVIDER_KIND_LABELS[provider]
+    const free = profile.tier === 'free' || profile.model.toLowerCase().includes(':free')
+    options.push({
+      key,
+      provider,
+      ...(profileId ? { profileId } : {}),
+      label: `${name}${free ? ' (Free)' : ''}`,
+      configured: profile.configured
+    })
+  }
+  for (const provider of PROVIDER_KINDS) push(provider, undefined, summary.profiles[provider])
+  for (const [profileId, profile] of Object.entries(summary.compatibleProfiles ?? {})) {
+    if (!profile) continue
+    push('openai_compatible', profileId as ProviderProfileId, profile)
+  }
+  return options
+}
+
+function currentProviderKey(summary: ProviderSummary | null): string {
+  if (!summary) return ''
+  return summary.provider === 'openai_compatible' && summary.profileId
+    ? `openai_compatible:${summary.profileId}`
+    : summary.provider
+}
+
+function formatMoney(nanoUsd: number): string {
+  const usd = nanoUsd / 1_000_000_000
+  if (!Number.isFinite(usd) || usd <= 0) return '$0.00'
+  if (usd < 0.01) return `$${usd.toFixed(9).replace(/0+$/, '').replace(/\.$/, '')}`
+  return `$${usd.toFixed(2)}`
+}
+
+function formatClock(atMs: number): string {
+  const at = new Date(atMs)
+  if (!Number.isFinite(at.getTime())) return '—'
+  return at.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+function agentMonogram(id: string): string {
+  const tail = id.split(/[:\-_/]/).filter(Boolean).at(-1) ?? id
+  return tail.slice(-2).toUpperCase() || 'AI'
+}
+
+const QUEEN_REASON_LABELS: Record<string, string> = {
+  provider_minute_cap_reached: 'лимит запросов за минуту достигнут',
+  provider_hour_cap_reached: 'лимит запросов за час достигнут',
+  provider_day_cap_reached: 'лимит запросов за сутки достигнут',
+  provider_request_cap_reached: 'лимит запросов провайдера достигнут'
+}
+
+type HiveLogLevel = 'success' | 'warning' | 'info'
+
+interface HiveLogEntry {
+  readonly id: string
+  readonly at: string
+  readonly level: HiveLogLevel
+  readonly text: string
+}
+
+const HIVE_LOG_ICONS: Record<HiveLogLevel, UiIconName> = {
+  success: 'check-circle',
+  warning: 'alert-triangle',
+  info: 'circle'
+}
+
+/** Понятные подписи для частых событий; незнакомый тип показывается как есть. */
+const HIVE_LOG_LABELS: Record<string, string> = {
+  'task.started': 'Задача запущена',
+  'task.completed': 'Задача завершена',
+  'task.failed': 'Задача остановлена с ошибкой',
+  'task.stopped': 'Задача остановлена',
+  'approval.required': 'Требуется подтверждение действия',
+  'tool.started': 'Инструмент запущен',
+  'tool.output': 'Инструмент вернул вывод',
+  'child.workflow': 'Шаг дочерней задачи',
+  'runtime.schedule_completed': 'Pulse: расписание выполнено',
+  'runtime.schedule_failed': 'Pulse: ошибка расписания',
+  'runtime.schedule_dead_letter': 'Pulse: задание в dead-letter'
+}
+
+function hiveLogLevel(eventType: string): HiveLogLevel {
+  if (eventType === 'approval.required') return 'warning'
+  if (/(failed|denied|dead_letter|error|cancelled|timed_out|stopped)/.test(eventType)) return 'warning'
+  if (/(completed|succeeded|accepted|resolved)/.test(eventType)) return 'success'
+  return 'info'
+}
+
+function hiveLogEntries(
+  events: readonly CoreEvent[],
+  observedAt: ReadonlyMap<number, string>,
+  limit: number
+): readonly HiveLogEntry[] {
+  return events
+    .filter((event) => event.eventType !== 'hive_state.snapshot')
+    .slice(0, limit)
+    .map((event) => ({
+      id: `seq-${event.sequenceId}`,
+      at: observedAt.get(event.sequenceId) ?? '—',
+      level: hiveLogLevel(event.eventType),
+      text: `${HIVE_LOG_LABELS[event.eventType] ?? event.eventType}${event.taskId ? ` · ${event.taskId}` : ''}`
+    }))
+}
+
+/** Круговой индикатор эффективности: только SVG, без сторонних библиотек. */
+function EfficiencyRing({ percent }: { readonly percent: number }): React.JSX.Element {
+  const bounded = Math.max(0, Math.min(100, Math.round(percent)))
+  const radius = 34
+  const circumference = 2 * Math.PI * radius
+  return (
+    <svg className="hive-ring" viewBox="0 0 88 88" role="img" aria-label={`${translate('Эффективность')} ${bounded}%`}>
+      <circle className="hive-ring__track" cx="44" cy="44" r={radius} />
+      <circle
+        className="hive-ring__value"
+        cx="44"
+        cy="44"
+        r={radius}
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - bounded / 100)}
+        transform="rotate(-90 44 44)"
+      />
+      <text className="hive-ring__label" x="44" y="49" textAnchor="middle">{bounded}%</text>
+    </svg>
+  )
+}
+
+function parseApprovalRequest(event: CoreEvent): ApprovalRequestView | null {
+  try {
+    const root = JSON.parse(event.payload) as Record<string, unknown>
+    const text = (key: string, fallback = ''): string => typeof root[key] === 'string' ? (root[key] as string).slice(0, 240) : fallback
+    const approvalId = text('approval_id')
+    if (!approvalId) return null
+    // Core publishes `preview` as a structured object, so the human-readable
+    // summary must be read from its own field instead of stringified.
+    const preview = root['preview'] !== null && typeof root['preview'] === 'object' && !Array.isArray(root['preview'])
+      ? root['preview'] as Record<string, unknown>
+      : {}
+    const previewText = (key: string): string => typeof preview[key] === 'string' ? (preview[key] as string).slice(0, 240) : ''
+    // Оценку стоимости Core пока не публикует; берём только явно переданное
+    // значение и никогда не выводим стоимость из догадки.
+    const cost = preview['cost_usd'] ?? preview['costUsd'] ?? preview['estimated_cost_usd']
+    const costUsd = typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : null
+    return {
+      approvalId,
+      taskId: event.taskId,
+      summary: text('summary') || previewText('summary') || 'Ева запросила подтверждение действия.',
+      permission: text('permission') || 'требуется разрешение',
+      scope: text('scope') || 'область не указана',
+      toolName: text('tool_name') || 'операция Core',
+      costUsd
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Плашка human-in-the-loop: жёлто-оранжевая, с решением пользователя. */
+function ApprovalRequest({ request, busy, onResolve }: { readonly request: ApprovalRequestView; readonly busy: boolean; readonly onResolve: (granted: boolean) => void }): React.JSX.Element {
+  return (
+    <aside className="hive-approval" role="alert" aria-label={translate('Запрос подтверждения')}>
+      <div className="hive-approval__icon" aria-hidden="true"><UiIcon name="alert-triangle" size={22} /></div>
+      <div className="hive-approval__body">
+        <p className="hive-approval__eyebrow">Human-in-the-loop</p>
+        <strong>{translate('Требуется ваше подтверждение')}</strong>
+        <span className="hive-approval__summary">{translate(request.summary)}</span>
+        <span className="hive-approval__meta">{translate(request.toolName)} · {translate(request.permission)} · {translate(request.scope)}</span>
+      </div>
+      <div className="hive-approval__cost">
+        <span>{translate('Стоимость')}</span>
+        <strong>~${(request.costUsd ?? HIVE_MOCK.approvalCostUsd).toFixed(2)}</strong>
+        {request.costUsd === null ? (
+          <em className="hive-badge hive-badge--mock" title={translate('Значение из макета: Core пока не оценивает стоимость этого действия')}>{translate('макет')}</em>
+        ) : null}
+      </div>
+      <div className="hive-approval__actions">
+        <button type="button" className="hive-button hive-button--approve" onClick={() => onResolve(true)} disabled={busy}>{translate('Разрешить')}</button>
+        <button type="button" className="hive-button hive-button--reject" onClick={() => onResolve(false)} disabled={busy}>{translate('Отклонить')}</button>
+      </div>
+    </aside>
+  )
+}
+
+const EMPTY_BUDGET: HiveStateView['budget'] = {
+  provider: '',
+  historyAvailable: false,
+  model: '',
+  requestsLastMinute: 0,
+  requestsLastHour: 0,
+  requestsLastDay: 0,
+  minuteCap: 0,
+  hourCap: 0,
+  dayCap: 0,
+  minuteExhausted: false,
+  exhausted: false,
+  dailyCostAvailable: false,
+  dailyCostNanoUsd: null
+}
+
+/** Formats the exact reset moment Core computed, never a fixed default. */
+function formatWakeAt(wakeAtMs: number | null, nowMs: number): string {
+  if (wakeAtMs === null || !Number.isSafeInteger(wakeAtMs)) return translate('сброс не вычислен Core')
+  if (wakeAtMs <= nowMs) return translate('лимит уже должен был сброситься')
+  const resetAt = new Date(wakeAtMs)
+  if (!Number.isFinite(resetAt.getTime())) return translate('сброс не вычислен Core')
+  return `${translate('сброс в')} ${resetAt.toLocaleTimeString()}`
+}
+
+/**
+ * Единый дашборд «Улей»: департаменты, Королева Ева, метрики и бюджет,
+ * активные агенты и логи. Состояние читается из `HiveStateSnapshot`, решения
+ * уходят в Core, режим авто-обновления принадлежит оболочке.
+ */
+export function HiveDashboard({ connection, events, resolvedApprovalIds = [], onApprovalResolved }: Pick<Props, 'connection' | 'events' | 'resolvedApprovalIds' | 'onApprovalResolved'>): React.JSX.Element {
+  const api = useShellApi()
+  const [resolvingApprovalIds, setResolvingApprovalIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [resolvedLocally, setResolvedLocally] = useState<readonly string[]>([])
+  const [commandError, setCommandError] = useState<string | null>(null)
+  const [preference, setPreference] = useState<HivePreference>(() => loadHivePreference())
+  const [allLogs, setAllLogs] = useState(false)
+  const [provider, setProvider] = useState<ProviderSummary | null>(null)
+  const [providerBusy, setProviderBusy] = useState(false)
+  const [providerMessage, setProviderMessage] = useState<string | null>(null)
+  const [observedAt, setObservedAt] = useState<ReadonlyMap<number, string>>(() => new Map())
+  const connected = CONNECTED_STATES.includes(connection)
+  const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
+
+  // Метка времени ставится в момент, когда оболочка получила событие: Core не
+  // публикует wall-clock для каждого события, а выдумывать время нельзя.
+  useEffect(() => {
+    setObservedAt((current) => {
+      let next = new Map(current)
+      if (next.size > 2000) {
+        next = new Map()
+        for (const event of events) {
+          const seen = current.get(event.sequenceId)
+          if (seen) next.set(event.sequenceId, seen)
+        }
+      }
+      let changed = next.size !== current.size
+      for (const event of events) {
+        if (next.has(event.sequenceId)) continue
+        next.set(event.sequenceId, new Date().toLocaleTimeString('ru-RU', { hour12: false }))
+        changed = true
+      }
+      return changed ? next : current
+    })
+  }, [events])
+
+  const requestSnapshot = useCallback((): void => {
+    if (!api) return
+    void api.invoke('core.getHiveState', {}).catch(() => undefined)
+  }, [api])
+
+  // Snapshot polling is read-only and bounded by the chosen interval. EvaPulse
+  // here is the dashboard's live mode: it never starts or stops the hive.
+  useEffect(() => {
+    if (!api || !connected || !preference.pulse) return
+    requestSnapshot()
+    const timer = window.setInterval(requestSnapshot, preference.intervalMs)
+    return () => window.clearInterval(timer)
+  }, [api, connected, preference.intervalMs, preference.pulse, requestSnapshot])
+
+  useEffect(() => {
+    if (!api) return
+    void api.invoke('provider.get', {}).then((outcome) => {
+      if (outcome.ok) setProvider(outcome.value)
+    })
+  }, [api])
+
+  const activeApprovals = useMemo(() => {
+    const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
+    const resolved = new Set([...resolvedApprovalIds, ...resolvedLocally])
+    const byId = new Map<string, { request: ApprovalRequestView; sequence: number }>()
+    const newestFirst = [...events].sort((left, right) => right.sequenceId - left.sequenceId)
+    for (const event of newestFirst) {
+      if (event.eventType !== 'approval.required') continue
+      if (events.some((candidate) => candidate.taskId === event.taskId && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))) continue
+      const request = parseApprovalRequest(event)
+      if (!request || resolved.has(request.approvalId)) continue
+      if (!byId.has(request.approvalId)) byId.set(request.approvalId, { request, sequence: event.sequenceId })
+    }
+    return [...byId.values()].map((item) => item.request)
+  }, [events, resolvedApprovalIds, resolvedLocally])
+
+  const approvalResolved = useCallback(async (approval: ApprovalRequestView, granted: boolean) => {
+    if (!api || resolvingApprovalIds.has(approval.approvalId)) return
+    setResolvingApprovalIds((current) => new Set(current).add(approval.approvalId))
+    setCommandError(null)
+    try {
+      const outcome = await api.invoke('core.resolveApproval', {
+        approvalId: approval.approvalId,
+        granted,
+        idempotencyKey: `approval:${approval.approvalId}:${granted ? 'grant' : 'reject'}`,
+        ...(granted ? {} : { rejectionReason: 'rejected_by_user' })
+      })
+      if (outcome.ok) {
+        setResolvedLocally((current) => current.includes(approval.approvalId) ? current : [...current, approval.approvalId])
+        onApprovalResolved?.(approval.approvalId)
+      } else {
+        setCommandError(outcome.message)
+      }
+    } catch {
+      setCommandError('Не удалось отправить решение в Core; запрос остаётся ожидающим.')
+    } finally {
+      setResolvingApprovalIds((current) => {
+        const next = new Set(current)
+        next.delete(approval.approvalId)
+        return next
+      })
+    }
+  }, [api, onApprovalResolved, resolvingApprovalIds])
+
+  const providerOptionList = useMemo(() => providerOptions(provider), [provider])
+  const selectedProviderKey = currentProviderKey(provider)
+
+  const selectProvider = useCallback(async (key: string): Promise<void> => {
+    if (!api || providerBusy) return
+    const option = providerOptionList.find((candidate) => candidate.key === key)
+    if (!option || !option.configured) return
+    setProviderBusy(true)
+    setProviderMessage(null)
+    try {
+      const outcome = await api.invoke('provider.select', option.profileId
+        ? { provider: option.provider, profileId: option.profileId }
+        : { provider: option.provider })
+      if (outcome.ok) {
+        setProvider(outcome.value.summary)
+        setProviderMessage(outcome.value.restarted ? 'Core перезапущен с выбранным провайдером.' : null)
+      } else {
+        setProviderMessage(outcome.message)
+      }
+    } catch {
+      setProviderMessage('Не удалось выбрать провайдера: оболочка не ответила.')
+    } finally {
+      setProviderBusy(false)
+    }
+  }, [api, providerBusy, providerOptionList])
+
+  const updatePreference = useCallback((next: HivePreference): void => {
+    setPreference(next)
+    saveHivePreference(next)
+  }, [])
+
+  const budget = hive?.budget ?? EMPTY_BUDGET
+  const departments = useMemo(() => departmentView(hive?.departments ?? []), [hive])
+  const agentsOnline = hive?.metrics.totalAgentsOnline ?? 0
+  const activeTasks = hive?.metrics.activeTasks ?? 0
+  const efficiency = hive?.metrics.efficiencyPercent ?? 0
+  const hiveCapacity = Math.max(
+    0,
+    ...departments.map((department) => department.maxCapacity),
+    hive?.limits.maxSubagentsPerWorker ?? 0
+  )
+  const capacityLabel = hiveCapacity > 0 ? hiveCapacity : agentsOnline
+  const paused = hive?.queen.status === 'budget_exhausted' && budget.historyAvailable
+  const queenActive = hive?.queen.status === 'active'
+  const waitingApproval = activeApprovals.length > 0
+  const queenStatusLabel = paused
+    ? 'Спит'
+    : waitingApproval
+      ? 'Ждёт подтверждения'
+      : queenActive
+        ? 'Активна'
+        : 'Спит'
+  const wakeAtMs = hive?.queen.wakeAtMs ?? null
+  const averageTaskTimeSec = hive?.metrics.averageTaskTimeSec ?? 0
+  const averageTimeIsMock = averageTaskTimeSec <= 0
+  const averageTimeLabel = averageTimeIsMock ? `${HIVE_MOCK.averageTaskTimeSec}с` : `${averageTaskTimeSec}с`
+  const spentUsd = budget.dailyCostAvailable && budget.dailyCostNanoUsd !== null ? budget.dailyCostNanoUsd / 1_000_000_000 : null
+  const spendPercent = spentUsd === null ? 0 : Math.min(100, Math.round((spentUsd / HIVE_MOCK.dailyBudgetUsd) * 100))
+  const remainingUsd = Math.max(0, HIVE_MOCK.dailyBudgetUsd - (spentUsd ?? 0))
+  const spentLabel = budget.dailyCostAvailable && budget.dailyCostNanoUsd !== null ? formatMoney(budget.dailyCostNanoUsd) : '—'
+  const requestSummary = [
+    `${budget.historyAvailable ? budget.requestsLastMinute : '—'}${budget.minuteCap > 0 ? ` / ${budget.minuteCap}` : ''} ${translate('за минуту')}`,
+    `${budget.historyAvailable ? budget.requestsLastHour : '—'}${budget.hourCap > 0 ? ` / ${budget.hourCap}` : ''} ${translate('за час')}`,
+    `${budget.historyAvailable ? budget.requestsLastDay : '—'}${budget.dayCap > 0 ? ` / ${budget.dayCap}` : ''} ${translate('за сутки')}`
+  ].join(' · ')
+  const configuredCaps = budget.minuteCap > 0 || budget.hourCap > 0 || budget.dayCap > 0
+  const snapshotBudgetLabel = budget.provider === 'literouter' || budget.provider === 'openrouter'
+    ? `LiteRouter${budget.model.toLowerCase().includes(':free') ? ' (Free)' : ''}`
+    : budget.provider.toLowerCase().includes('deepseek')
+      ? 'DeepSeek API'
+      : budget.provider || translate('провайдер не выбран')
+  const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
+  const logs: readonly HiveLogEntry[] = realLogs.length > 0
+    ? realLogs
+    : HIVE_MOCK.logs.map((entry, index) => ({ id: `mock-${index}`, ...entry }))
+  const logsAreMock = realLogs.length === 0
+
+  return (
+    <section className="hive-console" aria-label={translate('Улей (Hive)')}>
+      <header className="hive-console__header">
+        <div className="hive-console__title">
+          <p className="hive-console__eyebrow">Hive / Eva</p>
+          <h1>{translate('Улей (Hive)')}</h1>
+          <p>{translate('Единый центр управления Ульем и Королевой Евой')}</p>
+        </div>
+        <div className="hive-console__controls">
+          <span className={`status-pill status-pill--${connection}`}>{translate(connection)}</span>
+          <div className="hive-switch">
+            <span className="hive-switch__label" id="hive-pulse-label">{translate('Авто-режим (EvaPulse)')}</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={preference.pulse}
+              aria-labelledby="hive-pulse-label"
+              className={`hive-switch__control${preference.pulse ? ' hive-switch__control--on' : ''}`}
+              onClick={() => updatePreference({ ...preference, pulse: !preference.pulse })}
+            >
+              <span aria-hidden="true" />
+            </button>
+          </div>
+          <label className="hive-interval">
+            <span>{translate('Обновление')}</span>
+            <select
+              aria-label={translate('Интервал обновления')}
+              value={preference.intervalMs}
+              onChange={(changeEvent) => updatePreference({ ...preference, intervalMs: Number(changeEvent.target.value) })}
+            >
+              {HIVE_INTERVALS.map((value) => (
+                <option key={value} value={value}>{value / 1000}с</option>
+              ))}
+            </select>
+          </label>
+          {!preference.pulse ? (
+            <button type="button" className="hive-console__refresh" onClick={requestSnapshot} disabled={!connected}>
+              {translate('Обновить сейчас')}
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      {activeApprovals.map((approval) => (
+        <ApprovalRequest
+          key={approval.approvalId}
+          request={approval}
+          busy={resolvingApprovalIds.has(approval.approvalId)}
+          onResolve={(granted) => void approvalResolved(approval, granted)}
+        />
+      ))}
+      {commandError ? <p role="alert" className="hive-console__error">{translate(commandError)}</p> : null}
+
+      <div className="hive-console__grid">
+        <section className="hive-panel hive-panel--departments" aria-label={translate('Департаменты улья')}>
+          <div className="hive-panel__head">
+            <h2>{translate('Департаменты улья')}</h2>
+            <span>{translate('Активно:')} {agentsOnline} / {capacityLabel}</span>
+          </div>
+          <div className="hive-departments">
+            {departments.map((department) => {
+              const percent = hivePercent(department.activeCount, department.maxCapacity)
+              return (
+                <article key={department.key} className="hive-department">
+                  <div className="hive-department__head">
+                    <span className="hive-department__icon" aria-hidden="true"><UiIcon name={department.icon} size={16} /></span>
+                    <strong>{translate(department.label)}</strong>
+                  </div>
+                  <div className="hive-department__count">
+                    <span>{department.activeCount} / {department.maxCapacity}</span>
+                    <em>{percent}%</em>
+                  </div>
+                  <div
+                    className="hive-progress"
+                    role="progressbar"
+                    aria-label={translate(department.label)}
+                    aria-valuemin={0}
+                    aria-valuemax={Math.max(department.maxCapacity, 1)}
+                    aria-valuenow={department.activeCount}
+                  >
+                    <span style={{ width: `${percent}%` }} />
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+        </section>
+
+        <section className={`hive-queen${queenActive ? '' : ' hive-queen--sleeping'}`} aria-label={translate('Королева Ева')}>
+          <div className="hive-queen__portrait" aria-hidden="true">
+            <span className="hive-queen__sigil">✦</span>
+            <span className="hive-queen__scan" />
+          </div>
+          <div className="hive-queen__body">
+            <p className="hive-queen__eyebrow">Eva core · {hive?.queen.name || 'EvoHime'}</p>
+            <h2>{translate('Королева Ева')}</h2>
+            <p className="hive-queen__role">{translate('Главный оркестратор улья')}</p>
+            <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'sleeping'}`}>
+              <span className="hive-dot" aria-hidden="true" />
+              {translate(queenStatusLabel)}
+            </p>
+            <p className="hive-queen__note">
+              {paused
+                ? `${translate(QUEEN_REASON_LABELS[hive?.queen.reason ?? ''] ?? hive?.queen.reason ?? 'лимит провайдера')} · ${formatWakeAt(wakeAtMs, Date.now())}`
+                : translate('Координирует агентов и выполняет задачи')}
+            </p>
+          </div>
+          <dl className="hive-queen__footer">
+            <div>
+              <dt>{translate('Воркеры')}</dt>
+              <dd>{agentsOnline} / {capacityLabel}</dd>
+            </div>
+            <div>
+              <dt>{translate('Следующий сон')}</dt>
+              <dd>{paused && wakeAtMs !== null ? formatClock(wakeAtMs) : '—'}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <aside className="hive-panel hive-panel--metrics" aria-label={translate('Метрики улья')}>
+          <div className="hive-panel__head">
+            <h2>{translate('Метрики улья')}</h2>
+            <span className="hive-badge hive-badge--mock" title={translate('Часть величин взята из макета: Core пока не отдаёт эти поля')}>{translate('макет')}</span>
+          </div>
+          <div className="hive-metrics">
+            <EfficiencyRing percent={efficiency} />
+            <span className="hive-metrics__caption">{translate('Эффективность')}</span>
+          </div>
+          <ul className="hive-stat-list">
+            <li><span>{translate('Агентов онлайн')}</span><strong>{agentsOnline}</strong></li>
+            <li><span>{translate('Задач в работе')}</span><strong>{activeTasks}</strong></li>
+            <li>
+              <span>{translate('Задач сегодня')}</span>
+              <strong>{HIVE_MOCK.tasksToday}</strong>
+              <em className="hive-badge hive-badge--mock">{translate('макет')}</em>
+            </li>
+            <li>
+              <span>{translate('Среднее время')}</span>
+              <strong>{averageTimeLabel}</strong>
+              {averageTimeIsMock ? <em className="hive-badge hive-badge--mock">{translate('макет')}</em> : null}
+            </li>
+          </ul>
+
+          <div className="hive-budget-card">
+            <div className="hive-budget-card__head">
+              <h3>{translate('Бюджет и провайдер')}</h3>
+            </div>
+            <div className="hive-budget-card__spent">
+              <span>{translate('Потрачено сегодня')}</span>
+              <strong>{spentLabel} / ${HIVE_MOCK.dailyBudgetUsd.toFixed(2)}</strong>
+            </div>
+            <div
+              className="hive-progress"
+              role="progressbar"
+              aria-label={translate('Расход дневного бюджета')}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={spendPercent}
+            >
+              <span style={{ width: `${spendPercent}%` }} />
+            </div>
+            <label className="hive-provider">
+              <span>{translate('Текущий провайдер')}</span>
+              <select
+                aria-label={translate('Провайдер улья')}
+                value={selectedProviderKey}
+                disabled={providerBusy || providerOptionList.length === 0}
+                onChange={(changeEvent) => void selectProvider(changeEvent.target.value)}
+              >
+                {providerOptionList.length === 0
+                  ? <option value="">{translate(snapshotBudgetLabel)}</option>
+                  : providerOptionList.map((option) => (
+                    <option key={option.key} value={option.key} disabled={!option.configured}>
+                      {option.label}{option.configured ? '' : ` · ${translate('ключ не настроен')}`}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <p className="hive-budget-card__limit">
+              {translate('Лимит:')} ${HIVE_MOCK.dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
+            </p>
+            <p className="hive-budget-card__requests">
+              {translate('Лимит запросов провайдера')}: {requestSummary}
+            </p>
+            <small>
+              {budget.model ? `${translate('Модель:')} ${budget.model}` : translate('Модель ещё не известна')}
+              {!configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}
+              {!budget.historyAvailable ? ` · ${translate('история отправок недоступна')}` : ''}
+            </small>
+            {budget.exhausted ? <p className="hive-budget-card__notice">{translate('Лимит запросов исчерпан — Core приостановит отправку до сброса окна.')}</p> : null}
+            {providerMessage ? <small className="hive-budget-card__message">{translate(providerMessage)}</small> : null}
+          </div>
+        </aside>
+      </div>
+
+      <div className="hive-console__bottom">
+        <section className="hive-panel hive-panel--agents" aria-label={translate('Активные агенты')}>
+          <div className="hive-panel__head">
+            <h2>{translate('Активные агенты')} ({agentsOnline})</h2>
+            <span>{translate('глубина и подагенты')}</span>
+          </div>
+          {hive && hive.activeAgents.length > 0 ? (
+            <ul className="hive-agent-list">
+              {hive.activeAgents.slice(0, 8).map((agent) => (
+                <li key={agent.id}>
+                  <span className="hive-agent__avatar" aria-hidden="true">{agentMonogram(agent.id)}</span>
+                  <div className="hive-agent__body">
+                    <div className="hive-agent__topline">
+                      <strong>{agent.id || 'worker'}</strong>
+                      <span className="hive-role-badge">{translate(departmentLabel(agent.role))}</span>
+                    </div>
+                    <small>{translate(agent.currentAction) || translate('ожидание')}</small>
+                  </div>
+                  <span className="hive-agent__meta">{agent.spawnedSubagents} / {agent.ceiling}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="hive-empty">
+              {connected
+                ? translate('Активных агентов нет.')
+                : translate('Core недоступен — ожидается актуальная проекция.')}
+            </p>
+          )}
+        </section>
+
+        <section className="hive-panel hive-panel--logs" aria-label={translate('Логи улья')}>
+          <div className="hive-panel__head">
+            <h2>{translate('Логи улья')}</h2>
+            <div className="hive-panel__actions">
+              {logsAreMock ? <span className="hive-badge hive-badge--mock">{translate('демо')}</span> : null}
+              <button
+                type="button"
+                className="hive-link-button"
+                aria-pressed={allLogs}
+                onClick={() => setAllLogs((value) => !value)}
+              >
+                {translate(allLogs ? 'Свернуть' : 'Все логи')}
+              </button>
+            </div>
+          </div>
+          <ol className="hive-log-list">
+            {logs.map((entry) => (
+              <li key={entry.id} className={`hive-log-row hive-log-row--${entry.level}`}>
+                <span className="hive-log-row__icon" aria-hidden="true"><UiIcon name={HIVE_LOG_ICONS[entry.level]} size={14} /></span>
+                <time className="hive-log-row__time">{entry.at}</time>
+                <span className="hive-log-row__text">{translate(entry.text)}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      </div>
+    </section>
+  )
 }
 
 /** Read-only projection of Core-owned memory/child/schedule state. */
@@ -468,9 +1331,6 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
   const toolCalls = count('tool.started')
   const toolOutputs = count('tool.output')
   const approvalRequests = count('approval.required')
-
-  const hiveEvent = latest(events, 'hive_state.snapshot')
-  const hive = useMemo(() => parseHiveState(hiveEvent), [hiveEvent])
 
   const pendingEvent = latest(events, 'memory.pending')
   const pending = useMemo(
@@ -550,18 +1410,6 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
     if (!api || !connected) return
     void api.invoke('core.listRetainedChildren', { limit: 16 })
     void api.invoke('core.listRefinementCandidates', { ownerScope: 'workspace', limit: 32 })
-  }, [api, connected])
-
-  // Snapshot polling is read-only and bounded by the fixed interval. Core
-  // answers with `hive_state.snapshot`, which the event list already carries.
-  useEffect(() => {
-    if (!api || !connected) return
-    const request = (): void => {
-      void api.invoke('core.getHiveState', {})
-    }
-    request()
-    const timer = window.setInterval(request, 2_000)
-    return () => window.clearInterval(timer)
   }, [api, connected])
 
   const refinementList = useMemo(
@@ -857,111 +1705,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         </article>
       </div>
 
-      <section className="operations-section operations-section--hive" aria-label={translate("Состояние улья")}>
-        <div className="operations-section__header">
-          <div>
-            <p className="panel__eyebrow">Hive state</p>
-            <h3>{translate("Состояние улья")}</h3>
-          </div>
-          <span className="operations-section__hint">
-            {translate(hive ? `обновление 2 с · лимит ${hive.limits.maxSubagentsPerWorker}/${hive.limits.maxParallelSubagents}` : projectionReady ? 'ожидание первого снимка' : 'Core недоступен')}
-          </span>
-        </div>
-        <div className="hive-metrics">
-          <div className="hive-metric">
-            <span>{translate("Королева")}</span>
-            <strong>{hive?.queen.name || '—'}</strong>
-            <small>{hive ? translate(hive.queen.status) : translate("нет данных")}</small>
-          </div>
-          <div className="hive-metric">
-            <span>{translate("Всего агентов")}</span>
-            <strong>{hive?.metrics.totalAgentsOnline ?? '—'}</strong>
-            <small>{translate("в сети")}</small>
-          </div>
-          <div className="hive-metric">
-            <span>{translate("Задач в работе")}</span>
-            <strong>{hive?.metrics.activeTasks ?? '—'}</strong>
-            <small>{hive ? translate(`эффективность ${hive.metrics.efficiencyPercent}%`) : translate("нет данных")}</small>
-          </div>
-        </div>
-        <div className="hive-subsection">
-          <h4>{translate("Департаменты")}</h4>
-          {hive && hive.departments.length > 0 ? (
-            <div className="hive-departments">
-              {hive.departments.map((department) => (
-                <article key={department.role} className="hive-department">
-                  <div className="hive-department__topline">
-                    <strong>{department.role || 'unknown'}</strong>
-                    <span>{department.activeCount} / {department.maxCapacity}</span>
-                  </div>
-                  <div
-                    className="hive-progress"
-                    role="progressbar"
-                    aria-label={department.role}
-                    aria-valuemin={0}
-                    aria-valuemax={Math.max(department.maxCapacity, 1)}
-                    aria-valuenow={department.activeCount}
-                  >
-                    <span style={{ width: `${hivePercent(department.activeCount, department.maxCapacity)}%` }} />
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : <p>{translate("Департаменты появятся после первого события Core.")}</p>}
-        </div>
-        <div className="hive-subsection">
-          <h4>{translate("Активные агенты")}</h4>
-          {hive && hive.activeAgents.length > 0 ? (
-            <ul className="hive-agents">
-              {hive.activeAgents.map((agent) => (
-                <li key={agent.id}>
-                  <div className="hive-agent__topline">
-                    <strong>{agent.role || 'unknown'}</strong>
-                    <span>depth {agent.depth}</span>
-                  </div>
-                  <small>{agent.currentAction || translate("ожидание")}</small>
-                  <div
-                    className="hive-progress"
-                    role="progressbar"
-                    aria-label={`${agent.role} subagents`}
-                    aria-valuemin={0}
-                    aria-valuemax={Math.max(agent.ceiling, 1)}
-                    aria-valuenow={agent.spawnedSubagents}
-                  >
-                    <span style={{ width: `${hivePercent(agent.spawnedSubagents, agent.ceiling)}%` }} />
-                  </div>
-                  <small>{agent.spawnedSubagents} / {agent.ceiling}</small>
-                </li>
-              ))}
-            </ul>
-          ) : <p>{translate("Активных агентов нет.")}</p>}
-        </div>
-        <div className="hive-subsection">
-          <h4>{translate("Поток задач")}</h4>
-          <div className="hive-flow">
-            {([
-              [translate("Processing"), hive?.taskFlow.processing ?? 0, hive?.metrics.totalAgentsOnline ?? 0],
-              [translate("Analyzing"), hive?.taskFlow.analyzing ?? 0, hive?.metrics.totalAgentsOnline ?? 0],
-              [translate("Plan"), hive?.taskFlow.generatingPlan ?? 0, hive?.metrics.totalAgentsOnline ?? 0]
-            ] as const).map(([label, value, total]) => (
-              <div key={label} className="hive-flow__row">
-                <span>{label}</span>
-                <div
-                  className="hive-progress"
-                  role="progressbar"
-                  aria-label={label}
-                  aria-valuemin={0}
-                  aria-valuemax={Math.max(total, 1)}
-                  aria-valuenow={value}
-                >
-                  <span style={{ width: `${hivePercent(value, total)}%` }} />
-                </div>
-                <strong>{value}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+
 
       <section className="operations-section operations-section--knowledge" aria-label={translate("Локальный индекс workspace")}>
         <div className="operations-section__header">

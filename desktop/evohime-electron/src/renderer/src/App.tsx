@@ -29,6 +29,7 @@ import { REASON_TEXTS, STATE_TITLES } from './listening-labels'
 const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ default: module.SettingsModal })))
 const ScheduledPanel = lazy(() => import('./ScheduledPanel').then((module) => ({ default: module.ScheduledPanel })))
 const OperationsPanel = lazy(() => import('./OperationsPanel').then((module) => ({ default: module.OperationsPanel })))
+const HivePanel = lazy(() => import('./OperationsPanel').then((module) => ({ default: module.HiveDashboard })))
 const PlanReviewPanel = lazy(() => import('./PlanReviewPanel').then((module) => ({ default: module.PlanReviewPanel })))
 const OverviewPanel = lazy(() => import('./OverviewPanel').then((module) => ({ default: module.OverviewPanel })))
 const ListeningPanel = lazy(() => import('./ListeningPanel').then((module) => ({ default: module.ListeningPanel })))
@@ -60,7 +61,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'listening'
+type ViewId = 'chat' | 'scheduled' | 'overview' | 'reviews' | 'operations' | 'hive' | 'listening'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -75,6 +76,7 @@ interface ViewDescriptor {
 const USER_VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: 'compass' },
   { id: 'reviews', label: 'Ревью планов', icon: 'check-circle' },
+  { id: 'hive', label: 'Улей', icon: 'workflow' },
   { id: 'operations', label: 'Память и Pulse', icon: 'pulse' },
   { id: 'listening', label: 'Слух', icon: 'mic' },
 ]
@@ -90,6 +92,7 @@ export function App(): React.JSX.Element {
   const [appearance, setAppearance] = useState<AppearanceSettings>(() => loadAppearance())
   const [state, setState] = useState<ShellState | null>(null)
   const [events, setEvents] = useState<readonly CoreEvent[]>([])
+  const [resolvedApprovalIds, setResolvedApprovalIds] = useState<readonly string[]>([])
   const [shellDiagnostics, setShellDiagnostics] = useState<readonly ShellDiagnostic[]>([])
   const [apiMissing, setApiMissing] = useState(false)
   const [view, setView] = useState<ViewId>('chat')
@@ -160,7 +163,16 @@ export function App(): React.JSX.Element {
       flushTimer = null
       if (pendingCoreEvents.length === 0) return
       const newestFirst = pendingCoreEvents.splice(0).reverse()
-      setEvents((current) => [...newestFirst, ...current].slice(0, MAX_VISIBLE_EVENTS))
+      setEvents((current) => {
+        const combined = [...newestFirst, ...current]
+        const seen = new Set<string>()
+        return combined.filter((item) => {
+          const key = `${item.coreInstanceId ?? 'legacy'}:${item.sessionEpoch ?? 0}:${item.sequenceId}:${item.taskId}:${item.eventType}`
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        }).slice(0, MAX_VISIBLE_EVENTS)
+      })
     }
 
     const unsubscribe = api.subscribe((event) => {
@@ -269,6 +281,7 @@ export function App(): React.JSX.Element {
               key={item.id}
               view={item}
               active={item.id === view}
+              badge={item.id === 'hive' ? countPendingApprovals(events, resolvedApprovalIds) : 0}
               onSelect={(id) => {
                 setView(id)
                 setAccountMenuOpen(false)
@@ -388,6 +401,8 @@ export function App(): React.JSX.Element {
                   }}
                   identityName={identity?.name ?? null}
                   chatRevision={chatRevision}
+                  resolvedApprovalIds={resolvedApprovalIds}
+                  onApprovalResolved={(id) => setResolvedApprovalIds((current) => current.includes(id) ? current : [...current, id])}
                 />
                 <aside
                   className={`conversation-side-panels${workbenchVisible || browserVisible ? '' : ' conversation-side-panels--summary-only'}`}
@@ -417,6 +432,7 @@ export function App(): React.JSX.Element {
                 {translate(view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null)}
                 {translate(view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null)}
                 {translate(view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null)}
+                {translate(view === 'hive' ? <HivePanel connection={connection} events={events} resolvedApprovalIds={resolvedApprovalIds} onApprovalResolved={(id) => setResolvedApprovalIds((current) => current.includes(id) ? current : [...current, id])} /> : null)}
                 {translate(view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null)}
                 {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
               </div>
@@ -538,23 +554,41 @@ interface NavItemProps {
   readonly view: ViewDescriptor
   readonly active: boolean
   readonly onSelect: (id: ViewId) => void
+  readonly badge?: number
 }
 
-function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
+function NavItem({ view, active, onSelect, badge = 0 }: NavItemProps): React.JSX.Element {
   const t = useT()
   return (
     <button
       type="button"
       className="nav-item"
       aria-current={active ? 'page' : undefined}
-      aria-label={t(view.label)}
+      aria-label={badge > 0 ? `${t(view.label)}, ${badge} ${t('Ожидают разрешения')}` : t(view.label)}
       title={t(view.label)}
       onClick={() => onSelect(view.id)}
     >
       <span className="nav-item__icon" aria-hidden="true"><UiIcon name={view.icon} size={18} /></span>
       <span className="nav-item__label">{t(view.label)}</span>
+      {badge > 0 ? <span className="nav-item__badge" aria-label={t('Ожидают разрешения')}>{badge > 99 ? '99+' : badge}</span> : null}
     </button>
   )
+}
+
+function countPendingApprovals(events: readonly CoreEvent[], resolvedApprovalIds: readonly string[]): number {
+  const pending = new Map<string, { sequence: number; taskId: string; epoch: number }>()
+  const newestFirst = [...events].sort((left, right) => right.sequenceId - left.sequenceId)
+  for (const event of newestFirst) {
+    if (event.eventType !== 'approval.required') continue
+    try {
+      const payload = JSON.parse(event.payload) as { approval_id?: unknown }
+      if (typeof payload.approval_id !== 'string' || payload.approval_id.length === 0 || resolvedApprovalIds.includes(payload.approval_id)) continue
+      if (!pending.has(payload.approval_id)) pending.set(payload.approval_id, { sequence: event.sequenceId, taskId: event.taskId, epoch: event.sessionEpoch ?? 0 })
+    } catch {
+      // Malformed events are excluded from the badge; Core remains authoritative.
+    }
+  }
+  return [...pending.values()].filter(({ taskId, sequence, epoch }) => !events.some((candidate) => (candidate.sessionEpoch ?? 0) === epoch && candidate.taskId === taskId && candidate.sequenceId > sequence && ['task.completed', 'task.failed', 'task.stopped'].includes(candidate.eventType))).length
 }
 
 function sameWorkspacePath(left: string | null, right: string | null): boolean {
