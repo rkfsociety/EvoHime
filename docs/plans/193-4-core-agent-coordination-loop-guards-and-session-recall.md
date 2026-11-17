@@ -4,7 +4,7 @@
 
 ## Scope и изменяемые контракты
 1. Выполнить focused tests contracts/canonicalization, loop guard, coordination, child handoff, session query, recovery и IPC/UI.
-2. Проверить failure matrix: duplicate tool call, oscillation, repeated error, legitimate polling, no progress, partial trace, stale assignment, conflicting child outputs, crash/restart, query timeout и scope mismatch.
+2. Проверить failure matrix: duplicate tool call, oscillation, repeated error, legitimate polling, no progress, повторное чтение покрытого диапазона, trace replay из 193.0, partial trace, stale assignment, conflicting child outputs, crash/restart, query timeout и scope mismatch.
 3. Проверить security: no grant escalation, no cross-workspace recall, no raw transcript/prompt leakage, no credential propagation, no blind retry.
 4. Проверить concurrency/resource pressure и cancellation на bounded workloads.
 5. Обновить architecture/current-state/release-evidence и каталог plans только по подтверждённым фактам; удалить временные plan files 193 после closure.
@@ -26,6 +26,7 @@ Versions/hashes contracts, deterministic fixture results, redacted loop outcomes
 
 ## Критерии выхода
 - [ ] Все критерии 193.0 подтверждены observed evidence.
+- [ ] Replay прогона от 2026-11-17 даёт `iteration_limited`, а не `completed`, и не расходует бюджет на повторные чтения того же диапазона.
 - [ ] Canonical docs отражают фактическое поведение, не плановые намерения.
 - [ ] Нет второго loop, team, session, memory, scheduler или tool owner.
 - [ ] Security, recovery, compatibility и focused CI gates зелёные.

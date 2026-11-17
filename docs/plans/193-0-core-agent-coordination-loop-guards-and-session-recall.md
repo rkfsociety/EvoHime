@@ -8,8 +8,27 @@
 ## Основание checkout
 Уже существуют Persistent Agent Organization Registry (schema 92), Agent Role Profiles/Team SOP и immutable TeamSession snapshots, Causal Collaboration Bus, child handoff, Context Namespace, Memory Views & Adaptive Recall, conversation/event history, durable background execution и workflow runtime. План использует их как источники истины. Он не создаёт второй team registry, collaboration bus, memory/session store, scheduler или tool dispatcher.
 
+## Trace evidence 2026-11-17
+Наблюдаемый прогон (`deepseek-flash`, workspace `D:\github\EvoHime`) исчерпал
+бюджет шагов и всё равно был записан как завершённый:
+- 33 model call: 32 tool-capable шага и один tool-free финальный шаг
+  (`tools_count=0`) при `DEFAULT_TOOL_ITERATIONS = 32`;
+- 34 tool call, все `ok`; 18 из 20 `filesystem_read` — один и тот же
+  `crates/tool-runtime/src/registry.rs`, включая три вызова с идентичными
+  аргументами; ещё 6 из 7 `filesystem_search` — тоже по `tool-runtime`;
+- 189 812 байт tool output, контекст вырос с 14 206 до 73 241 токена
+  (окно 108 800), компрессия не включалась;
+- после единственного `filesystem_write` 27 шагов не изменили ни одного файла;
+- события о лимите нет в conversation journal: `task.iteration_limit_final_answer`
+  пишется только в `logs/model-trace.jsonl` (`core_agent_execution.rs:1137-1147`),
+  а терминальное событие проецируется как `status=completed`
+  (`ipc_bridge_ambient_transport.rs:43-52`).
+
+Прогон считается обязательным regression fixture для 193.1–193.4 и не является
+доказательством того, что guard уже реализован.
+
 ## Граница
-- Loop guard работает в Core вокруг фактического agent/tool execution и использует observed events, canonical tool identity/args hash, state/evidence revisions и существующие budgets.
+- Loop guard работает в Core вокруг фактического agent/tool execution и использует observed events, canonical tool identity/args hash, state/evidence revisions, read coverage и существующие budgets.
 - Coordination использует существующие assignments, team protocol, TeamSession, child handoff, collaboration messages, workflow runtime и A2A bridge (план 180) в пределах текущих grants.
 - Session recall — read-only query facade над conversation, EventJournal, ArtifactStore и memory/context owners. Результаты содержат provenance refs и redacted summaries, а не полный transcript, secrets или hidden reasoning.
 
@@ -44,6 +63,7 @@ Unknown/partial execution trace не считается прогрессом. П
 
 ## Критерии готовности
 - [ ] Повтор одинакового tool+canonical args, повторяющиеся ошибки, oscillation и отсутствие подтверждённого прогресса обнаруживаются детерминированно; false-positive cases имеют явные исключения.
+- [ ] Исчерпание бюджета шагов наблюдаемо в conversation trace: терминальный статус отличает `iteration_limited` от обычного completion, а финальный tool-free шаг не маскирует незавершённую работу.
 - [ ] Per-task/per-agent/global budgets bounded и не обходятся делегированием.
 - [ ] Coordinator делегирует только зарегистрированным агентам через существующие assignment/handoff/team contracts.
 - [ ] Результаты агентов проходят provenance, revision и conflict checks до объединения.

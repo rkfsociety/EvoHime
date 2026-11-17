@@ -11,6 +11,16 @@
 6. Встроить session-query как read-only context retrieval до планирования и при смене стратегии. Запрос scoped к текущему workspace/task и разрешённым memory views; агент получает citations/refs, summaries и trust metadata, а не необработанную историю.
 7. Recovery сверяет active assignments, task generation, deadlines и child handoff state. Повторное присоединение допустимо только к тому же idempotency/source revision; неизвестный исход остаётся unknown.
 8. Ошибки и остановки выдавать typed outcomes, не маскировать успешным completion и не выполнять внешние side effects из recovery.
+9. Вести read coverage на task scope: path, revision и покрытые диапазоны строк из `structured` результата `filesystem_read`. Повторное чтение уже покрытого диапазона при неизменной revision даёт `no-progress`/`strategy_change_required`, а не новый шаг бюджета; `forget_reads` ограничивается изменённым path.
+10. Зарезервированный tool-free финальный шаг завершать typed outcome `budget_exhausted` со счётчиками, а терминальное событие задачи обязано нести этот статус. Delivery requirements, не выполненные к моменту лимита, не отбрасываются молча и не превращаются в обычный `completed`.
+
+### Приоритетный срез по trace evidence
+До delegation и session-recall закрывается минимальный детерминированный набор:
+1. read coverage и no-progress в существующем agent loop (`core_agent_execution.rs`, обработка tool outcome и голова цикла): повтор уже покрытого диапазона при неизменной revision не тратит шаг и получает bounded-подсказку сменить стратегию;
+2. typed `budget_exhausted` из финального tool-free шага и truthful terminal event задачи (`core_protocol.rs::TaskCompleted` или additive поле статуса);
+3. regression replay fixture из 193.0 и focused tests на лимит, повторное чтение и терминальный статус.
+
+IPC/UI-часть этого среза входит в 193.3. Срез не создаёт второй loop, не меняет grants и не ждёт остальных пунктов этапа.
 
 ## Зависимости
 ### Блокирующие
@@ -24,6 +34,9 @@ On restart: generation-fence незавершённые runs, восстанов
 ## Verification
 - Guard наблюдает фактические вызовы, а не только план модели.
 - Repeated calls с одинаковыми args блокируются после порога; legitimate reads с доказанным прогрессом не блокируются.
+- Повторное чтение уже покрытого диапазона того же файла и revision не продлевает бюджет и не выглядит как исследование.
+- Терминальный статус `iteration_limited`/`budget_exhausted` доходит до conversation journal и IPC projection без подмены на `completed`.
+- Replay fixture из 193.0 (32 tool-шага, 18 чтений одного файла) завершается детерминированно и объяснимо, без зависания на лимите.
 - Child budget не превышает parent остаток; параллельность bounded.
 - Child agent не получает parent credentials, полный workspace или grants.
 - Conflict/late/stale/duplicate child reports не применяются автоматически.
@@ -39,4 +52,5 @@ Redacted execution/assignment ids, generation/revision, policy version, loop rea
 - [ ] Loop guard включён на поддерживаемых agent execution paths.
 - [ ] Delegation ограничена parent budget, grants и pinned TeamSession.
 - [ ] Recovery не повторяет ambiguous effects.
+- [ ] Задача, исчерпавшая шаги, завершается typed-статусом, а не обычным completion.
 - [ ] Query scope и provenance проверяются Core на каждом запросе.

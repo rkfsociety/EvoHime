@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-11-13. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-11-17. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -36,7 +36,7 @@
 | 188 | [Core-owned Research Experiment Tree](188-0-core-research-experiment-tree.md) | active; исторический источник issue #164 |
 | 191 | [Core-owned tool surface hardening и доставка skills агенту](191-0-core-tool-surface-and-skill-delivery.md) | active; выведен из аудита checkout, без исходного issue |
 | 192 | [Agent-facing доступ к Persistent Analysis Kernel](192-0-core-analysis-kernel-agent-access.md) | active; этап 192.1 реализован, 192.2–192.4 впереди; без исходного issue |
-| 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness и audit checkout |
+| 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
 | 196 | [Канонический лексикон tool id без подмены имён](196-0-core-tool-id-canonical-lexicon.md) | active; id равно wire-имени, legacy-точки только на чтение |

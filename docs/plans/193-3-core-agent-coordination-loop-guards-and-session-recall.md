@@ -9,6 +9,7 @@
 4. Добавить в существующий Operations/Task UI представление guard state, причины остановки/паузы, budget usage, child assignments, partial/conflict states и источников recalled context.
 5. Управление пользователем ограничить безопасными действиями: открыть evidence, повторить query, отменить текущую задачу либо использовать существующий review flow. UI не может снять guard, увеличить budget или одобрить инструмент.
 6. Сохранить progressive disclosure: компактный статус по умолчанию, подробные причины и provenance по запросу. Отсутствие capability отображать как unavailable, а не пустой успешный результат.
+7. Не хардкодить терминальный статус: `ipc_bridge_ambient_transport.rs:43-52` проецирует статус из terminal outcome задачи. `iteration_limited` показывается как остановка по лимиту шагов со счётчиками и причиной, а `completed` — только при подтверждённом завершении; conversation journal получает отдельное событие о причине исчерпания бюджета.
 
 ## Зависимости
 ### Блокирующие
@@ -24,6 +25,7 @@
 - IPC bounds ограничивают assignments, refs, excerpt bytes и frame size.
 - Tests проверяют отсутствие raw prompts, raw tool args, secrets, transcript bodies и hidden reasoning.
 - UI отображает stopped, paused, partial, conflicted, unavailable, stale и reconnect states.
+- Проекция не подменяет `iteration_limited` на `completed`: тест фиксирует передачу terminal outcome и наличие счётчиков.
 - UI controls не расширяют grants и не обходят guard.
 - npm run check:protocol и focused renderer tests проходят.
 
