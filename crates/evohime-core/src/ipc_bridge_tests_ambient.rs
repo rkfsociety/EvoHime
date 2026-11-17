@@ -393,6 +393,7 @@ async fn persistent_goal_ipc_is_typed_bounded_and_recoverable() {
         generated::command_envelope::Command::CreateGoal(generated::CreateGoal {
             goal_id: "goal-ipc-cancel-target".into(),
             workspace_path: workspace.to_string_lossy().into_owned(),
+            chat_id: "chat-1".into(),
             objective: "Отменяемая цель".into(),
             success_criteria: vec![generated::GoalCriterionInput {
                 id: "criterion-1".into(),

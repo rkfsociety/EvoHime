@@ -320,6 +320,15 @@ impl IpcBridge {
         self
     }
 
+    /// Attaches the process-wide EvaPulse daemon.
+    ///
+    /// The daemon is spawned once by the Core bootstrap; every IPC connection
+    /// shares the same handle so a toggle from one shell is seen by all.
+    pub fn with_pulse_daemon(mut self, pulse: Arc<crate::eva_pulse::EvaPulseDaemon>) -> Self {
+        self.pulse = Some(pulse);
+        self
+    }
+
     /// Streams journal entries newer than `after_sequence` to a connected
     /// client and returns the sequence it has now seen.
     ///

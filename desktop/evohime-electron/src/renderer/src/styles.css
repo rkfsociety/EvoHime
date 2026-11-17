@@ -7273,6 +7273,12 @@ body {
   font-size: 12px;
 }
 
+.hive-switch__status {
+  color: var(--fg-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .hive-switch__control {
   position: relative;
   width: 40px;

@@ -382,6 +382,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::warn!("memory extraction recovery could not acquire a background slot");
     }
     let background_journal = journal.clone();
+    let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
+        Ok(logger) => std::sync::Arc::new(logger),
+        Err(error) => return Err(format!("logging failed: {error}").into()),
+    };
+    let pulse = evohime_core::eva_pulse::EvaPulseDaemon::start(
+        journal.clone(),
+        gateway_config.clone(),
+        selected_model.clone(),
+        coordinator.clone(),
+        Some(std::sync::Arc::clone(&logger)),
+    );
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
         coordinator,
@@ -391,6 +402,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         gateway_config,
     )
     .with_selected_model(selected_model)
+    .with_pulse_daemon(std::sync::Arc::new(pulse.clone()))
     .with_proactivity(proactivity)
     .with_workflow_runtime_state(workflow_state)
     .with_provider_catalog_cache(provider_catalog_cache)
@@ -443,10 +455,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Err(error) = bridge.journal().reconcile_ledger_on_startup().await {
         tracing::error!("evohime-core ledger reconciliation failed: {error}");
     }
-    let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
-        Ok(logger) => std::sync::Arc::new(logger),
-        Err(error) => return Err(format!("logging failed: {error}").into()),
-    };
     #[cfg(windows)]
     let pipe_config = pipe_config.ok_or("pipe configuration missing for a server launch")?;
     #[cfg(windows)]
@@ -557,6 +565,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     event_trigger_cancellation.cancel();
     let _ = event_trigger_source_task.await;
     free_access_probe_cancellation.cancel();
+    pulse.shutdown();
     result.map_err(|error| format!("core failed: {error}"))?;
     heartbeat_task.abort();
     automation_scheduler_task.abort();

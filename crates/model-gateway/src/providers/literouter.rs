@@ -5,6 +5,7 @@ use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     ThinkingConfig, TokenStream,
 };
+use crate::rate_limit_signal::{clear_rate_limit, record_rate_limit_for};
 use crate::retry::{
     classify_rate_limit, compute_backoff, is_retryable_status, parse_rate_limit_delay,
     parse_retry_after_seconds, read_bounded_rate_limit_body, RateLimitClass, RetryPolicy,
@@ -238,7 +239,12 @@ impl LiteRouterProvider {
             let send_result = request.json(&body).send().await;
 
             match send_result {
-                Ok(response) if response.status().is_success() => return Ok(response),
+                Ok(response) if response.status().is_success() => {
+                    // A successful call clears any cooldown learned from an
+                    // earlier reply, so the next background cycle can run.
+                    clear_rate_limit(model);
+                    return Ok(response);
+                }
                 Ok(response) => {
                     let status = response.status();
                     let retry_after = parse_retry_after_seconds(response.headers());
@@ -250,15 +256,25 @@ impl LiteRouterProvider {
                         )));
                     }
                     let rate_limit = classify_rate_limit(status, &text);
+                    // The provider may state how long its tier needs between
+                    // messages; both this retry and later requests honor it.
+                    let pacing_hint = parse_rate_limit_delay(&text);
+                    if let Some(class) = rate_limit {
+                        // Publish the cooldown before returning: background
+                        // work must sleep instead of repeating the failed
+                        // request. The signal is process-local and bounded.
+                        let cooldown = pacing_hint.or(retry_after).unwrap_or(match class {
+                            RateLimitClass::Exhausted => Duration::from_secs(3_600),
+                            _ => Self::RATE_LIMIT_FALLBACK_DELAY,
+                        });
+                        record_rate_limit_for(model, cooldown);
+                    }
                     if matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
                         return Err(ProviderError::Api(format!(
                             "{}: provider quota exhausted",
                             status.as_u16()
                         )));
                     }
-                    // The provider may state how long its tier needs between
-                    // messages; both this retry and later requests honor it.
-                    let pacing_hint = parse_rate_limit_delay(&text);
                     if let Some(hint) = pacing_hint {
                         self.learn_request_interval(hint).await;
                     }

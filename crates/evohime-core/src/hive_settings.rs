@@ -38,6 +38,16 @@ pub const MAX_SUBAGENT_HARD_LIMIT: u32 = 256;
 pub const MAX_PARALLEL_HARD_LIMIT: u32 = 32;
 /// Storage scope used by [`crate::EventJournal::hive_settings`].
 pub const HIVE_SETTINGS_SCOPE: &str = "hive";
+/// Default interval between EvaPulse background cycles, in seconds.
+pub const DEFAULT_PULSE_INTERVAL_SECS: u64 = 1_800;
+/// Lower bound accepted for the EvaPulse interval.
+pub const MIN_PULSE_INTERVAL_SECS: u64 = 30;
+/// Upper bound accepted for the EvaPulse interval.
+pub const MAX_PULSE_INTERVAL_SECS: u64 = 86_400;
+/// Default daily spend ceiling shown and enforced by the hive, in USD.
+pub const DEFAULT_DAILY_BUDGET_USD: f64 = 0.50;
+/// Hard upper bound for the persisted daily budget, in USD.
+pub const MAX_DAILY_BUDGET_USD: f64 = 10_000.0;
 
 /// Bounded inputs the queen uses to pick a delegation ceiling.
 ///
@@ -57,7 +67,7 @@ pub struct DelegationComplexity {
 }
 
 /// Safety ceiling for queen-driven sub-agent fan-out.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HiveSettings {
     /// Version of the persisted settings contract.
@@ -71,10 +81,26 @@ pub struct HiveSettings {
     pub max_parallel_subagents: u32,
     /// Hard workflow-wide guard. Must be positive.
     pub max_total_subagents_per_workflow: u32,
+    /// Interval between EvaPulse background cycles, in seconds.
+    #[serde(default = "default_pulse_interval_secs")]
+    pub pulse_interval_secs: u64,
+    /// Daily spend ceiling for background work, in USD.
+    ///
+    /// `0` means no budget at all: a background cycle must not start a task.
+    #[serde(default = "default_daily_budget_usd")]
+    pub daily_budget_usd: f64,
 }
 
 fn default_schema_version() -> u32 {
     HIVE_SETTINGS_SCHEMA_VERSION
+}
+
+fn default_pulse_interval_secs() -> u64 {
+    DEFAULT_PULSE_INTERVAL_SECS
+}
+
+fn default_daily_budget_usd() -> f64 {
+    DEFAULT_DAILY_BUDGET_USD
 }
 
 impl Default for HiveSettings {
@@ -84,6 +110,8 @@ impl Default for HiveSettings {
             max_subagents_per_worker: DEFAULT_MAX_SUBAGENTS_PER_WORKER,
             max_parallel_subagents: DEFAULT_MAX_PARALLEL_SUBAGENTS,
             max_total_subagents_per_workflow: DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW,
+            pulse_interval_secs: DEFAULT_PULSE_INTERVAL_SECS,
+            daily_budget_usd: DEFAULT_DAILY_BUDGET_USD,
         }
     }
 }
@@ -113,6 +141,23 @@ impl HiveSettings {
             return Err(HiveSettingsError::TotalAboveHardLimit {
                 value: self.max_total_subagents_per_workflow,
                 limit: MAX_SUBAGENT_HARD_LIMIT,
+            });
+        }
+        if !(MIN_PULSE_INTERVAL_SECS..=MAX_PULSE_INTERVAL_SECS).contains(&self.pulse_interval_secs)
+        {
+            return Err(HiveSettingsError::InvalidPulseInterval {
+                value: self.pulse_interval_secs,
+                min: MIN_PULSE_INTERVAL_SECS,
+                max: MAX_PULSE_INTERVAL_SECS,
+            });
+        }
+        if !self.daily_budget_usd.is_finite()
+            || self.daily_budget_usd < 0.0
+            || self.daily_budget_usd > MAX_DAILY_BUDGET_USD
+        {
+            return Err(HiveSettingsError::InvalidDailyBudget {
+                value: self.daily_budget_usd,
+                max: MAX_DAILY_BUDGET_USD,
             });
         }
         Ok(())
@@ -223,7 +268,9 @@ impl HiveSettings {
             "fields": [
                 {"name": "max_subagents_per_worker", "type": "u32", "zero": "unbounded_up_to_total"},
                 {"name": "max_parallel_subagents", "type": "u32", "zero": "unbounded_up_to_worker_ceiling"},
-                {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"}
+                {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"},
+                {"name": "pulse_interval_secs", "type": "u64", "zero": "invalid"},
+                {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"}
             ],
             "note": "ceilings are safety guards, not a spawn plan",
             "max_child_depth": MAX_CHILD_DEPTH
@@ -234,7 +281,7 @@ impl HiveSettings {
 }
 
 /// Invalid hive safety settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HiveSettingsError {
     /// The persisted contract version is not supported.
     UnsupportedVersion(u32),
@@ -282,6 +329,22 @@ pub enum HiveSettingsError {
         /// Remaining workflow capacity.
         remaining: u32,
     },
+    /// The pulse interval is outside the accepted range.
+    InvalidPulseInterval {
+        /// Submitted interval in seconds.
+        value: u64,
+        /// Minimum accepted interval.
+        min: u64,
+        /// Maximum accepted interval.
+        max: u64,
+    },
+    /// The daily budget is negative, non-finite, or above the hard bound.
+    InvalidDailyBudget {
+        /// Submitted budget in USD.
+        value: f64,
+        /// Hard upper bound.
+        max: f64,
+    },
     /// The settings could not be serialized or parsed.
     Serialization(String),
 }
@@ -327,6 +390,12 @@ impl std::fmt::Display for HiveSettingsError {
                     f,
                     "delegation ceiling {requested} exceeds remaining workflow capacity {remaining}"
                 )
+            }
+            Self::InvalidPulseInterval { value, min, max } => {
+                write!(f, "pulse_interval_secs {value} is outside {min}..={max}")
+            }
+            Self::InvalidDailyBudget { value, max } => {
+                write!(f, "daily_budget_usd {value} is outside 0..={max}")
             }
             Self::Serialization(message) => {
                 write!(f, "hive settings serialization failed: {message}")
@@ -435,12 +504,49 @@ mod tests {
     }
 
     #[test]
+    fn pulse_budget_and_interval_validate_and_keep_compatible_defaults() {
+        let settings = HiveSettings::default();
+        assert_eq!(settings.pulse_interval_secs, DEFAULT_PULSE_INTERVAL_SECS);
+        assert_eq!(settings.daily_budget_usd, DEFAULT_DAILY_BUDGET_USD);
+
+        let legacy = br#"{"schema_version":1,"max_subagents_per_worker":1,"max_parallel_subagents":1,"max_total_subagents_per_workflow":2}"#;
+        let loaded = HiveSettings::from_json(legacy).expect("legacy settings load");
+        assert_eq!(loaded.pulse_interval_secs, DEFAULT_PULSE_INTERVAL_SECS);
+        assert_eq!(loaded.daily_budget_usd, DEFAULT_DAILY_BUDGET_USD);
+
+        let zero_budget = HiveSettings {
+            daily_budget_usd: 0.0,
+            ..HiveSettings::default()
+        };
+        assert!(zero_budget.validate().is_ok());
+
+        let too_fast = HiveSettings {
+            pulse_interval_secs: MIN_PULSE_INTERVAL_SECS - 1,
+            ..HiveSettings::default()
+        };
+        assert!(matches!(
+            too_fast.validate(),
+            Err(HiveSettingsError::InvalidPulseInterval { .. })
+        ));
+
+        let negative_budget = HiveSettings {
+            daily_budget_usd: -0.1,
+            ..HiveSettings::default()
+        };
+        assert!(matches!(
+            negative_budget.validate(),
+            Err(HiveSettingsError::InvalidDailyBudget { .. })
+        ));
+    }
+
+    #[test]
     fn json_roundtrip_revalidates_on_load() {
         let settings = HiveSettings {
             max_subagents_per_worker: 3,
             max_parallel_subagents: 2,
             max_total_subagents_per_workflow: 9,
             schema_version: HIVE_SETTINGS_SCHEMA_VERSION,
+            ..HiveSettings::default()
         };
         let json = settings.to_json().expect("serialize");
         assert_eq!(HiveSettings::from_json(&json).expect("load"), settings);
@@ -459,6 +565,7 @@ mod tests {
             max_parallel_subagents: 4,
             max_total_subagents_per_workflow: 10,
             schema_version: HIVE_SETTINGS_SCHEMA_VERSION,
+            ..HiveSettings::default()
         };
         assert_eq!(settings.ensure_workflow_capacity(8, 0), Ok(8));
         assert_eq!(settings.ensure_workflow_capacity(6, 4), Ok(6));

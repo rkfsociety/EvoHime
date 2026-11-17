@@ -1975,6 +1975,7 @@ message CommandEnvelope {
     ForkCapabilityRecipeRun fork_capability_recipe_run = 284;
     ImageGenerationCommand image_generation = 285;
     HiveStateCommand hive_state = 286;
+    TogglePulseCommand toggle_pulse = 287;
   }
 }
 
@@ -1984,6 +1985,16 @@ message CommandEnvelope {
 message HiveStateCommand {
   uint32 schema_version = 1;
   string request_id = 2;
+}
+
+// Enables or parks the Core-owned EvaPulse background loop. This is a runtime
+// switch, not an authorization decision: the daemon still enforces the daily
+// budget and provider caps on every cycle. A false value stops new cycles
+// immediately; true runs a cycle without waiting for the previous interval.
+message TogglePulseCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  bool enabled = 3;
 }
 
 // Plan 135: bounded Core-owned review target/findings projection.

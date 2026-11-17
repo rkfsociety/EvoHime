@@ -480,6 +480,13 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::TogglePulse(request)) => {
+                let payload = match self.toggle_pulse(request.enabled) {
+                    Ok(payload) => payload,
+                    Err(error) => error_response_payload(error),
+                };
+                self.write_response(writer, "pulse.status", payload).await?;
+            }
             Some(generated::command_envelope::Command::GetRetainedChild(request)) => {
                 let (reply, response) = oneshot::channel();
                 let coordinator = self

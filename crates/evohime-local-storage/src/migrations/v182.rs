@@ -1,18 +1,36 @@
 use rusqlite::Transaction;
 
 /// Persists provider-reported cache-hit input tokens alongside actual usage.
+///
+/// Legacy test fixtures and very old databases can reach this step without the
+/// ledger tables, so each optional change is applied only when its table exists.
+/// Production databases upgraded through v17 always have both tables.
 pub(crate) fn apply(transaction: &Transaction<'_>, current: u32) -> rusqlite::Result<()> {
     if current < 182 {
-        transaction.execute_batch(
-            "ALTER TABLE context_ledger_usage ADD COLUMN cache_read_input_tokens INTEGER;
-             CREATE INDEX IF NOT EXISTS idx_context_ledger_usage_recorded_at
-                 ON context_ledger_usage(recorded_at);
-             CREATE INDEX IF NOT EXISTS idx_context_ledger_provider_created_at
-                 ON context_ledger(provider, created_at);
-             PRAGMA user_version = 182;",
-        )?;
+        if table_exists(transaction, "context_ledger_usage")? {
+            transaction.execute_batch(
+                "ALTER TABLE context_ledger_usage ADD COLUMN cache_read_input_tokens INTEGER;
+                 CREATE INDEX IF NOT EXISTS idx_context_ledger_usage_recorded_at
+                     ON context_ledger_usage(recorded_at);",
+            )?;
+        }
+        if table_exists(transaction, "context_ledger")? {
+            transaction.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_context_ledger_provider_created_at
+                     ON context_ledger(provider, created_at);",
+            )?;
+        }
+        transaction.execute_batch("PRAGMA user_version = 182;")?;
     }
     Ok(())
+}
+
+fn table_exists(transaction: &Transaction<'_>, name: &str) -> rusqlite::Result<bool> {
+    transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        [name],
+        |row| row.get(0),
+    )
 }
 
 #[cfg(test)]
@@ -50,5 +68,17 @@ mod tests {
             )
             .expect("column metadata");
         assert_eq!(column_exists, 1);
+    }
+
+    #[test]
+    fn migration_tolerates_legacy_databases_without_ledger_tables() {
+        let mut connection = Connection::open_in_memory().expect("database");
+        let transaction = connection.transaction().expect("transaction");
+        apply(&transaction, 181).expect("migration");
+        transaction.commit().expect("commit");
+        let version: u32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("version");
+        assert_eq!(version, 182);
     }
 }

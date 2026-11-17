@@ -1008,6 +1008,13 @@ function dispatch(
       return accepted(client.send({ hiveState: { schemaVersion: 1, requestId: '' } }))
     }
 
+    case 'core.togglePulse': {
+      const enabled = asRecord(payload)['enabled']
+      if (typeof enabled !== 'boolean') return failure('invalid-payload', 'Некорректное состояние EvaPulse.')
+      log('info', 'shell.pulse_toggled', { enabled })
+      return accepted(client.send({ togglePulse: { schemaVersion: 1, requestId: '', enabled } }))
+    }
+
     case 'core.listSkills': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])

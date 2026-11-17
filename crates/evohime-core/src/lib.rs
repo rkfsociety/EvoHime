@@ -208,6 +208,8 @@ pub(crate) mod conversation_workbench;
 pub(crate) mod conversational_workflow_composer;
 pub mod design_intent_review_lane;
 pub(crate) mod doctor;
+/// Core-owned EvaPulse background daemon for the hive.
+pub mod eva_pulse;
 pub mod evals;
 pub(crate) mod event_trigger_runtime;
 pub(crate) mod execution_backend_registry;
@@ -223,6 +225,7 @@ pub(crate) mod github_public_repository;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
+pub(crate) mod hive_observation;
 pub mod hive_settings;
 /// Read-only aggregated hive visualization snapshot for the operations panel.
 pub mod hive_state;

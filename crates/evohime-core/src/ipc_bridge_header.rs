@@ -698,6 +698,11 @@ pub struct IpcBridge {
     conversation_subscription: ConversationSubscription,
     /// Bounded owner for detached IPC workflows and long-running operations.
     background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
+    /// Core-owned EvaPulse daemon attached by the process bootstrap.
+    ///
+    /// `None` in tests and console workflows means the toggle reports
+    /// `pulse_unavailable` instead of pretending a daemon is running.
+    pulse: Option<Arc<crate::eva_pulse::EvaPulseDaemon>>,
 }
 
 /// Проект, под которым живут принятые предложения. Речь у стола не

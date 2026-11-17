@@ -49,6 +49,8 @@ mod tests {
     mod projection;
     #[path = "../ipc_bridge_tests_provider_catalog.rs"]
     mod provider_catalog;
+    #[path = "../ipc_bridge_tests_pulse.rs"]
+    mod pulse;
     #[path = "../ipc_bridge_tests_workflow.rs"]
     mod workflow;
     #[path = "../ipc_bridge_tests_workspace_research.rs"]

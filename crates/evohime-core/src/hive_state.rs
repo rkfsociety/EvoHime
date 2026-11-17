@@ -17,7 +17,7 @@ use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
-pub const HIVE_STATE_SCHEMA_VERSION: u32 = 3;
+pub const HIVE_STATE_SCHEMA_VERSION: u32 = 4;
 /// Name shown for the single queen in the local hive.
 pub const DEFAULT_QUEEN_NAME: &str = "EvoHime";
 /// Maximum number of departments rendered at once.
@@ -37,6 +37,12 @@ pub const HIVE_QUEEN_ACTIVE: &str = "active";
 pub const HIVE_QUEEN_IDLE: &str = "idle";
 /// Queen status: the configured rolling request cap for the model is reached.
 pub const HIVE_QUEEN_BUDGET_EXHAUSTED: &str = "budget_exhausted";
+/// EvaPulse status: the daemon is enabled and running its periodic cycle.
+pub const HIVE_PULSE_ACTIVE: &str = "active";
+/// EvaPulse status: the user switched the daemon off.
+pub const HIVE_PULSE_DISABLED: &str = "disabled";
+/// EvaPulse status: the daemon is waiting for a budget or provider window.
+pub const HIVE_PULSE_SLEEPING: &str = "sleeping";
 
 /// Queen status line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -174,7 +180,7 @@ impl HiveBudget {
 /// Every field is already-committed state: dispatch counters from the durable
 /// provenance table and caps from the active route configuration. The hive
 /// never derives a limit from a guess.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HiveObservation {
     /// Provider profile identifier of the active route.
     pub provider: String,
@@ -209,6 +215,38 @@ pub struct HiveObservation {
     pub daily_cost_available: bool,
     /// Estimated DeepSeek API cost for the current UTC day, in nano-USD.
     pub daily_cost_nano_usd: Option<u64>,
+    /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
+    pub pulse_status: String,
+    /// Unix milliseconds at which the daemon plans its next cycle.
+    ///
+    /// `None` means the daemon is disabled or cannot promise a wake moment.
+    pub pulse_next_wake_at_ms: Option<i64>,
+}
+
+impl Default for HiveObservation {
+    fn default() -> Self {
+        Self {
+            provider: String::new(),
+            history_available: false,
+            model: String::new(),
+            requests_last_minute: 0,
+            requests_last_hour: 0,
+            requests_last_day: 0,
+            oldest_minute_dispatch_ms: None,
+            oldest_hour_dispatch_ms: None,
+            oldest_day_dispatch_ms: None,
+            hour_cap: 0,
+            minute_cap: 0,
+            day_cap: 0,
+            now_ms: 0,
+            daily_cost_available: false,
+            daily_cost_nano_usd: None,
+            // A bridge without a daemon must report the honest disabled state
+            // instead of pretending the background loop is running.
+            pulse_status: HIVE_PULSE_DISABLED.into(),
+            pulse_next_wake_at_ms: None,
+        }
+    }
 }
 
 /// Aggregated, serializable hive state for the operations panel.
@@ -231,6 +269,10 @@ pub struct HiveStateSnapshot {
     pub limits: HiveLimits,
     /// Active request budget for the current model.
     pub budget: HiveBudget,
+    /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
+    pub pulse_status: String,
+    /// Unix milliseconds at which the daemon plans its next cycle.
+    pub next_wake_at_ms: Option<i64>,
 }
 
 impl Default for HiveStateSnapshot {
@@ -347,6 +389,8 @@ impl HiveStateSnapshot {
             },
             limits: limits_for(settings),
             budget,
+            pulse_status: pulse_status_from(observation),
+            next_wake_at_ms: observation.pulse_next_wake_at_ms,
         }
     }
 }
@@ -374,6 +418,19 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
         daily_cost_available: observation.daily_cost_available,
         daily_cost_nano_usd: observation.daily_cost_nano_usd,
     }
+}
+
+/// Keeps the pulse status inside the published enum.
+///
+/// An unknown producer value degrades to `disabled` instead of leaking an
+/// unbounded string into the UI.
+fn pulse_status_from(observation: &HiveObservation) -> String {
+    match observation.pulse_status.as_str() {
+        HIVE_PULSE_ACTIVE => HIVE_PULSE_ACTIVE,
+        HIVE_PULSE_SLEEPING => HIVE_PULSE_SLEEPING,
+        _ => HIVE_PULSE_DISABLED,
+    }
+    .to_owned()
 }
 
 /// DeepSeek tariff for one model, in nano-USD per token.
@@ -1038,7 +1095,28 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_round_trips_through_json_with_the_budget_contract() {
+    fn hive_state_projects_the_daemon_pulse_status() {
+        let observation = HiveObservation {
+            pulse_status: HIVE_PULSE_SLEEPING.into(),
+            pulse_next_wake_at_ms: Some(42_000),
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert_eq!(snapshot.pulse_status, HIVE_PULSE_SLEEPING);
+        assert_eq!(snapshot.next_wake_at_ms, Some(42_000));
+
+        let observation = HiveObservation {
+            pulse_status: "unexpected".into(),
+            ..HiveObservation::default()
+        };
+        let snapshot =
+            HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
+        assert_eq!(snapshot.pulse_status, HIVE_PULSE_DISABLED);
+    }
+
+    #[test]
+    fn hive_state_snapshot_round_trips_through_json_with_the_budget_contract() {
         let snapshot = HiveStateSnapshot::from_projection(&HiveSettings::default(), &[], &[]);
         let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
         let decoded: HiveStateSnapshot =

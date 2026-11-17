@@ -522,6 +522,23 @@ peak/off-peak тариф по времени отправки запроса. Н
 как `budget.history_available = false`, неизвестная модель или отсутствующий
 тариф — как недоступная стоимость, а не как нулевой расход.
 
+`EvaPulse` — Core-owned фоновый цикл улья (`crates/evohime-core/src/eva_pulse.rs`).
+Он стартует вместе с Core и просыпается по `HiveSettings.pulse_interval_secs`
+(по умолчанию 1800 с). Перед каждым циклом демон читает committed dispatch-окна,
+дневную оценку DeepSeek и bounded-окно `child.workflow`; при исчерпанном бюджете
+(`daily_budget_usd = 0` или оценка расхода достигла потолка) или окне LiteRouter
+он засыпает до точного `wake_at_ms`, не создавая задач. Новые упавшие воркеры
+приводят к одной ограниченной recovery-задаче через `TaskCoordinator`, но только
+на primary-маршруте LiteRouter: DeepSeek и другие маршруты для фоновой работы не
+используются, а 429 не повторяется и не уходит в платный fallback. Gateway
+записывает полученный cooldown в process-local `rate_limit_signal`, и демон
+читает его перед следующим циклом. Здоровый цикл
+пишет `EvaPulse: all good` в `core.jsonl`. Тумблер «Авто-режим (EvaPulse)» в
+дашборде вызывает `core.togglePulse` (proto command 287); `false` переводит
+демон в `disabled`, `true` будит его и запускает цикл сразу. Статус
+`pulse_status` и `next_wake_at_ms` возвращаются в `hive_state.snapshot`
+(schema version 4) и только отображаются renderer-ом.
+
 Внутренние runtime-контракты, execution backends, безопасность, диагностика и
 организация агентов не представлены отдельными вкладками: это Core/agent/model
 поверхность, которой управляет ядро. В верхней панели доступны только контекстные

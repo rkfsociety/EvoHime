@@ -286,6 +286,8 @@ interface HiveStateView {
     readonly dailyCostAvailable: boolean
     readonly dailyCostNanoUsd: number | null
   }
+  readonly pulseStatus: string
+  readonly nextWakeAtMs: number | null
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -395,7 +397,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   // Core может отставать от UI. Известные версии проекции читаются с defaults
   // для отсутствующих секций; неизвестная версия отклоняется целиком.
   const version = root['schema_version']
-  if (version !== 1 && version !== 2 && version !== 3) return null
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4) return null
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -465,7 +467,11 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       dailyCostNanoUsd: typeof budget['daily_cost_nano_usd'] === 'number' && Number.isSafeInteger(budget['daily_cost_nano_usd']) && budget['daily_cost_nano_usd'] >= 0
         ? budget['daily_cost_nano_usd']
         : null
-    }
+    },
+    pulseStatus: text(root['pulse_status'], 16),
+    nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
+      ? root['next_wake_at_ms']
+      : null
   }
 }
 
@@ -981,6 +987,18 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
     saveHivePreference(next)
   }, [])
 
+  // The switch is a Core runtime control, not only a local display option:
+  // false parks the daemon, true lets it run a cycle immediately. The local
+  // preference still owns the snapshot polling interval in this window.
+  const togglePulse = useCallback((enabled: boolean): void => {
+    updatePreference({ ...preference, pulse: enabled })
+    if (!api) return
+    setCommandError(null)
+    void api.invoke('core.togglePulse', { enabled }).then((outcome) => {
+      if (!outcome.ok) setCommandError(outcome.message)
+    }).catch(() => setCommandError('Не удалось переключить EvaPulse: оболочка не ответила.'))
+  }, [api, preference, updatePreference])
+
   const budget = hive?.budget ?? EMPTY_BUDGET
   const departments = useMemo(() => departmentView(hive?.departments ?? []), [hive])
   const agentsOnline = hive?.metrics.totalAgentsOnline ?? 0
@@ -1003,6 +1021,15 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
         ? 'Активна'
         : 'Спит'
   const wakeAtMs = hive?.queen.wakeAtMs ?? null
+  const pulseNextWakeAtMs = hive?.nextWakeAtMs ?? null
+  const pulseStatus = hive?.pulseStatus ?? ''
+  const pulseStatusLabel = pulseStatus === 'active'
+    ? 'EvaPulse активен'
+    : pulseStatus === 'sleeping'
+      ? 'EvaPulse спит'
+      : pulseStatus === 'disabled'
+        ? 'EvaPulse выключен'
+        : 'EvaPulse: нет данных Core'
   const averageTaskTimeSec = hive?.metrics.averageTaskTimeSec ?? 0
   const averageTimeIsMock = averageTaskTimeSec <= 0
   const averageTimeLabel = averageTimeIsMock ? `${HIVE_MOCK.averageTaskTimeSec}с` : `${averageTaskTimeSec}с`
@@ -1045,10 +1072,11 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
               aria-checked={preference.pulse}
               aria-labelledby="hive-pulse-label"
               className={`hive-switch__control${preference.pulse ? ' hive-switch__control--on' : ''}`}
-              onClick={() => updatePreference({ ...preference, pulse: !preference.pulse })}
+              onClick={() => togglePulse(!preference.pulse)}
             >
               <span aria-hidden="true" />
             </button>
+            <small className="hive-switch__status" aria-live="polite">{translate(pulseStatusLabel)}</small>
           </div>
           <label className="hive-interval">
             <span>{translate('Обновление')}</span>
@@ -1141,7 +1169,11 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
             </div>
             <div>
               <dt>{translate('Следующий сон')}</dt>
-              <dd>{paused && wakeAtMs !== null ? formatClock(wakeAtMs) : '—'}</dd>
+              <dd>{pulseNextWakeAtMs !== null ? formatClock(pulseNextWakeAtMs) : paused && wakeAtMs !== null ? formatClock(wakeAtMs) : '—'}</dd>
+            </div>
+            <div>
+              <dt>{translate('EvaPulse')}</dt>
+              <dd>{translate(pulseStatusLabel)}</dd>
             </div>
           </dl>
         </section>

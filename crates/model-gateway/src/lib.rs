@@ -26,6 +26,8 @@ pub mod config;
 pub mod provider_contract;
 /// Provider adapter implementations.
 pub mod providers;
+/// Process-local provider rate-limit cooldown signals.
+pub mod rate_limit_signal;
 /// Retry behavior for transient provider failures.
 pub mod retry;
 /// Evaluation catalog used to select routing candidates.
@@ -58,6 +60,7 @@ use crate::providers::{
     openai_responses::OpenAIResponsesProvider, ChatMessage, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
 };
+pub use crate::rate_limit_signal::{clear_rate_limit, rate_limited_until, record_rate_limit};
 pub use crate::retry::RetryPolicy;
 pub use crate::routing_catalog::{CatalogError, CatalogStore, EvaluationCatalog, EvaluationRecord};
 pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};

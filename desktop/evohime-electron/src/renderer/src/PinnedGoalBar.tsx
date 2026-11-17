@@ -109,7 +109,10 @@ export function PinnedGoalBar({
   }, [api, chatId, connected, workspace, latestGoalNotificationSeq])
 
   const pinnedGoal = useMemo(() => {
-    const visible = goals.filter((goal) => !dismissedGoalIds.includes(goal.goalId))
+    // IPC projections are untrusted: a malformed list must render as empty
+    // instead of crashing the composer.
+    const visible = goals.filter((goal): goal is GoalProjection =>
+      goal != null && !dismissedGoalIds.includes(goal.goalId))
     const byChat = (goal: GoalProjection): boolean =>
       chatId !== null && goal.chatId === chatId
     const inFlight = (goal: GoalProjection): boolean =>
@@ -289,7 +292,7 @@ export function PinnedGoalBar({
 }
 
 function mergeGoal(current: readonly GoalProjection[], updated: GoalProjection): readonly GoalProjection[] {
-  const rest = current.filter((goal) => goal.goalId !== updated.goalId)
+  const rest = current.filter((goal) => goal != null && goal.goalId !== updated.goalId)
   return [updated, ...rest]
 }
 

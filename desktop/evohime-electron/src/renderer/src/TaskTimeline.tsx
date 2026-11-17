@@ -753,7 +753,7 @@ export function TaskTimeline({
       const created = await api.invoke('core.createGoal', {
         goalId: createdGoalId,
         workspacePath: workspace,
-        ...(targetChatId ? { chatId: targetChatId } : {}),
+        chatId: targetChatId,
         objective: effectivePrompt,
         successCriteria: [{ id: 'criterion-1', kind: 'manual', statement: 'Цель полностью выполнена и проверена.' }],
         continuationBudget: 12,

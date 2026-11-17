@@ -17,10 +17,10 @@ function event(eventType: string, payload: Record<string, unknown>, taskId = '')
   return { sequenceId: nextSequence++, taskId, eventType, payload: JSON.stringify(payload) }
 }
 
-/** Snapshot ровно в том виде, в каком его публикует Core (schema v3). */
+/** Snapshot ровно в том виде, в каком его публикует Core (schema v4). */
 function snapshot(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    schema_version: 3,
+    schema_version: 4,
     queen: { status: 'active', name: 'EvoHime', reason: '', wake_at_ms: null },
     metrics: {
       total_agents_online: 2,
@@ -68,6 +68,8 @@ function snapshot(overrides: Record<string, unknown> = {}): Record<string, unkno
       daily_cost_available: true,
       daily_cost_nano_usd: 120_000_000
     },
+    pulse_status: 'active',
+    next_wake_at_ms: Date.now() + 1_800_000,
     ...overrides
   }
 }
@@ -188,9 +190,26 @@ describe('hive dashboard', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     expect(screen.getByRole('button', { name: 'Обновить сейчас' })).toBeTruthy()
     expect(JSON.parse(window.localStorage.getItem('evohime.hive.dashboard.v1') ?? '{}')).toMatchObject({ pulse: false })
+    await waitFor(() => {
+      expect(calls.find((call) => call.command === 'core.togglePulse')?.payload).toEqual({ enabled: false })
+    })
 
     await userEvent.click(toggle)
     expect(toggle.getAttribute('aria-checked')).toBe('true')
+    await waitFor(() => {
+      expect(calls.filter((call) => call.command === 'core.togglePulse').at(-1)?.payload).toEqual({ enabled: true })
+    })
+  })
+
+  it('показывает статус EvaPulse из снимка Core', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ pulse_status: 'sleeping', next_wake_at_ms: Date.now() + 60_000 }))]}
+      />
+    )
+
+    expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
   })
 
   it('переключает провайдера через provider.select и показывает бюджет', async () => {

@@ -1045,6 +1045,7 @@ impl IpcBridge {
             background_tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
                 crate::bounded_tasks::DEFAULT_CAPACITY,
             )),
+            pulse: None,
         }
     }
 
@@ -1098,6 +1099,7 @@ impl IpcBridge {
             background_tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
                 crate::bounded_tasks::DEFAULT_CAPACITY,
             )),
+            pulse: None,
         }
     }
 
@@ -1158,6 +1160,7 @@ impl IpcBridge {
             background_tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
                 crate::bounded_tasks::DEFAULT_CAPACITY,
             )),
+            pulse: None,
         }
     }
 
