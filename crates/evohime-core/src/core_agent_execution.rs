@@ -30,7 +30,7 @@ fn model_tool_observation(
     };
 
     serde_json::json!({
-        "preview": guarded_output,
+        "preview": bounded_tool_output(guarded_output, MAX_TRACE_TOOL_OUTPUT_BYTES),
         "content_hash": content_hash,
         "expected_hash": content_hash,
         "revision": revision,
