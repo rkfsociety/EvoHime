@@ -496,6 +496,7 @@ impl ModelProvider for LiteRouterProvider {
             client: self.client.clone(),
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
+            model_rate_limits: self.model_rate_limits.clone(),
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
@@ -559,6 +560,7 @@ impl ModelProvider for LiteRouterProvider {
             client: self.client.clone(),
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
+            model_rate_limits: self.model_rate_limits.clone(),
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
@@ -622,6 +624,7 @@ impl ModelProvider for LiteRouterProvider {
             client: self.client.clone(),
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
+            model_rate_limits: self.model_rate_limits.clone(),
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
@@ -664,6 +667,7 @@ impl ModelProvider for LiteRouterProvider {
             client: self.client.clone(),
             retry: self.retry.clone(),
             reasoning_effort: self.reasoning_effort,
+            model_rate_limits: self.model_rate_limits.clone(),
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };

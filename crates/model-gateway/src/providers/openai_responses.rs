@@ -233,6 +233,7 @@ impl ModelProvider for OpenAIResponsesProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            model_rate_limits: self.model_rate_limits.clone(),
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
@@ -274,6 +275,7 @@ impl ModelProvider for OpenAIResponsesProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            model_rate_limits: self.model_rate_limits.clone(),
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
@@ -312,6 +314,7 @@ impl ModelProvider for OpenAIResponsesProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            model_rate_limits: self.model_rate_limits.clone(),
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };

@@ -30,7 +30,7 @@ fn model_tool_observation(
     };
 
     serde_json::json!({
-        "preview": bounded_tool_output(guarded_output, MAX_TRACE_TOOL_OUTPUT_BYTES),
+        "preview": bounded_tool_output(guarded_output, MAX_MODEL_TOOL_PREVIEW_BYTES),
         "content_hash": content_hash,
         "expected_hash": content_hash,
         "revision": revision,
@@ -165,6 +165,10 @@ fn bounded_tool_arguments(input: &serde_json::Value) -> String {
 /// a truncated excerpt. 32 KiB leaves room for JSON escaping and the event
 /// wrapper even when the excerpt is quote-heavy.
 const MAX_TRACE_TOOL_OUTPUT_BYTES: usize = 32 * 1024;
+// Model observations are serialized as JSON and then wrapped in the external
+// output envelope. Non-ASCII previews can expand substantially during JSON
+// escaping, so keep this second bound below the journal/guardrail input cap.
+const MAX_MODEL_TOOL_PREVIEW_BYTES: usize = 16 * 1024;
 const TOOL_OUTPUT_TRUNCATION_SUFFIX: &str =
     "\n…[tool output truncated; request the rest with a smaller limit or offset]";
 
