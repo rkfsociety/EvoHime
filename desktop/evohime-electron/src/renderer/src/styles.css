@@ -47,7 +47,6 @@
   --panel: var(--bg-raised);
   --surface: var(--bg-sunken);
   --surface-muted: var(--bg-active);
-  --context-ratio: 0;
 }
 
 :root[data-theme='light'] {
@@ -1863,38 +1862,6 @@ body {
   color: var(--fg-faint);
   opacity: 0.62;
 }
-.composer__divider {
-  width: 1px;
-  height: 22px;
-  flex: 0 0 auto;
-  background: var(--border);
-}
-.composer__usage {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  min-width: 18px;
-  min-height: 29px;
-  margin-left: auto;
-}
-.composer__usage .context-usage { border: none; background: transparent; }
-
-.composer__repository { flex: 0 0 auto; min-width: max-content; }
-.composer__repository .repobar {
-  gap: 7px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-size: 11px;
-  white-space: nowrap;
-}
-.composer__repository .repobar__project { display: none; }
-.composer__repository .repobar__spacer { display: none; }
-.composer__repository .repobar__branch { padding: 0 8px; }
-.composer__repository .repobar__diff { gap: 5px; padding: 0; background: transparent; }
-.composer__repository .repobar__clean { color: var(--fg-muted); }
-.composer__repository .repobar__action { padding: 2px 6px; }
 
 .composer__box {
   display: block;
@@ -2019,36 +1986,6 @@ body {
 .routing-status__route { color: var(--accent); }
 .routing-status--degraded, .routing-status--partial_fallback { border-color: var(--warning); color: var(--warning); }
 .routing-status--refusal, .routing-status--unknown_state, .routing-status--core_unavailable { border-color: var(--danger); color: var(--danger); }
-
-.context-usage {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--fg-faint);
-  white-space: nowrap;
-}
-
-.context-usage__ring {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: conic-gradient(var(--accent) var(--context-ratio), var(--bg-active) 0);
-}
-
-.context-usage__value {
-  display: grid;
-  place-items: center;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--bg-raised);
-  color: var(--fg-muted);
-  font-size: 8px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
 
 .model-picker {
   position: relative;
@@ -4038,9 +3975,7 @@ body {
 .modal,
 .home__card,
 .timeline__item,
-.routing,
-.repository-bar,
-.context-usage {
+.routing {
   border-color: var(--border);
   background: var(--bg-raised);
 }
@@ -5968,7 +5903,7 @@ body {
 .composer__controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
   min-height: 28px;
   gap: 6px;
@@ -5978,6 +5913,7 @@ body {
 .composer__scope {
   display: inline-flex;
   align-items: center;
+  flex: 0 3 auto;
   gap: 6px;
   min-width: 0;
   height: 28px;
@@ -5992,55 +5928,21 @@ body {
 }
 
 .composer__scope .composer__control-icon {
+  flex: 0 0 auto;
   width: 13px;
   height: 13px;
   color: var(--accent);
 }
 
 .composer__scope strong {
-  max-width: 160px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 200px;
   overflow: hidden;
   color: var(--fg);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.composer__repository {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 0 auto;
-  min-width: max-content;
-}
-
-.composer__repository .repobar {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 28px;
-  margin: 0;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-sunken);
-  font-size: 11.5px;
-  white-space: nowrap;
-}
-
-.composer__repository .repobar__branch {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
-  color: var(--fg-muted);
-}
-
-.repobar__branch-icon {
-  color: var(--fg-faint);
-}
-
-.composer__divider {
-  display: none;
 }
 
 .composer__control-group {
@@ -6062,6 +5964,11 @@ body {
 .composer__control-group:hover,
 .composer__control-group:focus-within {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+/* Long model names shrink with an ellipsis instead of pushing the row wide. */
+.composer__control-group--model {
+  min-width: 0;
 }
 
 .composer__control-group .composer__control-icon {
@@ -6135,8 +6042,21 @@ body {
   box-shadow: none;
 }
 
+.composer__control-group .model-picker,
+.composer__control-group .model-picker__button {
+  min-width: 0;
+}
+
 .composer__control-group .model-picker__button {
   max-width: 220px;
+}
+
+.composer__control-group .model-picker__value {
+  min-width: 0;
+}
+
+.composer__control-group .model-picker__chevron {
+  flex: 0 0 auto;
 }
 
 .permission-picker__chevron,
@@ -6144,31 +6064,6 @@ body {
   display: grid;
   place-items: center;
   color: var(--fg-faint);
-}
-
-.composer__usage {
-  height: 28px;
-  min-height: 28px;
-  margin-left: auto;
-}
-
-.composer__usage .context-usage {
-  padding: 0;
-  border: none;
-  background: transparent;
-}
-
-.context-usage__ring {
-  width: 24px;
-  height: 24px;
-}
-
-.context-usage__value {
-  width: 18px;
-  height: 18px;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: -.02em;
 }
 
 .composer__box {
@@ -6250,6 +6145,21 @@ body {
 .composer__footer {
   padding: 6px 2px 0;
   color: var(--fg-faint);
+}
+
+.composer__footer-start {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composer__footer .composer__shortcut {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer__shortcut kbd {

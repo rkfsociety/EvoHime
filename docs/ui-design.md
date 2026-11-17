@@ -27,8 +27,9 @@
   chat.list, chat.remove.
 - TaskTimeline.tsx отображает transcript и composer. Выбор workspace
   перенесён из composer в context rail; composer явно показывает текущую папку
-  и сохраняет permission, provider, model, context usage, attachments,
-  web-search и start/stop actions.
+  и сохраняет permission, provider, model, attachments, web-search и start/stop
+  actions. Context usage и состояние репозитория (ветка, счётчики изменений)
+  показывает сводка чата, поэтому в composer они не дублируются.
 - SettingsModal.tsx использует tabs/tabpanel ARIA contract, переключение
   вкладок клавишами стрелок и Escape для закрытия.
 - TracePanel, WorkbenchPanel и browser session остаются вспомогательными
@@ -45,12 +46,16 @@
 
 ## Composer
 
-Composer визуально группирует область проекта и branch metadata, permission
-mode, provider/model и context usage над полем ввода. Поле запроса занимает
-основную ширину; attach, web search и run/stop остаются отдельными явными
-действиями. Enter отправляет, Shift+Enter добавляет строку. Отсутствие
-workspace не скрывает composer и не отключает обычный диалог; project-only
-attachments корректно остаются недоступны без выбранной папки.
+Composer визуально группирует область проекта и permission mode над полем
+ввода, а выбор провайдера и модели вынесен в нижнюю строку рядом с
+подсказками клавиш. Ряд контролов не переносится: на минимальной
+поддерживаемой ширине окна блоки остаются в одной строке, а длинные подписи
+усекаются. Поле запроса занимает основную ширину; attach, web search и
+run/stop остаются отдельными явными действиями. Enter отправляет, Shift+Enter
+добавляет строку. Отсутствие workspace не скрывает composer и не отключает
+обычный диалог; project-only attachments корректно остаются недоступны без
+выбранной папки. Изменения репозитория и расход контекста показываются в
+сводке чата, а не в composer.
 
 ## Визуальные токены
 

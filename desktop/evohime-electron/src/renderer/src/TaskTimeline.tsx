@@ -6,13 +6,11 @@ import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEv
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
 import { HomeScreen } from './HomeScreen'
-import { RepositoryBar } from './RepositoryBar'
 import { ActivityLine } from './ActivityLine'
 import { buildTranscript } from './transcript'
 import { MarkdownMessage } from './MarkdownMessage'
 import { RecoveryBanner } from './RecoveryBanner'
 import { PermissionModePicker } from './PermissionModePicker'
-import { ContextUsage } from './ContextUsage'
 import { RoutingStatus } from './RoutingStatus'
 import { ChatProviderPicker } from './ChatProviderPicker'
 import { PinnedGoalBar } from './PinnedGoalBar'
@@ -934,15 +932,8 @@ export function TaskTimeline({
           <div className="composer__controls" aria-label={translate("Параметры задачи")}>
             <div className="composer__scope" title={workspace ?? translate("Без проекта")}>
               <ComposerIcon name="folder" className="composer__control-icon" />
-              <span>{translate("Папка")}</span>
               <strong>{translate(workspace ? basename(workspace) : translate("Без проекта"))}</strong>
             </div>
-            {workspace !== null ? (
-              <div className="composer__repository">
-                <RepositoryBar workspace={workspace} refreshKey={finished ? entries.length : 0} />
-              </div>
-            ) : null}
-            <span className="composer__divider" aria-hidden="true" />
             <div className="composer__control-group">
               <ComposerIcon name="lock" className="composer__control-icon" />
               <PermissionModePicker
@@ -951,24 +942,6 @@ export function TaskTimeline({
                 open={toolsMenuOpen}
                 onOpenChange={setToolsMenuOpen}
               />
-            </div>
-            <span className="composer__divider" aria-hidden="true" />
-            <div className="composer__control-group">
-              <ComposerIcon name="link" className="composer__control-icon" />
-              <ChatProviderPicker
-                connection={connection}
-                value={providerMode}
-                onChange={setProviderMode}
-                disabled={busy}
-              />
-            </div>
-            <span className="composer__divider" aria-hidden="true" />
-            <div className="composer__control-group composer__control-group--model">
-              <ComposerIcon name="box" className="composer__control-icon" />
-              <ModelPicker connection={connection} events={events} provider={providerMode} use="agent" />
-            </div>
-            <div className="composer__usage">
-              <ContextUsage events={taskEvents} />
             </div>
           </div>
           <div className="composer__box">
@@ -1078,7 +1051,22 @@ export function TaskTimeline({
 
 
           <div className="composer__footer">
-            {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : <span />}
+            <div className="composer__footer-start">
+              <div className="composer__control-group">
+                <ComposerIcon name="link" className="composer__control-icon" />
+                <ChatProviderPicker
+                  connection={connection}
+                  value={providerMode}
+                  onChange={setProviderMode}
+                  disabled={busy}
+                />
+              </div>
+              <div className="composer__control-group composer__control-group--model">
+                <ComposerIcon name="box" className="composer__control-icon" />
+                <ModelPicker connection={connection} events={events} provider={providerMode} use="agent" />
+              </div>
+              {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : null}
+            </div>
             <span className="composer__shortcut"><kbd>Enter</kbd> {translate("— отправить ·")}{' '}<kbd>Shift + Enter</kbd> {translate("— новая строка ·")}{' '}<kbd>Ctrl + V</kbd> {translate("— вставить файлы")}</span>
           </div>
 
