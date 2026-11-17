@@ -24,6 +24,7 @@ export interface ToolCall {
 
 export type TranscriptEntry =
   | { readonly kind: 'agent'; readonly id: string; readonly text: string }
+  | { readonly kind: 'approval'; readonly id: string; readonly summary: string; readonly toolName: string }
   | {
       readonly kind: 'activity'
       readonly id: string
@@ -142,6 +143,13 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {  con
       case 'approval.required': {
         const approvalId = text_(payload, 'approval_id')
         if (approvalId.length > 0) {
+          const preview = preview_(payload)
+          entries.push({
+            kind: 'approval',
+            id: approvalId,
+            summary: preview.summary || 'Ева запросила подтверждение действия.',
+            toolName: text_(payload, 'tool_name') || 'операция Core'
+          })
           approval = {
             approvalId,
             toolName: text_(payload, 'tool_name') || 'операция Core',

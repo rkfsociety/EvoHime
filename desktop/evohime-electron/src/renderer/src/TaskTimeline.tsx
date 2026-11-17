@@ -146,6 +146,8 @@ export interface TaskTimelineProps {
   readonly onChatOpened: (chatId: string) => void
   readonly identityName: string | null
   readonly chatRevision: number
+  readonly resolvedApprovalIds?: readonly string[]
+  readonly onApprovalResolved?: (approvalId: string) => void
 }
 
 export function TaskTimeline({
@@ -156,7 +158,9 @@ export function TaskTimeline({
   onChatTouched,
   onChatOpened,
   identityName,
-  chatRevision
+  chatRevision,
+  resolvedApprovalIds = [],
+  onApprovalResolved
 }: TaskTimelineProps): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
@@ -486,6 +490,7 @@ export function TaskTimeline({
       : transcriptForTask(activeTaskId, activeTaskEvents.filter((event) => event.taskId === activeTaskId)),
     [activeTaskEvents, activeTaskId, transcriptForTask]
   )
+  const visibleApproval = approval && !resolvedApprovalIds.includes(approval.approvalId) ? approval : null
 
   const conversation = useMemo(() => {
     const authoritativeMessages = projectedConversationEvents
@@ -814,17 +819,23 @@ export function TaskTimeline({
     async (granted: boolean, cancel = false) => {
       if (!api || !approval) return
       setBusy(true)
-      const outcome = await api.invoke('core.resolveApproval', {
-        approvalId: approval.approvalId,
-        granted,
-        idempotencyKey: `approval:${approval.approvalId}:${granted ? 'grant' : cancel ? 'cancel' : 'reject'}`,
-        ...(granted ? {} : { rejectionReason: cancel ? 'cancelled_by_user' : 'rejected_by_user' }),
-        cancel
-      })
-      setBusy(false)
-      if (!outcome.ok) setCommandError(outcome.message)
+      try {
+        const outcome = await api.invoke('core.resolveApproval', {
+          approvalId: approval.approvalId,
+          granted,
+          idempotencyKey: `approval:${approval.approvalId}:${granted ? 'grant' : cancel ? 'cancel' : 'reject'}`,
+          ...(granted ? {} : { rejectionReason: cancel ? 'cancelled_by_user' : 'rejected_by_user' }),
+          cancel
+        })
+        if (!outcome.ok) setCommandError(outcome.message)
+        else onApprovalResolved?.(approval.approvalId)
+      } catch {
+        setCommandError('Не удалось отправить решение в Core; запрос остаётся ожидающим.')
+      } finally {
+        setBusy(false)
+      }
     },
-    [api, approval]
+    [api, approval, onApprovalResolved]
   )
 
   const connected = CONNECTED_STATES.includes(connection)
@@ -832,7 +843,7 @@ export function TaskTimeline({
   const running = activeTaskId !== null && (startingTaskId === activeTaskId || !finished)
   // Запрос разрешения может прийти раньше любой другой записи ленты.
   const empty =
-    entries.length === 0 && sentPrompt === null && approval === null && conversation.length === 0
+    entries.length === 0 && sentPrompt === null && visibleApproval === null && conversation.length === 0
 
   return (
     <section className="chat" aria-label={translate("Ход задачи")}>
@@ -879,7 +890,7 @@ export function TaskTimeline({
                 <li className="chat__window-spacer" aria-hidden="true" style={{ height: `${(timelineItems.length - renderedTimelineStart - renderedTimelineItems.length) * TIMELINE_ITEM_HEIGHT_ESTIMATE_PX}px` }} />
               ) : null)}
 
-              {conversation.length > 0 && running && !approval && !conversation.at(-1)?.transcript.entries.some(
+              {conversation.length > 0 && running && !visibleApproval && !conversation.at(-1)?.transcript.entries.some(
                 (entry) => entry.kind === 'activity' && entry.running
               ) ? (
                 <li className="message message--working" role="status" aria-label={translate("Агент формирует ответ")}>
@@ -891,16 +902,16 @@ export function TaskTimeline({
                 </li>
               ) : null}
 
-              {approval ? (
+              {visibleApproval ? (
                 <li className="approval task-timeline__approval" role="alert">
-                  <strong>{translate("Нужно разрешение:")} {translate(approval.toolName)}</strong>
-                  <span>{translate(approval.permission)} · {translate(approval.scope)}</span>
-                  <strong>{approval.preview.summary}</strong>
-                  {approval.preview.command ? <code>{translate("Команда:")}{approval.preview.command}</code> : null}
-                  {approval.preview.cwd ? <code>cwd: {approval.preview.cwd}</code> : null}
-                  {approval.preview.path ? <code>{translate("Файл:")}{approval.preview.path}</code> : null}
-                  {approval.preview.details ? <pre className="approval__details">{approval.preview.details}</pre> : null}
-                  {approval.preview.truncated ? <small>{translate("Preview ограничен по размеру.")}</small> : null}
+                  <strong>{translate("Нужно разрешение:")} {translate(visibleApproval.toolName)}</strong>
+                  <span>{translate(visibleApproval.permission)} · {translate(visibleApproval.scope)}</span>
+                  <strong>{visibleApproval.preview.summary}</strong>
+                  {visibleApproval.preview.command ? <code>{translate("Команда:")}{visibleApproval.preview.command}</code> : null}
+                  {visibleApproval.preview.cwd ? <code>cwd: {visibleApproval.preview.cwd}</code> : null}
+                  {visibleApproval.preview.path ? <code>{translate("Файл:")}{visibleApproval.preview.path}</code> : null}
+                  {visibleApproval.preview.details ? <pre className="approval__details">{visibleApproval.preview.details}</pre> : null}
+                  {visibleApproval.preview.truncated ? <small>{translate("Preview ограничен по размеру.")}</small> : null}
                   <div>
                     <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>{translate("Разрешить")}</button>
                     <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>{translate("Отклонить")}</button>
@@ -1125,6 +1136,14 @@ function renderTranscriptEntry(
   copiedMessageId: string | null,
   onCopy: (id: string) => void
 ): React.JSX.Element {
+  if (entry.kind === 'approval') {
+    return (
+      <li key={`${entry.kind}-${entry.id}-${keySuffix}`} className="message message--note" data-testid="approval-history-entry">
+        <strong>{translate('Запрос подтверждения')}</strong>
+        <span>{translate(entry.summary)} · {translate(entry.toolName)}</span>
+      </li>
+    )
+  }
   if (entry.kind === 'activity') {
     return (
       <li key={`${entry.kind}-${entry.id}-${keySuffix}`} className="message message--activity">

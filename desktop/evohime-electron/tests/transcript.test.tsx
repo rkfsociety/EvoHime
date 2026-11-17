@@ -67,6 +67,24 @@ describe('transcript', () => {
     ])
   })
 
+  it('keeps approval requests as explicit entries in chat history', () => {
+    const { entries, approval } = buildTranscript(stream(
+      event('ApprovalRequired', {
+        approval_id: 'approval-history',
+        tool_name: 'deepseek_route',
+        preview: { kind: 'route_change', summary: 'Переключиться на платную модель за ~$0.05' }
+      })
+    ))
+
+    expect(entries).toContainEqual(expect.objectContaining({
+      kind: 'approval',
+      id: 'approval-history',
+      toolName: 'deepseek_route',
+      summary: 'Переключиться на платную модель за ~$0.05'
+    }))
+    expect(approval?.approvalId).toBe('approval-history')
+  })
+
   it('keeps completed long Codex messages instead of replacing the first one', () => {
     const first = 'Первое сообщение Codex. ' + 'а'.repeat(260)
     const second = 'Второе сообщение Codex. ' + 'б'.repeat(260)

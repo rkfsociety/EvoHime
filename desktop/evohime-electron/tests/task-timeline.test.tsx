@@ -948,6 +948,7 @@ describe('task timeline', () => {
   })
 
   it('shows approval details and forwards the decision', async () => {
+    let resolvedApprovalId = ''
     render(
       <TaskTimeline
         workspace="C:\work\repo"
@@ -959,6 +960,8 @@ describe('task timeline', () => {
           scope: 'src/app.ts',
           preview: { kind: 'file_write', summary: 'Записать файл (42 байт)', path: 'src/app.ts' }
         })]}
+        resolvedApprovalIds={[]}
+        onApprovalResolved={(id) => { resolvedApprovalId = id }}
       />
     )
 
@@ -974,5 +977,6 @@ describe('task timeline', () => {
         cancel: false
       }
     }))
+    await waitFor(() => expect(resolvedApprovalId).toBe('approval-1'))
   })
 })
