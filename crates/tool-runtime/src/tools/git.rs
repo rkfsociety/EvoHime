@@ -90,6 +90,7 @@ pub const CHANGED_FILES_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_GIT_OUTPUT_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct DiffInput {
     path: Option<String>,
 }
@@ -695,6 +696,26 @@ mod tests {
         .expect("diff succeeds");
 
         assert!(result.output.contains("world"));
+    }
+
+    #[tokio::test]
+    async fn diff_rejects_arguments_that_belong_to_git_show() {
+        let (_dir, ctx, _) = init_repo();
+
+        // `git.show` accepts `reference` and `stat_only`; `git.diff` does not.
+        // Ignoring them silently would return a whole-tree diff for a request
+        // that asked for one revision.
+        let error = diff(&ctx, json!({"reference": "HEAD", "stat_only": true}))
+            .await
+            .expect_err("git.diff must reject git.show arguments");
+        assert!(
+            matches!(&error, ToolError::InvalidInput { .. }),
+            "unexpected error: {error:?}"
+        );
+        assert!(
+            error.to_string().contains("unknown field"),
+            "error must name the rejected field: {error}"
+        );
     }
 
     #[tokio::test]

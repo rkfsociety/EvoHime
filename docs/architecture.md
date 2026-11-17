@@ -1904,6 +1904,17 @@ revision/registry/policy/grant/query/selector/limit и инвалидирует�
 попадает лишь bounded redacted selection metadata. Existing authenticated
 `model.context` event — единственная client projection; Electron panel не имеет
 доступа к Core, storage или full schemas.
+
+Имена инструментов Core остаются в dotted-форме (`git.status`), а провайдеру
+уходит `git_status`: `provider_function_name` в
+`crates/model-gateway/src/tools.rs` заменяет точки, а
+`adaptive_tool_catalog::canonical_tool_call_name` возвращает id только из
+активного loadout, поэтому обратная подстановка не расширяет authority.
+Дедупликация повторов (`recovery::RecentToolCalls`) удаляет повтор
+мутирующего вызова в окне шести сигнатур; успешная правка или коммит сбрасывают
+это окно для read-only инструментов (`git.status`, `git.diff`,
+`filesystem.read` и соседних), чтобы модель могла перечитать изменённое
+состояние, не получая «повтор удалён Core».
 ## Structured Response Contract v1
 
 Model Gateway предоставляет Core-owned schema-first structured response path.

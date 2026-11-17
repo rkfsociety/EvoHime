@@ -2400,8 +2400,16 @@ impl ToolAgent {
                         escalation_remaining.insert(call.name.clone(), 2);
                     }
                 }
-                mutation_done |=
+                let mutated =
                     outcome.ok && DELIVERY_MUTATION_TOOLS.contains(&call.name.as_str());
+                mutation_done |= mutated;
+                let committed = outcome.ok && call.name == DELIVERY_COMMIT_TOOL;
+                if mutated || committed {
+                    // Re-reading the same path is how a model verifies its own
+                    // edit. Drop earlier read-only signatures so the duplicate
+                    // guard does not swallow that read.
+                    recent_tool_calls.forget_reads();
+                }
                 commit_done |= outcome.ok
                     && call.name == DELIVERY_COMMIT_TOOL
                     && outcome

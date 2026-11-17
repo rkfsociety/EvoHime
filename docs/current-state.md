@@ -742,6 +742,32 @@ Exact-SHA CI по этому изменению ожидает результа�
 - сверх лимита tool-итераций цикл делает один дополнительный tool-free вызов: инструменты убираются из запроса, напечатанный tool call не исполняется, задача завершается `task.completed` с текстом модели, а не `tool_iteration_limit`;
 - для задачи с обязательным изменением Core считает успешные шаги без правки и на 6/12/18-м шаге добавляет bounded guidance перейти к `filesystem.patch` или `filesystem.write` (`task.delivery_mutation_nudge`), максимум три раза.
 
+### Схемы инструментов и ложные повторы
+
+Работа через Еву выявила дефекты, которые отклоняли корректные шаги агента
+без понятной причины.
+
+- `builtin_input_schema` для 27 зарегистрированных инструментов не имел явной
+  ветки и возвращал fallback с единственным полем `input`. Модель видела эту
+  схему, отправляла `{"input":{}}` в `git.status` и получала
+  `this tool does not accept input`. Теперь явные схемы объявлены для
+  `git.status`/`git.changed_files` (пустой объект), каждого git-инструмента,
+  `filesystem.stat`/`mkdir`, `logs.*`, `cargo.*`, `archive.*` и legacy
+  `browser.session.*`; тест
+  `no_registered_builtin_tool_falls_back_to_the_generic_input_schema` не даёт
+  вернуть заглушку.
+- `git.diff` делил схему с `git.log`/`show`/`blame`/`pull`/`push` и объявлял
+  `reference`, `remote`, `branch`, `force`, `max_count`, которых его исполнитель
+  не читает. Схемы разделены, а `DiffInput` отвергает неизвестные поля через
+  `serde(deny_unknown_fields)`: вызов с `reference` больше не превращается в
+  diff всего дерева.
+- `RecentToolCalls::forget_reads` существовал, но не вызывался, поэтому повтор
+  `filesystem.read` или `git.status` после правки удалялся как дубликат с
+  guidance «Его повтор удалён Core». Теперь успешная правка или коммит
+  сбрасывают окно read-only сигнатур, включая `git.status` и `git.diff`.
+- Recovery-подсказка для инструмента без аргументов требует передать `{}`
+  вместо вывода бесполезной схемы `{"type":"object"}`.
+
 ## Подтверждённые проверки checkout
 
 Этап 192.1 опубликован в `origin/main` коммитом

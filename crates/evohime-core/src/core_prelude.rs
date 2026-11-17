@@ -791,6 +791,9 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
             "- filesystem.patch принимает только JSON с path, patch и expected_hash, например {\"path\":\"relative/file.rs\",\"expected_hash\":\"точный content_hash из filesystem.read\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}; поля edits и patches недопустимы.".into(),
         );
     }
+    rules.push(
+        "- Если вызов инструмента отклонён, сверь аргументы с его JSON-схемой: инструменту без аргументов (git.status) отправляй ровно {}, не оборачивай поля в input, не добавляй чужие поля (reference у git.diff) и не повторяй тот же мутирующий вызов. Полный разбор форматов — docs/agent-tool-playbook.md в исходниках проекта.".into(),
+    );
     let mutation_tools: Vec<&str> = ["filesystem.patch", "filesystem.write", "git.commit"]
         .into_iter()
         .filter(|name| has(name))

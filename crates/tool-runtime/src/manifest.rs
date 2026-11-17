@@ -93,6 +93,10 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"path":string("Workspace-relative directory")}),
             &[],
         ),
+        "filesystem.stat" | "filesystem.mkdir" => object(
+            serde_json::json!({"path":string("Workspace-relative path")}),
+            &["path"],
+        ),
         "agent.run" => object(
             serde_json::json!({"prompt":string("Task prompt"),"max_steps":integer(),"timeout_ms":integer(),"model_route":string("Optional model route")}),
             &["prompt"],
@@ -120,9 +124,69 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"message":string("Commit message")}),
             &["message"],
         ),
-        "git.diff" | "git.log" | "git.show" | "git.blame" | "git.pull" | "git.push" => object(
-            serde_json::json!({"path":string("Optional workspace path"),"reference":string("Optional revision"),"remote":string("Optional remote"),"branch":string("Optional branch"),"force":{"type":"boolean"},"max_count":integer()}),
+        // Each Git tool declares its own closed schema. A shared superset used
+        // to promise `reference`/`stat_only` on `git.diff`, so a model could
+        // build a call the executor then rejected.
+        "git.status" | "git.changed_files" => object(serde_json::json!({}), &[]),
+        "git.diff" => object(
+            serde_json::json!({"path":string("Optional workspace path to limit the diff")}),
             &[],
+        ),
+        "git.log" => object(
+            serde_json::json!({"max_count":integer(),"path":string("Optional workspace path")}),
+            &[],
+        ),
+        "git.show" => object(
+            serde_json::json!({"reference":string("Optional revision, defaults to HEAD"),"stat_only":{"type":"boolean"}}),
+            &[],
+        ),
+        "git.blame" => object(
+            serde_json::json!({"path":string("Workspace-relative file path"),"start_line":integer(),"end_line":integer()}),
+            &["path"],
+        ),
+        "git.pull" => object(
+            serde_json::json!({"remote":string("Optional configured remote"),"branch":string("Optional branch")}),
+            &[],
+        ),
+        "git.push" => object(
+            serde_json::json!({"remote":string("Optional configured remote"),"branch":string("Optional branch"),"force":{"type":"boolean"}}),
+            &[],
+        ),
+        "git.branch" => object(
+            serde_json::json!({"action":string("create, switch, list, delete, or rename"),"name":string("Branch name"),"from":string("Optional base reference")}),
+            &["action"],
+        ),
+        "git.merge" => object(
+            serde_json::json!({"branch":string("Branch to merge"),"strategy":string("Optional merge strategy"),"no_ff":{"type":"boolean"}}),
+            &["branch"],
+        ),
+        "git.reset" => object(
+            serde_json::json!({"commit":string("Target revision"),"mode":string("soft, mixed, or hard")}),
+            &["commit"],
+        ),
+        "git.revert" => object(
+            serde_json::json!({"commit":string("Commit to revert"),"message":string("Optional commit message")}),
+            &["commit"],
+        ),
+        "git.cherry_pick" => object(
+            serde_json::json!({"commit":string("Commit to apply")}),
+            &["commit"],
+        ),
+        "git.rebase" => object(
+            serde_json::json!({"onto":string("Base revision to rebase onto"),"interactive":{"type":"boolean"}}),
+            &["onto"],
+        ),
+        "git.tag" => object(
+            serde_json::json!({"action":string("create, list, or delete"),"name":string("Tag name"),"commit":string("Optional target revision"),"message":string("Optional annotated tag message")}),
+            &["action"],
+        ),
+        "git.stash" => object(
+            serde_json::json!({"action":string("list, save, apply, pop, or drop"),"message":string("Optional stash message"),"index":string("Optional stash index"),"include_untracked":{"type":"boolean"}}),
+            &["action"],
+        ),
+        "git.remote" => object(
+            serde_json::json!({"action":string("list, add, or remove"),"name":string("Remote name"),"url":string("Remote URL")}),
+            &["action"],
         ),
         "mcp.call" => object(
             serde_json::json!({"server_id":string("Core-owned MCP server identity"),"tool_name":string("Allowlisted MCP tool"),"params":{},"timeout_ms":integer()}),
@@ -152,6 +216,55 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"program":string("Executable"),"args":{"type":"array","items":{"type":"string"}},"cwd":string("Working directory"),"timeout_ms":integer()}),
             &["program"],
         ),
+        "logs.tail" => object(
+            serde_json::json!({"path":string("Workspace-relative log path"),"lines":integer()}),
+            &["path"],
+        ),
+        "logs.grep" => object(
+            serde_json::json!({"pattern":string("Literal text to find"),"path":string("Optional file or directory"),"case_insensitive":{"type":"boolean"},"invert_match":{"type":"boolean"},"context_lines":integer()}),
+            &["pattern"],
+        ),
+        "cargo.build" => object(
+            serde_json::json!({"release":{"type":"boolean"},"package":string("Optional package"),"features":string("Optional comma-separated features")}),
+            &[],
+        ),
+        "cargo.test" => object(
+            serde_json::json!({"test_name":string("Optional test filter"),"package":string("Optional package"),"lib":{"type":"boolean"},"doc":{"type":"boolean"}}),
+            &[],
+        ),
+        "cargo.fmt" => object(
+            serde_json::json!({"check":{"type":"boolean"}}),
+            &[],
+        ),
+        "cargo.clippy" => object(
+            serde_json::json!({"package":string("Optional package"),"all_targets":{"type":"boolean"}}),
+            &[],
+        ),
+        "cargo.check" => object(
+            serde_json::json!({"package":string("Optional package")}),
+            &[],
+        ),
+        "archive.create" => object(
+            serde_json::json!({"source":string("Workspace path to archive"),"destination":string("Output archive path"),"format":string("tar, gz, tar.gz, or zip")}),
+            &["source", "destination"],
+        ),
+        "archive.extract" => object(
+            serde_json::json!({"archive":string("Workspace archive path"),"destination":string("Optional output directory")}),
+            &["archive"],
+        ),
+        "archive.list" => object(
+            serde_json::json!({"archive":string("Workspace archive path")}),
+            &["archive"],
+        ),
+        // Retired raw CDP names stay registered for diagnostics only: the
+        // executor always fails closed with `legacy_disabled`, and the typed
+        // Core IPC browser surface is the supported path.
+        "browser.session.navigate"
+        | "browser.session.read"
+        | "browser.session.click"
+        | "browser.session.screenshot"
+        | "browser.session.type"
+        | "browser.session.close" => object(serde_json::json!({}), &[]),
         _ => object(
             serde_json::json!({"input":{"type":"object","description":"Tool-specific structured input"}}),
             &[],
@@ -414,5 +527,45 @@ mod tests {
             serde_json::json!(["path", "patch", "expected_hash"])
         );
         assert_eq!(schema["properties"]["expected_hash"]["type"], "string");
+    }
+
+    #[test]
+    fn no_registered_builtin_tool_falls_back_to_the_generic_input_schema() {
+        // The fallback advertises a lone `input` field, so a model faithfully
+        // sends `{"input":{}}` to a tool whose executor expects `path` or no
+        // arguments at all. Every registered tool must declare its own schema.
+        let fallback = builtin_input_schema("__no_such_tool__");
+        assert!(fallback["properties"].get("input").is_some());
+
+        for manifest in crate::ToolRegistry::bootstrap().manifests() {
+            assert_ne!(
+                manifest.input_schema, fallback,
+                "{} declares no explicit input schema and would advertise a generic `input` field",
+                manifest.tool_id
+            );
+        }
+    }
+
+    #[test]
+    fn git_readers_declare_exactly_the_fields_their_executors_accept() {
+        let status = builtin_input_schema("git.status");
+        assert_eq!(status["additionalProperties"], false);
+        assert!(
+            status["properties"]
+                .as_object()
+                .is_none_or(|properties| properties.is_empty()),
+            "git.status takes no arguments"
+        );
+
+        let diff = builtin_input_schema("git.diff");
+        assert_eq!(diff["properties"]["path"]["type"], "string");
+        assert!(
+            diff["properties"].get("reference").is_none(),
+            "git.diff must not advertise the git.show `reference` field"
+        );
+
+        let show = builtin_input_schema("git.show");
+        assert_eq!(show["properties"]["reference"]["type"], "string");
+        assert_eq!(show["properties"]["stat_only"]["type"], "boolean");
     }
 }

@@ -79,6 +79,18 @@ pub fn recovery_hint(
                 )
             } else if schema.get("additionalProperties") == Some(&Value::Bool(true)) {
                 format!("Проверь обязательные поля инструмента {tool_name}: {description}")
+            } else if schema.get("additionalProperties") == Some(&Value::Bool(false))
+                && schema
+                    .get("properties")
+                    .and_then(Value::as_object)
+                    .is_none_or(|properties| properties.is_empty())
+            {
+                // A no-argument tool rejected the call because the model wrapped
+                // its arguments (`{"input":{}}`) or invented fields. Repeating the
+                // bare schema `{"type":"object"}` explains nothing.
+                format!(
+                    "{tool_name} не принимает аргументов: передай ровно пустой JSON-объект {{}} без обёртки `input` и без дополнительных полей."
+                )
             } else {
                 format!("Повтори вызов {tool_name} с JSON по схеме: {schema}")
             }
@@ -141,6 +153,24 @@ fn canonical_json(value: &Value) -> String {
     }
 }
 
+/// Signature prefixes of read-only tools whose results a mutation invalidates.
+///
+/// The prefix is the tool id plus the `:` that `canonical_call_signature`
+/// inserts, so a tool named `git.status` is matched exactly and never
+/// shadowed by a longer id.
+const READ_ONLY_SIGNATURE_PREFIXES: &[&str] = &[
+    "filesystem.read:",
+    "filesystem.list:",
+    "filesystem.search:",
+    "filesystem.stat:",
+    "git.status:",
+    "git.diff:",
+    "git.log:",
+    "git.show:",
+    "git.blame:",
+    "git.changed_files:",
+];
+
 /// Bounded set of recent tool-call signatures used to suppress duplicate work.
 pub struct RecentToolCalls {
     capacity: usize,
@@ -173,12 +203,15 @@ impl RecentToolCalls {
         true
     }
 
-    /// Removes filesystem read/list/search signatures so fresh reads can rework changed state.
+    /// Removes read-only signatures so fresh reads can rework changed state.
+    ///
+    /// Called after a successful mutation: re-reading the same path is the
+    /// normal way to verify an edit and must not be treated as a duplicate.
     pub fn forget_reads(&mut self) {
         self.order.retain(|signature| {
-            let keep = !(signature.starts_with("filesystem.read:")
-                || signature.starts_with("filesystem.list:")
-                || signature.starts_with("filesystem.search:"));
+            let keep = !READ_ONLY_SIGNATURE_PREFIXES
+                .iter()
+                .any(|prefix| signature.starts_with(prefix));
             if !keep {
                 self.present.remove(signature);
             }
@@ -207,6 +240,29 @@ mod recent_tests {
         recent.remember("git.status:null".into());
         recent.forget_reads();
         assert!(recent.remember("filesystem.read:{\"path\":\"a\"}".into()));
+    }
+
+    #[test]
+    fn mutation_forgets_git_observation_signatures_and_keeps_mutations_deduped() {
+        let mut recent = RecentToolCalls::new(6);
+        assert!(recent.remember("git.status:null".into()));
+        assert!(recent.remember("git.diff:{\"path\":\"a\"}".into()));
+        assert!(recent.remember("git.commit:{\"message\":\"x\"}".into()));
+
+        recent.forget_reads();
+
+        assert!(
+            recent.remember("git.status:null".into()),
+            "status must be repeatable after a mutation"
+        );
+        assert!(
+            recent.remember("git.diff:{\"path\":\"a\"}".into()),
+            "diff must be repeatable after a mutation"
+        );
+        assert!(
+            !recent.remember("git.commit:{\"message\":\"x\"}".into()),
+            "a mutation keeps its duplicate window"
+        );
     }
 }
 
@@ -572,6 +628,28 @@ mod tests {
             "писать файл",
         );
         assert!(hint.contains("schema") || hint.contains("JSON") || hint.contains("обязательные"));
+    }
+
+    #[test]
+    fn recovery_hint_invalidinput_for_no_argument_tool_names_the_empty_object() {
+        // git.status declares `additionalProperties: false` with no properties.
+        // Echoing that schema back does not tell a model what to send.
+        let hint = recovery_hint(
+            "git.status",
+            ToolFailureKind::InvalidInput,
+            &json!({"input": {}}),
+            &json!({"type": "object", "additionalProperties": false}),
+            "показать статус",
+        );
+        assert!(hint.contains("{}"), "hint must show the empty object: {hint}");
+        assert!(
+            hint.contains("не принимает аргументов"),
+            "hint must state that the tool takes no arguments: {hint}"
+        );
+        assert!(
+            !hint.contains("additionalProperties"),
+            "hint must not echo the raw schema: {hint}"
+        );
     }
 
     #[test]
