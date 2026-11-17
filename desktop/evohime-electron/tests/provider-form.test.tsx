@@ -166,12 +166,28 @@ describe('provider form', () => {
       acknowledgeProbePossibleCost: false,
       freeAccessRoutingMode: 'any',
       allowPaidFallback: false,
-      requestPacing: { enabled: true, intervalMs: 8000, freeIntervalMs: 18948 }
+      requestPacing: { enabled: true, intervalMs: 8000, freeIntervalMs: 18948 },
+      modelRateLimits: { 'deepseek:free': { enabled: false, rpm: 0, rph: 0, rpd: 0 } }
     })
     await waitFor(() => expect(screen.getByText(/Core перезапущен/)).toBeTruthy())
     // The stored value is never echoed back into the form.
     expect(field.value).toBe('')
     expect(screen.getByText('Ключ сохранён')).toBeTruthy()
+  })
+
+  it('saves disabled per-model request limits by default and lets the user enable them', async () => {
+    renderProviderForm()
+    expect(await screen.findByLabelText('ID модели')).toBeTruthy()
+    expect((screen.getByRole('checkbox', { name: /Включить лимиты для этой модели/i }) as HTMLInputElement).checked).toBe(false)
+    await userEvent.type(screen.getByLabelText('Ключ API'), 'sk-rate-limit-test')
+    await userEvent.click(screen.getByRole('checkbox', { name: /Включить лимиты для этой модели/i }))
+    await userEvent.clear(screen.getByLabelText('RPM'))
+    await userEvent.type(screen.getByLabelText('RPM'), '12')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
+    const save = calls.find((call) => call.command === 'provider.save')
+    expect((save?.payload as { modelRateLimits: Record<string, unknown> }).modelRateLimits['deepseek:free']).toEqual({
+      enabled: true, rpm: 12, rph: 0, rpd: 0
+    })
   })
 
   it('loads and saves per-provider request pacing', async () => {

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 const CONFIG_DIRECTORY: &str = "evohime";
 const CONFIG_FILE: &str = "provider.env";
-const MAX_CONFIG_BYTES: u64 = 16 * 1024;
+const MAX_CONFIG_BYTES: u64 = 128 * 1024;
 const CONFIG_TEMPLATE: &str = concat!(
     "# EvoHime Linux CLI provider settings\n",
     "MODEL_PROVIDER=literouter\n",
@@ -15,6 +15,7 @@ const CONFIG_TEMPLATE: &str = concat!(
     "# MODEL_PROVIDER_REQUEST_PACING_ENABLED=true\n",
     "# MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS=8000\n",
     "# MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS=18948\n",
+    "# MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON={}\n",
     "EVOHIME_MODEL_TIMEOUT_SECS=0\n",
     "EVOHIME_TASK_TIMEOUT_SECONDS=0\n",
 );
@@ -28,6 +29,7 @@ const ALLOWED_KEYS: &[&str] = &[
     "MODEL_PROVIDER_REQUEST_PACING_ENABLED",
     "MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS",
     "MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS",
+    "MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON",
     "EVOHIME_MODEL_TIMEOUT_SECS",
     "EVOHIME_TASK_TIMEOUT_SECONDS",
 ];
@@ -157,7 +159,7 @@ fn read_private_config(path: &Path) -> io::Result<Option<BTreeMap<String, String
     if metadata.len() > MAX_CONFIG_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "configuration exceeds 16 KiB",
+            "configuration exceeds 128 KiB",
         ));
     }
     if metadata.mode() & 0o777 != 0o600 {
@@ -171,7 +173,7 @@ fn read_private_config(path: &Path) -> io::Result<Option<BTreeMap<String, String
     if content.len() as u64 > MAX_CONFIG_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "configuration exceeds 16 KiB",
+            "configuration exceeds 128 KiB",
         ));
     }
     parse_config(&content).map(Some).map_err(|line| {

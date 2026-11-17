@@ -1690,24 +1690,32 @@ pub fn mock_gateway(chunks: Vec<String>) -> ModelGateway {
 
 fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, ProviderError> {
     match route.provider {
-        ProviderKind::LiteRouter => Ok(Arc::new(LiteRouterProvider::with_pacing(
+        ProviderKind::LiteRouter => Ok(Arc::new(LiteRouterProvider::with_pacing_and_model_limits(
             route.literouter.clone(),
             RetryPolicy::from_env(),
             route.request_pacing,
+            route.model_rate_limits.clone(),
         )?)),
-        ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::with_pacing(
+        ProviderKind::OpenAICompatible => Ok(Arc::new(
+            OpenAICompatibleProvider::with_pacing_and_model_limits(
+                route.literouter.clone(),
+                RetryPolicy::from_env(),
+                route.request_pacing,
+                route.model_rate_limits.clone(),
+            )?,
+        )),
+        ProviderKind::OpenAIResponses => Ok(Arc::new(
+            OpenAIResponsesProvider::with_pacing_and_model_limits(
+                route.literouter.clone(),
+                RetryPolicy::from_env(),
+                route.request_pacing,
+                route.model_rate_limits.clone(),
+            )?,
+        )),
+        ProviderKind::Ollama => Ok(Arc::new(OllamaProvider::with_pacing_and_model_limits(
             route.literouter.clone(),
-            RetryPolicy::from_env(),
             route.request_pacing,
-        )?)),
-        ProviderKind::OpenAIResponses => Ok(Arc::new(OpenAIResponsesProvider::with_pacing(
-            route.literouter.clone(),
-            RetryPolicy::from_env(),
-            route.request_pacing,
-        )?)),
-        ProviderKind::Ollama => Ok(Arc::new(OllamaProvider::with_pacing(
-            route.literouter.clone(),
-            route.request_pacing,
+            route.model_rate_limits.clone(),
         )?)),
         ProviderKind::Local => {
             LocalProvider::validate_loopback(&route.literouter.base_url)?;

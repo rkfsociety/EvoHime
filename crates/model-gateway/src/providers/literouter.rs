@@ -1,4 +1,6 @@
-use crate::config::{LiteRouterConfig, ProviderProfileId, RequestPacingConfig};
+use crate::config::{
+    LiteRouterConfig, ModelRateLimitConfig, ProviderProfileId, RequestPacingConfig,
+};
 use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     ThinkingConfig, TokenStream,
@@ -14,6 +16,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
+    collections::{HashMap, VecDeque},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -26,6 +29,8 @@ struct RequestGate {
     last_request: Option<Instant>,
     /// Interval learned from a provider rate-limit reply.
     min_interval: Option<Duration>,
+    /// Rolling request timestamps keyed by exact model id.
+    model_requests: HashMap<String, VecDeque<Instant>>,
 }
 
 /// LiteRouter — OpenAI-compatible provider.
@@ -39,6 +44,7 @@ pub struct LiteRouterProvider {
     reasoning_effort: Option<&'static str>,
     request_gate: Arc<Mutex<RequestGate>>,
     pacing: RequestPacingConfig,
+    model_rate_limits: HashMap<String, ModelRateLimitConfig>,
 }
 
 impl LiteRouterProvider {
@@ -67,13 +73,23 @@ impl LiteRouterProvider {
         retry: RetryPolicy,
         pacing: RequestPacingConfig,
     ) -> Result<Self, ProviderError> {
+        Self::with_pacing_and_model_limits(config, retry, pacing, HashMap::new())
+    }
+
+    /// Creates an adapter with independent optional limits for exact model IDs.
+    pub fn with_pacing_and_model_limits(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        pacing: RequestPacingConfig,
+        model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+    ) -> Result<Self, ProviderError> {
         if config.api_key.is_empty() {
             return Err(ProviderError::Config(
                 "LiteRouter API key must not be empty".to_string(),
             ));
         }
 
-        Self::build(config, retry, None, pacing)
+        Self::build(config, retry, None, pacing, model_rate_limits)
     }
 
     pub(crate) fn without_auth_with_reasoning_effort(
@@ -82,7 +98,29 @@ impl LiteRouterProvider {
         reasoning_effort: &'static str,
         pacing: RequestPacingConfig,
     ) -> Result<Self, ProviderError> {
-        Self::build(config, retry, Some(reasoning_effort), pacing)
+        Self::build(
+            config,
+            retry,
+            Some(reasoning_effort),
+            pacing,
+            HashMap::new(),
+        )
+    }
+
+    pub(crate) fn with_model_limits_without_auth_with_reasoning_effort(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        reasoning_effort: &'static str,
+        pacing: RequestPacingConfig,
+        model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+    ) -> Result<Self, ProviderError> {
+        Self::build(
+            config,
+            retry,
+            Some(reasoning_effort),
+            pacing,
+            model_rate_limits,
+        )
     }
 
     fn build(
@@ -90,6 +128,7 @@ impl LiteRouterProvider {
         retry: RetryPolicy,
         reasoning_effort: Option<&'static str>,
         pacing: RequestPacingConfig,
+        model_rate_limits: HashMap<String, ModelRateLimitConfig>,
     ) -> Result<Self, ProviderError> {
         // Core owns the request/task deadlines. Keep only a bounded connection
         // setup so a refused or unreachable endpoint fails promptly.
@@ -105,6 +144,7 @@ impl LiteRouterProvider {
             reasoning_effort,
             request_gate: Arc::new(Mutex::new(RequestGate::default())),
             pacing: pacing.normalized(),
+            model_rate_limits,
         })
     }
 
@@ -288,20 +328,67 @@ impl LiteRouterProvider {
     }
 
     async fn wait_for_request_slot(&self, model: &str) {
-        let Some(base_interval) = self.pacing.interval_for_model(model) else {
-            return;
-        };
         let mut gate = self.request_gate.lock().await;
-        let interval = gate
-            .min_interval
-            .map_or(base_interval, |learned| learned.max(base_interval));
-        if let Some(previous) = gate.last_request {
-            let elapsed = previous.elapsed();
-            if elapsed < interval {
-                tokio::time::sleep(interval - elapsed).await;
+        loop {
+            let mut delay = self.pacing.interval_for_model(model).and_then(|base| {
+                let interval = gate.min_interval.map_or(base, |learned| learned.max(base));
+                gate.last_request.and_then(|previous| {
+                    let elapsed = previous.elapsed();
+                    (elapsed < interval).then_some(interval - elapsed)
+                })
+            });
+            if let Some(limits) = self.model_rate_limits.get(model).filter(|limits| {
+                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+            }) {
+                let now = Instant::now();
+                let timestamps = gate.model_requests.entry(model.to_owned()).or_default();
+                while timestamps.front().is_some_and(|started| {
+                    now.duration_since(*started) >= Duration::from_secs(86_400)
+                }) {
+                    timestamps.pop_front();
+                }
+                for (cap, window) in [
+                    (limits.rpm, Duration::from_secs(60)),
+                    (limits.rph, Duration::from_secs(3600)),
+                    (limits.rpd, Duration::from_secs(86400)),
+                ] {
+                    if cap == 0 {
+                        continue;
+                    }
+                    let count = timestamps
+                        .iter()
+                        .filter(|started| now.duration_since(**started) < window)
+                        .count();
+                    if count >= cap as usize {
+                        let wait = timestamps
+                            .iter()
+                            .filter(|started| now.duration_since(**started) < window)
+                            .nth(count - cap as usize)
+                            .map(|started| window.saturating_sub(now.duration_since(*started)));
+                        if let Some(wait) = wait {
+                            delay = Some(delay.map_or(wait, |current| current.max(wait)));
+                        }
+                    }
+                }
             }
+            if let Some(delay) = delay {
+                drop(gate);
+                tokio::time::sleep(delay).await;
+                gate = self.request_gate.lock().await;
+                continue;
+            }
+            let now = Instant::now();
+            gate.last_request = Some(now);
+            if self.model_rate_limits.get(model).is_some_and(|limits| {
+                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+            }) {
+                gate.model_requests
+                    .entry(model.to_owned())
+                    .or_default()
+                    .push_back(now);
+            }
+            return;
         }
-        gate.last_request = Some(Instant::now());
     }
 
     /// Widens the request pacing after the provider reports the interval its
@@ -874,6 +961,49 @@ mod tests {
             provider.chat_completions_url(),
             "https://api.literouter.com/v1/chat/completions"
         );
+    }
+
+    #[tokio::test]
+    async fn rolling_limits_are_model_scoped_and_disabled_by_default() {
+        let pacing = RequestPacingConfig::disabled();
+        let mut limits = HashMap::new();
+        limits.insert(
+            "model-a".to_owned(),
+            ModelRateLimitConfig {
+                enabled: true,
+                rpm: 1,
+                rph: 0,
+                rpd: 0,
+            },
+        );
+        let provider = LiteRouterProvider::with_pacing_and_model_limits(
+            LiteRouterConfig {
+                api_key: "key".into(),
+                base_url: "https://api.literouter.com/v1".into(),
+                model: "model-a".into(),
+            },
+            RetryPolicy::default(),
+            pacing,
+            limits,
+        )
+        .expect("provider created");
+        {
+            let mut gate = provider.request_gate.lock().await;
+            let now = Instant::now();
+            gate.model_requests
+                .entry("model-a".into())
+                .or_default()
+                .push_back(now);
+            gate.model_requests
+                .entry("model-b".into())
+                .or_default()
+                .push_back(now);
+        }
+        provider.wait_for_request_slot("model-b").await;
+        let gate = provider.request_gate.lock().await;
+        assert_eq!(gate.model_requests["model-a"].len(), 1);
+        assert!(!gate.model_requests.contains_key("model-b"));
+        assert_eq!(provider.model_rate_limits["model-a"].rpm, 1);
     }
 
     #[test]

@@ -110,6 +110,23 @@ impl RequestPacingConfig {
     }
 }
 
+/// Optional rolling request caps for one exact model identifier.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelRateLimitConfig {
+    /// Whether any configured cap is enforced.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Maximum requests in a rolling minute; zero means unlimited.
+    #[serde(default)]
+    pub rpm: u32,
+    /// Maximum requests in a rolling hour; zero means unlimited.
+    #[serde(default)]
+    pub rph: u32,
+    /// Maximum requests in a rolling day; zero means unlimited.
+    #[serde(default)]
+    pub rpd: u32,
+}
+
 fn env_bool(name: &str, default: bool) -> bool {
     match env::var(name) {
         Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
@@ -373,6 +390,9 @@ pub struct ModelRouteConfig {
     /// Minimum spacing between request starts for this route.
     #[serde(default)]
     pub request_pacing: RequestPacingConfig,
+    /// Independent request caps keyed by exact model ID.
+    #[serde(default)]
+    pub model_rate_limits: HashMap<String, ModelRateLimitConfig>,
 }
 
 fn default_thinking_support() -> bool {
@@ -403,6 +423,7 @@ impl ModelRouteConfig {
             provider_credential_binding: None,
             supports_thinking,
             request_pacing: RequestPacingConfig::for_provider(provider),
+            model_rate_limits: HashMap::new(),
         }
     }
 
@@ -447,6 +468,15 @@ impl ModelRouteConfig {
     /// Replaces the request pacing policy for this route.
     pub fn with_request_pacing(mut self, request_pacing: RequestPacingConfig) -> Self {
         self.request_pacing = request_pacing.normalized();
+        self
+    }
+
+    /// Replaces per-model request limits for this provider route.
+    pub fn with_model_rate_limits(
+        mut self,
+        model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+    ) -> Self {
+        self.model_rate_limits = model_rate_limits;
         self
     }
 
@@ -549,6 +579,7 @@ impl ModelRouteConfig {
             provider_credential_binding: None,
             supports_thinking: true, // Mock supports all features
             request_pacing: RequestPacingConfig::disabled(),
+            model_rate_limits: HashMap::new(),
         }
     }
 
@@ -597,6 +628,7 @@ impl ModelGatewayConfig {
                 provider_credential_binding: None,
                 supports_thinking: true,
                 request_pacing: RequestPacingConfig::for_provider(provider),
+                model_rate_limits: HashMap::new(),
             },
             ProviderKind::OpenAICompatible => {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
@@ -624,7 +656,8 @@ impl ModelGatewayConfig {
         };
         route = route
             .with_credential_binding(env::var("MODEL_PROVIDER_CREDENTIAL_BINDING").ok())
-            .with_request_pacing(RequestPacingConfig::from_env(provider));
+            .with_request_pacing(RequestPacingConfig::from_env(provider))
+            .with_model_rate_limits(model_rate_limits_from_env()?);
         if provider == ProviderKind::OpenAICompatible {
             let profile_id =
                 match env::var("MODEL_PROVIDER_PROFILE_ID") {
@@ -645,6 +678,42 @@ impl ModelGatewayConfig {
             routes: HashMap::from([(default_route, route)]),
         })
     }
+}
+
+fn model_rate_limits_from_env() -> Result<HashMap<String, ModelRateLimitConfig>, ProviderError> {
+    let Ok(raw) = env::var("MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON") else {
+        return Ok(HashMap::new());
+    };
+    if raw.len() > 64 * 1024 {
+        return Err(ProviderError::Config(
+            "provider model rate limits exceed the environment bound".into(),
+        ));
+    }
+    let limits: HashMap<String, ModelRateLimitConfig> = serde_json::from_str(&raw)
+        .map_err(|_| ProviderError::Config("provider model rate limits are invalid".into()))?;
+    validate_model_rate_limits(&limits)?;
+    Ok(limits)
+}
+
+fn validate_model_rate_limits(
+    limits: &HashMap<String, ModelRateLimitConfig>,
+) -> Result<(), ProviderError> {
+    if limits.len() > 64
+        || limits.iter().any(|(model, limit)| {
+            model.is_empty()
+                || model.chars().count() > 128
+                || model.contains('\0')
+                || model.chars().any(char::is_whitespace)
+                || [limit.rpm, limit.rph, limit.rpd]
+                    .iter()
+                    .any(|value| *value > 10_000)
+        })
+    {
+        return Err(ProviderError::Config(
+            "provider model rate limits are out of bounds".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn normalize_base_url(url: &str) -> String {
@@ -669,6 +738,8 @@ struct EnvRouteConfig {
     provider_credential_binding: Option<String>,
     #[serde(default)]
     request_pacing: Option<RequestPacingConfig>,
+    #[serde(default)]
+    model_rate_limits: HashMap<String, ModelRateLimitConfig>,
 }
 
 fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, ProviderError> {
@@ -687,6 +758,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             .request_pacing
             .map(RequestPacingConfig::normalized)
             .unwrap_or_else(|| RequestPacingConfig::for_provider(provider));
+        let model_rate_limits = route.model_rate_limits;
         let model = route.model.unwrap_or_else(|| match provider {
             ProviderKind::OpenAICompatible => OPENAI_DEFAULT_MODEL.to_string(),
             ProviderKind::OpenAIResponses => OPENAI_CODEX_DEFAULT_MODEL.to_string(),
@@ -750,7 +822,8 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
         }
         route_config = route_config
             .with_credential_binding(route.provider_credential_binding)
-            .with_request_pacing(request_pacing);
+            .with_request_pacing(request_pacing)
+            .with_model_rate_limits(model_rate_limits);
         route_config.validate_provider_profile()?;
         parsed_routes.insert(name, route_config);
     }
@@ -997,6 +1070,9 @@ mod tests {
                     "interval_ms": 1500,
                     "free_interval_ms": 2500
                 }
+                ,"model_rate_limits": {
+                    "gpt-4o-mini": {"enabled": true, "rpm": 10, "rph": 200, "rpd": 1000}
+                }
             },
             "literouter": {
                 "provider": "literouter",
@@ -1010,12 +1086,34 @@ mod tests {
         assert!(openai.request_pacing.enabled);
         assert_eq!(openai.request_pacing.interval_ms, 1_500);
         assert_eq!(openai.request_pacing.free_interval_ms, 2_500);
+        let limits = openai
+            .model_rate_limits
+            .get("gpt-4o-mini")
+            .expect("model limits");
+        assert!(limits.enabled);
+        assert_eq!(limits.rpm, 10);
+        assert_eq!(limits.rph, 200);
+        assert_eq!(limits.rpd, 1000);
         let literouter = parsed.routes.get("literouter").expect("literouter route");
         assert!(literouter.request_pacing.enabled);
         assert_eq!(
             literouter.request_pacing.interval_ms,
             RequestPacingConfig::LITEROUTER_INTERVAL_MS
         );
+        assert!(literouter.model_rate_limits.is_empty());
+    }
+
+    #[test]
+    fn rejects_unbounded_model_limit_maps() {
+        let limits = (0..65)
+            .map(|index| (format!("model-{index}"), ModelRateLimitConfig::default()))
+            .collect();
+        assert!(validate_model_rate_limits(&limits).is_err());
+        assert!(validate_model_rate_limits(&HashMap::from([(
+            "bad model".to_owned(),
+            ModelRateLimitConfig::default(),
+        )]))
+        .is_err());
     }
 
     #[test]

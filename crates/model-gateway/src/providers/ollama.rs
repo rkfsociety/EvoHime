@@ -4,12 +4,12 @@ use super::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     TokenStream,
 };
-use crate::config::{LiteRouterConfig, RequestPacingConfig};
+use crate::config::{LiteRouterConfig, ModelRateLimitConfig, RequestPacingConfig};
 use crate::providers::literouter::LiteRouterProvider;
 use crate::retry::RetryPolicy;
 use crate::tools::ToolSpec;
 use serde::Deserialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 
 /// Default loopback base URL for the Ollama OpenAI-compatible endpoint.
@@ -38,13 +38,23 @@ impl OllamaProvider {
         config: LiteRouterConfig,
         pacing: RequestPacingConfig,
     ) -> Result<Self, ProviderError> {
+        Self::with_pacing_and_model_limits(config, pacing, HashMap::new())
+    }
+
+    /// Creates the adapter with optional per-model request limits.
+    pub fn with_pacing_and_model_limits(
+        config: LiteRouterConfig,
+        pacing: RequestPacingConfig,
+        model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+    ) -> Result<Self, ProviderError> {
         validate_loopback(&config.base_url)?;
         Ok(Self {
-            inner: LiteRouterProvider::without_auth_with_reasoning_effort(
+            inner: LiteRouterProvider::with_model_limits_without_auth_with_reasoning_effort(
                 config,
                 RetryPolicy::from_env(),
                 "none",
                 pacing,
+                model_rate_limits,
             )?,
         })
     }

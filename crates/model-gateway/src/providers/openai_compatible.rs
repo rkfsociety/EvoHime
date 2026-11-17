@@ -1,10 +1,11 @@
-use crate::config::{LiteRouterConfig, RequestPacingConfig};
+use crate::config::{LiteRouterConfig, ModelRateLimitConfig, RequestPacingConfig};
 use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     TokenStream,
 };
 use crate::retry::RetryPolicy;
 use crate::tools::ToolSpec;
+use std::collections::HashMap;
 /// Standalone OpenAI-compatible provider.
 ///
 /// It deliberately shares the proven wire implementation with LiteRouter while
@@ -34,13 +35,28 @@ impl OpenAICompatibleProvider {
         retry: RetryPolicy,
         pacing: RequestPacingConfig,
     ) -> Result<Self, ProviderError> {
+        Self::with_pacing_and_model_limits(config, retry, pacing, HashMap::new())
+    }
+
+    /// Creates the adapter with optional per-model request limits.
+    pub fn with_pacing_and_model_limits(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        pacing: RequestPacingConfig,
+        model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+    ) -> Result<Self, ProviderError> {
         if config.api_key.is_empty() {
             return Err(ProviderError::Config(
                 "OpenAI-compatible API key must not be empty".to_string(),
             ));
         }
         Ok(Self {
-            inner: super::literouter::LiteRouterProvider::with_pacing(config, retry, pacing)?,
+            inner: super::literouter::LiteRouterProvider::with_pacing_and_model_limits(
+                config,
+                retry,
+                pacing,
+                model_rate_limits,
+            )?,
         })
     }
 

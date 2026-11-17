@@ -43,6 +43,7 @@ import {
   normalizeCloudflareAccountId,
   normalizeModel,
   normalizeRequestPacing,
+  normalizeModelRateLimits,
   type ProviderStore
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
@@ -1739,6 +1740,9 @@ function dispatch(
       const requestPacing = value['requestPacing'] === undefined
         ? currentProfile?.requestPacing ?? (provider ? defaultRequestPacing(provider) : null)
         : normalizeRequestPacing(value['requestPacing'])
+      const modelRateLimits = value['modelRateLimits'] === undefined
+        ? currentProfile?.modelRateLimits ?? {}
+        : normalizeModelRateLimits(value['modelRateLimits'])
       const accountIdValue = value['accountId']
       const accountId = accountIdValue === undefined
         ? undefined
@@ -1752,6 +1756,7 @@ function dispatch(
         freeAccessProbePolicy === null ||
         freeAccessRoutingMode === null ||
         requestPacing === null ||
+        modelRateLimits === null ||
         (value['acknowledgeProbePossibleCost'] !== undefined && typeof value['acknowledgeProbePossibleCost'] !== 'boolean') ||
         (value['allowPaidFallback'] !== undefined && typeof value['allowPaidFallback'] !== 'boolean') ||
         (profileIdValue !== undefined && profileId === null) ||
@@ -1780,6 +1785,7 @@ function dispatch(
         freeAccessRoutingMode,
         allowPaidFallback,
         requestPacing,
+        modelRateLimits,
         ...(profileId ? { profileId } : {}),
         ...(accountId ? { accountId } : {})
       })

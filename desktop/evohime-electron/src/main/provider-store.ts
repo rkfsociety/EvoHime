@@ -16,6 +16,8 @@ import {
   type ProviderProfileSummary,
   type ProviderSummary,
   type RequestPacingSettings,
+  type ProviderModelRateLimits,
+  type ModelRateLimitSettings,
   OLLAMA_DEFAULT_BASE_URL
 } from '@shared/api'
 
@@ -32,7 +34,7 @@ import {
 export const MAX_KEY_CHARS = 512
 export const MAX_MODEL_CHARS = 128
 export const MAX_URL_CHARS = 512
-const STORE_VERSION = 7
+const STORE_VERSION = 8
 const MAX_STORED_SECRET_CHARS = 8_192
 const MAX_REVOKED_CREDENTIAL_BINDINGS = 128
 
@@ -51,6 +53,7 @@ export interface ProviderUpdate {
   readonly allowPaidFallback?: boolean
   /** Omitted values keep the stored per-provider pacing settings. */
   readonly requestPacing?: RequestPacingSettings
+  readonly modelRateLimits?: ProviderModelRateLimits
 }
 
 /** OS-backed encryption, injected so the store stays testable. */
@@ -70,6 +73,7 @@ interface StoredProfile {
   readonly credentialBinding: string
   readonly freeAccessProbePolicy: FreeAccessProbePolicy
   readonly requestPacing: RequestPacingSettings
+  readonly modelRateLimits: ProviderModelRateLimits
 }
 
 interface StoredDocument {
@@ -176,6 +180,32 @@ export function normalizeRequestPacing(value: unknown): RequestPacingSettings | 
   return { enabled: value['enabled'], intervalMs, freeIntervalMs }
 }
 
+const MAX_MODEL_RATE = 10_000
+const MAX_MODEL_RATE_LIMIT_MODELS = 64
+function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
+  if (!isRecord(value) || typeof value['enabled'] !== 'boolean') return null
+  const numbers = ['rpm', 'rph', 'rpd'] as const
+  const result = { enabled: value['enabled'] } as { enabled: boolean; rpm: number; rph: number; rpd: number }
+  for (const key of numbers) {
+    const n = value[key]
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > MAX_MODEL_RATE) return null
+    result[key] = n
+  }
+  return result
+}
+export function normalizeModelRateLimits(value: unknown): ProviderModelRateLimits | null {
+  if (value === undefined) return {}
+  if (!isRecord(value) || Object.keys(value).length > MAX_MODEL_RATE_LIMIT_MODELS) return null
+  const result: Record<string, ModelRateLimitSettings> = {}
+  for (const [model, settings] of Object.entries(value)) {
+    if (model.length === 0 || model.length > MAX_MODEL_CHARS || /[\s\0]/.test(model)) return null
+    const normalized = normalizeModelRate(settings)
+    if (normalized === null) return null
+    result[model] = normalized
+  }
+  return result
+}
+
 export class ProviderStore {
   constructor(
     private readonly filePath: string,
@@ -205,6 +235,7 @@ export class ProviderStore {
       freeAccessRoutingMode: document.freeAccessRoutingMode,
       allowPaidFallback: document.allowPaidFallback,
       requestPacing: active.requestPacing,
+      modelRateLimits: active.modelRateLimits,
       profiles: Object.fromEntries(PROVIDER_KINDS.map((kind) => (
         [kind, profileSummary(kind, profileFor(document, kind))] as const
       ))) as Readonly<Record<ProviderKind, ProviderProfileSummary>>,
@@ -274,6 +305,10 @@ export class ProviderStore {
       ? previous.requestPacing
       : normalizeRequestPacing(update.requestPacing)
     if (requestPacing === null) return null
+    const modelRateLimits = update.modelRateLimits === undefined
+      ? previous.modelRateLimits
+      : normalizeModelRateLimits(update.modelRateLimits)
+    if (modelRateLimits === null) return null
     const revokedCredentialBindings = credentialChanged && previous.credentialBinding
       ? appendRevokedBinding(current.revokedCredentialBindings, previous.credentialBinding)
       : current.revokedCredentialBindings
@@ -290,7 +325,8 @@ export class ProviderStore {
           accountId,
           credentialBinding,
           freeAccessProbePolicy,
-          requestPacing
+          requestPacing,
+          modelRateLimits
         }
       },
       compatibleProfiles: update.provider === 'openai_compatible'
@@ -305,7 +341,8 @@ export class ProviderStore {
               accountId,
               credentialBinding,
               freeAccessProbePolicy,
-              requestPacing
+              requestPacing,
+              modelRateLimits
             }
           }
         : current.compatibleProfiles,
@@ -435,6 +472,7 @@ export class ProviderStore {
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: String(profile.requestPacing.intervalMs),
       MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: String(profile.requestPacing.freeIntervalMs)
     }
+    environment['MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON'] = JSON.stringify(profile.modelRateLimits)
     if (document.codexModel) environment['CODEX_MODEL'] = document.codexModel
     if (document.provider === 'ollama') {
       environment['OLLAMA_BASE_URL'] = profile.baseUrl || OLLAMA_DEFAULT_BASE_URL
@@ -529,7 +567,8 @@ export class ProviderStore {
           : 'disabled'
         if (freeAccessProbePolicy !== value['freeAccessProbePolicy']) needsMigration = true
         const storedPacing = normalizeRequestPacing(value['requestPacing'])
-        if (storedPacing === null) needsMigration = true
+        const modelRateLimits = normalizeModelRateLimits(value['modelRateLimits'])
+        if (storedPacing === null || modelRateLimits === null || value['modelRateLimits'] === undefined) needsMigration = true
         profiles[kind] = {
           model: normalizeModel(value['model']) ?? '',
           baseUrl: providerProfileBaseUrl(profileId, accountId, baseUrl) ?? '',
@@ -539,7 +578,8 @@ export class ProviderStore {
           accountId,
           credentialBinding,
           freeAccessProbePolicy,
-          requestPacing: storedPacing ?? defaultRequestPacing(kind)
+          requestPacing: storedPacing ?? defaultRequestPacing(kind),
+          modelRateLimits: modelRateLimits ?? {}
         }
       }
     } else {
@@ -554,6 +594,8 @@ export class ProviderStore {
         ? record['freeAccessProbePolicy']
         : 'disabled'
       if (freeAccessProbePolicy !== record['freeAccessProbePolicy']) needsMigration = true
+      const modelRateLimits = normalizeModelRateLimits(record['modelRateLimits'])
+      if (modelRateLimits === null || record['modelRateLimits'] === undefined) needsMigration = true
       profiles[provider] = {
         model: normalizeModel(record['model']) ?? '',
         baseUrl: normalizeBaseUrl(record['baseUrl']) ?? '',
@@ -565,7 +607,8 @@ export class ProviderStore {
         accountId: cloudflareAccountFromBaseUrl(normalizeBaseUrl(record['baseUrl']) ?? '') ?? '',
         credentialBinding,
         freeAccessProbePolicy,
-        requestPacing: defaultRequestPacing(provider)
+        requestPacing: defaultRequestPacing(provider),
+        modelRateLimits: modelRateLimits ?? {}
       }
       if (provider === 'openai_compatible') {
         const migrated = profiles[provider]
@@ -593,8 +636,9 @@ export class ProviderStore {
           ? value['freeAccessProbePolicy']
           : 'disabled'
         const storedPacing = normalizeRequestPacing(value['requestPacing'])
+        const modelRateLimits = normalizeModelRateLimits(value['modelRateLimits'])
         if (credentialBinding !== existingBinding || freeAccessProbePolicy !== value['freeAccessProbePolicy'] ||
-          storedPacing === null || baseUrl !== value['baseUrl']) needsMigration = true
+          storedPacing === null || modelRateLimits === null || value['modelRateLimits'] === undefined || baseUrl !== value['baseUrl']) needsMigration = true
         compatibleProfiles[profileId] = {
           model: normalizeModel(value['model']) ?? '',
           baseUrl,
@@ -604,7 +648,8 @@ export class ProviderStore {
           accountId,
           credentialBinding,
           freeAccessProbePolicy,
-          requestPacing: storedPacing ?? defaultRequestPacing('openai_compatible')
+          requestPacing: storedPacing ?? defaultRequestPacing('openai_compatible'),
+          modelRateLimits: modelRateLimits ?? {}
         }
       }
     }
@@ -614,7 +659,7 @@ export class ProviderStore {
         compatibleProfiles[legacyCompatible.profileId] = legacyCompatible
         needsMigration = true
       } else if (hasCurrentProfiles && record['version'] === STORE_VERSION) {
-        // Version 7 writes the active compatibility profile in both places for
+        // Version 8 writes the active compatibility profile in both places for
         // legacy readers. Do not let this mirror overwrite newer profile data.
         const active = compatibleProfiles[legacyCompatible.profileId]
         if (active && !sameStoredProfile(active, legacyCompatible)) {
@@ -669,7 +714,7 @@ function profileFor(document: StoredDocument, provider: ProviderKind): StoredPro
   }
   if (provider === 'ollama') {
     return document.profiles[provider] ?? {
-      model: '', baseUrl: OLLAMA_DEFAULT_BASE_URL, tier: 'free', secret: '', profileId: 'custom', accountId: '', credentialBinding: '', freeAccessProbePolicy: 'disabled', requestPacing: defaultRequestPacing(provider)
+      model: '', baseUrl: OLLAMA_DEFAULT_BASE_URL, tier: 'free', secret: '', profileId: 'custom', accountId: '', credentialBinding: '', freeAccessProbePolicy: 'disabled', requestPacing: defaultRequestPacing(provider), modelRateLimits: {}
     }
   }
   return document.profiles[provider] ?? {
@@ -681,7 +726,7 @@ function profileFor(document: StoredDocument, provider: ProviderKind): StoredPro
     accountId: '',
     credentialBinding: '',
     freeAccessProbePolicy: 'disabled',
-    requestPacing: defaultRequestPacing(provider)
+    requestPacing: defaultRequestPacing(provider), modelRateLimits: {}
   }
 }
 
@@ -699,7 +744,7 @@ function compatibleProfileFor(document: StoredDocument, profileId: ProviderProfi
     accountId: '',
     credentialBinding: '',
     freeAccessProbePolicy: 'disabled',
-    requestPacing: defaultRequestPacing('openai_compatible')
+    requestPacing: defaultRequestPacing('openai_compatible'), modelRateLimits: {}
   }
 }
 
@@ -715,6 +760,7 @@ function sameStoredProfile(left: StoredProfile, right: StoredProfile): boolean {
     && left.requestPacing.enabled === right.requestPacing.enabled
     && left.requestPacing.intervalMs === right.requestPacing.intervalMs
     && left.requestPacing.freeIntervalMs === right.requestPacing.freeIntervalMs
+    && JSON.stringify(left.modelRateLimits) === JSON.stringify(right.modelRateLimits)
 }
 
 function isFreeAccessProbePolicy(value: unknown): value is FreeAccessProbePolicy {
@@ -784,7 +830,8 @@ function profileSummary(provider: ProviderKind, profile: StoredProfile): Provide
     profileId: profile.profileId,
     ...(profile.accountId ? { accountId: profile.accountId } : {}),
     freeAccessProbePolicy: profile.freeAccessProbePolicy,
-    requestPacing: profile.requestPacing
+    requestPacing: profile.requestPacing,
+    modelRateLimits: profile.modelRateLimits
   }
 }
 

@@ -10,6 +10,7 @@ import {
   normalizeApiKey,
   normalizeBaseUrl,
   normalizeModel,
+  normalizeModelRateLimits,
   type SecretCipher
 } from '../src/main/provider-store'
 import { PROVIDER_PROFILE_ENDPOINTS, PROVIDER_PROFILE_IDS } from '../src/shared/api'
@@ -106,6 +107,7 @@ describe('provider store', () => {
       MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
       MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
+      MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON: '{}',
       OPENAI_API_KEY: 'sk-openai',
       OPENAI_MODEL: 'gpt-4o-mini',
       OPENAI_BASE_URL: 'https://api.openai.com/v1',
@@ -136,6 +138,7 @@ describe('provider store', () => {
       MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
       MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
+      MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON: '{}',
       OLLAMA_BASE_URL: 'http://127.0.0.1:11434/v1',
       OLLAMA_MODEL: 'qwen3:4b'
     })
@@ -167,6 +170,7 @@ describe('provider store', () => {
       MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
       MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
+      MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON: '{}',
       OPENAI_API_KEY: 'sk-openai',
       OPENAI_MODEL: 'gpt-model',
       OPENAI_BASE_URL: 'https://api.openai.com/v1',
@@ -256,7 +260,7 @@ describe('provider store', () => {
     expect(store.summary().compatibleProfiles?.groq).toMatchObject({ configured: true, model: 'llama-groq' })
     expect(store.environment()).toMatchObject({ OPENAI_API_KEY: 'sk-groq', MODEL_PROVIDER_PROFILE_ID: 'groq' })
     expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({
-      version: 7,
+      version: 8,
       profiles: { openai_compatible: { profileId: 'groq', model: 'llama-groq' } },
       compatibleProfiles: { groq: { secret: Buffer.from('enc:sk-groq').toString('base64') } }
     })
@@ -311,14 +315,40 @@ describe('provider store', () => {
     expect(store.environment()).toMatchObject({
       MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'true',
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '1500',
-      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '2500'
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '2500',
+      MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON: '{}'
     })
     store.select('openai_compatible')
     expect(store.environment()).toMatchObject({
       MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '3500',
-      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '4500'
+      MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '4500',
+      MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON: '{}'
     })
+  })
+
+  it('keeps per-model limits independent between providers and models', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    store.save({
+      provider: 'literouter', apiKey: 'lr-key', model: 'model-a', baseUrl: '', tier: 'free',
+      modelRateLimits: { 'model-a': { enabled: true, rpm: 5, rph: 50, rpd: 500 } }
+    })
+    store.save({
+      provider: 'openai_compatible', apiKey: 'oa-key', model: 'model-b', baseUrl: '', tier: 'paid',
+      modelRateLimits: { 'model-b': { enabled: false, rpm: 0, rph: 0, rpd: 0 } }
+    })
+
+    expect(store.summary().profiles.literouter.modelRateLimits).toEqual({
+      'model-a': { enabled: true, rpm: 5, rph: 50, rpd: 500 }
+    })
+    store.select('literouter')
+    expect(store.environment()['MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON']).toBe(
+      '{"model-a":{"enabled":true,"rpm":5,"rph":50,"rpd":500}}'
+    )
+    store.select('openai_compatible')
+    expect(store.environment()['MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON']).toBe(
+      '{"model-b":{"enabled":false,"rpm":0,"rph":0,"rpd":0}}'
+    )
   })
 
   it('keeps request pacing when the key is removed', () => {
@@ -374,6 +404,7 @@ describe('provider store', () => {
       MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
       MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
+      MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON: '{}',
       OPENAI_API_KEY: 'sk-responses',
       OPENAI_MODEL: 'gpt-5-codex',
       MODEL_PROVIDER_CREDENTIAL_BINDING: expect.stringMatching(/^credential:[0-9a-f-]{36}$/)
@@ -408,6 +439,7 @@ describe('provider store', () => {
       MODEL_PROVIDER_REQUEST_PACING_ENABLED: 'false',
       MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS: '8000',
       MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS: '18948',
+      MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON: '{}',
       OPENAI_API_KEY: 'cf-token',
       OPENAI_BASE_URL: 'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/v1',
       OPENAI_MODEL: '@cf/meta/llama-3.1-8b-instruct',
@@ -541,7 +573,7 @@ describe('provider store', () => {
       freeIntervalMs: 18_948
     })
     expect(readFileSync(path, 'utf8')).not.toContain('sk-legacy')
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 7 })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 8 })
   })
 
   it('binds automatic probe consent to the saved OpenRouter credential and clears it on removal', () => {
@@ -615,7 +647,8 @@ describe('provider profile endpoints', () => {
       configured: false,
       profileId: 'deepseek',
       freeAccessProbePolicy: 'disabled',
-      requestPacing: { enabled: false, intervalMs: 8_000, freeIntervalMs: 18_948 }
+      requestPacing: { enabled: false, intervalMs: 8_000, freeIntervalMs: 18_948 },
+      modelRateLimits: {}
     })
     expect(defaultCompatibleProfileSummary('cloudflare_workers_ai')).toMatchObject({
       baseUrl: '',
@@ -625,6 +658,17 @@ describe('provider profile endpoints', () => {
 })
 
 describe('provider input bounds', () => {
+  it('validates bounded per-model rate limits', () => {
+    expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: 10, rph: 100, rpd: 500 } })).toEqual({
+      'gpt-4o': { enabled: true, rpm: 10, rph: 100, rpd: 500 }
+    })
+    expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: -1, rph: 0, rpd: 0 } })).toBeNull()
+    expect(normalizeModelRateLimits({ 'gpt-4o': { enabled: true, rpm: 10_001, rph: 0, rpd: 0 } })).toBeNull()
+    expect(normalizeModelRateLimits(Object.fromEntries(
+      Array.from({ length: 65 }, (_, index) => [`model-${index}`, { enabled: false, rpm: 0, rph: 0, rpd: 0 }])
+    ))).toBeNull()
+  })
+
   it('accepts https and loopback http only', () => {
     expect(normalizeBaseUrl('https://api.literouter.com/v1')).toBe('https://api.literouter.com/v1')
     expect(normalizeBaseUrl('http://localhost:1234/v1')).toBe('http://localhost:1234/v1')

@@ -705,6 +705,16 @@ export interface RequestPacingSettings {
   readonly freeIntervalMs: number
 }
 
+/** Per-model rolling request limits. Disabled and empty by default. */
+export interface ModelRateLimitSettings {
+  readonly enabled: boolean
+  readonly rpm: number
+  readonly rph: number
+  readonly rpd: number
+}
+
+export type ProviderModelRateLimits = Readonly<Record<string, ModelRateLimitSettings>>
+
 /** Largest interval the shell and Core accept for one request pause. */
 export const REQUEST_PACING_MAX_INTERVAL_MS = 3_600_000
 /** LiteRouter tier window between regular-model messages. */
@@ -736,6 +746,7 @@ export interface ProviderProfileSummary {
   readonly accountId?: string
   readonly freeAccessProbePolicy?: FreeAccessProbePolicy
   readonly requestPacing?: RequestPacingSettings
+  readonly modelRateLimits?: ProviderModelRateLimits
 }
 
 
@@ -757,6 +768,7 @@ export interface ProviderSummary {
   readonly freeAccessRoutingMode?: FreeAccessRoutingMode
   readonly allowPaidFallback?: boolean
   readonly requestPacing?: RequestPacingSettings
+  readonly modelRateLimits?: ProviderModelRateLimits
 }
 
 /** Модель, опубликованная локальным Codex app-server. */
@@ -2043,6 +2055,7 @@ export interface CommandPayloads {
     freeAccessRoutingMode?: FreeAccessRoutingMode
     allowPaidFallback?: boolean
     requestPacing?: RequestPacingSettings
+    modelRateLimits?: ProviderModelRateLimits
   }
   'provider.select': { provider: ProviderKind; profileId?: ProviderProfileId }
   'provider.clearKey': { provider?: ProviderKind; profileId?: ProviderProfileId }

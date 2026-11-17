@@ -4,7 +4,7 @@
 //! models are exposed through Responses, and the wire format for function
 //! calls is different.
 
-use crate::config::{LiteRouterConfig, RequestPacingConfig};
+use crate::config::{LiteRouterConfig, ModelRateLimitConfig, RequestPacingConfig};
 use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ChatRole, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
@@ -15,6 +15,7 @@ use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -25,8 +26,15 @@ pub struct OpenAIResponsesProvider {
     config: LiteRouterConfig,
     client: Client,
     retry: RetryPolicy,
-    request_gate: Arc<Mutex<Option<Instant>>>,
+    request_gate: Arc<Mutex<ResponsesRequestGate>>,
     pacing: RequestPacingConfig,
+    model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+}
+
+#[derive(Debug, Default)]
+struct ResponsesRequestGate {
+    last_request: Option<Instant>,
+    model_requests: HashMap<String, VecDeque<Instant>>,
 }
 
 impl OpenAIResponsesProvider {
@@ -46,6 +54,16 @@ impl OpenAIResponsesProvider {
         retry: RetryPolicy,
         pacing: RequestPacingConfig,
     ) -> Result<Self, ProviderError> {
+        Self::with_pacing_and_model_limits(config, retry, pacing, HashMap::new())
+    }
+
+    /// Creates the adapter with optional per-model request limits.
+    pub fn with_pacing_and_model_limits(
+        config: LiteRouterConfig,
+        retry: RetryPolicy,
+        pacing: RequestPacingConfig,
+        model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+    ) -> Result<Self, ProviderError> {
         if config.api_key.trim().is_empty() {
             return Err(ProviderError::Config(
                 "OpenAI Responses API key must not be empty".into(),
@@ -60,23 +78,74 @@ impl OpenAIResponsesProvider {
             config,
             client,
             retry,
-            request_gate: Arc::new(Mutex::new(None)),
+            request_gate: Arc::new(Mutex::new(ResponsesRequestGate::default())),
             pacing: pacing.normalized(),
+            model_rate_limits,
         })
     }
 
     async fn wait_for_request_slot(&self, model: &str) {
-        let Some(interval) = self.pacing.interval_for_model(model) else {
-            return;
-        };
         let mut previous = self.request_gate.lock().await;
-        if let Some(started) = *previous {
-            let elapsed = started.elapsed();
-            if elapsed < interval {
-                tokio::time::sleep(interval - elapsed).await;
+        loop {
+            let mut delay = self.pacing.interval_for_model(model).and_then(|interval| {
+                previous.last_request.and_then(|started| {
+                    let elapsed = started.elapsed();
+                    (elapsed < interval).then_some(interval - elapsed)
+                })
+            });
+            if let Some(limits) = self.model_rate_limits.get(model).filter(|limits| {
+                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+            }) {
+                let now = Instant::now();
+                let timestamps = previous.model_requests.entry(model.to_owned()).or_default();
+                while timestamps.front().is_some_and(|started| {
+                    now.duration_since(*started) >= Duration::from_secs(86_400)
+                }) {
+                    timestamps.pop_front();
+                }
+                for (cap, window) in [
+                    (limits.rpm, Duration::from_secs(60)),
+                    (limits.rph, Duration::from_secs(3600)),
+                    (limits.rpd, Duration::from_secs(86400)),
+                ] {
+                    if cap == 0 {
+                        continue;
+                    }
+                    let count = timestamps
+                        .iter()
+                        .filter(|started| now.duration_since(**started) < window)
+                        .count();
+                    if count >= cap as usize {
+                        if let Some(wait) = timestamps
+                            .iter()
+                            .filter(|started| now.duration_since(**started) < window)
+                            .nth(count - cap as usize)
+                            .map(|started| window.saturating_sub(now.duration_since(*started)))
+                        {
+                            delay = Some(delay.map_or(wait, |current| current.max(wait)));
+                        }
+                    }
+                }
             }
+            if let Some(delay) = delay {
+                drop(previous);
+                tokio::time::sleep(delay).await;
+                previous = self.request_gate.lock().await;
+                continue;
+            }
+            let now = Instant::now();
+            previous.last_request = Some(now);
+            if self.model_rate_limits.get(model).is_some_and(|limits| {
+                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+            }) {
+                previous
+                    .model_requests
+                    .entry(model.to_owned())
+                    .or_default()
+                    .push_back(now);
+            }
+            return;
         }
-        *previous = Some(Instant::now());
     }
 
     fn responses_url(&self) -> String {
