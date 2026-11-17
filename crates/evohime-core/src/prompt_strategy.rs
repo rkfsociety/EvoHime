@@ -652,9 +652,9 @@ fn composition_compatible(
                 && supports_tool_calls
                 && required_tool_ids.iter().all(|required| {
                     let required = evohime_tool_runtime::canonical_tool_id(required);
-                    available_tool_ids.iter().any(|granted| {
-                        evohime_tool_runtime::canonical_tool_id(granted) == required
-                    })
+                    available_tool_ids
+                        .iter()
+                        .any(|granted| evohime_tool_runtime::canonical_tool_id(granted) == required)
                 })
         }
         StrategyComposition::StructuredOutput { .. } => {

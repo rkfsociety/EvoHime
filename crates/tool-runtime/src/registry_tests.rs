@@ -24,7 +24,10 @@ fn resolve_tool_id_accepts_the_historical_dotted_spelling_only() {
     let registry = ToolRegistry::bootstrap();
 
     assert_eq!(registry.resolve_tool_id("git.status"), Some("git_status"));
-    assert_eq!(registry.resolve_tool_id("filesystem.read"), Some("filesystem_read"));
+    assert_eq!(
+        registry.resolve_tool_id("filesystem.read"),
+        Some("filesystem_read")
+    );
     assert_eq!(registry.resolve_tool_id("git_status"), Some("git_status"));
 
     // No alias is invented: an unregistered name stays unknown, and a dotted

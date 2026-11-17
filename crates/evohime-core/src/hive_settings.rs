@@ -370,9 +370,11 @@ mod tests {
 
     #[test]
     fn zero_semantics_are_explicit() {
-        let mut settings = HiveSettings::default();
-        settings.max_subagents_per_worker = 0;
-        settings.max_parallel_subagents = 0;
+        let mut settings = HiveSettings {
+            max_subagents_per_worker: 0,
+            max_parallel_subagents: 0,
+            ..HiveSettings::default()
+        };
         assert!(settings.validate().is_ok());
         assert_eq!(settings.effective_worker_ceiling(), 64);
         assert_eq!(settings.effective_parallel_limit(), 64);
@@ -386,14 +388,20 @@ mod tests {
 
     #[test]
     fn hard_limits_reject_hostile_values() {
-        let mut settings = HiveSettings::default();
-        settings.max_subagents_per_worker = MAX_SUBAGENT_HARD_LIMIT + 1;
+        let settings = HiveSettings {
+            max_subagents_per_worker: MAX_SUBAGENT_HARD_LIMIT + 1,
+            ..HiveSettings::default()
+        };
         assert!(settings.validate().is_err());
-        settings = HiveSettings::default();
-        settings.max_parallel_subagents = MAX_PARALLEL_HARD_LIMIT + 1;
+        let settings = HiveSettings {
+            max_parallel_subagents: MAX_PARALLEL_HARD_LIMIT + 1,
+            ..HiveSettings::default()
+        };
         assert!(settings.validate().is_err());
-        settings = HiveSettings::default();
-        settings.max_total_subagents_per_workflow = MAX_SUBAGENT_HARD_LIMIT + 1;
+        let settings = HiveSettings {
+            max_total_subagents_per_workflow: MAX_SUBAGENT_HARD_LIMIT + 1,
+            ..HiveSettings::default()
+        };
         assert!(settings.validate().is_err());
     }
 

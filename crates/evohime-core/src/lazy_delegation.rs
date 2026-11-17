@@ -906,7 +906,7 @@ mod tests {
 
     #[test]
     fn role_and_purpose_bounds_are_reused_for_extension_text() {
-        assert!(MAX_ROLE_CHARS >= 8);
+        const { assert!(MAX_ROLE_CHARS >= 8) };
         let request = DelegationExtensionRequest::new("a", "b", 1, 2, 1, "ok").expect("request");
         assert_eq!(request.requested_ceiling, 2);
     }

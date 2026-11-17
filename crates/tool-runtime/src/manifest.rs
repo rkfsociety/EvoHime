@@ -256,10 +256,7 @@ pub fn builtin_input_schema(tool_id: &str) -> Value {
             serde_json::json!({"test_name":string("Optional test filter"),"package":string("Optional package"),"lib":{"type":"boolean"},"doc":{"type":"boolean"}}),
             &[],
         ),
-        "cargo_fmt" => object(
-            serde_json::json!({"check":{"type":"boolean"}}),
-            &[],
-        ),
+        "cargo_fmt" => object(serde_json::json!({"check":{"type":"boolean"}}), &[]),
         "cargo_clippy" => object(
             serde_json::json!({"package":string("Optional package"),"all_targets":{"type":"boolean"}}),
             &[],
@@ -573,7 +570,10 @@ mod tests {
     #[test]
     fn canonical_tool_id_rewrites_only_the_historical_separator() {
         assert_eq!(canonical_tool_id("git.status"), "git_status");
-        assert_eq!(canonical_tool_id("git.worktree.create"), "git_worktree_create");
+        assert_eq!(
+            canonical_tool_id("git.worktree.create"),
+            "git_worktree_create"
+        );
         assert_eq!(canonical_tool_id("git_status"), "git_status");
         assert_eq!(canonical_tool_id("plain"), "plain");
     }

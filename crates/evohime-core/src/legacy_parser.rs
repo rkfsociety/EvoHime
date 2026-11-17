@@ -389,7 +389,7 @@ pub(crate) fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<N
         parsed_arguments.insert(key.to_string(), json_value);
     }
     if parsed_arguments.is_empty()
-        && evohime_tool_runtime::tool_namespace(&name) != "git"
+        && evohime_tool_runtime::tool_namespace(name) != "git"
         && !matches!(name, "browser_session_read" | "browser_session_close")
     {
         return None;

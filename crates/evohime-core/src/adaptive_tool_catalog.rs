@@ -384,7 +384,10 @@ mod tests {
         );
         // Underscore names are matched exactly; no fuzzy rewriting happens.
         assert_eq!(resolve_tool_call_name("filesystem", &allowed), None);
-        assert_eq!(resolve_tool_call_name("filesystem.list.extra", &allowed), None);
+        assert_eq!(
+            resolve_tool_call_name("filesystem.list.extra", &allowed),
+            None
+        );
     }
 
     #[test]

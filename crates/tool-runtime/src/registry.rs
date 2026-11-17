@@ -188,8 +188,7 @@ impl ToolDefinition {
             } else {
                 crate::ApprovalMode::OnPermission
             },
-            workspace_scope: if is_analysis_kernel
-                || crate::tool_namespace(self.name) == "workflow"
+            workspace_scope: if is_analysis_kernel || crate::tool_namespace(self.name) == "workflow"
             {
                 "task".into()
             } else {

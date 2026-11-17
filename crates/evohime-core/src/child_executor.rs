@@ -2121,11 +2121,10 @@ mod tests {
             .into_iter()
             .filter(|record| record.event_type == "child.workflow")
             .filter_map(|record| serde_json::from_slice::<ChildProjection>(&record.payload).ok())
-            .filter(|projection| {
+            .rfind(|projection| {
                 projection.child_task_id == "run-1:worker"
                     && projection.state == CoordinatorState::Accepted
             })
-            .last()
             .expect("accepted worker projection");
         assert_eq!(worker_projection.spawned_subagents, 3);
         assert_eq!(worker_projection.planned_ceiling, 8);

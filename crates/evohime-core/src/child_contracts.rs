@@ -455,7 +455,7 @@ impl DelegationGrant {
     /// The value is a ceiling, not a target. A worker may spawn fewer
     /// sub-agents and may stop as soon as the task is solved. A value of zero
     /// or one above [`MAX_DELEGATION_CHILDREN`] is rejected by
-    /// [`Self::validate`] instead of being silently clamped.
+    /// [`Self::validate_for_parent`] instead of being silently clamped.
     pub fn with_max_children(mut self, max_children: u32) -> Self {
         self.max_children = max_children;
         self

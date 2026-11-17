@@ -828,9 +828,8 @@ pub(crate) fn build_agent_system_prompt(tool_names: &[String]) -> String {
             git_rules.push("git_pull — для обновления checkout");
         }
         if has("git_push") {
-            git_rules.push(
-                "git_push — только если пользователь явно попросил опубликовать изменения",
-            );
+            git_rules
+                .push("git_push — только если пользователь явно попросил опубликовать изменения");
         }
         rules.push(format!(
             "- Для Git используй специализированные инструменты: {}. Не заменяй эти вызовы shell_execute и не выполняй git-команды из неправильной директории.",
