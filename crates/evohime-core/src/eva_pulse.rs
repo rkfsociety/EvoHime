@@ -549,9 +549,7 @@ impl Inner {
                     }
                     Err(error) if is_all_models_exhausted_error(&error) => {
                         if let Some(fallback_provider) = report.fallback_provider {
-                            if report
-                                .routmy_tokens_remaining
-                                .unwrap_or(0)
+                            if report.routmy_tokens_remaining.unwrap_or(0)
                                 >= ROUTMY_MIN_TOKENS_THRESHOLD
                             {
                                 self.dispatch_recovery_via_fallback(
@@ -1196,7 +1194,8 @@ impl PulseProbe for JournalPulseProbe {
                     let trimmed = value.trim();
                     trimmed.eq_ignore_ascii_case("true") || trimmed == "1"
                 });
-            let selected_provider = (!observation.provider.is_empty()).then(|| observation.provider.clone());
+            let selected_provider =
+                (!observation.provider.is_empty()).then(|| observation.provider.clone());
             let fallback_provider = observation
                 .fallback_provider
                 .as_deref()

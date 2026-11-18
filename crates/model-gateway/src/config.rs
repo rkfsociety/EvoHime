@@ -1313,7 +1313,10 @@ mod tests {
 
     #[test]
     fn routmy_profile_sets_daily_token_quota_and_utc_midnight_reset() {
-        assert_eq!(ProviderProfileId::parse("routmy"), Some(ProviderProfileId::RoutMy));
+        assert_eq!(
+            ProviderProfileId::parse("routmy"),
+            Some(ProviderProfileId::RoutMy)
+        );
         assert_eq!(ProviderProfileId::RoutMy.as_str(), "routmy");
         assert_eq!(
             ProviderProfileId::RoutMy.default_base_url(),
