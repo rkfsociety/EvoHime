@@ -92,6 +92,12 @@ pub struct HiveSettings {
     /// Optional isolated Git checkout used only by Queen self-development.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eva_workspace_path: Option<String>,
+    /// Whether EvaPulse may proactively pick uncompleted roadmap items when idle.
+    #[serde(default)]
+    pub proactive_evolution_enabled: bool,
+    /// Relative path inside `eva_workspace_path` to the roadmap/TODO file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eva_roadmap_path: Option<String>,
 }
 
 fn default_schema_version() -> u32 {
@@ -116,6 +122,8 @@ impl Default for HiveSettings {
             pulse_interval_secs: DEFAULT_PULSE_INTERVAL_SECS,
             daily_budget_usd: DEFAULT_DAILY_BUDGET_USD,
             eva_workspace_path: None,
+            proactive_evolution_enabled: false,
+            eva_roadmap_path: None,
         }
     }
 }
@@ -166,6 +174,9 @@ impl HiveSettings {
         }
         if let Some(path) = self.eva_workspace_path.as_deref() {
             validate_eva_workspace_path(path)?;
+        }
+        if let Some(path) = self.eva_roadmap_path.as_deref() {
+            validate_eva_roadmap_path(path)?;
         }
         Ok(())
     }
@@ -278,7 +289,9 @@ impl HiveSettings {
                 {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"},
                 {"name": "pulse_interval_secs", "type": "u64", "zero": "invalid"},
                 {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"},
-                {"name": "eva_workspace_path", "type": "optional_existing_git_directory", "default": null}
+                {"name": "eva_workspace_path", "type": "optional_existing_git_directory", "default": null},
+                {"name": "proactive_evolution_enabled", "type": "bool", "default": false},
+                {"name": "eva_roadmap_path", "type": "optional_relative_path", "default": null}
             ],
             "note": "ceilings are safety guards, not a spawn plan",
             "max_child_depth": MAX_CHILD_DEPTH
@@ -312,11 +325,42 @@ pub fn validate_eva_workspace_path(path: &str) -> Result<(), HiveSettingsError> 
     Ok(())
 }
 
+/// Validates that a roadmap file path is non-empty, relative, and stays within `eva_workspace_path`.
+pub fn validate_eva_roadmap_path(path: &str) -> Result<(), HiveSettingsError> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(HiveSettingsError::InvalidEvaRoadmapPath(
+            "path must not be empty".into(),
+        ));
+    }
+    let candidate = std::path::Path::new(trimmed);
+    if candidate.is_absolute() {
+        return Err(HiveSettingsError::InvalidEvaRoadmapPath(
+            "path must be relative to eva_workspace_path".into(),
+        ));
+    }
+    for component in candidate.components() {
+        if matches!(
+            component,
+            std::path::Component::ParentDir
+                | std::path::Component::RootDir
+                | std::path::Component::Prefix(_)
+        ) {
+            return Err(HiveSettingsError::InvalidEvaRoadmapPath(
+                "path must not escape eva_workspace_path".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Invalid hive safety settings.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HiveSettingsError {
     /// The configured isolated self-development checkout is invalid.
     InvalidEvaWorkspace(String),
+    /// The configured roadmap path is invalid.
+    InvalidEvaRoadmapPath(String),
     /// The persisted contract version is not supported.
     UnsupportedVersion(u32),
     /// The per-worker ceiling exceeds the hard implementation limit.
@@ -387,6 +431,9 @@ impl std::fmt::Display for HiveSettingsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidEvaWorkspace(message) => write!(f, "invalid eva workspace: {message}"),
+            Self::InvalidEvaRoadmapPath(message) => {
+                write!(f, "invalid eva roadmap path: {message}")
+            }
             Self::UnsupportedVersion(version) => {
                 write!(f, "unsupported hive settings version: {version}")
             }

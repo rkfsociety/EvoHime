@@ -33,6 +33,9 @@ impl PulseProbe for CalmProbe {
                 failed_worker_contexts: Vec::new(),
                 route_is_primary: true,
                 eva_workspace_path: None,
+                proactive_evolution_enabled: false,
+                eva_roadmap_path: None,
+                next_roadmap_item: None,
             })
         })
     }
@@ -44,6 +47,14 @@ impl PulseTaskSink for NoopSink {
     fn dispatch_recovery(
         &self,
         _failed_workers: &[FailedWorkerContext],
+        _eva_workspace_path: Option<&str>,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
+        Box::pin(async move { Err("not_used".into()) })
+    }
+
+    fn dispatch_evolution(
+        &self,
+        _item: &str,
         _eva_workspace_path: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
         Box::pin(async move { Err("not_used".into()) })
@@ -172,7 +183,8 @@ async fn saves_validated_eva_workspace_path_and_rejects_non_git_directory() {
 #[tokio::test]
 async fn set_hive_setting_daily_budget_usd() {
     let directory = tempfile::tempdir().expect("temp dir");
-    let journal = EventJournal::open(directory.path().join("hive-budget.db")).expect("journal opens");
+    let journal =
+        EventJournal::open(directory.path().join("hive-budget.db")).expect("journal opens");
     let bridge = IpcBridge::new(journal.clone());
 
     let saved = bridge

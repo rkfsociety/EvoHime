@@ -115,6 +115,12 @@ pub(crate) struct PulseCycleReport {
     pub route_is_primary: bool,
     /// Validated isolated checkout configured for Queen self-development.
     pub eva_workspace_path: Option<String>,
+    /// Whether proactive evolution is enabled in `HiveSettings`.
+    pub proactive_evolution_enabled: bool,
+    /// Relative path to the roadmap/TODO file inside `eva_workspace_path`.
+    pub eva_roadmap_path: Option<String>,
+    /// First uncompleted `[ ]` roadmap item eligible for proactive evolution.
+    pub next_roadmap_item: Option<String>,
 }
 
 /// Pure decision for one cycle.
@@ -132,6 +138,11 @@ pub(crate) enum PulseDecision {
         /// Newly failed child ids.
         failed_workers: Vec<String>,
     },
+    /// Dispatch one proactive self-development task from the roadmap.
+    Evolve {
+        /// First uncompleted roadmap item text.
+        item: String,
+    },
     /// Nothing needs attention.
     AllGood,
 }
@@ -143,14 +154,24 @@ pub(crate) trait PulseProbe: Send + Sync {
 
     /// Records that a recovery task was dispatched for the given failed workers.
     fn mark_recovery_dispatched(&self, _task_id: &str, _failed_workers: &[String]) {}
+
+    /// Records that a proactive evolution task was dispatched for the given item key.
+    fn mark_evolution_dispatched(&self, _task_id: &str, _item_key: &str) {}
 }
 
-/// Sink that asks Core to investigate failed workers.
+/// Sink that asks Core to investigate failed workers or evolve proactively.
 pub(crate) trait PulseTaskSink: Send + Sync {
     /// Dispatches one bounded recovery task and returns its task id.
     fn dispatch_recovery(
         &self,
         failed_workers: &[FailedWorkerContext],
+        eva_workspace_path: Option<&str>,
+    ) -> PulseFuture<'_, Result<String, String>>;
+
+    /// Dispatches one proactive evolution task for a roadmap item and returns its task id.
+    fn dispatch_evolution(
+        &self,
+        item: &str,
         eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>>;
 }
@@ -187,6 +208,7 @@ struct Inner {
     options: EvaPulseOptions,
     logger: Option<Arc<StructuredLogger>>,
     state: std::sync::Mutex<DaemonState>,
+    dispatched_evolutions: std::sync::Mutex<HashSet<String>>,
     notify: tokio::sync::Notify,
     shutdown: tokio_util::sync::CancellationToken,
     started: AtomicBool,
@@ -244,6 +266,7 @@ impl EvaPulseDaemon {
                 cycles: 0,
                 reason: "",
             }),
+            dispatched_evolutions: std::sync::Mutex::new(HashSet::new()),
             notify: tokio::sync::Notify::new(),
             shutdown: tokio_util::sync::CancellationToken::new(),
             started: AtomicBool::new(false),
@@ -455,6 +478,77 @@ impl Inner {
                 self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
                 interval
             }
+            PulseDecision::Evolve { item } => {
+                if !report.route_is_primary {
+                    self.publish(
+                        HIVE_PULSE_SLEEPING,
+                        next_wake_at(interval),
+                        "primary_route_unavailable",
+                    );
+                    self.log(
+                        "warning",
+                        "eva_pulse.evolution_skipped",
+                        serde_json::json!({
+                            "reason": "primary_route_unavailable",
+                            "item": item,
+                        }),
+                    );
+                    return interval;
+                }
+                let item_key = evolution_item_key(
+                    report.eva_workspace_path.as_deref(),
+                    report.eva_roadmap_path.as_deref(),
+                    &item,
+                );
+                let already_dispatched = {
+                    let guard = self
+                        .dispatched_evolutions
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    guard.contains(&item_key)
+                };
+                if already_dispatched {
+                    self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
+                    return interval;
+                }
+                match self
+                    .tasks
+                    .dispatch_evolution(&item, report.eva_workspace_path.as_deref())
+                    .await
+                {
+                    Ok(task_id) => {
+                        {
+                            let mut guard = self
+                                .dispatched_evolutions
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                            if guard.len() >= MAX_SEEN_FAILURES {
+                                guard.clear();
+                            }
+                            guard.insert(item_key.clone());
+                        }
+                        self.probe.mark_evolution_dispatched(&task_id, &item_key);
+                        self.log(
+                            "info",
+                            "eva_pulse.evolution_dispatched",
+                            serde_json::json!({
+                                "task_id": task_id,
+                                "item": item,
+                                "roadmap_path": report.eva_roadmap_path,
+                            }),
+                        );
+                    }
+                    Err(error) => {
+                        self.log(
+                            "warning",
+                            "eva_pulse.evolution_failed",
+                            serde_json::json!({ "error": error, "item": item }),
+                        );
+                    }
+                }
+                self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
+                interval
+            }
             PulseDecision::AllGood => {
                 tracing::info!("EvaPulse: all good");
                 self.log(
@@ -524,6 +618,14 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
             failed_workers: report.failed_workers.clone(),
         };
     }
+    if report.proactive_evolution_enabled
+        && report.eva_workspace_path.is_some()
+        && report.eva_roadmap_path.is_some()
+    {
+        if let Some(item) = report.next_roadmap_item.as_ref() {
+            return PulseDecision::Evolve { item: item.clone() };
+        }
+    }
     PulseDecision::AllGood
 }
 
@@ -562,6 +664,11 @@ struct PendingRecovery {
     failed_workers: Vec<String>,
 }
 
+struct PendingEvolution {
+    task_id: String,
+    item_key: String,
+}
+
 /// Production probe backed by the journal and the active route configuration.
 pub(crate) struct JournalPulseProbe {
     journal: EventJournal,
@@ -569,6 +676,8 @@ pub(crate) struct JournalPulseProbe {
     selected_model: SelectedModel,
     seen_failures: std::sync::Mutex<HashSet<String>>,
     pending_recoveries: std::sync::Mutex<Vec<PendingRecovery>>,
+    pending_evolutions: std::sync::Mutex<Vec<PendingEvolution>>,
+    handled_evolutions: std::sync::Mutex<HashSet<String>>,
     first_scan: AtomicBool,
 }
 
@@ -585,8 +694,57 @@ impl JournalPulseProbe {
             selected_model,
             seen_failures: std::sync::Mutex::new(HashSet::new()),
             pending_recoveries: std::sync::Mutex::new(Vec::new()),
+            pending_evolutions: std::sync::Mutex::new(Vec::new()),
+            handled_evolutions: std::sync::Mutex::new(HashSet::new()),
             first_scan: AtomicBool::new(true),
         }
+    }
+
+    fn reconcile_pending_evolutions(&self, records: &[evohime_local_storage::EventRecord]) {
+        let mut pending = self
+            .pending_evolutions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if pending.is_empty() {
+            return;
+        }
+        let mut still_pending = Vec::with_capacity(pending.len());
+        for entry in pending.drain(..) {
+            match task_terminal_outcome(records, &entry.task_id) {
+                Some(_) => {
+                    // Task finished (succeeded or failed): keep `item_key` in
+                    // `handled_evolutions` so the daemon does not loop on it.
+                }
+                None => {
+                    still_pending.push(entry);
+                }
+            }
+        }
+        *pending = still_pending;
+    }
+
+    fn next_roadmap_item(&self, settings: &HiveSettings) -> Option<String> {
+        if !settings.proactive_evolution_enabled {
+            return None;
+        }
+        let workspace = settings.eva_workspace_path.as_deref()?;
+        let roadmap = settings.eva_roadmap_path.as_deref()?;
+        let items = read_uncompleted_roadmap_items(workspace, roadmap);
+        if items.is_empty() {
+            return None;
+        }
+        let handled = self
+            .handled_evolutions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let pending = self
+            .pending_evolutions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        items.into_iter().find(|item| {
+            let key = evolution_item_key(Some(workspace), Some(roadmap), item);
+            !handled.contains(&key) && !pending.iter().any(|entry| entry.item_key == key)
+        })
     }
 
     fn reconcile_pending_recoveries(
@@ -682,6 +840,30 @@ impl PulseProbe for JournalPulseProbe {
         });
     }
 
+    fn mark_evolution_dispatched(&self, task_id: &str, item_key: &str) {
+        {
+            let mut handled = self
+                .handled_evolutions
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if handled.len() >= MAX_SEEN_FAILURES {
+                handled.clear();
+            }
+            handled.insert(item_key.to_owned());
+        }
+        let mut pending = self
+            .pending_evolutions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if pending.len() >= 32 {
+            pending.remove(0);
+        }
+        pending.push(PendingEvolution {
+            task_id: task_id.to_owned(),
+            item_key: item_key.to_owned(),
+        });
+    }
+
     fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>> {
         Box::pin(async move {
             let settings = self.journal.hive_settings().await.unwrap_or_default();
@@ -707,9 +889,15 @@ impl PulseProbe for JournalPulseProbe {
             let snapshot =
                 HiveStateSnapshot::from_observation(&settings, &projections, &roles, &observation);
             let in_flight = self.reconcile_pending_recoveries(&records);
+            self.reconcile_pending_evolutions(&records);
             let failed_workers = self.new_failures(&projections, &in_flight);
             let failed_worker_contexts =
                 build_failed_worker_contexts(&failed_workers, &projections, &records);
+            let next_roadmap_item = if failed_workers.is_empty() {
+                self.next_roadmap_item(&settings)
+            } else {
+                None
+            };
             let rate_limit_model = if observation.model.is_empty() {
                 selected_model.as_deref().unwrap_or("")
             } else {
@@ -733,6 +921,9 @@ impl PulseProbe for JournalPulseProbe {
                     self.gateway_config.as_ref(),
                 ),
                 eva_workspace_path: settings.eva_workspace_path,
+                proactive_evolution_enabled: settings.proactive_evolution_enabled,
+                eva_roadmap_path: settings.eva_roadmap_path,
+                next_roadmap_item,
             })
         })
     }
@@ -894,10 +1085,17 @@ fn find_last_tool_and_path(
             _ => tool_name.to_owned(),
         });
         file_path = parsed_args.as_ref().and_then(|args| {
-            ["path", "file_path", "file", "target_path", "target", "filename"]
-                .iter()
-                .find_map(|key| args.get(*key).and_then(|v| v.as_str()))
-                .map(|s| s.chars().take(256).collect::<String>())
+            [
+                "path",
+                "file_path",
+                "file",
+                "target_path",
+                "target",
+                "filename",
+            ]
+            .iter()
+            .find_map(|key| args.get(*key).and_then(|v| v.as_str()))
+            .map(|s| s.chars().take(256).collect::<String>())
         });
     }
     (last_tool, file_path)
@@ -952,8 +1150,23 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
         failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>> {
-        let primary_route = self.primary_route.clone();
         let prompt = build_recovery_prompt(failed_workers, eva_workspace_path);
+        self.dispatch_primary_task(prompt)
+    }
+
+    fn dispatch_evolution(
+        &self,
+        item: &str,
+        _eva_workspace_path: Option<&str>,
+    ) -> PulseFuture<'_, Result<String, String>> {
+        let prompt = proactive_evolution_prompt(item);
+        self.dispatch_primary_task(prompt)
+    }
+}
+
+impl CoordinatorPulseTaskSink {
+    fn dispatch_primary_task(&self, prompt: String) -> PulseFuture<'_, Result<String, String>> {
+        let primary_route = self.primary_route.clone();
         Box::pin(async move {
             // A route is required: without the primary LiteRouter route the
             // daemon must not fall back to a paid DeepSeek profile.
@@ -973,6 +1186,72 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
             Ok(task_id)
         })
     }
+}
+
+fn proactive_evolution_prompt(item: &str) -> String {
+    format!(
+        "Ты работаешь в песочнице. Твоя цель — реализовать следующий пункт из плана: '{item}'. \
+         Используй инструменты `eva_workspace_*`. Изучи код, внеси изменения, запусти тесты. \
+         Если тесты пройдут — закоммить и запушь. Если нет — исправь ошибки. \
+         Когда закончишь, отметь этот пункт в файле планов как `[x]`."
+    )
+}
+
+fn evolution_item_key(
+    eva_workspace_path: Option<&str>,
+    eva_roadmap_path: Option<&str>,
+    item: &str,
+) -> String {
+    format!(
+        "{}::{}::{}",
+        eva_workspace_path.unwrap_or("").trim(),
+        eva_roadmap_path.unwrap_or("").trim(),
+        item.trim()
+    )
+}
+
+fn read_uncompleted_roadmap_items(workspace_path: &str, roadmap_path: &str) -> Vec<String> {
+    let Ok(workspace) = evohime_tool_runtime::self_development::EvaWorkspace::open(workspace_path)
+    else {
+        return Vec::new();
+    };
+    let candidate = workspace.root().join(roadmap_path.trim());
+    let Ok(canonical) = candidate.canonicalize() else {
+        return Vec::new();
+    };
+    if !canonical.starts_with(workspace.root()) {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(canonical) else {
+        return Vec::new();
+    };
+    extract_uncompleted_roadmap_items(&content)
+}
+
+fn extract_uncompleted_roadmap_items(content: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        let rest = trimmed
+            .strip_prefix("- [ ] ")
+            .or_else(|| trimmed.strip_prefix("* [ ] "))
+            .or_else(|| trimmed.strip_prefix("[ ] "))
+            .or_else(|| {
+                let (prefix, tail) = trimmed.split_once("[ ] ")?;
+                let prefix_trimmed = prefix.trim();
+                let digits = prefix_trimmed
+                    .strip_suffix('.')
+                    .or_else(|| prefix_trimmed.strip_suffix(')'))?;
+                (!digits.is_empty() && digits.chars().all(|ch| ch.is_ascii_digit())).then_some(tail)
+            });
+        if let Some(text) = rest {
+            let clean = text.trim();
+            if !clean.is_empty() {
+                items.push(clean.to_owned());
+            }
+        }
+    }
+    items
 }
 
 fn recovery_task_prompt(incident: &str, workspace_path: Option<&str>) -> String {
@@ -1020,6 +1299,7 @@ mod tests {
     #[derive(Default)]
     struct CountingSink {
         primary_calls: AtomicUsize,
+        evolution_calls: AtomicUsize,
         fallback_calls: AtomicUsize,
     }
 
@@ -1031,6 +1311,15 @@ mod tests {
         ) -> PulseFuture<'_, Result<String, String>> {
             self.primary_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok("task-pulse".into()) })
+        }
+
+        fn dispatch_evolution(
+            &self,
+            _item: &str,
+            _eva_workspace_path: Option<&str>,
+        ) -> PulseFuture<'_, Result<String, String>> {
+            self.evolution_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move { Ok("task-evolution".into()) })
         }
     }
 
@@ -1046,6 +1335,9 @@ mod tests {
             failed_worker_contexts: Vec::new(),
             route_is_primary: true,
             eva_workspace_path: None,
+            proactive_evolution_enabled: false,
+            eva_roadmap_path: None,
+            next_roadmap_item: None,
         }
     }
 
@@ -1149,7 +1441,10 @@ mod tests {
         let (coordinator, mut events) = TaskCoordinator::new(8);
         let sink = CoordinatorPulseTaskSink::new(coordinator, Some("primary".into()));
         let task_id = sink
-            .dispatch_recovery(&[FailedWorkerContext::from_id("failed-worker")], Some("D:/eva"))
+            .dispatch_recovery(
+                &[FailedWorkerContext::from_id("failed-worker")],
+                Some("D:/eva"),
+            )
             .await
             .expect("recovery dispatches");
         let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
@@ -1238,7 +1533,11 @@ mod tests {
         assert!(!prompt.contains("D:/eva"));
     }
 
-    fn failed_projection(child_task_id: &str, role: &str, reason_code: Option<&str>) -> crate::child_workflow::ChildProjection {
+    fn failed_projection(
+        child_task_id: &str,
+        role: &str,
+        reason_code: Option<&str>,
+    ) -> crate::child_workflow::ChildProjection {
         crate::child_workflow::ChildProjection {
             event_id: format!("evt-{child_task_id}"),
             parent_task_id: "queen-1".into(),
@@ -1266,7 +1565,8 @@ mod tests {
     #[tokio::test]
     async fn eva_pulse_passes_error_context_to_recovery_task() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let journal = EventJournal::open(directory.path().join("pulse-context.db")).expect("journal opens");
+        let journal =
+            EventJournal::open(directory.path().join("pulse-context.db")).expect("journal opens");
         let selected = SelectedModel::default();
         selected.set("primary");
         let probe = JournalPulseProbe::new(journal.clone(), None, selected);
@@ -1330,7 +1630,8 @@ mod tests {
     #[tokio::test]
     async fn eva_pulse_retries_incident_after_recovery_429_cooldown() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let journal = EventJournal::open(directory.path().join("pulse-429.db")).expect("journal opens");
+        let journal =
+            EventJournal::open(directory.path().join("pulse-429.db")).expect("journal opens");
         let model = "pulse-429-test-model";
         evohime_model_gateway::clear_rate_limit(model);
         let selected = SelectedModel::default();
@@ -1399,5 +1700,151 @@ mod tests {
             decide(&report_4, crate::task_memory::now_millis() as i64),
             PulseDecision::AllGood
         );
+    }
+
+    fn init_git_repo(dir: &std::path::Path) {
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir)
+            .status()
+            .expect("git init runs");
+        assert!(status.success());
+    }
+
+    #[tokio::test]
+    async fn pulse_creates_proactive_task_from_roadmap() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let repo_dir = directory.path().join("eva-repo");
+        std::fs::create_dir_all(repo_dir.join("docs")).expect("docs dir");
+        init_git_repo(&repo_dir);
+        std::fs::write(
+            repo_dir.join("docs/development-plan.md"),
+            "# Plan\n- [x] Already done\n- [ ] Add proactive metrics endpoint\n",
+        )
+        .expect("write roadmap");
+
+        let journal =
+            EventJournal::open(directory.path().join("pulse-evolve.db")).expect("journal opens");
+        let settings = HiveSettings {
+            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            proactive_evolution_enabled: true,
+            eva_roadmap_path: Some("docs/development-plan.md".into()),
+            ..HiveSettings::default()
+        };
+        journal
+            .save_hive_settings(&settings)
+            .await
+            .expect("save settings");
+
+        let selected = SelectedModel::default();
+        selected.set("primary");
+        let gateway_config = Some(ModelGatewayConfig {
+            default_route: "primary".into(),
+            routes: std::collections::HashMap::from([(
+                "primary".into(),
+                evohime_model_gateway::ModelRouteConfig::literouter(
+                    "test-key",
+                    "http://localhost:1234",
+                    "primary",
+                ),
+            )]),
+        });
+        let probe = Arc::new(JournalPulseProbe::new(
+            journal.clone(),
+            gateway_config,
+            selected,
+        ));
+        let (coordinator, mut events) = TaskCoordinator::new(8);
+        let sink = Arc::new(CoordinatorPulseTaskSink::new(
+            coordinator,
+            Some("primary".into()),
+        ));
+
+        let report_1 = probe.observe().await.expect("observe 1");
+        assert_eq!(
+            decide(&report_1, crate::task_memory::now_millis() as i64),
+            PulseDecision::Evolve {
+                item: "Add proactive metrics endpoint".into()
+            }
+        );
+
+        let daemon = EvaPulseDaemon::spawn(
+            Arc::clone(&probe) as Arc<dyn PulseProbe>,
+            Arc::clone(&sink) as Arc<dyn PulseTaskSink>,
+            options(),
+            None,
+        );
+        daemon.run();
+
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("evolution task starts")
+            .expect("event received");
+        let dispatched_task_id = match &event {
+            crate::CoreEvent::TaskStarted { task_id, .. } => task_id.clone(),
+            other => panic!("unexpected event: {other:?}"),
+        };
+
+        // Allow a couple more cycles to run while the task is in-flight and after failure.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        journal
+            .record(&crate::CoreEvent::TaskFailed {
+                task_id: dispatched_task_id,
+                error: "simulated failure".into(),
+            })
+            .await
+            .expect("record failure");
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        daemon.shutdown();
+
+        // Anti-loop protection: the same item must not be re-dispatched after failure.
+        assert!(events.try_recv().is_err());
+
+        let prompt = proactive_evolution_prompt("Add proactive metrics endpoint");
+        assert!(prompt.contains("Add proactive metrics endpoint"));
+        assert!(prompt.contains("eva_workspace_*"));
+        assert!(prompt.contains("[x]"));
+    }
+
+    #[tokio::test]
+    async fn pulse_ignores_roadmap_if_disabled() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let repo_dir = directory.path().join("eva-repo");
+        std::fs::create_dir_all(repo_dir.join("docs")).expect("docs dir");
+        init_git_repo(&repo_dir);
+        std::fs::write(
+            repo_dir.join("docs/development-plan.md"),
+            "- [ ] Uncompleted item\n",
+        )
+        .expect("write roadmap");
+
+        let journal =
+            EventJournal::open(directory.path().join("pulse-disabled.db")).expect("journal opens");
+        let settings = HiveSettings {
+            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            proactive_evolution_enabled: false,
+            eva_roadmap_path: Some("docs/development-plan.md".into()),
+            ..HiveSettings::default()
+        };
+        journal
+            .save_hive_settings(&settings)
+            .await
+            .expect("save settings");
+
+        let probe = JournalPulseProbe::new(journal, None, SelectedModel::default());
+        let report = probe.observe().await.expect("observe");
+        assert!(!report.proactive_evolution_enabled);
+        assert_eq!(report.next_roadmap_item, None);
+        assert_eq!(
+            decide(&report, crate::task_memory::now_millis() as i64),
+            PulseDecision::AllGood
+        );
+
+        let mut forced_report = healthy_report();
+        forced_report.proactive_evolution_enabled = false;
+        forced_report.eva_workspace_path = Some("D:/eva".into());
+        forced_report.eva_roadmap_path = Some("docs/development-plan.md".into());
+        forced_report.next_roadmap_item = Some("Uncompleted item".into());
+        assert_eq!(decide(&forced_report, 1_000), PulseDecision::AllGood);
     }
 }
