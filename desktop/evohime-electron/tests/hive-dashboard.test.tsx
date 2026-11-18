@@ -296,6 +296,39 @@ describe('hive dashboard', () => {
     })
   })
 
+  it('ui_can_save_daily_budget', async () => {
+    const { rerender } = render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot({ daily_budget_usd: 0.5 }))]} />)
+    expect(await screen.findByText('$0.12 / $0.50')).toBeTruthy()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+
+    const budgetInput = await screen.findByRole('spinbutton', { name: 'Дневной лимит бюджета ($)' })
+    await userEvent.clear(budgetInput)
+    await userEvent.type(budgetInput, '2.00')
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить лимит' }))
+    await waitFor(() => {
+      expect(calls.find((call) => call.command === 'core.setHiveSetting')?.payload).toEqual({
+        key: 'daily_budget_usd',
+        value: '2'
+      })
+    })
+    expect(calls.some((call) => call.command === 'core.getHiveState')).toBe(true)
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_settings.saved', { accepted: true, daily_budget_usd: 2.0, error_code: '' }),
+          event('hive_state.snapshot', snapshot({ daily_budget_usd: 2.0 }))
+        ]}
+      />
+    )
+    expect(await screen.findByText('$0.12 / $2.00')).toBeTruthy()
+    expect(screen.getByText(/Лимит: \$2\.00\/день/)).toBeTruthy()
+  })
+
   it('shows zero task metrics when snapshot has no completed-task history', async () => {
     render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
     expect(await screen.findByText('Задач сегодня')).toBeTruthy()

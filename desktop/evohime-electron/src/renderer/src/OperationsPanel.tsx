@@ -1064,6 +1064,9 @@ export function HiveDashboard({
   const [evaWorkspaceDraft, setEvaWorkspaceDraft] = useState('')
   const [evaWorkspaceError, setEvaWorkspaceError] = useState<string | null>(null)
   const [evaWorkspaceBusy, setEvaWorkspaceBusy] = useState(false)
+  const [dailyBudgetDraft, setDailyBudgetDraft] = useState('')
+  const [dailyBudgetBusy, setDailyBudgetBusy] = useState(false)
+  const [dailyBudgetError, setDailyBudgetError] = useState<string | null>(null)
   const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
   const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
   const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
@@ -1081,11 +1084,28 @@ export function HiveDashboard({
     setEvaWorkspacePath(configured)
     setEvaWorkspaceDraft(configured)
   }, [hive?.evaWorkspacePath])
+  useEffect(() => {
+    if (!hive) return
+    setDailyBudgetDraft(String(hive.dailyBudgetUsd))
+  }, [hive?.dailyBudgetUsd])
   const hiveSettingsResult = latest(events, 'hive_settings.saved')
   useEffect(() => {
     if (!hiveSettingsResult) return
     try {
-      const result = JSON.parse(hiveSettingsResult.payload) as { accepted?: boolean; eva_workspace_path?: string | null; error_code?: string }
+      const result = JSON.parse(hiveSettingsResult.payload) as {
+        accepted?: boolean
+        eva_workspace_path?: string | null
+        daily_budget_usd?: number | null
+        error_code?: string
+      }
+      if (typeof result.daily_budget_usd === 'number' && Number.isFinite(result.daily_budget_usd)) {
+        if (result.accepted) {
+          setDailyBudgetDraft(String(result.daily_budget_usd))
+          setDailyBudgetError(null)
+        } else {
+          setDailyBudgetError(result.error_code || 'Дневной лимит отклонён Core.')
+        }
+      }
       if (!result.accepted && !result.error_code && !result.eva_workspace_path) {
         setEvaWorkspacePath('')
         setEvaWorkspaceDraft('')
@@ -1093,9 +1113,11 @@ export function HiveDashboard({
         return
       }
       if (!result.accepted || result.error_code) {
-        setEvaWorkspacePath('')
-        setEvaWorkspaceDraft('')
-        setEvaWorkspaceError(result.error_code || 'Путь к репозиторию отклонён Core.')
+        if (typeof result.daily_budget_usd !== 'number') {
+          setEvaWorkspacePath('')
+          setEvaWorkspaceDraft('')
+          setEvaWorkspaceError(result.error_code || 'Путь к репозиторию отклонён Core.')
+        }
         return
       }
       setEvaWorkspacePath(result.eva_workspace_path ?? '')
@@ -1323,6 +1345,33 @@ export function HiveDashboard({
       setEvaWorkspaceBusy(false)
     }
   }, [api, evaWorkspaceDraft, events])
+
+  const saveDailyBudget = useCallback(async (): Promise<void> => {
+    if (!api) return
+    const raw = dailyBudgetDraft.trim()
+    const parsed = Number(raw)
+    if (raw.length === 0 || !Number.isFinite(parsed) || parsed < 0 || parsed > 10_000) {
+      setDailyBudgetError('Укажите число от 0 до 10000.')
+      return
+    }
+    setDailyBudgetBusy(true)
+    setDailyBudgetError(null)
+    try {
+      const outcome = await api.invoke('core.setHiveSetting', {
+        key: 'daily_budget_usd',
+        value: String(parsed)
+      })
+      if (!outcome.ok) {
+        setDailyBudgetError(outcome.message)
+        return
+      }
+      requestSnapshot()
+    } catch {
+      setDailyBudgetError('Не удалось сохранить дневной лимит: Core не ответил.')
+    } finally {
+      setDailyBudgetBusy(false)
+    }
+  }, [api, dailyBudgetDraft, requestSnapshot])
 
   // The switch is a Core runtime control, not only a local display option:
   // false parks the daemon, true lets it run a cycle immediately. The local
@@ -1792,6 +1841,34 @@ export function HiveDashboard({
               ) : null}
               {evaWorkspaceError ? (
                 <p role="alert" className="hive-console__error">{translate(evaWorkspaceError)}</p>
+              ) : null}
+              <label className="hive-provider" htmlFor="daily-budget-usd-input">
+                <span>{translate('Дневной лимит бюджета ($)')}</span>
+                <div className="hive-settings-modal__row">
+                  <input
+                    id="daily-budget-usd-input"
+                    type="number"
+                    min="0"
+                    max="10000"
+                    step="0.01"
+                    aria-label={translate('Дневной лимит бюджета ($)')}
+                    value={dailyBudgetDraft}
+                    onChange={(changeEvent) => {
+                      setDailyBudgetDraft(changeEvent.target.value)
+                      setDailyBudgetError(null)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={!connected || dailyBudgetBusy}
+                    onClick={() => void saveDailyBudget()}
+                  >
+                    {translate(dailyBudgetBusy ? 'Сохранение…' : 'Сохранить лимит')}
+                  </button>
+                </div>
+              </label>
+              {dailyBudgetError ? (
+                <p role="alert" className="hive-console__error">{translate(dailyBudgetError)}</p>
               ) : null}
             </div>
           </section>

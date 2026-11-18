@@ -68,6 +68,16 @@ const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly
   { id: 'paid', label: 'Платные', hint: 'списываются с баланса провайдера' }
 ]
 
+/** Default probe policy for a newly selected transport or vendor profile. */
+function defaultTierFor(provider: ProviderKind, profileId: ProviderProfileId): ModelTier {
+  if (provider === 'ollama' || provider === 'literouter') return 'free'
+  if (provider === 'openai_responses') return 'paid'
+  const paidProfiles: ReadonlySet<ProviderProfileId> = new Set([
+    'openai', 'deepseek', 'xai', 'together_ai', 'fireworks_ai', 'moonshot', 'zai', 'nebius', 'rout', 'anymodel', 'custom'
+  ])
+  return paidProfiles.has(profileId) ? 'paid' : 'free'
+}
+
 function defaultProbePolicy(provider: ProviderKind, profileId: ProviderProfileId): FreeAccessProbePolicy {
   return provider === 'openai_compatible' && profileId === 'openrouter' ? 'on_first_use' : 'disabled'
 }
@@ -276,7 +286,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setApiKey('')
     setModel(savedMatches ? (saved?.model ?? '') : '')
     setLimitModel(savedMatches ? (saved?.model ?? '') : '')
-    setTier(savedMatches ? (saved?.tier ?? 'free') : 'free')
+    setTier(
+      savedMatches
+        ? (saved?.tier ?? defaultTierFor(nextProvider, nextProfileId))
+        : defaultTierFor(nextProvider, nextProfileId)
+    )
     setBaseUrl(
       savedMatches
         ? (saved?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))

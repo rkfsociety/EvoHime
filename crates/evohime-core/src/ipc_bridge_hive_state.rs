@@ -59,10 +59,59 @@ impl IpcBridge {
         serde_json::to_vec(&payload).map_err(|error| error.to_string())
     }
 
+    /// Validates and persists the daily background spend ceiling in USD.
+    pub(crate) async fn save_daily_budget_usd(&self, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let parsed = value.trim().parse::<f64>();
+        let valid_value = match parsed {
+            Ok(amount)
+                if amount.is_finite()
+                    && (0.0..=crate::hive_settings::MAX_DAILY_BUDGET_USD).contains(&amount) =>
+            {
+                Some(amount)
+            }
+            _ => None,
+        };
+        let Some(amount) = valid_value else {
+            return serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "daily_budget_usd": settings.daily_budget_usd,
+                "eva_workspace_path": settings.eva_workspace_path,
+                "self_development_enabled": settings.eva_workspace_path.is_some(),
+                "error_code": format!(
+                    "daily_budget_usd must be a number between 0 and {}",
+                    crate::hive_settings::MAX_DAILY_BUDGET_USD
+                ),
+            }))
+            .map_err(|error| error.to_string());
+        };
+        settings.daily_budget_usd = amount;
+        if let Err(error) = settings.validate() {
+            return serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "daily_budget_usd": serde_json::Value::Null,
+                "eva_workspace_path": settings.eva_workspace_path,
+                "self_development_enabled": settings.eva_workspace_path.is_some(),
+                "error_code": error.to_string(),
+            }))
+            .map_err(|serialization_error| serialization_error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "daily_budget_usd": settings.daily_budget_usd,
+            "eva_workspace_path": settings.eva_workspace_path,
+            "self_development_enabled": settings.eva_workspace_path.is_some(),
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
     /// Updates a named HiveSettings entry in Core durable storage.
     pub(crate) async fn set_hive_setting(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
         match key.trim() {
             "eva_workspace_path" => self.save_eva_workspace_path(value).await,
+            "daily_budget_usd" => self.save_daily_budget_usd(value).await,
             other => serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "eva_workspace_path": serde_json::Value::Null,

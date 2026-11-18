@@ -7,7 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::eva_pulse::{
-    EvaPulseDaemon, EvaPulseOptions, PulseCycleReport, PulseProbe, PulseTaskSink,
+    EvaPulseDaemon, EvaPulseOptions, FailedWorkerContext, PulseCycleReport, PulseProbe,
+    PulseTaskSink,
 };
 use crate::hive_state::{HIVE_PULSE_ACTIVE, HIVE_PULSE_DISABLED};
 
@@ -29,6 +30,7 @@ impl PulseProbe for CalmProbe {
                 provider_window_wake_at_ms: None,
                 rate_limited_until_ms: None,
                 failed_workers: Vec::new(),
+                failed_worker_contexts: Vec::new(),
                 route_is_primary: true,
                 eva_workspace_path: None,
             })
@@ -41,7 +43,7 @@ struct NoopSink;
 impl PulseTaskSink for NoopSink {
     fn dispatch_recovery(
         &self,
-        _failed_workers: &[String],
+        _failed_workers: &[FailedWorkerContext],
         _eva_workspace_path: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
         Box::pin(async move { Err("not_used".into()) })
@@ -164,5 +166,43 @@ async fn saves_validated_eva_workspace_path_and_rejects_non_git_directory() {
             .expect("settings reload")
             .eva_workspace_path,
         None
+    );
+}
+
+#[tokio::test]
+async fn set_hive_setting_daily_budget_usd() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let journal = EventJournal::open(directory.path().join("hive-budget.db")).expect("journal opens");
+    let bridge = IpcBridge::new(journal.clone());
+
+    let saved = bridge
+        .set_hive_setting("daily_budget_usd", "2.5")
+        .await
+        .expect("valid daily budget saves");
+    let saved: serde_json::Value = serde_json::from_slice(&saved).expect("saved json");
+    assert_eq!(saved["accepted"], true);
+    assert_eq!(saved["daily_budget_usd"], 2.5);
+    assert_eq!(
+        journal
+            .hive_settings()
+            .await
+            .expect("settings load")
+            .daily_budget_usd,
+        2.5
+    );
+
+    let rejected = bridge
+        .set_hive_setting("daily_budget_usd", "10001")
+        .await
+        .expect("out-of-range budget returns rejection payload");
+    let rejected: serde_json::Value = serde_json::from_slice(&rejected).expect("rejected json");
+    assert_eq!(rejected["accepted"], false);
+    assert_eq!(
+        journal
+            .hive_settings()
+            .await
+            .expect("settings remain unchanged")
+            .daily_budget_usd,
+        2.5
     );
 }

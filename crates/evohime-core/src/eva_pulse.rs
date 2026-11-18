@@ -41,6 +41,57 @@ const FALLBACK_INTERVAL: Duration = Duration::from_secs(1_800);
 /// Boxed future used by the probe/sink seams.
 pub(crate) type PulseFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Bounded diagnostic context extracted for one failed child worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FailedWorkerContext {
+    /// Identifier of the failed child task.
+    pub child_task_id: String,
+    /// Role assigned to the child worker.
+    pub role: String,
+    /// Machine-readable reason code from `child.workflow` or `task.failed`.
+    pub reason_code: Option<String>,
+    /// Last tool or command started by the worker, if recorded.
+    pub last_tool: Option<String>,
+    /// Target file path extracted from the last tool arguments, if present.
+    pub file_path: Option<String>,
+}
+
+impl FailedWorkerContext {
+    /// Builds a minimal context carrying only the child task identifier.
+    pub(crate) fn from_id(id: impl Into<String>) -> Self {
+        Self {
+            child_task_id: id.into(),
+            role: String::new(),
+            reason_code: None,
+            last_tool: None,
+            file_path: None,
+        }
+    }
+
+    /// Formats a bounded human-readable summary for the recovery prompt.
+    pub(crate) fn format_summary(&self) -> String {
+        let id: String = self.child_task_id.chars().take(128).collect();
+        let mut details = Vec::new();
+        if !self.role.trim().is_empty() {
+            details.push(format!("роль={}", self.role.trim()));
+        }
+        if let Some(reason) = self.reason_code.as_deref().filter(|s| !s.trim().is_empty()) {
+            details.push(format!("причина={}", reason.trim()));
+        }
+        if let Some(tool) = self.last_tool.as_deref().filter(|s| !s.trim().is_empty()) {
+            details.push(format!("инструмент={}", tool.trim()));
+        }
+        if let Some(path) = self.file_path.as_deref().filter(|s| !s.trim().is_empty()) {
+            details.push(format!("файл={}", path.trim()));
+        }
+        if details.is_empty() {
+            id
+        } else {
+            format!("{id} ({})", details.join(", "))
+        }
+    }
+}
+
 /// Observable result of one background cycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PulseCycleReport {
@@ -58,6 +109,8 @@ pub(crate) struct PulseCycleReport {
     pub rate_limited_until_ms: Option<i64>,
     /// Newly terminal child workers that still need a decision.
     pub failed_workers: Vec<String>,
+    /// Enriched diagnostic contexts for `failed_workers`.
+    pub failed_worker_contexts: Vec<FailedWorkerContext>,
     /// Whether the active route is the primary LiteRouter route.
     pub route_is_primary: bool,
     /// Validated isolated checkout configured for Queen self-development.
@@ -87,6 +140,9 @@ pub(crate) enum PulseDecision {
 pub(crate) trait PulseProbe: Send + Sync {
     /// Reads committed state; a failure parks the loop instead of inventing work.
     fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>>;
+
+    /// Records that a recovery task was dispatched for the given failed workers.
+    fn mark_recovery_dispatched(&self, _task_id: &str, _failed_workers: &[String]) {}
 }
 
 /// Sink that asks Core to investigate failed workers.
@@ -94,7 +150,7 @@ pub(crate) trait PulseTaskSink: Send + Sync {
     /// Dispatches one bounded recovery task and returns its task id.
     fn dispatch_recovery(
         &self,
-        failed_workers: &[String],
+        failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>>;
 }
@@ -361,12 +417,23 @@ impl Inner {
                     );
                     return interval;
                 }
+                let contexts = if report.failed_worker_contexts.is_empty() {
+                    failed_workers
+                        .iter()
+                        .cloned()
+                        .map(FailedWorkerContext::from_id)
+                        .collect::<Vec<_>>()
+                } else {
+                    report.failed_worker_contexts.clone()
+                };
                 match self
                     .tasks
-                    .dispatch_recovery(&failed_workers, report.eva_workspace_path.as_deref())
+                    .dispatch_recovery(&contexts, report.eva_workspace_path.as_deref())
                     .await
                 {
                     Ok(task_id) => {
+                        self.probe
+                            .mark_recovery_dispatched(&task_id, &failed_workers);
                         self.log(
                             "warning",
                             "eva_pulse.recovery_dispatched",
@@ -490,12 +557,18 @@ pub fn usd_to_nano_usd(value: f64) -> u64 {
     }
 }
 
+struct PendingRecovery {
+    task_id: String,
+    failed_workers: Vec<String>,
+}
+
 /// Production probe backed by the journal and the active route configuration.
 pub(crate) struct JournalPulseProbe {
     journal: EventJournal,
     gateway_config: Option<ModelGatewayConfig>,
     selected_model: SelectedModel,
     seen_failures: std::sync::Mutex<HashSet<String>>,
+    pending_recoveries: std::sync::Mutex<Vec<PendingRecovery>>,
     first_scan: AtomicBool,
 }
 
@@ -511,11 +584,59 @@ impl JournalPulseProbe {
             gateway_config,
             selected_model,
             seen_failures: std::sync::Mutex::new(HashSet::new()),
+            pending_recoveries: std::sync::Mutex::new(Vec::new()),
             first_scan: AtomicBool::new(true),
         }
     }
 
-    fn new_failures(&self, projections: &[crate::child_workflow::ChildProjection]) -> Vec<String> {
+    fn reconcile_pending_recoveries(
+        &self,
+        records: &[evohime_local_storage::EventRecord],
+    ) -> HashSet<String> {
+        let mut pending = self
+            .pending_recoveries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if pending.is_empty() {
+            return HashSet::new();
+        }
+        let mut seen = self
+            .seen_failures
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut in_flight = HashSet::new();
+        let mut still_pending = Vec::with_capacity(pending.len());
+        for entry in pending.drain(..) {
+            match task_terminal_outcome(records, &entry.task_id) {
+                Some(true) => {
+                    for id in entry.failed_workers {
+                        if seen.len() < MAX_SEEN_FAILURES {
+                            seen.insert(id);
+                        }
+                    }
+                }
+                Some(false) => {
+                    // Recovery task failed (e.g. 429 rate limit) or stopped:
+                    // drop from pending without marking workers as seen so the
+                    // next wake retries the incident.
+                }
+                None => {
+                    for id in &entry.failed_workers {
+                        in_flight.insert(id.clone());
+                    }
+                    still_pending.push(entry);
+                }
+            }
+        }
+        *pending = still_pending;
+        in_flight
+    }
+
+    fn new_failures(
+        &self,
+        projections: &[crate::child_workflow::ChildProjection],
+        in_flight: &HashSet<String>,
+    ) -> Vec<String> {
         let first_scan = self.first_scan.swap(false, Ordering::SeqCst);
         let mut seen = self
             .seen_failures
@@ -526,15 +647,19 @@ impl JournalPulseProbe {
             if !is_terminal_failure(projection) {
                 continue;
             }
-            if seen.len() >= MAX_SEEN_FAILURES {
-                break;
-            }
-            if !seen.insert(projection.child_task_id.clone()) {
+            if seen.contains(&projection.child_task_id) {
                 continue;
             }
-            // The first scan after startup adopts existing failures instead of
-            // immediately spawning work for a state the user already saw.
-            if !first_scan && failures.len() < MAX_REPORTED_FAILURES {
+            if first_scan {
+                if seen.len() < MAX_SEEN_FAILURES {
+                    seen.insert(projection.child_task_id.clone());
+                }
+                continue;
+            }
+            if in_flight.contains(&projection.child_task_id) {
+                continue;
+            }
+            if failures.len() < MAX_REPORTED_FAILURES {
                 failures.push(projection.child_task_id.clone());
             }
         }
@@ -543,6 +668,20 @@ impl JournalPulseProbe {
 }
 
 impl PulseProbe for JournalPulseProbe {
+    fn mark_recovery_dispatched(&self, task_id: &str, failed_workers: &[String]) {
+        let mut pending = self
+            .pending_recoveries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if pending.len() >= 32 {
+            pending.remove(0);
+        }
+        pending.push(PendingRecovery {
+            task_id: task_id.to_owned(),
+            failed_workers: failed_workers.to_vec(),
+        });
+    }
+
     fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>> {
         Box::pin(async move {
             let settings = self.journal.hive_settings().await.unwrap_or_default();
@@ -555,15 +694,31 @@ impl PulseProbe for JournalPulseProbe {
                 now_ms,
             )
             .await;
-            let projections = crate::hive_observation::replay_hive_projections(&self.journal).await;
+            let latest = self.journal.latest_sequence().await;
+            let after =
+                latest.saturating_sub(i64::from(crate::hive_observation::HIVE_REPLAY_WINDOW) - 1);
+            let records = self
+                .journal
+                .replay(after, crate::hive_observation::HIVE_REPLAY_WINDOW as usize)
+                .await
+                .unwrap_or_default();
+            let projections = replay_projections_from_records(&records);
             let roles = crate::hive_observation::persistent_agent_roles(&self.journal).await;
             let snapshot =
                 HiveStateSnapshot::from_observation(&settings, &projections, &roles, &observation);
-            let failed_workers = self.new_failures(&projections);
-            let rate_limited_until_ms = if observation.model.is_empty() {
+            let in_flight = self.reconcile_pending_recoveries(&records);
+            let failed_workers = self.new_failures(&projections, &in_flight);
+            let failed_worker_contexts =
+                build_failed_worker_contexts(&failed_workers, &projections, &records);
+            let rate_limit_model = if observation.model.is_empty() {
+                selected_model.as_deref().unwrap_or("")
+            } else {
+                observation.model.as_str()
+            };
+            let rate_limited_until_ms = if rate_limit_model.is_empty() {
                 None
             } else {
-                evohime_model_gateway::rate_limited_until(&observation.model)
+                evohime_model_gateway::rate_limited_until(rate_limit_model)
             };
             Ok(PulseCycleReport {
                 interval_secs: settings.pulse_interval_secs,
@@ -573,6 +728,7 @@ impl PulseProbe for JournalPulseProbe {
                 provider_window_wake_at_ms: snapshot.queen.wake_at_ms,
                 rate_limited_until_ms,
                 failed_workers,
+                failed_worker_contexts,
                 route_is_primary: crate::hive_observation::route_is_background_primary(
                     self.gateway_config.as_ref(),
                 ),
@@ -580,6 +736,171 @@ impl PulseProbe for JournalPulseProbe {
             })
         })
     }
+}
+
+fn replay_projections_from_records(
+    records: &[evohime_local_storage::EventRecord],
+) -> Vec<crate::child_workflow::ChildProjection> {
+    let mut by_child = std::collections::BTreeMap::new();
+    for record in records {
+        if record.event_type != "child.workflow" {
+            continue;
+        }
+        if let Ok(projection) =
+            serde_json::from_slice::<crate::child_workflow::ChildProjection>(&record.payload)
+        {
+            by_child.insert(projection.child_task_id.clone(), projection);
+        }
+    }
+    by_child.into_values().collect()
+}
+
+fn task_terminal_outcome(
+    records: &[evohime_local_storage::EventRecord],
+    target_task_id: &str,
+) -> Option<bool> {
+    let mut outcome = None;
+    for record in records {
+        match record.event_type.as_str() {
+            "task.completed" => {
+                if extract_event_task_id(&record.payload).as_deref() == Some(target_task_id) {
+                    outcome = Some(true);
+                }
+            }
+            "task.failed" | "task.stopped" => {
+                if extract_event_task_id(&record.payload).as_deref() == Some(target_task_id) {
+                    outcome = Some(false);
+                }
+            }
+            _ => {}
+        }
+    }
+    outcome
+}
+
+fn extract_event_task_id(payload: &[u8]) -> Option<String> {
+    let value = serde_json::from_slice::<serde_json::Value>(payload).ok()?;
+    if let Some(id) = value.get("task_id").and_then(|v| v.as_str()) {
+        return Some(id.to_owned());
+    }
+    for variant in ["TaskCompleted", "TaskFailed", "TaskStopped", "ToolStarted"] {
+        if let Some(id) = value
+            .get(variant)
+            .and_then(|inner| inner.get("task_id"))
+            .and_then(|v| v.as_str())
+        {
+            return Some(id.to_owned());
+        }
+    }
+    None
+}
+
+fn build_failed_worker_contexts(
+    failed_workers: &[String],
+    projections: &[crate::child_workflow::ChildProjection],
+    records: &[evohime_local_storage::EventRecord],
+) -> Vec<FailedWorkerContext> {
+    failed_workers
+        .iter()
+        .map(|worker_id| {
+            let projection = projections
+                .iter()
+                .find(|item| item.child_task_id == *worker_id);
+            let role = projection.map(|item| item.role.clone()).unwrap_or_default();
+            let mut reason_code = projection.and_then(|item| item.reason_code.clone());
+            if reason_code.as_deref().is_none_or(|s| s.trim().is_empty()) {
+                reason_code = find_task_failure_reason(records, worker_id);
+            }
+            let (last_tool, file_path) = find_last_tool_and_path(records, worker_id);
+            FailedWorkerContext {
+                child_task_id: worker_id.clone(),
+                role,
+                reason_code,
+                last_tool,
+                file_path,
+            }
+        })
+        .collect()
+}
+
+fn find_task_failure_reason(
+    records: &[evohime_local_storage::EventRecord],
+    target_task_id: &str,
+) -> Option<String> {
+    let mut found = None;
+    for record in records {
+        if record.event_type != "task.failed" {
+            continue;
+        }
+        if extract_event_task_id(&record.payload).as_deref() != Some(target_task_id) {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&record.payload) {
+            let reason = value
+                .get("reason_code")
+                .or_else(|| value.get("error"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.chars().take(128).collect::<String>());
+            if reason.is_some() {
+                found = reason;
+            }
+        }
+    }
+    found
+}
+
+fn find_last_tool_and_path(
+    records: &[evohime_local_storage::EventRecord],
+    target_task_id: &str,
+) -> (Option<String>, Option<String>) {
+    let mut last_tool = None;
+    let mut file_path = None;
+    for record in records {
+        if record.event_type != "tool.started" {
+            continue;
+        }
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&record.payload) else {
+            continue;
+        };
+        let inner = value.get("ToolStarted").unwrap_or(&value);
+        let Some(task_id) = inner.get("task_id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(tool_name) = inner.get("tool_name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let arguments = inner
+            .get("arguments")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        if task_id != target_task_id {
+            continue;
+        }
+        let parsed_args = if arguments.trim().is_empty() {
+            None
+        } else {
+            serde_json::from_str::<serde_json::Value>(&arguments).ok()
+        };
+        let command = parsed_args.as_ref().and_then(|args| {
+            args.get("command")
+                .or_else(|| args.get("CommandLine"))
+                .or_else(|| args.get("cmd"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.chars().take(96).collect::<String>())
+        });
+        last_tool = Some(match command {
+            Some(cmd) if !cmd.trim().is_empty() => format!("{tool_name}: {cmd}"),
+            _ => tool_name.to_owned(),
+        });
+        file_path = parsed_args.as_ref().and_then(|args| {
+            ["path", "file_path", "file", "target_path", "target", "filename"]
+                .iter()
+                .find_map(|key| args.get(*key).and_then(|v| v.as_str()))
+                .map(|s| s.chars().take(256).collect::<String>())
+        });
+    }
+    (last_tool, file_path)
 }
 
 fn is_terminal_failure(projection: &crate::child_workflow::ChildProjection) -> bool {
@@ -609,29 +930,35 @@ impl CoordinatorPulseTaskSink {
     }
 }
 
+fn build_recovery_prompt(
+    failed_workers: &[FailedWorkerContext],
+    eva_workspace_path: Option<&str>,
+) -> String {
+    let failed = failed_workers
+        .iter()
+        .take(MAX_REPORTED_FAILURES)
+        .map(FailedWorkerContext::format_summary)
+        .collect::<Vec<_>>();
+    let workspace_path = eva_workspace_path
+        .map(str::trim)
+        .filter(|path| !path.is_empty());
+    let incident = format!("завершившиеся с ошибкой воркеры: {}", failed.join("; "));
+    recovery_task_prompt(&incident, workspace_path)
+}
+
 impl PulseTaskSink for CoordinatorPulseTaskSink {
     fn dispatch_recovery(
         &self,
-        failed_workers: &[String],
+        failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>> {
         let primary_route = self.primary_route.clone();
-        let failed = failed_workers
-            .iter()
-            .take(MAX_REPORTED_FAILURES)
-            .map(|id| id.chars().take(128).collect::<String>())
-            .collect::<Vec<_>>();
-        let workspace_path = eva_workspace_path
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(str::to_owned);
+        let prompt = build_recovery_prompt(failed_workers, eva_workspace_path);
         Box::pin(async move {
             // A route is required: without the primary LiteRouter route the
             // daemon must not fall back to a paid DeepSeek profile.
             primary_route.ok_or_else(|| "primary_route_unavailable".to_owned())?;
             let task_id = uuid::Uuid::new_v4().to_string();
-            let incident = format!("завершившиеся с ошибкой воркеры: {}", failed.join(", "));
-            let prompt = recovery_task_prompt(&incident, workspace_path.as_deref());
             self.coordinator
                 .dispatch(CoreCommand::StartTask {
                     task_id: task_id.clone(),
@@ -699,7 +1026,7 @@ mod tests {
     impl PulseTaskSink for CountingSink {
         fn dispatch_recovery(
             &self,
-            _failed_workers: &[String],
+            _failed_workers: &[FailedWorkerContext],
             _eva_workspace_path: Option<&str>,
         ) -> PulseFuture<'_, Result<String, String>> {
             self.primary_calls.fetch_add(1, Ordering::SeqCst);
@@ -716,6 +1043,7 @@ mod tests {
             provider_window_wake_at_ms: None,
             rate_limited_until_ms: None,
             failed_workers: Vec::new(),
+            failed_worker_contexts: Vec::new(),
             route_is_primary: true,
             eva_workspace_path: None,
         }
@@ -821,7 +1149,7 @@ mod tests {
         let (coordinator, mut events) = TaskCoordinator::new(8);
         let sink = CoordinatorPulseTaskSink::new(coordinator, Some("primary".into()));
         let task_id = sink
-            .dispatch_recovery(&["failed-worker".into()], Some("D:/eva"))
+            .dispatch_recovery(&[FailedWorkerContext::from_id("failed-worker")], Some("D:/eva"))
             .await
             .expect("recovery dispatches");
         let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
@@ -908,5 +1236,168 @@ mod tests {
         assert!(prompt.contains("Изучи журнал child.workflow"));
         assert!(!prompt.contains("eva_workspace_*"));
         assert!(!prompt.contains("D:/eva"));
+    }
+
+    fn failed_projection(child_task_id: &str, role: &str, reason_code: Option<&str>) -> crate::child_workflow::ChildProjection {
+        crate::child_workflow::ChildProjection {
+            event_id: format!("evt-{child_task_id}"),
+            parent_task_id: "queen-1".into(),
+            child_task_id: child_task_id.into(),
+            role: role.into(),
+            revision: 1,
+            state: CoordinatorState::Failed,
+            reason_code: reason_code.map(str::to_owned),
+            parent_sequence: 1,
+            budget: None,
+            lease_live: false,
+            dead_letter: false,
+            depth: 1,
+            report_status: None,
+            report_summary: None,
+            spawned_subagents: 0,
+            planned_ceiling: 0,
+            extensions_granted: 0,
+            lazy_waiting: 0,
+            in_flight_subagents: 0,
+            extension_requested: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn eva_pulse_passes_error_context_to_recovery_task() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal = EventJournal::open(directory.path().join("pulse-context.db")).expect("journal opens");
+        let selected = SelectedModel::default();
+        selected.set("primary");
+        let probe = JournalPulseProbe::new(journal.clone(), None, selected);
+        // Initial baseline scan before the worker failure arrives.
+        let _ = probe.observe().await.expect("initial observe");
+
+        journal
+            .record(&crate::CoreEvent::ToolStarted {
+                task_id: "worker-ctx-1".into(),
+                tool_name: "eva_workspace_write_file".into(),
+                arguments: r#"{"path":"crates/evohime-core/src/eva_pulse.rs"}"#.into(),
+            })
+            .await
+            .expect("tool event recorded");
+        journal
+            .record(&crate::CoreEvent::ChildWorkflowProjection {
+                task_id: "queen-1".into(),
+                projection: failed_projection("worker-ctx-1", "coder", Some("compile_error")),
+            })
+            .await
+            .expect("projection recorded");
+
+        let report = probe.observe().await.expect("observe after failure");
+        assert_eq!(report.failed_workers, vec!["worker-ctx-1".to_owned()]);
+        assert_eq!(report.failed_worker_contexts.len(), 1);
+        assert_eq!(
+            report.failed_worker_contexts[0].reason_code.as_deref(),
+            Some("compile_error")
+        );
+        assert_eq!(
+            report.failed_worker_contexts[0].last_tool.as_deref(),
+            Some("eva_workspace_write_file")
+        );
+        assert_eq!(
+            report.failed_worker_contexts[0].file_path.as_deref(),
+            Some("crates/evohime-core/src/eva_pulse.rs")
+        );
+
+        let (coordinator, mut events) = TaskCoordinator::new(8);
+        let sink = CoordinatorPulseTaskSink::new(coordinator, Some("primary".into()));
+        let task_id = sink
+            .dispatch_recovery(&report.failed_worker_contexts, Some("D:/eva"))
+            .await
+            .expect("recovery dispatches");
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("task start arrives")
+            .expect("event received");
+        assert!(matches!(
+            &event,
+            crate::CoreEvent::TaskStarted { task_id: started, .. } if started == &task_id
+        ));
+        let prompt = build_recovery_prompt(&report.failed_worker_contexts, Some("D:/eva"));
+        assert!(prompt.contains("worker-ctx-1"));
+        assert!(prompt.contains("compile_error"));
+        assert!(prompt.contains("eva_workspace_write_file"));
+        assert!(prompt.contains("crates/evohime-core/src/eva_pulse.rs"));
+        assert!(prompt.contains("D:/eva"));
+    }
+
+    #[tokio::test]
+    async fn eva_pulse_retries_incident_after_recovery_429_cooldown() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal = EventJournal::open(directory.path().join("pulse-429.db")).expect("journal opens");
+        let model = "pulse-429-test-model";
+        evohime_model_gateway::clear_rate_limit(model);
+        let selected = SelectedModel::default();
+        selected.set(model);
+        let probe = JournalPulseProbe::new(journal.clone(), None, selected);
+        let _ = probe.observe().await.expect("initial observe");
+
+        journal
+            .record(&crate::CoreEvent::ChildWorkflowProjection {
+                task_id: "queen-1".into(),
+                projection: failed_projection("worker-429-1", "coder", Some("worker_failed")),
+            })
+            .await
+            .expect("projection recorded");
+
+        // Cycle 1: incident detected and recovery-1 is dispatched.
+        let report_1 = probe.observe().await.expect("observe 1");
+        assert_eq!(report_1.failed_workers, vec!["worker-429-1".to_owned()]);
+        probe.mark_recovery_dispatched("recovery-1", &report_1.failed_workers);
+
+        // Background recovery-1 hits 429 and fails, recording rate-limit cooldown.
+        let wake_at = crate::task_memory::now_millis() as i64 + 60_000;
+        evohime_model_gateway::record_rate_limit(model, wake_at);
+        journal
+            .record(&crate::CoreEvent::TaskFailed {
+                task_id: "recovery-1".into(),
+                error: "429 Too Many Requests: provider_rate_limited".into(),
+            })
+            .await
+            .expect("task failure recorded");
+
+        // Cycle 2 (during cooldown): incident is NOT lost; daemon sleeps until wake_at_ms.
+        let report_2 = probe.observe().await.expect("observe 2");
+        assert_eq!(report_2.failed_workers, vec!["worker-429-1".to_owned()]);
+        assert!(report_2.rate_limited_until_ms.is_some());
+        let decision_2 = decide(&report_2, crate::task_memory::now_millis() as i64);
+        assert!(matches!(
+            decision_2,
+            PulseDecision::Sleep {
+                wake_at_ms: Some(_),
+                reason: "provider_rate_limited"
+            }
+        ));
+
+        // Cycle 3 (after cooldown expires): incident is retried.
+        evohime_model_gateway::clear_rate_limit(model);
+        let report_3 = probe.observe().await.expect("observe 3");
+        assert_eq!(
+            decide(&report_3, crate::task_memory::now_millis() as i64),
+            PulseDecision::Recover {
+                failed_workers: vec!["worker-429-1".to_owned()]
+            }
+        );
+
+        // Once recovery-2 completes, the incident is retired and not repeated.
+        probe.mark_recovery_dispatched("recovery-2", &report_3.failed_workers);
+        journal
+            .record(&crate::CoreEvent::TaskCompleted {
+                task_id: "recovery-2".into(),
+                final_message: "fixed".into(),
+            })
+            .await
+            .expect("task completed recorded");
+        let report_4 = probe.observe().await.expect("observe 4");
+        assert_eq!(
+            decide(&report_4, crate::task_memory::now_millis() as i64),
+            PulseDecision::AllGood
+        );
     }
 }

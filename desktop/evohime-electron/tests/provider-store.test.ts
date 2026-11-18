@@ -643,7 +643,7 @@ describe('provider profile endpoints', () => {
     expect(defaultCompatibleProfileSummary('deepseek')).toEqual({
       model: '',
       baseUrl: 'https://api.deepseek.com/v1',
-      tier: 'free',
+      tier: 'paid',
       configured: false,
       profileId: 'deepseek',
       freeAccessProbePolicy: 'disabled',
@@ -689,5 +689,49 @@ describe('provider input bounds', () => {
     expect(normalizeModel('deepseek:free')).toBe('deepseek:free')
     expect(normalizeModel('')).toBe('')
     expect(normalizeModel('two words')).toBeNull()
+  })
+
+  it('deepseek_defaults_to_paid_tier', () => {
+    const path = storePath()
+    writeFileSync(path, JSON.stringify({
+      version: 8,
+      provider: 'openai_compatible',
+      profiles: {
+        openai_compatible: {
+          model: 'deepseek-chat',
+          baseUrl: 'https://api.deepseek.com/v1',
+          secret: Buffer.from('enc:sk-ds').toString('base64'),
+          profileId: 'deepseek'
+        },
+        openai_responses: {
+          model: 'gpt-5-codex',
+          baseUrl: '',
+          secret: Buffer.from('enc:sk-oa').toString('base64')
+        }
+      },
+      compatibleProfiles: {
+        deepseek: {
+          model: 'deepseek-chat',
+          baseUrl: 'https://api.deepseek.com/v1',
+          secret: Buffer.from('enc:sk-ds').toString('base64'),
+          profileId: 'deepseek'
+        },
+        openrouter: {
+          model: 'deepseek/deepseek-r1:free',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          secret: Buffer.from('enc:sk-or').toString('base64'),
+          profileId: 'openrouter'
+        }
+      }
+    }), 'utf8')
+
+    const store = new ProviderStore(path, reversibleCipher())
+    const summary = store.summary()
+    expect(summary.tier).toBe('paid')
+    expect(summary.compatibleProfiles?.deepseek?.tier).toBe('paid')
+    expect(summary.profiles.openai_responses.tier).toBe('paid')
+    expect(summary.compatibleProfiles?.openrouter?.tier).toBe('free')
+    expect(defaultCompatibleProfileSummary('deepseek').tier).toBe('paid')
+    expect(defaultCompatibleProfileSummary('openai').tier).toBe('paid')
   })
 })

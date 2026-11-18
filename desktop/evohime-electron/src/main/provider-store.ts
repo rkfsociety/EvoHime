@@ -569,10 +569,11 @@ export class ProviderStore {
         const storedPacing = normalizeRequestPacing(value['requestPacing'])
         const modelRateLimits = normalizeModelRateLimits(value['modelRateLimits'])
         if (storedPacing === null || modelRateLimits === null || value['modelRateLimits'] === undefined) needsMigration = true
+        const model = normalizeModel(value['model']) ?? ''
         profiles[kind] = {
-          model: normalizeModel(value['model']) ?? '',
+          model,
           baseUrl: providerProfileBaseUrl(profileId, accountId, baseUrl) ?? '',
-          tier: value['tier'] === 'paid' ? 'paid' : 'free',
+          tier: resolveProfileTier(value['tier'], kind, profileId, model),
           secret,
           profileId,
           accountId,
@@ -596,14 +597,17 @@ export class ProviderStore {
       if (freeAccessProbePolicy !== record['freeAccessProbePolicy']) needsMigration = true
       const modelRateLimits = normalizeModelRateLimits(record['modelRateLimits'])
       if (modelRateLimits === null || record['modelRateLimits'] === undefined) needsMigration = true
+      const legacyModel = normalizeModel(record['model']) ?? ''
+      const legacyBaseUrl = normalizeBaseUrl(record['baseUrl']) ?? ''
+      const legacyProfileId = provider === 'openai_compatible'
+        ? inferProviderProfileId(legacyBaseUrl)
+        : 'custom'
       profiles[provider] = {
-        model: normalizeModel(record['model']) ?? '',
-        baseUrl: normalizeBaseUrl(record['baseUrl']) ?? '',
-        tier: record['tier'] === 'paid' ? 'paid' : 'free',
+        model: legacyModel,
+        baseUrl: legacyBaseUrl,
+        tier: resolveProfileTier(record['tier'], provider, legacyProfileId, legacyModel),
         secret,
-        profileId: provider === 'openai_compatible'
-          ? inferProviderProfileId(normalizeBaseUrl(record['baseUrl']) ?? '')
-          : 'custom',
+        profileId: legacyProfileId,
         accountId: cloudflareAccountFromBaseUrl(normalizeBaseUrl(record['baseUrl']) ?? '') ?? '',
         credentialBinding,
         freeAccessProbePolicy,
@@ -639,10 +643,11 @@ export class ProviderStore {
         const modelRateLimits = normalizeModelRateLimits(value['modelRateLimits'])
         if (credentialBinding !== existingBinding || freeAccessProbePolicy !== value['freeAccessProbePolicy'] ||
           storedPacing === null || modelRateLimits === null || value['modelRateLimits'] === undefined || baseUrl !== value['baseUrl']) needsMigration = true
+        const compatModel = normalizeModel(value['model']) ?? ''
         compatibleProfiles[profileId] = {
-          model: normalizeModel(value['model']) ?? '',
+          model: compatModel,
           baseUrl,
-          tier: value['tier'] === 'paid' ? 'paid' : 'free',
+          tier: resolveProfileTier(value['tier'], 'openai_compatible', profileId, compatModel),
           secret,
           profileId,
           accountId,
@@ -720,7 +725,7 @@ function profileFor(document: StoredDocument, provider: ProviderKind): StoredPro
   return document.profiles[provider] ?? {
     model: '',
     baseUrl: '',
-    tier: 'free',
+    tier: defaultTierForProfile(provider, 'custom', ''),
     secret: '',
     profileId: 'custom',
     accountId: '',
@@ -738,7 +743,7 @@ function compatibleProfileFor(document: StoredDocument, profileId: ProviderProfi
   return {
     model: '',
     baseUrl: providerProfileBaseUrl(profileId, '', '') ?? '',
-    tier: 'free',
+    tier: defaultTierForProfile('openai_compatible', profileId, ''),
     secret: '',
     profileId,
     accountId: '',
@@ -850,6 +855,47 @@ export function defaultCompatibleProfileSummary(profileId: ProviderProfileId): P
 function normalizeStoredSecret(value: unknown): string {
   if (typeof value !== 'string' || value.length > MAX_STORED_SECRET_CHARS) return ''
   return /^[A-Za-z0-9+/]*={0,2}$/.test(value) ? value : ''
+}
+
+const PAID_COMPATIBLE_PROFILES: ReadonlySet<ProviderProfileId> = new Set([
+  'openai',
+  'deepseek',
+  'xai',
+  'together_ai',
+  'fireworks_ai',
+  'moonshot',
+  'zai',
+  'nebius',
+  'rout',
+  'anymodel',
+  'custom'
+])
+
+/**
+ * Infers the default billing tier when a stored profile omits `tier`.
+ * Paid providers such as DeepSeek and OpenAI default to `'paid'` unless the
+ * model explicitly carries a `:free` suffix.
+ */
+export function defaultTierForProfile(
+  provider: ProviderKind,
+  profileId: ProviderProfileId,
+  model: string
+): ModelTier {
+  if (model.toLowerCase().includes(':free')) return 'free'
+  if (provider === 'ollama' || provider === 'literouter') return 'free'
+  if (provider === 'openai_responses') return 'paid'
+  return PAID_COMPATIBLE_PROFILES.has(profileId) ? 'paid' : 'free'
+}
+
+function resolveProfileTier(
+  rawTier: unknown,
+  provider: ProviderKind,
+  profileId: ProviderProfileId,
+  model: string
+): ModelTier {
+  if (rawTier === 'paid') return 'paid'
+  if (rawTier === 'free') return 'free'
+  return defaultTierForProfile(provider, profileId, model)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
