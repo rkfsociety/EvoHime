@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Default free model selected for the `rout` provider when no explicit model is configured.
-pub const ROUT_DEFAULT_FREE_MODEL: &str = "meta-llama/llama-3-70b-instruct:free";
+pub const ROUT_DEFAULT_FREE_MODEL: &str = "openai/gpt-6-luna";
 
 /// Ranked list of free LiteRouter models ordered from highest to lowest preference.
 const RANKED_FREE_MODELS: &[(u32, &str)] = &[
@@ -15,13 +15,13 @@ const RANKED_FREE_MODELS: &[(u32, &str)] = &[
     (5, "gemma-2-27b-it-free"),
 ];
 
-/// Ranked list of zero-multiplier free Rout models ordered from highest to lowest preference.
+/// Ranked list of free Rout models ordered by multiplier (cheapest first).
 const RANKED_ROUT_FREE_MODELS: &[(u32, &str)] = &[
     (1, ROUT_DEFAULT_FREE_MODEL),
-    (2, "mistralai/mistral-7b-instruct:free"),
-    (3, "meta-llama/llama-3.3-70b-instruct:free"),
-    (4, "qwen/qwen-2.5-72b-instruct:free"),
-    (5, "deepseek/deepseek-r1:free"),
+    (2, "deepseek/deepseek-v4.1-flash"),
+    (3, "z-ai/glm-5.3-flash"),
+    (4, "deepseek/deepseek-v4-pro"),
+    (5, "qwen/qwen3.7-max"),
 ];
 
 fn ranked_models_from(source: &[(u32, &str)]) -> Vec<String> {

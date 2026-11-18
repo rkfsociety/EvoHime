@@ -1626,6 +1626,8 @@ export function HiveDashboard({
       : budget.provider.toLowerCase().includes('deepseek')
         ? 'DeepSeek API'
         : budget.provider || translate('провайдер не выбран')
+  const isRoutProvider = budget.provider.trim().toLowerCase() === 'rout'
+    || selectedProviderKey === 'openai_compatible:rout'
   const routmyConfigured = budget.fallbackProvider === 'rout'
     || provider?.compatibleProfiles?.rout?.configured === true
   const routmyStatusText = budget.provider === 'rout'
@@ -1662,8 +1664,8 @@ export function HiveDashboard({
     [activeApprovals]
   )
   const queenTyping = useMemo(
-    () => isQueenThinking(events, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
-    [activeApprovalTaskIds, events, pendingTaskIds, sendingMessage]
+    () => pulseStatus !== 'sleeping' && isQueenThinking(events, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
+    [activeApprovalTaskIds, events, pendingTaskIds, pulseStatus, sendingMessage]
   )
 
   return (
@@ -1887,13 +1889,19 @@ export function HiveDashboard({
             <p className="hive-budget-card__limit">
               {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
             </p>
-            <p className="hive-budget-card__requests">
-              {translate('Лимит запросов провайдера')}: {requestSummary}
-            </p>
+            {isRoutProvider ? (
+              <p className="hive-budget-card__requests">
+                {translate('Дневной лимит: 650 000 токенов (сброс в 00:00 UTC)')}
+              </p>
+            ) : (
+              <p className="hive-budget-card__requests">
+                {translate('Лимит запросов провайдера')}: {requestSummary}
+              </p>
+            )}
             {routmyStatusText ? <p className="hive-budget-card__routmy">{routmyStatusText}</p> : null}
             <small>
               {budget.model ? `${translate('Текущая модель:')} ${budget.model}` : translate('Модель ещё не известна')}
-              {!configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}
+              {!isRoutProvider && !configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}
               {!budget.historyAvailable ? ` · ${translate('история отправок недоступна')}` : ''}
             </small>
             {budget.exhausted ? <p className="hive-budget-card__notice">{translate('Лимит запросов исчерпан — Core приостановит отправку до сброса окна.')}</p> : null}

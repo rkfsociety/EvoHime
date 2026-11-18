@@ -1371,14 +1371,20 @@ mod tests {
         let route = ModelRouteConfig::openai_compatible("rout-key", "https://api.rout.my/v1", "")
             .with_provider_profile(ProviderProfileId::Rout, None);
 
+        assert_eq!(route.literouter.model, "openai/gpt-6-luna");
         assert_eq!(
             route.literouter.model,
             crate::model_ranker::ROUT_DEFAULT_FREE_MODEL
         );
-        assert!(route.literouter.model.ends_with(":free"));
-        assert_ne!(route.literouter.model, "openai/gpt-6-luna");
-        assert!(crate::model_ranker::get_rout_ranked_models()
-            .iter()
-            .all(|model| model.ends_with(":free") && model != "openai/gpt-6-luna"));
+        assert_eq!(
+            crate::model_ranker::get_rout_ranked_models(),
+            vec![
+                "openai/gpt-6-luna",
+                "deepseek/deepseek-v4.1-flash",
+                "z-ai/glm-5.3-flash",
+                "deepseek/deepseek-v4-pro",
+                "qwen/qwen3.7-max",
+            ]
+        );
     }
 }

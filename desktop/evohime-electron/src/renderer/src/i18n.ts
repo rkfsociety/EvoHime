@@ -32,6 +32,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Официальный прайс DeepSeek': 'Official DeepSeek pricing',
   'Денежный лимит: не настроен': 'Monetary limit: not configured',
   'Лимит запросов провайдера': 'Provider request limits',
+  'Дневной лимит: 650 000 токенов (сброс в 00:00 UTC)': 'Daily limit: 650,000 tokens (resets at 00:00 UTC)',
   'провайдер не выбран': 'no provider selected',
   'Запрос подтверждения': 'Approval request',
   'за минуту': 'per minute',

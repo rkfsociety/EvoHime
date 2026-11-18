@@ -857,4 +857,71 @@ describe('hive dashboard', () => {
       expect(calls.some((call) => call.command === 'core.selectModel' && (call.payload as { model?: string })?.model === 'claude-3.5-haiku:free')).toBe(true)
     })
   })
+
+  it('ui_shows_token_quota_for_rout', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              budget: {
+                provider: 'rout',
+                history_available: true,
+                model: 'openai/gpt-6-luna',
+                requests_last_minute: 0,
+                requests_last_hour: 0,
+                requests_last_day: 0,
+                minute_cap: 0,
+                hour_cap: 0,
+                day_cap: 0,
+                minute_exhausted: false,
+                hour_exhausted: false,
+                day_exhausted: false,
+                daily_cost_available: false,
+                daily_cost_nano_usd: null,
+                daily_token_quota: 650000,
+                daily_tokens_remaining: 650000,
+                quota_reset_utc_midnight: true
+              }
+            })
+          )
+        ]}
+      />
+    )
+
+    expect(await screen.findByText('Дневной лимит: 650 000 токенов (сброс в 00:00 UTC)')).toBeTruthy()
+    expect(screen.queryByText(/Лимит запросов провайдера/)).toBeNull()
+  })
+
+  it('ui_stops_typing_when_pulse_sleeps', async () => {
+    const initialEvents = [
+      event('hive_state.snapshot', snapshot({ pulse_status: 'active' })),
+      event('task.started', { prompt: 'Проверь состояние улья' }, 'task-sleep-1')
+    ]
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={initialEvents}
+      />
+    )
+
+    const indicator = await screen.findByTestId('queen-typing-indicator')
+    expect(indicator.textContent).toContain('Королева печатает')
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ pulse_status: 'sleeping' })),
+          event('task.started', { prompt: 'Проверь состояние улья' }, 'task-sleep-1')
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
+    })
+  })
 })
