@@ -8,7 +8,7 @@
 2. Verify no raw PII, spans, prompt body, credentials or reversible mapping in
    durable state, diagnostics, IPC or error messages; verify no remote sanitizer
    call and no weaker privacy fallback.
-3. Update `docs/architecture.md`, `docs/current-state.md` and
+3. Update `docs/architecture/policy-receipts.md`, `docs/current-state.md` and
    `docs/release-evidence.md` with actual detector pack/policy versions,
    destination semantics and explicit unsupported OCR/image/audio boundaries.
    Remove plan files only after all criteria are evidenced.

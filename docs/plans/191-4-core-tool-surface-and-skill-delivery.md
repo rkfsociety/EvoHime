@@ -13,7 +13,7 @@
 1. Свести acceptance по каждому дефекту из `191-0`: мёртвые инструменты,
    заглушки схем, `git_commit`, `EXPECTED_TOOL_COUNT`, ASCII-only отбор,
    неиспользуемый `SelectionCache`, промпт без версии, `skill_context: &[]`.
-2. Обновить `docs/architecture.md` (декларативный каталог, промпт-профиль,
+2. Обновить `docs/architecture/capabilities.md`, `docs/architecture/model-routing.md` и `docs/architecture/context-knowledge.md` (декларативный каталог, промпт-профиль,
    model-facing skill disclosure), `docs/current-state.md` (подтверждённое
    состояние checkout) и `docs/release-evidence.md` (focused evidence и
    честные unavailable gates) только после подтверждённого поведения.

@@ -1,7 +1,7 @@
 # План 192.1 — декларация инструментов и host-контракт
 
 Статус: реализован в checkout (этап 1). Контракт перенесён в
-[`../architecture.md`](../architecture.md), фактическое состояние — в
+[`../architecture/capabilities.md`](../architecture/capabilities.md), фактическое состояние — в
 [`../current-state.md`](../current-state.md). Файл удаляется на этапе 192.4.
 
 ## Scope и изменяемые контракты

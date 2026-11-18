@@ -29,6 +29,18 @@ try {
                 $errors.Add("${relative}: stale reference '$forbidden'")
             }
         }
+        $normRel = $relative.Replace('\', '/')
+        if ($normRel -eq 'docs/architecture.md') {
+            $lineCount = @(Get-Content -LiteralPath $path).Count
+            if ($lineCount -gt 500) {
+                $errors.Add("docs/architecture.md: exceeds line limit ($lineCount > 500)")
+            }
+        } elseif ($normRel -like 'docs/architecture/*.md') {
+            $lineCount = @(Get-Content -LiteralPath $path).Count
+            if ($lineCount -gt 2000) {
+                $errors.Add("${normRel}: exceeds domain architecture line limit ($lineCount > 2000)")
+            }
+        }
     }
     if ($errors.Count -gt 0) {
         $errors | ForEach-Object { Write-Error $_ }

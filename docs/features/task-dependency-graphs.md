@@ -15,7 +15,7 @@ Task Dependency Graphs живут в Core и описывают зависимо
 | узел | шаг задачи | action profile: `child`, `tool`, `mcp_tool`, `context_provider`, … |
 
 Канонический контракт workflow orchestration описан в разделе «Workflow
-orchestration» файла [`../architecture.md`](../architecture.md). Ссылаться на
+orchestration» файла [`../architecture/workflow.md`](../architecture/workflow.md). Ссылаться на
 этот документ как на описание workflow-контура нельзя.
 
 ## Runtime

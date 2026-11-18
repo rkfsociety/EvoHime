@@ -7,7 +7,7 @@
 
 ## Источник статуса
 Подтверждённое состояние checkout находится в [`../current-state.md`](../current-state.md),
-архитектурные контракты — в [`../architecture.md`](../architecture.md), а
+архитектурные контракты — в [`../architecture.md`](../architecture.md) и [`../architecture/`](../architecture/), а
 проверки поставки — в [`../release-evidence.md`](../release-evidence.md).
 Эта страница является каталогом незавершённых направлений и не дублирует
 таблицы реализации.
@@ -18,7 +18,7 @@
 `183`, `189–190` (включая `144`); планы `127–130` закрыты как MVP-контуры
 с явно сохранёнными `unavailable` deployment/adapter gates. Их отсутствие
 из каталога не означает отсутствие контракта: он находится в
-`architecture.md` и `current-state.md`.
+`architecture.md`, `docs/architecture/*.md` и `current-state.md`.
 
 ## Активный каталог
 Все перечисленные ниже направления имеют этапы `0–4`. Ссылки ведут на overview
@@ -69,7 +69,7 @@ recovery, verification, rollback и release evidence.
 План закрывается только после кода, integration, recovery, typed IPC/UI при
 наличии, тестов, security/release evidence и обновления канонической
 документации. После закрытия:
-- контракт переносится в [`../architecture.md`](../architecture.md);
+- контракт переносится в доменный файл [`../architecture/`](../architecture/) (один домен — один файл; новый домен — новый файл), а [`../architecture.md`](../architecture.md) меняется лишь при изменении границ, процессов, инвариантов или карты;
 - фактический статус — в [`../current-state.md`](../current-state.md);
 - проверки — в [`../release-evidence.md`](../release-evidence.md);
 - временные plan-файлы удаляются из этого каталога.

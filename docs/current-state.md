@@ -276,7 +276,7 @@ chat event boundary keeps compact Core instance/epoch/sequence metadata, while
 conversation projection helpers own replay deduplication; only the timestamp
 LRU is retained locally and it is capped at 256 entries. Workflow event polling
 uses `afterSequence`, correlates projections by run ID, drains full pages, and
-stops after terminal catch-up. See [`architecture.md`](architecture.md).
+stops after terminal catch-up. See [`architecture.md`](architecture.md) and [`architecture/workflow.md`](architecture/workflow.md).
 
 ## Продуктовая граница
 
@@ -383,7 +383,7 @@ projection. Stale/expired/failed snapshots и подтверждённое от�
 provider health остаются `Unknown`. Bounded redacted `provider_catalog`
 передаётся через существующий authenticated `model.catalog`; ProviderForm и
 ModelPicker отображают Core-owned profile, lifecycle и capability state.
-Полный контракт находится в [`architecture.md`](architecture.md), проверки —
+Полный контракт находится в [`architecture/model-routing.md`](architecture/model-routing.md), проверки —
 в [`release-evidence.md`](release-evidence.md).
 Каталог моделей провайдера принимается в пределах 16 MiB и 4096 записей: этот
 предел вмещает реальные ответы OpenAI-совместимых агрегаторов (LiteRouter
@@ -960,7 +960,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 Незавершённый каталог содержит планы `180–181` и `184–188`; планы `01–179`, `183` и `189` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
-в `architecture.md`, а evidence — в `release-evidence.md`. Точный порядок
+в `architecture.md` и `docs/architecture/*.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а
 не по старому линейному списку.
 
@@ -976,7 +976,7 @@ revisions. Запуск создаёт обычный workflow run и immutable 
 catalog/preflight/run/fork projections. Fork завершённого run создаёт draft
 из точного template с placeholders и без inputs, outputs, grants, secrets или
 allowlists. Канонический контракт находится в
-[`architecture.md`](architecture.md#guided-capability-recipes-v1).
+[`architecture/capabilities.md`](architecture/capabilities.md#guided-capability-recipes-v1).
 
 ## Plan 132 — Durable Background Execution Plane (закрыт 2026-09-09)
 
@@ -1066,7 +1066,7 @@ owner/generation/deadline возвращают fail-closed decision; новая 
 ## Как поддерживать этот документ
 
 Обновляйте дату и этот файл только по фактам из кода, тестов и release evidence.
-Контракт завершённого плана переносится сюда и в `architecture.md`, а сам
+Контракт завершённого плана переносится сюда и в доменный файл `docs/architecture/`, а сам
 временный plan-комплект удаляется. Историю и гипотезы не добавляйте в раздел
 текущего состояния.
 
@@ -1229,7 +1229,7 @@ projection. Core unit tests (5) и storage regressions (2 + migration) прош�
 TypeScript typecheck и `cargo check -p evohime-core --locked` прошли. Electron
 В исходном task snapshot Electron unit test был недоступен из-за Node 20;
 проект требует Node 22 LTS.
-Stage-файлы плана удалены после переноса контракта в `architecture.md`.
+Stage-файлы плана удалены после переноса контракта в `docs/architecture/`.
 Exact-commit CI успешен для `0ebdde23`: module router `34878668073`, Core
 `34878724254`, UI/shell-host предыдущего task commit `34876365464`/`34876370453`,
 compatible release manifest `34881572843`; clippy, tests, release build и

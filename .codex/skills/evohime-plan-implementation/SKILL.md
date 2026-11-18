@@ -62,7 +62,7 @@ checklist и task-only commit; внешний блокер фиксируй яв
    проверь живую карту workflow и подними только patch-часть нужных
    `release-versions/<module>.txt`.
 8. Загрузи `evohime-documentation-closure`. Перенеси устойчивый контракт в
-   `docs/architecture.md`, подтверждённое состояние в `docs/current-state.md`,
+   доменный файл `docs/architecture/` (меняя `docs/architecture.md` лишь при изменении границ, процессов, инвариантов или карты), подтверждённое состояние в `docs/current-state.md`,
    release/verification evidence в `docs/release-evidence.md`; обнови карту
    документов и индекс планов, удали все этапы закрытого плана и проверь ссылки.
 9. Загрузи `evohime-static-verification`. Выполни только разрешённые

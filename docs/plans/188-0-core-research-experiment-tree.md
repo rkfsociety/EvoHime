@@ -49,7 +49,7 @@ Candidate проходит существующий review/verification/promotio
 ### Опциональные
 
 - Планы 184/185 могут поставлять trace/scenario evidence refs, но не блокируют campaign lifecycle.
-- the Core-owned Prompt Strategy Profiles contract in `../architecture.md` and grounded research refs are optional hypothesis evidence.
+- the Core-owned Prompt Strategy Profiles contract in `../architecture/model-routing.md` and grounded research refs are optional hypothesis evidence.
 
 ## Критерии готовности
 

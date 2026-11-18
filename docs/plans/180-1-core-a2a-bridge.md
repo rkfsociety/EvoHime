@@ -1,7 +1,7 @@
 # План 180.1 — Profile/card contract и storage
 
 Статус: реализовано (2026-11-11). Контракт зафиксирован в
-[`../architecture.md`](../architecture.md#core-owned-a2a-remote-agent-bridge-v1-plan-180-stage-1),
+[`../architecture/capabilities.md`](../architecture/capabilities.md#core-owned-a2a-remote-agent-bridge-v1-plan-180-stage-1),
 состояние — в [`../current-state.md`](../current-state.md). Сетевой доступ,
 discovery, capsule materialization и dispatch остаются за этапами 180.2–180.3.
 

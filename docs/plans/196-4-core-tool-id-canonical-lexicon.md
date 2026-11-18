@@ -5,7 +5,7 @@
 ## Scope и изменяемые контракты
 1. Документация канонического лексикона:
    - `docs/agent-tool-playbook.md` — таблица форматов вызовов с underscore-id;
-   - `docs/architecture.md` — заменить описание пары
+   - `docs/architecture/capabilities.md` — заменить описание пары
      `provider_function_name`/`canonical_tool_call_name` на правило «id равно
      wire-имени», объяснить отличие tool id от `capability_class`;
    - `docs/current-state.md` — подтверждённое состояние после переименования;
@@ -26,7 +26,7 @@
    `pinned-goal-bar`).
 5. Удалить переходные комментарии «заменяем точки перед отправкой» и любые
    упоминания временного алиаса, кроме раздела про legacy-приём.
-6. После подтверждения CI перенести контракт в `architecture.md` и
+6. После подтверждения CI перенести контракт в доменный файл `docs/architecture/` и
    `current-state.md`, удалить файлы `196-0..196-4` и строку плана из
    `docs/plans/README.md`.
 
@@ -58,4 +58,4 @@ legacy→canonical, подтверждение `git ls-remote origin main` дл�
 - [ ] Ни один документ не описывает подмену имён как действующий механизм.
 - [ ] Планы 191–195 и eval-фикстуры согласованы с каноническим id.
 - [ ] CI подтверждает весь набор проверок.
-- [ ] Контракт перенесён в `architecture.md`/`current-state.md`, план удалён.
+- [ ] Контракт перенесён в `docs/architecture/`/`current-state.md`, план удалён.

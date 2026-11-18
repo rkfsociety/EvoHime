@@ -17,7 +17,7 @@
 4. Проверить recovery на реальном сценарии: рестарт Core при активной
    kernel-сессии, отказ worker, превышение лимита, повтор с тем же
    idempotency key.
-5. Обновить канонические документы: контракт — `docs/architecture.md`
+5. Обновить канонические документы: контракт — `docs/architecture/capabilities.md`
    (раздел Persistent Analysis Kernel), состояние — `docs/current-state.md`,
    проверки — `docs/release-evidence.md`, каталог — `docs/plans/README.md`.
 6. Удалить временные plan-файлы 192 после подтверждения критериев и переноса

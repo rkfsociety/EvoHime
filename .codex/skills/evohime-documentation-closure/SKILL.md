@@ -7,7 +7,7 @@ description: Закрыть реализованный plan EvoHime через �
 
 ## Раскладка источников истины
 
-- `docs/architecture.md` — устойчивый архитектурный контракт: ownership,
+- `docs/architecture.md` и `docs/architecture/*.md` — устойчивый архитектурный контракт: ownership,
   schema/API/IPC/runtime/recovery/security/package boundaries;
 - `docs/current-state.md` — подтверждённое состояние именно текущего checkout,
   включая commit/evidence scope и честные unavailable gates;

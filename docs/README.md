@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Обновлено: 2026-11-14.
+Обновлено: 2026-11-18.
 
 Этот каталог описывает поддерживаемый Windows desktop-продукт. Корневой [`README.md`](../README.md) — пользовательское описание продукта и установка; главный источник команд запуска, требований и критериев проверки — [`AGENTS.md`](../AGENTS.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md), а технические release evidence — в [`release-evidence.md`](release-evidence.md).
 
@@ -9,14 +9,14 @@
 | Задача | Документ | Назначение |
 | --- | --- | --- |
 | Понять структуру основного desktop UI | [ui-design.md](ui-design.md) | Навигация, рабочий контекст, composer, панели, адаптивность и доступность |
-| Понять границы и процессы | [`architecture.md`](architecture.md) | Runtime, оболочка, IPC, данные и упаковка |
+| Понять границы и процессы | [`architecture.md`](architecture.md) и [`architecture/`](architecture/) | Остов (границы, процессы, IPC, инварианты, карта) и доменные контракты |
 | Узнать, что уже сделано | [`current-state.md`](current-state.md) | Подтверждённое состояние checkout |
 | Понять ближайший порядок работ | [`development-plan.md`](development-plan.md) | Исполняемый план и критерии готовности |
 | Посмотреть долгосрочные направления | [`roadmap.md`](roadmap.md) | Крупные продуктовые этапы без деталей реализации |
 | Проверить решения и зависимости | [`decision-register.md`](decision-register.md) | Accepted/open decisions, владельцы и release impact |
 | Проверить статус выпуска | [`release-evidence.md`](release-evidence.md) | Технические gates, blockers и rollback evidence |
 | Проверить дизайн окна обновления | [`update-window-design.md`](update-window-design.md), [`.codex/updater-window-preview.html`](../.codex/updater-window-preview.html) | Утверждённая композиция, состояния и визуальный контракт Electron updater |
-| Проверить пользовательское self-repair/self-update | [`current-state.md`](current-state.md), [`architecture.md`](architecture.md), [`release-evidence.md`](release-evidence.md) | Ручной repair-run, обязательные provider/model, CI gates, health-check и rollback |
+| Проверить пользовательское self-repair/self-update | [`current-state.md`](current-state.md), [`architecture/shell-ui.md`](architecture/shell-ui.md), [`release-evidence.md`](release-evidence.md) | Ручной repair-run, обязательные provider/model, CI gates, health-check и rollback |
 | Проверить границы безопасности | [`../SECURITY.md`](../SECURITY.md) | Угрозы, доверие, диагностика и релизные проверки |
 | Документировать Rust API | [`../AGENTS.md`](../AGENTS.md), [`../.github/workflows/rustdoc.yml`](../.github/workflows/rustdoc.yml) | Предметные `///`-описания, проверка полноты library API и doc-tests workspace |
 | Вызывать инструменты без отказов Core | [`agent-tool-playbook.md`](agent-tool-playbook.md) | Канонические аргументы вызовов, причины отклонений, порядок правки файлов и локальные ограничения нагрузки |
@@ -39,8 +39,12 @@
 [`plans/README.md`](plans/README.md). Один файл — один этап
 (`NN-M-slug.md`, где `M = 0` — обзор плана), а порядок реализации
 задаётся зависимостями. Реализованный план из каталога удаляется: его контракт
-переезжает в [`architecture.md`](architecture.md), а подтверждённое состояние —
-в [`current-state.md`](current-state.md).
+переезжает в доменный файл [`architecture/`](architecture/) (один домен — один
+файл; новый домен — новый файл); [`architecture.md`](architecture.md) хранит
+только границы, процессы, инварианты и карту и меняется лишь при их изменении,
+а подтверждённое состояние — в [`current-state.md`](current-state.md). Лимиты:
+[`architecture.md`](architecture.md) ≤ 500 строк, каждый доменный файл
+`docs/architecture/*.md` ≤ 2000 строк.
 
 Рядом с ними два документа общего цикла:
 
@@ -60,14 +64,14 @@ socket. Electron desktop shell и supervisor остаются Windows-компо
 
 ## Правило источника истины
 
-Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` → `development-plan.md` → `roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией. Release evidence хранится отдельно от статуса реализации.
+Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` и `docs/architecture/*.md` (доменные файлы имеют ту же силу, что `architecture.md`) → `development-plan.md` → `roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией. Release evidence хранится отдельно от статуса реализации.
 
 ## Владельцы информации
 
 | Вопрос | Канонический документ |
 | --- | --- |
 | Что реально собрано и проверено в checkout | [`current-state.md`](current-state.md) |
-| Какой runtime является утверждённой целью | [`architecture.md`](architecture.md) |
+| Какой runtime является утверждённой целью | [`architecture.md`](architecture.md) (остов) и [`architecture/`](architecture/) (доменные контракты) |
 | В каком порядке выполнять ближайшую работу | [`development-plan.md`](development-plan.md) |
 | Долгосрочные направления без пошаговой реализации | [`roadmap.md`](roadmap.md) |
 | Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
@@ -75,7 +79,7 @@ socket. Electron desktop shell и supervisor остаются Windows-компо
 | Команды сборки, запуска и проверок | [`../AGENTS.md`](../AGENTS.md) |
 | Установить текущий Windows-клиент | [`../installer/release-notes.md`](../installer/release-notes.md) |
 | Provider-specific configuration | [`providers/`](providers/) |
-| Core crate contracts and implementation notes | [`architecture.md`](architecture.md) и README конкретного crate, если он существует |
+| Core crate contracts and implementation notes | [`architecture.md`](architecture.md), [`architecture/`](architecture/) и README конкретного crate, если он существует |
 
 Один факт не должен поддерживаться вручную в нескольких статусных документах:
 ссылки на факт допустимы, копирование таблиц состояния — нет.
