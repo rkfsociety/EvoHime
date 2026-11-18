@@ -83,7 +83,7 @@ schema/revision/status/priority/hash и fail-closed admission. При отсут
 versioned inference-stream adapter статус всегда `Unavailable`; модуль не
 создаёт worker queue, не измеряет inference и не дублирует Model Gateway.
 
-### Hardware Fit Evidence Catalog v1 (план 168)
+## Hardware Fit Evidence Catalog v1 (план 168)
 
 Core владеет bounded portable hardware-fit observations: нормализованными
 hardware/model/runtime/context identity, агрегированными метриками,

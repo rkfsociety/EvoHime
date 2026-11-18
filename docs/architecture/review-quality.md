@@ -243,7 +243,7 @@ raw prompts, logs или authority. Это adapter/lane, а не новый scan
 executor, scheduler или permission system: фактический эффект остаётся у
 существующих Core owners.
 
-### Multi-Reviewer Ensemble & Adjudication v1 (план 170)
+## Multi-Reviewer Ensemble & Adjudication v1 (план 170)
 
 Core владеет bounded orchestration metadata для reviewer ensemble: immutable
 profile и input snapshot, reviewer slots с independence snapshot, run revision,
@@ -254,20 +254,10 @@ majority authority. SQLite schema v170 и authenticated desktop IPC 278/123
 хранят и проецируют только bounded refs, hashes, statuses, classifications и
 evidence refs. Renderer не может подделать verdict, а cancellation и повторный
 запуск защищены revision/hash boundaries.
-### Deterministic Review Execution Plan v1 (план 148)
+
+## Deterministic Review Execution Plan v1 (план 148)
 
 Core владеет bounded versioned review plan с canonical SHA-256, lifecycle,
 actor/scope/evidence refs и безопасным verdict `unknown_without_evidence`.
 SQLite schema v116 хранит revision-aware metadata и immutable run boundary;
 IPC tags 275/120 добавлены аддитивно и проецируют только redacted metadata.
-
-### Rust public API documentation
-
-Публичный контракт Rust описывается doc-комментариями `///` непосредственно у
-внешне достижимых элементов library targets. Полноту покрытия workspace
-проверяет `cargo doc --workspace --lib --no-deps --locked` с `-D missing_docs`;
-сборка полной документации также проверяет binary targets, а
-`cargo test --workspace --doc --locked` исполняет compilable-примеры. Rustdoc
-workflow дополнительно запрещает неразрешённые intra-doc links и некорректные
-HTML tags. `#[cfg(doc)]` не нужен для включения rustdoc и может применяться
-только для конкретного doc-only элемента, которому он действительно требуется.

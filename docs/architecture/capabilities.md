@@ -616,10 +616,6 @@ validation, monotonic version fence и Core event journal. Poll lease огран
 `remote_task_records`, а authenticated IPC использует command 251/event 96 и
 metadata-only Electron projection.
 
-Лимиты: 128 sources, 32 bindings/source, 1 024 chunks/source, 64 KiB source
-и chunk, 128 hits/query, 256 KiB evidence и 16 384 view tokens. Secret source
-не входит в lower-sensitivity view, stale source не считается Ready, а
-unauthorized source ID не попадает в retrieval.
 ## Agent Git Change Sets v1 (план 102)
 
 Core хранит bounded `AgentGitChangeSet` с exact baseline (`HEAD`, dirty
@@ -870,14 +866,14 @@ availability и adapter metadata. Renderer не получает audio, transcri
 secrets или authority; unknown/unsupported adapter состояния не являются
 success.
 
-### Plans 149–167 — Core capability contract batch
+## Plans 149–167 — Core capability contract batch
 
 Каждый закрытый контур получил отдельный bounded Core-owned record с
 canonical SHA-256, lifecycle и revision-aware validation, а также отдельную
 SQLite migration/store. Все projections metadata-only и fail-closed; внешние
 устройства, сеть, IDE и voice adapters не получают implicit authority.
 
-### Language Intelligence Runtime v1 (план 171)
+## Language Intelligence Runtime v1 (план 171)
 
 Core владеет bounded registry/session/query/proposal metadata для managed LSP.
 Descriptor допускает только зарегистрированный stdio provider с проверенным
@@ -888,7 +884,7 @@ automatic command execution и второй diagnostics store запрещены
 хранит только redacted metadata, а authenticated IPC 279/124 и Electron
 projection не расширяют filesystem grants или authority renderer.
 
-### Core-owned image generation and editing v1
+## Core-owned image generation and editing v1
 
 Image generation and editing use the existing ModelGateway route, provider
 profile, privacy policy, Core execution and ArtifactStore. Gateway advertises an

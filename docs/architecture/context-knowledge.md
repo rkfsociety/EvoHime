@@ -505,6 +505,11 @@ bounded список source IDs с retrieval profile и scope. Коллекци�
 redacted metadata через существующую authenticated surface. Parser/fetch,
 vector backend и отдельная UI authority не добавляются.
 
+Лимиты: 128 sources, 32 bindings/source, 1 024 chunks/source, 64 KiB source
+и chunk, 128 hits/query, 256 KiB evidence и 16 384 view tokens. Secret source
+не входит в lower-sensitivity view, stale source не считается Ready, а
+unauthorized source ID не попадает в retrieval.
+
 ## Context Mentions v1 (план 82)
 
 Explicit user-authored `@` mentions проходят Core lexer и переиспользуют

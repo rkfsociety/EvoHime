@@ -332,7 +332,7 @@ threshold/revision/hash и fail-closed decisions `Unavailable`, `NeedsReview`,
 `Eligible` или `Denied`. Model Gateway остаётся единственным routing owner;
 без versioned confidence producer или eligible route cascade не исполняется.
 
-### Core-owned Prompt Strategy Profiles v1
+## Core-owned Prompt Strategy Profiles v1
 
 `crates/evohime-core/src/prompt_strategy.rs` owns immutable, versioned strategy profiles, bindings, lifecycle/evidence checks, deterministic selection and replay snapshots. SQLite metadata is additive in schema v179; profile, example-set, output-contract and selection rows are immutable, while lifecycle transitions use revision checks. Registry rows retain hashes and artifact references, not reusable prompt text. Few-shot assets must resolve to validated privacy-approved artifacts.
 

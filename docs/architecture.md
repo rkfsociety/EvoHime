@@ -77,7 +77,7 @@ conversation history и соответствующие `conversation.event` deli
 постепенно: memory bounded context уже экспортируется явно, остальные legacy
 store-модули мигрируются без разрыва текущего Core API.
 
-### Границы модулей и эксплуатационные ограничения
+## Границы модулей и эксплуатационные ограничения
 
 Core организован по доменам, а не одним набором крупных исходников. Координация
 agent run разделена между routing, approval, dispatch, recovery и child
@@ -110,7 +110,18 @@ batch-вставки для журналируемых событий. Узки�
 `crates/evohime-core/benches/runtime_paths.rs` и покрывают context planner,
 workflow hash и protobuf IPC envelope.
 
-### Ограничение фоновых задач Core
+## Rust public API documentation
+
+Публичный контракт Rust описывается doc-комментариями `///` непосредственно у
+внешне достижимых элементов library targets. Полноту покрытия workspace
+проверяет `cargo doc --workspace --lib --no-deps --locked` с `-D missing_docs`;
+сборка полной документации также проверяет binary targets, а
+`cargo test --workspace --doc --locked` исполняет compilable-примеры. Rustdoc
+workflow дополнительно запрещает неразрешённые intra-doc links и некорректные
+HTML tags. `#[cfg(doc)]` не нужен для включения rustdoc и может применяться
+только для конкретного doc-only элемента, которому он действительно требуется.
+
+## Ограничение фоновых задач Core
 
 Detached-задачи, запускаемые IPC-мостом и координатором для agent run,
 workflow drive, plan review/revision, backup/restore, extraction и индексации,
