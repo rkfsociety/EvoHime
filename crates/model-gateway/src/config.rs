@@ -1247,6 +1247,9 @@ mod tests {
             OPENAI_DEFAULT_MODEL,
         )
         .with_provider_limits(fallback_limits);
-        assert_eq!(openai.effective_limits(OPENAI_DEFAULT_MODEL), fallback_limits);
+        assert_eq!(
+            openai.effective_limits(OPENAI_DEFAULT_MODEL),
+            fallback_limits
+        );
     }
 }

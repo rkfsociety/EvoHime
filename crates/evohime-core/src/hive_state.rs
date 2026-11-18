@@ -11,8 +11,8 @@
 //! no child events produces zero/empty metrics rather than an error, so the UI
 //! can render before the first task starts.
 
-use serde::{Deserialize, Serialize};
 pub use evohime_model_gateway::ProviderLimits;
+use serde::{Deserialize, Serialize};
 
 use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
@@ -157,10 +157,10 @@ pub struct HiveBudget {
     /// Configured daily cap; `0` means no daily cap.
     pub day_cap: u32,
 
-    /// Whether the minute cap is reached.
     /// Unified effective provider request limits across rolling windows.
     #[serde(default)]
     pub limits: ProviderLimits,
+    /// Whether the minute cap is reached.
     pub minute_exhausted: bool,
     /// Whether the hourly cap is reached.
     pub hour_exhausted: bool,

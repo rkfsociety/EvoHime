@@ -397,9 +397,7 @@ impl ProviderError {
             Self::Config(_)
             | Self::ImagePreflightRejected
             | Self::ImageCapabilityStale
-            | Self::AllModelsExhausted => {
-                return None
-            }
+            | Self::AllModelsExhausted => return None,
         };
         let prefix = message.split(':').next()?.trim();
         if prefix.len() != HTTP_STATUS_PREFIX_CHARS

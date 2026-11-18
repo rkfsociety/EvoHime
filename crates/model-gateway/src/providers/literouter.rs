@@ -1418,9 +1418,9 @@ mod tests {
             .expect("fallback model succeeds");
 
         assert_eq!(result.content, "ok-from-fallback");
-        assert!(crate::rate_limit_signal::rate_limited_until(
-            "llama-3.3-70b-instruct-turbo-free"
-        )
-        .is_some());
+        assert!(
+            crate::rate_limit_signal::rate_limited_until("llama-3.3-70b-instruct-turbo-free")
+                .is_some()
+        );
     }
 }

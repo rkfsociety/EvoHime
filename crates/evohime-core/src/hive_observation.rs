@@ -101,12 +101,9 @@ pub(crate) async fn build_hive_observation(
     }
     observation.minute_cap = limits.rpm;
 
-
     observation.hour_cap = limits.rph;
 
-
     observation.day_cap = limits.rpd;
-
 
     if let Ok(windows) = journal
         .model_dispatch_windows(
