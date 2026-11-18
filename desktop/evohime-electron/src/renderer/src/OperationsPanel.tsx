@@ -10,6 +10,7 @@ import { ImageGenerationPanel } from './ImageGenerationPanel'
 import { PROVIDER_PROFILE_LABELS } from './provider-labels'
 import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
+import { HiveGraph } from './components/HiveGraph'
 
 interface Props {
   readonly connection: ConnectionState
@@ -1190,23 +1191,30 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
         </section>
 
         <section className={`hive-queen${queenActive ? '' : ' hive-queen--sleeping'}`} aria-label={translate('Королева Ева')}>
-          <div className="hive-queen__portrait" aria-hidden="true">
-            <span className="hive-queen__sigil">✦</span>
-            <span className="hive-queen__scan" />
-          </div>
-          <div className="hive-queen__body">
-            <p className="hive-queen__eyebrow">Eva core · {hive?.queen.name || 'EvoHime'}</p>
-            <h2>{translate('Королева Ева')}</h2>
-            <p className="hive-queen__role">{translate('Главный оркестратор улья')}</p>
-            <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'sleeping'}`}>
-              <span className="hive-dot" aria-hidden="true" />
-              {translate(queenStatusLabel)}
-            </p>
-            <p className="hive-queen__note">
-              {paused
-                ? `${translate(QUEEN_REASON_LABELS[hive?.queen.reason ?? ''] ?? hive?.queen.reason ?? 'лимит провайдера')} · ${formatWakeAt(wakeAtMs, Date.now())}`
-                : translate('Координирует агентов и выполняет задачи')}
-            </p>
+          <div className="hive-queen__stage">
+            <HiveGraph
+              queenName={hive?.queen.name || 'EvoHime'}
+              queenActive={queenActive}
+              activeAgents={hive?.activeAgents ?? []}
+            />
+            <div className="hive-queen__body hive-queen__body--overlay">
+              <div className="hive-queen__header-row">
+                <div>
+                  <p className="hive-queen__eyebrow">Eva core · {hive?.queen.name || 'EvoHime'}</p>
+                  <h2>{translate('Королева Ева')}</h2>
+                  <p className="hive-queen__role">{translate('Главный оркестратор улья')}</p>
+                </div>
+                <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'sleeping'}`}>
+                  <span className="hive-dot" aria-hidden="true" />
+                  {translate(queenStatusLabel)}
+                </p>
+              </div>
+              <p className="hive-queen__note">
+                {paused
+                  ? `${translate(QUEEN_REASON_LABELS[hive?.queen.reason ?? ''] ?? hive?.queen.reason ?? 'лимит провайдера')} · ${formatWakeAt(wakeAtMs, Date.now())}`
+                  : translate('Координирует агентов и выполняет задачи')}
+              </p>
+            </div>
           </div>
           <dl className="hive-queen__footer">
             <div>

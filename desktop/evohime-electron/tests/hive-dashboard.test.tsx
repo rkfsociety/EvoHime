@@ -367,4 +367,54 @@ describe('hive dashboard', () => {
     expect(await screen.findByText('Активных агентов нет.')).toBeTruthy()
     expect(screen.getByText('Активно: 0 / 0')).toBeTruthy()
   })
+
+  it('hive_graph_renders_queen_and_active_agents', async () => {
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              active_agents: [
+                { id: 'worker-run-1', role: 'developer', current_action: 'executing', depth: 1, spawned_subagents: 0, ceiling: 4 },
+                { id: 'worker-idle-2', role: 'researcher', current_action: 'idle', depth: 1, spawned_subagents: 0, ceiling: 2 }
+              ]
+            })
+          )
+        ]}
+      />
+    )
+
+    const graph = await screen.findByTestId('hive-graph')
+    expect(graph.getAttribute('data-queen-state')).toBe('active')
+
+    const queenNode = screen.getByTestId('hive-graph-queen')
+    expect(queenNode.getAttribute('data-queen-state')).toBe('active')
+
+    const agentNodes = screen.getAllByTestId('hive-graph-agent')
+    expect(agentNodes).toHaveLength(2)
+    expect(agentNodes.map((node) => node.getAttribute('data-agent-id'))).toEqual(['worker-run-1', 'worker-idle-2'])
+    expect(agentNodes.map((node) => node.getAttribute('data-agent-state'))).toEqual(['running', 'idle'])
+
+    const edges = screen.getAllByTestId('hive-graph-edge')
+    expect(edges).toHaveLength(2)
+    expect(edges.map((edge) => edge.getAttribute('data-edge-state'))).toEqual(['running', 'idle'])
+
+    // Плашка с именем и статусом остаётся поверх графа.
+    expect(screen.getByRole('heading', { name: 'Королева Ева' })).toBeTruthy()
+
+    // При пустом active_agents граф показывает спящую Королеву.
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ active_agents: [] }))]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('hive-graph').getAttribute('data-queen-state')).toBe('sleeping')
+    })
+    expect(screen.queryAllByTestId('hive-graph-agent')).toHaveLength(0)
+  })
 })
