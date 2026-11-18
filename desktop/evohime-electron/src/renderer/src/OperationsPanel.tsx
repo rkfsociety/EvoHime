@@ -1940,24 +1940,30 @@ export function HiveDashboard({
             {departments.map((department) => {
               const percent = hivePercent(department.activeCount, department.maxCapacity)
               return (
-                <article key={department.key} className="hive-department">
-                  <div className="hive-department__head">
-                    <span className="hive-department__icon" aria-hidden="true"><UiIcon name={department.icon} size={16} /></span>
-                    <strong>{translate(department.label)}</strong>
-                  </div>
-                  <div className="hive-department__count">
-                    <span>{department.activeCount} / {department.maxCapacity}</span>
-                    <em>{percent}%</em>
-                  </div>
-                  <div
-                    className="hive-progress"
-                    role="progressbar"
-                    aria-label={translate(department.label)}
-                    aria-valuemin={0}
-                    aria-valuemax={Math.max(department.maxCapacity, 1)}
-                    aria-valuenow={department.activeCount}
-                  >
-                    <span style={{ width: `${percent}%` }} />
+                <article
+                  key={department.key}
+                  className={`hive-department${department.activeCount > 0 ? ' hive-department--active' : ''}`}
+                  data-dept={department.key}
+                >
+                  <span className="hive-department__icon" aria-hidden="true"><UiIcon name={department.icon} size={18} /></span>
+                  <div className="hive-department__body">
+                    <div className="hive-department__head">
+                      <strong>{translate(department.label)}</strong>
+                    </div>
+                    <div className="hive-department__count">
+                      <span>{department.activeCount} / {department.maxCapacity}</span>
+                      <em>{percent}%</em>
+                    </div>
+                    <div
+                      className="hive-progress"
+                      role="progressbar"
+                      aria-label={translate(department.label)}
+                      aria-valuemin={0}
+                      aria-valuemax={Math.max(department.maxCapacity, 1)}
+                      aria-valuenow={department.activeCount}
+                    >
+                      <span style={{ width: `${percent}%` }} />
+                    </div>
                   </div>
                 </article>
               )

@@ -7489,25 +7489,40 @@ body {
 
 .hive-department {
   display: grid;
-  gap: 5px;
-  padding: 7px 9px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 11px;
   background:
-    linear-gradient(160deg, color-mix(in srgb, var(--hive-violet) 9%, transparent), transparent 65%),
+    linear-gradient(160deg, color-mix(in srgb, var(--hive-violet) 7%, transparent), transparent 65%),
     var(--bg-sunken);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.hive-department--active {
+  border-color: color-mix(in srgb, var(--hive-violet) 55%, var(--border));
+  box-shadow: 0 0 18px -10px color-mix(in srgb, var(--hive-violet) 85%, transparent);
+}
+
+.hive-department__body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .hive-department__head {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   min-width: 0;
 }
 
 .hive-department__head strong {
   overflow: hidden;
   font-size: 12px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -7516,11 +7531,27 @@ body {
   display: grid;
   flex: none;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--hive-blue) 28%, transparent);
   background: color-mix(in srgb, var(--hive-blue) 14%, transparent);
   color: var(--hive-blue);
+}
+
+.hive-department[data-dept='analytics'] .hive-department__icon,
+.hive-department[data-dept='planning'] .hive-department__icon,
+.hive-department[data-dept='research'] .hive-department__icon {
+  border-color: color-mix(in srgb, var(--hive-violet) 32%, transparent);
+  background: color-mix(in srgb, var(--hive-violet) 15%, transparent);
+  color: var(--hive-violet);
+}
+
+.hive-department[data-dept='documentation'] .hive-department__icon,
+.hive-department[data-dept='support'] .hive-department__icon {
+  border-color: color-mix(in srgb, var(--hive-green) 30%, transparent);
+  background: color-mix(in srgb, var(--hive-green) 14%, transparent);
+  color: var(--hive-green);
 }
 
 .hive-department__count {
@@ -7913,23 +7944,31 @@ body {
 
 .hive-queen__footer {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin: 4px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--hive-violet) 22%, transparent);
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--hive-violet) 22%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-sunken) 85%, transparent);
+  text-align: center;
+}
+
+.hive-queen__footer > div + div {
+  border-left: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  padding-left: 8px;
 }
 
 .hive-queen__footer dt {
   color: var(--fg-faint);
-  font: 10px var(--mono);
+  font: 9.5px var(--mono);
   letter-spacing: .06em;
   text-transform: uppercase;
 }
 
 .hive-queen__footer dd {
   margin: 2px 0 0;
-  font: 12px var(--mono);
+  font: 600 12px var(--mono);
 }
 
 /* Метрики и бюджет. */
