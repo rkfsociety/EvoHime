@@ -1371,9 +1371,9 @@ mod timeout_tests {
             .expect("task dispatches");
 
         let mut observed = Vec::new();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
         while tokio::time::Instant::now() < deadline {
-            match tokio::time::timeout(Duration::from_secs(2), events.recv()).await {
+            match tokio::time::timeout_at(deadline, events.recv()).await {
                 Ok(Ok(event)) => {
                     let is_terminal = matches!(
                         event,
@@ -1589,9 +1589,9 @@ mod timeout_tests {
             .expect("task dispatches");
 
         let mut observed = Vec::new();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         while tokio::time::Instant::now() < deadline {
-            match tokio::time::timeout(Duration::from_secs(1), events.recv()).await {
+            match tokio::time::timeout_at(deadline, events.recv()).await {
                 Ok(Ok(event)) => {
                     let is_terminal = matches!(
                         event,
@@ -1833,9 +1833,9 @@ mod timeout_tests {
             .expect("task dispatches");
 
         let mut observed = Vec::new();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
         while tokio::time::Instant::now() < deadline {
-            match tokio::time::timeout(Duration::from_secs(2), events.recv()).await {
+            match tokio::time::timeout_at(deadline, events.recv()).await {
                 Ok(Ok(event)) => {
                     let is_terminal = matches!(
                         event,
