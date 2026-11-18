@@ -1,14 +1,13 @@
 import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { HIVE_SYSTEM_CHAT_ID, PROVIDER_KINDS } from '@shared/api'
-import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderKind, ProviderLimits, ProviderProfileId, ProviderProfileSummary, ProviderSummary, RepairStatus } from '@shared/api'
+import { HIVE_SYSTEM_CHAT_ID } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { useProviderState } from './provider-state'
 import { ModelPicker } from './ModelPicker'
 import { ImageGenerationPanel } from './ImageGenerationPanel'
-import { PROVIDER_PROFILE_LABELS } from './provider-labels'
 import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
 import { HiveGraph } from './components/HiveGraph'
@@ -667,48 +666,6 @@ function saveHivePreference(preference: HivePreference): void {
   } catch {
     // Storage may be unavailable; the in-memory mode stays active.
   }
-}
-
-const PROVIDER_KIND_LABELS: Record<ProviderKind, string> = {
-  literouter: 'LiteRouter',
-  openai_compatible: 'OpenAI-compatible API',
-  openai_responses: 'OpenAI Responses',
-  ollama: 'Ollama (локально)'
-}
-
-interface ProviderOption {
-  readonly key: string
-  readonly provider: ProviderKind
-  readonly profileId?: ProviderProfileId
-  readonly label: string
-  readonly configured: boolean
-}
-
-/** Список провайдеров строится по тому, что реально сохранено в оболочке. */
-function providerOptions(summary: ProviderSummary | null): readonly ProviderOption[] {
-  if (!summary) return []
-  const options: ProviderOption[] = []
-  const seen = new Set<string>()
-  const push = (provider: ProviderKind, profileId: ProviderProfileId | undefined, profile: ProviderProfileSummary): void => {
-    const key = profileId ? `${provider}:${profileId}` : provider
-    if (seen.has(key)) return
-    seen.add(key)
-    const name = profileId ? PROVIDER_PROFILE_LABELS[profileId] : PROVIDER_KIND_LABELS[provider]
-    const free = profile.tier === 'free' || profile.model.toLowerCase().includes(':free')
-    options.push({
-      key,
-      provider,
-      ...(profileId ? { profileId } : {}),
-      label: `${name}${free ? ' (Free)' : ''}`,
-      configured: profile.configured
-    })
-  }
-  for (const provider of PROVIDER_KINDS) push(provider, undefined, summary.profiles[provider])
-  for (const [profileId, profile] of Object.entries(summary.compatibleProfiles ?? {})) {
-    if (!profile) continue
-    push('openai_compatible', profileId as ProviderProfileId, profile)
-  }
-  return options
 }
 
 function currentProviderKey(summary: ProviderSummary | null): string {

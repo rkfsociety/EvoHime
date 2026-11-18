@@ -1006,16 +1006,21 @@ mod tests {
             cached_input_usd_per_1m: 0.15,
             output_usd_per_1m: 6.00,
         };
-        let usage = [evohime_local_storage::context_ledger_store::DailyModelUsage {
-            model: "gpt-4o-mini".into(),
-            prompt_tokens: 1_000,
-            completion_tokens: 500,
-            cache_read_input_tokens: Some(400),
-            recorded_at: 1000,
-            request_at: 1000,
-        }];
+        let usage = [
+            evohime_local_storage::context_ledger_store::DailyModelUsage {
+                model: "gpt-4o-mini".into(),
+                prompt_tokens: 1_000,
+                completion_tokens: 500,
+                cache_read_input_tokens: Some(400),
+                recorded_at: 1000,
+                request_at: 1000,
+            },
+        ];
         // 400 * 0.15 * 1000 = 60_000; 600 * 1.50 * 1000 = 900_000; 500 * 6.00 * 1000 = 3_000_000
-        assert_eq!(custom_daily_cost_nano_usd(&pricing, &usage), Some(3_960_000));
+        assert_eq!(
+            custom_daily_cost_nano_usd(&pricing, &usage),
+            Some(3_960_000)
+        );
     }
 
     #[test]

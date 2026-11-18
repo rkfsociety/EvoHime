@@ -213,7 +213,6 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
     rpm: number
     rph: number
     rpd: number
-    pricing?: ModelRateLimitSettings['pricing']
   }
   for (const key of numbers) {
     const n = value[key]
@@ -222,8 +221,7 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
   }
   const pricing = normalizeModelPricing(value['pricing'])
   if (pricing === null) return null
-  if (pricing !== undefined) result.pricing = pricing
-  return result
+  return pricing === undefined ? result : { ...result, pricing }
 }
 export function normalizeModelRateLimits(value: unknown): ProviderModelRateLimits | null {
   if (value === undefined) return {}
