@@ -34,7 +34,7 @@ impl PulseProbe for CalmProbe {
                 route_is_primary: true,
                 eva_workspace_path: None,
                 proactive_evolution_enabled: false,
-                next_roadmap_item: None,
+                roadmap_items: Vec::new(),
             })
         })
     }
@@ -53,8 +53,7 @@ impl PulseTaskSink for NoopSink {
 
     fn dispatch_evolution(
         &self,
-        _file_path: &str,
-        _item: &str,
+        _items: &[crate::eva_pulse::RoadmapItem],
         _eva_workspace_path: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
         Box::pin(async move { Err("not_used".into()) })
