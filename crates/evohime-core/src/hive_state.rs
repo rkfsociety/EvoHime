@@ -281,9 +281,6 @@ pub struct HiveStateSnapshot {
     /// Whether proactive evolution via EvaPulse is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
-    /// Relative path to the roadmap/TODO file inside `eva_workspace_path`.
-    #[serde(default)]
-    pub eva_roadmap_path: Option<String>,
     /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
     pub pulse_status: String,
     /// Unix milliseconds at which the daemon plans its next cycle.
@@ -408,7 +405,6 @@ impl HiveStateSnapshot {
             daily_budget_usd: settings.daily_budget_usd,
             eva_workspace_path: settings.eva_workspace_path.clone(),
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
-            eva_roadmap_path: settings.eva_roadmap_path.clone(),
             pulse_status: pulse_status_from(observation),
             next_wake_at_ms: observation.pulse_next_wake_at_ms,
         }

@@ -311,7 +311,6 @@ interface HiveStateView {
   readonly dailyBudgetUsd: number
   readonly evaWorkspacePath: string | null
   readonly proactiveEvolutionEnabled: boolean
-  readonly evaRoadmapPath: string | null
   readonly pulseStatus: string
   readonly nextWakeAtMs: number | null
 }
@@ -500,7 +499,6 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       : 0,
     evaWorkspacePath: typeof root['eva_workspace_path'] === 'string' ? root['eva_workspace_path'].slice(0, 4_096) : null,
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
-    evaRoadmapPath: typeof root['eva_roadmap_path'] === 'string' ? root['eva_roadmap_path'].slice(0, 1_024) : null,
     pulseStatus: text(root['pulse_status'], 16),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
       ? root['next_wake_at_ms']
@@ -1074,9 +1072,6 @@ export function HiveDashboard({
   const [proactiveEvolutionEnabled, setProactiveEvolutionEnabled] = useState(false)
   const [proactiveEvolutionBusy, setProactiveEvolutionBusy] = useState(false)
   const [proactiveEvolutionError, setProactiveEvolutionError] = useState<string | null>(null)
-  const [evaRoadmapDraft, setEvaRoadmapDraft] = useState('')
-  const [evaRoadmapBusy, setEvaRoadmapBusy] = useState(false)
-  const [evaRoadmapError, setEvaRoadmapError] = useState<string | null>(null)
   const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
   const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
   const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
@@ -1102,10 +1097,6 @@ export function HiveDashboard({
     if (!hive) return
     setProactiveEvolutionEnabled(hive.proactiveEvolutionEnabled)
   }, [hive?.proactiveEvolutionEnabled])
-  useEffect(() => {
-    if (!hive) return
-    setEvaRoadmapDraft(hive.evaRoadmapPath ?? '')
-  }, [hive?.evaRoadmapPath])
   const hiveSettingsResult = latest(events, 'hive_settings.saved')
   useEffect(() => {
     if (!hiveSettingsResult) return
@@ -1116,7 +1107,6 @@ export function HiveDashboard({
         eva_workspace_path?: string | null
         daily_budget_usd?: number | null
         proactive_evolution_enabled?: boolean
-        eva_roadmap_path?: string | null
         error_code?: string
       }
       if (result.setting_key === 'proactive_evolution_enabled') {
@@ -1124,15 +1114,6 @@ export function HiveDashboard({
           setProactiveEvolutionEnabled(result.proactive_evolution_enabled)
         }
         setProactiveEvolutionError(result.accepted ? null : (result.error_code || 'Не удалось сохранить настройку.'))
-        return
-      }
-      if (result.setting_key === 'eva_roadmap_path') {
-        if (result.accepted) {
-          setEvaRoadmapDraft(result.eva_roadmap_path ?? '')
-          setEvaRoadmapError(null)
-        } else {
-          setEvaRoadmapError(result.error_code || 'Путь к файлу планов отклонён Core.')
-        }
         return
       }
       if (typeof result.daily_budget_usd === 'number' && Number.isFinite(result.daily_budget_usd)) {
@@ -1433,28 +1414,6 @@ export function HiveDashboard({
       setProactiveEvolutionBusy(false)
     }
   }, [api, requestSnapshot])
-
-  const saveEvaRoadmapPath = useCallback(async (): Promise<void> => {
-    if (!api) return
-    setEvaRoadmapBusy(true)
-    setEvaRoadmapError(null)
-    try {
-      const submittedPath = evaRoadmapDraft.trim()
-      const outcome = await api.invoke('core.setHiveSetting', {
-        key: 'eva_roadmap_path',
-        value: submittedPath
-      })
-      if (!outcome.ok) {
-        setEvaRoadmapError(outcome.message)
-        return
-      }
-      requestSnapshot()
-    } catch {
-      setEvaRoadmapError('Не удалось сохранить путь к файлу планов: Core не ответил.')
-    } finally {
-      setEvaRoadmapBusy(false)
-    }
-  }, [api, evaRoadmapDraft, requestSnapshot])
 
   // The switch is a Core runtime control, not only a local display option:
   // false parks the daemon, true lets it run a cycle immediately. The local
@@ -1967,32 +1926,6 @@ export function HiveDashboard({
               </label>
               {proactiveEvolutionError ? (
                 <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
-              ) : null}
-              <label className="hive-provider" htmlFor="eva-roadmap-path-input">
-                <span>{translate('Путь к файлу планов (eva_roadmap_path)')}</span>
-                <div className="hive-settings-modal__row">
-                  <input
-                    id="eva-roadmap-path-input"
-                    type="text"
-                    aria-label={translate('Путь к файлу планов (eva_roadmap_path)')}
-                    value={evaRoadmapDraft}
-                    onChange={(changeEvent) => {
-                      setEvaRoadmapDraft(changeEvent.target.value)
-                      setEvaRoadmapError(null)
-                    }}
-                    placeholder="docs/development-plan.md"
-                  />
-                  <button
-                    type="button"
-                    disabled={!connected || evaRoadmapBusy}
-                    onClick={() => void saveEvaRoadmapPath()}
-                  >
-                    {translate(evaRoadmapBusy ? 'Сохранение…' : 'Сохранить путь планов')}
-                  </button>
-                </div>
-              </label>
-              {evaRoadmapError ? (
-                <p role="alert" className="hive-console__error">{translate(evaRoadmapError)}</p>
               ) : null}
             </div>
           </section>

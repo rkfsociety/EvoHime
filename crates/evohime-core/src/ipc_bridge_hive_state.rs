@@ -121,7 +121,6 @@ impl IpcBridge {
                     "accepted": false,
                     "setting_key": "proactive_evolution_enabled",
                     "proactive_evolution_enabled": settings.proactive_evolution_enabled,
-                    "eva_roadmap_path": settings.eva_roadmap_path,
                     "error_code": "proactive_evolution_enabled must be true or false",
                 }))
                 .map_err(|error| error.to_string());
@@ -133,39 +132,6 @@ impl IpcBridge {
             "accepted": true,
             "setting_key": "proactive_evolution_enabled",
             "proactive_evolution_enabled": settings.proactive_evolution_enabled,
-            "eva_roadmap_path": settings.eva_roadmap_path,
-            "error_code": "",
-        }))
-        .map_err(|error| error.to_string())
-    }
-
-    /// Validates and persists the relative roadmap path inside `eva_workspace_path`.
-    pub(crate) async fn save_eva_roadmap_path(&self, value: &str) -> Result<Vec<u8>, String> {
-        let normalized = value.trim();
-        let mut settings = self.journal.hive_settings().await?;
-        let previous = settings.eva_roadmap_path.clone();
-        settings.eva_roadmap_path = if normalized.is_empty() {
-            None
-        } else {
-            Some(normalized.to_owned())
-        };
-        if let Err(error) = settings.validate() {
-            settings.eva_roadmap_path = previous;
-            return serde_json::to_vec(&serde_json::json!({
-                "accepted": false,
-                "setting_key": "eva_roadmap_path",
-                "proactive_evolution_enabled": settings.proactive_evolution_enabled,
-                "eva_roadmap_path": settings.eva_roadmap_path,
-                "error_code": error.to_string(),
-            }))
-            .map_err(|serialization_error| serialization_error.to_string());
-        }
-        self.journal.save_hive_settings(&settings).await?;
-        serde_json::to_vec(&serde_json::json!({
-            "accepted": true,
-            "setting_key": "eva_roadmap_path",
-            "proactive_evolution_enabled": settings.proactive_evolution_enabled,
-            "eva_roadmap_path": settings.eva_roadmap_path,
             "error_code": "",
         }))
         .map_err(|error| error.to_string())
@@ -177,7 +143,6 @@ impl IpcBridge {
             "eva_workspace_path" => self.save_eva_workspace_path(value).await,
             "daily_budget_usd" => self.save_daily_budget_usd(value).await,
             "proactive_evolution_enabled" => self.save_proactive_evolution_enabled(value).await,
-            "eva_roadmap_path" => self.save_eva_roadmap_path(value).await,
             other => serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "eva_workspace_path": serde_json::Value::Null,

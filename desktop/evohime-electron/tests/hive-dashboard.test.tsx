@@ -72,7 +72,6 @@ function snapshot(overrides: Record<string, unknown> = {}): Record<string, unkno
     daily_budget_usd: 0.5,
     eva_workspace_path: null,
     proactive_evolution_enabled: false,
-    eva_roadmap_path: null,
     pulse_status: 'active',
     next_wake_at_ms: Date.now() + 1_800_000,
     ...overrides
@@ -335,11 +334,12 @@ describe('hive dashboard', () => {
     const { rerender } = render(
       <HiveDashboard
         connection="connected"
-        events={[event('hive_state.snapshot', snapshot({ proactive_evolution_enabled: false, eva_roadmap_path: null }))]}
+        events={[event('hive_state.snapshot', snapshot({ proactive_evolution_enabled: false }))]}
       />
     )
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: /eva_roadmap_path|планов/i })).toBeNull()
 
     const toggle = await screen.findByRole('switch', { name: 'Проактивное саморазвитие' })
     expect((toggle as HTMLInputElement).checked).toBe(false)
@@ -352,37 +352,24 @@ describe('hive dashboard', () => {
       })
     })
 
-    const roadmapInput = await screen.findByRole('textbox', { name: 'Путь к файлу планов (eva_roadmap_path)' })
-    await userEvent.type(roadmapInput, 'docs/development-plan.md')
-    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить путь планов' }))
-
-    await waitFor(() => {
-      expect(calls.find((call) => call.command === 'core.setHiveSetting' && (call.payload as { key?: string })?.key === 'eva_roadmap_path')?.payload).toEqual({
-        key: 'eva_roadmap_path',
-        value: 'docs/development-plan.md'
-      })
-    })
-
     rerender(
       <HiveDashboard
         connection="connected"
         events={[
           event('hive_settings.saved', {
             accepted: true,
-            setting_key: 'eva_roadmap_path',
+            setting_key: 'proactive_evolution_enabled',
             proactive_evolution_enabled: true,
-            eva_roadmap_path: 'docs/development-plan.md',
             error_code: ''
           }),
           event(
             'hive_state.snapshot',
-            snapshot({ proactive_evolution_enabled: true, eva_roadmap_path: 'docs/development-plan.md' })
+            snapshot({ proactive_evolution_enabled: true })
           )
         ]}
       />
     )
     expect((screen.getByRole('switch', { name: 'Проактивное саморазвитие' }) as HTMLInputElement).checked).toBe(true)
-    expect((screen.getByRole('textbox', { name: 'Путь к файлу планов (eva_roadmap_path)' }) as HTMLInputElement).value).toBe('docs/development-plan.md')
   })
 
   it('shows zero task metrics when snapshot has no completed-task history', async () => {
