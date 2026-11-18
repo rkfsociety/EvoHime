@@ -1,5 +1,37 @@
 use super::*;
 
+fn format_queen_failure_message(error: &str) -> String {
+    let trimmed = error.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.contains("permission_denied")
+        || lower.contains("permission denied")
+        || lower.contains("access denied")
+        || lower.contains("workspace_boundary")
+        || lower.contains("workspace boundary")
+    {
+        return "Королева Ева: У меня нет прав на выполнение этого действия. Проверьте, что указан правильный путь к песочнице и у меня есть доступ к файлам.".to_owned();
+    }
+    let reason = if trimmed.is_empty() || trimmed == "task_failed" {
+        "внутренняя ошибка выполнения"
+    } else {
+        trimmed
+    };
+    format!(
+        "Королева Ева: Я не смогла выполнить задачу. Причина: {reason}. Пожалуйста, проверьте настройки песочницы (eva_workspace_path) или лимиты провайдера."
+    )
+}
+
+async fn emit_task_failed(events: &EventSink, task_id: String, error: String) {
+    let message = format_queen_failure_message(&error);
+    let _ = events
+        .send(CoreEvent::AssistantDelta {
+            task_id: task_id.clone(),
+            content: message,
+        })
+        .await;
+    let _ = events.send(CoreEvent::TaskFailed { task_id, error }).await;
+}
+
 pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCommand) {
     match command {
         CoreCommand::StartTask {
@@ -96,12 +128,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     Ok(messages) => messages,
                     Err(_) => {
                         state.lock().await.tasks.remove(&task_id);
-                        let _ = events
-                            .send(CoreEvent::TaskFailed {
-                                task_id,
-                                error: "conversation history could not be loaded".into(),
-                            })
-                            .await;
+                        emit_task_failed(
+                            &events,
+                            task_id,
+                            "conversation history could not be loaded".into(),
+                        )
+                        .await;
                         return;
                     }
                 }
@@ -119,12 +151,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 state_guard.tasks.remove(&task_id);
                 let events = state_guard.events.clone();
                 drop(state_guard);
-                let _ = events
-                    .send(CoreEvent::TaskFailed {
-                        task_id,
-                        error: "background task capacity is exhausted".into(),
-                    })
-                    .await;
+                emit_task_failed(
+                    &events,
+                    task_id,
+                    "background task capacity is exhausted".into(),
+                )
+                .await;
                 return;
             };
             tokio::spawn(async move {
@@ -148,12 +180,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             });
                             let events = state_guard.events.clone();
                             drop(state_guard);
-                            let _ = events
-                                .send(CoreEvent::TaskFailed {
-                                    task_id,
-                                    error: warning,
-                                })
-                                .await;
+                            emit_task_failed(&events, task_id, warning).await;
                             return;
                         }
                         Err(error) => {
@@ -161,12 +188,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                             state_guard.tasks.remove(&task_id);
                             let events = state_guard.events.clone();
                             drop(state_guard);
-                            let _ = events
-                                .send(CoreEvent::TaskFailed {
-                                    task_id,
-                                    error: format!("task checkpoint recovery failed: {error}"),
-                                })
-                                .await;
+                            emit_task_failed(
+                                &events,
+                                task_id,
+                                format!("task checkpoint recovery failed: {error}"),
+                            )
+                            .await;
                             return;
                         }
                         Ok(_) => {}
@@ -185,12 +212,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         state_guard.tasks.remove(&task_id);
                         let events = state_guard.events.clone();
                         drop(state_guard);
-                        let _ = events
-                            .send(CoreEvent::TaskFailed {
-                                task_id,
-                                error: format!("task checkpoint could not be persisted: {error}"),
-                            })
-                            .await;
+                        emit_task_failed(
+                            &events,
+                            task_id,
+                            format!("task checkpoint could not be persisted: {error}"),
+                        )
+                        .await;
                         return;
                     }
                     if let Err(error) = journal
@@ -201,14 +228,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         state_guard.tasks.remove(&task_id);
                         let events = state_guard.events.clone();
                         drop(state_guard);
-                        let _ = events
-                            .send(CoreEvent::TaskFailed {
-                                task_id,
-                                error: format!(
-                                    "agent run could not acquire durable lease: {error}"
-                                ),
-                            })
-                            .await;
+                        emit_task_failed(
+                            &events,
+                            task_id,
+                            format!("agent run could not acquire durable lease: {error}"),
+                        )
+                        .await;
                         return;
                     }
                 }
@@ -832,14 +857,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
                 match (result, heartbeat_error) {
                     (Ok(_), Some(error)) => {
-                        let _ = events
-                            .send(CoreEvent::TaskFailed {
-                                task_id,
-                                error: format!(
+                        emit_task_failed(
+                            &events,
+                            task_id,
+                            format!(
                                 "agent run lease was lost; outcome requires reconciliation: {error}"
                             ),
-                            })
-                            .await;
+                        )
+                        .await;
                     }
                     (Ok(final_message), None) => {
                         if is_continuation_run {
@@ -856,12 +881,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                         if matches!(error, AgentRunError::Cancelled) {
                             let _ = events.send(CoreEvent::TaskStopped { task_id }).await;
                         } else {
-                            let _ = events
-                                .send(CoreEvent::TaskFailed {
-                                    task_id,
-                                    error: error.to_string(),
-                                })
-                                .await;
+                            emit_task_failed(&events, task_id, error.to_string()).await;
                         }
                     }
                 }
@@ -1894,5 +1914,65 @@ mod timeout_tests {
                 .any(|id| id == &format!("{task_id}:{task_id}-c2-0")),
             "request_ids={request_ids:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn task_failed_reports_human_readable_error() {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(16);
+        let events = EventSink::new(event_tx);
+
+        emit_task_failed(&events, "task-perm".into(), "permission_denied".into()).await;
+        let perm_delta = event_rx.recv().await.expect("perm assistant delta");
+        let perm_failed = event_rx.recv().await.expect("perm task failed");
+        match perm_delta {
+            CoreEvent::AssistantDelta { task_id, content } => {
+                assert_eq!(task_id, "task-perm");
+                assert!(content.contains("Королева Ева:"));
+                assert!(content.contains("У меня нет прав"));
+            }
+            other => panic!("expected AssistantDelta, got {other:?}"),
+        }
+        assert!(matches!(
+            perm_failed,
+            CoreEvent::TaskFailed { ref task_id, .. } if task_id == "task-perm"
+        ));
+
+        emit_task_failed(
+            &events,
+            "task-rate".into(),
+            "provider rate limit reached".into(),
+        )
+        .await;
+        let rate_delta = event_rx.recv().await.expect("rate assistant delta");
+        let rate_failed = event_rx.recv().await.expect("rate task failed");
+        match rate_delta {
+            CoreEvent::AssistantDelta { task_id, content } => {
+                assert_eq!(task_id, "task-rate");
+                assert!(content.contains("Королева Ева: Я не смогла выполнить задачу."));
+                assert!(content.contains("provider rate limit reached"));
+            }
+            other => panic!("expected AssistantDelta, got {other:?}"),
+        }
+        assert!(matches!(
+            rate_failed,
+            CoreEvent::TaskFailed { ref task_id, .. } if task_id == "task-rate"
+        ));
+    }
+
+    #[test]
+    fn rout_uses_free_default_model() {
+        let route = evohime_model_gateway::ModelRouteConfig::openai_compatible(
+            "rout-key",
+            "https://api.rout.my/v1",
+            "",
+        )
+        .with_provider_profile(evohime_model_gateway::ProviderProfileId::Rout, None);
+
+        assert_eq!(
+            route.literouter.model,
+            evohime_model_gateway::ROUT_DEFAULT_FREE_MODEL
+        );
+        assert!(route.literouter.model.ends_with(":free"));
+        assert_ne!(route.literouter.model, "openai/gpt-6-luna");
     }
 }

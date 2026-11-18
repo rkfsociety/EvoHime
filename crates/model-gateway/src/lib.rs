@@ -46,7 +46,10 @@ pub mod structured_response;
 pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderLimits, ProviderProfileId};
-pub use crate::model_ranker::{get_ranked_models, next_available_model};
+pub use crate::model_ranker::{
+    get_ranked_models, get_rout_ranked_models, next_available_model, next_available_rout_model,
+    ROUT_DEFAULT_FREE_MODEL,
+};
 pub use crate::provider_contract::{
     classify_provider_error, select_route_snapshot, select_route_snapshot_cached, AttemptTrace,
     CandidateEntry, CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory,

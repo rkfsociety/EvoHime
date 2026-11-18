@@ -602,6 +602,37 @@ describe('hive dashboard', () => {
     expect(screen.getByText('Улей работает штатно.')).toBeTruthy()
   })
 
+  it('ui_stops_typing_indicator_on_task_failed', async () => {
+    const initialEvents = [
+      event('hive_state.snapshot', snapshot()),
+      event('task.started', { prompt: 'Проверь файлы песочницы' }, 'task-fail-1')
+    ]
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={initialEvents}
+      />
+    )
+
+    const indicator = await screen.findByTestId('queen-typing-indicator')
+    expect(indicator.textContent).toContain('Королева печатает')
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('task.failed', { error_code: 'permission_denied' }, 'task-fail-1'),
+          ...initialEvents
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
+    })
+    expect(screen.getByText(/Королева Ева: У меня нет прав на выполнение этого действия/)).toBeTruthy()
+  })
+
   it('ui_duplicates_approval_request_in_hive_chat', async () => {
     render(
       <HiveDashboard

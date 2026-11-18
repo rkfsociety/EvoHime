@@ -1,7 +1,10 @@
-//! Static ranking and cooldown-aware fallback selection for free LiteRouter models.
+//! Static ranking and cooldown-aware fallback selection for free LiteRouter and Rout models.
 
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Default free model selected for the `rout` provider when no explicit model is configured.
+pub const ROUT_DEFAULT_FREE_MODEL: &str = "meta-llama/llama-3-70b-instruct:free";
 
 /// Ranked list of free LiteRouter models ordered from highest to lowest preference.
 const RANKED_FREE_MODELS: &[(u32, &str)] = &[
@@ -12,9 +15,17 @@ const RANKED_FREE_MODELS: &[(u32, &str)] = &[
     (5, "gemma-2-27b-it-free"),
 ];
 
-/// Returns the static list of free LiteRouter models sorted by rank (best first).
-pub fn get_ranked_models() -> Vec<String> {
-    let mut entries: Vec<(u32, &str)> = RANKED_FREE_MODELS.to_vec();
+/// Ranked list of zero-multiplier free Rout models ordered from highest to lowest preference.
+const RANKED_ROUT_FREE_MODELS: &[(u32, &str)] = &[
+    (1, ROUT_DEFAULT_FREE_MODEL),
+    (2, "mistralai/mistral-7b-instruct:free"),
+    (3, "meta-llama/llama-3.3-70b-instruct:free"),
+    (4, "qwen/qwen-2.5-72b-instruct:free"),
+    (5, "deepseek/deepseek-r1:free"),
+];
+
+fn ranked_models_from(source: &[(u32, &str)]) -> Vec<String> {
+    let mut entries: Vec<(u32, &str)> = source.to_vec();
     entries.sort_by_key(|(rank, _)| *rank);
     entries
         .into_iter()
@@ -22,20 +33,49 @@ pub fn get_ranked_models() -> Vec<String> {
         .collect()
 }
 
-/// Returns the highest-ranked model other than `current` that has no active cooldown.
-///
-/// A model is considered on cooldown when `cooldowns.get(model)` holds a Unix
-/// millisecond timestamp strictly greater than the current wall-clock time.
-pub fn next_available_model(current: &str, cooldowns: &HashMap<String, i64>) -> Option<String> {
+fn next_available_model_from(
+    source: &[(u32, &str)],
+    current: &str,
+    cooldowns: &HashMap<String, i64>,
+) -> Option<String> {
     let now = now_ms();
     let current = current.trim();
-    get_ranked_models().into_iter().find(|model| {
+    ranked_models_from(source).into_iter().find(|model| {
         model != current
             && cooldowns
                 .get(model.as_str())
                 .copied()
                 .is_none_or(|until_ms| until_ms <= now)
     })
+}
+
+/// Returns the static list of free LiteRouter models sorted by rank (best first).
+pub fn get_ranked_models() -> Vec<String> {
+    ranked_models_from(RANKED_FREE_MODELS)
+}
+
+/// Returns the static list of free Rout models sorted by rank (best first).
+pub fn get_rout_ranked_models() -> Vec<String> {
+    ranked_models_from(RANKED_ROUT_FREE_MODELS)
+}
+
+/// Returns the highest-ranked LiteRouter model other than `current` that has no active cooldown.
+///
+/// A model is considered on cooldown when `cooldowns.get(model)` holds a Unix
+/// millisecond timestamp strictly greater than the current wall-clock time.
+pub fn next_available_model(current: &str, cooldowns: &HashMap<String, i64>) -> Option<String> {
+    next_available_model_from(RANKED_FREE_MODELS, current, cooldowns)
+}
+
+/// Returns the highest-ranked free Rout model other than `current` that has no active cooldown.
+///
+/// A model is considered on cooldown when `cooldowns.get(model)` holds a Unix
+/// millisecond timestamp strictly greater than the current wall-clock time.
+pub fn next_available_rout_model(
+    current: &str,
+    cooldowns: &HashMap<String, i64>,
+) -> Option<String> {
+    next_available_model_from(RANKED_ROUT_FREE_MODELS, current, cooldowns)
 }
 
 fn now_ms() -> i64 {

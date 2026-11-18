@@ -984,9 +984,17 @@ function extractHiveChatMessages(
     }
 
     if (event.eventType === 'task.failed') {
+      const message = readEventString(payload, 'final_message') || readEventString(payload, 'message')
       const errorCode = readEventString(payload, 'error_code') || readEventString(payload, 'error')
+      const existing = queenByTask.get(taskKey)
+      const fallbackText = formatQueenFailureText(errorCode)
+      const text = message.length > 0
+        ? message
+        : existing && existing.text.trim().length > 0 && existing.text.includes('Королева Ева:')
+          ? existing.text
+          : fallbackText
       queenByTask.set(taskKey, {
-        text: errorCode.length > 0 ? errorCode : 'Задача завершилась ошибкой.',
+        text,
         order: event.sequenceId,
         failed: true
       })
@@ -1023,6 +1031,18 @@ function extractHiveChatMessages(
     .map(({ id, role, text, failed }) => ({ id, role, text, ...(failed ? { failed } : {}) }))
 }
 
+function formatQueenFailureText(errorCodeOrMessage: string): string {
+  const normalized = errorCodeOrMessage.trim()
+  const lower = normalized.toLowerCase()
+  if (lower === 'permission_denied' || lower.includes('permission denied') || lower.includes('access denied')) {
+    return 'Королева Ева: У меня нет прав на выполнение этого действия. Проверьте, что указан правильный путь к песочнице и у меня есть доступ к файлам.'
+  }
+  const reason = normalized.length > 0 && normalized !== 'task_failed'
+    ? normalized
+    : 'внутренняя ошибка выполнения'
+  return `Королева Ева: Я не смогла выполнить задачу. Причина: ${reason}. Пожалуйста, проверьте настройки песочницы (eva_workspace_path) или лимиты провайдера.`
+}
+
 function isQueenThinking(
   events: readonly CoreEvent[],
   pendingTaskIds: ReadonlySet<string>,
@@ -1031,28 +1051,41 @@ function isQueenThinking(
 ): boolean {
   if (sendingMessage) return true
   const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
-
-  for (const taskId of pendingTaskIds) {
-    if (activeApprovalTaskIds.has(taskId)) continue
-    const finished = events.some((event) => event.taskId === taskId && terminalTypes.has(event.eventType))
-    if (!finished) return true
-  }
-
+  const failedOrStoppedTaskIds = new Set<string>()
   const activeTaskSeq = new Map<string, number>()
   const terminalTaskSeq = new Map<string, number>()
+  const approvalTaskSeq = new Map<string, number>()
+
   for (const event of events) {
     if (!event.taskId) continue
     if (terminalTypes.has(event.eventType)) {
+      if (event.eventType === 'task.failed' || event.eventType === 'task.stopped') {
+        failedOrStoppedTaskIds.add(event.taskId)
+      }
       const current = terminalTaskSeq.get(event.taskId) ?? -1
       if (event.sequenceId > current) terminalTaskSeq.set(event.taskId, event.sequenceId)
+    } else if (event.eventType === 'approval.required') {
+      const current = approvalTaskSeq.get(event.taskId) ?? -1
+      if (event.sequenceId > current) approvalTaskSeq.set(event.taskId, event.sequenceId)
     } else if (event.eventType === 'task.started' || event.eventType === 'agent.message.delta') {
       const current = activeTaskSeq.get(event.taskId) ?? -1
       if (event.sequenceId > current) activeTaskSeq.set(event.taskId, event.sequenceId)
     }
   }
 
+  for (const taskId of pendingTaskIds) {
+    if (activeApprovalTaskIds.has(taskId) || failedOrStoppedTaskIds.has(taskId)) continue
+    const approvalSeq = approvalTaskSeq.get(taskId) ?? -1
+    const activeSeq = activeTaskSeq.get(taskId) ?? -1
+    if (approvalSeq >= 0 && approvalSeq >= activeSeq) continue
+    const finished = events.some((event) => event.taskId === taskId && terminalTypes.has(event.eventType))
+    if (!finished) return true
+  }
+
   for (const [taskId, startedSeq] of activeTaskSeq.entries()) {
-    if (activeApprovalTaskIds.has(taskId)) continue
+    if (activeApprovalTaskIds.has(taskId) || failedOrStoppedTaskIds.has(taskId)) continue
+    const approvalSeq = approvalTaskSeq.get(taskId) ?? -1
+    if (approvalSeq >= startedSeq) continue
     const terminalSeq = terminalTaskSeq.get(taskId) ?? -1
     if (startedSeq > terminalSeq) return true
   }

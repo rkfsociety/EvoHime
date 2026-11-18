@@ -485,9 +485,14 @@ impl ModelRouteConfig {
     ) -> Self {
         self.provider_profile_id = Some(profile_id);
         self.provider_account_id = account_id;
-        if profile_id == ProviderProfileId::Rout && self.daily_token_quota.is_none() {
-            self.daily_token_quota = Some(ROUT_DAILY_TOKEN_QUOTA);
-            self.quota_reset_utc_midnight = true;
+        if profile_id == ProviderProfileId::Rout {
+            if self.daily_token_quota.is_none() {
+                self.daily_token_quota = Some(ROUT_DAILY_TOKEN_QUOTA);
+                self.quota_reset_utc_midnight = true;
+            }
+            if self.literouter.model.trim().is_empty() {
+                self.literouter.model = crate::model_ranker::ROUT_DEFAULT_FREE_MODEL.to_owned();
+            }
         }
         self
     }
@@ -1329,7 +1334,10 @@ mod tests {
 
     #[test]
     fn rout_profile_has_daily_token_quota() {
-        assert_eq!(ProviderProfileId::parse("rout"), Some(ProviderProfileId::Rout));
+        assert_eq!(
+            ProviderProfileId::parse("rout"),
+            Some(ProviderProfileId::Rout)
+        );
         assert_eq!(ProviderProfileId::parse("routmy"), None);
         assert_eq!(
             serde_json::from_str::<ProviderProfileId>("\"routmy\"").ok(),
@@ -1356,5 +1364,21 @@ mod tests {
         let custom_quota = route.with_daily_token_quota(Some(100_000), false);
         assert_eq!(custom_quota.daily_token_quota, Some(100_000));
         assert!(!custom_quota.quota_reset_utc_midnight);
+    }
+
+    #[test]
+    fn rout_uses_free_default_model() {
+        let route = ModelRouteConfig::openai_compatible("rout-key", "https://api.rout.my/v1", "")
+            .with_provider_profile(ProviderProfileId::Rout, None);
+
+        assert_eq!(
+            route.literouter.model,
+            crate::model_ranker::ROUT_DEFAULT_FREE_MODEL
+        );
+        assert!(route.literouter.model.ends_with(":free"));
+        assert_ne!(route.literouter.model, "openai/gpt-6-luna");
+        assert!(crate::model_ranker::get_rout_ranked_models()
+            .iter()
+            .all(|model| model.ends_with(":free") && model != "openai/gpt-6-luna"));
     }
 }
