@@ -39,7 +39,10 @@ impl IpcBridge {
     }
 
     /// Validates a candidate Eva self-development path without persisting it.
-    pub(crate) fn validate_eva_workspace_path_payload(&self, path: &str) -> Result<Vec<u8>, String> {
+    pub(crate) fn validate_eva_workspace_path_payload(
+        &self,
+        path: &str,
+    ) -> Result<Vec<u8>, String> {
         let normalized = path.trim();
         let payload = match crate::hive_settings::validate_eva_workspace_path(normalized) {
             Ok(()) => serde_json::json!({
