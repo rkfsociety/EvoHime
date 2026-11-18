@@ -777,4 +777,17 @@ describe('provider input bounds', () => {
     expect(persisted.compatibleProfiles.routmy).toBeUndefined()
     expect(persisted.compatibleProfiles.rout.profileId).toBe('rout')
   })
+
+  it('encrypts hive_api_key and exports HIVE_API_KEY only when set', () => {
+    const path = storePath()
+    const store = new ProviderStore(path, reversibleCipher())
+
+    expect(store.environment()['HIVE_API_KEY']).toBeUndefined()
+    expect(store.saveHiveApiKey('sk-hive-only')).toBe(true)
+    expect(store.environment()['HIVE_API_KEY']).toBe('sk-hive-only')
+    expect(readFileSync(path, 'utf8')).not.toContain('sk-hive-only')
+
+    expect(store.saveHiveApiKey('')).toBe(true)
+    expect(store.environment()['HIVE_API_KEY']).toBeUndefined()
+  })
 })

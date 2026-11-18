@@ -1036,6 +1036,19 @@ function dispatch(
       if (key === null || key.length > 128 || typeof value !== 'string' || value.length > 4_096) {
         return failure('invalid-payload', 'Некорректный параметр настройки улья.')
       }
+      if (key === 'hive_api_key') {
+        const normalized = normalizeApiKey(value)
+        if (normalized === null) {
+          return failure('invalid-payload', 'Некорректный API-ключ Улья.')
+        }
+        if (!providers.saveHiveApiKey(normalized)) {
+          log('error', 'shell.hive_provider_encryption_unavailable', {})
+          return failure('protocol-error', 'Windows не даёт зашифровать ключ — он не сохранён.')
+        }
+        // Never log the key value, only whether a credential is configured.
+        log('info', 'shell.hive_api_key_saved', { configured: normalized.length > 0 })
+        return restartCore().then((restarted) => ({ ok: true, value: { accepted: restarted } }))
+      }
       log('info', 'shell.command_forwarded', { command })
       return accepted(client.send({ setHiveSetting: { schemaVersion: 1, requestId: '', key, value } }))
     }

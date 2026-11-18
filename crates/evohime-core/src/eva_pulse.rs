@@ -1210,19 +1210,26 @@ impl PulseProbe for JournalPulseProbe {
             } else {
                 snapshot.budget.fallback_tokens_remaining
             };
-            let route_is_primary = if settings
-                .hive_provider_profile
-                .as_deref()
-                .is_some_and(|profile| !profile.trim().is_empty())
-            {
-                crate::hive_observation::hive_route_name(
-                    self.gateway_config.as_ref(),
-                    settings.hive_provider_profile.as_deref(),
-                )
-                .is_some()
-            } else {
-                crate::hive_observation::route_is_background_primary(self.gateway_config.as_ref())
-            };
+            let route_is_primary =
+                if crate::hive_observation::isolated_hive_route_name(self.gateway_config.as_ref())
+                    .is_some()
+                {
+                    true
+                } else if settings
+                    .hive_provider_profile
+                    .as_deref()
+                    .is_some_and(|profile| !profile.trim().is_empty())
+                {
+                    crate::hive_observation::hive_route_name(
+                        self.gateway_config.as_ref(),
+                        settings.hive_provider_profile.as_deref(),
+                    )
+                    .is_some()
+                } else {
+                    crate::hive_observation::route_is_background_primary(
+                        self.gateway_config.as_ref(),
+                    )
+                };
             let eva_workspace_path = settings.primary_workspace_path().map(str::to_owned);
             Ok(PulseCycleReport {
                 interval_secs: settings.pulse_interval_secs,
@@ -1587,6 +1594,10 @@ impl CoordinatorPulseTaskSink {
         let gateway_config = self.gateway_config.clone();
         Box::pin(async move {
             let mut preferred_route_hint = explicit_hint;
+            if preferred_route_hint.is_none() {
+                preferred_route_hint =
+                    crate::hive_observation::isolated_hive_route_name(gateway_config.as_ref());
+            }
             if preferred_route_hint.is_none() {
                 if let Some(journal) = journal {
                     if let Ok(settings) = journal.hive_settings().await {
@@ -2984,6 +2995,54 @@ mod tests {
                 ..
             } => {
                 assert_eq!(preferred_route_hint.as_deref(), Some("literouter"));
+            }
+            _ => panic!("unexpected command sent to coordinator"),
+        }
+    }
+
+    #[tokio::test]
+    async fn coordinator_pulse_sink_prefers_isolated_hive_route() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let journal =
+            crate::EventJournal::open(dir.path().join("pulse-isolated-hive.db")).expect("journal");
+
+        let deepseek_route = evohime_model_gateway::ModelRouteConfig::openai_compatible(
+            "sk-paid",
+            "https://api.deepseek.com/v1",
+            "deepseek-chat",
+        )
+        .with_provider_profile(evohime_model_gateway::ProviderProfileId::DeepSeek, None);
+        let hive_route = evohime_model_gateway::ModelRouteConfig::openai_compatible(
+            "sk-hive",
+            "https://api.rout.my/v1",
+            "",
+        )
+        .with_provider_profile(evohime_model_gateway::ProviderProfileId::Rout, None);
+        let gateway_config = evohime_model_gateway::ModelGatewayConfig {
+            default_route: "deepseek".into(),
+            routes: std::collections::HashMap::from([
+                ("deepseek".into(), deepseek_route),
+                ("hive".into(), hive_route),
+            ]),
+        };
+
+        let (mut coordinator, _events) = TaskCoordinator::new(8);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        coordinator.set_command_sender_for_test(tx);
+        let sink = CoordinatorPulseTaskSink::new(coordinator, None)
+            .with_hive_settings_source(journal, Some(gateway_config));
+        let task_id = sink
+            .dispatch_recovery(&[], None)
+            .await
+            .expect("dispatches with isolated hive route");
+        assert!(!task_id.is_empty());
+        let command = rx.recv().await.expect("command sent");
+        match command {
+            CoreCommand::StartTask {
+                preferred_route_hint,
+                ..
+            } => {
+                assert_eq!(preferred_route_hint.as_deref(), Some("hive"));
             }
             _ => panic!("unexpected command sent to coordinator"),
         }

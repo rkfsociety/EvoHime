@@ -1004,4 +1004,32 @@ describe('hive dashboard', () => {
       })
     })
   })
+
+  it('ui_can_save_hive_api_key', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot())]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+
+    const keyInput = screen.getByLabelText('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)') as HTMLInputElement
+    expect(keyInput.type).toBe('password')
+
+    await userEvent.type(keyInput, 'sk-hive-secret-123')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ' }))
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: {
+          key: 'hive_api_key',
+          value: 'sk-hive-secret-123'
+        }
+      })
+    })
+  })
 })

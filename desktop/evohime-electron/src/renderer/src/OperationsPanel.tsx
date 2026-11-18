@@ -1148,6 +1148,9 @@ export function HiveDashboard({
   const [hiveModelDraft, setHiveModelDraft] = useState('')
   const [hiveProviderBusy, setHiveProviderBusy] = useState(false)
   const [hiveProviderError, setHiveProviderError] = useState<string | null>(null)
+  const [hiveApiKeyDraft, setHiveApiKeyDraft] = useState('')
+  const [hiveApiKeyBusy, setHiveApiKeyBusy] = useState(false)
+  const [hiveApiKeyError, setHiveApiKeyError] = useState<string | null>(null)
   const [dailyBudgetDraft, setDailyBudgetDraft] = useState('')
   const [dailyBudgetBusy, setDailyBudgetBusy] = useState(false)
   const [dailyBudgetError, setDailyBudgetError] = useState<string | null>(null)
@@ -1654,6 +1657,28 @@ export function HiveDashboard({
       setHiveProviderBusy(false)
     }
   }, [api, hiveModelDraft, hiveProviderProfile, requestSnapshot])
+
+  const saveHiveApiKey = useCallback(async (): Promise<void> => {
+    if (!api) return
+    setHiveApiKeyBusy(true)
+    setHiveApiKeyError(null)
+    try {
+      const outcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_api_key',
+        value: hiveApiKeyDraft.trim()
+      })
+      if (!outcome.ok) {
+        setHiveApiKeyError(outcome.message)
+        return
+      }
+      setHiveApiKeyDraft('')
+      requestSnapshot()
+    } catch {
+      setHiveApiKeyError('Не удалось сохранить API-ключ Улья: Core не ответил.')
+    } finally {
+      setHiveApiKeyBusy(false)
+    }
+  }, [api, hiveApiKeyDraft, requestSnapshot])
 
   const openHiveChat = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -2256,6 +2281,33 @@ export function HiveDashboard({
               </label>
               {hiveProviderError ? (
                 <p role="alert" className="hive-console__error">{translate(hiveProviderError)}</p>
+              ) : null}
+              <label className="hive-provider" htmlFor="hive-api-key-input">
+                <span>{translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}</span>
+                <div className="hive-settings-modal__row">
+                  <input
+                    id="hive-api-key-input"
+                    type="password"
+                    aria-label={translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}
+                    value={hiveApiKeyDraft}
+                    disabled={!connected || hiveApiKeyBusy}
+                    onChange={(changeEvent) => {
+                      setHiveApiKeyDraft(changeEvent.target.value)
+                      setHiveApiKeyError(null)
+                    }}
+                    placeholder="sk-..."
+                  />
+                  <button
+                    type="button"
+                    disabled={!connected || hiveApiKeyBusy}
+                    onClick={() => void saveHiveApiKey()}
+                  >
+                    {translate(hiveApiKeyBusy ? 'Сохранение…' : 'Сохранить ключ')}
+                  </button>
+                </div>
+              </label>
+              {hiveApiKeyError ? (
+                <p role="alert" className="hive-console__error">{translate(hiveApiKeyError)}</p>
               ) : null}
               <label className="hive-provider" htmlFor="daily-budget-usd-input">
                 <span>{translate('Дневной лимит бюджета ($)')}</span>

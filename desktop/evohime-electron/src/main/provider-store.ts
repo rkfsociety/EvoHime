@@ -81,6 +81,7 @@ interface StoredDocument {
   readonly profiles: Readonly<Partial<Record<ProviderKind, StoredProfile>>>
   readonly compatibleProfiles: Readonly<Partial<Record<ProviderProfileId, StoredProfile>>>
   readonly codexModel: string
+  readonly hiveApiKeySecret: string
   readonly freeAccessRoutingMode: FreeAccessRoutingMode
   readonly allowPaidFallback: boolean
   readonly revokedCredentialBindings: readonly string[]
@@ -91,6 +92,7 @@ const EMPTY: StoredDocument = {
   profiles: {},
   compatibleProfiles: {},
   codexModel: '',
+  hiveApiKeySecret: '',
   freeAccessRoutingMode: 'any',
   allowPaidFallback: false,
   revokedCredentialBindings: []
@@ -347,6 +349,7 @@ export class ProviderStore {
           }
         : current.compatibleProfiles,
       codexModel: current.codexModel,
+      hiveApiKeySecret: current.hiveApiKeySecret,
       freeAccessRoutingMode: isFreeAccessRoutingMode(update.freeAccessRoutingMode)
         ? update.freeAccessRoutingMode
         : current.freeAccessRoutingMode,
@@ -453,6 +456,27 @@ export class ProviderStore {
   }
 
   /**
+   * Persists or clears the isolated API key for Hive encrypted via OS cipher.
+   * Returns false when the key is invalid or OS encryption is unavailable.
+   */
+  saveHiveApiKey(apiKey: string): boolean {
+    const normalized = normalizeApiKey(apiKey)
+    if (normalized === null) return false
+    const current = this.readDocument()
+    if (normalized.length === 0) {
+      if (current.hiveApiKeySecret.length === 0) return true
+      this.write({ ...current, hiveApiKeySecret: '' })
+      return true
+    }
+    if (!this.cipher.isAvailable()) {
+      return false
+    }
+    const hiveApiKeySecret = this.cipher.encrypt(normalized).toString('base64')
+    this.write({ ...current, hiveApiKeySecret })
+    return true
+  }
+
+  /**
    * Environment block for the Core process. Only the variables of the selected
    * provider are set, so a stale key of the other one never reaches the model
    * gateway.
@@ -474,6 +498,8 @@ export class ProviderStore {
     }
     environment['MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON'] = JSON.stringify(profile.modelRateLimits)
     if (document.codexModel) environment['CODEX_MODEL'] = document.codexModel
+    const hiveKey = this.decryptSecret(document.hiveApiKeySecret)
+    if (hiveKey) environment['HIVE_API_KEY'] = hiveKey
     if (document.provider === 'ollama') {
       environment['OLLAMA_BASE_URL'] = profile.baseUrl || OLLAMA_DEFAULT_BASE_URL
       if (profile.model) environment['OLLAMA_MODEL'] = profile.model
@@ -725,6 +751,7 @@ export class ProviderStore {
       }
     }
     const codexModel = normalizeModel(record['codexModel']) ?? ''
+    const hiveApiKeySecret = normalizeStoredSecret(record['hiveApiKeySecret'])
     const freeAccessRoutingMode = isFreeAccessRoutingMode(record['freeAccessRoutingMode'])
       ? record['freeAccessRoutingMode']
       : 'any'
@@ -739,7 +766,7 @@ export class ProviderStore {
       JSON.stringify(revokedCredentialBindings) !== JSON.stringify(record['revokedCredentialBindings'] ?? [])) {
       needsMigration = true
     }
-    const document = { provider, profiles, compatibleProfiles, codexModel, freeAccessRoutingMode, allowPaidFallback, revokedCredentialBindings }
+    const document = { provider, profiles, compatibleProfiles, codexModel, hiveApiKeySecret, freeAccessRoutingMode, allowPaidFallback, revokedCredentialBindings }
     if (needsMigration) this.write(document)
     return document
   }

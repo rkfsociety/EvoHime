@@ -816,6 +816,58 @@ impl ModelGatewayConfig {
             }
         }
 
+        let hive_key = env::var("HIVE_API_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        if let Some(hive_key) = hive_key {
+            if !routes.contains_key("hive") {
+                let hive_profile_raw = env::var("HIVE_PROVIDER_PROFILE")
+                    .ok()
+                    .or_else(|| env::var("hive_provider_profile").ok())
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty());
+                let hive_base = env::var("HIVE_BASE_URL")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty());
+                let hive_model = env::var("HIVE_MODEL")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_default();
+                let hive_route = match hive_profile_raw.as_deref() {
+                    Some("literouter") => ModelRouteConfig::literouter(
+                        hive_key,
+                        hive_base.unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string()),
+                        hive_model,
+                    ),
+                    Some("openai_responses") => ModelRouteConfig::openai_responses(
+                        hive_key,
+                        hive_base.unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string()),
+                        if hive_model.is_empty() {
+                            OPENAI_CODEX_DEFAULT_MODEL.to_string()
+                        } else {
+                            hive_model
+                        },
+                    ),
+                    other => {
+                        let profile_id = other
+                            .and_then(ProviderProfileId::parse)
+                            .unwrap_or(ProviderProfileId::Rout);
+                        let base_url = hive_base
+                            .or_else(|| profile_id.default_base_url().map(str::to_owned))
+                            .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string());
+                        ModelRouteConfig::openai_compatible(hive_key, base_url, hive_model)
+                            .with_provider_profile(profile_id, None)
+                    }
+                };
+                if hive_route.validate_provider_profile().is_ok() {
+                    routes.insert("hive".to_string(), hive_route);
+                }
+            }
+        }
+
         Ok(Self {
             default_route,
             routes,
@@ -1386,5 +1438,46 @@ mod tests {
                 "qwen/qwen3.7-max",
             ]
         );
+    }
+
+    #[test]
+    fn hive_route_uses_separate_api_key() {
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_hive_key = env::var("HIVE_API_KEY").ok();
+        let prev_hive_profile = env::var("HIVE_PROVIDER_PROFILE").ok();
+        let prev_routes = env::var("MODEL_ROUTES_JSON").ok();
+        let prev_provider = env::var("MODEL_PROVIDER").ok();
+
+        env::remove_var("MODEL_ROUTES_JSON");
+        env::remove_var("HIVE_PROVIDER_PROFILE");
+        env::set_var("MODEL_PROVIDER", "literouter");
+        env::set_var("HIVE_API_KEY", "sk-hive-isolated");
+
+        let config = ModelGatewayConfig::from_env().expect("from_env succeeds");
+        let hive_route = config.routes.get("hive").expect("hive route must exist");
+        assert_eq!(hive_route.literouter.api_key, "sk-hive-isolated");
+        assert_eq!(
+            hive_route.provider_profile_id,
+            Some(ProviderProfileId::Rout)
+        );
+        assert!(hive_route.configured());
+
+        match prev_hive_key {
+            Some(v) => env::set_var("HIVE_API_KEY", v),
+            None => env::remove_var("HIVE_API_KEY"),
+        }
+        match prev_hive_profile {
+            Some(v) => env::set_var("HIVE_PROVIDER_PROFILE", v),
+            None => env::remove_var("HIVE_PROVIDER_PROFILE"),
+        }
+        match prev_routes {
+            Some(v) => env::set_var("MODEL_ROUTES_JSON", v),
+            None => env::remove_var("MODEL_ROUTES_JSON"),
+        }
+        match prev_provider {
+            Some(v) => env::set_var("MODEL_PROVIDER", v),
+            None => env::remove_var("MODEL_PROVIDER"),
+        }
     }
 }

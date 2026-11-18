@@ -57,12 +57,25 @@ pub(crate) fn fallback_routmy_route_name(config: Option<&ModelGatewayConfig>) ->
     })
 }
 
+/// Returns `"hive"` when an isolated Hive route is present and configured.
+pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
+    let config = config?;
+    config
+        .routes
+        .get("hive")
+        .filter(|route| route.configured())
+        .map(|_| "hive".to_owned())
+}
+
 /// Resolves the route name for Hive based on `hive_provider_profile`, falling
 /// back to the standard background route (`LiteRouter -> Rout`) when unset.
 pub(crate) fn hive_route_name(
     config: Option<&ModelGatewayConfig>,
     hive_provider_profile: Option<&str>,
 ) -> Option<String> {
+    if let Some(hive_route) = isolated_hive_route_name(config) {
+        return Some(hive_route);
+    }
     let profile = hive_provider_profile
         .map(str::trim)
         .filter(|value| !value.is_empty());
@@ -128,7 +141,9 @@ pub(crate) async fn build_hive_observation_for_hive(
     let hive_profile = hive_provider_profile
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let route_name = if let Some(profile) = hive_profile {
+    let route_name = if let Some(hive_route) = isolated_hive_route_name(Some(config)) {
+        Some(hive_route)
+    } else if let Some(profile) = hive_profile {
         hive_route_name(Some(config), Some(profile))
     } else {
         Some(config.default_route.clone())
