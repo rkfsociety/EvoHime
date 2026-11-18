@@ -1064,7 +1064,72 @@ describe('hive dashboard', () => {
           value: 'sk-hive-secret-123'
         }
       })
+      expect(screen.getByText(/API-ключ Улья сохранён/)).toBeTruthy()
     })
+  })
+
+  it('does not treat literouter hive budget as rout when global chat provider is rout', async () => {
+    const previousApi = window.evohime
+    Object.defineProperty(window, 'evohime', {
+      configurable: true,
+      value: {
+        ...previousApi,
+        invoke: (async (command: RendererCommand, payload: unknown) => {
+          calls.push({ command, payload })
+          if (command === 'provider.get') {
+            return ok({
+              provider: 'openai_compatible',
+              model: 'anthropic/claude-fable-5.1-cc',
+              baseUrl: 'https://api.rout.my/v1',
+              tier: 'free',
+              configured: true,
+              profileId: 'rout',
+              compatibleProfiles: {
+                rout: {
+                  profileId: 'rout',
+                  model: 'anthropic/claude-fable-5.1-cc',
+                  baseUrl: 'https://api.rout.my/v1',
+                  configured: true
+                }
+              }
+            })
+          }
+          if (command === 'chat.open') {
+            return ok({ chatId: '__hive__', messages: [] })
+          }
+          return ok({})
+        }) as EvoHimeApiV1['invoke']
+      }
+    })
+
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              budget: {
+                provider: 'literouter',
+                model: 'glm-5.3-flash-cheap:free',
+                daily_cost_nano_usd: null,
+                daily_cost_available: false,
+                daily_budget_usd: 0.5,
+                requests_last_minute: 1,
+                requests_last_hour: 2,
+                requests_last_day: 3,
+                limits: { rpm: 10, rph: 100, rpd: 500 },
+                history_available: true,
+                exhausted: false
+              }
+            })
+          )
+        ]}
+      />
+    )
+
+    expect(await screen.findByText('LiteRouter (Free)')).toBeTruthy()
+    expect(screen.queryByText(/Дневной лимит: 650 000 токенов/)).toBeNull()
   })
 
 })

@@ -853,32 +853,12 @@ impl ModelGatewayConfig {
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())
                     .unwrap_or_default();
-                let hive_route = match hive_profile_raw.as_deref() {
-                    Some("literouter") => ModelRouteConfig::literouter(
-                        hive_key,
-                        hive_base.unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string()),
-                        hive_model,
-                    ),
-                    Some("openai_responses") => ModelRouteConfig::openai_responses(
-                        hive_key,
-                        hive_base.unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string()),
-                        if hive_model.is_empty() {
-                            OPENAI_CODEX_DEFAULT_MODEL.to_string()
-                        } else {
-                            hive_model
-                        },
-                    ),
-                    other => {
-                        let profile_id = other
-                            .and_then(ProviderProfileId::parse)
-                            .unwrap_or(ProviderProfileId::Rout);
-                        let base_url = hive_base
-                            .or_else(|| profile_id.default_base_url().map(str::to_owned))
-                            .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string());
-                        ModelRouteConfig::openai_compatible(hive_key, base_url, hive_model)
-                            .with_provider_profile(profile_id, None)
-                    }
-                };
+                let hive_route = Self::build_hive_route(
+                    hive_key,
+                    hive_profile_raw.as_deref(),
+                    hive_base,
+                    hive_model,
+                );
                 if hive_route.validate_provider_profile().is_ok() {
                     routes.insert("hive".to_string(), hive_route);
                 }
@@ -889,6 +869,66 @@ impl ModelGatewayConfig {
             default_route,
             routes,
         })
+    }
+
+    fn build_hive_route(
+        hive_key: String,
+        hive_profile: Option<&str>,
+        hive_base: Option<String>,
+        hive_model: String,
+    ) -> ModelRouteConfig {
+        match hive_profile.map(str::trim).filter(|value| !value.is_empty()) {
+            Some("literouter") => ModelRouteConfig::literouter(
+                hive_key,
+                hive_base.unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string()),
+                hive_model,
+            ),
+            Some("openai_responses") => ModelRouteConfig::openai_responses(
+                hive_key,
+                hive_base.unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string()),
+                if hive_model.is_empty() {
+                    OPENAI_CODEX_DEFAULT_MODEL.to_string()
+                } else {
+                    hive_model
+                },
+            ),
+            Some("ollama") => ModelRouteConfig::ollama(
+                hive_base.unwrap_or_else(|| OLLAMA_DEFAULT_BASE_URL.to_string()),
+                hive_model,
+            ),
+            other => {
+                let profile_id = other
+                    .and_then(ProviderProfileId::parse)
+                    .unwrap_or(ProviderProfileId::Rout);
+                let base_url = hive_base
+                    .or_else(|| profile_id.default_base_url().map(str::to_owned))
+                    .unwrap_or_else(|| OPENAI_DEFAULT_BASE_URL.to_string());
+                ModelRouteConfig::openai_compatible(hive_key, base_url, hive_model)
+                    .with_provider_profile(profile_id, None)
+            }
+        }
+    }
+
+    /// Rebuilds the isolated `"hive"` route (when `HIVE_API_KEY` created one)
+    /// using the durable `hive_provider_profile` and `hive_model` settings.
+    pub fn apply_hive_route_overrides(&mut self, profile: Option<&str>, model: Option<&str>) {
+        let Some(existing) = self.routes.get("hive").cloned() else {
+            return;
+        };
+        let normalized_profile = profile.map(str::trim).filter(|value| !value.is_empty());
+        let normalized_model = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| existing.literouter.model.clone());
+        if normalized_profile.is_none() && normalized_model == existing.literouter.model {
+            return;
+        }
+        let hive_key = existing.literouter.api_key;
+        let rebuilt = Self::build_hive_route(hive_key, normalized_profile, None, normalized_model);
+        if rebuilt.validate_provider_profile().is_ok() {
+            self.routes.insert("hive".to_string(), rebuilt);
+        }
     }
 }
 
@@ -1506,5 +1546,31 @@ mod tests {
             Some(v) => env::set_var("MODEL_PROVIDER", v),
             None => env::remove_var("MODEL_PROVIDER"),
         }
+    }
+
+    #[test]
+    fn apply_hive_route_overrides_rebuilds_hive_route_for_literouter() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "hive".to_string(),
+            ModelRouteConfig::openai_compatible(
+                "sk-hive-isolated",
+                "https://api.rout.my/v1",
+                "",
+            )
+            .with_provider_profile(ProviderProfileId::Rout, None),
+        );
+        let mut config = ModelGatewayConfig {
+            default_route: "hive".to_string(),
+            routes,
+        };
+
+        config.apply_hive_route_overrides(Some("literouter"), Some("glm-5.3-flash-cheap:free"));
+        let hive = config.routes.get("hive").expect("hive route remains");
+        assert_eq!(hive.provider, ProviderKind::LiteRouter);
+        assert_eq!(hive.provider_profile_id, None);
+        assert_eq!(hive.literouter.api_key, "sk-hive-isolated");
+        assert_eq!(hive.literouter.model, "glm-5.3-flash-cheap:free");
+        assert_eq!(hive.literouter.base_url, LITEROUTER_DEFAULT_BASE_URL);
     }
 }

@@ -1118,6 +1118,9 @@ export function HiveDashboard({
   const [dailyBudgetDraft, setDailyBudgetDraft] = useState('')
   const [dailyBudgetBusy, setDailyBudgetBusy] = useState(false)
   const [dailyBudgetError, setDailyBudgetError] = useState<string | null>(null)
+  const [hiveProviderSaved, setHiveProviderSaved] = useState(false)
+  const [hiveApiKeySaved, setHiveApiKeySaved] = useState(false)
+  const [dailyBudgetSaved, setDailyBudgetSaved] = useState(false)
   const [proactiveEvolutionEnabled, setProactiveEvolutionEnabled] = useState(false)
   const [proactiveEvolutionBusy, setProactiveEvolutionBusy] = useState(false)
   const [proactiveEvolutionError, setProactiveEvolutionError] = useState<string | null>(null)
@@ -1447,6 +1450,7 @@ export function HiveDashboard({
     }
     setDailyBudgetBusy(true)
     setDailyBudgetError(null)
+    setDailyBudgetSaved(false)
     try {
       const outcome = await api.invoke('core.setHiveSetting', {
         key: 'daily_budget_usd',
@@ -1456,6 +1460,7 @@ export function HiveDashboard({
         setDailyBudgetError(outcome.message)
         return
       }
+      setDailyBudgetSaved(true)
       requestSnapshot()
     } catch {
       setDailyBudgetError('Не удалось сохранить дневной лимит: Core не ответил.')
@@ -1572,6 +1577,7 @@ export function HiveDashboard({
     if (!api) return
     setHiveProviderBusy(true)
     setHiveProviderError(null)
+    setHiveProviderSaved(false)
     try {
       const profileOutcome = await api.invoke('core.setHiveSetting', {
         key: 'hive_provider_profile',
@@ -1589,6 +1595,7 @@ export function HiveDashboard({
         setHiveProviderError(modelOutcome.message)
         return
       }
+      setHiveProviderSaved(true)
       requestSnapshot()
     } catch {
       setHiveProviderError('Не удалось сохранить провайдера Улья: Core не ответил.')
@@ -1601,6 +1608,7 @@ export function HiveDashboard({
     if (!api) return
     setHiveApiKeyBusy(true)
     setHiveApiKeyError(null)
+    setHiveApiKeySaved(false)
     try {
       const outcome = await api.invoke('core.setHiveSetting', {
         key: 'hive_api_key',
@@ -1611,6 +1619,7 @@ export function HiveDashboard({
         return
       }
       setHiveApiKeyDraft('')
+      setHiveApiKeySaved(true)
       requestSnapshot()
     } catch {
       setHiveApiKeyError('Не удалось сохранить API-ключ Улья: Core не ответил.')
@@ -1760,8 +1769,9 @@ export function HiveDashboard({
       : budget.provider.toLowerCase().includes('deepseek')
         ? 'DeepSeek API'
         : budget.provider || translate('провайдер не выбран')
-  const isRoutProvider = budget.provider.trim().toLowerCase() === 'rout'
-    || selectedProviderKey === 'openai_compatible:rout'
+  const normalizedBudgetProvider = budget.provider.trim().toLowerCase()
+  const isRoutProvider = normalizedBudgetProvider === 'rout'
+    || (normalizedBudgetProvider.length === 0 && selectedProviderKey === 'openai_compatible:rout')
   const routmyConfigured = budget.fallbackProvider === 'rout'
     || provider?.compatibleProfiles?.rout?.configured === true
   const routmyStatusText = budget.provider === 'rout'
@@ -2331,6 +2341,7 @@ export function HiveDashboard({
                       onChange={(changeEvent) => {
                         setHiveProviderProfile(changeEvent.target.value)
                         setHiveProviderError(null)
+                        setHiveProviderSaved(false)
                       }}
                     >
                       <option value="">{translate('По умолчанию (глобальный)')}</option>
@@ -2354,6 +2365,7 @@ export function HiveDashboard({
                         onChange={(changeEvent) => {
                           setHiveModelDraft(changeEvent.target.value)
                           setHiveProviderError(null)
+                          setHiveProviderSaved(false)
                         }}
                         placeholder="gpt-4o-mini:free"
                       />
@@ -2369,6 +2381,8 @@ export function HiveDashboard({
                 </div>
                 {hiveProviderError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveProviderError)}</p>
+                ) : hiveProviderSaved ? (
+                  <small role="status" className="hive-settings-hint">✓ {translate('Провайдер и модель Улья сохранены')}</small>
                 ) : null}
                 <label className="hive-provider" htmlFor="hive-api-key-input">
                   <span>{translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}</span>
@@ -2382,6 +2396,7 @@ export function HiveDashboard({
                       onChange={(changeEvent) => {
                         setHiveApiKeyDraft(changeEvent.target.value)
                         setHiveApiKeyError(null)
+                        setHiveApiKeySaved(false)
                       }}
                       placeholder="sk-..."
                     />
@@ -2396,6 +2411,8 @@ export function HiveDashboard({
                 </label>
                 {hiveApiKeyError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveApiKeyError)}</p>
+                ) : hiveApiKeySaved ? (
+                  <small role="status" className="hive-settings-hint">✓ {translate('API-ключ Улья сохранён')}</small>
                 ) : null}
               </section>
 
@@ -2415,6 +2432,7 @@ export function HiveDashboard({
                         onChange={(changeEvent) => {
                           setDailyBudgetDraft(changeEvent.target.value)
                           setDailyBudgetError(null)
+                          setDailyBudgetSaved(false)
                         }}
                       />
                       <button
@@ -2441,6 +2459,8 @@ export function HiveDashboard({
                 </div>
                 {dailyBudgetError ? (
                   <p role="alert" className="hive-console__error">{translate(dailyBudgetError)}</p>
+                ) : dailyBudgetSaved ? (
+                  <small role="status" className="hive-settings-hint">✓ {translate('Дневной лимит сохранён')}</small>
                 ) : null}
                 {proactiveEvolutionError ? (
                   <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>

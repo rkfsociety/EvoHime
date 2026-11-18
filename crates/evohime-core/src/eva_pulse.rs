@@ -1595,25 +1595,26 @@ impl CoordinatorPulseTaskSink {
         Box::pin(async move {
             let mut preferred_route_hint = explicit_hint;
             if preferred_route_hint.is_none() {
-                preferred_route_hint =
-                    crate::hive_observation::isolated_hive_route_name(gateway_config.as_ref());
-            }
-            if preferred_route_hint.is_none() {
-                if let Some(journal) = journal {
-                    if let Ok(settings) = journal.hive_settings().await {
-                        if let Some(profile) = settings
-                            .hive_provider_profile
-                            .as_deref()
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                        {
-                            preferred_route_hint = crate::hive_observation::hive_route_name(
-                                gateway_config.as_ref(),
-                                Some(profile),
-                            )
-                            .or_else(|| Some(profile.to_owned()));
-                        }
-                    }
+                let hive_profile = if let Some(journal) = journal.as_ref() {
+                    journal
+                        .hive_settings()
+                        .await
+                        .ok()
+                        .and_then(|settings| settings.hive_provider_profile)
+                        .map(|value| value.trim().to_owned())
+                        .filter(|value| !value.is_empty())
+                } else {
+                    None
+                };
+                if let Some(profile) = hive_profile.as_deref() {
+                    preferred_route_hint = crate::hive_observation::hive_route_name(
+                        gateway_config.as_ref(),
+                        Some(profile),
+                    )
+                    .or_else(|| Some(profile.to_owned()));
+                } else {
+                    preferred_route_hint =
+                        crate::hive_observation::isolated_hive_route_name(gateway_config.as_ref());
                 }
             }
             if preferred_route_hint.is_none() {

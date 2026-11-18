@@ -67,18 +67,34 @@ pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> O
         .map(|_| "hive".to_owned())
 }
 
+fn route_matches_profile(
+    route: &evohime_model_gateway::ModelRouteConfig,
+    profile: &str,
+) -> bool {
+    route
+        .provider_profile_id
+        .is_some_and(|id| id.as_str().eq_ignore_ascii_case(profile))
+        || route.provider.as_str().eq_ignore_ascii_case(profile)
+}
+
 /// Resolves the route name for Hive based on `hive_provider_profile`, falling
 /// back to the standard background route (`LiteRouter -> Rout`) when unset.
 pub(crate) fn hive_route_name(
     config: Option<&ModelGatewayConfig>,
     hive_provider_profile: Option<&str>,
 ) -> Option<String> {
-    if let Some(hive_route) = isolated_hive_route_name(config) {
-        return Some(hive_route);
-    }
     let profile = hive_provider_profile
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    if let Some(hive_route) = isolated_hive_route_name(config) {
+        let matches_requested = match (profile, config.and_then(|c| c.routes.get(&hive_route))) {
+            (Some(requested), Some(route)) => route_matches_profile(route, requested),
+            _ => true,
+        };
+        if matches_requested {
+            return Some(hive_route);
+        }
+    }
     let Some(profile) = profile else {
         return background_route_name(config).or_else(|| fallback_routmy_route_name(config));
     };
@@ -92,12 +108,11 @@ pub(crate) fn hive_route_name(
     {
         return Some(name.clone());
     }
-    if let Some((name, _)) = config.routes.iter().find(|(_, route)| {
-        route
-            .provider_profile_id
-            .is_some_and(|id| id.as_str().eq_ignore_ascii_case(profile))
-            || route.provider.as_str().eq_ignore_ascii_case(profile)
-    }) {
+    if let Some((name, _)) = config
+        .routes
+        .iter()
+        .find(|(_, route)| route_matches_profile(route, profile))
+    {
         return Some(name.clone());
     }
     None
@@ -141,10 +156,10 @@ pub(crate) async fn build_hive_observation_for_hive(
     let hive_profile = hive_provider_profile
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let route_name = if let Some(hive_route) = isolated_hive_route_name(Some(config)) {
+    let route_name = if hive_profile.is_some() {
+        hive_route_name(Some(config), hive_profile)
+    } else if let Some(hive_route) = isolated_hive_route_name(Some(config)) {
         Some(hive_route)
-    } else if let Some(profile) = hive_profile {
-        hive_route_name(Some(config), Some(profile))
     } else {
         Some(config.default_route.clone())
     };
@@ -152,6 +167,9 @@ pub(crate) async fn build_hive_observation_for_hive(
         .as_deref()
         .and_then(|name| config.routes.get(name))
     else {
+        if let Some(profile) = hive_profile {
+            observation.provider = profile.to_owned();
+        }
         return observation;
     };
     // The ledger records the transport kind, so dispatch counters must be
@@ -376,5 +394,44 @@ mod tests {
         let (count, average) = task_metrics(&journal, now_ms).await;
         assert_eq!(count, 1);
         assert!(average <= 86_400);
+    }
+
+    #[test]
+    fn hive_route_name_prefers_requested_profile_over_mismatched_hive_route() {
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "hive".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::openai_compatible(
+                "sk-hive",
+                "https://api.rout.my/v1",
+                "",
+            )
+            .with_provider_profile(ProviderProfileId::Rout, None),
+        );
+        routes.insert(
+            "literouter".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::literouter(
+                "lr-key",
+                "https://api.literouter.com/v1",
+                "glm-5.3-flash-cheap:free",
+            ),
+        );
+        let config = ModelGatewayConfig {
+            default_route: "rout".to_owned(),
+            routes,
+        };
+
+        assert_eq!(
+            hive_route_name(Some(&config), Some("literouter")).as_deref(),
+            Some("literouter")
+        );
+        assert_eq!(
+            hive_route_name(Some(&config), Some("rout")).as_deref(),
+            Some("hive")
+        );
+        assert_eq!(
+            hive_route_name(Some(&config), None).as_deref(),
+            Some("hive")
+        );
     }
 }
