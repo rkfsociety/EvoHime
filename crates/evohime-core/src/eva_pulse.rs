@@ -2937,7 +2937,8 @@ mod tests {
             "https://api.deepseek.com",
             "deepseek-chat",
         );
-        deepseek_route.provider_profile_id = Some(evohime_model_gateway::ProviderProfileId::DeepSeek);
+        deepseek_route.provider_profile_id =
+            Some(evohime_model_gateway::ProviderProfileId::DeepSeek);
         let literouter_route = evohime_model_gateway::ModelRouteConfig::literouter(
             "free-key",
             "http://localhost:1234",

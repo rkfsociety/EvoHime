@@ -288,7 +288,11 @@ impl HiveSettings {
             .map_err(|error| HiveSettingsError::Serialization(error.to_string()))?;
         if let Some(map) = value.as_object_mut() {
             if let Some(legacy_path) = map.remove("eva_workspace_path") {
-                if let Some(path) = legacy_path.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                if let Some(path) = legacy_path
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
                     let needs_migration = match map.get("watched_repositories") {
                         None => true,
                         Some(serde_json::Value::Array(items)) => items.is_empty(),
