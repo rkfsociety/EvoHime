@@ -67,10 +67,7 @@ pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> O
         .map(|_| "hive".to_owned())
 }
 
-fn route_matches_profile(
-    route: &evohime_model_gateway::ModelRouteConfig,
-    profile: &str,
-) -> bool {
+fn route_matches_profile(route: &evohime_model_gateway::ModelRouteConfig, profile: &str) -> bool {
     route
         .provider_profile_id
         .is_some_and(|id| id.as_str().eq_ignore_ascii_case(profile))

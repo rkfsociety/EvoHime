@@ -877,7 +877,10 @@ impl ModelGatewayConfig {
         hive_base: Option<String>,
         hive_model: String,
     ) -> ModelRouteConfig {
-        match hive_profile.map(str::trim).filter(|value| !value.is_empty()) {
+        match hive_profile
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
             Some("literouter") => ModelRouteConfig::literouter(
                 hive_key,
                 hive_base.unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string()),
@@ -1553,12 +1556,8 @@ mod tests {
         let mut routes = HashMap::new();
         routes.insert(
             "hive".to_string(),
-            ModelRouteConfig::openai_compatible(
-                "sk-hive-isolated",
-                "https://api.rout.my/v1",
-                "",
-            )
-            .with_provider_profile(ProviderProfileId::Rout, None),
+            ModelRouteConfig::openai_compatible("sk-hive-isolated", "https://api.rout.my/v1", "")
+                .with_provider_profile(ProviderProfileId::Rout, None),
         );
         let mut config = ModelGatewayConfig {
             default_route: "hive".to_string(),

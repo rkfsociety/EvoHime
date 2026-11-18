@@ -179,7 +179,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let approvals = evohime_core::ApprovalCoordinator::default();
     let routing_approvals = evohime_core::RoutingApprovalRegistry::default();
     let mut model_config = evohime_model_gateway::ModelGatewayConfig::from_env().ok();
-    if let (Some(config), Ok(hive_settings)) = (model_config.as_mut(), journal.hive_settings().await) {
+    if let (Some(config), Ok(hive_settings)) =
+        (model_config.as_mut(), journal.hive_settings().await)
+    {
         config.apply_hive_route_overrides(
             hive_settings.hive_provider_profile.as_deref(),
             hive_settings.hive_model.as_deref(),

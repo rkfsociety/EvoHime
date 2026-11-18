@@ -758,11 +758,9 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
             reason: "provider_rate_limited",
         };
     }
-    let budget_exhausted = report
-        .daily_cost_nano_usd
-        .is_some_and(|spent| {
-            report.daily_budget_nano_usd == 0 || spent >= report.daily_budget_nano_usd
-        });
+    let budget_exhausted = report.daily_cost_nano_usd.is_some_and(|spent| {
+        report.daily_budget_nano_usd == 0 || spent >= report.daily_budget_nano_usd
+    });
     if budget_exhausted {
         return PulseDecision::Sleep {
             wake_at_ms: Some(next_utc_midnight(now_ms)),
