@@ -308,7 +308,9 @@ impl LiteRouterProvider {
                         });
                         record_rate_limit_for(&current_model, cooldown);
                     }
-                    if status.as_u16() == 429 {
+                    if status.as_u16() == 429
+                        && get_ranked_models().iter().any(|m| m == &current_model)
+                    {
                         rate_limited_models.insert(current_model.clone());
                         let mut cooldowns = active_rate_limits();
                         for exhausted in &rate_limited_models {
