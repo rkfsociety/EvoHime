@@ -1145,8 +1145,6 @@ export function HiveDashboard({
   const [preference, setPreference] = useState<HivePreference>(() => loadHivePreference())
   const [allLogs, setAllLogs] = useState(false)
   const [provider, setProvider] = useState<ProviderSummary | null>(null)
-  const [providerBusy, setProviderBusy] = useState(false)
-  const [providerMessage, setProviderMessage] = useState<string | null>(null)
   const [evaWorkspacePath, setEvaWorkspacePath] = useState('')
   const [evaWorkspaceDraft, setEvaWorkspaceDraft] = useState('')
   const [evaWorkspaceError, setEvaWorkspaceError] = useState<string | null>(null)
@@ -1431,42 +1429,7 @@ export function HiveDashboard({
     }
   }, [api, onApprovalResolved, resolvingApprovalIds])
 
-  const providerOptionList = useMemo(() => providerOptions(provider), [provider])
   const selectedProviderKey = currentProviderKey(provider)
-
-  const selectProvider = useCallback(async (key: string): Promise<void> => {
-    if (!api || providerBusy) return
-    const option = providerOptionList.find((candidate) => candidate.key === key)
-    if (!option || !option.configured) return
-    setProviderBusy(true)
-    setProviderMessage(null)
-    try {
-      const hiveProfile = option.profileId ?? option.provider
-      if (connected) {
-        const settingOutcome = await api.invoke('core.setHiveSetting', {
-          key: 'hive_provider_profile',
-          value: hiveProfile
-        }).catch(() => null)
-        if (settingOutcome?.ok) {
-          setHiveProviderProfile(hiveProfile)
-        }
-      }
-      const outcome = await api.invoke('provider.select', option.profileId
-        ? { provider: option.provider, profileId: option.profileId }
-        : { provider: option.provider })
-      if (outcome.ok) {
-        setProvider(outcome.value.summary)
-        applyProviderSummary(outcome.value.summary)
-        setProviderMessage(outcome.value.restarted ? 'Core перезапущен с выбранным провайдером.' : null)
-      } else {
-        setProviderMessage(outcome.message)
-      }
-    } catch {
-      setProviderMessage('Не удалось выбрать провайдера: оболочка не ответила.')
-    } finally {
-      setProviderBusy(false)
-    }
-  }, [api, applyProviderSummary, connected, providerBusy, providerOptionList])
 
   const updatePreference = useCallback((next: HivePreference): void => {
     setPreference(next)
@@ -1790,11 +1753,6 @@ export function HiveDashboard({
   }, [api, chatDraft, connected, onChatTouched, sendingMessage])
 
   const budget = hive?.budget ?? EMPTY_BUDGET
-  const handleQueenModelChange = useCallback((model: string): void => {
-    if (model && model !== budget.model) {
-      requestSnapshot()
-    }
-  }, [budget.model, requestSnapshot])
   const departments = useMemo(() => departmentView(hive?.departments ?? []), [hive])
   const agentsOnline = hive?.metrics.totalAgentsOnline ?? 0
   const activeTasks = hive?.metrics.activeTasks ?? 0
@@ -2062,6 +2020,7 @@ export function HiveDashboard({
           <div className="hive-budget-card">
             <div className="hive-budget-card__head">
               <h3>{translate('Бюджет и провайдер')}</h3>
+              <span className="hive-budget-card__provider-tag">{snapshotBudgetLabel}</span>
             </div>
             <div className="hive-budget-card__spent">
               <span>{translate('Потрачено сегодня')}</span>
@@ -2076,39 +2035,6 @@ export function HiveDashboard({
               aria-valuenow={spendPercent}
             >
               <span style={{ width: `${spendPercent}%` }} />
-            </div>
-            <div className="hive-budget-card__selectors">
-              <label className="hive-provider">
-                <span>{translate('Текущий провайдер')}</span>
-                <select
-                  aria-label={translate('Провайдер улья')}
-                  value={selectedProviderKey}
-                  disabled={providerBusy || providerOptionList.length === 0}
-                  onChange={(changeEvent) => void selectProvider(changeEvent.target.value)}
-                >
-                  {providerOptionList.length === 0
-                    ? <option value="">{translate(snapshotBudgetLabel)}</option>
-                    : providerOptionList.map((option) => (
-                      <option key={option.key} value={option.key} disabled={!option.configured}>
-                        {option.label}{option.configured ? '' : ` · ${translate('ключ не настроен')}`}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              {provider ? (
-                <div className="hive-provider hive-model-picker" aria-label={translate('Модель королевы')}>
-                  <span>{translate('Модель королевы')}</span>
-                  <ModelPicker
-                    key={selectedProviderKey}
-                    connection={connection}
-                    events={events}
-                    provider={provider.provider}
-                    use="agent"
-                    disabled={providerBusy}
-                    onModelChange={handleQueenModelChange}
-                  />
-                </div>
-              ) : null}
             </div>
             <p className="hive-budget-card__limit">
               {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
@@ -2129,7 +2055,6 @@ export function HiveDashboard({
               {!budget.historyAvailable ? ` · ${translate('история отправок недоступна')}` : ''}
             </small>
             {budget.exhausted ? <p className="hive-budget-card__notice">{translate('Лимит запросов исчерпан — Core приостановит отправку до сброса окна.')}</p> : null}
-            {providerMessage ? <small className="hive-budget-card__message">{translate(providerMessage)}</small> : null}
           </div>
         </aside>
       </div>

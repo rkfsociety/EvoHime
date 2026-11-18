@@ -236,7 +236,7 @@ describe('hive dashboard', () => {
     expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
   })
 
-  it('переключает провайдера через provider.select и показывает бюджет', async () => {
+  it('показывает бюджет на дашборде и настраивает провайдера и модель в Настройках улья', async () => {
     render(
       <HiveDashboard
         connection="connected"
@@ -247,23 +247,29 @@ describe('hive dashboard', () => {
     expect(await screen.findByText('Потрачено сегодня')).toBeTruthy()
     expect(screen.getByText('$0.12 / $0.50')).toBeTruthy()
     expect(screen.getByText(/Лимит: \$0\.50\/день • Остаток: \$0\.38/)).toBeTruthy()
+    expect(screen.getByText('LiteRouter (Free)')).toBeTruthy()
+    expect(screen.queryByLabelText('Провайдер улья')).toBeNull()
+    expect(screen.queryByLabelText('Модель королевы')).toBeNull()
 
-    const picker = await screen.findByLabelText('Провайдер улья')
-    await waitFor(() => {
-      expect((picker as HTMLSelectElement).options.length).toBeGreaterThan(1)
-    })
-    expect((picker as HTMLSelectElement).value).toBe('literouter')
-    expect(screen.getByRole('option', { name: 'LiteRouter (Free)' })).toBeTruthy()
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    const providerSelect = within(dialog).getByLabelText('Провайдер Улья')
+    const modelInput = within(dialog).getByLabelText('Модель Улья')
+    await userEvent.selectOptions(providerSelect, 'ollama')
+    await userEvent.clear(modelInput)
+    await userEvent.type(modelInput, 'qwen2.5-coder:7b')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить провайдер Улья' }))
 
-    await userEvent.selectOptions(picker, 'ollama')
     await waitFor(() => {
       expect(calls).toContainEqual({
         command: 'core.setHiveSetting',
         payload: { key: 'hive_provider_profile', value: 'ollama' }
       })
-      expect(calls.find((call) => call.command === 'provider.select')?.payload).toEqual({ provider: 'ollama' })
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: { key: 'hive_model', value: 'qwen2.5-coder:7b' }
+      })
     })
-    expect(await screen.findByText('Core перезапущен с выбранным провайдером.')).toBeTruthy()
   })
 
   it('ui_reads_budget_from_snapshot', async () => {
@@ -836,7 +842,7 @@ describe('hive dashboard', () => {
     })
   })
 
-  it('queen_model_can_be_selected_manually_in_hive_dashboard', async () => {
+  it('не отображает выбор модели на главном экране Улья — настройка перенесена в Настройки улья', async () => {
     render(
       <HiveDashboard
         connection="connected"
@@ -848,16 +854,9 @@ describe('hive dashboard', () => {
       />
     )
 
-    const pickerContainer = await screen.findByLabelText('Модель королевы')
-    const trigger = await within(pickerContainer).findByRole('button', { name: 'Модель' })
-    await userEvent.click(trigger)
-
-    const listbox = await within(pickerContainer).findByRole('listbox', { name: 'Список моделей' })
-    await userEvent.click(within(listbox).getByRole('option', { name: /claude-3\.5-haiku:free/ }))
-
-    await waitFor(() => {
-      expect(calls.some((call) => call.command === 'core.selectModel' && (call.payload as { model?: string })?.model === 'claude-3.5-haiku:free')).toBe(true)
-    })
+    expect(await screen.findByText('Текущая модель: gpt-4o-mini:free')).toBeTruthy()
+    expect(screen.queryByLabelText('Модель королевы')).toBeNull()
+    expect(screen.queryByLabelText('Провайдер улья')).toBeNull()
   })
 
   it('ui_shows_token_quota_for_rout', async () => {
@@ -1037,36 +1036,4 @@ describe('hive dashboard', () => {
     })
   })
 
-  it('загружает каталог моделей в Модель королевы и не сбрасывает список при обновлении событий', async () => {
-    const baseEvents = [
-      event('hive_state.snapshot', snapshot()),
-      event('model.catalog', { models: ['openai/gpt-6-luna', 'meta/llama-4'] }),
-      event('model.config', { model: 'openai/gpt-6-luna' })
-    ]
-    const { rerender } = render(
-      <HiveDashboard
-        connection="connected"
-        events={baseEvents}
-      />
-    )
-
-    const queenPicker = await screen.findByLabelText('Модель королевы')
-    await waitFor(() => {
-      expect(queenPicker.textContent).toContain('openai/gpt-6-luna')
-      expect(queenPicker.textContent).not.toContain('загрузка моделей…')
-    })
-
-    rerender(
-      <HiveDashboard
-        connection="connected"
-        events={[
-          ...baseEvents,
-          event('hive_state.snapshot', snapshot({ tasks_today: 11 }))
-        ]}
-      />
-    )
-
-    expect(queenPicker.textContent).toContain('openai/gpt-6-luna')
-    expect(queenPicker.textContent).not.toContain('загрузка моделей…')
-  })
 })

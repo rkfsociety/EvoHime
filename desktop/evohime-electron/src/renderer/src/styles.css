@@ -8080,6 +8080,16 @@ body {
   font-size: 12px;
 }
 
+.hive-budget-card__provider-tag {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--hive-blue) 30%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hive-blue) 10%, transparent);
+  color: var(--hive-blue);
+  font: 600 10.5px var(--mono);
+  white-space: nowrap;
+}
+
 .hive-budget-card__spent {
   display: flex;
   align-items: baseline;
