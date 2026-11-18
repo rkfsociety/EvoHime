@@ -2461,6 +2461,10 @@ export function HiveDashboard({
                   <p role="alert" className="hive-console__error">{translate(dailyBudgetError)}</p>
                 ) : dailyBudgetSaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('Дневной лимит сохранён')}</small>
+                ) : !budget.dailyCostAvailable ? (
+                  <small className="hive-settings-hint">
+                    {translate('Текущий провайдер не использует денежный биллинг — ограничение идёт по лимитам запросов и токенов, значение 0 не блокирует работу.')}
+                  </small>
                 ) : null}
                 {proactiveEvolutionError ? (
                   <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>

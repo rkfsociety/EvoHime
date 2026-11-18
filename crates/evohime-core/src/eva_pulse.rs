@@ -758,10 +758,11 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
             reason: "provider_rate_limited",
         };
     }
-    let budget_exhausted = report.daily_budget_nano_usd == 0
-        || report
-            .daily_cost_nano_usd
-            .is_some_and(|spent| spent >= report.daily_budget_nano_usd);
+    let budget_exhausted = report
+        .daily_cost_nano_usd
+        .is_some_and(|spent| {
+            report.daily_budget_nano_usd == 0 || spent >= report.daily_budget_nano_usd
+        });
     if budget_exhausted {
         return PulseDecision::Sleep {
             wake_at_ms: Some(next_utc_midnight(now_ms)),
@@ -1929,6 +1930,20 @@ mod tests {
         let status = daemon.status();
         assert_eq!(status.status, HIVE_PULSE_SLEEPING);
         assert!(status.next_wake_at_ms.is_some());
+    }
+
+    #[test]
+    fn decide_ignores_zero_usd_budget_when_provider_has_no_monetary_billing() {
+        let mut report = healthy_report();
+        report.daily_cost_nano_usd = None;
+        report.daily_budget_nano_usd = 0;
+        report.failed_workers = vec!["child-failed".into()];
+
+        let decision = decide(&report, 1_700_000_000_000);
+        assert!(
+            matches!(decision, PulseDecision::DispatchPrimary { .. }),
+            "expected DispatchPrimary for free/quota provider with 0 USD budget, got {decision:?}"
+        );
     }
 
     #[tokio::test]
