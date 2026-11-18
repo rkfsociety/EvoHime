@@ -596,6 +596,10 @@ mod tests {
         ));
         assert!(matches!(
             events.recv().await,
+            Ok(CoreEvent::AssistantDelta { .. })
+        ));
+        assert!(matches!(
+            events.recv().await,
             Ok(CoreEvent::TaskFailed { .. })
         ));
 
