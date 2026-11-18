@@ -2123,7 +2123,7 @@ export function HiveDashboard({
                 <h2 id="hive-settings-title">{translate('Настройки улья')}</h2>
               </div>
               <div className="hive-console__controls">
-                <span className="hive-badge">
+                <span className={`hive-badge ${evaWorkspacePath ? 'hive-badge--active' : 'hive-badge--inactive'}`}>
                   {translate(evaWorkspacePath ? 'включено' : 'выключено')}
                 </span>
                 <button
@@ -2137,221 +2137,245 @@ export function HiveDashboard({
               </div>
             </header>
             <div className="settings-modal__content hive-settings-modal__body">
-              <p>{translate('Укажи отдельный изолированный Git checkout. Ева сможет исследовать и исправлять только его; Core не изменяет установленный продукт.')}</p>
-              <label className="hive-provider" htmlFor="eva-workspace-path-input">
-                <span>{translate('Путь к исходникам Евы (eva_workspace_path)')}</span>
-                <div className="hive-settings-modal__row">
-                  <input
-                    id="eva-workspace-path-input"
-                    type="text"
-                    aria-label={translate('Путь к исходникам Евы (eva_workspace_path)')}
-                    value={evaWorkspaceDraft}
-                    onChange={(changeEvent) => {
-                      setEvaWorkspaceDraft(changeEvent.target.value)
-                      setEvaWorkspaceValidation('idle')
-                      setEvaWorkspaceValidationMessage(null)
-                    }}
-                    placeholder="C:\\EvoHime-self-development"
-                  />
-                  <button
-                    type="button"
-                    disabled={!connected || evaWorkspaceValidation === 'checking' || evaWorkspaceBusy}
-                    onClick={() => void validateEvaWorkspacePath()}
-                  >
-                    {translate(evaWorkspaceValidation === 'checking' ? 'Проверка…' : 'Проверить')}
-                  </button>
-                  {evaWorkspaceValidation === 'valid' ? (
-                    <span
-                      className="hive-settings-status hive-settings-status--valid"
-                      data-testid="eva-workspace-valid"
-                      aria-label={translate('Путь проверен: валидный Git-репозиторий')}
+              <p className="hive-settings-modal__lead">
+                {translate('Укажи отдельный изолированный Git checkout. Ева сможет исследовать и исправлять только его; Core не изменяет установленный продукт.')}
+              </p>
+
+              <section className="hive-settings-section">
+                <label className="hive-provider" htmlFor="eva-workspace-path-input">
+                  <span>{translate('Путь к исходникам Евы (eva_workspace_path)')}</span>
+                  <div className="hive-settings-modal__row">
+                    <input
+                      id="eva-workspace-path-input"
+                      type="text"
+                      aria-label={translate('Путь к исходникам Евы (eva_workspace_path)')}
+                      value={evaWorkspaceDraft}
+                      onChange={(changeEvent) => {
+                        setEvaWorkspaceDraft(changeEvent.target.value)
+                        setEvaWorkspaceValidation('idle')
+                        setEvaWorkspaceValidationMessage(null)
+                      }}
+                      placeholder="C:\\EvoHime-self-development"
+                    />
+                    <button
+                      type="button"
+                      disabled={!connected || evaWorkspaceValidation === 'checking' || evaWorkspaceBusy}
+                      onClick={() => void validateEvaWorkspacePath()}
                     >
-                      ✓
-                    </span>
-                  ) : null}
-                  {evaWorkspaceValidation === 'invalid' ? (
-                    <span
-                      className="hive-settings-status hive-settings-status--invalid"
-                      data-testid="eva-workspace-invalid"
-                      aria-label={translate('Путь невалиден')}
+                      {translate(evaWorkspaceValidation === 'checking' ? 'Проверка…' : 'Проверить')}
+                    </button>
+                    <button
+                      type="button"
+                      className="hive-settings-btn--primary"
+                      disabled={!connected || evaWorkspaceBusy}
+                      onClick={() => void saveEvaWorkspacePath()}
                     >
-                      ✕
-                    </span>
-                  ) : null}
+                      {translate(evaWorkspaceBusy ? 'Сохранение…' : 'Сохранить')}
+                    </button>
+                    {evaWorkspaceValidation === 'valid' ? (
+                      <span
+                        className="hive-settings-status hive-settings-status--valid"
+                        data-testid="eva-workspace-valid"
+                        aria-label={translate('Путь проверен: валидный Git-репозиторий')}
+                      >
+                        ✓
+                      </span>
+                    ) : null}
+                    {evaWorkspaceValidation === 'invalid' ? (
+                      <span
+                        className="hive-settings-status hive-settings-status--invalid"
+                        data-testid="eva-workspace-invalid"
+                        aria-label={translate('Путь невалиден')}
+                      >
+                        ✕
+                      </span>
+                    ) : null}
+                  </div>
+                </label>
+                <small className="hive-settings-hint">
+                  {translate(evaWorkspacePath ? 'Инструменты eva_workspace_* доступны Королеве Еве.' : 'Путь не задан — инструменты саморазвития недоступны.')}
+                </small>
+                {evaWorkspaceValidationMessage ? (
+                  <p role="alert" className="hive-console__error">{translate(evaWorkspaceValidationMessage)}</p>
+                ) : null}
+                {evaWorkspaceError ? (
+                  <p role="alert" className="hive-console__error">{translate(evaWorkspaceError)}</p>
+                ) : null}
+              </section>
+
+              <section className="hive-settings-section" data-testid="watched-repositories-section">
+                <div className="hive-provider">
+                  <span>{translate('Проекты Улья (watched_repositories)')}</span>
+                  {watchedRepositories.length > 0 ? (
+                    <ul className="hive-watched-repos">
+                      {watchedRepositories.map((repo) => (
+                        <li key={repo} className="hive-watched-repos__item">
+                          <span className="hive-watched-repos__path" title={repo}>{repo}</span>
+                          <button
+                            type="button"
+                            className="hive-watched-repos__remove"
+                            aria-label={`${translate('Удалить проект')} ${repo}`}
+                            disabled={!connected || evaWorkspaceBusy}
+                            onClick={() => void removeWatchedRepository(repo)}
+                          >
+                            {translate('Удалить')}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <small className="hive-settings-hint">{translate('Список проектов пуст.')}</small>
+                  )}
+                  <div className="hive-settings-modal__row">
+                    <input
+                      id="watched-repo-input"
+                      type="text"
+                      aria-label={translate('Путь к проекту')}
+                      value={newRepoDraft}
+                      onChange={(changeEvent) => {
+                        setNewRepoDraft(changeEvent.target.value)
+                        setEvaWorkspaceError(null)
+                      }}
+                      placeholder="C:\\Projects\\my-repo"
+                    />
+                    <button
+                      type="button"
+                      disabled={!connected || evaWorkspaceBusy}
+                      onClick={() => void addWatchedRepository()}
+                    >
+                      {translate('Добавить проект')}
+                    </button>
+                  </div>
                 </div>
-              </label>
-              <div className="hive-console__controls">
-                <button type="button" disabled={!connected || evaWorkspaceBusy} onClick={() => void saveEvaWorkspacePath()}>
-                  {translate(evaWorkspaceBusy ? 'Сохранение…' : 'Сохранить')}
-                </button>
-                <small>{translate(evaWorkspacePath ? 'Инструменты eva_workspace_* доступны Королеве Еве.' : 'Путь не задан — инструменты саморазвития недоступны.')}</small>
-              </div>
-              {evaWorkspaceValidationMessage ? (
-                <p role="alert" className="hive-console__error">{translate(evaWorkspaceValidationMessage)}</p>
-              ) : null}
-              {evaWorkspaceError ? (
-                <p role="alert" className="hive-console__error">{translate(evaWorkspaceError)}</p>
-              ) : null}
-              <div className="hive-provider" data-testid="watched-repositories-section">
-                <span>{translate('Проекты Улья (watched_repositories)')}</span>
-                {watchedRepositories.length > 0 ? (
-                  <ul className="hive-watched-repos">
-                    {watchedRepositories.map((repo) => (
-                      <li key={repo} className="hive-settings-modal__row">
-                        <span>{repo}</span>
-                        <button
-                          type="button"
-                          aria-label={`${translate('Удалить проект')} ${repo}`}
-                          disabled={!connected || evaWorkspaceBusy}
-                          onClick={() => void removeWatchedRepository(repo)}
-                        >
-                          {translate('Удалить')}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <small>{translate('Список проектов пуст.')}</small>
-                )}
-                <div className="hive-settings-modal__row">
-                  <input
-                    id="watched-repo-input"
-                    type="text"
-                    aria-label={translate('Путь к проекту')}
-                    value={newRepoDraft}
-                    onChange={(changeEvent) => {
-                      setNewRepoDraft(changeEvent.target.value)
-                      setEvaWorkspaceError(null)
-                    }}
-                    placeholder="C:\\Projects\\my-repo"
-                  />
-                  <button
-                    type="button"
-                    disabled={!connected || evaWorkspaceBusy}
-                    onClick={() => void addWatchedRepository()}
-                  >
-                    {translate('Добавить проект')}
-                  </button>
+              </section>
+
+              <section className="hive-settings-section">
+                <div className="hive-settings-modal__grid">
+                  <label className="hive-provider" htmlFor="hive-provider-profile-select">
+                    <span>{translate('Провайдер Улья')}</span>
+                    <select
+                      id="hive-provider-profile-select"
+                      aria-label={translate('Провайдер Улья')}
+                      value={hiveProviderProfile}
+                      disabled={!connected || hiveProviderBusy}
+                      onChange={(changeEvent) => {
+                        setHiveProviderProfile(changeEvent.target.value)
+                        setHiveProviderError(null)
+                      }}
+                    >
+                      <option value="">{translate('По умолчанию (глобальный)')}</option>
+                      <option value="literouter">LiteRouter</option>
+                      <option value="rout">Rout.my</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="openai_compatible">OpenAI-Compatible</option>
+                      <option value="openai_responses">OpenAI Responses</option>
+                      <option value="ollama">Ollama</option>
+                    </select>
+                  </label>
+                  <label className="hive-provider" htmlFor="hive-model-input">
+                    <span>{translate('Модель Улья')}</span>
+                    <div className="hive-settings-modal__row">
+                      <input
+                        id="hive-model-input"
+                        type="text"
+                        aria-label={translate('Модель Улья')}
+                        value={hiveModelDraft}
+                        disabled={!connected || hiveProviderBusy}
+                        onChange={(changeEvent) => {
+                          setHiveModelDraft(changeEvent.target.value)
+                          setHiveProviderError(null)
+                        }}
+                        placeholder="gpt-4o-mini:free"
+                      />
+                      <button
+                        type="button"
+                        disabled={!connected || hiveProviderBusy}
+                        onClick={() => void saveHiveProviderSettings()}
+                      >
+                        {translate(hiveProviderBusy ? 'Сохранение…' : 'Сохранить провайдер Улья')}
+                      </button>
+                    </div>
+                  </label>
                 </div>
-              </div>
-              <label className="hive-provider" htmlFor="hive-provider-profile-select">
-                <span>{translate('Провайдер Улья')}</span>
-                <select
-                  id="hive-provider-profile-select"
-                  aria-label={translate('Провайдер Улья')}
-                  value={hiveProviderProfile}
-                  disabled={!connected || hiveProviderBusy}
-                  onChange={(changeEvent) => {
-                    setHiveProviderProfile(changeEvent.target.value)
-                    setHiveProviderError(null)
-                  }}
-                >
-                  <option value="">{translate('По умолчанию (глобальный)')}</option>
-                  <option value="literouter">LiteRouter</option>
-                  <option value="rout">Rout.my</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="openai_compatible">OpenAI-Compatible</option>
-                  <option value="openai_responses">OpenAI Responses</option>
-                  <option value="ollama">Ollama</option>
-                </select>
-              </label>
-              <label className="hive-provider" htmlFor="hive-model-input">
-                <span>{translate('Модель Улья')}</span>
-                <div className="hive-settings-modal__row">
-                  <input
-                    id="hive-model-input"
-                    type="text"
-                    aria-label={translate('Модель Улья')}
-                    value={hiveModelDraft}
-                    disabled={!connected || hiveProviderBusy}
-                    onChange={(changeEvent) => {
-                      setHiveModelDraft(changeEvent.target.value)
-                      setHiveProviderError(null)
-                    }}
-                    placeholder="gpt-4o-mini:free"
-                  />
-                  <button
-                    type="button"
-                    disabled={!connected || hiveProviderBusy}
-                    onClick={() => void saveHiveProviderSettings()}
-                  >
-                    {translate(hiveProviderBusy ? 'Сохранение…' : 'Сохранить провайдер Улья')}
-                  </button>
+                {hiveProviderError ? (
+                  <p role="alert" className="hive-console__error">{translate(hiveProviderError)}</p>
+                ) : null}
+                <label className="hive-provider" htmlFor="hive-api-key-input">
+                  <span>{translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}</span>
+                  <div className="hive-settings-modal__row">
+                    <input
+                      id="hive-api-key-input"
+                      type="password"
+                      aria-label={translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}
+                      value={hiveApiKeyDraft}
+                      disabled={!connected || hiveApiKeyBusy}
+                      onChange={(changeEvent) => {
+                        setHiveApiKeyDraft(changeEvent.target.value)
+                        setHiveApiKeyError(null)
+                      }}
+                      placeholder="sk-..."
+                    />
+                    <button
+                      type="button"
+                      disabled={!connected || hiveApiKeyBusy}
+                      onClick={() => void saveHiveApiKey()}
+                    >
+                      {translate(hiveApiKeyBusy ? 'Сохранение…' : 'Сохранить ключ')}
+                    </button>
+                  </div>
+                </label>
+                {hiveApiKeyError ? (
+                  <p role="alert" className="hive-console__error">{translate(hiveApiKeyError)}</p>
+                ) : null}
+              </section>
+
+              <section className="hive-settings-section">
+                <div className="hive-settings-modal__grid hive-settings-modal__grid--balanced">
+                  <label className="hive-provider" htmlFor="daily-budget-usd-input">
+                    <span>{translate('Дневной лимит бюджета ($)')}</span>
+                    <div className="hive-settings-modal__row">
+                      <input
+                        id="daily-budget-usd-input"
+                        type="number"
+                        min="0"
+                        max="10000"
+                        step="0.01"
+                        aria-label={translate('Дневной лимит бюджета ($)')}
+                        value={dailyBudgetDraft}
+                        onChange={(changeEvent) => {
+                          setDailyBudgetDraft(changeEvent.target.value)
+                          setDailyBudgetError(null)
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={!connected || dailyBudgetBusy}
+                        onClick={() => void saveDailyBudget()}
+                      >
+                        {translate(dailyBudgetBusy ? 'Сохранение…' : 'Сохранить лимит')}
+                      </button>
+                    </div>
+                  </label>
+                  <label className="hive-settings-toggle" htmlFor="proactive-evolution-toggle">
+                    <span>{translate('Проактивное саморазвитие')}</span>
+                    <input
+                      id="proactive-evolution-toggle"
+                      type="checkbox"
+                      role="switch"
+                      aria-label={translate('Проактивное саморазвитие')}
+                      checked={proactiveEvolutionEnabled}
+                      disabled={!connected || proactiveEvolutionBusy}
+                      onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
+                    />
+                  </label>
                 </div>
-              </label>
-              {hiveProviderError ? (
-                <p role="alert" className="hive-console__error">{translate(hiveProviderError)}</p>
-              ) : null}
-              <label className="hive-provider" htmlFor="hive-api-key-input">
-                <span>{translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}</span>
-                <div className="hive-settings-modal__row">
-                  <input
-                    id="hive-api-key-input"
-                    type="password"
-                    aria-label={translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}
-                    value={hiveApiKeyDraft}
-                    disabled={!connected || hiveApiKeyBusy}
-                    onChange={(changeEvent) => {
-                      setHiveApiKeyDraft(changeEvent.target.value)
-                      setHiveApiKeyError(null)
-                    }}
-                    placeholder="sk-..."
-                  />
-                  <button
-                    type="button"
-                    disabled={!connected || hiveApiKeyBusy}
-                    onClick={() => void saveHiveApiKey()}
-                  >
-                    {translate(hiveApiKeyBusy ? 'Сохранение…' : 'Сохранить ключ')}
-                  </button>
-                </div>
-              </label>
-              {hiveApiKeyError ? (
-                <p role="alert" className="hive-console__error">{translate(hiveApiKeyError)}</p>
-              ) : null}
-              <label className="hive-provider" htmlFor="daily-budget-usd-input">
-                <span>{translate('Дневной лимит бюджета ($)')}</span>
-                <div className="hive-settings-modal__row">
-                  <input
-                    id="daily-budget-usd-input"
-                    type="number"
-                    min="0"
-                    max="10000"
-                    step="0.01"
-                    aria-label={translate('Дневной лимит бюджета ($)')}
-                    value={dailyBudgetDraft}
-                    onChange={(changeEvent) => {
-                      setDailyBudgetDraft(changeEvent.target.value)
-                      setDailyBudgetError(null)
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={!connected || dailyBudgetBusy}
-                    onClick={() => void saveDailyBudget()}
-                  >
-                    {translate(dailyBudgetBusy ? 'Сохранение…' : 'Сохранить лимит')}
-                  </button>
-                </div>
-              </label>
-              {dailyBudgetError ? (
-                <p role="alert" className="hive-console__error">{translate(dailyBudgetError)}</p>
-              ) : null}
-              <label className="hive-provider hive-settings-toggle" htmlFor="proactive-evolution-toggle">
-                <span>{translate('Проактивное саморазвитие')}</span>
-                <input
-                  id="proactive-evolution-toggle"
-                  type="checkbox"
-                  role="switch"
-                  aria-label={translate('Проактивное саморазвитие')}
-                  checked={proactiveEvolutionEnabled}
-                  disabled={!connected || proactiveEvolutionBusy}
-                  onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
-                />
-              </label>
-              {proactiveEvolutionError ? (
-                <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
-              ) : null}
+                {dailyBudgetError ? (
+                  <p role="alert" className="hive-console__error">{translate(dailyBudgetError)}</p>
+                ) : null}
+                {proactiveEvolutionError ? (
+                  <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
+                ) : null}
+              </section>
             </div>
           </section>
         </div>
