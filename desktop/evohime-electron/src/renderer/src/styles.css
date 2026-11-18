@@ -8296,6 +8296,153 @@ body {
   cursor: not-allowed;
 }
 
+.hive-chat {
+  display: grid;
+  gap: 12px;
+}
+
+.hive-chat__messages {
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.hive-chat__message,
+.hive-chat__approval {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+
+.hive-chat__message--user {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+
+.hive-chat__message--queen {
+  border-color: color-mix(in srgb, var(--hive-green) 32%, var(--border));
+}
+
+.hive-chat__message--failed {
+  border-color: color-mix(in srgb, var(--danger, #e5534b) 45%, var(--border));
+}
+
+.hive-chat__author {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.hive-chat__text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hive-chat__approval {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-color: color-mix(in srgb, var(--hive-amber, #d29922) 45%, var(--border));
+  background: color-mix(in srgb, var(--hive-amber, #d29922) 10%, var(--surface-2));
+}
+
+.hive-chat__approval-body {
+  display: grid;
+  gap: 4px;
+}
+
+.hive-chat__approval-body small {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.hive-chat__typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  padding: 4px 2px;
+}
+
+.hive-chat__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.hive-chat__dots > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: hive-typing-dot 1.2s infinite ease-in-out;
+}
+
+.hive-chat__dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.hive-chat__dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes hive-typing-dot {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.hive-chat__composer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.hive-chat__input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.hive-chat__send {
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.hive-chat__send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Адаптив: сначала три колонки, затем две, затем одна. */
 
 @media (max-width: 1200px) {

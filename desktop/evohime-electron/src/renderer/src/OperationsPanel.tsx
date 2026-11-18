@@ -20,6 +20,26 @@ interface Props {
   readonly onApprovalResolved?: (approvalId: string) => void
 }
 
+interface HiveDashboardProps extends Pick<Props, 'connection' | 'events' | 'resolvedApprovalIds' | 'onApprovalResolved'> {
+  readonly workspace?: string | null
+  readonly chatId?: string | null
+  readonly onChatOpened?: (chatId: string) => void
+  readonly onChatTouched?: () => void
+}
+
+interface HiveChatMessage {
+  readonly id: string
+  readonly role: 'user' | 'queen'
+  readonly text: string
+  readonly failed?: boolean
+}
+
+interface HiveUserPrompt {
+  readonly taskId: string
+  readonly text: string
+  readonly sequenceHint: number
+}
+
 interface ApprovalRequestView {
   readonly approvalId: string
   readonly taskId: string
@@ -840,12 +860,197 @@ function formatWakeAt(wakeAtMs: number | null, nowMs: number): string {
   return `${translate('сброс в')} ${resetAt.toLocaleTimeString()}`
 }
 
+function parseEventPayloadObject(rawPayload: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(rawPayload) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const record = parsed as Record<string, unknown>
+    const nested = record['payload']
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      return nested as Record<string, unknown>
+    }
+    return record
+  } catch {
+    return null
+  }
+}
+
+function readEventString(payload: Record<string, unknown> | null, key: string): string {
+  if (!payload) return ''
+  const value = payload[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function extractHiveChatMessages(
+  events: readonly CoreEvent[],
+  userPrompts: readonly HiveUserPrompt[],
+  limit = 5
+): readonly HiveChatMessage[] {
+  const items: Array<HiveChatMessage & { readonly order: number }> = []
+  const promptTaskIds = new Set<string>()
+  const queenByTask = new Map<string, { text: string; order: number; failed: boolean }>()
+  const minSequenceByTask = new Map<string, number>()
+  let maxSequence = 0
+
+  for (const event of events) {
+    if (event.sequenceId > maxSequence) maxSequence = event.sequenceId
+    if (!event.taskId) continue
+    const prev = minSequenceByTask.get(event.taskId)
+    if (prev === undefined || event.sequenceId < prev) {
+      minSequenceByTask.set(event.taskId, event.sequenceId)
+    }
+  }
+
+  for (let index = 0; index < userPrompts.length; index += 1) {
+    const prompt = userPrompts[index]
+    if (!prompt || prompt.text.length === 0) continue
+    if (prompt.taskId.length > 0) promptTaskIds.add(prompt.taskId)
+    const taskMinSeq = prompt.taskId ? minSequenceByTask.get(prompt.taskId) : undefined
+    const order = taskMinSeq !== undefined ? taskMinSeq - 0.5 : maxSequence + 1 + index * 0.01
+    items.push({
+      id: `user-${prompt.taskId || prompt.sequenceHint}`,
+      role: 'user',
+      text: prompt.text,
+      order
+    })
+  }
+
+  // `events` приходят newest-first; обходим с конца, чтобы собрать ответы хронологически.
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (!event) continue
+    const payload = parseEventPayloadObject(event.payload)
+    const taskKey = event.taskId || `seq-${event.sequenceId}`
+
+    if (event.eventType === 'task.started') {
+      const promptText = readEventString(payload, 'prompt')
+      if (promptText.length > 0 && !promptTaskIds.has(taskKey)) {
+        promptTaskIds.add(taskKey)
+        items.push({
+          id: `user-${taskKey}`,
+          role: 'user',
+          text: promptText,
+          order: event.sequenceId - 0.5
+        })
+      }
+      continue
+    }
+
+    if (event.eventType === 'agent.message.delta') {
+      const chunk = typeof payload?.['content'] === 'string' ? payload['content'] : ''
+      if (chunk.length === 0) continue
+      const existing = queenByTask.get(taskKey)
+      queenByTask.set(taskKey, {
+        text: `${existing?.text ?? ''}${chunk}`,
+        order: event.sequenceId,
+        failed: false
+      })
+      continue
+    }
+
+    if (event.eventType === 'task.completed') {
+      const finalMessage = readEventString(payload, 'final_message') || readEventString(payload, 'summary')
+      const existing = queenByTask.get(taskKey)
+      if (finalMessage.length > 0 && (!existing || existing.text.trim().length === 0)) {
+        queenByTask.set(taskKey, { text: finalMessage, order: event.sequenceId, failed: false })
+      } else if (existing) {
+        queenByTask.set(taskKey, { ...existing, order: event.sequenceId })
+      }
+      continue
+    }
+
+    if (event.eventType === 'task.failed') {
+      const errorCode = readEventString(payload, 'error_code') || readEventString(payload, 'error')
+      queenByTask.set(taskKey, {
+        text: errorCode.length > 0 ? errorCode : 'Задача завершилась ошибкой.',
+        order: event.sequenceId,
+        failed: true
+      })
+      continue
+    }
+
+    if (event.eventType === 'task.stopped') {
+      const existing = queenByTask.get(taskKey)
+      if (!existing || existing.text.trim().length === 0) {
+        queenByTask.set(taskKey, {
+          text: 'Задача остановлена.',
+          order: event.sequenceId,
+          failed: false
+        })
+      }
+    }
+  }
+
+  for (const [taskKey, queen] of queenByTask.entries()) {
+    const text = queen.text.trim()
+    if (text.length === 0) continue
+    items.push({
+      id: `queen-${taskKey}`,
+      role: 'queen',
+      text,
+      failed: queen.failed,
+      order: queen.order
+    })
+  }
+
+  return items
+    .sort((left, right) => left.order - right.order)
+    .slice(-limit)
+    .map(({ id, role, text, failed }) => ({ id, role, text, ...(failed ? { failed } : {}) }))
+}
+
+function isQueenThinking(
+  events: readonly CoreEvent[],
+  pendingTaskIds: ReadonlySet<string>,
+  sendingMessage: boolean,
+  activeApprovalTaskIds: ReadonlySet<string>
+): boolean {
+  if (sendingMessage) return true
+  const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
+
+  for (const taskId of pendingTaskIds) {
+    if (activeApprovalTaskIds.has(taskId)) continue
+    const finished = events.some((event) => event.taskId === taskId && terminalTypes.has(event.eventType))
+    if (!finished) return true
+  }
+
+  const activeTaskSeq = new Map<string, number>()
+  const terminalTaskSeq = new Map<string, number>()
+  for (const event of events) {
+    if (!event.taskId) continue
+    if (terminalTypes.has(event.eventType)) {
+      const current = terminalTaskSeq.get(event.taskId) ?? -1
+      if (event.sequenceId > current) terminalTaskSeq.set(event.taskId, event.sequenceId)
+    } else if (event.eventType === 'task.started' || event.eventType === 'agent.message.delta') {
+      const current = activeTaskSeq.get(event.taskId) ?? -1
+      if (event.sequenceId > current) activeTaskSeq.set(event.taskId, event.sequenceId)
+    }
+  }
+
+  for (const [taskId, startedSeq] of activeTaskSeq.entries()) {
+    if (activeApprovalTaskIds.has(taskId)) continue
+    const terminalSeq = terminalTaskSeq.get(taskId) ?? -1
+    if (startedSeq > terminalSeq) return true
+  }
+
+  return false
+}
+
 /**
  * Единый дашборд «Улей»: департаменты, Королева Ева, метрики и бюджет,
  * активные агенты и логи. Состояние читается из `HiveStateSnapshot`, решения
  * уходят в Core, режим авто-обновления принадлежит оболочке.
  */
-export function HiveDashboard({ connection, events, resolvedApprovalIds = [], onApprovalResolved }: Pick<Props, 'connection' | 'events' | 'resolvedApprovalIds' | 'onApprovalResolved'>): React.JSX.Element {
+export function HiveDashboard({
+  connection,
+  events,
+  workspace = null,
+  chatId = null,
+  onChatOpened,
+  onChatTouched,
+  resolvedApprovalIds = [],
+  onApprovalResolved
+}: HiveDashboardProps): React.JSX.Element {
   const api = useShellApi()
   const [resolvingApprovalIds, setResolvingApprovalIds] = useState<ReadonlySet<string>>(() => new Set())
   const [resolvedLocally, setResolvedLocally] = useState<readonly string[]>([])
@@ -860,6 +1065,11 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
   const [evaWorkspaceError, setEvaWorkspaceError] = useState<string | null>(null)
   const [evaWorkspaceBusy, setEvaWorkspaceBusy] = useState(false)
   const [observedAt, setObservedAt] = useState<ReadonlyMap<number, string>>(() => new Map())
+  const [chatDraft, setChatDraft] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [pendingTaskIds, setPendingTaskIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [localPrompts, setLocalPrompts] = useState<readonly HiveUserPrompt[]>([])
+  const [historyPrompts, setHistoryPrompts] = useState<readonly HiveUserPrompt[]>([])
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
   useEffect(() => {
@@ -935,6 +1145,42 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
       if (outcome.ok) setProvider(outcome.value)
     })
   }, [api])
+
+  useEffect(() => {
+    if (!api || !chatId) {
+      setHistoryPrompts([])
+      return
+    }
+    let cancelled = false
+    void api.invoke('chat.open', { chatId }).then((outcome) => {
+      if (cancelled || !outcome.ok || !outcome.value) return
+      const loaded = outcome.value.messages.map((message, index) => ({
+        taskId: message.taskId,
+        text: message.prompt,
+        sequenceHint: index + 1
+      }))
+      setHistoryPrompts(loaded)
+    }).catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [api, chatId])
+
+  useEffect(() => {
+    if (pendingTaskIds.size === 0) return
+    const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
+    setPendingTaskIds((current) => {
+      let changed = false
+      const next = new Set(current)
+      for (const taskId of current) {
+        if (events.some((event) => event.taskId === taskId && terminalTypes.has(event.eventType))) {
+          next.delete(taskId)
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [events, pendingTaskIds.size])
 
   const activeApprovals = useMemo(() => {
     const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
@@ -1049,6 +1295,83 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
     }).catch(() => setCommandError('Не удалось переключить EvaPulse: оболочка не ответила.'))
   }, [api, preference, updatePreference])
 
+  const sendHiveMessage = useCallback(async (): Promise<void> => {
+    const text = chatDraft.trim()
+    if (!api || !connected || sendingMessage || text.length === 0) return
+    const nextTaskId = typeof globalThis.crypto?.randomUUID === 'function'
+      ? `hive-${globalThis.crypto.randomUUID()}`
+      : `hive-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+    const clientMessageId = typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `msg-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+    setSendingMessage(true)
+    setCommandError(null)
+    try {
+      let targetChatId = chatId
+      if (targetChatId === null) {
+        const created = await api.invoke('chat.create', { workspacePath: workspace ?? null })
+        if (!created.ok) {
+          setCommandError(created.message)
+          return
+        }
+        targetChatId = created.value.id
+        onChatOpened?.(targetChatId)
+      }
+
+      setLocalPrompts((current) => [
+        ...current,
+        { taskId: nextTaskId, text, sequenceHint: current.length + 1 }
+      ])
+      setPendingTaskIds((current) => new Set(current).add(nextTaskId))
+      setChatDraft('')
+
+      const outcome = await api.invoke('core.startTask', {
+        taskId: nextTaskId,
+        prompt: text,
+        workspacePath: workspace ?? '',
+        conversationId: targetChatId,
+        clientMessageId,
+        preferredRouteHint: 'cloud',
+        executionKind: 'dialogue'
+      })
+      if (!outcome.ok) {
+        setPendingTaskIds((current) => {
+          const next = new Set(current)
+          next.delete(nextTaskId)
+          return next
+        })
+        setCommandError(outcome.message)
+        return
+      }
+
+      const stored = await api.invoke('chat.appendPrompt', {
+        chatId: targetChatId,
+        taskId: nextTaskId,
+        clientMessageId,
+        prompt: text
+      })
+      if (stored.ok && stored.value) {
+        setHistoryPrompts(
+          stored.value.messages.map((message, index) => ({
+            taskId: message.taskId,
+            text: message.prompt,
+            sequenceHint: index + 1
+          }))
+        )
+      }
+      onChatTouched?.()
+    } catch {
+      setPendingTaskIds((current) => {
+        const next = new Set(current)
+        next.delete(nextTaskId)
+        return next
+      })
+      setCommandError('Не удалось отправить сообщение Королеве Еве.')
+    } finally {
+      setSendingMessage(false)
+    }
+  }, [api, chatDraft, chatId, connected, onChatOpened, onChatTouched, sendingMessage, workspace])
+
   const budget = hive?.budget ?? EMPTY_BUDGET
   const departments = useMemo(() => departmentView(hive?.departments ?? []), [hive])
   const agentsOnline = hive?.metrics.totalAgentsOnline ?? 0
@@ -1100,6 +1423,30 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
       : budget.provider || translate('провайдер не выбран')
   const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
   const logs = realLogs
+  const combinedPrompts = useMemo(() => {
+    const byTask = new Map<string, HiveUserPrompt>()
+    for (const item of historyPrompts) {
+      byTask.set(item.taskId || `hist-${item.sequenceHint}`, item)
+    }
+    for (const item of localPrompts) {
+      if (!byTask.has(item.taskId)) {
+        byTask.set(item.taskId || `local-${item.sequenceHint}`, item)
+      }
+    }
+    return [...byTask.values()]
+  }, [historyPrompts, localPrompts])
+  const hiveChatMessages = useMemo(
+    () => extractHiveChatMessages(events, combinedPrompts, 5),
+    [combinedPrompts, events]
+  )
+  const activeApprovalTaskIds = useMemo(
+    () => new Set(activeApprovals.map((approval) => approval.taskId).filter(Boolean)),
+    [activeApprovals]
+  )
+  const queenTyping = useMemo(
+    () => isQueenThinking(events, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
+    [activeApprovalTaskIds, events, pendingTaskIds, sendingMessage]
+  )
 
   return (
     <section className="hive-console" aria-label={translate('Улей (Hive)')}>
@@ -1390,6 +1737,94 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
           {logs.length === 0 ? <p className="hive-empty">{translate('Событий пока нет.')}</p> : null}
         </section>
       </div>
+
+      <section className="hive-panel hive-chat" aria-label={translate('Диалог с Королевой Евой')}>
+        <div className="hive-panel__head">
+          <h2>{translate('Диалог с Королевой Евой')}</h2>
+          <span className="hive-badge">
+            {translate(queenTyping ? 'в процессе' : 'на связи')}
+          </span>
+        </div>
+
+        <div className="hive-chat__messages" role="log" aria-live="polite">
+          {hiveChatMessages.length === 0 && activeApprovals.length === 0 && !queenTyping ? (
+            <p className="hive-empty">{translate('Напиши Королеве Еве — здесь отобразятся последние сообщения диалога.')}</p>
+          ) : null}
+          {hiveChatMessages.map((message) => (
+            <div
+              key={message.id}
+              className={`hive-chat__message hive-chat__message--${message.role}${message.failed ? ' hive-chat__message--failed' : ''}`}
+            >
+              <span className="hive-chat__author">
+                {translate(message.role === 'user' ? 'Вы' : 'Королева Ева')}
+              </span>
+              <p className="hive-chat__text">{message.text}</p>
+            </div>
+          ))}
+          {activeApprovals.map((approval) => (
+            <div key={`chat-approval-${approval.approvalId}`} className="hive-chat__approval" data-testid="hive-chat-approval">
+              <div className="hive-chat__approval-body">
+                <span className="hive-chat__author">{translate('Запрос подтверждения')}</span>
+                <p className="hive-chat__text">{approval.summary}</p>
+                <small>{approval.toolName} · {approval.permission} · {approval.scope}</small>
+              </div>
+              <div className="hive-approval__actions">
+                <button
+                  type="button"
+                  className="hive-button hive-button--approve"
+                  disabled={resolvingApprovalIds.has(approval.approvalId)}
+                  onClick={() => void approvalResolved(approval, true)}
+                >
+                  {translate('Разрешить')}
+                </button>
+                <button
+                  type="button"
+                  className="hive-button hive-button--reject"
+                  disabled={resolvingApprovalIds.has(approval.approvalId)}
+                  onClick={() => void approvalResolved(approval, false)}
+                >
+                  {translate('Отклонить')}
+                </button>
+              </div>
+            </div>
+          ))}
+          {queenTyping ? (
+            <div className="hive-chat__typing" data-testid="queen-typing-indicator" role="status" aria-live="polite">
+              <span>{translate('Королева печатает')}</span>
+              <span className="hive-chat__dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
+          ) : null}
+        </div>
+
+        <form
+          className="hive-chat__composer"
+          onSubmit={(submitEvent) => {
+            submitEvent.preventDefault()
+            void sendHiveMessage()
+          }}
+        >
+          <input
+            type="text"
+            className="hive-chat__input"
+            aria-label={translate('Сообщение Королеве Еве')}
+            placeholder={translate('Напиши задачу или вопрос Королеве Еве...')}
+            value={chatDraft}
+            onChange={(changeEvent) => setChatDraft(changeEvent.target.value)}
+            disabled={!connected || sendingMessage}
+          />
+          <button
+            type="submit"
+            className="hive-chat__send"
+            disabled={!connected || sendingMessage || chatDraft.trim().length === 0}
+          >
+            {translate('Отправить')}
+          </button>
+        </form>
+      </section>
     </section>
   )
 }

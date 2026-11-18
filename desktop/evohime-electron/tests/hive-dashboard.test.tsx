@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -107,6 +107,20 @@ beforeEach(() => {
     invoke: (async (command: RendererCommand, payload: unknown) => {
       calls.push({ command, payload })
       if (command === 'core.setEvaWorkspacePath') return ok({ accepted: true })
+      if (command === 'chat.open') return ok(null)
+      if (command === 'chat.create') {
+        return ok({
+          id: 'chat-created-1',
+          workspacePath: null,
+          title: 'Новый чат',
+          createdMs: 1,
+          updatedMs: 1,
+          taskIds: [],
+          messages: [],
+          workbenchPresentation: { activeTab: 'summary' }
+        })
+      }
+      if (command === 'chat.appendPrompt') return ok(null)
       if (command === 'provider.get') return ok(providerSummary())
       if (command === 'provider.select') {
         return ok({ summary: providerSummary({ provider: 'ollama', model: 'llama3.2', tier: 'free' }), restarted: true })
@@ -167,10 +181,11 @@ describe('hive dashboard', () => {
     render(<HiveDashboard connection="connected" events={events} />)
 
     expect(await screen.findByText('Требуется ваше подтверждение')).toBeTruthy()
-    expect(screen.getByText('Запустить тесты')).toBeTruthy()
-    expect(screen.getByLabelText('Запрос подтверждения').querySelector('.hive-approval__cost strong')?.textContent).toBe('—')
+    const banner = screen.getByLabelText('Запрос подтверждения')
+    expect(within(banner).getByText('Запустить тесты')).toBeTruthy()
+    expect(banner.querySelector('.hive-approval__cost strong')?.textContent).toBe('—')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Разрешить' }))
+    await userEvent.click(within(banner).getByRole('button', { name: 'Разрешить' }))
 
     await waitFor(() => {
       expect(calls.find((call) => call.command === 'core.resolveApproval')?.payload).toMatchObject({
@@ -416,5 +431,98 @@ describe('hive dashboard', () => {
       expect(screen.getByTestId('hive-graph').getAttribute('data-queen-state')).toBe('sleeping')
     })
     expect(screen.queryAllByTestId('hive-graph-agent')).toHaveLength(0)
+  })
+
+  it('ui_can_send_message_from_hive_dashboard', async () => {
+    const user = userEvent.setup()
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot())]}
+        workspace={'C:\\repo\\EvoHime'}
+        chatId="chat-main-1"
+      />
+    )
+
+    const input = await screen.findByLabelText('Сообщение Королеве Еве')
+    await user.type(input, 'Исправь баг в коде{enter}')
+
+    await waitFor(() => {
+      const startCall = calls.find((item) => item.command === 'core.startTask')
+      expect(startCall).toBeTruthy()
+      expect(startCall?.payload).toMatchObject({
+        prompt: 'Исправь баг в коде',
+        workspacePath: 'C:\\repo\\EvoHime',
+        conversationId: 'chat-main-1',
+        executionKind: 'dialogue'
+      })
+    })
+
+    await waitFor(() => {
+      const appendCall = calls.find((item) => item.command === 'chat.appendPrompt')
+      expect(appendCall).toBeTruthy()
+      expect(appendCall?.payload).toMatchObject({
+        chatId: 'chat-main-1',
+        prompt: 'Исправь баг в коде'
+      })
+    })
+
+    expect(screen.getByText('Исправь баг в коде')).toBeTruthy()
+  })
+
+  it('ui_shows_queen_typing_indicator', async () => {
+    const initialEvents = [
+      event('hive_state.snapshot', snapshot()),
+      event('task.started', { prompt: 'Проверь состояние улья' }, 'task-typing-1')
+    ]
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={initialEvents}
+      />
+    )
+
+    const indicator = await screen.findByTestId('queen-typing-indicator')
+    expect(indicator.textContent).toContain('Королева печатает')
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('task.completed', { final_message: 'Улей работает штатно.' }, 'task-typing-1'),
+          ...initialEvents
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
+    })
+    expect(screen.getByText('Улей работает штатно.')).toBeTruthy()
+  })
+
+  it('ui_duplicates_approval_request_in_hive_chat', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event(
+            'approval.required',
+            {
+              approval_id: 'apr-chat-1',
+              tool_name: 'eva_workspace_git',
+              permission: 'GitWrite',
+              scope: 'origin/main',
+              preview: { summary: 'Разрешить push изменений?' }
+            },
+            'task-apr-1'
+          )
+        ]}
+      />
+    )
+
+    expect(await screen.findByTestId('hive-chat-approval')).toBeTruthy()
+    expect(screen.getAllByText('Разрешить push изменений?')).toHaveLength(2)
   })
 })

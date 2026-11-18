@@ -592,7 +592,7 @@ impl ToolAgent {
             if tool
                 .name
                 .starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX)
-                && (context.eva_workspace_root.is_none() || !self_development_intent)
+                && context.eva_workspace_root.is_none()
             {
                 preflight.push((
                     tool.name,
@@ -618,7 +618,10 @@ impl ToolAgent {
         let router_mutation_intent = request_allows_mutation(&prompt);
         let mutation_intent = router_mutation_intent || mutation_authorized;
         let mut delivery_requirements = DeliveryRequirements::from_prompt(&prompt);
-        if self_development_intent {
+        if self_development_intent
+            || (context.workspace_root.as_os_str().is_empty()
+                && context.eva_workspace_root.is_some())
+        {
             // Self-development tools own a separate successful-test gate. Do
             // not require the unrelated task-workspace `shell_execute` and
             // `git_commit` tools for this isolated recovery route.
@@ -633,8 +636,7 @@ impl ToolAgent {
             reconcile_delivery_requirements(&mut delivery_requirements, mutation_intent);
         let mut authorized_manifests = Vec::new();
         for (name, decision) in &preflight {
-            let self_development_tool_is_requested = self_development_intent
-                && context.eva_workspace_root.is_some()
+            let self_development_tool_is_requested = context.eva_workspace_root.is_some()
                 && name.starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX);
             if tool_preflight_can_be_offered(
                 decision,
@@ -682,7 +684,7 @@ impl ToolAgent {
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
         }
-        if self_development_intent && context.eva_workspace_root.is_some() {
+        if context.eva_workspace_root.is_some() {
             // This is a task-scoped request, not a new grant: manifests still
             // pass the same permission preflight, and approval-required tools
             // remain gated by the existing approval flow.

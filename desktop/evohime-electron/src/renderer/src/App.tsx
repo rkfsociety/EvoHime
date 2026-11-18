@@ -432,7 +432,21 @@ export function App(): React.JSX.Element {
                 {translate(view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null)}
                 {translate(view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null)}
                 {translate(view === 'operations' ? <OperationsPanel connection={connection} events={events} repair={repair} /> : null)}
-                {translate(view === 'hive' ? <HivePanel connection={connection} events={events} resolvedApprovalIds={resolvedApprovalIds} onApprovalResolved={(id) => setResolvedApprovalIds((current) => current.includes(id) ? current : [...current, id])} /> : null)}
+                {translate(view === 'hive' ? (
+                  <HivePanel
+                    connection={connection}
+                    events={events}
+                    workspace={workspace}
+                    chatId={chatId}
+                    onChatOpened={(id) => {
+                      setChatId(id)
+                      setChatRevision((value) => value + 1)
+                    }}
+                    onChatTouched={() => setChatRevision((value) => value + 1)}
+                    resolvedApprovalIds={resolvedApprovalIds}
+                    onApprovalResolved={(id) => setResolvedApprovalIds((current) => current.includes(id) ? current : [...current, id])}
+                  />
+                ) : null)}
                 {translate(view === 'scheduled' ? <ScheduledPanel connection={connection} events={events} workspace={workspace} /> : null)}
                 {translate(view === 'listening' ? <ListeningPanel connection={connection} events={events} /> : null)}
               </div>
