@@ -257,6 +257,10 @@ describe('hive dashboard', () => {
 
     await userEvent.selectOptions(picker, 'ollama')
     await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: { key: 'hive_provider_profile', value: 'ollama' }
+      })
       expect(calls.find((call) => call.command === 'provider.select')?.payload).toEqual({ provider: 'ollama' })
     })
     expect(await screen.findByText('Core перезапущен с выбранным провайдером.')).toBeTruthy()
@@ -1031,5 +1035,38 @@ describe('hive dashboard', () => {
         }
       })
     })
+  })
+
+  it('загружает каталог моделей в Модель королевы и не сбрасывает список при обновлении событий', async () => {
+    const baseEvents = [
+      event('hive_state.snapshot', snapshot()),
+      event('model.catalog', { models: ['openai/gpt-6-luna', 'meta/llama-4'] }),
+      event('model.config', { model: 'openai/gpt-6-luna' })
+    ]
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={baseEvents}
+      />
+    )
+
+    const queenPicker = await screen.findByLabelText('Модель королевы')
+    await waitFor(() => {
+      expect(queenPicker.textContent).toContain('openai/gpt-6-luna')
+      expect(queenPicker.textContent).not.toContain('загрузка моделей…')
+    })
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          ...baseEvents,
+          event('hive_state.snapshot', snapshot({ tasks_today: 11 }))
+        ]}
+      />
+    )
+
+    expect(queenPicker.textContent).toContain('openai/gpt-6-luna')
+    expect(queenPicker.textContent).not.toContain('загрузка моделей…')
   })
 })

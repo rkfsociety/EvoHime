@@ -55,6 +55,8 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const [configLoaded, setConfigLoaded] = useState(false)
   const pendingSelection = useRef<string | null>(null)
   const autoSelectionBlocked = useRef(false)
+  const onModelChangeRef = useRef(onModelChange)
+  onModelChangeRef.current = onModelChange
 
   useEffect(() => {
     setFallbackTier(null)
@@ -71,8 +73,8 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setConfigLoaded(false)
     pendingSelection.current = null
     autoSelectionBlocked.current = false
-    onModelChange?.('')
-  }, [onModelChange, provider])
+    onModelChangeRef.current?.('')
+  }, [provider])
 
   useEffect(() => {
     if (shared || !api || provider === 'codex_cli') return
@@ -100,11 +102,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         setCodexModels(outcome.value.models)
         setCodexRateLimits(outcome.value.rateLimits)
         setCurrent(outcome.value.selectedModel)
-        if (outcome.value.selectedModel.length > 0) onModelChange?.(outcome.value.selectedModel)
+        if (outcome.value.selectedModel.length > 0) onModelChangeRef.current?.(outcome.value.selectedModel)
         setError(outcome.value.error)
       }
     })
-  }, [api, connected, onModelChange, provider])
+  }, [api, connected, provider])
 
   const catalog = useMemo(() => latest(events, 'model.catalog'), [events])
   const config = useMemo(() => latest(events, 'model.config'), [events])
@@ -162,7 +164,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     // the user selected instead of silently picking the first entry.
     if (current === '' && configuredModel.length > 0 && catalogModels.includes(configuredModel)) {
       setCurrent(configuredModel)
-      onModelChange?.(configuredModel)
+      onModelChangeRef.current?.(configuredModel)
     }
     const state = typeof catalogProjection?.['state'] === 'string' ? catalogProjection['state'] : null
     const failureCode = typeof catalogProjection?.['failure_code'] === 'string'
@@ -189,10 +191,10 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     if (typeof parsed['model'] === 'string') {
       if (pendingSelection.current === parsed['model']) pendingSelection.current = null
       setCurrent(parsed['model'])
-      onModelChange?.(parsed['model'])
+      onModelChangeRef.current?.(parsed['model'])
     }
     setConfigLoaded(true)
-  }, [config, onModelChange, provider])
+  }, [config, provider])
 
   const select = useCallback(
     async (model: string) => {
@@ -208,9 +210,9 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       if (!outcome.ok) {
         pendingSelection.current = null
         setSelectionError(outcome.message)
-      } else onModelChange?.(model)
+      } else onModelChangeRef.current?.(model)
     },
-    [api, onModelChange, provider]
+    [api, provider]
   )
 
   const requiredCapability = use === 'agent' ? 'tool_calls' : 'chat'

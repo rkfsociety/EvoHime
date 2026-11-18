@@ -1441,6 +1441,16 @@ export function HiveDashboard({
     setProviderBusy(true)
     setProviderMessage(null)
     try {
+      const hiveProfile = option.profileId ?? option.provider
+      if (connected) {
+        const settingOutcome = await api.invoke('core.setHiveSetting', {
+          key: 'hive_provider_profile',
+          value: hiveProfile
+        }).catch(() => null)
+        if (settingOutcome?.ok) {
+          setHiveProviderProfile(hiveProfile)
+        }
+      }
       const outcome = await api.invoke('provider.select', option.profileId
         ? { provider: option.provider, profileId: option.profileId }
         : { provider: option.provider })
@@ -1456,7 +1466,7 @@ export function HiveDashboard({
     } finally {
       setProviderBusy(false)
     }
-  }, [api, applyProviderSummary, providerBusy, providerOptionList])
+  }, [api, applyProviderSummary, connected, providerBusy, providerOptionList])
 
   const updatePreference = useCallback((next: HivePreference): void => {
     setPreference(next)
@@ -1780,6 +1790,11 @@ export function HiveDashboard({
   }, [api, chatDraft, connected, onChatTouched, sendingMessage])
 
   const budget = hive?.budget ?? EMPTY_BUDGET
+  const handleQueenModelChange = useCallback((model: string): void => {
+    if (model && model !== budget.model) {
+      requestSnapshot()
+    }
+  }, [budget.model, requestSnapshot])
   const departments = useMemo(() => departmentView(hive?.departments ?? []), [hive])
   const agentsOnline = hive?.metrics.totalAgentsOnline ?? 0
   const activeTasks = hive?.metrics.activeTasks ?? 0
@@ -2090,11 +2105,7 @@ export function HiveDashboard({
                     provider={provider.provider}
                     use="agent"
                     disabled={providerBusy}
-                    onModelChange={(model) => {
-                      if (model && model !== budget.model) {
-                        requestSnapshot()
-                      }
-                    }}
+                    onModelChange={handleQueenModelChange}
                   />
                 </div>
               ) : null}
