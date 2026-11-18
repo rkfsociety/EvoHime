@@ -12,6 +12,7 @@
 //! can render before the first task starts.
 
 use serde::{Deserialize, Serialize};
+pub use evohime_model_gateway::ProviderLimits;
 
 use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
@@ -155,7 +156,11 @@ pub struct HiveBudget {
     pub hour_cap: u32,
     /// Configured daily cap; `0` means no daily cap.
     pub day_cap: u32,
+
     /// Whether the minute cap is reached.
+    /// Unified effective provider request limits across rolling windows.
+    #[serde(default)]
+    pub limits: ProviderLimits,
     pub minute_exhausted: bool,
     /// Whether the hourly cap is reached.
     pub hour_exhausted: bool,
@@ -208,6 +213,7 @@ pub struct HiveObservation {
     pub minute_cap: u32,
     /// Configured daily cap of the active model; `0` means unlimited.
     pub day_cap: u32,
+
     /// Reference time used to compute rolling window boundaries.
     pub now_ms: i64,
     /// Whether current UTC-day DeepSeek usage was read and priced completely.
@@ -426,6 +432,11 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
         minute_cap,
         hour_cap,
         day_cap,
+        limits: ProviderLimits {
+            rpm: minute_cap,
+            rph: hour_cap,
+            rpd: day_cap,
+        },
         // A cap of zero is the configured "unlimited" value, never "reached".
         minute_exhausted: minute_cap > 0
             && observation.requests_last_minute >= u64::from(minute_cap),

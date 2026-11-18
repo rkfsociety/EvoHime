@@ -317,6 +317,7 @@ pub fn classify_provider_error(error: &crate::providers::ProviderError) -> Failu
         ProviderError::Config(_)
         | ProviderError::ImagePreflightRejected
         | ProviderError::ImageCapabilityStale => return FailureCategory::InvalidRequest,
+        ProviderError::AllModelsExhausted => return FailureCategory::RateLimited,
         ProviderError::Http(message)
         | ProviderError::Api(message)
         | ProviderError::Stream(message) => message,

@@ -127,6 +127,20 @@ pub struct ModelRateLimitConfig {
     pub rpd: u32,
 }
 
+/// Unified provider request rate limits across rolling time windows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderLimits {
+    /// Maximum requests per rolling minute (`0` means unlimited).
+    #[serde(default)]
+    pub rpm: u32,
+    /// Maximum requests per rolling hour (`0` means unlimited).
+    #[serde(default)]
+    pub rph: u32,
+    /// Maximum requests per rolling day (`0` means unlimited).
+    #[serde(default)]
+    pub rpd: u32,
+}
+
 fn env_bool(name: &str, default: bool) -> bool {
     match env::var(name) {
         Ok(value) => match value.trim().to_ascii_lowercase().as_str() {
@@ -393,6 +407,9 @@ pub struct ModelRouteConfig {
     /// Independent request caps keyed by exact model ID.
     #[serde(default)]
     pub model_rate_limits: HashMap<String, ModelRateLimitConfig>,
+    /// Default provider-wide request limits when per-model overrides are absent.
+    #[serde(default)]
+    pub provider_limits: ProviderLimits,
 }
 
 fn default_thinking_support() -> bool {
@@ -424,6 +441,7 @@ impl ModelRouteConfig {
             supports_thinking,
             request_pacing: RequestPacingConfig::for_provider(provider),
             model_rate_limits: HashMap::new(),
+            provider_limits: ProviderLimits::default(),
         }
     }
 
@@ -478,6 +496,50 @@ impl ModelRouteConfig {
     ) -> Self {
         self.model_rate_limits = model_rate_limits;
         self
+    }
+
+    /// Replaces default provider-wide request limits for this route.
+    pub fn with_provider_limits(mut self, provider_limits: ProviderLimits) -> Self {
+        self.provider_limits = provider_limits;
+        self
+    }
+
+    /// Returns effective request limits for `model`.
+    ///
+    /// Precedence:
+    /// 1. Enabled per-model `model_rate_limits` entry for `model`.
+    /// 2. For `ProviderKind::LiteRouter`, limits derived from `request_pacing` when enabled.
+    /// 3. Route-level `provider_limits` fallback.
+    pub fn effective_limits(&self, model: &str) -> ProviderLimits {
+        if let Some(limits) = self
+            .model_rate_limits
+            .get(model)
+            .filter(|limits| limits.enabled)
+        {
+            return ProviderLimits {
+                rpm: limits.rpm,
+                rph: limits.rph,
+                rpd: limits.rpd,
+            };
+        }
+
+        if self.provider == ProviderKind::LiteRouter {
+            if let Some(interval) = self.request_pacing.interval_for_model(model) {
+                let interval_ms = u64::try_from(interval.as_millis())
+                    .unwrap_or(u64::MAX)
+                    .max(1);
+                let rpm = u32::try_from(60_000 / interval_ms).unwrap_or(u32::MAX);
+                let rph = ((3_600_000.0_f64 / interval_ms as f64).round() as u64)
+                    .min(u64::from(u32::MAX)) as u32;
+                return ProviderLimits {
+                    rpm,
+                    rph,
+                    rpd: self.provider_limits.rpd,
+                };
+            }
+        }
+
+        self.provider_limits
     }
 
     /// Validates that an explicit profile uses its trusted transport endpoint.
@@ -580,6 +642,7 @@ impl ModelRouteConfig {
             supports_thinking: true, // Mock supports all features
             request_pacing: RequestPacingConfig::disabled(),
             model_rate_limits: HashMap::new(),
+            provider_limits: ProviderLimits::default(),
         }
     }
 
@@ -629,6 +692,7 @@ impl ModelGatewayConfig {
                 supports_thinking: true,
                 request_pacing: RequestPacingConfig::for_provider(provider),
                 model_rate_limits: HashMap::new(),
+                provider_limits: ProviderLimits::default(),
             },
             ProviderKind::OpenAICompatible => {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
@@ -1138,5 +1202,51 @@ mod tests {
         );
         assert_eq!(route.provider_account_id.as_deref(), Some(account_id));
         assert!(route.validate_provider_profile().is_ok());
+    }
+
+    #[test]
+    fn provider_limits_are_derived_from_pacing() {
+        let route = ModelRouteConfig::literouter("lr-key", LITEROUTER_DEFAULT_BASE_URL, "");
+
+        let regular = route.effective_limits("llama-3.3-70b-instruct-turbo-free");
+        assert_eq!(regular.rpm, 7);
+        assert_eq!(regular.rph, 450);
+        assert_eq!(regular.rpd, 0);
+
+        let free_suffix = route.effective_limits("some-model:free");
+        assert_eq!(free_suffix.rpm, 3);
+        assert_eq!(free_suffix.rph, 190);
+        assert_eq!(free_suffix.rpd, 0);
+
+        let overridden = route.clone().with_model_rate_limits(HashMap::from([(
+            "some-model:free".to_owned(),
+            ModelRateLimitConfig {
+                enabled: true,
+                rpm: 12,
+                rph: 120,
+                rpd: 1_000,
+            },
+        )]));
+        assert_eq!(
+            overridden.effective_limits("some-model:free"),
+            ProviderLimits {
+                rpm: 12,
+                rph: 120,
+                rpd: 1_000,
+            }
+        );
+
+        let fallback_limits = ProviderLimits {
+            rpm: 20,
+            rph: 300,
+            rpd: 5_000,
+        };
+        let openai = ModelRouteConfig::openai_compatible(
+            "oa-key",
+            OPENAI_DEFAULT_BASE_URL,
+            OPENAI_DEFAULT_MODEL,
+        )
+        .with_provider_limits(fallback_limits);
+        assert_eq!(openai.effective_limits(OPENAI_DEFAULT_MODEL), fallback_limits);
     }
 }

@@ -337,6 +337,7 @@ fn provider_error_code(error: &ProviderError) -> &'static str {
         ProviderError::Stream(_) => "provider_stream",
         ProviderError::ImagePreflightRejected => "image_preflight_rejected",
         ProviderError::ImageCapabilityStale => "image_capability_stale",
+        ProviderError::AllModelsExhausted => "all_models_exhausted",
     }
 }
 

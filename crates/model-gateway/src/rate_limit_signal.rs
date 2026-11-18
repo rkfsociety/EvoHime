@@ -64,6 +64,16 @@ pub fn rate_limited_until(model: &str) -> Option<i64> {
     signals.get(model.trim()).copied()
 }
 
+/// Returns a snapshot of all currently active model cooldown deadlines in Unix milliseconds.
+pub fn active_rate_limits() -> HashMap<String, i64> {
+    let now = now_ms();
+    let Ok(mut signals) = registry().lock() else {
+        return HashMap::new();
+    };
+    signals.retain(|_, until| *until > now);
+    signals.clone()
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -2,7 +2,7 @@ import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PROVIDER_KINDS } from '@shared/api'
-import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderKind, ProviderProfileId, ProviderProfileSummary, ProviderSummary, RepairStatus } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderKind, ProviderLimits, ProviderProfileId, ProviderProfileSummary, ProviderSummary, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -300,9 +300,7 @@ interface HiveStateView {
     readonly requestsLastMinute: number
     readonly requestsLastHour: number
     readonly requestsLastDay: number
-    readonly minuteCap: number
-    readonly hourCap: number
-    readonly dayCap: number
+    readonly limits: ProviderLimits
     readonly minuteExhausted: boolean
     readonly exhausted: boolean
     readonly dailyCostAvailable: boolean
@@ -440,6 +438,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   const taskFlow = record(root['task_flow'])
   const limits = record(root['limits'])
   const budget = record(root['budget'])
+  const rawLimits = record(budget['limits'])
   return {
     queen: {
       status: text(queen['status'], 32),
@@ -484,9 +483,11 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       requestsLastMinute: count(budget['requests_last_minute'], 1_000_000),
       requestsLastDay: count(budget['requests_last_day'], 1_000_000),
       // A zero cap is Core's "no configured limit", and it must stay zero here.
-      minuteCap: count(budget['minute_cap'], 1_000_000),
-      hourCap: count(budget['hour_cap'], 1_000_000),
-      dayCap: count(budget['day_cap'], 1_000_000),
+      limits: {
+        rpm: rawLimits['rpm'] !== undefined ? count(rawLimits['rpm'], 1_000_000) : count(budget['minute_cap'], 1_000_000),
+        rph: rawLimits['rph'] !== undefined ? count(rawLimits['rph'], 1_000_000) : count(budget['hour_cap'], 1_000_000),
+        rpd: rawLimits['rpd'] !== undefined ? count(rawLimits['rpd'], 1_000_000) : count(budget['day_cap'], 1_000_000)
+      },
       minuteExhausted: budget['minute_exhausted'] === true,
       exhausted: budget['history_available'] === true && (budget['minute_exhausted'] === true || budget['hour_exhausted'] === true || budget['day_exhausted'] === true),
       dailyCostAvailable: budget['daily_cost_available'] === true,
@@ -844,9 +845,7 @@ const EMPTY_BUDGET: HiveStateView['budget'] = {
   requestsLastMinute: 0,
   requestsLastHour: 0,
   requestsLastDay: 0,
-  minuteCap: 0,
-  hourCap: 0,
-  dayCap: 0,
+  limits: { rpm: 0, rph: 0, rpd: 0 },
   minuteExhausted: false,
   exhausted: false,
   dailyCostAvailable: false,
@@ -1543,11 +1542,11 @@ export function HiveDashboard({
   const remainingUsd = Math.max(0, dailyBudgetUsd - (spentUsd ?? 0))
   const spentLabel = budget.dailyCostAvailable && budget.dailyCostNanoUsd !== null ? formatMoney(budget.dailyCostNanoUsd) : '—'
   const requestSummary = [
-    `${budget.historyAvailable ? budget.requestsLastMinute : '—'}${budget.minuteCap > 0 ? ` / ${budget.minuteCap}` : ''} ${translate('за минуту')}`,
-    `${budget.historyAvailable ? budget.requestsLastHour : '—'}${budget.hourCap > 0 ? ` / ${budget.hourCap}` : ''} ${translate('за час')}`,
-    `${budget.historyAvailable ? budget.requestsLastDay : '—'}${budget.dayCap > 0 ? ` / ${budget.dayCap}` : ''} ${translate('за сутки')}`
+    `${budget.historyAvailable ? budget.requestsLastMinute : '—'}${budget.limits.rpm > 0 ? ` / ${budget.limits.rpm}` : ''} ${translate('за минуту')}`,
+    `${budget.historyAvailable ? budget.requestsLastHour : '—'}${budget.limits.rph > 0 ? ` / ${budget.limits.rph}` : ''} ${translate('за час')}`,
+    `${budget.historyAvailable ? budget.requestsLastDay : '—'}${budget.limits.rpd > 0 ? ` / ${budget.limits.rpd}` : ''} ${translate('за сутки')}`
   ].join(' · ')
-  const configuredCaps = budget.minuteCap > 0 || budget.hourCap > 0 || budget.dayCap > 0
+  const configuredCaps = budget.limits.rpm > 0 || budget.limits.rph > 0 || budget.limits.rpd > 0
   const snapshotBudgetLabel = budget.provider === 'literouter' || budget.provider === 'openrouter'
     ? `LiteRouter${budget.model.toLowerCase().includes(':free') ? ' (Free)' : ''}`
     : budget.provider.toLowerCase().includes('deepseek')
@@ -1787,7 +1786,7 @@ export function HiveDashboard({
               {translate('Лимит запросов провайдера')}: {requestSummary}
             </p>
             <small>
-              {budget.model ? `${translate('Модель:')} ${budget.model}` : translate('Модель ещё не известна')}
+              {budget.model ? `${translate('Текущая модель:')} ${budget.model}` : translate('Модель ещё не известна')}
               {!configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}
               {!budget.historyAvailable ? ` · ${translate('история отправок недоступна')}` : ''}
             </small>

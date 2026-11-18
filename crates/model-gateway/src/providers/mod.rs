@@ -208,6 +208,9 @@ pub enum ProviderError {
     /// The provider changed its image capability after Core froze the request.
     #[error("image capability epoch is stale")]
     ImageCapabilityStale,
+    /// All ranked fallback models are currently rate-limited or exhausted.
+    #[error("all models exhausted")]
+    AllModelsExhausted,
 }
 
 /// Bounded, structured diagnostics extracted from a rejected provider response.
@@ -374,7 +377,10 @@ impl ProviderError {
                 Some(message.as_str())
             }
             Self::ApiWithDiagnostics { diagnostics, .. } => diagnostics.message.as_deref(),
-            Self::Config(_) | Self::ImagePreflightRejected | Self::ImageCapabilityStale => None,
+            Self::Config(_)
+            | Self::ImagePreflightRejected
+            | Self::ImageCapabilityStale
+            | Self::AllModelsExhausted => None,
         }?;
         Some(message.to_ascii_lowercase())
     }
@@ -388,7 +394,10 @@ impl ProviderError {
         let message = match self {
             Self::Http(message) | Self::Api(message) | Self::Stream(message) => message,
             Self::ApiWithDiagnostics { status, .. } => return Some(*status),
-            Self::Config(_) | Self::ImagePreflightRejected | Self::ImageCapabilityStale => {
+            Self::Config(_)
+            | Self::ImagePreflightRejected
+            | Self::ImageCapabilityStale
+            | Self::AllModelsExhausted => {
                 return None
             }
         };
@@ -412,6 +421,7 @@ impl ProviderError {
             Self::Config(_) => "provider_configuration",
             Self::ImagePreflightRejected => "image_preflight_rejected",
             Self::ImageCapabilityStale => "image_capability_stale",
+            Self::AllModelsExhausted => "all_models_exhausted",
             Self::ApiWithDiagnostics { error_code, .. } => error_code,
             Self::Http(_) | Self::Api(_) | Self::Stream(_) => {
                 classify_failure_message(self, &self.classification_message().unwrap_or_default())

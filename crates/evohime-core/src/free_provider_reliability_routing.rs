@@ -1951,6 +1951,7 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
         }
         ProviderError::ImagePreflightRejected => "image preflight rejected".into(),
         ProviderError::ImageCapabilityStale => "image capability stale".into(),
+        ProviderError::AllModelsExhausted => "all models exhausted".into(),
     };
     match error {
         ProviderError::Config(_)
@@ -2006,6 +2007,7 @@ pub fn classify_catalog_error(error: &ProviderError) -> CatalogFailureCode {
         ProviderError::Api(_) | ProviderError::ApiWithDiagnostics { .. } => {
             CatalogFailureCode::ProtocolMismatch
         }
+        ProviderError::AllModelsExhausted => CatalogFailureCode::RateLimited,
     }
 }
 

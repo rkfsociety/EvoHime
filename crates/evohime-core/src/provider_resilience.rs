@@ -62,6 +62,7 @@ pub fn is_retriable_error(error: &ProviderError) -> bool {
         | ProviderError::ImagePreflightRejected
         | ProviderError::ImageCapabilityStale => false, // Configuration and image preflight errors are terminal.
         ProviderError::Stream(_) => true, // Transient streaming error
+        ProviderError::AllModelsExhausted => false, // All fallback models are already exhausted.
     }
 }
 

@@ -1,11 +1,12 @@
 use crate::config::{
     LiteRouterConfig, ModelRateLimitConfig, ProviderProfileId, RequestPacingConfig,
 };
+use crate::model_ranker::{get_ranked_models, next_available_model};
 use crate::providers::{
     ChatFuture, ChatMessage, ChatRequestOptions, ModelProvider, ProviderError, ProviderKind,
     ThinkingConfig, TokenStream,
 };
-use crate::rate_limit_signal::{clear_rate_limit, record_rate_limit_for};
+use crate::rate_limit_signal::{active_rate_limits, clear_rate_limit, record_rate_limit_for};
 use crate::retry::{
     classify_rate_limit, compute_backoff, is_retryable_status, parse_rate_limit_delay,
     parse_retry_after_seconds, read_bounded_provider_error_body, RateLimitClass, RetryPolicy,
@@ -17,7 +18,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -149,6 +150,17 @@ impl LiteRouterProvider {
         self.config.chat_completions_url()
     }
 
+    fn resolve_initial_model(&self, explicit_model: Option<&str>) -> String {
+        if let Some(model) = explicit_model.map(str::trim).filter(|m| !m.is_empty()) {
+            return model.to_owned();
+        }
+        let configured = self.config.model.trim();
+        if !configured.is_empty() {
+            return configured.to_owned();
+        }
+        get_ranked_models().into_iter().next().unwrap_or_default()
+    }
+
     async fn send_chat_request(
         &self,
         model: &str,
@@ -205,10 +217,12 @@ impl LiteRouterProvider {
         thinking: Option<ThinkingConfig>,
         options: ChatRequestOptions,
     ) -> Result<reqwest::Response, ProviderError> {
+        let mut current_model = self.resolve_initial_model(Some(model));
+        let mut rate_limited_models = HashSet::new();
         let tools = tools.map(wire_tools);
         let has_tools = tools.as_ref().is_some_and(|specs| !specs.is_empty());
-        let body = ChatCompletionRequest {
-            model: model.to_string(),
+        let mut body = ChatCompletionRequest {
+            model: current_model.clone(),
             messages: messages.iter().map(ApiMessage::from_chat_message).collect(),
             stream,
             stream_options: stream.then_some(StreamOptions {
@@ -231,7 +245,8 @@ impl LiteRouterProvider {
         loop {
             // Count every provider attempt, including retries, against the
             // free-tier budget and spread requests across the hour.
-            self.wait_for_request_slot(model).await;
+            self.wait_for_request_slot(&current_model).await;
+            body.model = current_model.clone();
             let mut request = self.client.post(self.config.chat_completions_url());
             if !self.config.api_key.is_empty() {
                 request = request.bearer_auth(&self.config.api_key);
@@ -242,7 +257,7 @@ impl LiteRouterProvider {
                 Ok(response) if response.status().is_success() => {
                     // A successful call clears any cooldown learned from an
                     // earlier reply, so the next background cycle can run.
-                    clear_rate_limit(model);
+                    clear_rate_limit(&current_model);
                     return Ok(response);
                 }
                 Ok(response) => {
@@ -291,7 +306,20 @@ impl LiteRouterProvider {
                             RateLimitClass::Exhausted => Duration::from_secs(3_600),
                             _ => Self::RATE_LIMIT_FALLBACK_DELAY,
                         });
-                        record_rate_limit_for(model, cooldown);
+                        record_rate_limit_for(&current_model, cooldown);
+                    }
+                    if status.as_u16() == 429 {
+                        rate_limited_models.insert(current_model.clone());
+                        let mut cooldowns = active_rate_limits();
+                        for exhausted in &rate_limited_models {
+                            cooldowns.insert(exhausted.clone(), i64::MAX);
+                        }
+                        if let Some(next_model) = next_available_model(&current_model, &cooldowns) {
+                            current_model = next_model;
+                            attempt = 0;
+                            continue;
+                        }
+                        return Err(ProviderError::AllModelsExhausted);
                     }
                     if matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
                         return Err(ProviderError::api_with_diagnostics(
@@ -598,12 +626,13 @@ impl ModelProvider for LiteRouterProvider {
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
+        let model = self.resolve_initial_model(None);
         let request_messages = messages.to_vec();
         let tools = tools.map(|t| t.to_vec());
 
         Box::pin(stream! {
             let response = match provider
-                .send_chat_request_with_thinking(&provider.config.model, &request_messages, tools.as_deref(), thinking)
+                .send_chat_request_with_thinking(&model, &request_messages, tools.as_deref(), thinking)
                 .await
             {
                 Ok(response) => response,
@@ -662,10 +691,7 @@ impl ModelProvider for LiteRouterProvider {
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
-        let model = model
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(&self.config.model)
-            .to_string();
+        let model = self.resolve_initial_model(model);
         let request_messages = messages.to_vec();
         let tools = tools.to_vec();
 
@@ -705,10 +731,7 @@ impl ModelProvider for LiteRouterProvider {
             request_gate: Arc::clone(&self.request_gate),
             pacing: self.pacing,
         };
-        let model = model
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(&self.config.model)
-            .to_string();
+        let model = self.resolve_initial_model(model);
         let request_messages = messages.to_vec();
         let tools = tools.to_vec();
 
@@ -1336,5 +1359,68 @@ mod tests {
                 .interval_for_model("gpt-4o-mini"),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn literouter_falls_back_on_429() {
+        use crate::providers::ChatRole;
+        use wiremock::matchers::{body_partial_json, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        for model in get_ranked_models() {
+            clear_rate_limit(&model);
+        }
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_partial_json(json!({
+                "model": "llama-3.3-70b-instruct-turbo-free"
+            })))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .set_body_json(json!({"error": {"message": "rate limit exceeded"}})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .and(body_partial_json(json!({
+                "model": "llama-3.1-8b-instruct-free"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{
+                    "message": {
+                        "content": "ok-from-fallback"
+                    }
+                }]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let provider = LiteRouterProvider::with_pacing(
+            LiteRouterConfig {
+                api_key: "lr_test".into(),
+                base_url: server.uri(),
+                model: String::new(),
+            },
+            RetryPolicy::default(),
+            RequestPacingConfig::disabled(),
+        )
+        .expect("provider created");
+
+        let result = provider
+            .chat_with_tools(None, &[ChatMessage::text(ChatRole::User, "hello")], &[])
+            .await
+            .expect("fallback model succeeds");
+
+        assert_eq!(result.content, "ok-from-fallback");
+        assert!(crate::rate_limit_signal::rate_limited_until(
+            "llama-3.3-70b-instruct-turbo-free"
+        )
+        .is_some());
     }
 }

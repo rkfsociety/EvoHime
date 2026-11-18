@@ -894,6 +894,9 @@ pub(crate) fn classify_gateway_error(
         | ProviderError::ImagePreflightRejected
         | ProviderError::ImageCapabilityStale => FreeProbeFailureCode::ConsentOrCredentialRequired,
         ProviderError::Http(_) | ProviderError::Stream(_) => FreeProbeFailureCode::TransportFailure,
+        ProviderError::AllModelsExhausted => {
+            classify_provider_failure(provider_id, Some(429), None)
+        }
     }
 }
 

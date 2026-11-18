@@ -38,6 +38,12 @@ export interface ProtocolVersion {
   readonly minor: number
 }
 
+export interface ProviderLimits {
+  readonly rpm: number
+  readonly rph: number
+  readonly rpd: number
+}
+
 export interface ShellState {
   readonly connection: ConnectionState
   /** Negotiated protocol, present only once a handshake succeeded. */

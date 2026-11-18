@@ -86,7 +86,7 @@ pub(crate) async fn build_hive_observation(
         .filter(|value| !value.trim().is_empty());
     let model =
         crate::core_agent::effective_model_name(&route.literouter.model, selected_model.as_deref());
-    let limits = route.model_rate_limits.get(&model);
+    let limits = route.effective_limits(&model);
     observation.provider = provider;
     observation.model = model.clone();
     if profile == Some(ProviderProfileId::DeepSeek) {
@@ -99,15 +99,15 @@ pub(crate) async fn build_hive_observation(
             observation.daily_cost_available = observation.daily_cost_nano_usd.is_some();
         }
     }
-    observation.minute_cap = limits
-        .filter(|limits| limits.enabled)
-        .map_or(0, |limits| limits.rpm);
-    observation.hour_cap = limits
-        .filter(|limits| limits.enabled)
-        .map_or(0, |limits| limits.rph);
-    observation.day_cap = limits
-        .filter(|limits| limits.enabled)
-        .map_or(0, |limits| limits.rpd);
+    observation.minute_cap = limits.rpm;
+
+
+    observation.hour_cap = limits.rph;
+
+
+    observation.day_cap = limits.rpd;
+
+
     if let Ok(windows) = journal
         .model_dispatch_windows(
             transport,

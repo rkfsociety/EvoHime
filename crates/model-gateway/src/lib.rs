@@ -22,6 +22,8 @@
 
 /// Gateway configuration and per-model route settings.
 pub mod config;
+/// Static ranking and fallback selection for free LiteRouter models.
+pub mod model_ranker;
 /// Provider request, health, and route snapshot contracts.
 pub mod provider_contract;
 /// Provider adapter implementations.
@@ -43,7 +45,8 @@ pub mod structured_response;
 /// Tool call and chat response types exposed by the gateway.
 pub mod tools;
 
-pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderProfileId};
+pub use crate::config::{ModelGatewayConfig, ModelRouteConfig, ProviderLimits, ProviderProfileId};
+pub use crate::model_ranker::{get_ranked_models, next_available_model};
 pub use crate::provider_contract::{
     classify_provider_error, select_route_snapshot, select_route_snapshot_cached, AttemptTrace,
     CandidateEntry, CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory,

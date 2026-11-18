@@ -67,6 +67,9 @@ fn safe_model_catalog_error_code(
         evohime_model_gateway::providers::ProviderError::ImageCapabilityStale => {
             "catalog_capability_stale"
         }
+        evohime_model_gateway::providers::ProviderError::AllModelsExhausted => {
+            "provider_all_models_exhausted"
+        }
     }
 }
 

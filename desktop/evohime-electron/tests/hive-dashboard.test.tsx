@@ -624,4 +624,40 @@ describe('hive dashboard', () => {
     expect(await screen.findByTestId('hive-chat-approval')).toBeTruthy()
     expect(screen.getAllByText('Разрешить push изменений?')).toHaveLength(2)
   })
+
+  it('ui_displays_provider_limits_and_model', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              budget: {
+                provider: 'literouter',
+                history_available: true,
+                model: 'llama-3.3-70b-instruct-turbo-free',
+                requests_last_minute: 2,
+                requests_last_hour: 15,
+                requests_last_day: 40,
+                minute_cap: 7,
+                hour_cap: 190,
+                day_cap: 0,
+                limits: { rpm: 7, rph: 190, rpd: 0 },
+                minute_exhausted: false,
+                hour_exhausted: false,
+                day_exhausted: false,
+                daily_cost_available: false,
+                daily_cost_nano_usd: null
+              }
+            })
+          )
+        ]}
+      />
+    )
+
+    expect(await screen.findByText(/2 \/ 7 за минуту · 15 \/ 190 за час · 40 за сутки/)).toBeTruthy()
+    expect(screen.getByText(/Текущая модель: llama-3\.3-70b-instruct-turbo-free/)).toBeTruthy()
+    expect(screen.queryByText(/лимиты запросов не настроены/)).toBeNull()
+  })
 })
