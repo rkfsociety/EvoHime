@@ -660,4 +660,107 @@ describe('hive dashboard', () => {
     expect(screen.getByText(/Текущая модель: llama-3\.3-70b-instruct-turbo-free/)).toBeTruthy()
     expect(screen.queryByText(/лимиты запросов не настроены/)).toBeNull()
   })
+
+  it('ui_displays_fallback_provider_status', async () => {
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              budget: {
+                provider: 'literouter',
+                history_available: true,
+                model: 'gpt-4o-mini:free',
+                requests_last_minute: 1,
+                requests_last_hour: 3,
+                requests_last_day: 7,
+                minute_cap: 5,
+                hour_cap: 190,
+                day_cap: 0,
+                minute_exhausted: false,
+                hour_exhausted: false,
+                day_exhausted: false,
+                daily_cost_available: false,
+                daily_cost_nano_usd: null,
+                fallback_provider: 'routmy',
+                fallback_tokens_remaining: 650000
+              }
+            })
+          )
+        ]}
+        repair={null}
+      />
+    )
+    expect(await screen.findByText('Резерв: Rout.my (650000 токенов)')).toBeTruthy()
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              budget: {
+                provider: 'routmy',
+                history_available: true,
+                model: 'deepseek-chat',
+                requests_last_minute: 0,
+                requests_last_hour: 0,
+                requests_last_day: 0,
+                minute_cap: 0,
+                hour_cap: 0,
+                day_cap: 0,
+                minute_exhausted: false,
+                hour_exhausted: false,
+                day_exhausted: false,
+                daily_cost_available: false,
+                daily_cost_nano_usd: null,
+                daily_token_quota: 650000,
+                daily_tokens_remaining: 650000,
+                quota_reset_utc_midnight: true
+              }
+            })
+          )
+        ]}
+        repair={null}
+      />
+    )
+    expect(await screen.findByText('Осталось токенов: 650000 до 00:00 UTC')).toBeTruthy()
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              budget: {
+                provider: 'literouter',
+                history_available: true,
+                model: 'gpt-4o-mini:free',
+                requests_last_minute: 1,
+                requests_last_hour: 3,
+                requests_last_day: 7,
+                minute_cap: 5,
+                hour_cap: 190,
+                day_cap: 0,
+                minute_exhausted: false,
+                hour_exhausted: false,
+                day_exhausted: false,
+                daily_cost_available: false,
+                daily_cost_nano_usd: null
+              }
+            })
+          )
+        ]}
+        repair={null}
+      />
+    )
+    await waitFor(() => {
+      expect(screen.queryByText(/Резерв: Rout\.my/)).toBeNull()
+      expect(screen.queryByText(/Осталось токенов:/)).toBeNull()
+    })
+  })
 })

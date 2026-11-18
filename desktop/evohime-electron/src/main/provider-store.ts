@@ -506,6 +506,15 @@ export class ProviderStore {
     if (key) environment['LITEROUTER_API_KEY'] = key
     if (profile.baseUrl) environment['LITEROUTER_BASE_URL'] = profile.baseUrl
     if (profile.model) environment['LITEROUTER_MODEL'] = profile.model
+    const routmyProfile = document.compatibleProfiles['routmy']
+    if (routmyProfile) {
+      const routmyKey = this.decryptSecret(routmyProfile.secret)
+      if (routmyKey) {
+        environment['ROUTMY_API_KEY'] = routmyKey
+        environment['ROUTMY_BASE_URL'] = routmyProfile.baseUrl || PROVIDER_PROFILE_ENDPOINTS.routmy || 'https://api.rout.my/v1'
+        if (routmyProfile.model) environment['ROUTMY_MODEL'] = routmyProfile.model
+      }
+    }
     return environment
   }
 

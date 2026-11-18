@@ -35,6 +35,11 @@ impl PulseProbe for CalmProbe {
                 eva_workspace_path: None,
                 proactive_evolution_enabled: false,
                 roadmap_items: Vec::new(),
+                selected_provider: Some("literouter".to_owned()),
+                fallback_provider: None,
+                routmy_tokens_remaining: None,
+                allow_paid_fallback: false,
+                literouter_all_models_exhausted: false,
             })
         })
     }

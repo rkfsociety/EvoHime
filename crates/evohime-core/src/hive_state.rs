@@ -170,6 +170,21 @@ pub struct HiveBudget {
     pub daily_cost_available: bool,
     /// Estimated DeepSeek API cost for the current UTC day, in nano-USD.
     pub daily_cost_nano_usd: Option<u64>,
+    /// Optional daily token quota for token-pooled providers (e.g. rout.my).
+    #[serde(default)]
+    pub daily_token_quota: Option<u64>,
+    /// Remaining tokens in the current UTC day for `daily_token_quota`.
+    #[serde(default)]
+    pub daily_tokens_remaining: Option<u64>,
+    /// Whether `daily_token_quota` resets at 00:00 UTC.
+    #[serde(default)]
+    pub quota_reset_utc_midnight: bool,
+    /// Configured free fallback provider identifier (e.g. `routmy`), if any.
+    #[serde(default)]
+    pub fallback_provider: Option<String>,
+    /// Remaining daily tokens for the configured fallback provider, if known.
+    #[serde(default)]
+    pub fallback_tokens_remaining: Option<u64>,
 }
 
 impl HiveBudget {
@@ -230,6 +245,16 @@ pub struct HiveObservation {
     pub tasks_today: u32,
     /// Mean duration of today's completed tasks, in seconds.
     pub average_task_time_sec: u64,
+    /// Optional daily token quota of the active route.
+    pub daily_token_quota: Option<u64>,
+    /// Total tokens recorded for the active route during the current UTC day.
+    pub daily_tokens_used: u64,
+    /// Whether the active route's daily token quota resets at 00:00 UTC.
+    pub quota_reset_utc_midnight: bool,
+    /// Configured free fallback provider identifier (e.g. `routmy`), if any.
+    pub fallback_provider: Option<String>,
+    /// Remaining daily tokens for the configured fallback provider, if known.
+    pub fallback_tokens_remaining: Option<u64>,
 }
 
 impl Default for HiveObservation {
@@ -256,6 +281,11 @@ impl Default for HiveObservation {
             pulse_next_wake_at_ms: None,
             tasks_today: 0,
             average_task_time_sec: 0,
+            daily_token_quota: None,
+            daily_tokens_used: 0,
+            quota_reset_utc_midnight: false,
+            fallback_provider: None,
+            fallback_tokens_remaining: None,
         }
     }
 }
@@ -444,6 +474,13 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
         day_exhausted: day_cap > 0 && observation.requests_last_day >= u64::from(day_cap),
         daily_cost_available: observation.daily_cost_available,
         daily_cost_nano_usd: observation.daily_cost_nano_usd,
+        daily_token_quota: observation.daily_token_quota,
+        daily_tokens_remaining: observation
+            .daily_token_quota
+            .map(|quota| quota.saturating_sub(observation.daily_tokens_used)),
+        quota_reset_utc_midnight: observation.quota_reset_utc_midnight,
+        fallback_provider: observation.fallback_provider.clone(),
+        fallback_tokens_remaining: observation.fallback_tokens_remaining,
     }
 }
 

@@ -39,6 +39,8 @@ const MAX_SEEN_FAILURES: usize = 512;
 const MAX_ROADMAP_ITEMS: usize = 30;
 /// Fallback interval used when settings cannot be read.
 const FALLBACK_INTERVAL: Duration = Duration::from_secs(1_800);
+/// Minimum remaining tokens required to dispatch background work via `rout.my`.
+const ROUTMY_MIN_TOKENS_THRESHOLD: u64 = 1_000;
 
 /// Boxed future used by the probe/sink seams.
 pub(crate) type PulseFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -121,6 +123,16 @@ pub(crate) struct PulseCycleReport {
     pub proactive_evolution_enabled: bool,
     /// Uncompleted `[ ]` roadmap items eligible for proactive evolution.
     pub roadmap_items: Vec<RoadmapItem>,
+    /// Active provider profile identifier (e.g. `"literouter"`, `"routmy"`).
+    pub selected_provider: Option<String>,
+    /// Configured free fallback provider transport (`OpenAICompatible` for `rout.my`).
+    pub fallback_provider: Option<evohime_model_gateway::providers::ProviderKind>,
+    /// Remaining daily tokens for `rout.my`, if configured.
+    pub routmy_tokens_remaining: Option<u64>,
+    /// Whether paid fallback (e.g. DeepSeek) is explicitly allowed in settings.
+    pub allow_paid_fallback: bool,
+    /// Whether all free LiteRouter models are currently in cooldown.
+    pub literouter_all_models_exhausted: bool,
 }
 
 /// Discovered uncompleted roadmap item and its workspace-relative file path.
@@ -184,6 +196,17 @@ pub(crate) trait PulseTaskSink: Send + Sync {
         failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>>;
+
+    /// Dispatches one bounded recovery task via the fallback free provider (e.g. `rout.my`).
+    fn dispatch_recovery_fallback(
+        &self,
+        failed_workers: &[FailedWorkerContext],
+        eva_workspace_path: Option<&str>,
+        fallback_provider: evohime_model_gateway::providers::ProviderKind,
+    ) -> PulseFuture<'_, Result<String, String>> {
+        let _ = (failed_workers, eva_workspace_path, fallback_provider);
+        Box::pin(async { Err("fallback_provider_unavailable".to_owned()) })
+    }
 
     /// Dispatches one proactive evolution task for candidate roadmap items and returns its task id.
     fn dispatch_evolution(
@@ -255,10 +278,15 @@ impl EvaPulseDaemon {
             gateway_config.clone(),
             selected_model,
         ));
-        let sink = Arc::new(CoordinatorPulseTaskSink::new(
-            coordinator,
-            crate::hive_observation::background_route_name(gateway_config.as_ref()),
-        ));
+        let sink = Arc::new(
+            CoordinatorPulseTaskSink::new(
+                coordinator,
+                crate::hive_observation::background_route_name(gateway_config.as_ref()),
+            )
+            .with_fallback_route(crate::hive_observation::fallback_routmy_route_name(
+                gateway_config.as_ref(),
+            )),
+        );
         let daemon = Self::spawn(probe, sink, EvaPulseOptions::default(), logger);
         daemon.run();
         daemon
@@ -441,7 +469,50 @@ impl Inner {
                 wait
             }
             PulseDecision::Recover { failed_workers } => {
+                let contexts = if report.failed_worker_contexts.is_empty() {
+                    failed_workers
+                        .iter()
+                        .cloned()
+                        .map(FailedWorkerContext::from_id)
+                        .collect::<Vec<_>>()
+                } else {
+                    report.failed_worker_contexts.clone()
+                };
+                let can_use_routmy = report.fallback_provider.is_some()
+                    && report
+                        .routmy_tokens_remaining
+                        .is_some_and(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
+
+                if report.literouter_all_models_exhausted {
+                    if let (Some(fallback_provider), true) =
+                        (report.fallback_provider, can_use_routmy)
+                    {
+                        self.dispatch_recovery_via_fallback(
+                            &contexts,
+                            &failed_workers,
+                            report.eva_workspace_path.as_deref(),
+                            fallback_provider,
+                        )
+                        .await;
+                        self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
+                        return interval;
+                    }
+                }
+
                 if !report.route_is_primary {
+                    if let (Some(fallback_provider), true) =
+                        (report.fallback_provider, can_use_routmy)
+                    {
+                        self.dispatch_recovery_via_fallback(
+                            &contexts,
+                            &failed_workers,
+                            report.eva_workspace_path.as_deref(),
+                            fallback_provider,
+                        )
+                        .await;
+                        self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
+                        return interval;
+                    }
                     self.publish(
                         HIVE_PULSE_SLEEPING,
                         next_wake_at(interval),
@@ -457,15 +528,7 @@ impl Inner {
                     );
                     return interval;
                 }
-                let contexts = if report.failed_worker_contexts.is_empty() {
-                    failed_workers
-                        .iter()
-                        .cloned()
-                        .map(FailedWorkerContext::from_id)
-                        .collect::<Vec<_>>()
-                } else {
-                    report.failed_worker_contexts.clone()
-                };
+
                 match self
                     .tasks
                     .dispatch_recovery(&contexts, report.eva_workspace_path.as_deref())
@@ -483,6 +546,37 @@ impl Inner {
                                 "used_fallback": false,
                             }),
                         );
+                    }
+                    Err(error) if is_all_models_exhausted_error(&error) => {
+                        if let Some(fallback_provider) = report.fallback_provider {
+                            if report
+                                .routmy_tokens_remaining
+                                .unwrap_or(0)
+                                >= ROUTMY_MIN_TOKENS_THRESHOLD
+                            {
+                                self.dispatch_recovery_via_fallback(
+                                    &contexts,
+                                    &failed_workers,
+                                    report.eva_workspace_path.as_deref(),
+                                    fallback_provider,
+                                )
+                                .await;
+                            } else if !report.allow_paid_fallback {
+                                let wake_at = next_utc_midnight(now);
+                                self.publish(
+                                    HIVE_PULSE_SLEEPING,
+                                    Some(wake_at),
+                                    "routmy_quota_exhausted",
+                                );
+                                return wait_until(Some(wake_at), now, interval);
+                            }
+                        } else {
+                            self.log(
+                                "warning",
+                                "eva_pulse.recovery_failed",
+                                serde_json::json!({ "error": error }),
+                            );
+                        }
                     }
                     Err(error) => {
                         self.log(
@@ -612,6 +706,45 @@ impl Inner {
             let _ = logger.write(level, event, fields);
         }
     }
+
+    async fn dispatch_recovery_via_fallback(
+        &self,
+        contexts: &[FailedWorkerContext],
+        failed_workers: &[String],
+        eva_workspace_path: Option<&str>,
+        fallback_provider: evohime_model_gateway::providers::ProviderKind,
+    ) {
+        match self
+            .tasks
+            .dispatch_recovery_fallback(contexts, eva_workspace_path, fallback_provider)
+            .await
+        {
+            Ok(task_id) => {
+                self.probe
+                    .mark_recovery_dispatched(&task_id, failed_workers);
+                self.log(
+                    "warning",
+                    "eva_pulse.recovery_dispatched",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "failed_workers": failed_workers,
+                        "used_fallback": true,
+                        "fallback_provider": fallback_provider.as_str(),
+                    }),
+                );
+            }
+            Err(error) => {
+                self.log(
+                    "warning",
+                    "eva_pulse.recovery_failed",
+                    serde_json::json!({
+                        "error": error,
+                        "used_fallback": true,
+                    }),
+                );
+            }
+        }
+    }
 }
 
 /// Decides what one cycle does.
@@ -632,11 +765,39 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
             .is_some_and(|spent| spent >= report.daily_budget_nano_usd);
     if budget_exhausted {
         return PulseDecision::Sleep {
-            wake_at_ms: Some(next_utc_day_ms(now_ms)),
+            wake_at_ms: Some(next_utc_midnight(now_ms)),
             reason: "daily_budget_exhausted",
         };
     }
-    if report.provider_window_exhausted {
+    let routmy_active = report.selected_provider.as_deref() == Some("routmy");
+    let routmy_exhausted = report
+        .routmy_tokens_remaining
+        .is_some_and(|rem| rem < ROUTMY_MIN_TOKENS_THRESHOLD);
+    if routmy_active && routmy_exhausted && !report.allow_paid_fallback {
+        return PulseDecision::Sleep {
+            wake_at_ms: Some(next_utc_midnight(now_ms)),
+            reason: "routmy_quota_exhausted",
+        };
+    }
+    let routmy_fallback_available = report.fallback_provider.is_some()
+        && report
+            .routmy_tokens_remaining
+            .is_some_and(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
+    if report.literouter_all_models_exhausted && !routmy_fallback_available {
+        if report.fallback_provider.is_some() && routmy_exhausted && !report.allow_paid_fallback {
+            return PulseDecision::Sleep {
+                wake_at_ms: Some(next_utc_midnight(now_ms)),
+                reason: "routmy_quota_exhausted",
+            };
+        }
+        if !report.allow_paid_fallback {
+            return PulseDecision::Sleep {
+                wake_at_ms: report.provider_window_wake_at_ms,
+                reason: "literouter_all_models_exhausted",
+            };
+        }
+    }
+    if report.provider_window_exhausted && !routmy_fallback_available {
         return PulseDecision::Sleep {
             wake_at_ms: report.provider_window_wake_at_ms,
             reason: "provider_window_exhausted",
@@ -658,7 +819,12 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
     PulseDecision::AllGood
 }
 
-fn next_utc_day_ms(now_ms: i64) -> i64 {
+fn is_all_models_exhausted_error(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    lower.contains("all_models_exhausted") || lower.contains("all models exhausted")
+}
+
+pub(crate) fn next_utc_midnight(now_ms: i64) -> i64 {
     (now_ms.div_euclid(HIVE_DAY_WINDOW_MS) + 1).saturating_mul(HIVE_DAY_WINDOW_MS)
 }
 
@@ -1024,6 +1190,22 @@ impl PulseProbe for JournalPulseProbe {
             } else {
                 evohime_model_gateway::rate_limited_until(rate_limit_model)
             };
+            let allow_paid_fallback = std::env::var("MODEL_FREE_ACCESS_ALLOW_PAID_FALLBACK")
+                .ok()
+                .is_some_and(|value| {
+                    let trimmed = value.trim();
+                    trimmed.eq_ignore_ascii_case("true") || trimmed == "1"
+                });
+            let selected_provider = (!observation.provider.is_empty()).then(|| observation.provider.clone());
+            let fallback_provider = observation
+                .fallback_provider
+                .as_deref()
+                .map(|_| evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
+            let routmy_tokens_remaining = if observation.provider == "routmy" {
+                snapshot.budget.daily_tokens_remaining
+            } else {
+                snapshot.budget.fallback_tokens_remaining
+            };
             Ok(PulseCycleReport {
                 interval_secs: settings.pulse_interval_secs,
                 daily_cost_nano_usd: observation.daily_cost_nano_usd,
@@ -1039,6 +1221,11 @@ impl PulseProbe for JournalPulseProbe {
                 eva_workspace_path: settings.eva_workspace_path,
                 proactive_evolution_enabled: settings.proactive_evolution_enabled,
                 roadmap_items,
+                selected_provider,
+                fallback_provider,
+                routmy_tokens_remaining,
+                allow_paid_fallback,
+                literouter_all_models_exhausted: false,
             })
         })
     }
@@ -1284,6 +1471,7 @@ fn is_terminal_failure(projection: &crate::child_workflow::ChildProjection) -> b
 pub(crate) struct CoordinatorPulseTaskSink {
     coordinator: TaskCoordinator,
     primary_route: Option<String>,
+    fallback_route: Option<String>,
 }
 
 impl CoordinatorPulseTaskSink {
@@ -1292,7 +1480,14 @@ impl CoordinatorPulseTaskSink {
         Self {
             coordinator,
             primary_route,
+            fallback_route: None,
         }
+    }
+
+    /// Attaches an optional free fallback route (e.g. `routmy`).
+    pub(crate) fn with_fallback_route(mut self, fallback_route: Option<String>) -> Self {
+        self.fallback_route = fallback_route;
+        self
     }
 }
 
@@ -1322,6 +1517,16 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
         self.dispatch_primary_task(prompt)
     }
 
+    fn dispatch_recovery_fallback(
+        &self,
+        failed_workers: &[FailedWorkerContext],
+        eva_workspace_path: Option<&str>,
+        _fallback_provider: evohime_model_gateway::providers::ProviderKind,
+    ) -> PulseFuture<'_, Result<String, String>> {
+        let prompt = build_recovery_prompt(failed_workers, eva_workspace_path);
+        self.dispatch_fallback_task(prompt)
+    }
+
     fn dispatch_evolution(
         &self,
         items: &[RoadmapItem],
@@ -1346,6 +1551,26 @@ impl CoordinatorPulseTaskSink {
                     prompt,
                     workspace_root: None,
                     preferred_route_hint: None,
+                    conversation: None,
+                    goal_id: None,
+                })
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(task_id)
+        })
+    }
+
+    fn dispatch_fallback_task(&self, prompt: String) -> PulseFuture<'_, Result<String, String>> {
+        let fallback_route = self.fallback_route.clone();
+        Box::pin(async move {
+            let route = fallback_route.ok_or_else(|| "fallback_route_unavailable".to_owned())?;
+            let task_id = uuid::Uuid::new_v4().to_string();
+            self.coordinator
+                .dispatch(CoreCommand::StartTask {
+                    task_id: task_id.clone(),
+                    prompt,
+                    workspace_root: None,
+                    preferred_route_hint: Some(route),
                     conversation: None,
                     goal_id: None,
                 })
@@ -1557,6 +1782,16 @@ mod tests {
             Box::pin(async move { Ok("task-pulse".into()) })
         }
 
+        fn dispatch_recovery_fallback(
+            &self,
+            _failed_workers: &[FailedWorkerContext],
+            _eva_workspace_path: Option<&str>,
+            _fallback_provider: evohime_model_gateway::providers::ProviderKind,
+        ) -> PulseFuture<'_, Result<String, String>> {
+            self.fallback_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move { Ok("task-pulse-routmy".into()) })
+        }
+
         fn dispatch_evolution(
             &self,
             _items: &[RoadmapItem],
@@ -1581,6 +1816,11 @@ mod tests {
             eva_workspace_path: None,
             proactive_evolution_enabled: false,
             roadmap_items: Vec::new(),
+            selected_provider: Some("literouter".to_owned()),
+            fallback_provider: None,
+            routmy_tokens_remaining: None,
+            allow_paid_fallback: false,
+            literouter_all_models_exhausted: false,
         }
     }
 
@@ -2390,5 +2630,179 @@ mod tests {
 
         let report_3 = probe.observe().await.expect("observe 3");
         assert!(report_3.roadmap_items.is_empty());
+    }
+
+    struct ExhaustedLiteRouterSink {
+        primary_calls: AtomicUsize,
+        fallback_calls: AtomicUsize,
+    }
+
+    impl Default for ExhaustedLiteRouterSink {
+        fn default() -> Self {
+            Self {
+                primary_calls: AtomicUsize::new(0),
+                fallback_calls: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl PulseTaskSink for ExhaustedLiteRouterSink {
+        fn dispatch_recovery(
+            &self,
+            _failed_workers: &[FailedWorkerContext],
+            _eva_workspace_path: Option<&str>,
+        ) -> PulseFuture<'_, Result<String, String>> {
+            self.primary_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move { Err("all_models_exhausted".to_owned()) })
+        }
+
+        fn dispatch_recovery_fallback(
+            &self,
+            _failed_workers: &[FailedWorkerContext],
+            _eva_workspace_path: Option<&str>,
+            _fallback_provider: evohime_model_gateway::providers::ProviderKind,
+        ) -> PulseFuture<'_, Result<String, String>> {
+            self.fallback_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move { Ok("task-routmy-fallback".to_owned()) })
+        }
+
+        fn dispatch_evolution(
+            &self,
+            _items: &[RoadmapItem],
+            _eva_workspace_path: Option<&str>,
+        ) -> PulseFuture<'_, Result<String, String>> {
+            Box::pin(async move { Ok("task-evo".to_owned()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn eva_pulse_uses_literouter_first() {
+        let mut report = healthy_report();
+        report.selected_provider = Some("literouter".to_owned());
+        report.fallback_provider =
+            Some(evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
+        report.routmy_tokens_remaining = Some(650_000);
+        report.failed_workers = vec!["child-failed".into()];
+
+        let sink = Arc::new(CountingSink::default());
+        let daemon = EvaPulseDaemon::spawn(
+            Arc::new(FakeProbe::new(report)),
+            sink.clone(),
+            options(),
+            None,
+        );
+        daemon.run();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while daemon.cycle_count() == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("cycle completes");
+        daemon.shutdown();
+
+        assert!(sink.primary_calls.load(Ordering::SeqCst) >= 1);
+        assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn eva_pulse_falls_back_to_routmy_when_literouter_exhausted() {
+        let mut report = healthy_report();
+        report.selected_provider = Some("literouter".to_owned());
+        report.fallback_provider =
+            Some(evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
+        report.routmy_tokens_remaining = Some(650_000);
+        report.failed_workers = vec!["child-failed".into()];
+
+        // Pure decision must not sleep when LiteRouter is exhausted and rout.my has tokens.
+        let mut decide_report = report.clone();
+        decide_report.literouter_all_models_exhausted = true;
+        assert_eq!(
+            decide(&decide_report, 10_000),
+            PulseDecision::Recover {
+                failed_workers: vec!["child-failed".into()],
+            }
+        );
+
+        let sink = Arc::new(ExhaustedLiteRouterSink::default());
+        let daemon = EvaPulseDaemon::spawn(
+            Arc::new(FakeProbe::new(report)),
+            sink.clone(),
+            options(),
+            None,
+        );
+        daemon.run();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while daemon.cycle_count() == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("cycle completes");
+        daemon.shutdown();
+
+        assert!(sink.primary_calls.load(Ordering::SeqCst) >= 1);
+        assert!(sink.fallback_calls.load(Ordering::SeqCst) >= 1);
+    }
+
+    #[tokio::test]
+    async fn eva_pulse_sleeps_when_routmy_quota_exhausted() {
+        let now_ms = 1_700_000_000_000_i64;
+        let mut report = healthy_report();
+        report.selected_provider = Some("routmy".to_owned());
+        report.routmy_tokens_remaining = Some(500);
+        report.allow_paid_fallback = false;
+        report.failed_workers = vec!["child-failed".into()];
+
+        assert_eq!(
+            decide(&report, now_ms),
+            PulseDecision::Sleep {
+                wake_at_ms: Some(next_utc_midnight(now_ms)),
+                reason: "routmy_quota_exhausted",
+            }
+        );
+
+        // Also when LiteRouter is exhausted and fallback rout.my has < 1000 tokens.
+        let mut fallback_exhausted = healthy_report();
+        fallback_exhausted.selected_provider = Some("literouter".to_owned());
+        fallback_exhausted.fallback_provider =
+            Some(evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
+        fallback_exhausted.routmy_tokens_remaining = Some(999);
+        fallback_exhausted.literouter_all_models_exhausted = true;
+        fallback_exhausted.allow_paid_fallback = false;
+        fallback_exhausted.failed_workers = vec!["child-failed".into()];
+
+        assert_eq!(
+            decide(&fallback_exhausted, now_ms),
+            PulseDecision::Sleep {
+                wake_at_ms: Some(next_utc_midnight(now_ms)),
+                reason: "routmy_quota_exhausted",
+            }
+        );
+
+        let sink = Arc::new(CountingSink::default());
+        let daemon = EvaPulseDaemon::spawn(
+            Arc::new(FakeProbe::new(report)),
+            sink.clone(),
+            options(),
+            None,
+        );
+        daemon.run();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while daemon.cycle_count() == 0 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("cycle completes");
+        let status = daemon.status();
+        daemon.shutdown();
+
+        assert_eq!(status.status, HIVE_PULSE_SLEEPING);
+        assert_eq!(sink.primary_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
     }
 }

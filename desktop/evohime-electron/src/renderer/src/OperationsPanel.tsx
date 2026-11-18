@@ -305,6 +305,11 @@ interface HiveStateView {
     readonly exhausted: boolean
     readonly dailyCostAvailable: boolean
     readonly dailyCostNanoUsd: number | null
+    readonly dailyTokenQuota: number | null
+    readonly dailyTokensRemaining: number | null
+    readonly quotaResetUtcMidnight: boolean
+    readonly fallbackProvider: string | null
+    readonly fallbackTokensRemaining: number | null
   }
   readonly dailyBudgetUsd: number
   readonly evaWorkspacePath: string | null
@@ -493,6 +498,19 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       dailyCostAvailable: budget['daily_cost_available'] === true,
       dailyCostNanoUsd: typeof budget['daily_cost_nano_usd'] === 'number' && Number.isSafeInteger(budget['daily_cost_nano_usd']) && budget['daily_cost_nano_usd'] >= 0
         ? budget['daily_cost_nano_usd']
+        : null,
+      dailyTokenQuota: typeof budget['daily_token_quota'] === 'number' && Number.isSafeInteger(budget['daily_token_quota']) && budget['daily_token_quota'] >= 0
+        ? budget['daily_token_quota']
+        : null,
+      dailyTokensRemaining: typeof budget['daily_tokens_remaining'] === 'number' && Number.isSafeInteger(budget['daily_tokens_remaining']) && budget['daily_tokens_remaining'] >= 0
+        ? budget['daily_tokens_remaining']
+        : null,
+      quotaResetUtcMidnight: budget['quota_reset_utc_midnight'] === true,
+      fallbackProvider: typeof budget['fallback_provider'] === 'string' && budget['fallback_provider'].length > 0
+        ? text(budget['fallback_provider'], 64)
+        : null,
+      fallbackTokensRemaining: typeof budget['fallback_tokens_remaining'] === 'number' && Number.isSafeInteger(budget['fallback_tokens_remaining']) && budget['fallback_tokens_remaining'] >= 0
+        ? budget['fallback_tokens_remaining']
         : null
     },
     dailyBudgetUsd: typeof root['daily_budget_usd'] === 'number' && Number.isFinite(root['daily_budget_usd']) && root['daily_budget_usd'] >= 0
@@ -849,7 +867,12 @@ const EMPTY_BUDGET: HiveStateView['budget'] = {
   minuteExhausted: false,
   exhausted: false,
   dailyCostAvailable: false,
-  dailyCostNanoUsd: null
+  dailyCostNanoUsd: null,
+  dailyTokenQuota: null,
+  dailyTokensRemaining: null,
+  quotaResetUtcMidnight: false,
+  fallbackProvider: null,
+  fallbackTokensRemaining: null
 }
 
 /** Formats the exact reset moment Core computed, never a fixed default. */
@@ -1549,9 +1572,18 @@ export function HiveDashboard({
   const configuredCaps = budget.limits.rpm > 0 || budget.limits.rph > 0 || budget.limits.rpd > 0
   const snapshotBudgetLabel = budget.provider === 'literouter' || budget.provider === 'openrouter'
     ? `LiteRouter${budget.model.toLowerCase().includes(':free') ? ' (Free)' : ''}`
-    : budget.provider.toLowerCase().includes('deepseek')
-      ? 'DeepSeek API'
-      : budget.provider || translate('провайдер не выбран')
+    : budget.provider === 'routmy'
+      ? 'Rout.my (Free)'
+      : budget.provider.toLowerCase().includes('deepseek')
+        ? 'DeepSeek API'
+        : budget.provider || translate('провайдер не выбран')
+  const routmyConfigured = budget.fallbackProvider === 'routmy'
+    || provider?.compatibleProfiles?.routmy?.configured === true
+  const routmyStatusText = budget.provider === 'routmy'
+    ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota ?? 650000}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
+    : (budget.provider === 'literouter' || budget.provider === 'openrouter') && routmyConfigured
+      ? `${translate('Резерв: Rout.my')} (${budget.fallbackTokensRemaining ?? 650000} ${translate('токенов')})`
+      : null
   const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
   const logs = realLogs
   const combinedPrompts = useMemo(() => {
@@ -1785,6 +1817,7 @@ export function HiveDashboard({
             <p className="hive-budget-card__requests">
               {translate('Лимит запросов провайдера')}: {requestSummary}
             </p>
+            {routmyStatusText ? <p className="hive-budget-card__routmy">{routmyStatusText}</p> : null}
             <small>
               {budget.model ? `${translate('Текущая модель:')} ${budget.model}` : translate('Модель ещё не известна')}
               {!configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}

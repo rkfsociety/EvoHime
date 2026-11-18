@@ -20,6 +20,7 @@ export const PROVIDER_PROFILE_LABELS: Record<ProviderProfileId, string> = {
   sambanova: 'SambaNova',
   nebius: 'Nebius Token Factory',
   rout: 'Rout',
+  routmy: 'Rout.my',
   anymodel: 'AnyModel',
   custom: 'Другой OpenAI-compatible API'
 }

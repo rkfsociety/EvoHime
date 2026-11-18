@@ -445,6 +445,25 @@ impl<'a> ContextLedgerStore<'a> {
         Ok(usage)
     }
 
+    /// Sums total prompt and completion tokens for a provider since `start_ms`.
+    pub fn provider_tokens_since(
+        &self,
+        start_ms: i64,
+        provider: &str,
+    ) -> Result<u64, StorageError> {
+        let total: i64 = self.connection.query_row(
+            "SELECT COALESCE(SUM(usage.actual_prompt_tokens + usage.actual_completion_tokens), 0)
+             FROM context_ledger_usage AS usage
+             JOIN context_ledger AS ledger ON ledger.id = usage.ledger_id
+             WHERE ledger.provider = ?1
+               AND ledger.created_at >= ?2
+               AND usage.recorded_at >= ?2",
+            rusqlite::params![provider, start_ms],
+            |row| row.get(0),
+        )?;
+        Ok(u64::try_from(total.max(0)).unwrap_or(0))
+    }
+
     /// Регистрация ссылки receipt из 03.4. Записи с неэкспортированным receipt
     /// не удаляются ротацией.
     pub fn register_receipt(

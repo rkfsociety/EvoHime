@@ -47,6 +47,16 @@ pub(crate) fn background_route_name(config: Option<&ModelGatewayConfig>) -> Opti
     })
 }
 
+/// Returns the configured free fallback route name (`routmy`), if present and configured.
+pub(crate) fn fallback_routmy_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
+    let config = config?;
+    config.routes.iter().find_map(|(name, route)| {
+        (route.provider_profile_id == Some(ProviderProfileId::RoutMy)
+            && !route.literouter.api_key.trim().is_empty())
+        .then(|| name.clone())
+    })
+}
+
 /// Collects configured provider limits and committed usage for the active route.
 ///
 /// The projection is additive: a missing route configuration leaves caps unset;
@@ -89,14 +99,35 @@ pub(crate) async fn build_hive_observation(
     let limits = route.effective_limits(&model);
     observation.provider = provider;
     observation.model = model.clone();
+    let day_start_ms = observation.now_ms.div_euclid(HIVE_DAY_WINDOW_MS) * HIVE_DAY_WINDOW_MS;
     if profile == Some(ProviderProfileId::DeepSeek) {
-        let day_start_ms = observation.now_ms.div_euclid(HIVE_DAY_WINDOW_MS) * HIVE_DAY_WINDOW_MS;
         if let Ok(usage) = journal
             .deepseek_usage_since(day_start_ms, transport, &model)
             .await
         {
             observation.daily_cost_nano_usd = deepseek_daily_cost_nano_usd(&model, &usage);
             observation.daily_cost_available = observation.daily_cost_nano_usd.is_some();
+        }
+    }
+    if let Some(quota) = route.daily_token_quota {
+        observation.daily_token_quota = Some(quota);
+        observation.quota_reset_utc_midnight = route.quota_reset_utc_midnight;
+        if let Ok(used) = journal.provider_tokens_since(day_start_ms, transport).await {
+            observation.daily_tokens_used = used;
+        }
+    }
+    if route.provider == ProviderKind::LiteRouter {
+        if let Some(fallback_name) = fallback_routmy_route_name(Some(config)) {
+            if let Some(fallback_route) = config.routes.get(&fallback_name) {
+                observation.fallback_provider = Some(ProviderProfileId::RoutMy.as_str().to_owned());
+                if let Some(quota) = fallback_route.daily_token_quota {
+                    let used = journal
+                        .provider_tokens_since(day_start_ms, fallback_route.provider.as_str())
+                        .await
+                        .unwrap_or(0);
+                    observation.fallback_tokens_remaining = Some(quota.saturating_sub(used));
+                }
+            }
         }
     }
     observation.minute_cap = limits.rpm;

@@ -337,6 +337,19 @@ impl EventJournal {
         store.deepseek_usage_since(start_ms, provider, model)
     }
 
+    /// Sums total prompt and completion tokens recorded for `provider` since `start_ms`.
+    pub async fn provider_tokens_since(
+        &self,
+        start_ms: i64,
+        provider: &str,
+    ) -> Result<u64, StorageError> {
+        let database = self.database.lock().await;
+        let store = evohime_local_storage::context_ledger_store::ContextLedgerStore::new(
+            database.connection(),
+        )?;
+        store.provider_tokens_since(start_ms, provider)
+    }
+
     /// Bounded projection ledger задачи для UI (этап 01.5).
     pub async fn context_ledger_projection(
         &self,

@@ -220,10 +220,16 @@ pub enum ProviderProfileId {
     /// Rout hosted API profile.
     #[serde(rename = "rout")]
     Rout,
+    /// Rout.my free token-pool hosted API profile (650k tokens/day, resets at 00:00 UTC).
+    #[serde(rename = "routmy")]
+    RoutMy,
     /// AnyModel hosted API profile.
     #[serde(rename = "anymodel")]
     AnyModel,
 }
+
+/// Default daily free token quota for the `rout.my` provider profile.
+pub const ROUTMY_DAILY_TOKEN_QUOTA: u64 = 650_000;
 
 impl ProviderProfileId {
     /// Returns the stable serialized identifier.
@@ -248,6 +254,7 @@ impl ProviderProfileId {
             Self::SambaNova => "sambanova",
             Self::Nebius => "nebius",
             Self::Rout => "rout",
+            Self::RoutMy => "routmy",
             Self::AnyModel => "anymodel",
         }
     }
@@ -274,6 +281,7 @@ impl ProviderProfileId {
             "sambanova" => Self::SambaNova,
             "nebius" => Self::Nebius,
             "rout" => Self::Rout,
+            "routmy" => Self::RoutMy,
             "anymodel" => Self::AnyModel,
             _ => return None,
         })
@@ -301,6 +309,7 @@ impl ProviderProfileId {
             Self::SambaNova => Some("https://api.sambanova.ai/v1"),
             Self::Nebius => Some("https://api.tokenfactory.nebius.com/v1"),
             Self::Rout => Some("https://api.rout.my/v1"),
+            Self::RoutMy => Some("https://api.rout.my/v1"),
             Self::AnyModel => Some("https://anymodel.org/v1"),
         }
     }
@@ -410,6 +419,12 @@ pub struct ModelRouteConfig {
     /// Default provider-wide request limits when per-model overrides are absent.
     #[serde(default)]
     pub provider_limits: ProviderLimits,
+    /// Optional daily token quota (e.g., 650,000 free tokens/day for rout.my).
+    #[serde(default)]
+    pub daily_token_quota: Option<u64>,
+    /// Whether `daily_token_quota` resets at 00:00 UTC.
+    #[serde(default)]
+    pub quota_reset_utc_midnight: bool,
 }
 
 fn default_thinking_support() -> bool {
@@ -442,6 +457,8 @@ impl ModelRouteConfig {
             request_pacing: RequestPacingConfig::for_provider(provider),
             model_rate_limits: HashMap::new(),
             provider_limits: ProviderLimits::default(),
+            daily_token_quota: None,
+            quota_reset_utc_midnight: false,
         }
     }
 
@@ -474,6 +491,21 @@ impl ModelRouteConfig {
     ) -> Self {
         self.provider_profile_id = Some(profile_id);
         self.provider_account_id = account_id;
+        if profile_id == ProviderProfileId::RoutMy && self.daily_token_quota.is_none() {
+            self.daily_token_quota = Some(ROUTMY_DAILY_TOKEN_QUOTA);
+            self.quota_reset_utc_midnight = true;
+        }
+        self
+    }
+
+    /// Configures a daily token quota and whether it resets at 00:00 UTC.
+    pub fn with_daily_token_quota(
+        mut self,
+        daily_token_quota: Option<u64>,
+        quota_reset_utc_midnight: bool,
+    ) -> Self {
+        self.daily_token_quota = daily_token_quota;
+        self.quota_reset_utc_midnight = quota_reset_utc_midnight;
         self
     }
 
@@ -643,6 +675,8 @@ impl ModelRouteConfig {
             request_pacing: RequestPacingConfig::disabled(),
             model_rate_limits: HashMap::new(),
             provider_limits: ProviderLimits::default(),
+            daily_token_quota: None,
+            quota_reset_utc_midnight: false,
         }
     }
 
@@ -693,6 +727,8 @@ impl ModelGatewayConfig {
                 request_pacing: RequestPacingConfig::for_provider(provider),
                 model_rate_limits: HashMap::new(),
                 provider_limits: ProviderLimits::default(),
+                daily_token_quota: None,
+                quota_reset_utc_midnight: false,
             },
             ProviderKind::OpenAICompatible => {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
@@ -737,9 +773,31 @@ impl ModelGatewayConfig {
         }
         route.validate_provider_profile()?;
 
+        let mut routes = HashMap::from([(default_route.clone(), route)]);
+        if let Ok(routmy_key) = env::var("ROUTMY_API_KEY") {
+            let routmy_key = routmy_key.trim().to_string();
+            if !routmy_key.is_empty() && !routes.contains_key("routmy") {
+                let routmy_base = env::var("ROUTMY_BASE_URL")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| "https://api.rout.my/v1".to_string());
+                let routmy_model = env::var("ROUTMY_MODEL")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .unwrap_or_default();
+                let routmy_route =
+                    ModelRouteConfig::openai_compatible(routmy_key, routmy_base, routmy_model)
+                        .with_provider_profile(ProviderProfileId::RoutMy, None);
+                if routmy_route.validate_provider_profile().is_ok() {
+                    routes.insert("routmy".to_string(), routmy_route);
+                }
+            }
+        }
+
         Ok(Self {
-            default_route: default_route.clone(),
-            routes: HashMap::from([(default_route, route)]),
+            default_route,
+            routes,
         })
     }
 }
@@ -1251,5 +1309,30 @@ mod tests {
             openai.effective_limits(OPENAI_DEFAULT_MODEL),
             fallback_limits
         );
+    }
+
+    #[test]
+    fn routmy_profile_sets_daily_token_quota_and_utc_midnight_reset() {
+        assert_eq!(ProviderProfileId::parse("routmy"), Some(ProviderProfileId::RoutMy));
+        assert_eq!(ProviderProfileId::RoutMy.as_str(), "routmy");
+        assert_eq!(
+            ProviderProfileId::RoutMy.default_base_url(),
+            Some("https://api.rout.my/v1")
+        );
+
+        let route = ModelRouteConfig::openai_compatible(
+            "routmy-key",
+            "https://api.rout.my/v1",
+            "deepseek-chat",
+        )
+        .with_provider_profile(ProviderProfileId::RoutMy, None);
+        assert_eq!(route.daily_token_quota, Some(ROUTMY_DAILY_TOKEN_QUOTA));
+        assert!(route.quota_reset_utc_midnight);
+        assert!(!route.request_pacing.enabled);
+        assert!(route.validate_provider_profile().is_ok());
+
+        let custom_quota = route.with_daily_token_quota(Some(100_000), false);
+        assert_eq!(custom_quota.daily_token_quota, Some(100_000));
+        assert!(!custom_quota.quota_reset_utc_midnight);
     }
 }

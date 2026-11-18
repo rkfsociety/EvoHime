@@ -667,7 +667,7 @@ export const OLLAMA_DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1'
 export const PROVIDER_PROFILE_IDS = [
   'openai', 'openrouter', 'groq', 'gemini', 'mistral', 'cloudflare_workers_ai',
   'nvidia_nim', 'cerebras', 'hugging_face',
-  'deepseek', 'xai', 'together_ai', 'fireworks_ai', 'moonshot', 'zai', 'sambanova', 'nebius', 'rout', 'anymodel',
+  'deepseek', 'xai', 'together_ai', 'fireworks_ai', 'moonshot', 'zai', 'sambanova', 'nebius', 'rout', 'routmy', 'anymodel',
   'custom'
 ] as const
 
@@ -690,6 +690,7 @@ export const PROVIDER_PROFILE_ENDPOINTS: Readonly<Partial<Record<ProviderProfile
   sambanova: 'https://api.sambanova.ai/v1',
   nebius: 'https://api.tokenfactory.nebius.com/v1',
   rout: 'https://api.rout.my/v1',
+  routmy: 'https://api.rout.my/v1',
   anymodel: 'https://anymodel.org/v1'
 }
 
