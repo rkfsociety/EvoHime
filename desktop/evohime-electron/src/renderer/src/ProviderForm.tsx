@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   PROVIDER_KINDS,
@@ -7,23 +7,28 @@ import {
   OLLAMA_DEFAULT_BASE_URL,
   REQUEST_PACING_MAX_INTERVAL_MS,
   defaultRequestPacing,
+  type ConnectionState,
+  type CoreEvent,
+  type FreeAccessProbePolicy,
+  type FreeAccessRoutingMode,
+  type ModelRateLimitSettings,
   type ModelTier,
   type ProviderKind,
+  type ProviderModelRateLimits,
   type ProviderProfileId,
   type ProviderProfileSummary,
   type ProviderSummary,
-  type RequestPacingSettings,
-  type ProviderModelRateLimits,
-  type FreeAccessProbePolicy,
-  type FreeAccessRoutingMode
+  type RequestPacingSettings
 } from '@shared/api'
 
-import { useShellApi } from './shell-api'
-import { formatDateTime, translate } from './i18n'
-import type { ConnectionState, CoreEvent } from '@shared/api'
-import { OllamaModelDownloadPanel } from './OllamaModelDownloadPanel'
+import { ModelSettingsBlock, type ModelLimitDraft } from './ModelSettingsBlock'
+import { ProviderBaseFields } from './ProviderBaseFields'
+import { ProviderSpecificSettings } from './ProviderSpecificSettings'
+import { translate, formatDateTime } from './i18n'
 import { PROVIDER_PROFILE_LABELS } from './provider-labels'
+import { getProviderSchema } from './provider-schema'
 import { useProviderState } from './provider-state'
+import { useShellApi } from './shell-api'
 
 /**
  * Credentials surface.
@@ -37,10 +42,6 @@ import { useProviderState } from './provider-state'
 /** A single provider choice: transport-level provider or fixed vendor profile. */
 type ProviderChoice = Exclude<ProviderKind, 'openai_compatible'> | ProviderProfileId
 
-/**
- * Probe policy lives on individual profiles; a transport-level summary has no
- * such field, so read it only when the stored record is a profile.
- */
 function profileProbePolicy(
   summary: ProviderSummary | ProviderProfileSummary | undefined
 ): FreeAccessProbePolicy | undefined {
@@ -63,49 +64,6 @@ function isProviderProfileChoice(choice: ProviderChoice): choice is ProviderProf
   return (PROVIDER_PROFILE_IDS as readonly string[]).includes(choice)
 }
 
-const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly hint: string }[] = [
-  { id: 'free', label: 'Бесплатные', hint: 'модели с суффиксом :free' },
-  { id: 'paid', label: 'Платные', hint: 'списываются с баланса провайдера' }
-]
-
-/** Default probe policy for a newly selected transport or vendor profile. */
-function defaultTierFor(provider: ProviderKind, profileId: ProviderProfileId): ModelTier {
-  if (provider === 'ollama' || provider === 'literouter') return 'free'
-  if (provider === 'openai_responses') return 'paid'
-  const paidProfiles: ReadonlySet<ProviderProfileId> = new Set([
-    'openai', 'deepseek', 'xai', 'together_ai', 'fireworks_ai', 'moonshot', 'zai', 'nebius', 'rout', 'anymodel', 'custom'
-  ])
-  return paidProfiles.has(profileId) ? 'paid' : 'free'
-}
-
-function defaultProbePolicy(provider: ProviderKind, profileId: ProviderProfileId): FreeAccessProbePolicy {
-  return provider === 'openai_compatible' && profileId === 'openrouter' ? 'on_first_use' : 'disabled'
-}
-
-/**
- * Core can only turn a probe into strict evidence where the profile has an
- * authoritative free-access source: OpenRouter pricing detail, or the bounded
- * Cloudflare activation/quota observations. Every other vendor always reports
- * `authority_unavailable`, so the probe controls would be dead switches.
- */
-function supportsFreeAccessProbe(provider: ProviderKind, profileId: ProviderProfileId): boolean {
-  return provider === 'openai_compatible'
-    && (profileId === 'openrouter' || profileId === 'cloudflare_workers_ai')
-}
-
-/**
- * Evidence routing picks between free and paid routes of one catalogue. Only
- * the OpenRouter profile produces the strict-free evidence it filters on.
- */
-function supportsEvidenceRouting(provider: ProviderKind, profileId: ProviderProfileId): boolean {
-  return provider === 'openai_compatible' && profileId === 'openrouter'
-}
-
-/** The per-provider pause exists for the LiteRouter tier window. */
-function needsRequestPacing(provider: ProviderKind): boolean {
-  return provider === 'literouter'
-}
-
 /** Parses a millisecond interval typed by the user, or reports it invalid. */
 function parsePacingInterval(value: string): number | null {
   const trimmed = value.trim()
@@ -114,8 +72,65 @@ function parsePacingInterval(value: string): number | null {
   return Number.isSafeInteger(parsed) && parsed <= REQUEST_PACING_MAX_INTERVAL_MS ? parsed : null
 }
 
+function parseModelCap(value: string): number | null {
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const parsed = Number(trimmed)
+  return Number.isSafeInteger(parsed) && parsed <= 10_000 ? parsed : null
+}
+
 function pacingOrDefault(value: RequestPacingSettings | undefined, provider: ProviderKind): RequestPacingSettings {
   return value ?? defaultRequestPacing(provider)
+}
+
+function buildModelLimitDrafts(
+  limits: ProviderModelRateLimits | undefined,
+  activeModel: string,
+  nextKey: () => string
+): ModelLimitDraft[] {
+  const entries: ModelLimitDraft[] = []
+  const seen = new Set<string>()
+  const trimmedActive = activeModel.trim()
+
+  if (limits) {
+    for (const [modelId, settings] of Object.entries(limits)) {
+      const trimmed = modelId.trim()
+      if (!trimmed || seen.has(trimmed)) continue
+      seen.add(trimmed)
+      entries.push({
+        key: nextKey(),
+        modelId: trimmed,
+        enabled: settings.enabled === true,
+        rpm: String(settings.rpm ?? 0),
+        rph: String(settings.rph ?? 0),
+        rpd: String(settings.rpd ?? 0)
+      })
+    }
+  }
+
+  if (trimmedActive && !seen.has(trimmedActive)) {
+    entries.unshift({
+      key: nextKey(),
+      modelId: trimmedActive,
+      enabled: false,
+      rpm: '0',
+      rph: '0',
+      rpd: '0'
+    })
+  }
+
+  if (entries.length === 0) {
+    entries.push({
+      key: nextKey(),
+      modelId: '',
+      enabled: false,
+      rpm: '0',
+      rph: '0',
+      rpd: '0'
+    })
+  }
+
+  return entries
 }
 
 type Status =
@@ -145,12 +160,15 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [pacingEnabled, setPacingEnabled] = useState(true)
   const [pacingInterval, setPacingInterval] = useState('8000')
   const [pacingFreeInterval, setPacingFreeInterval] = useState('18948')
-  const [limitModel, setLimitModel] = useState('')
   const [catalogModels, setCatalogModels] = useState<readonly string[]>([])
-  const [modelLimitsEnabled, setModelLimitsEnabled] = useState(false)
-  const [modelRpm, setModelRpm] = useState('0')
-  const [modelRph, setModelRph] = useState('0')
-  const [modelRpd, setModelRpd] = useState('0')
+  const cardKeySeq = useRef(0)
+  const nextCardKey = useCallback(() => {
+    cardKeySeq.current += 1
+    return `m-${cardKeySeq.current}`
+  }, [])
+  const [modelLimitEntries, setModelLimitEntries] = useState<ModelLimitDraft[]>(() =>
+    buildModelLimitDrafts(undefined, '', () => 'm-0')
+  )
   const [acknowledgeProbePossibleCost, setAcknowledgeProbePossibleCost] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [catalogStatus, setCatalogStatus] = useState<string | null>(null)
@@ -160,52 +178,48 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   // from the stored profile, incoming snapshots must not overwrite the form.
   const pendingSelection = useRef(false)
 
+  const schema = getProviderSchema(provider, profileId)
+
   const selectedProfile = provider === 'openai_compatible'
     ? summary?.compatibleProfiles?.[profileId]
       ?? (summary?.profiles?.openai_compatible?.profileId === profileId ? summary.profiles.openai_compatible : undefined)
       ?? (summary?.provider === provider && summary.profileId === profileId ? summary : undefined)
     : summary?.profiles?.[provider]
 
-  // Fields stay controlled even if a summary arrives with a missing member.
   const applyPacing = useCallback((pacing: RequestPacingSettings) => {
     setPacingEnabled(pacing.enabled)
     setPacingInterval(String(pacing.intervalMs))
     setPacingFreeInterval(String(pacing.freeIntervalMs))
   }, [])
 
-  const applyModelLimits = useCallback((limits: ProviderModelRateLimits | undefined, modelId: string) => {
-    const settings = limits?.[modelId]
-    setModelLimitsEnabled(settings?.enabled === true)
-    setModelRpm(String(settings?.rpm ?? 0))
-    setModelRph(String(settings?.rph ?? 0))
-    setModelRpd(String(settings?.rpd ?? 0))
-  }, [])
-
   const apply = useCallback((value: ProviderSummary) => {
     const nextProvider = PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter'
     const nextProfileId = nextProvider === 'openai_compatible' ? (value.profileId ?? 'openai') : 'custom'
+    const nextSchema = getProviderSchema(nextProvider, nextProfileId)
+
     setProvider(nextProvider)
     setModel(value.model ?? '')
-    setLimitModel(value.model ?? '')
     setTier(value.tier === 'paid' ? 'paid' : 'free')
-    setBaseUrl(value.baseUrl ?? (value.provider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
+    setBaseUrl(value.baseUrl ?? (nextSchema.supportsLocalModelDownload ? OLLAMA_DEFAULT_BASE_URL : ''))
     setProfileId(nextProfileId)
     setAccountId(value.accountId ?? '')
-    setProbePolicy(value.profiles?.[value.provider]?.freeAccessProbePolicy ?? defaultProbePolicy(nextProvider, nextProfileId))
+    setProbePolicy(value.profiles?.[value.provider]?.freeAccessProbePolicy ?? nextSchema.defaultProbePolicy)
     setRoutingMode(value.freeAccessRoutingMode ?? 'any')
     setAllowPaidFallback(value.allowPaidFallback === true)
     applyPacing(value.requestPacing ?? value.profiles?.[value.provider]?.requestPacing ?? defaultRequestPacing(nextProvider))
-    applyModelLimits(value.modelRateLimits ?? value.profiles?.[value.provider]?.modelRateLimits, value.model ?? '')
+    setModelLimitEntries(
+      buildModelLimitDrafts(
+        value.modelRateLimits ?? value.profiles?.[value.provider]?.modelRateLimits,
+        value.model ?? '',
+        nextCardKey
+      )
+    )
     setAcknowledgeProbePossibleCost(false)
-  }, [applyModelLimits, applyPacing])
+  }, [applyPacing, nextCardKey])
 
   useEffect(() => {
     if (summary && !pendingSelection.current) apply(summary)
   }, [apply, summary])
-
-  useEffect(() => {
-    if (!pendingSelection.current) applyModelLimits(selectedProfile?.modelRateLimits, limitModel)
-  }, [applyModelLimits, limitModel, selectedProfile])
 
   useEffect(() => {
     const event = [...events].reverse().find((item) => item.eventType === 'model.catalog')
@@ -268,6 +282,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     const nextProfileId: ProviderProfileId = isProviderProfileChoice(choice) ? choice : 'custom'
     if (nextProvider === provider && nextProfileId === profileId) return
 
+    const nextSchema = getProviderSchema(nextProvider, nextProfileId)
     const saved = nextProvider === 'openai_compatible'
       ? summary?.compatibleProfiles?.[nextProfileId]
         ?? (summary?.profiles?.openai_compatible?.profileId === nextProfileId ? summary.profiles.openai_compatible : undefined)
@@ -285,25 +300,26 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     setProfileId(nextProfileId)
     setApiKey('')
     setModel(savedMatches ? (saved?.model ?? '') : '')
-    setLimitModel(savedMatches ? (saved?.model ?? '') : '')
-    setTier(
-      savedMatches
-        ? (saved?.tier ?? defaultTierFor(nextProvider, nextProfileId))
-        : defaultTierFor(nextProvider, nextProfileId)
-    )
+    setTier(savedMatches ? (saved?.tier ?? nextSchema.defaultTier) : nextSchema.defaultTier)
     setBaseUrl(
       savedMatches
-        ? (saved?.baseUrl ?? (nextProvider === 'ollama' ? OLLAMA_DEFAULT_BASE_URL : ''))
+        ? (saved?.baseUrl ?? (nextSchema.supportsLocalModelDownload ? OLLAMA_DEFAULT_BASE_URL : ''))
         : (PROVIDER_PROFILE_ENDPOINTS[nextProfileId] ?? '')
     )
     setAccountId(savedMatches ? (saved?.accountId ?? '') : '')
     setProbePolicy(
       savedMatches
-        ? (profileProbePolicy(saved) ?? defaultProbePolicy(nextProvider, nextProfileId))
-        : defaultProbePolicy(nextProvider, nextProfileId)
+        ? (profileProbePolicy(saved) ?? nextSchema.defaultProbePolicy)
+        : nextSchema.defaultProbePolicy
     )
     applyPacing(pacingOrDefault(saved?.requestPacing, nextProvider))
-    applyModelLimits(saved?.modelRateLimits, saved?.model ?? '')
+    setModelLimitEntries(
+      buildModelLimitDrafts(
+        savedMatches ? saved?.modelRateLimits : undefined,
+        savedMatches ? (saved?.model ?? '') : '',
+        nextCardKey
+      )
+    )
     setAcknowledgeProbePossibleCost(false)
 
     // Selecting an unconfigured provider or switching vendor inside the
@@ -335,7 +351,41 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       apply(outcome.value.summary)
     }
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'provider' })
-  }, [api, apply, applyModelLimits, applyPacing, applySummary, profileId, provider, summary])
+  }, [api, apply, applyPacing, applySummary, nextCardKey, profileId, provider, summary])
+
+  const updateModelLimitEntry = useCallback(
+    (key: string, patch: Partial<Omit<ModelLimitDraft, 'key'>>) => {
+      setModelLimitEntries((current) =>
+        current.map((entry) => (entry.key === key ? { ...entry, ...patch } : entry))
+      )
+    },
+    []
+  )
+
+  const addModelLimitEntry = useCallback(() => {
+    setModelLimitEntries((current) => {
+      const used = new Set(current.map((item) => item.modelId.trim()).filter(Boolean))
+      const suggested = catalogModels.find((id) => !used.has(id)) ?? ''
+      return [
+        ...current,
+        {
+          key: nextCardKey(),
+          modelId: suggested,
+          enabled: false,
+          rpm: '0',
+          rph: '0',
+          rpd: '0'
+        }
+      ]
+    })
+  }, [catalogModels, nextCardKey])
+
+  const removeModelLimitEntry = useCallback((key: string) => {
+    setModelLimitEntries((current) => {
+      const next = current.filter((item) => item.key !== key)
+      return next.length > 0 ? next : current
+    })
+  }, [])
 
   const save = useCallback(async () => {
     if (!api) return
@@ -345,19 +395,23 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       setStatus({ kind: 'failed', message: 'Интервал паузы должен быть целым числом от 0 до 3600000 мс.' })
       return
     }
-    const parseModelCap = (value: string): number | null => {
-      const trimmed = value.trim()
-      if (!/^\d+$/.test(trimmed)) return null
-      const parsed = Number(trimmed)
-      return Number.isSafeInteger(parsed) && parsed <= 10_000 ? parsed : null
+
+    const nextModelRateLimits: Record<string, ModelRateLimitSettings> = {}
+    if (schema.supportsModelLimits) {
+      for (const entry of modelLimitEntries) {
+        const trimmedModel = entry.modelId.trim()
+        if (!trimmedModel) continue
+        const rpm = parseModelCap(entry.rpm)
+        const rph = parseModelCap(entry.rph)
+        const rpd = parseModelCap(entry.rpd)
+        if (rpm === null || rph === null || rpd === null) {
+          setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RPD должны быть целыми числами от 0 до 10000.' })
+          return
+        }
+        nextModelRateLimits[trimmedModel] = { enabled: entry.enabled, rpm, rph, rpd }
+      }
     }
-    const rpm = parseModelCap(modelRpm)
-    const rph = parseModelCap(modelRph)
-    const rpd = parseModelCap(modelRpd)
-    if (limitModel.trim() && (rpm === null || rph === null || rpd === null)) {
-      setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RPD должны быть целыми числами от 0 до 10000.' })
-      return
-    }
+
     setStatus({ kind: 'saving' })
     const outcome = await api.invoke('provider.save', {
       provider,
@@ -371,14 +425,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       freeAccessRoutingMode: routingMode,
       allowPaidFallback: routingMode === 'prefer_free' && allowPaidFallback,
       requestPacing: { enabled: pacingEnabled, intervalMs, freeIntervalMs },
-      modelRateLimits: limitModel.trim()
-        ? {
-            ...(selectedProfile?.modelRateLimits ?? {}),
-            [limitModel.trim()]: { enabled: modelLimitsEnabled, rpm: rpm ?? 0, rph: rph ?? 0, rpd: rpd ?? 0 }
-          }
-        : selectedProfile?.modelRateLimits ?? {},
+      modelRateLimits: schema.supportsModelLimits
+        ? nextModelRateLimits
+        : (selectedProfile?.modelRateLimits ?? {}),
       ...(provider === 'openai_compatible' ? { profileId } : {}),
-      ...(provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? { accountId } : {})
+      ...(schema.requiresAccountId ? { accountId } : {})
     })
     if (!outcome.ok) {
       setStatus({ kind: 'failed', message: outcome.message })
@@ -389,7 +440,29 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted, action: 'settings' })
-  }, [accountId, acknowledgeProbePossibleCost, allowPaidFallback, api, apiKey, apply, applySummary, baseUrl, limitModel, model, modelLimitsEnabled, modelRpd, modelRph, modelRpm, pacingEnabled, pacingFreeInterval, pacingInterval, probePolicy, profileId, provider, routingMode, selectedProfile, tier])
+  }, [
+    accountId,
+    acknowledgeProbePossibleCost,
+    allowPaidFallback,
+    api,
+    apiKey,
+    apply,
+    applySummary,
+    baseUrl,
+    model,
+    modelLimitEntries,
+    pacingEnabled,
+    pacingFreeInterval,
+    pacingInterval,
+    probePolicy,
+    profileId,
+    provider,
+    routingMode,
+    schema.requiresAccountId,
+    schema.supportsModelLimits,
+    selectedProfile,
+    tier
+  ])
 
   const clearKey = useCallback(async () => {
     if (!api) return
@@ -425,8 +498,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
 
   const busy = status.kind === 'saving'
   const selection: ProviderChoice = provider === 'openai_compatible' ? profileId : provider
-  const profileMatches = provider !== 'openai_compatible'
-    || selectedProfile?.profileId === profileId
+  const profileMatches = provider !== 'openai_compatible' || selectedProfile?.profileId === profileId
   const configured = profileMatches && (selectedProfile?.configured === true || (
     selectedProfile === undefined && summary?.provider === provider && summary.configured &&
     (provider !== 'openai_compatible' || summary.profileId === profileId)
@@ -436,292 +508,121 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     && parsePacingInterval(pacingFreeInterval) !== null
   const canSave = !busy
     && pacingValid
-    && (provider === 'ollama' || apiKey.trim().length > 0 || configured)
-    && (provider !== 'openai_compatible' || profileId !== 'cloudflare_workers_ai' || cloudflareAccountValid)
+    && (!schema.requiresApiKey || apiKey.trim().length > 0 || configured)
+    && (!schema.requiresAccountId || cloudflareAccountValid)
     && (!(probePolicy === 'on_first_use' || probePolicy === 'periodic_bounded') ||
       acknowledgeProbePossibleCost ||
       (probePolicy === profileProbePolicy(selectedProfile) && apiKey.trim().length === 0 &&
         profileId === selectedProfile?.profileId && baseUrl === selectedProfile?.baseUrl && accountId === (selectedProfile?.accountId ?? '')))
-  const displayBaseUrl = profileId === 'cloudflare_workers_ai' && cloudflareAccountValid
+  const displayBaseUrl = schema.requiresAccountId && cloudflareAccountValid
     ? `https://api.cloudflare.com/client/v4/accounts/${accountId.trim()}/ai/v1`
     : baseUrl
-  // Controls that Core cannot act on for the selected vendor stay out of the
-  // common path. A non-default saved option is still shown, otherwise the user
-  // could not inspect or undo a value that keeps affecting requests.
   const pacingDefaults = defaultRequestPacing(provider)
   const pacingIsDefault = !pacingEnabled
     && pacingInterval === String(pacingDefaults.intervalMs)
     && pacingFreeInterval === String(pacingDefaults.freeIntervalMs)
-  const showProbe = supportsFreeAccessProbe(provider, profileId) || probePolicy !== 'disabled'
-  const showRouting = supportsEvidenceRouting(provider, profileId) || routingMode !== 'any'
-  const showPacing = needsRequestPacing(provider) || !pacingIsDefault
-  const limitModelOptions = useMemo(() => {
-    const options = [...catalogModels]
-    if (limitModel.trim() && !options.includes(limitModel.trim())) options.unshift(limitModel.trim())
-    return options
-  }, [catalogModels, limitModel])
+
+  const badgeText = configured
+    ? (schema.configuredBadge ?? 'Ключ сохранён')
+    : (schema.unconfiguredBadge ?? 'Ключ не задан')
 
   return (
-    <section className="shell__panel provider-form" aria-label={translate("Ключ провайдера")}>
+    <section className="shell__panel provider-form" aria-label={translate('Ключ провайдера')}>
       <div className="settings-panel__heading">
         <div>
-          <h2>{translate("Доступ к моделям")}</h2>
-          <p className="shell__empty">
-            {translate(provider === 'ollama'
-              ? translate("Ollama работает локально. Ключ не нужен, модель можно скачать ниже.")
-              : translate("Ключ шифруется средствами Windows и хранится локально. Модель выбирается в чате."))}
-          </p>
+          <h2>{translate('Доступ к моделям')}</h2>
+          <p className="shell__empty">{translate(schema.description)}</p>
         </div>
-        <span
-          className={`settings-panel__state settings-panel__state--${configured ? 'ready' : 'offline'}`}
-        >
-          {translate(provider === 'ollama' ? translate("Локальный провайдер") : configured ? translate("Ключ сохранён") : translate("Ключ не задан"))}
+        <span className={`settings-panel__state settings-panel__state--${configured ? 'ready' : 'offline'}`}>
+          {translate(badgeText)}
         </span>
       </div>
 
       {catalogStatus !== null ? <p className="provider-form__catalog-status" role="status">{translate(catalogStatus)}</p> : null}
       {freeEvidenceStatus !== null ? <p className="provider-form__catalog-status" role="status">{translate(freeEvidenceStatus)}</p> : null}
 
-      <div className="provider-form__grid">
-        <label htmlFor="provider-kind">
-          {translate("Провайдер")}<select
-            id="provider-kind"
-            value={selection}
-            onChange={(event) => void selectChoice(event.target.value as ProviderChoice)}
-            disabled={busy}
-          >
-            {PROVIDER_CHOICES.map((choice) => (
-              <option key={choice.value} value={choice.value}>{translate(choice.label)}</option>
-            ))}
-          </select>
-        </label>
+      <ProviderBaseFields
+        schema={schema}
+        selection={selection}
+        choices={PROVIDER_CHOICES}
+        onSelectChoice={(choice) => void selectChoice(choice)}
+        apiKey={apiKey}
+        onApiKeyChange={(value) => {
+          setApiKey(value)
+          setAcknowledgeProbePossibleCost(false)
+        }}
+        displayBaseUrl={displayBaseUrl}
+        onBaseUrlChange={(value) => {
+          setBaseUrl(value)
+          setProbePolicy('disabled')
+          setAcknowledgeProbePossibleCost(false)
+        }}
+        configured={configured}
+        busy={busy}
+      />
 
-        {provider !== 'ollama' ? (
-          <label className="provider-form__key" htmlFor="provider-key">
-            {translate("Ключ API")}<input
-              id="provider-key"
-              type="password"
-              value={apiKey}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                setApiKey(event.target.value)
-                setAcknowledgeProbePossibleCost(false)
-              }}
-              placeholder={configured ? translate("сохранён — введи новый, чтобы заменить") : 'sk-…'}
-              disabled={busy}
-            />
-          </label>
-        ) : null}
+      <ProviderSpecificSettings
+        schema={schema}
+        busy={busy}
+        connection={connection}
+        events={events}
+        baseUrl={baseUrl}
+        accountId={accountId}
+        onAccountIdChange={(value) => {
+          setAccountId(value)
+          setProbePolicy('disabled')
+          setAcknowledgeProbePossibleCost(false)
+        }}
+        tier={tier}
+        onTierChange={setTier}
+        probePolicy={probePolicy}
+        onProbePolicyChange={(policy) => {
+          setProbePolicy(policy)
+          setAcknowledgeProbePossibleCost(false)
+        }}
+        acknowledgeProbePossibleCost={acknowledgeProbePossibleCost}
+        onAcknowledgeProbePossibleCostChange={setAcknowledgeProbePossibleCost}
+        routingMode={routingMode}
+        onRoutingModeChange={setRoutingMode}
+        allowPaidFallback={allowPaidFallback}
+        onAllowPaidFallbackChange={setAllowPaidFallback}
+        pacingEnabled={pacingEnabled}
+        onPacingEnabledChange={setPacingEnabled}
+        pacingInterval={pacingInterval}
+        onPacingIntervalChange={setPacingInterval}
+        pacingFreeInterval={pacingFreeInterval}
+        onPacingFreeIntervalChange={setPacingFreeInterval}
+        pacingIsDefault={pacingIsDefault}
+      />
 
-        {provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? (
-          <label htmlFor="provider-account-id">
-            Cloudflare Account ID
-            <input
-              id="provider-account-id"
-              value={accountId}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                setAccountId(event.target.value)
-                setProbePolicy('disabled')
-                setAcknowledgeProbePossibleCost(false)
-              }}
-              placeholder={translate("32 шестнадцатеричных символа")}
-              disabled={busy}
-            />
-          </label>
-        ) : null}
-
-        <label htmlFor="provider-url">
-          {translate("Адрес API")}<input
-            id="provider-url"
-            value={displayBaseUrl}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => {
-              setBaseUrl(event.target.value)
-              setProbePolicy('disabled')
-              setAcknowledgeProbePossibleCost(false)
-            }}
-            placeholder={translate("по умолчанию провайдера")}
-            disabled={busy || (provider === 'openai_compatible' && profileId !== 'custom')}
-          />
-        </label>
-      </div>
-
-      {provider === 'openai_compatible' && profileId === 'cloudflare_workers_ai' ? (
-        <p className="shell__empty">{translate("Нужен API token Cloudflare с разрешениями Workers AI Read и Workers AI Edit. Host и API path задаются профилем.")}</p>
+      {schema.supportsModelLimits ? (
+        <ModelSettingsBlock
+          entries={modelLimitEntries}
+          catalogModels={catalogModels}
+          busy={busy}
+          onUpdateEntry={updateModelLimitEntry}
+          onAddEntry={addModelLimitEntry}
+          onRemoveEntry={removeModelLimitEntry}
+        />
       ) : null}
-
-      {translate(provider === 'ollama' ? (
-        <OllamaModelDownloadPanel connection={connection} events={events} baseUrl={baseUrl} />
-      ) : null)}
-
-      {provider === 'literouter' ? <fieldset className="provider-form__tier">
-        <legend>{translate("Какие модели показывать")}</legend>
-        {TIERS.map((item) => (
-          <label key={item.id}>
-            <input
-              type="radio"
-              name="model-tier"
-              value={item.id}
-              checked={tier === item.id}
-              onChange={() => setTier(item.id)}
-              disabled={busy}
-            />
-            <span>{translate(item.label)}</span>
-            <span className="provider-form__hint">{translate(item.hint)}</span>
-          </label>
-        ))}
-      </fieldset> : null}
-
-      {showProbe ? <fieldset className="provider-form__tier">
-        <legend>{translate("Проверка бесплатного доступа")}</legend>
-        <label htmlFor="free-access-probe-policy">
-          {translate("Как собирать данные")}<select
-            id="free-access-probe-policy"
-            value={probePolicy}
-            onChange={(event) => {
-              setProbePolicy(event.target.value as FreeAccessProbePolicy)
-              setAcknowledgeProbePossibleCost(false)
-            }}
-            disabled={busy}
-          >
-            <option value="disabled">{translate("Выключена (ручную проверку можно запустить отдельно)")}</option>
-            <option value="manual_only">{translate("Только ручная проверка")}</option>
-            <option value="passive_only">{translate("Только наблюдать обычные запросы")}</option>
-            <option value="on_first_use" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>{translate("Авто (проверить при первом использовании)")}</option>
-            <option value="periodic_bounded" disabled={provider !== 'openai_compatible' || profileId !== 'openrouter'}>{translate("Повторять после истечения evidence")}</option>
-          </select>
-        </label>
-        {probePolicy === 'on_first_use' || probePolicy === 'periodic_bounded' ? (
-          <>
-            <p className="provider-form__hint">{translate("Автоматическая проверка отправляет короткий synthetic запрос через OpenRouter. Возможен расход кредитов или денег.")}</p>
-            <label>
-              <input
-                type="checkbox"
-                checked={acknowledgeProbePossibleCost}
-                onChange={(event) => setAcknowledgeProbePossibleCost(event.target.checked)}
-                disabled={busy}
-              />
-              {translate("Я отдельно разрешаю автоматическую проверку с возможным расходом для этого профиля и ключа")}</label>
-          </>
-        ) : null}
-      </fieldset> : null}
-
-      {showRouting ? <fieldset className="provider-form__tier">
-        <legend>{translate("Маршрутизация по evidence")}</legend>
-        <label htmlFor="free-access-routing-mode">
-          {translate("Режим")}<select
-            id="free-access-routing-mode"
-            value={routingMode}
-            onChange={(event) => setRoutingMode(event.target.value as FreeAccessRoutingMode)}
-            disabled={busy}
-          >
-            <option value="any">{translate("Обычная маршрутизация")}</option>
-            <option value="prefer_free">{translate("Сначала подтверждённые бесплатные модели")}</option>
-            <option value="free_only">{translate("Только подтверждённые бесплатные модели")}</option>
-          </select>
-        </label>
-        <p className="provider-form__hint">{translate("Каталожная метка и суффикс :free не подтверждают доступ. FreeOnly блокирует неизвестные, устаревшие и платные маршруты.")}</p>
-        {routingMode === 'prefer_free' ? (
-          <label>
-            <input
-              type="checkbox"
-              checked={allowPaidFallback}
-              onChange={(event) => setAllowPaidFallback(event.target.checked)}
-              disabled={busy}
-            />
-            {translate("Разрешить платный fallback, если подтверждённая бесплатная модель недоступна")}</label>
-        ) : null}
-      </fieldset> : null}
-
-      {showPacing ? <fieldset className="provider-form__tier">
-        <legend>{translate("Пауза между запросами")}</legend>
-        <label>
-          <input
-            type="checkbox"
-            checked={pacingEnabled}
-            onChange={(event) => setPacingEnabled(event.target.checked)}
-            disabled={busy}
-          />
-          {translate("Выдерживать минимальную паузу между запросами к этому провайдеру")}
-        </label>
-        {pacingEnabled ? (
-          <>
-            <label htmlFor="provider-pacing-interval">
-              {translate("Интервал для платных моделей, мс")}<input
-                id="provider-pacing-interval"
-                type="number"
-                min={0}
-                max={REQUEST_PACING_MAX_INTERVAL_MS}
-                step={1}
-                value={pacingInterval}
-                onChange={(event) => setPacingInterval(event.target.value)}
-                disabled={busy}
-              />
-            </label>
-            <label htmlFor="provider-pacing-free-interval">
-              {translate("Интервал для моделей :free, мс")}<input
-                id="provider-pacing-free-interval"
-                type="number"
-                min={0}
-                max={REQUEST_PACING_MAX_INTERVAL_MS}
-                step={1}
-                value={pacingFreeInterval}
-                onChange={(event) => setPacingFreeInterval(event.target.value)}
-                disabled={busy}
-              />
-            </label>
-          </>
-        ) : null}
-        {needsRequestPacing(provider) ? (
-          <p className="provider-form__hint">{translate("LiteRouter ограничивает частоту сообщений по тарифу, поэтому пауза включена по умолчанию. Для остальных провайдеров она по умолчанию выключена; настройка хранится отдельно для каждого провайдера.")}</p>
-        ) : null}
-      </fieldset> : null}
-
-      <fieldset className="provider-form__tier" aria-label={translate("Лимиты запросов модели")}>
-        <legend>{translate("Лимиты запросов модели")}</legend>
-        <label htmlFor="provider-limit-model">{translate("ID модели")}
-          <select id="provider-limit-model" value={limitModel} onChange={(event) => {
-            setLimitModel(event.target.value)
-            applyModelLimits(selectedProfile?.modelRateLimits, event.target.value)
-          }} disabled={busy || limitModelOptions.length === 0}>
-            {limitModelOptions.length === 0 ? <option value="">{translate("Каталог моделей ещё не загружен")}</option> : null}
-            {limitModel.trim() && !catalogModels.includes(limitModel.trim()) ? (
-              <option value={limitModel.trim()}>{limitModel.trim()} ({translate("текущая, не найдена в каталоге")})</option>
-            ) : null}
-            {catalogModels.map((modelId) => <option key={modelId} value={modelId}>{modelId}</option>)}
-          </select>
-        </label>
-        <label>
-          <input type="checkbox" checked={modelLimitsEnabled} onChange={(event) => setModelLimitsEnabled(event.target.checked)} disabled={busy || !limitModel.trim()} />
-          {translate("Включить лимиты для этой модели")}
-        </label>
-        <p className="provider-form__hint">{translate("Ноль означает без ограничения. Лимиты независимы для каждой модели выбранного провайдера; выключены по умолчанию.")}</p>
-        <div className="provider-form__grid">
-          <label htmlFor="provider-model-rpm">RPM<input id="provider-model-rpm" type="number" min={0} max={10_000} step={1} value={modelRpm} onChange={(event) => setModelRpm(event.target.value)} disabled={busy || !modelLimitsEnabled} /></label>
-          <label htmlFor="provider-model-rph">RPH<input id="provider-model-rph" type="number" min={0} max={10_000} step={1} value={modelRph} onChange={(event) => setModelRph(event.target.value)} disabled={busy || !modelLimitsEnabled} /></label>
-          <label htmlFor="provider-model-rpd">RPD<input id="provider-model-rpd" type="number" min={0} max={10_000} step={1} value={modelRpd} onChange={(event) => setModelRpd(event.target.value)} disabled={busy || !modelLimitsEnabled} /></label>
-        </div>
-      </fieldset>
 
       <div className="provider-form__actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
-          {translate(provider === 'ollama' ? translate("Сохранить параметры и применить") : translate("Сохранить ключ и применить"))}
+          {translate(schema.saveButtonLabel)}
         </button>
-        {configured && provider !== 'ollama' ? (
+        {configured && schema.requiresApiKey ? (
           <button type="button" onClick={() => void clearKey()} disabled={busy}>
-            {translate("Удалить ключ")}</button>
+            {translate('Удалить ключ')}
+          </button>
         ) : null}
       </div>
 
-      {provider === 'openai_compatible' && profileId === 'openrouter' && configured ? (
-        <div className="provider-form__catalog-status" aria-label={translate("Проверка бесплатного доступа")}>
-          <p>{translate("Разовая проверка OpenRouter: Core сверит цену модели и выполнит один короткий synthetic completion. Возможен расход.")}</p>
+      {schema.supportsAutoProbe && configured ? (
+        <div className="provider-form__catalog-status" aria-label={translate('Проверка бесплатного доступа')}>
+          <p>{translate('Разовая проверка OpenRouter: Core сверит цену модели и выполнит один короткий synthetic completion. Возможен расход.')}</p>
           <button type="button" onClick={() => void verifyFreeAccess()} disabled={busy || model.trim().length === 0}>
-            {translate("Проверить текущую модель")}</button>
+            {translate('Проверить текущую модель')}
+          </button>
           {probeStatus ? <p role="status">{translate(probeStatus)}</p> : null}
         </div>
       ) : null}
@@ -730,11 +631,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
         <p className={status.restarted ? 'provider-form__ok' : 'shell__reason'}>
           {translate(status.restarted
             ? status.action === 'provider'
-              ? translate("Провайдер выбран и сохранён, Core перезапущен — подключение восстановится за пару секунд.")
-              : translate("Сохранено, Core перезапущен — подключение восстановится за пару секунд.")
+              ? 'Провайдер выбран и сохранён, Core перезапущен — подключение восстановится за пару секунд.'
+              : 'Сохранено, Core перезапущен — подключение восстановится за пару секунд.'
             : status.action === 'provider'
-              ? translate("Провайдер сохранён, но Core не перезапустился. Перезапусти приложение вручную.")
-              : translate("Сохранено, но Core не перезапустился. Перезапусти приложение вручную."))}
+              ? 'Провайдер сохранён, но Core не перезапустился. Перезапусти приложение вручную.'
+              : 'Сохранено, но Core не перезапустился. Перезапусти приложение вручную.')}
         </p>
       ) : null}
       {status.kind === 'failed' ? (

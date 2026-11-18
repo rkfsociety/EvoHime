@@ -2874,6 +2874,46 @@ select:focus {
   gap: 8px;
 }
 
+.provider-form__model-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.provider-form__model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+}
+
+.provider-form__model-card .provider-form__grid {
+  margin: 4px 0 0;
+}
+
+.provider-form__model-card-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-form__model-card-header > label {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.provider-form__model-remove {
+  flex: 0 0 auto;
+}
+
 .ollama-models {
   margin: 4px 0 18px;
   padding: 14px;

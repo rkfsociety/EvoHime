@@ -605,4 +605,60 @@ describe('provider form', () => {
     // The tier-window explanation belongs to LiteRouter only.
     expect(screen.queryByText(/LiteRouter ограничивает/)).toBeNull()
   })
+
+  it('provider_form_uses_schema', async () => {
+    renderProviderForm()
+
+    const provider = await screen.findByLabelText('Провайдер')
+    await userEvent.selectOptions(provider, 'cloudflare_workers_ai')
+    expect(await screen.findByLabelText('Cloudflare Account ID')).toBeTruthy()
+    expect(screen.getByLabelText('Ключ API')).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Лимиты запросов модели' })).toBeTruthy()
+
+    await userEvent.selectOptions(provider, 'ollama')
+    expect(screen.queryByLabelText('Ключ API')).toBeNull()
+    expect(screen.queryByLabelText('Cloudflare Account ID')).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Лимиты запросов модели' })).toBeNull()
+  })
+
+  it('provider_form_saves_model_limits', async () => {
+    renderProviderForm([{
+      sequenceId: 10,
+      taskId: '',
+      eventType: 'model.catalog',
+      payload: JSON.stringify({ models: ['deepseek:free', 'qwen:free'] })
+    }])
+
+    expect(await screen.findByLabelText('ID модели')).toBeTruthy()
+    await userEvent.type(screen.getByLabelText('Ключ API'), 'sk-multi-model-limits')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить модель' }))
+
+    const modelSelects = screen.getAllByLabelText('ID модели') as HTMLSelectElement[]
+    expect(modelSelects).toHaveLength(2)
+    expect(modelSelects[0].value).toBe('deepseek:free')
+    expect(modelSelects[1].value).toBe('qwen:free')
+
+    const checkboxes = screen.getAllByRole('checkbox', { name: /Включить лимиты для этой модели/i })
+    const rpmInputs = screen.getAllByLabelText('RPM')
+    const rpdInputs = screen.getAllByLabelText('RPD')
+
+    await userEvent.click(checkboxes[0])
+    await userEvent.clear(rpmInputs[0])
+    await userEvent.type(rpmInputs[0], '10')
+
+    await userEvent.click(checkboxes[1])
+    await userEvent.clear(rpmInputs[1])
+    await userEvent.type(rpmInputs[1], '25')
+    await userEvent.clear(rpdInputs[1])
+    await userEvent.type(rpdInputs[1], '500')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
+
+    const save = calls.find((call) => call.command === 'provider.save')
+    expect((save?.payload as { modelRateLimits: Record<string, unknown> }).modelRateLimits).toEqual({
+      'deepseek:free': { enabled: true, rpm: 10, rph: 0, rpd: 0 },
+      'qwen:free': { enabled: true, rpm: 25, rph: 0, rpd: 500 }
+    })
+  })
 })
