@@ -48,7 +48,6 @@ const PAID_OPENAI_COMPATIBLE_PROFILES: ReadonlySet<ProviderProfileId> = new Set(
   'moonshot',
   'zai',
   'nebius',
-  'rout',
   'anymodel',
   'custom'
 ])
@@ -57,7 +56,7 @@ function buildOpenAICompatibleProfileSchema(profileId: ProviderProfileId): Provi
   const isCustom = profileId === 'custom'
   const isCloudflare = profileId === 'cloudflare_workers_ai'
   const isOpenRouter = profileId === 'openrouter'
-  const isRoutMy = profileId === 'routmy'
+  const isRout = profileId === 'rout'
   const defaultTier: ModelTier = PAID_OPENAI_COMPATIBLE_PROFILES.has(profileId) ? 'paid' : 'free'
 
   return {
@@ -68,7 +67,7 @@ function buildOpenAICompatibleProfileSchema(profileId: ProviderProfileId): Provi
     showTierSelector: false,
     supportsRequestPacing: false,
     supportsFreeAccessProbe: isOpenRouter || isCloudflare,
-    supportsModelLimits: !isRoutMy,
+    supportsModelLimits: !isRout,
     supportsEvidenceRouting: isOpenRouter,
     supportsAutoProbe: isOpenRouter,
     supportsLocalModelDownload: false,

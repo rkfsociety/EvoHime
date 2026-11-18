@@ -734,4 +734,47 @@ describe('provider input bounds', () => {
     expect(defaultCompatibleProfileSummary('deepseek').tier).toBe('paid')
     expect(defaultCompatibleProfileSummary('openai').tier).toBe('paid')
   })
+
+  it('migrates legacy compatibleProfiles.routmy secret to rout and exports ROUT_API_KEY', () => {
+    const path = storePath()
+    writeFileSync(path, JSON.stringify({
+      version: 8,
+      provider: 'literouter',
+      profiles: {
+        literouter: {
+          model: 'gpt-4o-mini:free',
+          baseUrl: '',
+          tier: 'free',
+          secret: Buffer.from('enc:sk-lr').toString('base64'),
+          profileId: 'custom'
+        }
+      },
+      compatibleProfiles: {
+        routmy: {
+          model: 'deepseek-chat',
+          baseUrl: 'https://api.rout.my/v1',
+          tier: 'free',
+          secret: Buffer.from('enc:sk-routmy-legacy').toString('base64'),
+          profileId: 'routmy'
+        }
+      }
+    }), 'utf8')
+
+    const store = new ProviderStore(path, reversibleCipher())
+    const summary = store.summary()
+    expect(summary.compatibleProfiles?.rout?.configured).toBe(true)
+    expect(summary.compatibleProfiles?.rout?.tier).toBe('free')
+    expect(summary.compatibleProfiles?.rout?.model).toBe('deepseek-chat')
+    expect((summary.compatibleProfiles as Record<string, unknown>)['routmy']).toBeUndefined()
+
+    const env = store.environment()
+    expect(env['ROUT_API_KEY']).toBe('sk-routmy-legacy')
+    expect(env['ROUT_BASE_URL']).toBe('https://api.rout.my/v1')
+    expect(env['ROUT_MODEL']).toBe('deepseek-chat')
+    expect(env['ROUTMY_API_KEY']).toBeUndefined()
+
+    const persisted = JSON.parse(readFileSync(path, 'utf8'))
+    expect(persisted.compatibleProfiles.routmy).toBeUndefined()
+    expect(persisted.compatibleProfiles.rout.profileId).toBe('rout')
+  })
 })

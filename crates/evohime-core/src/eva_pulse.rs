@@ -767,7 +767,7 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
             reason: "daily_budget_exhausted",
         };
     }
-    let routmy_active = report.selected_provider.as_deref() == Some("routmy");
+    let routmy_active = report.selected_provider.as_deref() == Some("rout");
     let routmy_exhausted = report
         .routmy_tokens_remaining
         .is_some_and(|rem| rem < ROUTMY_MIN_TOKENS_THRESHOLD);
@@ -1200,7 +1200,7 @@ impl PulseProbe for JournalPulseProbe {
                 .fallback_provider
                 .as_deref()
                 .map(|_| evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
-            let routmy_tokens_remaining = if observation.provider == "routmy" {
+            let routmy_tokens_remaining = if observation.provider == "rout" {
                 snapshot.budget.daily_tokens_remaining
             } else {
                 snapshot.budget.fallback_tokens_remaining
@@ -2706,7 +2706,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn eva_pulse_falls_back_to_routmy_when_literouter_exhausted() {
+    async fn eva_pulse_falls_back_to_rout_when_literouter_exhausted() {
         let mut report = healthy_report();
         report.selected_provider = Some("literouter".to_owned());
         report.fallback_provider =
@@ -2750,7 +2750,7 @@ mod tests {
     async fn eva_pulse_sleeps_when_routmy_quota_exhausted() {
         let now_ms = 1_700_000_000_000_i64;
         let mut report = healthy_report();
-        report.selected_provider = Some("routmy".to_owned());
+        report.selected_provider = Some("rout".to_owned());
         report.routmy_tokens_remaining = Some(500);
         report.allow_paid_fallback = false;
         report.failed_workers = vec!["child-failed".into()];

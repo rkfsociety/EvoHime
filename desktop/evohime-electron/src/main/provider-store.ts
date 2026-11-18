@@ -506,13 +506,13 @@ export class ProviderStore {
     if (key) environment['LITEROUTER_API_KEY'] = key
     if (profile.baseUrl) environment['LITEROUTER_BASE_URL'] = profile.baseUrl
     if (profile.model) environment['LITEROUTER_MODEL'] = profile.model
-    const routmyProfile = document.compatibleProfiles['routmy']
-    if (routmyProfile) {
-      const routmyKey = this.decryptSecret(routmyProfile.secret)
-      if (routmyKey) {
-        environment['ROUTMY_API_KEY'] = routmyKey
-        environment['ROUTMY_BASE_URL'] = routmyProfile.baseUrl || PROVIDER_PROFILE_ENDPOINTS.routmy || 'https://api.rout.my/v1'
-        if (routmyProfile.model) environment['ROUTMY_MODEL'] = routmyProfile.model
+    const routProfile = document.compatibleProfiles['rout']
+    if (routProfile) {
+      const routKey = this.decryptSecret(routProfile.secret)
+      if (routKey) {
+        environment['ROUT_API_KEY'] = routKey
+        environment['ROUT_BASE_URL'] = routProfile.baseUrl || PROVIDER_PROFILE_ENDPOINTS.rout || 'https://api.rout.my/v1'
+        if (routProfile.model) environment['ROUT_MODEL'] = routProfile.model
       }
     }
     return environment
@@ -559,8 +559,12 @@ export class ProviderStore {
         const value = record['profiles'][kind]
         if (!isRecord(value)) continue
         const baseUrl = normalizeBaseUrl(value['baseUrl']) ?? ''
+        const isLegacyRoutMy = kind === 'openai_compatible' && value['profileId'] === 'routmy'
+        if (isLegacyRoutMy) needsMigration = true
         const profileId = kind === 'openai_compatible'
-          ? (isProviderProfileId(value['profileId']) ? value['profileId'] : inferProviderProfileId(baseUrl))
+          ? (isLegacyRoutMy
+              ? 'rout'
+              : (isProviderProfileId(value['profileId']) ? value['profileId'] : inferProviderProfileId(baseUrl)))
           : 'custom'
         const accountId = profileId === 'cloudflare_workers_ai'
           ? normalizeCloudflareAccountId(value['accountId']) ?? cloudflareAccountFromBaseUrl(baseUrl) ?? ''
@@ -664,6 +668,44 @@ export class ProviderStore {
           freeAccessProbePolicy,
           requestPacing: storedPacing ?? defaultRequestPacing('openai_compatible'),
           modelRateLimits: modelRateLimits ?? {}
+        }
+      }
+      const legacyRoutMy = record['compatibleProfiles']['routmy']
+      if (isRecord(legacyRoutMy)) {
+        needsMigration = true
+        const rawBaseUrl = normalizeBaseUrl(legacyRoutMy['baseUrl']) ?? ''
+        const baseUrl = providerProfileBaseUrl('rout', '', rawBaseUrl) ?? ''
+        const secret = normalizeStoredSecret(legacyRoutMy['secret'])
+        const existingBinding = normalizeCredentialBinding(legacyRoutMy['credentialBinding'])
+        const credentialBinding = secret.length > 0 ? existingBinding ?? newCredentialBinding() : ''
+        const freeAccessProbePolicy = isFreeAccessProbePolicy(legacyRoutMy['freeAccessProbePolicy'])
+          ? legacyRoutMy['freeAccessProbePolicy']
+          : 'disabled'
+        const storedPacing = normalizeRequestPacing(legacyRoutMy['requestPacing'])
+        const modelRateLimits = normalizeModelRateLimits(legacyRoutMy['modelRateLimits'])
+        const compatModel = normalizeModel(legacyRoutMy['model']) ?? ''
+        const existingRout = compatibleProfiles['rout']
+        if (!existingRout) {
+          compatibleProfiles['rout'] = {
+            model: compatModel,
+            baseUrl,
+            tier: resolveProfileTier(legacyRoutMy['tier'], 'openai_compatible', 'rout', compatModel),
+            secret,
+            profileId: 'rout',
+            accountId: '',
+            credentialBinding,
+            freeAccessProbePolicy,
+            requestPacing: storedPacing ?? defaultRequestPacing('openai_compatible'),
+            modelRateLimits: modelRateLimits ?? {}
+          }
+        } else if (existingRout.secret.length === 0 && secret.length > 0) {
+          compatibleProfiles['rout'] = {
+            ...existingRout,
+            secret,
+            credentialBinding,
+            model: existingRout.model || compatModel,
+            baseUrl: existingRout.baseUrl || baseUrl
+          }
         }
       }
     }
@@ -875,7 +917,6 @@ const PAID_COMPATIBLE_PROFILES: ReadonlySet<ProviderProfileId> = new Set([
   'moonshot',
   'zai',
   'nebius',
-  'rout',
   'anymodel',
   'custom'
 ])

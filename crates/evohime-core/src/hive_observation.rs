@@ -47,11 +47,11 @@ pub(crate) fn background_route_name(config: Option<&ModelGatewayConfig>) -> Opti
     })
 }
 
-/// Returns the configured free fallback route name (`routmy`), if present and configured.
+/// Returns the configured free fallback route name (`rout`), if present and configured.
 pub(crate) fn fallback_routmy_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
     let config = config?;
     config.routes.iter().find_map(|(name, route)| {
-        (route.provider_profile_id == Some(ProviderProfileId::RoutMy)
+        (route.provider_profile_id == Some(ProviderProfileId::Rout)
             && !route.literouter.api_key.trim().is_empty())
         .then(|| name.clone())
     })
@@ -119,7 +119,7 @@ pub(crate) async fn build_hive_observation(
     if route.provider == ProviderKind::LiteRouter {
         if let Some(fallback_name) = fallback_routmy_route_name(Some(config)) {
             if let Some(fallback_route) = config.routes.get(&fallback_name) {
-                observation.fallback_provider = Some(ProviderProfileId::RoutMy.as_str().to_owned());
+                observation.fallback_provider = Some(ProviderProfileId::Rout.as_str().to_owned());
                 if let Some(quota) = fallback_route.daily_token_quota {
                     let used = journal
                         .provider_tokens_since(day_start_ms, fallback_route.provider.as_str())

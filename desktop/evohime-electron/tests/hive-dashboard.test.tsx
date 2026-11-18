@@ -3,8 +3,10 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { CommandOutcome, CoreEvent, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
+import { PROVIDER_PROFILE_IDS, type CommandOutcome, type CoreEvent, type EvoHimeApiV1, type RendererCommand } from '../src/shared/api'
 import { HiveDashboard } from '../src/renderer/src/OperationsPanel'
+import { PROVIDER_PROFILE_LABELS } from '../src/renderer/src/provider-labels'
+import { getProviderSchema } from '../src/renderer/src/provider-schema'
 
 const calls: Array<{ command: string; payload: unknown }> = []
 let nextSequence = 1
@@ -684,7 +686,7 @@ describe('hive dashboard', () => {
                 day_exhausted: false,
                 daily_cost_available: false,
                 daily_cost_nano_usd: null,
-                fallback_provider: 'routmy',
+                fallback_provider: 'rout',
                 fallback_tokens_remaining: 650000
               }
             })
@@ -693,7 +695,7 @@ describe('hive dashboard', () => {
         repair={null}
       />
     )
-    expect(await screen.findByText('Резерв: Rout.my (650000 токенов)')).toBeTruthy()
+    expect(await screen.findByText('Резерв: Rout (650000 токенов)')).toBeTruthy()
 
     rerender(
       <HiveDashboard
@@ -703,7 +705,7 @@ describe('hive dashboard', () => {
             'hive_state.snapshot',
             snapshot({
               budget: {
-                provider: 'routmy',
+                provider: 'rout',
                 history_available: true,
                 model: 'deepseek-chat',
                 requests_last_minute: 0,
@@ -759,8 +761,20 @@ describe('hive dashboard', () => {
       />
     )
     await waitFor(() => {
-      expect(screen.queryByText(/Резерв: Rout\.my/)).toBeNull()
+      expect(screen.queryByText(/Резерв: Rout/)).toBeNull()
       expect(screen.queryByText(/Осталось токенов:/)).toBeNull()
     })
+  })
+
+  it('ui_only_shows_one_rout_provider', () => {
+    expect(PROVIDER_PROFILE_IDS).toContain('rout')
+    expect((PROVIDER_PROFILE_IDS as readonly string[])).not.toContain('routmy')
+    expect(PROVIDER_PROFILE_IDS.filter((id) => id === 'rout')).toHaveLength(1)
+    expect(Object.keys(PROVIDER_PROFILE_LABELS)).not.toContain('routmy')
+    expect(PROVIDER_PROFILE_LABELS.rout).toBe('Rout')
+
+    const routSchema = getProviderSchema('openai_compatible', 'rout')
+    expect(routSchema.defaultTier).toBe('free')
+    expect(routSchema.supportsModelLimits).toBe(false)
   })
 })

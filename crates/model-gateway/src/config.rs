@@ -217,19 +217,16 @@ pub enum ProviderProfileId {
     /// Nebius Token Factory hosted API profile.
     #[serde(rename = "nebius")]
     Nebius,
-    /// Rout hosted API profile.
-    #[serde(rename = "rout")]
+    /// Rout free token-pool hosted API profile (650k tokens/day, resets at 00:00 UTC).
+    #[serde(rename = "rout", alias = "routmy")]
     Rout,
-    /// Rout.my free token-pool hosted API profile (650k tokens/day, resets at 00:00 UTC).
-    #[serde(rename = "routmy")]
-    RoutMy,
     /// AnyModel hosted API profile.
     #[serde(rename = "anymodel")]
     AnyModel,
 }
 
-/// Default daily free token quota for the `rout.my` provider profile.
-pub const ROUTMY_DAILY_TOKEN_QUOTA: u64 = 650_000;
+/// Default daily free token quota for the `rout` provider profile.
+pub const ROUT_DAILY_TOKEN_QUOTA: u64 = 650_000;
 
 impl ProviderProfileId {
     /// Returns the stable serialized identifier.
@@ -254,7 +251,6 @@ impl ProviderProfileId {
             Self::SambaNova => "sambanova",
             Self::Nebius => "nebius",
             Self::Rout => "rout",
-            Self::RoutMy => "routmy",
             Self::AnyModel => "anymodel",
         }
     }
@@ -281,7 +277,6 @@ impl ProviderProfileId {
             "sambanova" => Self::SambaNova,
             "nebius" => Self::Nebius,
             "rout" => Self::Rout,
-            "routmy" => Self::RoutMy,
             "anymodel" => Self::AnyModel,
             _ => return None,
         })
@@ -309,7 +304,6 @@ impl ProviderProfileId {
             Self::SambaNova => Some("https://api.sambanova.ai/v1"),
             Self::Nebius => Some("https://api.tokenfactory.nebius.com/v1"),
             Self::Rout => Some("https://api.rout.my/v1"),
-            Self::RoutMy => Some("https://api.rout.my/v1"),
             Self::AnyModel => Some("https://anymodel.org/v1"),
         }
     }
@@ -491,8 +485,8 @@ impl ModelRouteConfig {
     ) -> Self {
         self.provider_profile_id = Some(profile_id);
         self.provider_account_id = account_id;
-        if profile_id == ProviderProfileId::RoutMy && self.daily_token_quota.is_none() {
-            self.daily_token_quota = Some(ROUTMY_DAILY_TOKEN_QUOTA);
+        if profile_id == ProviderProfileId::Rout && self.daily_token_quota.is_none() {
+            self.daily_token_quota = Some(ROUT_DAILY_TOKEN_QUOTA);
             self.quota_reset_utc_midnight = true;
         }
         self
@@ -774,23 +768,45 @@ impl ModelGatewayConfig {
         route.validate_provider_profile()?;
 
         let mut routes = HashMap::from([(default_route.clone(), route)]);
-        if let Ok(routmy_key) = env::var("ROUTMY_API_KEY") {
-            let routmy_key = routmy_key.trim().to_string();
-            if !routmy_key.is_empty() && !routes.contains_key("routmy") {
-                let routmy_base = env::var("ROUTMY_BASE_URL")
+        let rout_key = env::var("ROUT_API_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                env::var("ROUTMY_API_KEY")
                     .ok()
                     .map(|value| value.trim().to_string())
                     .filter(|value| !value.is_empty())
-                    .unwrap_or_else(|| "https://api.rout.my/v1".to_string());
-                let routmy_model = env::var("ROUTMY_MODEL")
+            });
+        if let Some(rout_key) = rout_key {
+            if !routes.contains_key("rout") {
+                let rout_base = env::var("ROUT_BASE_URL")
                     .ok()
                     .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        env::var("ROUTMY_BASE_URL")
+                            .ok()
+                            .map(|value| value.trim().to_string())
+                            .filter(|value| !value.is_empty())
+                    })
+                    .unwrap_or_else(|| "https://api.rout.my/v1".to_string());
+                let rout_model = env::var("ROUT_MODEL")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .or_else(|| {
+                        env::var("ROUTMY_MODEL")
+                            .ok()
+                            .map(|value| value.trim().to_string())
+                            .filter(|value| !value.is_empty())
+                    })
                     .unwrap_or_default();
-                let routmy_route =
-                    ModelRouteConfig::openai_compatible(routmy_key, routmy_base, routmy_model)
-                        .with_provider_profile(ProviderProfileId::RoutMy, None);
-                if routmy_route.validate_provider_profile().is_ok() {
-                    routes.insert("routmy".to_string(), routmy_route);
+                let rout_route =
+                    ModelRouteConfig::openai_compatible(rout_key, rout_base, rout_model)
+                        .with_provider_profile(ProviderProfileId::Rout, None);
+                if rout_route.validate_provider_profile().is_ok() {
+                    routes.insert("rout".to_string(), rout_route);
                 }
             }
         }
@@ -1312,24 +1328,27 @@ mod tests {
     }
 
     #[test]
-    fn routmy_profile_sets_daily_token_quota_and_utc_midnight_reset() {
+    fn rout_profile_has_daily_token_quota() {
+        assert_eq!(ProviderProfileId::parse("rout"), Some(ProviderProfileId::Rout));
+        assert_eq!(ProviderProfileId::parse("routmy"), None);
         assert_eq!(
-            ProviderProfileId::parse("routmy"),
-            Some(ProviderProfileId::RoutMy)
+            serde_json::from_str::<ProviderProfileId>("\"routmy\"").ok(),
+            Some(ProviderProfileId::Rout)
         );
-        assert_eq!(ProviderProfileId::RoutMy.as_str(), "routmy");
+        assert_eq!(ProviderProfileId::Rout.as_str(), "rout");
         assert_eq!(
-            ProviderProfileId::RoutMy.default_base_url(),
+            ProviderProfileId::Rout.default_base_url(),
             Some("https://api.rout.my/v1")
         );
 
         let route = ModelRouteConfig::openai_compatible(
-            "routmy-key",
+            "rout-key",
             "https://api.rout.my/v1",
             "deepseek-chat",
         )
-        .with_provider_profile(ProviderProfileId::RoutMy, None);
-        assert_eq!(route.daily_token_quota, Some(ROUTMY_DAILY_TOKEN_QUOTA));
+        .with_provider_profile(ProviderProfileId::Rout, None);
+        assert_eq!(route.daily_token_quota, Some(650_000));
+        assert_eq!(route.daily_token_quota, Some(ROUT_DAILY_TOKEN_QUOTA));
         assert!(route.quota_reset_utc_midnight);
         assert!(!route.request_pacing.enabled);
         assert!(route.validate_provider_profile().is_ok());

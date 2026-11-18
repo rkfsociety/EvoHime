@@ -1572,17 +1572,17 @@ export function HiveDashboard({
   const configuredCaps = budget.limits.rpm > 0 || budget.limits.rph > 0 || budget.limits.rpd > 0
   const snapshotBudgetLabel = budget.provider === 'literouter' || budget.provider === 'openrouter'
     ? `LiteRouter${budget.model.toLowerCase().includes(':free') ? ' (Free)' : ''}`
-    : budget.provider === 'routmy'
-      ? 'Rout.my (Free)'
+    : budget.provider === 'rout'
+      ? 'Rout (Free)'
       : budget.provider.toLowerCase().includes('deepseek')
         ? 'DeepSeek API'
         : budget.provider || translate('провайдер не выбран')
-  const routmyConfigured = budget.fallbackProvider === 'routmy'
-    || provider?.compatibleProfiles?.routmy?.configured === true
-  const routmyStatusText = budget.provider === 'routmy'
+  const routmyConfigured = budget.fallbackProvider === 'rout'
+    || provider?.compatibleProfiles?.rout?.configured === true
+  const routmyStatusText = budget.provider === 'rout'
     ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota ?? 650000}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
     : (budget.provider === 'literouter' || budget.provider === 'openrouter') && routmyConfigured
-      ? `${translate('Резерв: Rout.my')} (${budget.fallbackTokensRemaining ?? 650000} ${translate('токенов')})`
+      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining ?? 650000} ${translate('токенов')})`
       : null
   const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
   const logs = realLogs
