@@ -859,6 +859,37 @@ describe('hive dashboard', () => {
     expect(screen.queryByLabelText('Провайдер улья')).toBeNull()
   })
 
+  it('скрывает блок бюджета если у провайдера не настроена цена', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({
+            budget: {
+              provider: 'literouter',
+              history_available: true,
+              model: 'gpt-4o-mini:free',
+              requests_last_minute: 0,
+              requests_last_hour: 0,
+              requests_last_day: 0,
+              limits: { rpm: 3, rph: 190, rpd: 0 },
+              minute_exhausted: false,
+              hour_exhausted: false,
+              day_exhausted: false,
+              daily_cost_available: false,
+              daily_cost_nano_usd: null
+            }
+          }))
+        ]}
+      />
+    )
+
+    expect(await screen.findByText('Провайдер и лимиты')).toBeTruthy()
+    expect(screen.queryByText('Потрачено сегодня')).toBeNull()
+    expect(screen.queryByLabelText('Расход дневного бюджета')).toBeNull()
+    expect(screen.queryByText(/Лимит: .*Остаток:/)).toBeNull()
+  })
+
   it('ui_shows_token_quota_for_rout', async () => {
     render(
       <HiveDashboard

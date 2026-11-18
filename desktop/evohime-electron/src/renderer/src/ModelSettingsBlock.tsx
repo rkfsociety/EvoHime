@@ -7,6 +7,10 @@ export interface ModelLimitDraft {
   readonly rpm: string
   readonly rph: string
   readonly rpd: string
+  readonly pricingEnabled: boolean
+  readonly inputUsdPer1M: string
+  readonly cachedInputUsdPer1M: string
+  readonly outputUsdPer1M: string
 }
 
 export interface ModelSettingsBlockProps {
@@ -46,6 +50,9 @@ export function ModelSettingsBlock({
           const rpmId = `provider-model-rpm-${entry.key}`
           const rphId = `provider-model-rph-${entry.key}`
           const rpdId = `provider-model-rpd-${entry.key}`
+          const priceInputId = `provider-model-price-input-${entry.key}`
+          const priceCachedId = `provider-model-price-cached-${entry.key}`
+          const priceOutputId = `provider-model-price-output-${entry.key}`
 
           return (
             <div key={entry.key} className="provider-form__model-card">
@@ -144,6 +151,58 @@ export function ModelSettingsBlock({
                     value={entry.rpd}
                     onChange={(event) => onUpdateEntry(entry.key, { rpd: event.target.value })}
                     disabled={busy || !entry.enabled}
+                  />
+                </label>
+              </div>
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={entry.pricingEnabled}
+                  onChange={(event) => onUpdateEntry(entry.key, { pricingEnabled: event.target.checked })}
+                  disabled={busy || trimmedModel.length === 0}
+                />
+                {translate('Указать стоимость токенов (USD за 1 млн)')}
+              </label>
+
+              <div className="provider-form__grid">
+                <label htmlFor={priceInputId}>
+                  {translate('Вход ($ / 1M)')}
+                  <input
+                    id={priceInputId}
+                    type="number"
+                    min={0}
+                    max={10_000}
+                    step="0.001"
+                    value={entry.inputUsdPer1M}
+                    onChange={(event) => onUpdateEntry(entry.key, { inputUsdPer1M: event.target.value })}
+                    disabled={busy || !entry.pricingEnabled}
+                  />
+                </label>
+                <label htmlFor={priceCachedId}>
+                  {translate('Кэш-вход ($ / 1M)')}
+                  <input
+                    id={priceCachedId}
+                    type="number"
+                    min={0}
+                    max={10_000}
+                    step="0.001"
+                    value={entry.cachedInputUsdPer1M}
+                    onChange={(event) => onUpdateEntry(entry.key, { cachedInputUsdPer1M: event.target.value })}
+                    disabled={busy || !entry.pricingEnabled}
+                  />
+                </label>
+                <label htmlFor={priceOutputId}>
+                  {translate('Выход ($ / 1M)')}
+                  <input
+                    id={priceOutputId}
+                    type="number"
+                    min={0}
+                    max={10_000}
+                    step="0.001"
+                    value={entry.outputUsdPer1M}
+                    onChange={(event) => onUpdateEntry(entry.key, { outputUsdPer1M: event.target.value })}
+                    disabled={busy || !entry.pricingEnabled}
                   />
                 </label>
               </div>

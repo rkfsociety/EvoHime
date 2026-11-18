@@ -1051,6 +1051,7 @@ mod tests {
                 rpm: 1,
                 rph: 0,
                 rpd: 0,
+                pricing: None,
             },
         );
         let provider = LiteRouterProvider::with_pacing_and_model_limits(

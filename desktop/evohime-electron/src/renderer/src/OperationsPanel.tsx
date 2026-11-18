@@ -2019,26 +2019,30 @@ export function HiveDashboard({
 
           <div className="hive-budget-card">
             <div className="hive-budget-card__head">
-              <h3>{translate('Бюджет и провайдер')}</h3>
+              <h3>{translate(budget.dailyCostAvailable ? 'Бюджет и провайдер' : 'Провайдер и лимиты')}</h3>
               <span className="hive-budget-card__provider-tag">{snapshotBudgetLabel}</span>
             </div>
-            <div className="hive-budget-card__spent">
-              <span>{translate('Потрачено сегодня')}</span>
-              <strong>{spentLabel} / ${dailyBudgetUsd.toFixed(2)}</strong>
-            </div>
-            <div
-              className="hive-progress"
-              role="progressbar"
-              aria-label={translate('Расход дневного бюджета')}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={spendPercent}
-            >
-              <span style={{ width: `${spendPercent}%` }} />
-            </div>
-            <p className="hive-budget-card__limit">
-              {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
-            </p>
+            {budget.dailyCostAvailable ? (
+              <>
+                <div className="hive-budget-card__spent">
+                  <span>{translate('Потрачено сегодня')}</span>
+                  <strong>{spentLabel} / ${dailyBudgetUsd.toFixed(2)}</strong>
+                </div>
+                <div
+                  className="hive-progress"
+                  role="progressbar"
+                  aria-label={translate('Расход дневного бюджета')}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={spendPercent}
+                >
+                  <span style={{ width: `${spendPercent}%` }} />
+                </div>
+                <p className="hive-budget-card__limit">
+                  {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
+                </p>
+              </>
+            ) : null}
             {isRoutProvider ? (
               <p className="hive-budget-card__requests">
                 {translate('Дневной лимит: 650 000 токенов (сброс в 00:00 UTC)')}

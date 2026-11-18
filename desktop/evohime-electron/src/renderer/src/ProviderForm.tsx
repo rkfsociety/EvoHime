@@ -79,6 +79,13 @@ function parseModelCap(value: string): number | null {
   return Number.isSafeInteger(parsed) && parsed <= 10_000 ? parsed : null
 }
 
+function parseModelPrice(value: string): number | null {
+  const trimmed = value.trim().replace(',', '.')
+  if (trimmed.length === 0) return 0
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 10_000 ? parsed : null
+}
+
 function pacingOrDefault(value: RequestPacingSettings | undefined, provider: ProviderKind): RequestPacingSettings {
   return value ?? defaultRequestPacing(provider)
 }
@@ -103,7 +110,11 @@ function buildModelLimitDrafts(
         enabled: settings.enabled === true,
         rpm: String(settings.rpm ?? 0),
         rph: String(settings.rph ?? 0),
-        rpd: String(settings.rpd ?? 0)
+        rpd: String(settings.rpd ?? 0),
+        pricingEnabled: settings.pricing !== undefined,
+        inputUsdPer1M: String(settings.pricing?.inputUsdPer1M ?? 0),
+        cachedInputUsdPer1M: String(settings.pricing?.cachedInputUsdPer1M ?? 0),
+        outputUsdPer1M: String(settings.pricing?.outputUsdPer1M ?? 0)
       })
     }
   }
@@ -115,7 +126,11 @@ function buildModelLimitDrafts(
       enabled: false,
       rpm: '0',
       rph: '0',
-      rpd: '0'
+      rpd: '0',
+      pricingEnabled: false,
+      inputUsdPer1M: '0',
+      cachedInputUsdPer1M: '0',
+      outputUsdPer1M: '0'
     })
   }
 
@@ -126,7 +141,11 @@ function buildModelLimitDrafts(
       enabled: false,
       rpm: '0',
       rph: '0',
-      rpd: '0'
+      rpd: '0',
+      pricingEnabled: false,
+      inputUsdPer1M: '0',
+      cachedInputUsdPer1M: '0',
+      outputUsdPer1M: '0'
     })
   }
 
@@ -374,7 +393,11 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           enabled: false,
           rpm: '0',
           rph: '0',
-          rpd: '0'
+          rpd: '0',
+          pricingEnabled: false,
+          inputUsdPer1M: '0',
+          cachedInputUsdPer1M: '0',
+          outputUsdPer1M: '0'
         }
       ]
     })
@@ -408,7 +431,24 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RPD должны быть целыми числами от 0 до 10000.' })
           return
         }
-        nextModelRateLimits[trimmedModel] = { enabled: entry.enabled, rpm, rph, rpd }
+        let pricing: ModelRateLimitSettings['pricing']
+        if (entry.pricingEnabled) {
+          const inputUsdPer1M = parseModelPrice(entry.inputUsdPer1M)
+          const cachedInputUsdPer1M = parseModelPrice(entry.cachedInputUsdPer1M)
+          const outputUsdPer1M = parseModelPrice(entry.outputUsdPer1M)
+          if (inputUsdPer1M === null || cachedInputUsdPer1M === null || outputUsdPer1M === null) {
+            setStatus({ kind: 'failed', message: 'Стоимость токенов должна быть числом от 0 до 10000 USD за 1 млн.' })
+            return
+          }
+          pricing = { inputUsdPer1M, cachedInputUsdPer1M, outputUsdPer1M }
+        }
+        nextModelRateLimits[trimmedModel] = {
+          enabled: entry.enabled,
+          rpm,
+          rph,
+          rpd,
+          ...(pricing ? { pricing } : {})
+        }
       }
     }
 

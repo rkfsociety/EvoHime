@@ -110,8 +110,22 @@ impl RequestPacingConfig {
     }
 }
 
-/// Optional rolling request caps for one exact model identifier.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Optional per-model token pricing in USD per 1M tokens.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct ModelPricingConfig {
+    /// Price in USD per 1M uncached input tokens.
+    #[serde(default, alias = "inputUsdPer1M")]
+    pub input_usd_per_1m: f64,
+    /// Price in USD per 1M cache-hit input tokens.
+    #[serde(default, alias = "cachedInputUsdPer1M")]
+    pub cached_input_usd_per_1m: f64,
+    /// Price in USD per 1M output tokens.
+    #[serde(default, alias = "outputUsdPer1M")]
+    pub output_usd_per_1m: f64,
+}
+
+/// Optional rolling request caps and token pricing for one exact model identifier.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModelRateLimitConfig {
     /// Whether any configured cap is enforced.
     #[serde(default)]
@@ -125,6 +139,9 @@ pub struct ModelRateLimitConfig {
     /// Maximum requests in a rolling day; zero means unlimited.
     #[serde(default)]
     pub rpd: u32,
+    /// Optional user-configured token pricing in USD per 1M tokens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pricing: Option<ModelPricingConfig>,
 }
 
 /// Unified provider request rate limits across rolling time windows.
@@ -890,6 +907,10 @@ fn model_rate_limits_from_env() -> Result<HashMap<String, ModelRateLimitConfig>,
     Ok(limits)
 }
 
+fn valid_pricing_rate(value: f64) -> bool {
+    value.is_finite() && (0.0..=10_000.0).contains(&value)
+}
+
 fn validate_model_rate_limits(
     limits: &HashMap<String, ModelRateLimitConfig>,
 ) -> Result<(), ProviderError> {
@@ -902,6 +923,11 @@ fn validate_model_rate_limits(
                 || [limit.rpm, limit.rph, limit.rpd]
                     .iter()
                     .any(|value| *value > 10_000)
+                || limit.pricing.is_some_and(|pricing| {
+                    !valid_pricing_rate(pricing.input_usd_per_1m)
+                        || !valid_pricing_rate(pricing.cached_input_usd_per_1m)
+                        || !valid_pricing_rate(pricing.output_usd_per_1m)
+                })
         })
     {
         return Err(ProviderError::Config(
@@ -1356,6 +1382,7 @@ mod tests {
                 rpm: 12,
                 rph: 120,
                 rpd: 1_000,
+                pricing: None,
             },
         )]));
         assert_eq!(

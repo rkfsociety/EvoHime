@@ -183,16 +183,46 @@ export function normalizeRequestPacing(value: unknown): RequestPacingSettings | 
 }
 
 const MAX_MODEL_RATE = 10_000
+const MAX_MODEL_PRICE_USD_PER_1M = 10_000
 const MAX_MODEL_RATE_LIMIT_MODELS = 64
+
+function normalizeModelPricing(value: unknown): ModelRateLimitSettings['pricing'] | null | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) return null
+  const rawInput = value['inputUsdPer1M'] ?? value['input_usd_per_1m']
+  const rawCached = value['cachedInputUsdPer1M'] ?? value['cached_input_usd_per_1m'] ?? 0
+  const rawOutput = value['outputUsdPer1M'] ?? value['output_usd_per_1m']
+  const rates = [rawInput, rawCached, rawOutput]
+  for (const rate of rates) {
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > MAX_MODEL_PRICE_USD_PER_1M) {
+      return null
+    }
+  }
+  return {
+    inputUsdPer1M: rawInput as number,
+    cachedInputUsdPer1M: rawCached as number,
+    outputUsdPer1M: rawOutput as number
+  }
+}
+
 function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
   if (!isRecord(value) || typeof value['enabled'] !== 'boolean') return null
   const numbers = ['rpm', 'rph', 'rpd'] as const
-  const result = { enabled: value['enabled'] } as { enabled: boolean; rpm: number; rph: number; rpd: number }
+  const result = { enabled: value['enabled'] } as {
+    enabled: boolean
+    rpm: number
+    rph: number
+    rpd: number
+    pricing?: ModelRateLimitSettings['pricing']
+  }
   for (const key of numbers) {
     const n = value[key]
     if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || n > MAX_MODEL_RATE) return null
     result[key] = n
   }
+  const pricing = normalizeModelPricing(value['pricing'])
+  if (pricing === null) return null
+  if (pricing !== undefined) result.pricing = pricing
   return result
 }
 export function normalizeModelRateLimits(value: unknown): ProviderModelRateLimits | null {

@@ -12,8 +12,8 @@ use evohime_model_gateway::{ModelGatewayConfig, ProviderProfileId};
 use crate::child_workflow::ChildProjection;
 use crate::core_agent::SelectedModel;
 use crate::hive_state::{
-    deepseek_daily_cost_nano_usd, HiveObservation, HIVE_DAY_WINDOW_MS, HIVE_HOUR_WINDOW_MS,
-    HIVE_MINUTE_WINDOW_MS,
+    custom_daily_cost_nano_usd, deepseek_daily_cost_nano_usd, HiveObservation, HIVE_DAY_WINDOW_MS,
+    HIVE_HOUR_WINDOW_MS, HIVE_MINUTE_WINDOW_MS,
 };
 use crate::EventJournal;
 
@@ -180,7 +180,19 @@ pub(crate) async fn build_hive_observation_for_hive(
     observation.provider = provider;
     observation.model = model.clone();
     let day_start_ms = observation.now_ms.div_euclid(HIVE_DAY_WINDOW_MS) * HIVE_DAY_WINDOW_MS;
-    if profile == Some(ProviderProfileId::DeepSeek) {
+    if let Some(custom_pricing) = route
+        .model_rate_limits
+        .get(&model)
+        .and_then(|cfg| cfg.pricing)
+    {
+        if let Ok(usage) = journal
+            .deepseek_usage_since(day_start_ms, transport, &model)
+            .await
+        {
+            observation.daily_cost_nano_usd = custom_daily_cost_nano_usd(&custom_pricing, &usage);
+            observation.daily_cost_available = observation.daily_cost_nano_usd.is_some();
+        }
+    } else if profile == Some(ProviderProfileId::DeepSeek) {
         if let Ok(usage) = journal
             .deepseek_usage_since(day_start_ms, transport, &model)
             .await

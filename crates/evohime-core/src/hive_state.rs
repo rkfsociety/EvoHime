@@ -550,6 +550,43 @@ fn deepseek_tariff(model: &str) -> Option<DeepSeekTariff> {
     }
 }
 
+/// Calculates the daily model charge in nano-USD from user-configured USD-per-1M-token rates.
+pub fn custom_daily_cost_nano_usd(
+    pricing: &evohime_model_gateway::config::ModelPricingConfig,
+    usage: &[evohime_local_storage::context_ledger_store::DailyModelUsage],
+) -> Option<u64> {
+    if ![
+        pricing.input_usd_per_1m,
+        pricing.cached_input_usd_per_1m,
+        pricing.output_usd_per_1m,
+    ]
+    .iter()
+    .all(|rate| rate.is_finite() && *rate >= 0.0)
+    {
+        return None;
+    }
+    let mut total: u64 = 0;
+    for row in usage {
+        let cache_hit_tokens = row
+            .cache_read_input_tokens
+            .unwrap_or(0)
+            .min(row.prompt_tokens);
+        let uncached_tokens = row.prompt_tokens.saturating_sub(cache_hit_tokens);
+        // 1 USD per 1M tokens == 1_000 nano-USD per token.
+        let row_cost = (f64::from(cache_hit_tokens) * pricing.cached_input_usd_per_1m
+            + f64::from(uncached_tokens) * pricing.input_usd_per_1m
+            + f64::from(row.completion_tokens) * pricing.output_usd_per_1m)
+            * 1_000.0;
+        if !row_cost.is_finite() || row_cost < 0.0 {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let rounded = row_cost.round() as u64;
+        total = total.saturating_add(rounded);
+    }
+    Some(total)
+}
+
 /// Calculates the DeepSeek model charge using reported prompt/cache usage and the UTC tariff window.
 ///
 /// `model` identifies the tariff, so a day without usage still reports a known
@@ -960,6 +997,25 @@ mod tests {
         assert!(snapshot.budget.daily_cost_available);
         assert_eq!(snapshot.budget.daily_cost_nano_usd, Some(39_300));
         assert_eq!(snapshot.daily_budget_usd, 0.50);
+    }
+
+    #[test]
+    fn custom_pricing_calculates_daily_cost_from_usd_per_1m_rates() {
+        let pricing = evohime_model_gateway::config::ModelPricingConfig {
+            input_usd_per_1m: 1.50,
+            cached_input_usd_per_1m: 0.15,
+            output_usd_per_1m: 6.00,
+        };
+        let usage = [evohime_local_storage::context_ledger_store::DailyModelUsage {
+            model: "gpt-4o-mini".into(),
+            prompt_tokens: 1_000,
+            completion_tokens: 500,
+            cache_read_input_tokens: Some(400),
+            recorded_at: 1000,
+            request_at: 1000,
+        }];
+        // 400 * 0.15 * 1000 = 60_000; 600 * 1.50 * 1000 = 900_000; 500 * 6.00 * 1000 = 3_000_000
+        assert_eq!(custom_daily_cost_nano_usd(&pricing, &usage), Some(3_960_000));
     }
 
     #[test]

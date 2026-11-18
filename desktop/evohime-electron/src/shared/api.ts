@@ -713,12 +713,20 @@ export interface RequestPacingSettings {
   readonly freeIntervalMs: number
 }
 
-/** Per-model rolling request limits. Disabled and empty by default. */
+/** Per-model token pricing in USD per 1M tokens. */
+export interface ModelPricingSettings {
+  readonly inputUsdPer1M: number
+  readonly cachedInputUsdPer1M: number
+  readonly outputUsdPer1M: number
+}
+
+/** Per-model rolling request limits and optional token pricing. Disabled and empty by default. */
 export interface ModelRateLimitSettings {
   readonly enabled: boolean
   readonly rpm: number
   readonly rph: number
   readonly rpd: number
+  readonly pricing?: ModelPricingSettings
 }
 
 export type ProviderModelRateLimits = Readonly<Record<string, ModelRateLimitSettings>>
