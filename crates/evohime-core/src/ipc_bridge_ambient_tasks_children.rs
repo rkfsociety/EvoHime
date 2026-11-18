@@ -495,6 +495,21 @@ impl IpcBridge {
                 self.write_response(writer, "hive_settings.saved", payload)
                     .await?;
             }
+            Some(generated::command_envelope::Command::ValidateEvaWorkspacePath(request)) => {
+                let payload = self
+                    .validate_eva_workspace_path_payload(&request.path)
+                    .unwrap_or_else(error_response_payload);
+                self.write_response(writer, "hive_settings.validated", payload)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SetHiveSetting(request)) => {
+                let payload = self
+                    .set_hive_setting(&request.key, &request.value)
+                    .await
+                    .unwrap_or_else(error_response_payload);
+                self.write_response(writer, "hive_settings.saved", payload)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::GetRetainedChild(request)) => {
                 let (reply, response) = oneshot::channel();
                 let coordinator = self

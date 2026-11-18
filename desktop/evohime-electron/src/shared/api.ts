@@ -1484,6 +1484,8 @@ export const RENDERER_COMMANDS = [
   'core.getHiveState',
   'core.togglePulse',
   'core.setEvaWorkspacePath',
+  'core.validateEvaWorkspacePath',
+  'core.setHiveSetting',
   'core.stopTask',
   'core.resolveApproval',
   'core.resolveRoutingDecision',
@@ -1906,6 +1908,8 @@ export interface CommandPayloads {
   'core.getHiveState': Record<string, never>
   'core.togglePulse': { enabled: boolean }
   'core.setEvaWorkspacePath': { path: string }
+  'core.validateEvaWorkspacePath': { path: string }
+  'core.setHiveSetting': { key: string; value: string }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean; idempotencyKey?: string; rejectionReason?: string; cancel?: boolean }
   'core.resolveRoutingDecision': { traceId: string; approve: boolean }
@@ -2481,6 +2485,8 @@ export interface CommandResults {
   'core.getHiveState': { accepted: boolean }
   'core.togglePulse': { accepted: boolean }
   'core.setEvaWorkspacePath': { accepted: boolean }
+  'core.validateEvaWorkspacePath': { accepted: boolean }
+  'core.setHiveSetting': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
   'core.resolveRoutingDecision': { accepted: boolean }

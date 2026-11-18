@@ -1064,6 +1064,9 @@ export function HiveDashboard({
   const [evaWorkspaceDraft, setEvaWorkspaceDraft] = useState('')
   const [evaWorkspaceError, setEvaWorkspaceError] = useState<string | null>(null)
   const [evaWorkspaceBusy, setEvaWorkspaceBusy] = useState(false)
+  const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
+  const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
+  const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
   const [observedAt, setObservedAt] = useState<ReadonlyMap<number, string>>(() => new Map())
   const [chatDraft, setChatDraft] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
@@ -1102,6 +1105,27 @@ export function HiveDashboard({
       setEvaWorkspaceError('Core вернул некорректный ответ о пути репозитория.')
     }
   }, [hiveSettingsResult])
+  const hiveSettingsValidationResult = latest(events, 'hive_settings.validated')
+  useEffect(() => {
+    if (!hiveSettingsValidationResult) return
+    try {
+      const result = JSON.parse(hiveSettingsValidationResult.payload) as {
+        valid?: boolean
+        eva_workspace_path?: string | null
+        error_code?: string
+      }
+      if (result.valid) {
+        setEvaWorkspaceValidation('valid')
+        setEvaWorkspaceValidationMessage(null)
+      } else {
+        setEvaWorkspaceValidation('invalid')
+        setEvaWorkspaceValidationMessage(result.error_code || 'Путь не является валидным Git-репозиторием.')
+      }
+    } catch {
+      setEvaWorkspaceValidation('invalid')
+      setEvaWorkspaceValidationMessage('Core вернул некорректный ответ о проверке пути.')
+    }
+  }, [hiveSettingsValidationResult])
 
   // Метка времени ставится в момент, когда оболочка получила событие: Core не
   // публикует wall-clock для каждого события, а выдумывать время нельзя.
@@ -1256,13 +1280,30 @@ export function HiveDashboard({
     saveHivePreference(next)
   }, [])
 
+  const validateEvaWorkspacePath = useCallback(async (): Promise<void> => {
+    if (!api) return
+    setEvaWorkspaceValidation('checking')
+    setEvaWorkspaceValidationMessage(null)
+    try {
+      const submittedPath = evaWorkspaceDraft.trim()
+      const outcome = await api.invoke('core.validateEvaWorkspacePath', { path: submittedPath })
+      if (!outcome.ok) {
+        setEvaWorkspaceValidation('invalid')
+        setEvaWorkspaceValidationMessage(outcome.message)
+      }
+    } catch {
+      setEvaWorkspaceValidation('invalid')
+      setEvaWorkspaceValidationMessage('Не удалось проверить путь: Core не ответил.')
+    }
+  }, [api, evaWorkspaceDraft])
+
   const saveEvaWorkspacePath = useCallback(async (): Promise<void> => {
     if (!api) return
     setEvaWorkspaceBusy(true)
     setEvaWorkspaceError(null)
     try {
       const submittedPath = evaWorkspaceDraft.trim()
-      const outcome = await api.invoke('core.setEvaWorkspacePath', { path: submittedPath })
+      const outcome = await api.invoke('core.setHiveSetting', { key: 'eva_workspace_path', value: submittedPath })
       if (!outcome.ok) {
         setEvaWorkspacePath('')
         setEvaWorkspaceDraft('')
@@ -1472,6 +1513,19 @@ export function HiveDashboard({
             </button>
             <small className="hive-switch__status" aria-live="polite">{translate(pulseStatusLabel)}</small>
           </div>
+          <button
+            type="button"
+            className="hive-settings-trigger"
+            aria-label={translate('Настройки улья')}
+            title={translate('Настройки улья')}
+            aria-expanded={hiveSettingsOpen}
+            onClick={() => setHiveSettingsOpen(true)}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+            </svg>
+          </button>
           <label className="hive-interval">
             <span>{translate('Обновление')}</span>
             <select
@@ -1652,32 +1706,97 @@ export function HiveDashboard({
         </aside>
       </div>
 
-      <section className="hive-panel" aria-label={translate('Настройка саморазвития')}>
-        <div className="hive-panel__head">
-          <h2>{translate('Саморазвитие Евы')}</h2>
-          <span className="hive-badge">
-            {translate(evaWorkspacePath ? 'включено' : 'выключено')}
-          </span>
+      {hiveSettingsOpen ? (
+        <div
+          className="settings-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setHiveSettingsOpen(false)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setHiveSettingsOpen(false)
+          }}
+        >
+          <section className="settings-modal__window hive-settings-modal" role="dialog" aria-modal="true" aria-labelledby="hive-settings-title">
+            <header className="settings-modal__header">
+              <div>
+                <p className="settings-modal__eyebrow">Hive / Eva</p>
+                <h2 id="hive-settings-title">{translate('Настройки улья')}</h2>
+              </div>
+              <div className="hive-console__controls">
+                <span className="hive-badge">
+                  {translate(evaWorkspacePath ? 'включено' : 'выключено')}
+                </span>
+                <button
+                  type="button"
+                  className="settings-modal__close"
+                  aria-label={translate('Закрыть настройки')}
+                  onClick={() => setHiveSettingsOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
+            </header>
+            <div className="settings-modal__content hive-settings-modal__body">
+              <p>{translate('Укажи отдельный изолированный Git checkout. Ева сможет исследовать и исправлять только его; Core не изменяет установленный продукт.')}</p>
+              <label className="hive-provider" htmlFor="eva-workspace-path-input">
+                <span>{translate('Путь к исходникам Евы (eva_workspace_path)')}</span>
+                <div className="hive-settings-modal__row">
+                  <input
+                    id="eva-workspace-path-input"
+                    type="text"
+                    aria-label={translate('Путь к исходникам Евы (eva_workspace_path)')}
+                    value={evaWorkspaceDraft}
+                    onChange={(changeEvent) => {
+                      setEvaWorkspaceDraft(changeEvent.target.value)
+                      setEvaWorkspaceValidation('idle')
+                      setEvaWorkspaceValidationMessage(null)
+                    }}
+                    placeholder="C:\\EvoHime-self-development"
+                  />
+                  <button
+                    type="button"
+                    disabled={!connected || evaWorkspaceValidation === 'checking' || evaWorkspaceBusy}
+                    onClick={() => void validateEvaWorkspacePath()}
+                  >
+                    {translate(evaWorkspaceValidation === 'checking' ? 'Проверка…' : 'Проверить')}
+                  </button>
+                  {evaWorkspaceValidation === 'valid' ? (
+                    <span
+                      className="hive-settings-status hive-settings-status--valid"
+                      data-testid="eva-workspace-valid"
+                      aria-label={translate('Путь проверен: валидный Git-репозиторий')}
+                    >
+                      ✓
+                    </span>
+                  ) : null}
+                  {evaWorkspaceValidation === 'invalid' ? (
+                    <span
+                      className="hive-settings-status hive-settings-status--invalid"
+                      data-testid="eva-workspace-invalid"
+                      aria-label={translate('Путь невалиден')}
+                    >
+                      ✕
+                    </span>
+                  ) : null}
+                </div>
+              </label>
+              <div className="hive-console__controls">
+                <button type="button" disabled={!connected || evaWorkspaceBusy} onClick={() => void saveEvaWorkspacePath()}>
+                  {translate(evaWorkspaceBusy ? 'Сохранение…' : 'Сохранить')}
+                </button>
+                <small>{translate(evaWorkspacePath ? 'Инструменты eva_workspace_* доступны Королеве Еве.' : 'Путь не задан — инструменты саморазвития недоступны.')}</small>
+              </div>
+              {evaWorkspaceValidationMessage ? (
+                <p role="alert" className="hive-console__error">{translate(evaWorkspaceValidationMessage)}</p>
+              ) : null}
+              {evaWorkspaceError ? (
+                <p role="alert" className="hive-console__error">{translate(evaWorkspaceError)}</p>
+              ) : null}
+            </div>
+          </section>
         </div>
-        <p>{translate('Укажи отдельный изолированный Git checkout. Ева сможет исследовать и исправлять только его; Core не изменяет установленный продукт.')}</p>
-        <label className="hive-provider">
-          <span>{translate('Путь к Git-репозиторию')}</span>
-          <input
-            type="text"
-            aria-label={translate('Путь к Git-репозиторию саморазвития')}
-            value={evaWorkspaceDraft}
-            onChange={(changeEvent) => setEvaWorkspaceDraft(changeEvent.target.value)}
-            placeholder="C:\\EvoHime-self-development"
-          />
-        </label>
-        <div className="hive-console__controls">
-          <button type="button" disabled={!connected || evaWorkspaceBusy} onClick={() => void saveEvaWorkspacePath()}>
-            {translate(evaWorkspaceBusy ? 'Сохранение…' : 'Сохранить путь')}
-          </button>
-          <small>{translate(evaWorkspacePath ? 'Инструменты eva_workspace_* доступны Королеве Еве.' : 'Путь не задан — инструменты саморазвития недоступны.')}</small>
-        </div>
-        {evaWorkspaceError ? <p role="alert" className="hive-console__error">{translate(evaWorkspaceError)}</p> : null}
-      </section>
+      ) : null}
 
       <div className="hive-console__bottom">
         <section className="hive-panel hive-panel--agents" aria-label={translate('Активные агенты')}>

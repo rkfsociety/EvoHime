@@ -1977,6 +1977,8 @@ message CommandEnvelope {
     HiveStateCommand hive_state = 286;
     TogglePulseCommand toggle_pulse = 287;
     SetEvaWorkspacePathCommand set_eva_workspace_path = 288;
+    ValidateEvaWorkspacePathCommand validate_eva_workspace_path = 289;
+    SetHiveSettingCommand set_hive_setting = 290;
   }
 }
 
@@ -2004,6 +2006,22 @@ message SetEvaWorkspacePathCommand {
   uint32 schema_version = 1;
   string request_id = 2;
   string path = 3;
+}
+
+// Validates whether a candidate path is an absolute existing Git repository
+// without persisting it to HiveSettings.
+message ValidateEvaWorkspacePathCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string path = 3;
+}
+
+// Updates a named HiveSettings entry in Core durable storage.
+message SetHiveSettingCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string key = 3;
+  string value = 4;
 }
 
 // Plan 135: bounded Core-owned review target/findings projection.

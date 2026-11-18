@@ -1022,6 +1022,24 @@ function dispatch(
       return accepted(client.send({ setEvaWorkspacePath: { schemaVersion: 1, requestId: '', path } }))
     }
 
+    case 'core.validateEvaWorkspacePath': {
+      const path = asRecord(payload)['path']
+      if (typeof path !== 'string' || path.length > 4_096) return failure('invalid-payload', 'Некорректный путь репозитория саморазвития.')
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ validateEvaWorkspacePath: { schemaVersion: 1, requestId: '', path } }))
+    }
+
+    case 'core.setHiveSetting': {
+      const record = asRecord(payload)
+      const key = asBoundedString(record['key'])
+      const value = record['value']
+      if (key === null || key.length > 128 || typeof value !== 'string' || value.length > 4_096) {
+        return failure('invalid-payload', 'Некорректный параметр настройки улья.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ setHiveSetting: { schemaVersion: 1, requestId: '', key, value } }))
+    }
+
     case 'core.listSkills': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])

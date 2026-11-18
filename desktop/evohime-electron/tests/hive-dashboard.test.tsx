@@ -107,6 +107,8 @@ beforeEach(() => {
     invoke: (async (command: RendererCommand, payload: unknown) => {
       calls.push({ command, payload })
       if (command === 'core.setEvaWorkspacePath') return ok({ accepted: true })
+      if (command === 'core.validateEvaWorkspacePath') return ok({ accepted: true })
+      if (command === 'core.setHiveSetting') return ok({ accepted: true })
       if (command === 'chat.open') return ok(null)
       if (command === 'chat.create') {
         return ok({
@@ -264,12 +266,33 @@ describe('hive dashboard', () => {
   })
 
   it('ui_can_save_eva_workspace_path', async () => {
-    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
-    const input = await screen.findByRole('textbox', { name: 'Путь к Git-репозиторию саморазвития' })
+    const { rerender } = render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+    const input = await screen.findByRole('textbox', { name: 'Путь к исходникам Евы (eva_workspace_path)' })
     await userEvent.type(input, 'D:/eva-checkout')
-    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить путь' }))
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Проверить' }))
     await waitFor(() => {
-      expect(calls.find((call) => call.command === 'core.setEvaWorkspacePath')?.payload).toEqual({ path: 'D:/eva-checkout' })
+      expect(calls.find((call) => call.command === 'core.validateEvaWorkspacePath')?.payload).toEqual({ path: 'D:/eva-checkout' })
+    })
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event('hive_settings.validated', { valid: true, eva_workspace_path: 'D:/eva-checkout', error_code: '' })
+        ]}
+      />
+    )
+    expect(await screen.findByTestId('eva-workspace-valid')).toBeTruthy()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => {
+      expect(calls.find((call) => call.command === 'core.setHiveSetting')?.payload).toEqual({
+        key: 'eva_workspace_path',
+        value: 'D:/eva-checkout'
+      })
     })
   })
 

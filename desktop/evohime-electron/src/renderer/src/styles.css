@@ -8500,3 +8500,63 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.hive-settings-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, transparent);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.hive-settings-trigger:hover {
+  border-color: var(--hive-blue, var(--accent));
+}
+
+.hive-settings-modal {
+  max-width: 560px;
+}
+
+.hive-settings-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hive-settings-modal__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hive-settings-modal__row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hive-settings-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.hive-settings-status--valid {
+  color: #16a34a;
+  background: color-mix(in srgb, #16a34a 15%, transparent);
+}
+
+.hive-settings-status--invalid {
+  color: #dc2626;
+  background: color-mix(in srgb, #dc2626 15%, transparent);
+}

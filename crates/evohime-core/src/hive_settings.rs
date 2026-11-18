@@ -288,8 +288,21 @@ impl HiveSettings {
     }
 }
 
-fn validate_eva_workspace_path(path: &str) -> Result<(), HiveSettingsError> {
-    let workspace = evohime_tool_runtime::self_development::EvaWorkspace::open(path)
+/// Validates that an Eva self-development workspace path is absolute, exists,
+/// and points to a Git repository root.
+pub fn validate_eva_workspace_path(path: &str) -> Result<(), HiveSettingsError> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err(HiveSettingsError::InvalidEvaWorkspace(
+            "path must not be empty".into(),
+        ));
+    }
+    if !std::path::Path::new(trimmed).is_absolute() {
+        return Err(HiveSettingsError::InvalidEvaWorkspace(
+            "path must be absolute".into(),
+        ));
+    }
+    let workspace = evohime_tool_runtime::self_development::EvaWorkspace::open(trimmed)
         .map_err(|error| HiveSettingsError::InvalidEvaWorkspace(error.to_string()))?;
     if !workspace.root().is_absolute() {
         return Err(HiveSettingsError::InvalidEvaWorkspace(
@@ -600,6 +613,41 @@ mod tests {
             Err(HiveSettingsError::InvalidEvaWorkspace(_))
         ));
         assert!(HiveSettings::default().validate().is_ok());
+    }
+
+    #[test]
+    fn core_validates_eva_workspace_path() {
+        assert!(matches!(
+            validate_eva_workspace_path(""),
+            Err(HiveSettingsError::InvalidEvaWorkspace(_))
+        ));
+        assert!(matches!(
+            validate_eva_workspace_path("."),
+            Err(HiveSettingsError::InvalidEvaWorkspace(_))
+        ));
+        assert!(matches!(
+            validate_eva_workspace_path("relative/eva-workspace"),
+            Err(HiveSettingsError::InvalidEvaWorkspace(_))
+        ));
+        assert!(matches!(
+            validate_eva_workspace_path("C:\\definitely\\missing\\eva-workspace"),
+            Err(HiveSettingsError::InvalidEvaWorkspace(_))
+        ));
+
+        let plain = tempfile::tempdir().expect("directory");
+        assert!(matches!(
+            validate_eva_workspace_path(&plain.path().to_string_lossy()),
+            Err(HiveSettingsError::InvalidEvaWorkspace(_))
+        ));
+
+        let git_repo = tempfile::tempdir().expect("git directory");
+        let status = std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(git_repo.path())
+            .status()
+            .expect("run git init");
+        assert!(status.success());
+        assert!(validate_eva_workspace_path(&git_repo.path().to_string_lossy()).is_ok());
     }
 
     #[test]

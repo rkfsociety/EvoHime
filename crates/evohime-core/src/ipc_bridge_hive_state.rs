@@ -38,6 +38,38 @@ impl IpcBridge {
         .map_err(|error| error.to_string())
     }
 
+    /// Validates a candidate Eva self-development path without persisting it.
+    pub(crate) fn validate_eva_workspace_path_payload(&self, path: &str) -> Result<Vec<u8>, String> {
+        let normalized = path.trim();
+        let payload = match crate::hive_settings::validate_eva_workspace_path(normalized) {
+            Ok(()) => serde_json::json!({
+                "valid": true,
+                "eva_workspace_path": normalized,
+                "error_code": "",
+            }),
+            Err(error) => serde_json::json!({
+                "valid": false,
+                "eva_workspace_path": serde_json::Value::Null,
+                "error_code": error.to_string(),
+            }),
+        };
+        serde_json::to_vec(&payload).map_err(|error| error.to_string())
+    }
+
+    /// Updates a named HiveSettings entry in Core durable storage.
+    pub(crate) async fn set_hive_setting(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
+        match key.trim() {
+            "eva_workspace_path" => self.save_eva_workspace_path(value).await,
+            other => serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "eva_workspace_path": serde_json::Value::Null,
+                "self_development_enabled": false,
+                "error_code": format!("unknown hive setting: {other}"),
+            }))
+            .map_err(|error| error.to_string()),
+        }
+    }
+
     /// Builds the read-only hive snapshot from the durable child projection
     /// window and the validated hive settings.
     ///
