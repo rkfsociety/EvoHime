@@ -420,4 +420,53 @@ describe('ModuleUpdateService', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('polls updater.json rapidly during prepareComponents even with periodicCheck enabled and deduplicates clicks', async () => {
+    vi.useFakeTimers()
+    const root = mkdtempSync(join(tmpdir(), 'evohime-apply-poll-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      let closeApply: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
+      spawnMock.mockImplementationOnce(() => ({
+        once: vi.fn((event: string, listener: (code: number | null, signal: NodeJS.Signals | null) => void) => {
+          if (event === 'close') closeApply = listener
+        }),
+        unref: vi.fn()
+      }))
+      let quitCount = 0
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000,
+        periodicCheck: true,
+        quitForApply: () => { quitCount += 1 }
+      })
+
+      await service.prepareComponents(['core'])
+      await service.prepareComponents(['core'])
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'applying',
+        message: 'Загрузка завершена. Закрываю окно на время применения…',
+        requires_exit: true,
+        available: [{ module: 'core', installed: '0.0.000243', available: '0.0.000244' }]
+      }))
+
+      await vi.advanceTimersByTimeAsync(350)
+      expect(quitCount).toBe(1)
+
+      closeApply?.(0, null)
+      await Promise.resolve()
+      service.stop()
+    } finally {
+      vi.useRealTimers()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

@@ -80,7 +80,10 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
             {available ? (
               <button
                 type="button"
-                onClick={() => void api?.invoke('update.prepareComponents', { selected: status.availableModules ?? [] })}
+                onClick={() => {
+                  setConfirmOpen(false)
+                  void api?.invoke('update.prepareComponents', { selected: status.availableModules ?? [] })
+                }}
               >
                 {translate("Обновить сейчас")}</button>
             ) : null}

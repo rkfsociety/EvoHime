@@ -62,9 +62,11 @@ export function shouldApplyBootstrap(shellExists: boolean, availableModules?: re
 export class ModuleUpdateService {
   private current: UpdateStatus
   private timer: NodeJS.Timeout | null = null
+  private applyPollTimer: NodeJS.Timeout | null = null
   private lastSerialized = ''
   private exitRequested = false
   private checkInFlight = false
+  private applyInFlight = false
 
   constructor(private readonly options: ModuleUpdateServiceOptions) {
     this.current = options.enabled
@@ -131,11 +133,17 @@ export class ModuleUpdateService {
   }
 
   async prepareComponents(_selected: readonly string[]): Promise<UpdateStatus> {
+    if (this.applyInFlight || this.current.phase === 'applying') return this.current
+    this.applyInFlight = true
     this.lastSerialized = ''
     this.exitRequested = false
     this.patchLocal({ phase: 'applying', message: 'Передаю обновление updater worker…' })
     this.scheduleRefresh()
-    void this.startUpdater('--apply')
+    this.startApplyPolling()
+    void this.startUpdater('--apply').finally(() => {
+      this.applyInFlight = false
+      this.stopApplyPolling()
+    })
     return this.current
   }
 
@@ -151,6 +159,23 @@ export class ModuleUpdateService {
     if (this.timer !== null) {
       clearInterval(this.timer)
       this.timer = null
+    }
+    this.stopApplyPolling()
+  }
+
+  private startApplyPolling(): void {
+    if (!this.options.enabled || this.applyPollTimer !== null) return
+    const pollMs = Math.min(this.options.intervalMs, 350)
+    this.applyPollTimer = setInterval(() => {
+      this.refresh()
+    }, pollMs)
+    this.applyPollTimer.unref?.()
+  }
+
+  private stopApplyPolling(): void {
+    if (this.applyPollTimer !== null) {
+      clearInterval(this.applyPollTimer)
+      this.applyPollTimer = null
     }
   }
 
