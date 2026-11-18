@@ -7413,21 +7413,38 @@ body {
   font-size: 12px;
 }
 
-/* Сетка: департаменты, Королева, метрики и бюджет. */
+/* Сетка: основная область (департаменты, Королева, метрики, агенты) + вертикальный диалог справа. */
+
+.hive-console__workspace {
+  display: grid;
+  flex: 1 1 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 370px);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.hive-console__primary {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 10px;
+}
 
 .hive-console__grid {
   display: grid;
   flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1.15fr) minmax(250px, .85fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(240px, .85fr) minmax(0, 1.1fr);
   gap: 10px;
   align-items: stretch;
 }
 
-.hive-console__bottom {
-  display: grid;
-  flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
+.hive-panel--agents {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .hive-panel {
@@ -8171,8 +8188,10 @@ body {
 
 .hive-agent-list {
   display: grid;
+  flex: 1 1 0;
+  min-height: 0;
+  align-content: start;
   gap: 5px;
-  max-height: 110px;
   margin: 0;
   padding: 0;
   overflow-y: auto;
@@ -8466,10 +8485,34 @@ body {
 .hive-chat {
   display: flex;
   flex-direction: column;
-  flex: 1 1 0;
-  min-height: 140px;
-  gap: 8px;
-  padding: 10px 12px;
+  min-height: 0;
+  height: 100%;
+  gap: 10px;
+  padding: 11px 12px;
+}
+
+.hive-chat__logs {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sunken);
+}
+
+.hive-chat__logs h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+
+.hive-chat__logs .hive-log-list {
+  max-height: 126px;
 }
 
 .hive-chat__messages {
@@ -8635,6 +8678,10 @@ body {
 
   .hive-console {
     height: auto;
+  }
+
+  .hive-console__workspace {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .hive-console__grid {
