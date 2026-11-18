@@ -159,8 +159,8 @@ async fn saves_validated_eva_workspace_path_and_rejects_non_git_directory() {
             .hive_settings()
             .await
             .expect("settings load")
-            .eva_workspace_path,
-        Some(path)
+            .watched_repositories,
+        vec![path]
     );
 
     let plain = tempfile::tempdir().expect("plain directory");
@@ -174,14 +174,12 @@ async fn saves_validated_eva_workspace_path_and_rejects_non_git_directory() {
     assert!(rejected["error_code"]
         .as_str()
         .is_some_and(|error| !error.is_empty()));
-    assert_eq!(
-        journal
-            .hive_settings()
-            .await
-            .expect("settings reload")
-            .eva_workspace_path,
-        None
-    );
+    assert!(journal
+        .hive_settings()
+        .await
+        .expect("settings reload")
+        .watched_repositories
+        .is_empty());
 }
 
 #[tokio::test]

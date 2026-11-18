@@ -274,7 +274,7 @@ impl EvaPulseDaemon {
         logger: Option<Arc<StructuredLogger>>,
     ) -> Self {
         let probe = Arc::new(JournalPulseProbe::new(
-            journal,
+            journal.clone(),
             gateway_config.clone(),
             selected_model,
         ));
@@ -285,7 +285,8 @@ impl EvaPulseDaemon {
             )
             .with_fallback_route(crate::hive_observation::fallback_routmy_route_name(
                 gateway_config.as_ref(),
-            )),
+            ))
+            .with_hive_settings_source(journal, gateway_config),
         );
         let daemon = Self::spawn(probe, sink, EvaPulseOptions::default(), logger);
         daemon.run();
@@ -977,14 +978,9 @@ impl JournalPulseProbe {
         if !settings.proactive_evolution_enabled {
             return Vec::new();
         }
-        let Some(workspace_path) = settings.eva_workspace_path.as_deref() else {
+        if settings.watched_repositories.is_empty() {
             return Vec::new();
-        };
-        let Ok(workspace) =
-            evohime_tool_runtime::self_development::EvaWorkspace::open(workspace_path)
-        else {
-            return Vec::new();
-        };
+        }
         let pending = self
             .pending_evolutions
             .lock()
@@ -998,25 +994,32 @@ impl JournalPulseProbe {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut items = Vec::new();
-        for file in find_roadmap_files(workspace.root()) {
-            let Ok(content) = std::fs::read_to_string(&file) else {
+        for workspace_path in &settings.watched_repositories {
+            let Ok(workspace) =
+                evohime_tool_runtime::self_development::EvaWorkspace::open(workspace_path)
+            else {
                 continue;
             };
-            let relative = file
-                .strip_prefix(workspace.root())
-                .unwrap_or(&file)
-                .to_string_lossy()
-                .replace('\\', "/");
-            for (line, text) in extract_uncompleted_roadmap_items(&content) {
-                let key = evolution_item_key(Some(workspace_path), Some(&relative), &text);
-                if !handled.contains(&key) {
-                    items.push(RoadmapItem {
-                        file_path: relative.clone(),
-                        line,
-                        text,
-                    });
-                    if items.len() >= MAX_ROADMAP_ITEMS {
-                        return items;
+            for file in find_roadmap_files(workspace.root()) {
+                let Ok(content) = std::fs::read_to_string(&file) else {
+                    continue;
+                };
+                let relative = file
+                    .strip_prefix(workspace.root())
+                    .unwrap_or(&file)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                for (line, text) in extract_uncompleted_roadmap_items(&content) {
+                    let key = evolution_item_key(Some(workspace_path), Some(&relative), &text);
+                    if !handled.contains(&key) {
+                        items.push(RoadmapItem {
+                            file_path: relative.clone(),
+                            line,
+                            text,
+                        });
+                        if items.len() >= MAX_ROADMAP_ITEMS {
+                            return items;
+                        }
                     }
                 }
             }
@@ -1149,10 +1152,12 @@ impl PulseProbe for JournalPulseProbe {
             let settings = self.journal.hive_settings().await.unwrap_or_default();
             let now_ms = crate::task_memory::now_millis() as i64;
             let selected_model = crate::hive_observation::selected_model_name(&self.selected_model);
-            let observation = crate::hive_observation::build_hive_observation(
+            let observation = crate::hive_observation::build_hive_observation_for_hive(
                 &self.journal,
                 self.gateway_config.as_ref(),
                 selected_model.as_deref(),
+                settings.hive_provider_profile.as_deref(),
+                settings.hive_model.as_deref(),
                 now_ms,
             )
             .await;
@@ -1205,6 +1210,20 @@ impl PulseProbe for JournalPulseProbe {
             } else {
                 snapshot.budget.fallback_tokens_remaining
             };
+            let route_is_primary = if settings
+                .hive_provider_profile
+                .as_deref()
+                .is_some_and(|profile| !profile.trim().is_empty())
+            {
+                crate::hive_observation::hive_route_name(
+                    self.gateway_config.as_ref(),
+                    settings.hive_provider_profile.as_deref(),
+                )
+                .is_some()
+            } else {
+                crate::hive_observation::route_is_background_primary(self.gateway_config.as_ref())
+            };
+            let eva_workspace_path = settings.primary_workspace_path().map(str::to_owned);
             Ok(PulseCycleReport {
                 interval_secs: settings.pulse_interval_secs,
                 daily_cost_nano_usd: observation.daily_cost_nano_usd,
@@ -1214,10 +1233,8 @@ impl PulseProbe for JournalPulseProbe {
                 rate_limited_until_ms,
                 failed_workers,
                 failed_worker_contexts,
-                route_is_primary: crate::hive_observation::route_is_background_primary(
-                    self.gateway_config.as_ref(),
-                ),
-                eva_workspace_path: settings.eva_workspace_path,
+                route_is_primary,
+                eva_workspace_path,
                 proactive_evolution_enabled: settings.proactive_evolution_enabled,
                 roadmap_items,
                 selected_provider,
@@ -1471,6 +1488,9 @@ pub(crate) struct CoordinatorPulseTaskSink {
     coordinator: TaskCoordinator,
     primary_route: Option<String>,
     fallback_route: Option<String>,
+    preferred_route_hint: Option<String>,
+    journal: Option<EventJournal>,
+    gateway_config: Option<ModelGatewayConfig>,
 }
 
 impl CoordinatorPulseTaskSink {
@@ -1480,12 +1500,35 @@ impl CoordinatorPulseTaskSink {
             coordinator,
             primary_route,
             fallback_route: None,
+            preferred_route_hint: None,
+            journal: None,
+            gateway_config: None,
         }
     }
 
     /// Attaches an optional free fallback route (e.g. `routmy`).
     pub(crate) fn with_fallback_route(mut self, fallback_route: Option<String>) -> Self {
         self.fallback_route = fallback_route;
+        self
+    }
+
+    /// Sets an explicit `preferred_route_hint` for Hive background tasks.
+    pub(crate) fn with_preferred_route_hint(mut self, hint: Option<String>) -> Self {
+        self.preferred_route_hint = hint
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        self
+    }
+
+    /// Attaches the journal and gateway config so Hive can resolve
+    /// `hive_provider_profile` dynamically without restarting Core.
+    pub(crate) fn with_hive_settings_source(
+        mut self,
+        journal: EventJournal,
+        gateway_config: Option<ModelGatewayConfig>,
+    ) -> Self {
+        self.journal = Some(journal);
+        self.gateway_config = gateway_config;
         self
     }
 }
@@ -1539,17 +1582,41 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
 impl CoordinatorPulseTaskSink {
     fn dispatch_primary_task(&self, prompt: String) -> PulseFuture<'_, Result<String, String>> {
         let primary_route = self.primary_route.clone();
+        let explicit_hint = self.preferred_route_hint.clone();
+        let journal = self.journal.clone();
+        let gateway_config = self.gateway_config.clone();
         Box::pin(async move {
-            // A route is required: without the primary LiteRouter route the
-            // daemon must not fall back to a paid DeepSeek profile.
-            primary_route.ok_or_else(|| "primary_route_unavailable".to_owned())?;
+            let mut preferred_route_hint = explicit_hint;
+            if preferred_route_hint.is_none() {
+                if let Some(journal) = journal {
+                    if let Ok(settings) = journal.hive_settings().await {
+                        if let Some(profile) = settings
+                            .hive_provider_profile
+                            .as_deref()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                        {
+                            preferred_route_hint = crate::hive_observation::hive_route_name(
+                                gateway_config.as_ref(),
+                                Some(profile),
+                            )
+                            .or_else(|| Some(profile.to_owned()));
+                        }
+                    }
+                }
+            }
+            if preferred_route_hint.is_none() {
+                // A route is required: without the primary LiteRouter route the
+                // daemon must not fall back to a paid DeepSeek profile.
+                primary_route.ok_or_else(|| "primary_route_unavailable".to_owned())?;
+            }
             let task_id = uuid::Uuid::new_v4().to_string();
             self.coordinator
                 .dispatch(CoreCommand::StartTask {
                     task_id: task_id.clone(),
                     prompt,
                     workspace_root: None,
-                    preferred_route_hint: None,
+                    preferred_route_hint,
                     conversation: None,
                     goal_id: None,
                 })
@@ -2208,7 +2275,7 @@ mod tests {
         let journal =
             EventJournal::open(directory.path().join("pulse-evolve.db")).expect("journal opens");
         let settings = HiveSettings {
-            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
@@ -2311,7 +2378,7 @@ mod tests {
         let journal =
             EventJournal::open(directory.path().join("pulse-disabled.db")).expect("journal opens");
         let settings = HiveSettings {
-            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: false,
             ..HiveSettings::default()
         };
@@ -2355,7 +2422,7 @@ mod tests {
         let journal =
             EventJournal::open(directory.path().join("pulse-auto.db")).expect("journal opens");
         let settings = HiveSettings {
-            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
@@ -2428,7 +2495,7 @@ mod tests {
         let journal =
             EventJournal::open(directory.path().join("pulse-empty.db")).expect("journal opens");
         let settings = HiveSettings {
-            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
@@ -2491,7 +2558,7 @@ mod tests {
         let journal =
             EventJournal::open(directory.path().join("pulse-collect.db")).expect("journal opens");
         let settings = HiveSettings {
-            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
@@ -2578,7 +2645,7 @@ mod tests {
         let journal = EventJournal::open(directory.path().join("pulse-loop-guard.db"))
             .expect("journal opens");
         let settings = HiveSettings {
-            eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
+            watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
@@ -2593,7 +2660,7 @@ mod tests {
 
         probe.mark_evolution_dispatched(
             "evo-1",
-            settings.eva_workspace_path.as_deref(),
+            settings.primary_workspace_path(),
             &report_1.roadmap_items,
         );
         // While in-flight, no new evolution items are offered.
@@ -2616,7 +2683,7 @@ mod tests {
         // Queen returns SKIP for remaining item: it is also added to handled_evolutions.
         probe.mark_evolution_dispatched(
             "evo-2",
-            settings.eva_workspace_path.as_deref(),
+            settings.primary_workspace_path(),
             &report_2.roadmap_items,
         );
         journal
@@ -2803,5 +2870,121 @@ mod tests {
         assert_eq!(status.status, HIVE_PULSE_SLEEPING);
         assert_eq!(sink.primary_calls.load(Ordering::SeqCst), 0);
         assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn hive_scans_all_watched_repositories() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let repo_one = directory.path().join("repo-one");
+        let repo_two = directory.path().join("repo-two");
+        std::fs::create_dir_all(&repo_one).expect("repo one dir");
+        std::fs::create_dir_all(&repo_two).expect("repo two dir");
+        for repo in [&repo_one, &repo_two] {
+            let status = std::process::Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(repo)
+                .status()
+                .expect("git init");
+            assert!(status.success());
+        }
+        std::fs::write(repo_one.join("TODO.md"), "- [ ] Task from repo one\n")
+            .expect("write repo one TODO");
+        std::fs::write(repo_two.join("TODO.md"), "- [ ] Task from repo two\n")
+            .expect("write repo two TODO");
+
+        let journal = EventJournal::open(directory.path().join("pulse-multi-repo.db"))
+            .expect("journal opens");
+        let settings = HiveSettings {
+            watched_repositories: vec![
+                repo_one.to_string_lossy().into_owned(),
+                repo_two.to_string_lossy().into_owned(),
+            ],
+            proactive_evolution_enabled: true,
+            ..HiveSettings::default()
+        };
+        journal
+            .save_hive_settings(&settings)
+            .await
+            .expect("save settings");
+
+        let probe = JournalPulseProbe::new(journal, None, SelectedModel::default());
+        let report = probe.observe().await.expect("observe");
+        let texts: Vec<&str> = report
+            .roadmap_items
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect();
+        assert_eq!(texts, vec!["Task from repo one", "Task from repo two"]);
+    }
+
+    #[tokio::test]
+    async fn hive_uses_own_provider() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal = EventJournal::open(directory.path().join("pulse-own-provider.db"))
+            .expect("journal opens");
+        let settings = HiveSettings {
+            hive_provider_profile: Some("literouter".into()),
+            hive_model: Some("hive-special-model".into()),
+            ..HiveSettings::default()
+        };
+        journal
+            .save_hive_settings(&settings)
+            .await
+            .expect("save settings");
+
+        let mut deepseek_route = evohime_model_gateway::ModelRouteConfig::literouter(
+            "paid-key",
+            "https://api.deepseek.com",
+            "deepseek-chat",
+        );
+        deepseek_route.provider_profile_id = Some(evohime_model_gateway::ProviderProfileId::DeepSeek);
+        let literouter_route = evohime_model_gateway::ModelRouteConfig::literouter(
+            "free-key",
+            "http://localhost:1234",
+            "free-default",
+        );
+
+        let gateway_config = ModelGatewayConfig {
+            default_route: "deepseek".into(),
+            routes: std::collections::HashMap::from([
+                ("deepseek".into(), deepseek_route),
+                ("literouter".into(), literouter_route),
+            ]),
+        };
+
+        let selected = SelectedModel::default();
+        selected.set("deepseek-chat");
+        let probe = JournalPulseProbe::new(journal.clone(), Some(gateway_config.clone()), selected);
+        let mut report = probe.observe().await.expect("observe");
+        assert!(report.route_is_primary);
+        assert_eq!(report.selected_provider.as_deref(), Some("literouter"));
+        report.failed_workers = vec!["child-failed".into()];
+        assert_eq!(
+            decide(&report, crate::task_memory::now_millis() as i64),
+            PulseDecision::Recover {
+                failed_workers: vec!["child-failed".into()],
+            }
+        );
+
+        let (mut coordinator, _events) = TaskCoordinator::new(8);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        coordinator.set_command_sender_for_test(tx);
+        let sink = CoordinatorPulseTaskSink::new(coordinator, None)
+            .with_hive_settings_source(journal, Some(gateway_config));
+        let task_id = sink
+            .dispatch_recovery(&[], None)
+            .await
+            .expect("dispatches with hive own provider");
+        assert!(!task_id.is_empty());
+        let command = rx.recv().await.expect("command sent");
+        match command {
+            CoreCommand::StartTask {
+                preferred_route_hint,
+                ..
+            } => {
+                assert_eq!(preferred_route_hint.as_deref(), Some("literouter"));
+            }
+            _ => panic!("unexpected command sent to coordinator"),
+        }
     }
 }

@@ -5,23 +5,26 @@ impl IpcBridge {
     pub(crate) async fn save_eva_workspace_path(&self, path: &str) -> Result<Vec<u8>, String> {
         let normalized = path.trim();
         let mut settings = self.journal.hive_settings().await?;
-        settings.eva_workspace_path = if normalized.is_empty() {
-            None
+        let previous = settings.watched_repositories.clone();
+        settings.watched_repositories = if normalized.is_empty() {
+            Vec::new()
         } else {
-            Some(normalized.to_owned())
+            vec![normalized.to_owned()]
         };
         if let Err(error) = settings.validate() {
-            settings.eva_workspace_path = None;
+            settings.watched_repositories = Vec::new();
             self.journal.save_hive_settings(&settings).await?;
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "eva_workspace_path": serde_json::Value::Null,
+                "watched_repositories": [],
                 "self_development_enabled": false,
                 "error_code": error.to_string(),
             }))
             .map_err(|serialization_error| serialization_error.to_string());
         }
-        let path_is_configured = settings.eva_workspace_path.is_some();
+        let _ = previous;
+        let path_is_configured = !settings.watched_repositories.is_empty();
         let error_code = if path_is_configured {
             "".to_owned()
         } else {
@@ -31,9 +34,121 @@ impl IpcBridge {
         self.journal.save_hive_settings(&settings).await?;
         serde_json::to_vec(&serde_json::json!({
             "accepted": path_is_configured,
-            "eva_workspace_path": settings.eva_workspace_path,
+            "eva_workspace_path": settings.primary_workspace_path(),
+            "watched_repositories": settings.watched_repositories,
             "self_development_enabled": path_is_configured,
             "error_code": error_code,
+        }))
+        .map_err(|error| error.to_string())
+    }
+
+    /// Validates and persists the list of Git repositories watched by Hive.
+    pub(crate) async fn save_watched_repositories(&self, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let previous = settings.watched_repositories.clone();
+        let trimmed = value.trim();
+        let parsed: Vec<String> = if trimmed.is_empty() {
+            Vec::new()
+        } else {
+            match serde_json::from_str::<Vec<String>>(trimmed) {
+                Ok(items) => items,
+                Err(error) => {
+                    return serde_json::to_vec(&serde_json::json!({
+                        "accepted": false,
+                        "setting_key": "watched_repositories",
+                        "watched_repositories": previous,
+                        "eva_workspace_path": settings.primary_workspace_path(),
+                        "self_development_enabled": !previous.is_empty(),
+                        "error_code": format!("invalid watched_repositories payload: {error}"),
+                    }))
+                    .map_err(|serialization_error| serialization_error.to_string());
+                }
+            }
+        };
+        let mut normalized = Vec::with_capacity(parsed.len());
+        for item in parsed {
+            let candidate = item.trim();
+            if candidate.is_empty() || normalized.iter().any(|existing| existing == candidate) {
+                continue;
+            }
+            normalized.push(candidate.to_owned());
+        }
+        settings.watched_repositories = normalized;
+        if let Err(error) = settings.validate() {
+            return serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "setting_key": "watched_repositories",
+                "watched_repositories": previous,
+                "eva_workspace_path": previous.first().map(String::as_str),
+                "self_development_enabled": !previous.is_empty(),
+                "error_code": error.to_string(),
+            }))
+            .map_err(|serialization_error| serialization_error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": "watched_repositories",
+            "watched_repositories": settings.watched_repositories,
+            "eva_workspace_path": settings.primary_workspace_path(),
+            "self_development_enabled": !settings.watched_repositories.is_empty(),
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
+    /// Validates and persists the isolated provider profile used by Hive.
+    pub(crate) async fn save_hive_provider_profile(&self, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let trimmed = value.trim();
+        settings.hive_provider_profile = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
+        if let Err(error) = settings.validate() {
+            return serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "setting_key": "hive_provider_profile",
+                "hive_provider_profile": settings.hive_provider_profile,
+                "error_code": error.to_string(),
+            }))
+            .map_err(|serialization_error| serialization_error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": "hive_provider_profile",
+            "hive_provider_profile": settings.hive_provider_profile,
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
+    /// Validates and persists the isolated model override used by Hive.
+    pub(crate) async fn save_hive_model(&self, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let trimmed = value.trim();
+        settings.hive_model = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
+        if let Err(error) = settings.validate() {
+            return serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "setting_key": "hive_model",
+                "hive_model": settings.hive_model,
+                "error_code": error.to_string(),
+            }))
+            .map_err(|serialization_error| serialization_error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": "hive_model",
+            "hive_model": settings.hive_model,
+            "error_code": "",
         }))
         .map_err(|error| error.to_string())
     }
@@ -76,8 +191,8 @@ impl IpcBridge {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "daily_budget_usd": settings.daily_budget_usd,
-                "eva_workspace_path": settings.eva_workspace_path,
-                "self_development_enabled": settings.eva_workspace_path.is_some(),
+                "eva_workspace_path": settings.primary_workspace_path(),
+                "self_development_enabled": !settings.watched_repositories.is_empty(),
                 "error_code": format!(
                     "daily_budget_usd must be a number between 0 and {}",
                     crate::hive_settings::MAX_DAILY_BUDGET_USD
@@ -90,8 +205,8 @@ impl IpcBridge {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "daily_budget_usd": serde_json::Value::Null,
-                "eva_workspace_path": settings.eva_workspace_path,
-                "self_development_enabled": settings.eva_workspace_path.is_some(),
+                "eva_workspace_path": settings.primary_workspace_path(),
+                "self_development_enabled": !settings.watched_repositories.is_empty(),
                 "error_code": error.to_string(),
             }))
             .map_err(|serialization_error| serialization_error.to_string());
@@ -100,8 +215,8 @@ impl IpcBridge {
         serde_json::to_vec(&serde_json::json!({
             "accepted": true,
             "daily_budget_usd": settings.daily_budget_usd,
-            "eva_workspace_path": settings.eva_workspace_path,
-            "self_development_enabled": settings.eva_workspace_path.is_some(),
+            "eva_workspace_path": settings.primary_workspace_path(),
+            "self_development_enabled": !settings.watched_repositories.is_empty(),
             "error_code": "",
         }))
         .map_err(|error| error.to_string())
@@ -141,6 +256,9 @@ impl IpcBridge {
     pub(crate) async fn set_hive_setting(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
         match key.trim() {
             "eva_workspace_path" => self.save_eva_workspace_path(value).await,
+            "watched_repositories" => self.save_watched_repositories(value).await,
+            "hive_provider_profile" => self.save_hive_provider_profile(value).await,
+            "hive_model" => self.save_hive_model(value).await,
             "daily_budget_usd" => self.save_daily_budget_usd(value).await,
             "proactive_evolution_enabled" => self.save_proactive_evolution_enabled(value).await,
             other => serde_json::to_vec(&serde_json::json!({
@@ -164,10 +282,12 @@ impl IpcBridge {
         let projections = crate::hive_observation::replay_hive_projections(&self.journal).await;
         let roles = crate::hive_observation::persistent_agent_roles(&self.journal).await;
         let selected_model = crate::hive_observation::selected_model_name(&self.selected_model);
-        let mut observation = crate::hive_observation::build_hive_observation(
+        let mut observation = crate::hive_observation::build_hive_observation_for_hive(
             &self.journal,
             self.gateway_config.as_ref(),
             selected_model.as_deref(),
+            settings.hive_provider_profile.as_deref(),
+            settings.hive_model.as_deref(),
             crate::task_memory::now_millis() as i64,
         )
         .await;

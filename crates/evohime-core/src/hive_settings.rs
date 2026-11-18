@@ -89,9 +89,15 @@ pub struct HiveSettings {
     /// `0` means no budget at all: a background cycle must not start a task.
     #[serde(default = "default_daily_budget_usd")]
     pub daily_budget_usd: f64,
-    /// Optional isolated Git checkout used only by Queen self-development.
+    /// Optional isolated Git checkouts watched by Queen / EvaPulse.
+    #[serde(default)]
+    pub watched_repositories: Vec<String>,
+    /// Optional isolated provider profile for Hive (e.g. `"literouter"`, `"rout"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub eva_workspace_path: Option<String>,
+    pub hive_provider_profile: Option<String>,
+    /// Optional model override used specifically by Hive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_model: Option<String>,
     /// Whether EvaPulse may proactively pick uncompleted roadmap items when idle.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
@@ -118,7 +124,9 @@ impl Default for HiveSettings {
             max_total_subagents_per_workflow: DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW,
             pulse_interval_secs: DEFAULT_PULSE_INTERVAL_SECS,
             daily_budget_usd: DEFAULT_DAILY_BUDGET_USD,
-            eva_workspace_path: None,
+            watched_repositories: Vec::new(),
+            hive_provider_profile: None,
+            hive_model: None,
             proactive_evolution_enabled: false,
         }
     }
@@ -168,10 +176,19 @@ impl HiveSettings {
                 max: MAX_DAILY_BUDGET_USD,
             });
         }
-        if let Some(path) = self.eva_workspace_path.as_deref() {
+        for path in &self.watched_repositories {
             validate_eva_workspace_path(path)?;
         }
         Ok(())
+    }
+
+    /// Returns the primary watched repository path, if any is configured.
+    pub fn primary_workspace_path(&self) -> Option<&str> {
+        self.watched_repositories
+            .first()
+            .map(String::as_str)
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
     }
 
     /// Returns the effective per-worker ceiling.
@@ -264,9 +281,32 @@ impl HiveSettings {
             .map_err(|error| HiveSettingsError::Serialization(error.to_string()))
     }
 
-    /// Parses and validates settings loaded from durable storage.
+    /// Parses and validates settings loaded from durable storage, migrating
+    /// legacy `eva_workspace_path` into `watched_repositories` when present.
     pub fn from_json(bytes: &[u8]) -> Result<Self, HiveSettingsError> {
-        let settings: Self = serde_json::from_slice(bytes)
+        let mut value: serde_json::Value = serde_json::from_slice(bytes)
+            .map_err(|error| HiveSettingsError::Serialization(error.to_string()))?;
+        if let Some(map) = value.as_object_mut() {
+            if let Some(legacy_path) = map.remove("eva_workspace_path") {
+                if let Some(path) = legacy_path.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+                    let needs_migration = match map.get("watched_repositories") {
+                        None => true,
+                        Some(serde_json::Value::Array(items)) => items.is_empty(),
+                        Some(serde_json::Value::Null) => true,
+                        _ => false,
+                    };
+                    if needs_migration {
+                        map.insert(
+                            "watched_repositories".to_owned(),
+                            serde_json::Value::Array(vec![serde_json::Value::String(
+                                path.to_owned(),
+                            )]),
+                        );
+                    }
+                }
+            }
+        }
+        let settings: Self = serde_json::from_value(value)
             .map_err(|error| HiveSettingsError::Serialization(error.to_string()))?;
         settings.validate()?;
         Ok(settings)
@@ -282,7 +322,9 @@ impl HiveSettings {
                 {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"},
                 {"name": "pulse_interval_secs", "type": "u64", "zero": "invalid"},
                 {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"},
-                {"name": "eva_workspace_path", "type": "optional_existing_git_directory", "default": null},
+                {"name": "watched_repositories", "type": "list_of_existing_git_directories", "default": []},
+                {"name": "hive_provider_profile", "type": "optional_string", "default": null},
+                {"name": "hive_model", "type": "optional_string", "default": null},
                 {"name": "proactive_evolution_enabled", "type": "bool", "default": false}
             ],
             "note": "ceilings are safety guards, not a spawn plan",
@@ -601,7 +643,7 @@ mod tests {
     #[test]
     fn eva_workspace_path_validation() {
         let missing = HiveSettings {
-            eva_workspace_path: Some("C:\\definitely\\missing\\eva-workspace".into()),
+            watched_repositories: vec!["C:\\definitely\\missing\\eva-workspace".into()],
             ..HiveSettings::default()
         };
         assert!(matches!(
@@ -610,7 +652,7 @@ mod tests {
         ));
         let plain = tempfile::tempdir().expect("directory");
         let not_git = HiveSettings {
-            eva_workspace_path: Some(plain.path().to_string_lossy().into_owned()),
+            watched_repositories: vec![plain.path().to_string_lossy().into_owned()],
             ..HiveSettings::default()
         };
         assert!(matches!(
@@ -618,6 +660,33 @@ mod tests {
             Err(HiveSettingsError::InvalidEvaWorkspace(_))
         ));
         assert!(HiveSettings::default().validate().is_ok());
+    }
+
+    #[test]
+    fn migrates_legacy_eva_workspace_path_to_watched_repositories() {
+        let git_repo = tempfile::tempdir().expect("git directory");
+        let status = std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(git_repo.path())
+            .status()
+            .expect("run git init");
+        assert!(status.success());
+
+        let repo_path = git_repo.path().to_string_lossy().into_owned();
+        let legacy_json = serde_json::json!({
+            "schema_version": HIVE_SETTINGS_SCHEMA_VERSION,
+            "max_subagents_per_worker": 16,
+            "max_parallel_subagents": 4,
+            "max_total_subagents_per_workflow": 64,
+            "eva_workspace_path": repo_path,
+            "proactive_evolution_enabled": true
+        })
+        .to_string()
+        .into_bytes();
+
+        let loaded = HiveSettings::from_json(&legacy_json).expect("legacy settings migrate");
+        assert_eq!(loaded.watched_repositories, vec![repo_path]);
+        assert!(loaded.proactive_evolution_enabled);
     }
 
     #[test]

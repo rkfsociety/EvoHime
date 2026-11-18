@@ -57,6 +57,39 @@ pub(crate) fn fallback_routmy_route_name(config: Option<&ModelGatewayConfig>) ->
     })
 }
 
+/// Resolves the route name for Hive based on `hive_provider_profile`, falling
+/// back to the standard background route (`LiteRouter -> Rout`) when unset.
+pub(crate) fn hive_route_name(
+    config: Option<&ModelGatewayConfig>,
+    hive_provider_profile: Option<&str>,
+) -> Option<String> {
+    let profile = hive_provider_profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(profile) = profile else {
+        return background_route_name(config).or_else(|| fallback_routmy_route_name(config));
+    };
+    let Some(config) = config else {
+        return Some(profile.to_owned());
+    };
+    if let Some((name, _)) = config
+        .routes
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(profile))
+    {
+        return Some(name.clone());
+    }
+    if let Some((name, _)) = config.routes.iter().find(|(_, route)| {
+        route
+            .provider_profile_id
+            .is_some_and(|id| id.as_str().eq_ignore_ascii_case(profile))
+            || route.provider.as_str().eq_ignore_ascii_case(profile)
+    }) {
+        return Some(name.clone());
+    }
+    None
+}
+
 /// Collects configured provider limits and committed usage for the active route.
 ///
 /// The projection is additive: a missing route configuration leaves caps unset;
@@ -66,6 +99,20 @@ pub(crate) async fn build_hive_observation(
     journal: &EventJournal,
     gateway_config: Option<&ModelGatewayConfig>,
     selected_model: Option<&str>,
+    now_ms: i64,
+) -> HiveObservation {
+    build_hive_observation_for_hive(journal, gateway_config, selected_model, None, None, now_ms)
+        .await
+}
+
+/// Collects configured provider limits and committed usage for Hive, preferring
+/// Hive's own provider profile and model override when configured.
+pub(crate) async fn build_hive_observation_for_hive(
+    journal: &EventJournal,
+    gateway_config: Option<&ModelGatewayConfig>,
+    selected_model: Option<&str>,
+    hive_provider_profile: Option<&str>,
+    hive_model: Option<&str>,
     now_ms: i64,
 ) -> HiveObservation {
     let mut observation = HiveObservation {
@@ -78,7 +125,18 @@ pub(crate) async fn build_hive_observation(
     let Some(config) = gateway_config else {
         return observation;
     };
-    let Some(route) = config.routes.get(&config.default_route) else {
+    let hive_profile = hive_provider_profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let route_name = if let Some(profile) = hive_profile {
+        hive_route_name(Some(config), Some(profile))
+    } else {
+        Some(config.default_route.clone())
+    };
+    let Some(route) = route_name
+        .as_deref()
+        .and_then(|name| config.routes.get(name))
+    else {
         return observation;
     };
     // The ledger records the transport kind, so dispatch counters must be
@@ -89,13 +147,20 @@ pub(crate) async fn build_hive_observation(
     let provider = profile
         .map_or(transport, |profile| profile.as_str())
         .to_owned();
-    // The user-selected model overrides the configured default, so the caps
-    // and counters must follow the model that will actually be dispatched.
-    let selected_model = selected_model
+    // Hive's own model override takes precedence over the global chat selection.
+    let effective_selected = hive_model
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .map(str::to_owned)
-        .filter(|value| !value.trim().is_empty());
-    let model =
-        crate::core_agent::effective_model_name(&route.literouter.model, selected_model.as_deref());
+        .or_else(|| {
+            selected_model
+                .map(str::to_owned)
+                .filter(|value| !value.trim().is_empty())
+        });
+    let model = crate::core_agent::effective_model_name(
+        &route.literouter.model,
+        effective_selected.as_deref(),
+    );
     let limits = route.effective_limits(&model);
     observation.provider = provider;
     observation.model = model.clone();

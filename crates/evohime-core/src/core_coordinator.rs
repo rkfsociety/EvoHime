@@ -43,6 +43,13 @@ struct ActiveTask {
     cancellation: CancellationToken,
 }
 
+#[cfg(test)]
+impl TaskCoordinator {
+    pub(crate) fn set_command_sender_for_test(&mut self, sender: mpsc::Sender<CoreCommand>) {
+        self.commands = sender;
+    }
+}
+
 #[path = "core_coordinator_build.rs"]
 mod build;
 #[path = "core_coordinator_build_runtime.rs"]

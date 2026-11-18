@@ -553,7 +553,7 @@ impl ToolAgent {
                 .hive_settings()
                 .await
                 .ok()
-                .and_then(|settings| settings.eva_workspace_path),
+                .and_then(|settings| settings.primary_workspace_path().map(str::to_owned)),
             None => None,
         };
         let eva_workspace_configured = eva_workspace_path.as_deref().and_then(|path| {
