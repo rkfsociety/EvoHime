@@ -2011,22 +2011,24 @@ export function HiveDashboard({
           <div className="hive-panel__head">
             <h2>{translate('Метрики улья')}</h2>
           </div>
-          <div className="hive-metrics">
-            <EfficiencyRing percent={efficiency} />
-            <span className="hive-metrics__caption">{translate('Эффективность')}</span>
+          <div className="hive-metrics-summary">
+            <div className="hive-metrics">
+              <EfficiencyRing percent={efficiency} />
+              <span className="hive-metrics__caption">{translate('Эффективность')}</span>
+            </div>
+            <ul className="hive-stat-list">
+              <li><span>{translate('Агентов онлайн')}</span><strong>{agentsOnline}</strong></li>
+              <li><span>{translate('Задач в работе')}</span><strong>{activeTasks}</strong></li>
+              <li>
+                <span>{translate('Задач сегодня')}</span>
+                <strong>{hive?.metrics.tasksToday ?? 0}</strong>
+              </li>
+              <li>
+                <span>{translate('Среднее время')}</span>
+                <strong>{averageTimeLabel}</strong>
+              </li>
+            </ul>
           </div>
-          <ul className="hive-stat-list">
-            <li><span>{translate('Агентов онлайн')}</span><strong>{agentsOnline}</strong></li>
-            <li><span>{translate('Задач в работе')}</span><strong>{activeTasks}</strong></li>
-            <li>
-              <span>{translate('Задач сегодня')}</span>
-              <strong>{hive?.metrics.tasksToday ?? 0}</strong>
-            </li>
-            <li>
-              <span>{translate('Среднее время')}</span>
-              <strong>{averageTimeLabel}</strong>
-            </li>
-          </ul>
 
           <div className="hive-budget-card">
             <div className="hive-budget-card__head">
@@ -2046,41 +2048,43 @@ export function HiveDashboard({
             >
               <span style={{ width: `${spendPercent}%` }} />
             </div>
-            <label className="hive-provider">
-              <span>{translate('Текущий провайдер')}</span>
-              <select
-                aria-label={translate('Провайдер улья')}
-                value={selectedProviderKey}
-                disabled={providerBusy || providerOptionList.length === 0}
-                onChange={(changeEvent) => void selectProvider(changeEvent.target.value)}
-              >
-                {providerOptionList.length === 0
-                  ? <option value="">{translate(snapshotBudgetLabel)}</option>
-                  : providerOptionList.map((option) => (
-                    <option key={option.key} value={option.key} disabled={!option.configured}>
-                      {option.label}{option.configured ? '' : ` · ${translate('ключ не настроен')}`}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {provider ? (
-              <div className="hive-provider hive-model-picker" aria-label={translate('Модель королевы')}>
-                <span>{translate('Модель королевы')}</span>
-                <ModelPicker
-                  key={selectedProviderKey}
-                  connection={connection}
-                  events={events}
-                  provider={provider.provider}
-                  use="agent"
-                  disabled={providerBusy}
-                  onModelChange={(model) => {
-                    if (model && model !== budget.model) {
-                      requestSnapshot()
-                    }
-                  }}
-                />
-              </div>
-            ) : null}
+            <div className="hive-budget-card__selectors">
+              <label className="hive-provider">
+                <span>{translate('Текущий провайдер')}</span>
+                <select
+                  aria-label={translate('Провайдер улья')}
+                  value={selectedProviderKey}
+                  disabled={providerBusy || providerOptionList.length === 0}
+                  onChange={(changeEvent) => void selectProvider(changeEvent.target.value)}
+                >
+                  {providerOptionList.length === 0
+                    ? <option value="">{translate(snapshotBudgetLabel)}</option>
+                    : providerOptionList.map((option) => (
+                      <option key={option.key} value={option.key} disabled={!option.configured}>
+                        {option.label}{option.configured ? '' : ` · ${translate('ключ не настроен')}`}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {provider ? (
+                <div className="hive-provider hive-model-picker" aria-label={translate('Модель королевы')}>
+                  <span>{translate('Модель королевы')}</span>
+                  <ModelPicker
+                    key={selectedProviderKey}
+                    connection={connection}
+                    events={events}
+                    provider={provider.provider}
+                    use="agent"
+                    disabled={providerBusy}
+                    onModelChange={(model) => {
+                      if (model && model !== budget.model) {
+                        requestSnapshot()
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
             <p className="hive-budget-card__limit">
               {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
             </p>

@@ -7241,6 +7241,18 @@ body {
 
 /* Unified Hive dashboard: departments, queen, metrics, agents and logs. */
 
+.main__scroll:has(> .hive-console) {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 18px 14px;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.main__scroll:has(> .hive-console)::-webkit-scrollbar {
+  display: none;
+}
+
 .hive-console {
   --hive-violet: #8d82e8;
   --hive-blue: #5ea8ff;
@@ -7248,20 +7260,24 @@ body {
   --hive-amber: #e0b341;
   --hive-line: color-mix(in srgb, var(--hive-violet) 24%, var(--border));
   --hive-panel-bg: color-mix(in srgb, var(--bg-raised) 92%, transparent);
-  display: grid;
-  gap: 14px;
-  padding-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
+  padding-bottom: 0;
 }
 
 .hive-console__header {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
+  gap: 12px;
+  padding: 10px 16px;
   border: 1px solid var(--hive-line);
-  border-radius: 16px;
+  border-radius: 14px;
   background:
     radial-gradient(900px 220px at 0% -40%, color-mix(in srgb, var(--hive-violet) 26%, transparent), transparent 70%),
     radial-gradient(700px 200px at 100% -60%, color-mix(in srgb, var(--hive-blue) 18%, transparent), transparent 70%),
@@ -7270,15 +7286,15 @@ body {
 }
 
 .hive-console__title h1 {
-  margin: 2px 0 4px;
-  font-size: 24px;
+  margin: 1px 0 2px;
+  font-size: 20px;
   letter-spacing: -.01em;
 }
 
 .hive-console__title p:last-child {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: 11.5px;
 }
 
 .hive-console__eyebrow {
@@ -7401,24 +7417,26 @@ body {
 
 .hive-console__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(250px, .85fr) minmax(0, 1fr);
-  gap: 14px;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1.15fr) minmax(250px, .85fr) minmax(0, 1.15fr);
+  gap: 10px;
   align-items: stretch;
 }
 
 .hive-console__bottom {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
+  gap: 10px;
 }
 
 .hive-panel {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   align-content: start;
-  padding: 14px;
+  padding: 11px 12px;
   border: 1px solid var(--hive-line);
-  border-radius: 14px;
+  border-radius: 13px;
   background: var(--hive-panel-bg);
 }
 
@@ -7466,15 +7484,15 @@ body {
 .hive-departments {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .hive-department {
   display: grid;
-  gap: 7px;
-  padding: 10px 11px;
+  gap: 5px;
+  padding: 7px 9px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 10px;
   background:
     linear-gradient(160deg, color-mix(in srgb, var(--hive-violet) 9%, transparent), transparent 65%),
     var(--bg-sunken);
@@ -7544,12 +7562,13 @@ body {
 
 .hive-queen {
   position: relative;
-  display: grid;
-  gap: 12px;
-  align-content: start;
-  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 12px;
   border: 1px solid color-mix(in srgb, var(--hive-violet) 40%, var(--border));
-  border-radius: 14px;
+  border-radius: 13px;
   overflow: hidden;
   background: linear-gradient(
     165deg,
@@ -7566,8 +7585,9 @@ body {
 
 .hive-queen__stage {
   position: relative;
-  min-height: 310px;
-  border-radius: 12px;
+  flex: 1 1 auto;
+  min-height: 205px;
+  border-radius: 11px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--hive-violet) 26%, transparent);
   background:
@@ -7914,16 +7934,23 @@ body {
 
 /* Метрики и бюджет. */
 
+.hive-metrics-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
 .hive-metrics {
   display: grid;
   justify-items: center;
   gap: 2px;
-  padding: 4px 0 2px;
+  padding: 2px 4px;
 }
 
 .hive-ring {
-  width: 116px;
-  height: 116px;
+  width: 78px;
+  height: 78px;
 }
 
 .hive-ring__track {
@@ -7948,14 +7975,15 @@ body {
 
 .hive-metrics__caption {
   color: var(--fg-faint);
-  font: 10px var(--mono);
-  letter-spacing: .12em;
+  font: 9px var(--mono);
+  letter-spacing: .1em;
   text-transform: uppercase;
 }
 
 .hive-stat-list {
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -7963,31 +7991,39 @@ body {
 
 .hive-stat-list li {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 10px;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--bg-sunken);
 }
 
 .hive-stat-list span {
-  flex: 1;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hive-stat-list strong {
-  font: 13px var(--mono);
+  font: 600 12.5px var(--mono);
 }
 
 .hive-budget-card {
   display: grid;
-  gap: 8px;
-  padding: 11px 12px;
+  gap: 6px;
+  padding: 9px 10px;
   border: 1px solid var(--border);
-  border-radius: 11px;
+  border-radius: 10px;
   background: var(--bg-sunken);
+}
+
+.hive-budget-card__selectors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .hive-budget-card__head {
@@ -8083,19 +8119,26 @@ body {
 
 .hive-agent-list {
   display: grid;
-  gap: 7px;
+  gap: 5px;
+  max-height: 110px;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
   list-style: none;
+}
+
+.hive-agent-list::-webkit-scrollbar {
+  display: none;
 }
 
 .hive-agent-list li {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
+  gap: 8px;
+  padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 9px;
   background: var(--bg-sunken);
 }
 
@@ -8170,21 +8213,26 @@ body {
 
 .hive-log-list {
   display: grid;
-  gap: 5px;
-  max-height: 340px;
+  gap: 4px;
+  max-height: 110px;
   margin: 0;
   padding: 0;
   overflow: auto;
+  scrollbar-width: none;
   overflow-anchor: none;
   list-style: none;
+}
+
+.hive-log-list::-webkit-scrollbar {
+  display: none;
 }
 
 .hive-log-row {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  padding: 4px 8px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--bg-sunken) 60%, transparent);
 }
 
@@ -8356,16 +8404,27 @@ body {
 }
 
 .hive-chat {
-  display: grid;
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 140px;
+  gap: 8px;
+  padding: 10px 12px;
 }
 
 .hive-chat__messages {
   display: grid;
-  gap: 8px;
-  max-height: 280px;
+  flex: 1 1 0;
+  min-height: 0;
+  align-content: start;
+  gap: 6px;
   overflow-y: auto;
-  padding-right: 4px;
+  scrollbar-width: none;
+  padding-right: 0;
+}
+
+.hive-chat__messages::-webkit-scrollbar {
+  display: none;
 }
 
 .hive-chat__message,
@@ -8505,6 +8564,14 @@ body {
 /* Адаптив: сначала три колонки, затем две, затем одна. */
 
 @media (max-width: 1200px) {
+  .main__scroll:has(> .hive-console) {
+    overflow-y: auto;
+  }
+
+  .hive-console {
+    height: auto;
+  }
+
   .hive-console__grid {
     grid-template-columns: minmax(0, 1fr) minmax(240px, .8fr);
   }
