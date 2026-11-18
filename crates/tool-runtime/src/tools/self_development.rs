@@ -335,7 +335,7 @@ impl TestGate {
 const TEST_SUBCOMMANDS: &[&str] = &["test", "nextest"];
 
 /// Binaries the Queen may invoke inside her workspace.
-const ALLOWED_BINARIES: &[&str] = &["cargo", "npm"];
+const ALLOWED_BINARIES: &[&str] = &["cargo", "npm", "npx", "git"];
 
 /// Shell metacharacters that would let a single tool call escape the allow-list.
 const FORBIDDEN_FRAGMENTS: &[&str] = &["&&", "||", ";", "|", ">", "<", "`", "$(", "&"];
@@ -394,10 +394,20 @@ pub fn validate_command(command: &str) -> Result<(), SelfDevelopmentError> {
     let allowed_subcommand = match binary {
         "cargo" => matches!(first_subcommand, Some("check" | "test" | "fmt" | "clippy")),
         "npm" => matches!(first_subcommand, Some("run" | "test")),
+        "npx" => matches!(first_subcommand, Some("prettier")),
+        "git" => matches!(first_subcommand, Some("log")),
         _ => false,
     };
     if !allowed_subcommand {
         return Err(SelfDevelopmentError::CommandNotAllowed(trimmed.to_string()));
+    }
+
+    if binary == "git" {
+        return validate_git_log_command(&words, trimmed);
+    }
+
+    if binary == "npx" {
+        return validate_npx_prettier_command(&words, trimmed);
     }
 
     if binary == "npm" {
@@ -408,7 +418,7 @@ pub fn validate_command(command: &str) -> Result<(), SelfDevelopmentError> {
         };
         if !matches!(
             script,
-            Some("typecheck" | "check:protocol" | "test" | "test:unit")
+            Some("typecheck" | "check:protocol" | "test" | "test:unit" | "lint")
         ) || words
             .iter()
             .skip(if first_subcommand == Some("run") {
@@ -526,6 +536,78 @@ pub fn validate_command(command: &str) -> Result<(), SelfDevelopmentError> {
         }
     }
 
+    Ok(())
+}
+
+fn is_safe_relative_arg(arg: &str) -> bool {
+    !arg.is_empty()
+        && !arg.starts_with('-')
+        && !arg.starts_with('/')
+        && !arg.starts_with('\\')
+        && !arg.contains("..")
+        && !arg.contains(':')
+        && arg.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'/' | b'*')
+        })
+}
+
+fn is_valid_log_count(raw: &str) -> bool {
+    raw.parse::<u16>()
+        .ok()
+        .is_some_and(|count| (1..=100).contains(&count))
+}
+
+fn validate_git_log_command(words: &[&str], trimmed: &str) -> Result<(), SelfDevelopmentError> {
+    let mut index = 2;
+    while index < words.len() {
+        let arg = words[index];
+        match arg {
+            "-n" => {
+                let count = words.get(index + 1).copied().unwrap_or_default();
+                if !is_valid_log_count(count) {
+                    return Err(SelfDevelopmentError::CommandNotAllowed(trimmed.to_string()));
+                }
+                index += 2;
+            }
+            "--oneline" | "--stat" | "--name-only" | "--name-status" | "--graph" | "--decorate"
+            | "--no-merges" | "--merges" | "--first-parent" | "--reverse" | "--abbrev-commit" => {
+                index += 1;
+            }
+            "--" => {
+                if words[index + 1..]
+                    .iter()
+                    .any(|path| !is_safe_relative_arg(path))
+                {
+                    return Err(SelfDevelopmentError::CommandNotAllowed(trimmed.to_string()));
+                }
+                break;
+            }
+            _ if arg
+                .strip_prefix("--max-count=")
+                .is_some_and(is_valid_log_count) =>
+            {
+                index += 1;
+            }
+            _ if arg.strip_prefix('-').is_some_and(is_valid_log_count) => {
+                index += 1;
+            }
+            _ => return Err(SelfDevelopmentError::CommandNotAllowed(trimmed.to_string())),
+        }
+    }
+    Ok(())
+}
+
+fn validate_npx_prettier_command(
+    words: &[&str],
+    trimmed: &str,
+) -> Result<(), SelfDevelopmentError> {
+    for arg in &words[2..] {
+        match *arg {
+            "--write" | "--check" | "--list-different" => {}
+            _ if is_safe_relative_arg(arg) => {}
+            _ => return Err(SelfDevelopmentError::CommandNotAllowed(trimmed.to_string())),
+        }
+    }
     Ok(())
 }
 
@@ -1443,5 +1525,39 @@ mod tests {
             .await,
             Err(ToolError::PermissionDenied(Permission::GitWrite))
         ));
+    }
+
+    #[test]
+    fn self_development_allows_git_log_and_fmt() {
+        assert!(validate_command("git log -n 5").is_ok());
+        assert!(validate_command("git log --oneline -n 10").is_ok());
+        assert!(validate_command("git log --stat --max-count=5 -- Cargo.toml").is_ok());
+        assert!(validate_command("cargo fmt").is_ok());
+        assert!(validate_command("cargo fmt --all").is_ok());
+        assert!(validate_command("npm run lint").is_ok());
+        assert!(validate_command("npx prettier --check src/index.ts").is_ok());
+
+        assert!(matches!(
+            validate_command("git push"),
+            Err(SelfDevelopmentError::CommandNotAllowed(_))
+        ));
+        assert!(matches!(
+            validate_command("git -c core.pager=sh log"),
+            Err(SelfDevelopmentError::CommandNotAllowed(_))
+        ));
+        assert!(matches!(
+            validate_command("git reset --hard"),
+            Err(SelfDevelopmentError::CommandNotAllowed(_))
+        ));
+        assert!(matches!(
+            validate_command("npx arbitrary-pkg"),
+            Err(SelfDevelopmentError::CommandNotAllowed(_))
+        ));
+
+        let gate = TestGate::default();
+        assert_eq!(
+            ensure_push_allowed(&gate, false),
+            Err(SelfDevelopmentError::PushRequiresPassingTests)
+        );
     }
 }

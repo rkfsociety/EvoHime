@@ -1219,9 +1219,17 @@ impl CoordinatorPulseTaskSink {
     }
 }
 
+const PROJECT_CONTEXT_PREAMBLE: &str = "\
+ПЕРЕД ТЕМ КАК ПИСАТЬ КОД, ты обязана изучить контекст проекта. Выполни следующие шаги:\n\
+1. Прочитай файл `AGENTS.md` в корне проекта (если он есть) с помощью `eva_workspace_read_file`. Строго соблюдай правила из него (например, правила коммитов, ветвления и запреты).\n\
+2. Прочитай `docs/architecture.md` (если он есть), чтобы понять, как устроен проект.\n\
+3. Выполни команду `git log -n 5` в песочнице, чтобы увидеть, что делалось в проекте до тебя.\n\
+Только после этого приступай к изменениям.\n\n";
+
 fn proactive_evolution_prompt(file_path: &str, item: &str) -> String {
     format!(
-        "Ты работаешь в песочнице. Реализуй пункт '{item}' из файла '{file_path}'. \
+        "{PROJECT_CONTEXT_PREAMBLE}\
+         Ты работаешь в песочнице. Реализуй пункт '{item}' из файла '{file_path}'. \
          Используй `eva_workspace_read_file`, чтобы прочитать файл и понять контекст, \
          и остальные инструменты `eva_workspace_*`, чтобы внести изменения в код, запустить тесты, \
          закоммитить и запушить. После успеха замени `[ ]` на `[x]` в файле '{file_path}'."
@@ -1278,10 +1286,7 @@ pub(crate) fn find_roadmap_files(workspace_path: &std::path::Path) -> Vec<std::p
             let mut plan_files = Vec::new();
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path
-                    .file_name()
-                    .is_some_and(is_excluded_roadmap_dir)
-                {
+                if path.file_name().is_some_and(is_excluded_roadmap_dir) {
                     continue;
                 }
                 let is_md = path
@@ -1334,7 +1339,8 @@ fn extract_uncompleted_roadmap_items(content: &str) -> Vec<String> {
 fn recovery_task_prompt(incident: &str, workspace_path: Option<&str>) -> String {
     match workspace_path {
         Some(path) => format!(
-            "Обнаружен сбой ({incident}). Твой код находится в {path}. Используй инструменты \
+            "{PROJECT_CONTEXT_PREAMBLE}\
+             Обнаружен сбой ({incident}). Твой код находится в {path}. Используй инструменты \
              `eva_workspace_*`, чтобы найти причину, исправить код, запустить тесты и сделать \
              коммит. Если для исправления нужна платная модель (DeepSeek), запроси подтверждение \
              у пользователя."
@@ -1967,11 +1973,7 @@ mod tests {
                 ),
             )]),
         });
-        let probe = Arc::new(JournalPulseProbe::new(
-            journal,
-            gateway_config,
-            selected,
-        ));
+        let probe = Arc::new(JournalPulseProbe::new(journal, gateway_config, selected));
         let (coordinator, mut events) = TaskCoordinator::new(8);
         let sink = Arc::new(CoordinatorPulseTaskSink::new(
             coordinator,
@@ -2035,5 +2037,19 @@ mod tests {
             decide(&report, crate::task_memory::now_millis() as i64),
             PulseDecision::AllGood
         );
+    }
+
+    #[test]
+    fn pulse_includes_project_context_in_prompt() {
+        let evolution = proactive_evolution_prompt("docs/development-plan.md", "Add metrics");
+        let recovery = recovery_task_prompt("worker crashed", Some("D:/eva"));
+
+        for prompt in [&evolution, &recovery] {
+            assert!(prompt.starts_with("ПЕРЕД ТЕМ КАК ПИСАТЬ КОД"));
+            assert!(prompt.contains("AGENTS.md"));
+            assert!(prompt.contains("docs/architecture.md"));
+            assert!(prompt.contains("eva_workspace_read_file"));
+            assert!(prompt.contains("git log -n 5"));
+        }
     }
 }
