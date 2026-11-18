@@ -1,5 +1,5 @@
 import { translate } from './i18n'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PROVIDER_KINDS } from '@shared/api'
 import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderKind, ProviderLimits, ProviderProfileId, ProviderProfileSummary, ProviderSummary, RepairStatus } from '@shared/api'
@@ -765,20 +765,27 @@ function hiveLogLevel(eventType: string): HiveLogLevel {
   return 'info'
 }
 
+function coreEventKey(event: CoreEvent): string {
+  return `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${event.sequenceId}:${event.taskId}:${event.eventType}`
+}
+
 function hiveLogEntries(
   events: readonly CoreEvent[],
-  observedAt: ReadonlyMap<number, string>,
+  observedAt: ReadonlyMap<string, string>,
   limit: number
 ): readonly HiveLogEntry[] {
   return events
     .filter((event) => event.eventType !== 'hive_state.snapshot')
     .slice(0, limit)
-    .map((event) => ({
-      id: `seq-${event.sequenceId}`,
-      at: observedAt.get(event.sequenceId) ?? '—',
-      level: hiveLogLevel(event.eventType),
-      text: `${HIVE_LOG_LABELS[event.eventType] ?? event.eventType}${event.taskId ? ` · ${event.taskId}` : ''}`
-    }))
+    .map((event) => {
+      const key = coreEventKey(event)
+      return {
+        id: key,
+        at: observedAt.get(key) ?? '—',
+        level: hiveLogLevel(event.eventType),
+        text: `${HIVE_LOG_LABELS[event.eventType] ?? event.eventType}${event.taskId ? ` · ${event.taskId}` : ''}`
+      }
+    })
 }
 
 /** Круговой индикатор эффективности: только SVG, без сторонних библиотек. */
@@ -1130,7 +1137,8 @@ export function HiveDashboard({
   const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
   const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
   const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
-  const [observedAt, setObservedAt] = useState<ReadonlyMap<number, string>>(() => new Map())
+  const [observedAt, setObservedAt] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const logListRef = useRef<HTMLOListElement | null>(null)
   const [chatDraft, setChatDraft] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
   const [pendingTaskIds, setPendingTaskIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -1230,14 +1238,16 @@ export function HiveDashboard({
       if (next.size > 2000) {
         next = new Map()
         for (const event of events) {
-          const seen = current.get(event.sequenceId)
-          if (seen) next.set(event.sequenceId, seen)
+          const key = coreEventKey(event)
+          const seen = current.get(key)
+          if (seen) next.set(key, seen)
         }
       }
       let changed = next.size !== current.size
       for (const event of events) {
-        if (next.has(event.sequenceId)) continue
-        next.set(event.sequenceId, new Date().toLocaleTimeString('ru-RU', { hour12: false }))
+        const key = coreEventKey(event)
+        if (next.has(key)) continue
+        next.set(key, new Date().toLocaleTimeString('ru-RU', { hour12: false }))
         changed = true
       }
       return changed ? next : current
@@ -1619,6 +1629,12 @@ export function HiveDashboard({
       : null
   const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
   const logs = realLogs
+  const latestLogId = logs[0]?.id ?? null
+  useEffect(() => {
+    if (logListRef.current) {
+      logListRef.current.scrollTop = 0
+    }
+  }, [latestLogId, allLogs])
   const combinedPrompts = useMemo(() => {
     const byTask = new Map<string, HiveUserPrompt>()
     for (const item of historyPrompts) {
@@ -2043,7 +2059,7 @@ export function HiveDashboard({
               </button>
             </div>
           </div>
-          <ol className="hive-log-list">
+          <ol ref={logListRef} className="hive-log-list">
             {logs.map((entry) => (
               <li key={entry.id} className={`hive-log-row hive-log-row--${entry.level}`}>
                 <span className="hive-log-row__icon" aria-hidden="true"><UiIcon name={HIVE_LOG_ICONS[entry.level]} size={14} /></span>

@@ -808,4 +808,29 @@ describe('hive dashboard', () => {
     expect(routSchema.defaultTier).toBe('free')
     expect(routSchema.supportsModelLimits).toBe(false)
   })
+
+  it('hive_logs_keep_latest_on_top_and_reset_scroll', async () => {
+    const initialEvents: CoreEvent[] = [
+      { sequenceId: 1, coreInstanceId: 'core-1', sessionEpoch: 1, taskId: 'task-old', eventType: 'task.completed', payload: '{}' }
+    ]
+    const { rerender } = render(<HiveDashboard connection="connected" events={initialEvents} />)
+
+    const logsSection = await screen.findByLabelText('Логи улья')
+    const list = logsSection.querySelector('.hive-log-list') as HTMLOListElement
+    expect(list).toBeTruthy()
+    list.scrollTop = 120
+
+    const updatedEvents: CoreEvent[] = [
+      { sequenceId: 1, coreInstanceId: 'core-2', sessionEpoch: 2, taskId: 'task-new', eventType: 'task.failed', payload: '{}' },
+      ...initialEvents
+    ]
+    rerender(<HiveDashboard connection="connected" events={updatedEvents} />)
+
+    await waitFor(() => {
+      const rows = list.querySelectorAll('.hive-log-row__text')
+      expect(rows[0]?.textContent).toBe('Задача остановлена с ошибкой · task-new')
+      expect(rows[1]?.textContent).toBe('Задача завершена · task-old')
+      expect(list.scrollTop).toBe(0)
+    })
+  })
 })
