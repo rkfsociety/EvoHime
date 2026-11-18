@@ -810,17 +810,26 @@ function EfficiencyRing({ percent }: { readonly percent: number }): React.JSX.El
   const circumference = 2 * Math.PI * radius
   return (
     <svg className="hive-ring" viewBox="0 0 88 88" role="img" aria-label={`${translate('Эффективность')} ${bounded}%`}>
+      <defs>
+        <linearGradient id="hive-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="var(--hive-blue)" />
+          <stop offset="55%" stopColor="var(--hive-violet)" />
+          <stop offset="100%" stopColor="var(--hive-green)" />
+        </linearGradient>
+      </defs>
       <circle className="hive-ring__track" cx="44" cy="44" r={radius} />
       <circle
         className="hive-ring__value"
         cx="44"
         cy="44"
         r={radius}
+        stroke="url(#hive-ring-grad)"
         strokeDasharray={circumference}
         strokeDashoffset={circumference * (1 - bounded / 100)}
         transform="rotate(-90 44 44)"
       />
-      <text className="hive-ring__label" x="44" y="49" textAnchor="middle">{bounded}%</text>
+      <text className="hive-ring__label" x="44" y="45" textAnchor="middle">{bounded}%</text>
+      <text className="hive-ring__sublabel" x="44" y="58" textAnchor="middle">{translate('Эффективность')}</text>
     </svg>
   )
 }
@@ -2020,7 +2029,6 @@ export function HiveDashboard({
           <div className="hive-metrics-summary">
             <div className="hive-metrics">
               <EfficiencyRing percent={efficiency} />
-              <span className="hive-metrics__caption">{translate('Эффективность')}</span>
             </div>
             <ul className="hive-stat-list">
               <li><span>{translate('Агентов онлайн')}</span><strong>{agentsOnline}</strong></li>
