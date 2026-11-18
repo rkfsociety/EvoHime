@@ -969,11 +969,7 @@ impl PulseProbe for JournalPulseProbe {
         let pending_items = items
             .iter()
             .map(|item| PendingEvolutionItem {
-                item_key: evolution_item_key(
-                    eva_workspace_path,
-                    Some(&item.file_path),
-                    &item.text,
-                ),
+                item_key: evolution_item_key(eva_workspace_path, Some(&item.file_path), &item.text),
                 file_path: item.file_path.clone(),
                 text: item.text.clone(),
             })
@@ -1099,7 +1095,8 @@ fn evolution_task_outcome(
         }
         match record.event_type.as_str() {
             "task.completed" => {
-                let message = extract_event_text_field(&record.payload, "TaskCompleted", "final_message");
+                let message =
+                    extract_event_text_field(&record.payload, "TaskCompleted", "final_message");
                 let trimmed = message.trim();
                 let is_skip = trimmed == "SKIP"
                     || trimmed.starts_with("SKIP ")
@@ -1370,7 +1367,15 @@ fn format_roadmap_items_list(items: &[RoadmapItem]) -> String {
     items
         .iter()
         .enumerate()
-        .map(|(index, item)| format!("{}. [{}:{}] {}", index + 1, item.file_path, item.line, item.text))
+        .map(|(index, item)| {
+            format!(
+                "{}. [{}:{}] {}",
+                index + 1,
+                item.file_path,
+                item.line,
+                item.text
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -2331,8 +2336,8 @@ mod tests {
         )
         .expect("write TODO");
 
-        let journal =
-            EventJournal::open(directory.path().join("pulse-loop-guard.db")).expect("journal opens");
+        let journal = EventJournal::open(directory.path().join("pulse-loop-guard.db"))
+            .expect("journal opens");
         let settings = HiveSettings {
             eva_workspace_path: Some(repo_dir.to_string_lossy().into_owned()),
             proactive_evolution_enabled: true,
