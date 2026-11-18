@@ -30,6 +30,7 @@ impl PulseProbe for CalmProbe {
                 rate_limited_until_ms: None,
                 failed_workers: Vec::new(),
                 route_is_primary: true,
+                eva_workspace_path: None,
             })
         })
     }
@@ -41,6 +42,7 @@ impl PulseTaskSink for NoopSink {
     fn dispatch_recovery(
         &self,
         _failed_workers: &[String],
+        _eva_workspace_path: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + '_>> {
         Box::pin(async move { Err("not_used".into()) })
     }
@@ -110,4 +112,57 @@ async fn pulse_daemon_starts_and_stops_via_ipc() {
     let snapshot = bridge.hive_state_snapshot().await;
     assert_eq!(snapshot.pulse_status, HIVE_PULSE_ACTIVE);
     daemon.shutdown();
+}
+
+#[tokio::test]
+async fn saves_validated_eva_workspace_path_and_rejects_non_git_directory() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let journal =
+        EventJournal::open(directory.path().join("workspace-setting.db")).expect("journal opens");
+    let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+    let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+
+    let checkout = tempfile::tempdir().expect("checkout");
+    let status = std::process::Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(checkout.path())
+        .status()
+        .expect("git init");
+    assert!(status.success());
+    let path = checkout.path().to_string_lossy().into_owned();
+    let saved = bridge
+        .save_eva_workspace_path(&path)
+        .await
+        .expect("valid isolated git checkout saves");
+    let saved: serde_json::Value = serde_json::from_slice(&saved).expect("saved payload");
+    assert_eq!(saved["eva_workspace_path"], path);
+    assert_eq!(saved["self_development_enabled"], true);
+    assert_eq!(
+        journal
+            .hive_settings()
+            .await
+            .expect("settings load")
+            .eva_workspace_path,
+        Some(path)
+    );
+
+    let plain = tempfile::tempdir().expect("plain directory");
+    let rejected = bridge
+        .save_eva_workspace_path(&plain.path().to_string_lossy())
+        .await
+        .expect("invalid workspace is reported to UI");
+    let rejected: serde_json::Value = serde_json::from_slice(&rejected).expect("rejection payload");
+    assert_eq!(rejected["accepted"], false);
+    assert_eq!(rejected["self_development_enabled"], false);
+    assert!(rejected["error_code"]
+        .as_str()
+        .is_some_and(|error| !error.is_empty()));
+    assert_eq!(
+        journal
+            .hive_settings()
+            .await
+            .expect("settings reload")
+            .eva_workspace_path,
+        None
+    );
 }

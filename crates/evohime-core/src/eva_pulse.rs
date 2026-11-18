@@ -60,6 +60,8 @@ pub(crate) struct PulseCycleReport {
     pub failed_workers: Vec<String>,
     /// Whether the active route is the primary LiteRouter route.
     pub route_is_primary: bool,
+    /// Validated isolated checkout configured for Queen self-development.
+    pub eva_workspace_path: Option<String>,
 }
 
 /// Pure decision for one cycle.
@@ -93,6 +95,7 @@ pub(crate) trait PulseTaskSink: Send + Sync {
     fn dispatch_recovery(
         &self,
         failed_workers: &[String],
+        eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>>;
 }
 
@@ -358,7 +361,11 @@ impl Inner {
                     );
                     return interval;
                 }
-                match self.tasks.dispatch_recovery(&failed_workers).await {
+                match self
+                    .tasks
+                    .dispatch_recovery(&failed_workers, report.eva_workspace_path.as_deref())
+                    .await
+                {
                     Ok(task_id) => {
                         self.log(
                             "warning",
@@ -569,6 +576,7 @@ impl PulseProbe for JournalPulseProbe {
                 route_is_primary: crate::hive_observation::route_is_background_primary(
                     self.gateway_config.as_ref(),
                 ),
+                eva_workspace_path: settings.eva_workspace_path,
             })
         })
     }
@@ -605,6 +613,7 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
     fn dispatch_recovery(
         &self,
         failed_workers: &[String],
+        eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>> {
         let primary_route = self.primary_route.clone();
         let failed = failed_workers
@@ -612,17 +621,17 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
             .take(MAX_REPORTED_FAILURES)
             .map(|id| id.chars().take(128).collect::<String>())
             .collect::<Vec<_>>();
+        let workspace_path = eva_workspace_path
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned);
         Box::pin(async move {
             // A route is required: without the primary LiteRouter route the
             // daemon must not fall back to a paid DeepSeek profile.
             primary_route.ok_or_else(|| "primary_route_unavailable".to_owned())?;
             let task_id = uuid::Uuid::new_v4().to_string();
-            let prompt = format!(
-                "EvaPulse: фоновый цикл обнаружил завершившихся с ошибкой воркеров ({}). \
-                 Изучи журнал их child.workflow, определи причину сбоя и предложи безопасное \
-                 исправление. Не изменяй файлы без подтверждения.",
-                failed.join(", ")
-            );
+            let incident = format!("завершившиеся с ошибкой воркеры: {}", failed.join(", "));
+            let prompt = recovery_task_prompt(&incident, workspace_path.as_deref());
             self.coordinator
                 .dispatch(CoreCommand::StartTask {
                     task_id: task_id.clone(),
@@ -636,6 +645,21 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
                 .map_err(|error| error.to_string())?;
             Ok(task_id)
         })
+    }
+}
+
+fn recovery_task_prompt(incident: &str, workspace_path: Option<&str>) -> String {
+    match workspace_path {
+        Some(path) => format!(
+            "Обнаружен сбой ({incident}). Твой код находится в {path}. Используй инструменты \
+             `eva_workspace_*`, чтобы найти причину, исправить код, запустить тесты и сделать \
+             коммит. Если для исправления нужна платная модель (DeepSeek), запроси подтверждение \
+             у пользователя."
+        ),
+        None => format!(
+            "EvaPulse: обнаружен сбой ({incident}). Изучи журнал child.workflow, определи причину \
+             и предложи безопасное исправление. Не изменяй файлы без подтверждения."
+        ),
     }
 }
 
@@ -676,6 +700,7 @@ mod tests {
         fn dispatch_recovery(
             &self,
             _failed_workers: &[String],
+            _eva_workspace_path: Option<&str>,
         ) -> PulseFuture<'_, Result<String, String>> {
             self.primary_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok("task-pulse".into()) })
@@ -692,6 +717,7 @@ mod tests {
             rate_limited_until_ms: None,
             failed_workers: Vec::new(),
             route_is_primary: true,
+            eva_workspace_path: None,
         }
     }
 
@@ -790,6 +816,27 @@ mod tests {
         assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
     }
 
+    #[tokio::test]
+    async fn recovery_sink_starts_task_with_self_development_instruction() {
+        let (coordinator, mut events) = TaskCoordinator::new(8);
+        let sink = CoordinatorPulseTaskSink::new(coordinator, Some("primary".into()));
+        let task_id = sink
+            .dispatch_recovery(&["failed-worker".into()], Some("D:/eva"))
+            .await
+            .expect("recovery dispatches");
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("task start arrives")
+            .expect("event received");
+        assert!(matches!(
+            &event,
+            crate::CoreEvent::TaskStarted { task_id: started, .. } if started == &task_id
+        ));
+        let prompt = recovery_task_prompt("failed-worker", Some("D:/eva"));
+        assert!(prompt.contains("eva_workspace_*"));
+        assert!(prompt.contains("D:/eva"));
+    }
+
     #[test]
     fn decision_order_blocks_budget_before_work() {
         let mut report = healthy_report();
@@ -830,5 +877,36 @@ mod tests {
         assert_eq!(usd_to_nano_usd(-1.0), 0);
         assert_eq!(usd_to_nano_usd(f64::NAN), 0);
         assert_eq!(usd_to_nano_usd(0.5), 500_000_000);
+    }
+
+    #[test]
+    fn pulse_creates_self_dev_task_when_workspace_is_set() {
+        let prompt = recovery_task_prompt("worker task-1 завершился с ошибкой", Some("D:/eva"));
+        assert!(prompt.contains("Обнаружен сбой"));
+        assert!(prompt.contains("D:/eva"));
+        assert!(prompt.contains("`eva_workspace_*`"));
+        assert!(prompt.contains("запустить тесты и сделать коммит"));
+        assert!(prompt.contains("платная модель (DeepSeek)"));
+        assert_eq!(
+            crate::core_prelude::SELF_DEVELOPMENT_TOOL_IDS,
+            [
+                evohime_tool_runtime::self_development::TOOL_READ_FILE,
+                evohime_tool_runtime::self_development::TOOL_WRITE_FILE,
+                evohime_tool_runtime::self_development::TOOL_RUN_COMMAND,
+                evohime_tool_runtime::self_development::TOOL_GIT,
+            ]
+        );
+        assert_eq!(
+            evohime_tool_runtime::self_development::SELF_DEVELOPMENT_CAPABILITY,
+            "eva_self_development"
+        );
+    }
+
+    #[test]
+    fn pulse_creates_investigation_task_when_workspace_is_empty() {
+        let prompt = recovery_task_prompt("worker task-1 завершился с ошибкой", None);
+        assert!(prompt.contains("Изучи журнал child.workflow"));
+        assert!(!prompt.contains("eva_workspace_*"));
+        assert!(!prompt.contains("D:/eva"));
     }
 }

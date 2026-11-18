@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-17.
+Обновлено: 2026-11-18.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
@@ -133,9 +133,9 @@ target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
 Текущий опубликованный commit и результаты CI для закрытых направлений
 фиксируются в последней записи [`release-evidence.md`](release-evidence.md).
 Актуальные release markers берутся из `release-versions/`: `analysis-worker
-0.0.000043`, `cli 0.0.000091`, `core 0.0.000412`, `installer 0.0.000065`,
+0.0.000043`, `cli 0.0.000091`, `core 0.0.000457`, `installer 0.0.000065`,
 `listener-runtime 0.0.000043`, `listener 0.0.000044`, `shell-host 0.0.000114`,
-`supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000144`,
+`supervisor 0.0.000046`, `transaction 0.0.000069`, `ui-bundle 0.0.000184`,
 `updater 0.0.000132` и `verifier 0.0.000057`.
 
 Новые задания чата получают из Core conversation log последние 40 durable
@@ -530,14 +530,38 @@ peak/off-peak тариф по времени отправки запроса. Н
 он засыпает до точного `wake_at_ms`, не создавая задач. Новые упавшие воркеры
 приводят к одной ограниченной recovery-задаче через `TaskCoordinator`, но только
 на primary-маршруте LiteRouter: DeepSeek и другие маршруты для фоновой работы не
-используются, а 429 не повторяется и не уходит в платный fallback. Gateway
+используются, а 429 не повторяется и не уходит в платный fallback. При заданном
+`eva_workspace_path` recovery-задача получает инструкции автономного ремонта и
+capability `eva_self_development` с каталогом `eva_workspace_*`; Core проверяет
+путь как отдельный Git checkout и сохраняет штатные permission approvals и
+тестовый gate перед commit/push. Без пути остаётся read-only исследование.
+Настройка пути доступна в дашборде Улья; пустое или невалидное значение
+очищает конфигурацию и отключает инструменты с ошибкой в UI. Gateway
 записывает полученный cooldown в process-local `rate_limit_signal`, и демон
 читает его перед следующим циклом. Здоровый цикл
 пишет `EvaPulse: all good` в `core.jsonl`. Тумблер «Авто-режим (EvaPulse)» в
 дашборде вызывает `core.togglePulse` (proto command 287); `false` переводит
 демон в `disabled`, `true` будит его и запускает цикл сразу. Статус
 `pulse_status` и `next_wake_at_ms` возвращаются в `hive_state.snapshot`
-(schema version 4) и только отображаются renderer-ом.
+`(schema version 5)` и только отображаются renderer-ом. Снимок также содержит
+фактический `daily_budget_usd`, число начатых задач за UTC-сутки и среднюю
+длительность завершённых задач из Core event journal; при ошибке чтения UI
+показывает нули. Мок-метрики, лимит `$0.50` и демо-логи удалены.
+
+Путь `HiveSettings.eva_workspace_path` в дашборде «Улей» задаёт отдельный Git
+checkout для self-development. Core валидирует путь через `EvaWorkspace::open`;
+пустой или невалидный ввод очищает путь, выключает инструменты и возвращает
+ошибку в UI. При настроенном workspace EvaPulse направляет recovery-задачу
+исследовать, исправить код, запустить тесты и сделать commit. Core добавляет
+capability `eva_self_development` и инструменты `eva_workspace_*` только для
+такой задачи и только после стандартного permission preflight. Изменения
+остаются внутри checkout, а commit закрыт тестовым gate, push — тестовым и
+чистым-worktree gates Self-Development Tools. Фоновый маршрут остаётся на
+primary LiteRouter; DeepSeek автоматически не вызывается и платный
+fallback не включается. Без пути остаётся обычная read-only задача исследования.
+Снимок Улья schema v5 отдаёт `daily_budget_usd`, число начатых задач за UTC-сутки
+и среднюю длительность завершённых задач из Core event journal; при ошибке
+чтения UI показывает ноль. Мок-метрики, лимит `$0.50` и демо-логи удалены.
 
 Внутренние runtime-контракты, execution backends, безопасность, диагностика и
 организация агентов не представлены отдельными вкладками: это Core/agent/model

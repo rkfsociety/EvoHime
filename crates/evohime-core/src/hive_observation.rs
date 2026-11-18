@@ -62,6 +62,9 @@ pub(crate) async fn build_hive_observation(
         now_ms,
         ..HiveObservation::default()
     };
+    let (tasks_today, average_task_time_sec) = task_metrics(journal, now_ms).await;
+    observation.tasks_today = tasks_today;
+    observation.average_task_time_sec = average_task_time_sec;
     let Some(config) = gateway_config else {
         return observation;
     };
@@ -127,6 +130,49 @@ pub(crate) async fn build_hive_observation(
     observation
 }
 
+async fn task_metrics(journal: &EventJournal, now_ms: i64) -> (u32, u64) {
+    let day_start_ms = now_ms.div_euclid(HIVE_DAY_WINDOW_MS) * HIVE_DAY_WINDOW_MS;
+    let Some(day_start) = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(day_start_ms)
+        .map(|timestamp| timestamp.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+    else {
+        return (0, 0);
+    };
+    let Ok(lease) = journal.checkout_read_database() else {
+        return (0, 0);
+    };
+    let Some(database) = lease.database() else {
+        return (0, 0);
+    };
+    let result = database.connection().query_row(
+        "WITH today_tasks AS (
+             SELECT task_id, MIN(sequence_id) AS start_sequence, MIN(created_at) AS started_at
+             FROM events WHERE event_type = 'task.started' AND created_at >= ?1
+             GROUP BY task_id
+         ), completed AS (
+             SELECT tasks.task_id, tasks.started_at, MIN(done.created_at) AS completed_at
+             FROM today_tasks AS tasks
+             JOIN events AS done ON done.task_id = tasks.task_id
+                 AND done.event_type = 'task.completed'
+                 AND done.sequence_id > tasks.start_sequence
+             GROUP BY tasks.task_id, tasks.started_at
+         )
+         SELECT (SELECT COUNT(*) FROM today_tasks),
+                (SELECT AVG((julianday(completed_at) - julianday(started_at)) * 86400.0)
+                 FROM completed)",
+        [day_start],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<f64>>(1)?)),
+    );
+    match result {
+        Ok((count, average)) => (
+            u32::try_from(count.max(0)).unwrap_or(u32::MAX),
+            average
+                .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+                .map_or(0, |seconds| seconds.round().min(u64::MAX as f64) as u64),
+        ),
+        Err(_) => (0, 0),
+    }
+}
+
 /// Replays the bounded child projection window.
 ///
 /// Later records for the same child replace earlier ones; terminal projections
@@ -180,4 +226,35 @@ pub(crate) async fn persistent_agent_roles(journal: &EventJournal) -> Vec<String
 /// Reads the model identity the shell selected, if any.
 pub(crate) fn selected_model_name(selected: &SelectedModel) -> Option<String> {
     selected.get().map(|value| value.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn task_metrics_come_from_durable_coordinator_events() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal = EventJournal::open(directory.path().join("hive-task-metrics.db"))
+            .expect("journal opens");
+        let now_ms = crate::task_memory::now_millis() as i64;
+        journal
+            .record(&crate::CoreEvent::TaskStarted {
+                task_id: "task-metrics-1".into(),
+                prompt: "<redacted>".into(),
+            })
+            .await
+            .expect("task start journals");
+        journal
+            .record(&crate::CoreEvent::TaskCompleted {
+                task_id: "task-metrics-1".into(),
+                final_message: "done".into(),
+            })
+            .await
+            .expect("task completion journals");
+
+        let (count, average) = task_metrics(&journal, now_ms).await;
+        assert_eq!(count, 1);
+        assert!(average <= 86_400);
+    }
 }

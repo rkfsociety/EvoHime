@@ -61,11 +61,7 @@ pub(crate) const TOOL_FILESYSTEM_READ: &str = "filesystem_read";
 pub(crate) const TOOL_FILESYSTEM_SEARCH: &str = "filesystem_search";
 /// Tools that can perform a required workspace mutation. The delivery gate
 /// drops a mutation requirement when none of them is in the active loadout.
-pub(crate) const DELIVERY_MUTATION_TOOLS: &[&str] = &[
-    "filesystem_write",
-    "filesystem_patch",
-    "eva_workspace_write_file",
-];
+pub(crate) const DELIVERY_MUTATION_TOOLS: &[&str] = &["filesystem_write", "filesystem_patch"];
 /// Tool that runs the required verification command (tests, build, diff check).
 pub(crate) const DELIVERY_VERIFICATION_TOOL: &str = "shell_execute";
 /// Tool that records the required commit after a successful verification.
@@ -86,6 +82,15 @@ pub(crate) const FULL_ACCESS_WORKING_SET: &[&str] = &[
     "git_status",
     "git_diff",
     "git_commit",
+    "eva_workspace_read_file",
+    "eva_workspace_write_file",
+    "eva_workspace_run_command",
+    "eva_workspace_git",
+];
+
+/// Complete self-development tool set offered only after workspace validation
+/// and the ordinary permission preflight succeeds.
+pub(crate) const SELF_DEVELOPMENT_TOOL_IDS: &[&str] = &[
     "eva_workspace_read_file",
     "eva_workspace_write_file",
     "eva_workspace_run_command",

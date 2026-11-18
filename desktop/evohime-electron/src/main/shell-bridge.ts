@@ -1015,6 +1015,13 @@ function dispatch(
       return accepted(client.send({ togglePulse: { schemaVersion: 1, requestId: '', enabled } }))
     }
 
+    case 'core.setEvaWorkspacePath': {
+      const path = asRecord(payload)['path']
+      if (typeof path !== 'string' || path.length > 4_096) return failure('invalid-payload', 'Некорректный путь репозитория саморазвития.')
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ setEvaWorkspacePath: { schemaVersion: 1, requestId: '', path } }))
+    }
+
     case 'core.listSkills': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])

@@ -17,15 +17,16 @@ function event(eventType: string, payload: Record<string, unknown>, taskId = '')
   return { sequenceId: nextSequence++, taskId, eventType, payload: JSON.stringify(payload) }
 }
 
-/** Snapshot ровно в том виде, в каком его публикует Core (schema v4). */
+/** Snapshot ровно в том виде, в каком его публикует Core (schema v5). */
 function snapshot(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    schema_version: 4,
+    schema_version: 5,
     queen: { status: 'active', name: 'EvoHime', reason: '', wake_at_ms: null },
     metrics: {
       total_agents_online: 2,
       active_tasks: 3,
       average_task_time_sec: 0,
+      tasks_today: 0,
       efficiency_percent: 98
     },
     departments: [
@@ -68,6 +69,8 @@ function snapshot(overrides: Record<string, unknown> = {}): Record<string, unkno
       daily_cost_available: true,
       daily_cost_nano_usd: 120_000_000
     },
+    daily_budget_usd: 0.5,
+    eva_workspace_path: null,
     pulse_status: 'active',
     next_wake_at_ms: Date.now() + 1_800_000,
     ...overrides
@@ -103,6 +106,7 @@ beforeEach(() => {
     apiVersion: 1,
     invoke: (async (command: RendererCommand, payload: unknown) => {
       calls.push({ command, payload })
+      if (command === 'core.setEvaWorkspacePath') return ok({ accepted: true })
       if (command === 'provider.get') return ok(providerSummary())
       if (command === 'provider.select') {
         return ok({ summary: providerSummary({ provider: 'ollama', model: 'llama3.2', tier: 'free' }), restarted: true })
@@ -164,7 +168,7 @@ describe('hive dashboard', () => {
 
     expect(await screen.findByText('Требуется ваше подтверждение')).toBeTruthy()
     expect(screen.getByText('Запустить тесты')).toBeTruthy()
-    expect(screen.getByText(/~\$0\.05/)).toBeTruthy()
+    expect(screen.getByLabelText('Запрос подтверждения').querySelector('.hive-approval__cost strong')?.textContent).toBe('—')
 
     await userEvent.click(screen.getByRole('button', { name: 'Разрешить' }))
 
@@ -236,6 +240,30 @@ describe('hive dashboard', () => {
       expect(calls.find((call) => call.command === 'provider.select')?.payload).toEqual({ provider: 'ollama' })
     })
     expect(await screen.findByText('Core перезапущен с выбранным провайдером.')).toBeTruthy()
+  })
+
+  it('ui_reads_budget_from_snapshot', async () => {
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot({ daily_budget_usd: 3.25 }))]} />)
+    expect(await screen.findByText('$0.12 / $3.25')).toBeTruthy()
+    expect(screen.getByText(/Лимит: \$3\.25\/день/)).toBeTruthy()
+  })
+
+  it('ui_can_save_eva_workspace_path', async () => {
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+    const input = await screen.findByRole('textbox', { name: 'Путь к Git-репозиторию саморазвития' })
+    await userEvent.type(input, 'D:/eva-checkout')
+    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить путь' }))
+    await waitFor(() => {
+      expect(calls.find((call) => call.command === 'core.setEvaWorkspacePath')?.payload).toEqual({ path: 'D:/eva-checkout' })
+    })
+  })
+
+  it('shows zero task metrics when snapshot has no completed-task history', async () => {
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+    expect(await screen.findByText('Задач сегодня')).toBeTruthy()
+    const list = screen.getByText('Задач сегодня').closest('li')
+    expect(list?.querySelector('strong')?.textContent).toBe('0')
+    expect(screen.getByText('Среднее время').closest('li')?.querySelector('strong')?.textContent).toBe('0с')
   })
 
   it('показывает спящую Королеву с точным моментом сброса лимита', async () => {

@@ -1976,6 +1976,7 @@ message CommandEnvelope {
     ImageGenerationCommand image_generation = 285;
     HiveStateCommand hive_state = 286;
     TogglePulseCommand toggle_pulse = 287;
+    SetEvaWorkspacePathCommand set_eva_workspace_path = 288;
   }
 }
 
@@ -1995,6 +1996,14 @@ message TogglePulseCommand {
   uint32 schema_version = 1;
   string request_id = 2;
   bool enabled = 3;
+}
+
+// Configures the isolated Git checkout available to Queen self-development.
+// An empty path clears the setting; non-empty paths are validated by Core.
+message SetEvaWorkspacePathCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string path = 3;
 }
 
 // Plan 135: bounded Core-owned review target/findings projection.

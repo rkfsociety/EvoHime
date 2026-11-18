@@ -253,6 +253,7 @@ interface HiveStateView {
   readonly metrics: {
     readonly totalAgentsOnline: number
     readonly activeTasks: number
+    readonly tasksToday: number
     readonly averageTaskTimeSec: number
     readonly efficiencyPercent: number
   }
@@ -286,6 +287,8 @@ interface HiveStateView {
     readonly dailyCostAvailable: boolean
     readonly dailyCostNanoUsd: number | null
   }
+  readonly dailyBudgetUsd: number
+  readonly evaWorkspacePath: string | null
   readonly pulseStatus: string
   readonly nextWakeAtMs: number | null
 }
@@ -397,7 +400,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   // Core может отставать от UI. Известные версии проекции читаются с defaults
   // для отсутствующих секций; неизвестная версия отклоняется целиком.
   const version = root['schema_version']
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4) return null
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5) return null
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -425,6 +428,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
     metrics: {
       totalAgentsOnline: count(metrics['total_agents_online'], 65_535),
       activeTasks: count(metrics['active_tasks'], 65_535),
+      tasksToday: count(metrics['tasks_today'], 1_000_000),
       averageTaskTimeSec: count(metrics['average_task_time_sec'], 86_400),
       efficiencyPercent: count(metrics['efficiency_percent'], 100)
     },
@@ -468,6 +472,10 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
         ? budget['daily_cost_nano_usd']
         : null
     },
+    dailyBudgetUsd: typeof root['daily_budget_usd'] === 'number' && Number.isFinite(root['daily_budget_usd']) && root['daily_budget_usd'] >= 0
+      ? Math.min(root['daily_budget_usd'], 10_000)
+      : 0,
+    evaWorkspacePath: typeof root['eva_workspace_path'] === 'string' ? root['eva_workspace_path'].slice(0, 4_096) : null,
     pulseStatus: text(root['pulse_status'], 16),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
       ? root['next_wake_at_ms']
@@ -569,23 +577,6 @@ function departmentView(departments: HiveStateView['departments']): readonly Dep
     })
   }
   return cards
-}
-
-/**
- * Плейсхолдеры макета. Используются только для величин, которых ещё нет в
- * `HiveStateSnapshot`; каждое такое место помечено в разметке как «макет»,
- * чтобы значение из макета нельзя было принять за данные Core.
- */
-const HIVE_MOCK = {
-  tasksToday: 128,
-  averageTaskTimeSec: 1.2,
-  dailyBudgetUsd: 0.5,
-  approvalCostUsd: 0.05,
-  logs: [
-    { at: '12:14:20', level: 'success' as const, text: 'Агент Dev-01: компонент HiveDashboard.tsx собран' },
-    { at: '12:14:02', level: 'info' as const, text: 'Королева Ева: распределены 3 задачи по департаментам' },
-    { at: '12:13:41', level: 'warning' as const, text: 'Pulse: расписание «ночной аудит» ожидает подтверждения' }
-  ]
 }
 
 const HIVE_INTERVALS = [1000, 2000, 5000, 10000] as const
@@ -813,10 +804,7 @@ function ApprovalRequest({ request, busy, onResolve }: { readonly request: Appro
       </div>
       <div className="hive-approval__cost">
         <span>{translate('Стоимость')}</span>
-        <strong>~${(request.costUsd ?? HIVE_MOCK.approvalCostUsd).toFixed(2)}</strong>
-        {request.costUsd === null ? (
-          <em className="hive-badge hive-badge--mock" title={translate('Значение из макета: Core пока не оценивает стоимость этого действия')}>{translate('макет')}</em>
-        ) : null}
+        <strong>{request.costUsd === null ? '—' : `~$${request.costUsd.toFixed(2)}`}</strong>
       </div>
       <div className="hive-approval__actions">
         <button type="button" className="hive-button hive-button--approve" onClick={() => onResolve(true)} disabled={busy}>{translate('Разрешить')}</button>
@@ -866,9 +854,43 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
   const [provider, setProvider] = useState<ProviderSummary | null>(null)
   const [providerBusy, setProviderBusy] = useState(false)
   const [providerMessage, setProviderMessage] = useState<string | null>(null)
+  const [evaWorkspacePath, setEvaWorkspacePath] = useState('')
+  const [evaWorkspaceDraft, setEvaWorkspaceDraft] = useState('')
+  const [evaWorkspaceError, setEvaWorkspaceError] = useState<string | null>(null)
+  const [evaWorkspaceBusy, setEvaWorkspaceBusy] = useState(false)
   const [observedAt, setObservedAt] = useState<ReadonlyMap<number, string>>(() => new Map())
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
+  useEffect(() => {
+    if (!hive) return
+    const configured = hive.evaWorkspacePath ?? ''
+    setEvaWorkspacePath(configured)
+    setEvaWorkspaceDraft(configured)
+  }, [hive?.evaWorkspacePath])
+  const hiveSettingsResult = latest(events, 'hive_settings.saved')
+  useEffect(() => {
+    if (!hiveSettingsResult) return
+    try {
+      const result = JSON.parse(hiveSettingsResult.payload) as { accepted?: boolean; eva_workspace_path?: string | null; error_code?: string }
+      if (!result.accepted && !result.error_code && !result.eva_workspace_path) {
+        setEvaWorkspacePath('')
+        setEvaWorkspaceDraft('')
+        setEvaWorkspaceError('Путь не задан; инструменты саморазвития выключены.')
+        return
+      }
+      if (!result.accepted || result.error_code) {
+        setEvaWorkspacePath('')
+        setEvaWorkspaceDraft('')
+        setEvaWorkspaceError(result.error_code || 'Путь к репозиторию отклонён Core.')
+        return
+      }
+      setEvaWorkspacePath(result.eva_workspace_path ?? '')
+      setEvaWorkspaceDraft(result.eva_workspace_path ?? '')
+      setEvaWorkspaceError(null)
+    } catch {
+      setEvaWorkspaceError('Core вернул некорректный ответ о пути репозитория.')
+    }
+  }, [hiveSettingsResult])
 
   // Метка времени ставится в момент, когда оболочка получила событие: Core не
   // публикует wall-clock для каждого события, а выдумывать время нельзя.
@@ -987,6 +1009,33 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
     saveHivePreference(next)
   }, [])
 
+  const saveEvaWorkspacePath = useCallback(async (): Promise<void> => {
+    if (!api) return
+    setEvaWorkspaceBusy(true)
+    setEvaWorkspaceError(null)
+    try {
+      const submittedPath = evaWorkspaceDraft.trim()
+      const outcome = await api.invoke('core.setEvaWorkspacePath', { path: submittedPath })
+      if (!outcome.ok) {
+        setEvaWorkspacePath('')
+        setEvaWorkspaceDraft('')
+        setEvaWorkspaceError(outcome.message)
+        return
+      }
+      if (submittedPath.length === 0) {
+        setEvaWorkspacePath('')
+        setEvaWorkspaceDraft('')
+        setEvaWorkspaceError('Путь не задан; инструменты саморазвития выключены.')
+        return
+      }
+      setEvaWorkspaceError('Путь отправлен в Core для проверки…')
+    } catch {
+      setEvaWorkspaceError('Не удалось сохранить путь репозитория: Core не ответил.')
+    } finally {
+      setEvaWorkspaceBusy(false)
+    }
+  }, [api, evaWorkspaceDraft, events])
+
   // The switch is a Core runtime control, not only a local display option:
   // false parks the daemon, true lets it run a cycle immediately. The local
   // preference still owns the snapshot polling interval in this window.
@@ -1031,11 +1080,11 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
         ? 'EvaPulse выключен'
         : 'EvaPulse: нет данных Core'
   const averageTaskTimeSec = hive?.metrics.averageTaskTimeSec ?? 0
-  const averageTimeIsMock = averageTaskTimeSec <= 0
-  const averageTimeLabel = averageTimeIsMock ? `${HIVE_MOCK.averageTaskTimeSec}с` : `${averageTaskTimeSec}с`
+  const averageTimeLabel = `${averageTaskTimeSec}с`
+  const dailyBudgetUsd = hive?.dailyBudgetUsd ?? 0
   const spentUsd = budget.dailyCostAvailable && budget.dailyCostNanoUsd !== null ? budget.dailyCostNanoUsd / 1_000_000_000 : null
-  const spendPercent = spentUsd === null ? 0 : Math.min(100, Math.round((spentUsd / HIVE_MOCK.dailyBudgetUsd) * 100))
-  const remainingUsd = Math.max(0, HIVE_MOCK.dailyBudgetUsd - (spentUsd ?? 0))
+  const spendPercent = spentUsd === null || dailyBudgetUsd <= 0 ? 0 : Math.min(100, Math.round((spentUsd / dailyBudgetUsd) * 100))
+  const remainingUsd = Math.max(0, dailyBudgetUsd - (spentUsd ?? 0))
   const spentLabel = budget.dailyCostAvailable && budget.dailyCostNanoUsd !== null ? formatMoney(budget.dailyCostNanoUsd) : '—'
   const requestSummary = [
     `${budget.historyAvailable ? budget.requestsLastMinute : '—'}${budget.minuteCap > 0 ? ` / ${budget.minuteCap}` : ''} ${translate('за минуту')}`,
@@ -1049,10 +1098,7 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
       ? 'DeepSeek API'
       : budget.provider || translate('провайдер не выбран')
   const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
-  const logs: readonly HiveLogEntry[] = realLogs.length > 0
-    ? realLogs
-    : HIVE_MOCK.logs.map((entry, index) => ({ id: `mock-${index}`, ...entry }))
-  const logsAreMock = realLogs.length === 0
+  const logs = realLogs
 
   return (
     <section className="hive-console" aria-label={translate('Улей (Hive)')}>
@@ -1181,7 +1227,6 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
         <aside className="hive-panel hive-panel--metrics" aria-label={translate('Метрики улья')}>
           <div className="hive-panel__head">
             <h2>{translate('Метрики улья')}</h2>
-            <span className="hive-badge hive-badge--mock" title={translate('Часть величин взята из макета: Core пока не отдаёт эти поля')}>{translate('макет')}</span>
           </div>
           <div className="hive-metrics">
             <EfficiencyRing percent={efficiency} />
@@ -1192,13 +1237,11 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
             <li><span>{translate('Задач в работе')}</span><strong>{activeTasks}</strong></li>
             <li>
               <span>{translate('Задач сегодня')}</span>
-              <strong>{HIVE_MOCK.tasksToday}</strong>
-              <em className="hive-badge hive-badge--mock">{translate('макет')}</em>
+              <strong>{hive?.metrics.tasksToday ?? 0}</strong>
             </li>
             <li>
               <span>{translate('Среднее время')}</span>
               <strong>{averageTimeLabel}</strong>
-              {averageTimeIsMock ? <em className="hive-badge hive-badge--mock">{translate('макет')}</em> : null}
             </li>
           </ul>
 
@@ -1208,7 +1251,7 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
             </div>
             <div className="hive-budget-card__spent">
               <span>{translate('Потрачено сегодня')}</span>
-              <strong>{spentLabel} / ${HIVE_MOCK.dailyBudgetUsd.toFixed(2)}</strong>
+              <strong>{spentLabel} / ${dailyBudgetUsd.toFixed(2)}</strong>
             </div>
             <div
               className="hive-progress"
@@ -1238,7 +1281,7 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
               </select>
             </label>
             <p className="hive-budget-card__limit">
-              {translate('Лимит:')} ${HIVE_MOCK.dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
+              {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
             </p>
             <p className="hive-budget-card__requests">
               {translate('Лимит запросов провайдера')}: {requestSummary}
@@ -1253,6 +1296,33 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
           </div>
         </aside>
       </div>
+
+      <section className="hive-panel" aria-label={translate('Настройка саморазвития')}>
+        <div className="hive-panel__head">
+          <h2>{translate('Саморазвитие Евы')}</h2>
+          <span className="hive-badge">
+            {translate(evaWorkspacePath ? 'включено' : 'выключено')}
+          </span>
+        </div>
+        <p>{translate('Укажи отдельный изолированный Git checkout. Ева сможет исследовать и исправлять только его; Core не изменяет установленный продукт.')}</p>
+        <label className="hive-provider">
+          <span>{translate('Путь к Git-репозиторию')}</span>
+          <input
+            type="text"
+            aria-label={translate('Путь к Git-репозиторию саморазвития')}
+            value={evaWorkspaceDraft}
+            onChange={(changeEvent) => setEvaWorkspaceDraft(changeEvent.target.value)}
+            placeholder="C:\\EvoHime-self-development"
+          />
+        </label>
+        <div className="hive-console__controls">
+          <button type="button" disabled={!connected || evaWorkspaceBusy} onClick={() => void saveEvaWorkspacePath()}>
+            {translate(evaWorkspaceBusy ? 'Сохранение…' : 'Сохранить путь')}
+          </button>
+          <small>{translate(evaWorkspacePath ? 'Инструменты eva_workspace_* доступны Королеве Еве.' : 'Путь не задан — инструменты саморазвития недоступны.')}</small>
+        </div>
+        {evaWorkspaceError ? <p role="alert" className="hive-console__error">{translate(evaWorkspaceError)}</p> : null}
+      </section>
 
       <div className="hive-console__bottom">
         <section className="hive-panel hive-panel--agents" aria-label={translate('Активные агенты')}>
@@ -1289,7 +1359,7 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
           <div className="hive-panel__head">
             <h2>{translate('Логи улья')}</h2>
             <div className="hive-panel__actions">
-              {logsAreMock ? <span className="hive-badge hive-badge--mock">{translate('демо')}</span> : null}
+              {logs.length === 0 ? <span className="hive-badge">{translate('нет событий')}</span> : null}
               <button
                 type="button"
                 className="hive-link-button"
@@ -1309,6 +1379,7 @@ export function HiveDashboard({ connection, events, resolvedApprovalIds = [], on
               </li>
             ))}
           </ol>
+          {logs.length === 0 ? <p className="hive-empty">{translate('Событий пока нет.')}</p> : null}
         </section>
       </div>
     </section>

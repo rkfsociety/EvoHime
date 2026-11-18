@@ -17,7 +17,7 @@ use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
-pub const HIVE_STATE_SCHEMA_VERSION: u32 = 4;
+pub const HIVE_STATE_SCHEMA_VERSION: u32 = 5;
 /// Name shown for the single queen in the local hive.
 pub const DEFAULT_QUEEN_NAME: &str = "EvoHime";
 /// Maximum number of departments rendered at once.
@@ -69,10 +69,9 @@ pub struct HiveMetrics {
     pub total_agents_online: u16,
     /// Number of child tasks currently in flight.
     pub active_tasks: u16,
-    /// Mean wall-clock time of a finished child task.
-    ///
-    /// Child projections do not carry start/end timestamps yet, so the value is
-    /// currently always zero rather than an estimate.
+    /// Number of tasks started during the current UTC day.
+    pub tasks_today: u32,
+    /// Mean wall-clock time of today's completed tasks, in seconds.
     pub average_task_time_sec: u64,
     /// Share of the queen-authored ceilings already used by spawned sub-agents.
     pub efficiency_percent: u8,
@@ -221,6 +220,10 @@ pub struct HiveObservation {
     ///
     /// `None` means the daemon is disabled or cannot promise a wake moment.
     pub pulse_next_wake_at_ms: Option<i64>,
+    /// Tasks started during the current UTC day according to durable Core events.
+    pub tasks_today: u32,
+    /// Mean duration of today's completed tasks, in seconds.
+    pub average_task_time_sec: u64,
 }
 
 impl Default for HiveObservation {
@@ -245,12 +248,14 @@ impl Default for HiveObservation {
             // instead of pretending the background loop is running.
             pulse_status: HIVE_PULSE_DISABLED.into(),
             pulse_next_wake_at_ms: None,
+            tasks_today: 0,
+            average_task_time_sec: 0,
         }
     }
 }
 
 /// Aggregated, serializable hive state for the operations panel.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HiveStateSnapshot {
     /// Version of this projection contract.
@@ -269,6 +274,10 @@ pub struct HiveStateSnapshot {
     pub limits: HiveLimits,
     /// Active request budget for the current model.
     pub budget: HiveBudget,
+    /// Configured daily background-work budget in USD.
+    pub daily_budget_usd: f64,
+    /// Validated isolated Git checkout used for self-development, if configured.
+    pub eva_workspace_path: Option<String>,
     /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
     pub pulse_status: String,
     /// Unix milliseconds at which the daemon plans its next cycle.
@@ -377,7 +386,8 @@ impl HiveStateSnapshot {
             metrics: HiveMetrics {
                 total_agents_online: bounded_u16(total),
                 active_tasks: bounded_u16(processing as usize),
-                average_task_time_sec: 0,
+                tasks_today: observation.tasks_today,
+                average_task_time_sec: observation.average_task_time_sec,
                 efficiency_percent: efficiency_percent(spawned, ceiling),
             },
             departments,
@@ -389,6 +399,8 @@ impl HiveStateSnapshot {
             },
             limits: limits_for(settings),
             budget,
+            daily_budget_usd: settings.daily_budget_usd,
+            eva_workspace_path: settings.eva_workspace_path.clone(),
             pulse_status: pulse_status_from(observation),
             next_wake_at_ms: observation.pulse_next_wake_at_ms,
         }
@@ -883,6 +895,7 @@ mod tests {
             HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
         assert!(snapshot.budget.daily_cost_available);
         assert_eq!(snapshot.budget.daily_cost_nano_usd, Some(39_300));
+        assert_eq!(snapshot.daily_budget_usd, 0.50);
     }
 
     #[test]

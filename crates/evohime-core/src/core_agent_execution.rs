@@ -586,11 +586,13 @@ impl ToolAgent {
         // full access the write tools are allowed without approval, so the model
         // must get them and keep mutation delivery regardless of prompt wording.
         let mut preflight = Vec::new();
+        let self_development_intent =
+            prompt.contains("eva_workspace_") || prompt.contains("eva_self_development");
         for tool in self.tools.list() {
             if tool
                 .name
                 .starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX)
-                && context.eva_workspace_root.is_none()
+                && (context.eva_workspace_root.is_none() || !self_development_intent)
             {
                 preflight.push((
                     tool.name,
@@ -616,11 +618,28 @@ impl ToolAgent {
         let router_mutation_intent = request_allows_mutation(&prompt);
         let mutation_intent = router_mutation_intent || mutation_authorized;
         let mut delivery_requirements = DeliveryRequirements::from_prompt(&prompt);
+        if self_development_intent {
+            // Self-development tools own a separate successful-test gate. Do
+            // not require the unrelated task-workspace `shell_execute` and
+            // `git_commit` tools for this isolated recovery route.
+            delivery_requirements.research = false;
+            delivery_requirements.mutation = false;
+            delivery_requirements.verification = false;
+            delivery_requirements.diff_check = false;
+            delivery_requirements.commit = false;
+            delivery_requirements.verification_command = false;
+        }
         let reconciliation =
             reconcile_delivery_requirements(&mut delivery_requirements, mutation_intent);
         let mut authorized_manifests = Vec::new();
         for (name, decision) in &preflight {
-            if tool_preflight_can_be_offered(decision, mutation_intent) {
+            let self_development_tool_is_requested = self_development_intent
+                && context.eva_workspace_root.is_some()
+                && name.starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX);
+            if tool_preflight_can_be_offered(
+                decision,
+                mutation_intent || self_development_tool_is_requested,
+            ) {
                 if let Some(manifest) = self.tools.manifest_for(name) {
                     authorized_manifests.push(manifest);
                 }
@@ -662,14 +681,12 @@ impl ToolAgent {
         required_ids.push("goal_verify");
         if mutation_authorized {
             required_ids.extend_from_slice(FULL_ACCESS_WORKING_SET);
-            if context.eva_workspace_root.is_some() {
-                required_ids.extend_from_slice(&[
-                    evohime_tool_runtime::self_development::TOOL_READ_FILE,
-                    evohime_tool_runtime::self_development::TOOL_WRITE_FILE,
-                    evohime_tool_runtime::self_development::TOOL_RUN_COMMAND,
-                    evohime_tool_runtime::self_development::TOOL_GIT,
-                ]);
-            }
+        }
+        if self_development_intent && context.eva_workspace_root.is_some() {
+            // This is a task-scoped request, not a new grant: manifests still
+            // pass the same permission preflight, and approval-required tools
+            // remain gated by the existing approval flow.
+            required_ids.extend_from_slice(SELF_DEVELOPMENT_TOOL_IDS);
         }
         for required in required_ids {
             if selected.iter().any(|manifest| manifest.tool_id == required) {
@@ -768,7 +785,7 @@ impl ToolAgent {
                 }),
             );
         }
-        let system_prompt = format!(
+        let mut system_prompt = format!(
             "{}\n\n{}\nProject instruction snapshot: {}",
             build_agent_system_prompt(&tool_names).replace(
                 "{eva_workspace_path}",
@@ -782,6 +799,18 @@ impl ToolAgent {
             project_instruction_context,
             project_instruction_snapshot_hash
         );
+        if self_development_intent {
+            if let Some(path) = context.eva_workspace_root.as_deref() {
+                system_prompt.push_str(&format!(
+                    "\n\nEvaPulse autonomous recovery instruction: {prompt}\n\
+                     Self-development capability eva_self_development is available for the \
+                     validated repository at {}. Use eva_workspace_* to investigate, patch and \
+                     verify changes. A commit requires the successful-test gate enforced by the \
+                     tools; never edit the running product.",
+                    path.display()
+                ));
+            }
+        }
         let user_prompt = prompt.clone();
         let mut messages =
             initial_agent_messages(system_prompt.clone(), prompt, conversation_history);
