@@ -65,6 +65,33 @@ describe('where the credential comes from', () => {
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ file: 'gh', args: ['auth', 'token'] }))
   })
 
+  it('falls back to git credential fill when gh is unavailable', async () => {
+    const run = vi.fn(async (options: RunOptions): Promise<RunResult> => {
+      if (options.file === 'gh') return { code: 1, tail: [], raw: [], timedOut: false }
+      return {
+        code: 0,
+        tail: [],
+        raw: ['protocol=https', 'host=github.com', 'username=roman', `password=${TOKEN}`],
+        timedOut: false
+      }
+    })
+
+    await expect(resolveGithubToken({ environment: {}, run })).resolves.toEqual({
+      token: TOKEN,
+      source: 'git-cli'
+    })
+    expect(run).toHaveBeenNthCalledWith(1, expect.objectContaining({ file: 'gh', args: ['auth', 'token'] }))
+    expect(run).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        file: 'git',
+        args: ['credential', 'fill'],
+        input: 'protocol=https\nhost=github.com\n\n',
+        env: expect.objectContaining({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' })
+      })
+    )
+  })
+
   it('ignores a malformed value from the config file', async () => {
     // Иначе строка из файла ушла бы в заголовок запроса как есть.
     await expect(

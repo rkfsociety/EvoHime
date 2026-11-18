@@ -327,4 +327,97 @@ describe('ModuleUpdateService', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+
+  it('runs background --check on each interval when periodicCheck is enabled without flashing checking', async () => {
+    vi.useFakeTimers()
+    const root = mkdtempSync(join(tmpdir(), 'evohime-periodic-check-'))
+    try {
+      const state = join(root, 'update-state')
+      mkdirSync(state)
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'ready',
+        message: 'Модули актуальны.',
+        available: []
+      }))
+      const phases: string[] = []
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: (status) => { phases.push(status.phase) },
+        intervalMs: 60_000,
+        periodicCheck: true,
+        skipLaunchGate: true
+      })
+
+      await service.runLaunchGate()
+      expect(spawnMock).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+      expect(spawnMock).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.arrayContaining(['--check']),
+        expect.any(Object)
+      )
+      expect(phases).not.toContain('checking')
+
+      writeFileSync(join(state, 'updater.json'), JSON.stringify({
+        phase: 'available',
+        message: 'Доступны обновления.',
+        available: [{ module: 'core', installed: '0.0.000243', available: '0.0.000244' }]
+      }))
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      expect(service.status.phase).toBe('available')
+      service.stop()
+    } finally {
+      vi.useRealTimers()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('skips overlapping periodic checks while a check is still running', async () => {
+    vi.useFakeTimers()
+    const root = mkdtempSync(join(tmpdir(), 'evohime-periodic-overlap-'))
+    try {
+      let closeCheck: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined
+      spawnMock.mockImplementationOnce(() => ({
+        once: vi.fn((event: string, listener: (code: number | null, signal: NodeJS.Signals | null) => void) => {
+          if (event === 'close') closeCheck = listener
+        }),
+        unref: vi.fn()
+      }))
+      const service = new ModuleUpdateService({
+        dataDirectory: root,
+        branch: 'main',
+        enabled: true,
+        updaterPath: 'C:\\EvoHime\\evohime-updater.exe',
+        installDirectory: join(root, 'install'),
+        emit: () => {},
+        intervalMs: 60_000,
+        periodicCheck: true,
+        skipLaunchGate: true
+      })
+
+      await service.runLaunchGate()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+
+      closeCheck?.(0, null)
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(spawnMock).toHaveBeenCalledTimes(2)
+      service.stop()
+    } finally {
+      vi.useRealTimers()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })

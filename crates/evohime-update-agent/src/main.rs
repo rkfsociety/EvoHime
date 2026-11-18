@@ -848,17 +848,24 @@ fn is_github_release_asset_url(value: &str) -> bool {
 }
 
 fn resolve_github_token(config: &serde_json::Value) -> Option<String> {
-    resolve_github_token_with(config, |name| env::var(name).ok(), read_gh_cli_token)
+    resolve_github_token_with(
+        config,
+        |name| env::var(name).ok(),
+        read_gh_cli_token,
+        read_git_credential_token,
+    )
 }
 
-fn resolve_github_token_with<Environment, GhToken>(
+fn resolve_github_token_with<Environment, GhToken, GitToken>(
     config: &serde_json::Value,
     environment: Environment,
     gh_token: GhToken,
+    git_token: GitToken,
 ) -> Option<String>
 where
     Environment: Fn(&str) -> Option<String>,
     GhToken: Fn() -> Option<String>,
+    GitToken: Fn() -> Option<String>,
 {
     normalize_github_token(environment("EVOHIME_UPDATE_GITHUB_TOKEN").as_deref())
         .or_else(|| {
@@ -867,6 +874,7 @@ where
         .or_else(|| normalize_github_token(environment("GH_TOKEN").as_deref()))
         .or_else(|| normalize_github_token(environment("GITHUB_TOKEN").as_deref()))
         .or_else(gh_token)
+        .or_else(git_token)
 }
 
 fn normalize_github_token(value: Option<&str>) -> Option<String> {
@@ -888,19 +896,58 @@ fn read_gh_cli_token() -> Option<String> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    configure_hidden_process(&mut command);
+    let stdout = run_hidden_command_with_timeout(&mut command, None, Duration::from_secs(10))?;
+    stdout
+        .lines()
+        .find_map(|line| normalize_github_token(Some(line)))
+}
+
+fn read_git_credential_token() -> Option<String> {
+    let mut command = Command::new("git");
+    command
+        .args(["credential", "fill"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let stdout = run_hidden_command_with_timeout(
+        &mut command,
+        Some(b"protocol=https\nhost=github.com\n\n"),
+        Duration::from_secs(10),
+    )?;
+    parse_git_credential_password(&stdout)
+}
+
+fn parse_git_credential_password(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let password = line.strip_prefix("password=")?;
+        normalize_github_token(Some(password))
+    })
+}
+
+fn run_hidden_command_with_timeout(
+    command: &mut Command,
+    stdin_bytes: Option<&[u8]>,
+    timeout: Duration,
+) -> Option<String> {
+    configure_hidden_process(command);
     let mut child = command.spawn().ok()?;
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
-            Ok(None) => {
+    if let Some(bytes) = stdin_bytes {
+        if let Some(mut stdin) = child.stdin.take() {
+            if stdin.write_all(bytes).is_err() {
                 let _ = child.kill();
                 let _ = child.wait();
                 return None;
             }
-            Err(_) => {
+        }
+    }
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
+            Ok(None) | Err(_) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return None;
@@ -911,9 +958,7 @@ fn read_gh_cli_token() -> Option<String> {
     if !output.status.success() {
         return None;
     }
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .find_map(|line| normalize_github_token(Some(line)))
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 fn configure_hidden_process(command: &mut Command) {

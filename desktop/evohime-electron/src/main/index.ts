@@ -593,6 +593,7 @@ function createUpdateService(): UpdateController {
       updaterPath: resolveInstalledUpdaterPath(dirname(app.getPath('exe'))),
       installDirectory: dirname(app.getPath('exe')),
       intervalMs: config.checkIntervalMs,
+      periodicCheck: true,
       skipLaunchGate: postUpdateLaunch,
       emit: (status) => {
         lastUpdateStatus = status

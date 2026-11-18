@@ -16,6 +16,7 @@ export interface RunOptions {
   readonly args: readonly string[]
   readonly cwd?: string
   readonly env?: NodeJS.ProcessEnv
+  readonly input?: string
   readonly timeoutMs?: number
   /** Redacted output lines, in order. */
   readonly onLine?: (line: string) => void
@@ -52,8 +53,12 @@ export const runCommand: CommandRunner = (options) =>
       cwd: options.cwd ?? process.cwd(),
       env: options.env ?? process.env,
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe']
     })
+
+    if (options.input !== undefined && child.stdin) {
+      child.stdin.end(options.input)
+    }
 
     const finish = (code: number): void => {
       if (settled) return

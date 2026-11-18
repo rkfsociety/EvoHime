@@ -56,8 +56,8 @@ export interface UpdateConfig {
   readonly installDirectory: string
 }
 
-const MIN_CHECK_INTERVAL_MS = 5 * 60_000
-const DEFAULT_CHECK_INTERVAL_MS = 30 * 60_000
+const MIN_CHECK_INTERVAL_MS = 60_000
+const DEFAULT_CHECK_INTERVAL_MS = 60_000
 const DEFAULT_GREEN_DEPTH = 10
 const MAX_CHECK_INTERVAL_MS = 24 * 60 * 60_000
 

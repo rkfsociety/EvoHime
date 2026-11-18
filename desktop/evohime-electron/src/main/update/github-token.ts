@@ -38,7 +38,7 @@ export function normalizeGithubToken(value: unknown): string | null {
   return /^[A-Za-z0-9_-]{20,255}$/.test(candidate) ? candidate : null
 }
 
-export type GithubTokenSource = 'environment' | 'config' | 'gh-cli'
+export type GithubTokenSource = 'environment' | 'config' | 'gh-cli' | 'git-cli'
 
 export interface GithubToken {
   readonly token: string
@@ -74,8 +74,12 @@ export async function resolveGithubToken(lookup: TokenLookup = {}): Promise<Gith
     if (ambient) return { token: ambient, source: 'environment' }
   }
 
-  const cli = await readGhCliToken(lookup.run ?? runCommand)
-  return cli ? { token: cli, source: 'gh-cli' } : null
+  const run = lookup.run ?? runCommand
+  const cli = await readGhCliToken(run)
+  if (cli) return { token: cli, source: 'gh-cli' }
+
+  const git = await readGitCliToken(run, environment)
+  return git ? { token: git, source: 'git-cli' } : null
 }
 
 /**
@@ -99,6 +103,33 @@ async function readGhCliToken(run: CommandRunner): Promise<string | null> {
   if (result.code !== 0) return null
   for (const line of result.raw) {
     const token = normalizeGithubToken(line)
+    if (token) return token
+  }
+  return null
+}
+
+/**
+ * Token stored by Git's configured credential helper (for example Git
+ * Credential Manager), if `git` is installed and non-interactively signed in.
+ */
+async function readGitCliToken(run: CommandRunner, environment: NodeJS.ProcessEnv): Promise<string | null> {
+  let result
+  try {
+    result = await run({
+      file: 'git',
+      args: ['credential', 'fill'],
+      input: 'protocol=https\nhost=github.com\n\n',
+      env: { ...environment, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+      timeoutMs: GH_TIMEOUT_MS,
+      capture: true
+    })
+  } catch {
+    return null
+  }
+  if (result.code !== 0) return null
+  for (const line of result.raw) {
+    if (!line.startsWith('password=')) continue
+    const token = normalizeGithubToken(line.slice('password='.length))
     if (token) return token
   }
   return null

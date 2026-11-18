@@ -30,6 +30,7 @@ describe('update config', () => {
     expect(config.repositoryUrl).toBe(DEFAULT_REPOSITORY_URL)
     expect(config.branch).toBe(DEFAULT_BRANCH)
     expect(config.launchPolicy).toBe('installer')
+    expect(config.checkIntervalMs).toBe(60_000)
     expect(config.requireGreenCommit).toBe(true)
     expect(config.greenCommitDepth).toBe(10)
     expect(config.sourceDirectory).toBe('C:\\data\\EvoHime\\source')
@@ -87,7 +88,7 @@ describe('update config', () => {
 
     // The interval is clamped, so a config file cannot turn the check into a
     // busy loop.
-    expect(load({ checkIntervalMinutes: 0 }).checkIntervalMs).toBe(5 * 60_000)
+    expect(load({ checkIntervalMinutes: 0 }).checkIntervalMs).toBe(60_000)
     expect(load({ checkIntervalMinutes: 10_000 }).checkIntervalMs).toBe(24 * 60 * 60_000)
 
     // The same for how much history one check may walk through.

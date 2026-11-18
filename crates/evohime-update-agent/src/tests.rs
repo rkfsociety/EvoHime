@@ -1,7 +1,8 @@
 use super::{
     cleanup_failed_staging, copy_reader_bounded, is_github_api_url, is_github_release_asset_url,
-    is_trusted_github_url, merge_installed_manifest_to, normalize_github_token, parse_json_body,
-    read_installed_module_manifest, read_update_config, resolve_github_token_with,
+    is_trusted_github_url, merge_installed_manifest_to, normalize_github_token,
+    parse_git_credential_password, parse_json_body, read_installed_module_manifest,
+    read_update_config, resolve_github_token_with,
     stream_file_hash, updater_bootstrap_script, updater_first_if_required, updater_http_client,
     validate_compatible_manifest, validate_runtime_manifest, write_staged_manifest,
     CompatibleComponent, CompatibleManifest, RuntimeReleaseEntry, RuntimeReleaseManifest,
@@ -805,17 +806,23 @@ fn github_token_resolution_uses_the_documented_precedence() {
             _ => None,
         },
         || Some("gh_token_1234567890".to_owned()),
+        || Some("git_token_1234567890".to_owned()),
     );
     assert_eq!(token.as_deref(), Some("explicit_token_1234567890"));
 
-    let token =
-        resolve_github_token_with(&config, |_| None, || Some("gh_token_1234567890".to_owned()));
+    let token = resolve_github_token_with(
+        &config,
+        |_| None,
+        || Some("gh_token_1234567890".to_owned()),
+        || Some("git_token_1234567890".to_owned()),
+    );
     assert_eq!(token.as_deref(), Some("config_token_1234567890"));
 
     let token = resolve_github_token_with(
         &serde_json::json!({}),
         |name| (name == "GH_TOKEN").then(|| "ambient_token_1234567890".to_owned()),
         || Some("gh_token_1234567890".to_owned()),
+        || Some("git_token_1234567890".to_owned()),
     );
     assert_eq!(token.as_deref(), Some("ambient_token_1234567890"));
 
@@ -823,8 +830,30 @@ fn github_token_resolution_uses_the_documented_precedence() {
         &serde_json::json!({}),
         |_| None,
         || Some("gh_token_1234567890".to_owned()),
+        || Some("git_token_1234567890".to_owned()),
     );
     assert_eq!(token.as_deref(), Some("gh_token_1234567890"));
+
+    let token = resolve_github_token_with(
+        &serde_json::json!({}),
+        |_| None,
+        || None,
+        || Some("git_token_1234567890".to_owned()),
+    );
+    assert_eq!(token.as_deref(), Some("git_token_1234567890"));
+}
+
+#[test]
+fn git_credential_fill_parser_extracts_valid_password() {
+    let output = "protocol=https\nhost=github.com\nusername=roman\npassword=ghp_0123456789abcdefghijklmnopqrstuvwx\n";
+    assert_eq!(
+        parse_git_credential_password(output).as_deref(),
+        Some("ghp_0123456789abcdefghijklmnopqrstuvwx")
+    );
+    assert_eq!(
+        parse_git_credential_password("protocol=https\nhost=github.com\npassword=bad token\n"),
+        None
+    );
 }
 
 #[test]

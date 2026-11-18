@@ -29,6 +29,8 @@ export interface ModuleUpdateServiceOptions {
   readonly installDirectory: string
   readonly emit: (status: UpdateStatus) => void
   readonly intervalMs: number
+  /** Run `evohime-updater.exe --check` on each interval tick instead of only polling `updater.json`. */
+  readonly periodicCheck?: boolean
   /** Skip only the first launch check when a transaction has just relaunched the shell. */
   readonly skipLaunchGate?: boolean
   /** Closes the visible updater only after downloads finish and file replacement must begin. */
@@ -62,6 +64,7 @@ export class ModuleUpdateService {
   private timer: NodeJS.Timeout | null = null
   private lastSerialized = ''
   private exitRequested = false
+  private checkInFlight = false
 
   constructor(private readonly options: ModuleUpdateServiceOptions) {
     this.current = options.enabled
@@ -111,10 +114,16 @@ export class ModuleUpdateService {
   }
 
   async check(): Promise<UpdateStatus> {
-    this.lastSerialized = ''
-    this.patchLocal({ phase: 'checking', message: 'Проверяю версии и целостность модулей…', error: null })
-    await this.startUpdater('--check')
-    return this.current
+    if (this.checkInFlight) return this.current
+    this.checkInFlight = true
+    try {
+      this.lastSerialized = ''
+      this.patchLocal({ phase: 'checking', message: 'Проверяю версии и целостность модулей…', error: null })
+      await this.startUpdater('--check')
+      return this.current
+    } finally {
+      this.checkInFlight = false
+    }
   }
 
   async prepare(): Promise<UpdateStatus> {
@@ -147,8 +156,25 @@ export class ModuleUpdateService {
 
   private scheduleRefresh(): void {
     if (this.options.enabled && this.timer === null) {
-      this.timer = setInterval(() => this.refresh(), this.options.intervalMs)
+      this.timer = setInterval(() => {
+        if (this.options.periodicCheck) {
+          void this.runPeriodicCheck()
+        } else {
+          this.refresh()
+        }
+      }, this.options.intervalMs)
       this.timer.unref?.()
+    }
+  }
+
+  private async runPeriodicCheck(): Promise<void> {
+    if (!this.options.enabled || this.checkInFlight) return
+    if (this.current.phase === 'checking' || this.current.phase === 'applying') return
+    this.checkInFlight = true
+    try {
+      await this.startUpdater('--check')
+    } finally {
+      this.checkInFlight = false
     }
   }
 
