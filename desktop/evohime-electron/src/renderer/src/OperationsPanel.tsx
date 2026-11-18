@@ -1,7 +1,7 @@
 import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { PROVIDER_KINDS } from '@shared/api'
+import { HIVE_SYSTEM_CHAT_ID, PROVIDER_KINDS } from '@shared/api'
 import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderKind, ProviderLimits, ProviderProfileId, ProviderProfileSummary, ProviderSummary, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
@@ -22,8 +22,6 @@ interface Props {
 }
 
 interface HiveDashboardProps extends Pick<Props, 'connection' | 'events' | 'resolvedApprovalIds' | 'onApprovalResolved'> {
-  readonly workspace?: string | null
-  readonly chatId?: string | null
   readonly onChatOpened?: (chatId: string) => void
   readonly onChatTouched?: () => void
 }
@@ -314,6 +312,9 @@ interface HiveStateView {
   }
   readonly dailyBudgetUsd: number
   readonly evaWorkspacePath: string | null
+  readonly watchedRepositories: readonly string[]
+  readonly hiveProviderProfile: string | null
+  readonly hiveModel: string | null
   readonly proactiveEvolutionEnabled: boolean
   readonly pulseStatus: string
   readonly nextWakeAtMs: number | null
@@ -518,6 +519,19 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       ? Math.min(root['daily_budget_usd'], 10_000)
       : 0,
     evaWorkspacePath: typeof root['eva_workspace_path'] === 'string' ? root['eva_workspace_path'].slice(0, 4_096) : null,
+    watchedRepositories: Array.isArray(root['watched_repositories'])
+      ? root['watched_repositories']
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map((item) => item.slice(0, 4_096))
+      : typeof root['eva_workspace_path'] === 'string' && root['eva_workspace_path'].trim().length > 0
+        ? [root['eva_workspace_path'].slice(0, 4_096)]
+        : [],
+    hiveProviderProfile: typeof root['hive_provider_profile'] === 'string' && root['hive_provider_profile'].trim().length > 0
+      ? root['hive_provider_profile'].slice(0, 128)
+      : null,
+    hiveModel: typeof root['hive_model'] === 'string' && root['hive_model'].trim().length > 0
+      ? root['hive_model'].slice(0, 128)
+      : null,
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
     pulseStatus: text(root['pulse_status'], 16),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
@@ -1109,8 +1123,6 @@ function isQueenThinking(
 export function HiveDashboard({
   connection,
   events,
-  workspace = null,
-  chatId = null,
   onChatOpened,
   onChatTouched,
   resolvedApprovalIds = [],
@@ -1130,6 +1142,12 @@ export function HiveDashboard({
   const [evaWorkspaceDraft, setEvaWorkspaceDraft] = useState('')
   const [evaWorkspaceError, setEvaWorkspaceError] = useState<string | null>(null)
   const [evaWorkspaceBusy, setEvaWorkspaceBusy] = useState(false)
+  const [watchedRepositories, setWatchedRepositories] = useState<readonly string[]>([])
+  const [newRepoDraft, setNewRepoDraft] = useState('')
+  const [hiveProviderProfile, setHiveProviderProfile] = useState('')
+  const [hiveModelDraft, setHiveModelDraft] = useState('')
+  const [hiveProviderBusy, setHiveProviderBusy] = useState(false)
+  const [hiveProviderError, setHiveProviderError] = useState<string | null>(null)
   const [dailyBudgetDraft, setDailyBudgetDraft] = useState('')
   const [dailyBudgetBusy, setDailyBudgetBusy] = useState(false)
   const [dailyBudgetError, setDailyBudgetError] = useState<string | null>(null)
@@ -1148,12 +1166,25 @@ export function HiveDashboard({
   const [historyPrompts, setHistoryPrompts] = useState<readonly HiveUserPrompt[]>([])
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
+  const watchedReposKey = hive ? hive.watchedRepositories.join('\n') : ''
   useEffect(() => {
     if (!hive) return
     const configured = hive.evaWorkspacePath ?? ''
     setEvaWorkspacePath(configured)
     setEvaWorkspaceDraft(configured)
   }, [hive?.evaWorkspacePath])
+  useEffect(() => {
+    if (!hive) return
+    setWatchedRepositories(hive.watchedRepositories)
+  }, [watchedReposKey])
+  useEffect(() => {
+    if (!hive) return
+    setHiveProviderProfile(hive.hiveProviderProfile ?? '')
+  }, [hive?.hiveProviderProfile])
+  useEffect(() => {
+    if (!hive) return
+    setHiveModelDraft(hive.hiveModel ?? '')
+  }, [hive?.hiveModel])
   useEffect(() => {
     if (!hive) return
     setDailyBudgetDraft(String(hive.dailyBudgetUsd))
@@ -1170,9 +1201,38 @@ export function HiveDashboard({
         accepted?: boolean
         setting_key?: string
         eva_workspace_path?: string | null
+        watched_repositories?: readonly string[]
+        hive_provider_profile?: string | null
+        hive_model?: string | null
         daily_budget_usd?: number | null
         proactive_evolution_enabled?: boolean
         error_code?: string
+      }
+      if (result.setting_key === 'watched_repositories') {
+        if (Array.isArray(result.watched_repositories)) {
+          setWatchedRepositories(result.watched_repositories)
+          setEvaWorkspacePath(result.watched_repositories[0] ?? '')
+        }
+        setEvaWorkspaceError(result.accepted ? null : (result.error_code || 'Не удалось обновить список проектов.'))
+        return
+      }
+      if (result.setting_key === 'hive_provider_profile') {
+        if (result.accepted) {
+          setHiveProviderProfile(result.hive_provider_profile ?? '')
+          setHiveProviderError(null)
+        } else {
+          setHiveProviderError(result.error_code || 'Не удалось сохранить провайдера Улья.')
+        }
+        return
+      }
+      if (result.setting_key === 'hive_model') {
+        if (result.accepted) {
+          setHiveModelDraft(result.hive_model ?? '')
+          setHiveProviderError(null)
+        } else {
+          setHiveProviderError(result.error_code || 'Не удалось сохранить модель Улья.')
+        }
+        return
       }
       if (result.setting_key === 'proactive_evolution_enabled') {
         if (typeof result.proactive_evolution_enabled === 'boolean') {
@@ -1281,12 +1341,12 @@ export function HiveDashboard({
   }, [api, applyProviderSummary])
 
   useEffect(() => {
-    if (!api || !chatId) {
+    if (!api) {
       setHistoryPrompts([])
       return
     }
     let cancelled = false
-    void api.invoke('chat.open', { chatId }).then((outcome) => {
+    void api.invoke('chat.open', { chatId: HIVE_SYSTEM_CHAT_ID }).then((outcome) => {
       if (cancelled || !outcome.ok || !outcome.value) return
       const loaded = outcome.value.messages.map((message, index) => ({
         taskId: message.taskId,
@@ -1298,7 +1358,7 @@ export function HiveDashboard({
     return () => {
       cancelled = true
     }
-  }, [api, chatId])
+  }, [api])
 
   useEffect(() => {
     if (pendingTaskIds.size === 0) return
@@ -1498,6 +1558,127 @@ export function HiveDashboard({
     }).catch(() => setCommandError('Не удалось переключить EvaPulse: оболочка не ответила.'))
   }, [api, preference, updatePreference])
 
+  const addWatchedRepository = useCallback(async (): Promise<void> => {
+    if (!api) return
+    const trimmed = newRepoDraft.trim()
+    if (trimmed.length === 0) {
+      setEvaWorkspaceError('Укажи путь к Git-репозиторию.')
+      return
+    }
+    if (watchedRepositories.includes(trimmed)) {
+      setEvaWorkspaceError('Этот проект уже добавлен в список.')
+      return
+    }
+    setEvaWorkspaceBusy(true)
+    setEvaWorkspaceError(null)
+    setEvaWorkspaceValidation('checking')
+    setEvaWorkspaceValidationMessage(null)
+    try {
+      const validation = await api.invoke('core.validateEvaWorkspacePath', { path: trimmed })
+      if (!validation.ok) {
+        setEvaWorkspaceValidation('invalid')
+        setEvaWorkspaceValidationMessage(validation.message)
+        return
+      }
+      const nextRepos = [...watchedRepositories, trimmed]
+      const outcome = await api.invoke('core.setHiveSetting', {
+        key: 'watched_repositories',
+        value: JSON.stringify(nextRepos)
+      })
+      if (!outcome.ok) {
+        setEvaWorkspaceError(outcome.message)
+        return
+      }
+      setWatchedRepositories(nextRepos)
+      setEvaWorkspacePath(nextRepos[0] ?? '')
+      setNewRepoDraft('')
+      setEvaWorkspaceValidation('valid')
+      requestSnapshot()
+    } catch {
+      setEvaWorkspaceValidation('invalid')
+      setEvaWorkspaceError('Не удалось добавить проект: Core не ответил.')
+    } finally {
+      setEvaWorkspaceBusy(false)
+    }
+  }, [api, newRepoDraft, requestSnapshot, watchedRepositories])
+
+  const removeWatchedRepository = useCallback(async (targetPath: string): Promise<void> => {
+    if (!api) return
+    setEvaWorkspaceBusy(true)
+    setEvaWorkspaceError(null)
+    try {
+      const nextRepos = watchedRepositories.filter((item) => item !== targetPath)
+      const outcome = await api.invoke('core.setHiveSetting', {
+        key: 'watched_repositories',
+        value: JSON.stringify(nextRepos)
+      })
+      if (!outcome.ok) {
+        setEvaWorkspaceError(outcome.message)
+        return
+      }
+      setWatchedRepositories(nextRepos)
+      setEvaWorkspacePath(nextRepos[0] ?? '')
+      requestSnapshot()
+    } catch {
+      setEvaWorkspaceError('Не удалось удалить проект: Core не ответил.')
+    } finally {
+      setEvaWorkspaceBusy(false)
+    }
+  }, [api, requestSnapshot, watchedRepositories])
+
+  const saveHiveProviderSettings = useCallback(async (): Promise<void> => {
+    if (!api) return
+    setHiveProviderBusy(true)
+    setHiveProviderError(null)
+    try {
+      const profileOutcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_provider_profile',
+        value: hiveProviderProfile.trim()
+      })
+      if (!profileOutcome.ok) {
+        setHiveProviderError(profileOutcome.message)
+        return
+      }
+      const modelOutcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_model',
+        value: hiveModelDraft.trim()
+      })
+      if (!modelOutcome.ok) {
+        setHiveProviderError(modelOutcome.message)
+        return
+      }
+      requestSnapshot()
+    } catch {
+      setHiveProviderError('Не удалось сохранить провайдера Улья: Core не ответил.')
+    } finally {
+      setHiveProviderBusy(false)
+    }
+  }, [api, hiveModelDraft, hiveProviderProfile, requestSnapshot])
+
+  const openHiveChat = useCallback(async (): Promise<void> => {
+    if (!api) return
+    setCommandError(null)
+    try {
+      const outcome = await api.invoke('chat.open', { chatId: HIVE_SYSTEM_CHAT_ID })
+      if (!outcome.ok) {
+        setCommandError(outcome.message)
+        return
+      }
+      if (outcome.value) {
+        setHistoryPrompts(
+          outcome.value.messages.map((message, index) => ({
+            taskId: message.taskId,
+            text: message.prompt,
+            sequenceHint: index + 1
+          }))
+        )
+      }
+      onChatOpened?.(HIVE_SYSTEM_CHAT_ID)
+    } catch {
+      setCommandError('Не удалось открыть чат Улья.')
+    }
+  }, [api, onChatOpened])
+
   const sendHiveMessage = useCallback(async (): Promise<void> => {
     const text = chatDraft.trim()
     if (!api || !connected || sendingMessage || text.length === 0) return
@@ -1510,17 +1691,6 @@ export function HiveDashboard({
     setSendingMessage(true)
     setCommandError(null)
     try {
-      let targetChatId = chatId
-      if (targetChatId === null) {
-        const created = await api.invoke('chat.create', { workspacePath: workspace ?? null })
-        if (!created.ok) {
-          setCommandError(created.message)
-          return
-        }
-        targetChatId = created.value.id
-        onChatOpened?.(targetChatId)
-      }
-
       setLocalPrompts((current) => [
         ...current,
         { taskId: nextTaskId, text, sequenceHint: current.length + 1 }
@@ -1531,8 +1701,8 @@ export function HiveDashboard({
       const outcome = await api.invoke('core.startTask', {
         taskId: nextTaskId,
         prompt: text,
-        workspacePath: workspace ?? '',
-        conversationId: targetChatId,
+        workspacePath: '',
+        conversationId: HIVE_SYSTEM_CHAT_ID,
         clientMessageId,
         preferredRouteHint: 'cloud',
         executionKind: 'dialogue'
@@ -1548,7 +1718,7 @@ export function HiveDashboard({
       }
 
       const stored = await api.invoke('chat.appendPrompt', {
-        chatId: targetChatId,
+        chatId: HIVE_SYSTEM_CHAT_ID,
         taskId: nextTaskId,
         clientMessageId,
         prompt: text
@@ -1573,7 +1743,7 @@ export function HiveDashboard({
     } finally {
       setSendingMessage(false)
     }
-  }, [api, chatDraft, chatId, connected, onChatOpened, onChatTouched, sendingMessage, workspace])
+  }, [api, chatDraft, connected, onChatTouched, sendingMessage])
 
   const budget = hive?.budget ?? EMPTY_BUDGET
   const departments = useMemo(() => departmentView(hive?.departments ?? []), [hive])
@@ -1997,6 +2167,96 @@ export function HiveDashboard({
               {evaWorkspaceError ? (
                 <p role="alert" className="hive-console__error">{translate(evaWorkspaceError)}</p>
               ) : null}
+              <div className="hive-provider" data-testid="watched-repositories-section">
+                <span>{translate('Проекты Улья (watched_repositories)')}</span>
+                {watchedRepositories.length > 0 ? (
+                  <ul className="hive-watched-repos">
+                    {watchedRepositories.map((repo) => (
+                      <li key={repo} className="hive-settings-modal__row">
+                        <span>{repo}</span>
+                        <button
+                          type="button"
+                          aria-label={`${translate('Удалить проект')} ${repo}`}
+                          disabled={!connected || evaWorkspaceBusy}
+                          onClick={() => void removeWatchedRepository(repo)}
+                        >
+                          {translate('Удалить')}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <small>{translate('Список проектов пуст.')}</small>
+                )}
+                <div className="hive-settings-modal__row">
+                  <input
+                    id="watched-repo-input"
+                    type="text"
+                    aria-label={translate('Путь к проекту')}
+                    value={newRepoDraft}
+                    onChange={(changeEvent) => {
+                      setNewRepoDraft(changeEvent.target.value)
+                      setEvaWorkspaceError(null)
+                    }}
+                    placeholder="C:\\Projects\\my-repo"
+                  />
+                  <button
+                    type="button"
+                    disabled={!connected || evaWorkspaceBusy}
+                    onClick={() => void addWatchedRepository()}
+                  >
+                    {translate('Добавить проект')}
+                  </button>
+                </div>
+              </div>
+              <label className="hive-provider" htmlFor="hive-provider-profile-select">
+                <span>{translate('Провайдер Улья')}</span>
+                <select
+                  id="hive-provider-profile-select"
+                  aria-label={translate('Провайдер Улья')}
+                  value={hiveProviderProfile}
+                  disabled={!connected || hiveProviderBusy}
+                  onChange={(changeEvent) => {
+                    setHiveProviderProfile(changeEvent.target.value)
+                    setHiveProviderError(null)
+                  }}
+                >
+                  <option value="">{translate('По умолчанию (глобальный)')}</option>
+                  <option value="literouter">LiteRouter</option>
+                  <option value="rout">Rout.my</option>
+                  <option value="deepseek">DeepSeek</option>
+                  <option value="openai_compatible">OpenAI-Compatible</option>
+                  <option value="openai_responses">OpenAI Responses</option>
+                  <option value="ollama">Ollama</option>
+                </select>
+              </label>
+              <label className="hive-provider" htmlFor="hive-model-input">
+                <span>{translate('Модель Улья')}</span>
+                <div className="hive-settings-modal__row">
+                  <input
+                    id="hive-model-input"
+                    type="text"
+                    aria-label={translate('Модель Улья')}
+                    value={hiveModelDraft}
+                    disabled={!connected || hiveProviderBusy}
+                    onChange={(changeEvent) => {
+                      setHiveModelDraft(changeEvent.target.value)
+                      setHiveProviderError(null)
+                    }}
+                    placeholder="gpt-4o-mini:free"
+                  />
+                  <button
+                    type="button"
+                    disabled={!connected || hiveProviderBusy}
+                    onClick={() => void saveHiveProviderSettings()}
+                  >
+                    {translate(hiveProviderBusy ? 'Сохранение…' : 'Сохранить провайдер Улья')}
+                  </button>
+                </div>
+              </label>
+              {hiveProviderError ? (
+                <p role="alert" className="hive-console__error">{translate(hiveProviderError)}</p>
+              ) : null}
               <label className="hive-provider" htmlFor="daily-budget-usd-input">
                 <span>{translate('Дневной лимит бюджета ($)')}</span>
                 <div className="hive-settings-modal__row">
@@ -2107,9 +2367,18 @@ export function HiveDashboard({
       <section className="hive-panel hive-chat" aria-label={translate('Диалог с Королевой Евой')}>
         <div className="hive-panel__head">
           <h2>{translate('Диалог с Королевой Евой')}</h2>
-          <span className="hive-badge">
-            {translate(queenTyping ? 'в процессе' : 'на связи')}
-          </span>
+          <div className="hive-panel__actions">
+            <button
+              type="button"
+              className="hive-link-button"
+              onClick={() => void openHiveChat()}
+            >
+              {translate('Открыть чат Улья')}
+            </button>
+            <span className="hive-badge">
+              {translate(queenTyping ? 'в процессе' : 'на связи')}
+            </span>
+          </div>
         </div>
 
         <div className="hive-chat__messages" role="log" aria-live="polite">

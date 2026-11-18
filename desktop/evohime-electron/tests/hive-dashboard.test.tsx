@@ -540,8 +540,6 @@ describe('hive dashboard', () => {
       <HiveDashboard
         connection="connected"
         events={[event('hive_state.snapshot', snapshot())]}
-        workspace={'C:\\repo\\EvoHime'}
-        chatId="chat-main-1"
       />
     )
 
@@ -553,8 +551,8 @@ describe('hive dashboard', () => {
       expect(startCall).toBeTruthy()
       expect(startCall?.payload).toMatchObject({
         prompt: 'Исправь баг в коде',
-        workspacePath: 'C:\\repo\\EvoHime',
-        conversationId: 'chat-main-1',
+        workspacePath: '',
+        conversationId: 'hive-system-chat',
         executionKind: 'dialogue'
       })
     })
@@ -563,7 +561,7 @@ describe('hive dashboard', () => {
       const appendCall = calls.find((item) => item.command === 'chat.appendPrompt')
       expect(appendCall).toBeTruthy()
       expect(appendCall?.payload).toMatchObject({
-        chatId: 'chat-main-1',
+        chatId: 'hive-system-chat',
         prompt: 'Исправь баг в коде'
       })
     })
@@ -922,6 +920,88 @@ describe('hive dashboard', () => {
 
     await waitFor(() => {
       expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
+    })
+  })
+
+  it('hive_uses_dedicated_chat', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot())]}
+      />
+    )
+
+    const input = await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })
+    await userEvent.type(input, 'Статус роя')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.startTask',
+        payload: expect.objectContaining({
+          prompt: 'Статус роя',
+          conversationId: 'hive-system-chat',
+          workspacePath: ''
+        })
+      })
+      expect(calls).toContainEqual({
+        command: 'chat.appendPrompt',
+        payload: expect.objectContaining({
+          chatId: 'hive-system-chat',
+          prompt: 'Статус роя'
+        })
+      })
+    })
+    expect(calls.some((call) => call.command === 'chat.create')).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть чат Улья' }))
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'chat.open',
+        payload: { chatId: 'hive-system-chat' }
+      })
+    })
+  })
+
+  it('ui_can_add_and_remove_watched_repositories', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ watched_repositories: ['D:/repo-one'] }))]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
+    expect(screen.getByText('D:/repo-one')).toBeTruthy()
+
+    const repoInput = screen.getByRole('textbox', { name: 'Путь к проекту' })
+    await userEvent.type(repoInput, 'D:/repo-two')
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить проект' }))
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.validateEvaWorkspacePath',
+        payload: { path: 'D:/repo-two' }
+      })
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: {
+          key: 'watched_repositories',
+          value: JSON.stringify(['D:/repo-one', 'D:/repo-two'])
+        }
+      })
+    })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить проект D:/repo-one' }))
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: {
+          key: 'watched_repositories',
+          value: JSON.stringify(['D:/repo-two'])
+        }
+      })
     })
   })
 })

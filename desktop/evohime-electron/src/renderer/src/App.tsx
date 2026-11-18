@@ -436,8 +436,6 @@ export function App(): React.JSX.Element {
                   <HivePanel
                     connection={connection}
                     events={events}
-                    workspace={workspace}
-                    chatId={chatId}
                     onChatOpened={(id) => {
                       setChatId(id)
                       setChatRevision((value) => value + 1)

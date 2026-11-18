@@ -11,6 +11,8 @@ import type { UpdateStatus } from './update'
 
 export const API_NAMESPACE = 'evohime'
 export const API_VERSION = 1 as const
+export const HIVE_SYSTEM_CHAT_ID = 'hive-system-chat'
+export const HIVE_SYSTEM_WORKSPACE_ID = 'hive'
 
 /** Locale selected for user-facing desktop shell surfaces. */
 export type AppLocale = 'ru' | 'en'

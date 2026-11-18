@@ -3,7 +3,16 @@ import { constants } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 
-import type { ChatMessage, ChatRecord, ChatSummary, WorkbenchPresentation } from '@shared/api'
+import {
+  HIVE_SYSTEM_CHAT_ID,
+  HIVE_SYSTEM_WORKSPACE_ID,
+  type ChatMessage,
+  type ChatRecord,
+  type ChatSummary,
+  type WorkbenchPresentation
+} from '@shared/api'
+
+export { HIVE_SYSTEM_CHAT_ID }
 
 import { normalizeWorkspacePath } from './workspace-store'
 
@@ -109,7 +118,27 @@ export class ChatStore {
   }
 
   async open(chatId: string): Promise<ChatRecord | null> {
-    return (await this.read()).chats.find((chat) => chat.id === chatId) ?? null
+    const existing = (await this.read()).chats.find((chat) => chat.id === chatId) ?? null
+    if (existing) return existing
+    if (chatId !== HIVE_SYSTEM_CHAT_ID) return null
+    return this.mutate(async () => {
+      const current = (await this.read()).chats
+      const found = current.find((chat) => chat.id === HIVE_SYSTEM_CHAT_ID)
+      if (found) return found
+      const stamp = this.now()
+      const hiveChat: ChatRecord = {
+        id: HIVE_SYSTEM_CHAT_ID,
+        workspacePath: HIVE_SYSTEM_WORKSPACE_ID,
+        title: 'Чат Улья',
+        createdMs: stamp,
+        updatedMs: stamp,
+        taskIds: [],
+        messages: [],
+        workbenchPresentation: DEFAULT_WORKBENCH
+      }
+      await this.write({ chats: [hiveChat, ...current] })
+      return hiveChat
+    })
   }
 
   /** Records a prompt and the task it started, naming the chat on first use. */
@@ -117,8 +146,22 @@ export class ChatStore {
     const text = prompt.trim().slice(0, MAX_PROMPT_CHARS)
     if (text.length === 0) return null
     return this.mutate(async () => {
-      const current = (await this.read()).chats
-      const chat = current.find((item) => item.id === chatId)
+      let current = (await this.read()).chats
+      let chat = current.find((item) => item.id === chatId)
+      if (!chat && chatId === HIVE_SYSTEM_CHAT_ID) {
+        const stamp = this.now()
+        chat = {
+          id: HIVE_SYSTEM_CHAT_ID,
+          workspacePath: HIVE_SYSTEM_WORKSPACE_ID,
+          title: 'Чат Улья',
+          createdMs: stamp,
+          updatedMs: stamp,
+          taskIds: [],
+          messages: [],
+          workbenchPresentation: DEFAULT_WORKBENCH
+        }
+        current = [chat, ...current]
+      }
       if (!chat) return null
       const message: ChatMessage = {
         taskId,
@@ -128,7 +171,7 @@ export class ChatStore {
       }
       const next: ChatRecord = {
         ...chat,
-        title: chat.messages.length === 0 ? titleFromPrompt(text) : chat.title,
+        title: chat.id === HIVE_SYSTEM_CHAT_ID ? chat.title : (chat.messages.length === 0 ? titleFromPrompt(text) : chat.title),
         updatedMs: message.atMs,
         taskIds: [...new Set([...chat.taskIds, taskId])].slice(-MAX_MESSAGES_PER_CHAT),
         messages: [...chat.messages, message].slice(-MAX_MESSAGES_PER_CHAT)
