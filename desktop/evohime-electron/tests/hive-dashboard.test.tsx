@@ -833,4 +833,28 @@ describe('hive dashboard', () => {
       expect(list.scrollTop).toBe(0)
     })
   })
+
+  it('queen_model_can_be_selected_manually_in_hive_dashboard', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event('model.config', { model: 'gpt-4o-mini:free' }),
+          event('model.catalog', { mode: 'free', models: ['gpt-4o-mini:free', 'claude-3.5-haiku:free'] })
+        ]}
+      />
+    )
+
+    const pickerContainer = await screen.findByLabelText('Модель королевы')
+    const trigger = await within(pickerContainer).findByRole('button', { name: 'Модель' })
+    await userEvent.click(trigger)
+
+    const listbox = await within(pickerContainer).findByRole('listbox', { name: 'Список моделей' })
+    await userEvent.click(within(listbox).getByRole('option', { name: /claude-3\.5-haiku:free/ }))
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.command === 'core.selectModel' && (call.payload as { model?: string })?.model === 'claude-3.5-haiku:free')).toBe(true)
+    })
+  })
 })

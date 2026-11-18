@@ -5,6 +5,7 @@ import { PROVIDER_KINDS } from '@shared/api'
 import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderKind, ProviderLimits, ProviderProfileId, ProviderProfileSummary, ProviderSummary, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { useProviderState } from './provider-state'
 import { ModelPicker } from './ModelPicker'
 import { ImageGenerationPanel } from './ImageGenerationPanel'
 import { PROVIDER_PROFILE_LABELS } from './provider-labels'
@@ -1116,6 +1117,7 @@ export function HiveDashboard({
   onApprovalResolved
 }: HiveDashboardProps): React.JSX.Element {
   const api = useShellApi()
+  const { apply: applyProviderSummary } = useProviderState()
   const [resolvingApprovalIds, setResolvingApprovalIds] = useState<ReadonlySet<string>>(() => new Set())
   const [resolvedLocally, setResolvedLocally] = useState<readonly string[]>([])
   const [commandError, setCommandError] = useState<string | null>(null)
@@ -1271,9 +1273,12 @@ export function HiveDashboard({
   useEffect(() => {
     if (!api) return
     void api.invoke('provider.get', {}).then((outcome) => {
-      if (outcome.ok) setProvider(outcome.value)
+      if (outcome.ok) {
+        setProvider(outcome.value)
+        applyProviderSummary(outcome.value)
+      }
     })
-  }, [api])
+  }, [api, applyProviderSummary])
 
   useEffect(() => {
     if (!api || !chatId) {
@@ -1369,6 +1374,7 @@ export function HiveDashboard({
         : { provider: option.provider })
       if (outcome.ok) {
         setProvider(outcome.value.summary)
+        applyProviderSummary(outcome.value.summary)
         setProviderMessage(outcome.value.restarted ? 'Core перезапущен с выбранным провайдером.' : null)
       } else {
         setProviderMessage(outcome.message)
@@ -1378,7 +1384,7 @@ export function HiveDashboard({
     } finally {
       setProviderBusy(false)
     }
-  }, [api, providerBusy, providerOptionList])
+  }, [api, applyProviderSummary, providerBusy, providerOptionList])
 
   const updatePreference = useCallback((next: HivePreference): void => {
     setPreference(next)
@@ -1860,6 +1866,24 @@ export function HiveDashboard({
                   ))}
               </select>
             </label>
+            {provider ? (
+              <div className="hive-provider hive-model-picker" aria-label={translate('Модель королевы')}>
+                <span>{translate('Модель королевы')}</span>
+                <ModelPicker
+                  key={selectedProviderKey}
+                  connection={connection}
+                  events={events}
+                  provider={provider.provider}
+                  use="agent"
+                  disabled={providerBusy}
+                  onModelChange={(model) => {
+                    if (model && model !== budget.model) {
+                      requestSnapshot()
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
             <p className="hive-budget-card__limit">
               {translate('Лимит:')} ${dailyBudgetUsd.toFixed(2)}{translate('/день')} • {translate('Остаток:')} ${remainingUsd.toFixed(2)}
             </p>

@@ -8039,6 +8039,24 @@ body {
   color: var(--fg);
 }
 
+.hive-model-picker .model-picker {
+  width: 100%;
+  min-width: 0;
+}
+
+.hive-model-picker .model-picker__button {
+  width: 100%;
+  max-width: 100%;
+  justify-content: space-between;
+}
+
+.hive-model-picker .model-picker__menu {
+  bottom: auto;
+  top: calc(100% + 6px);
+  width: 100%;
+  max-width: 100%;
+}
+
 .hive-budget-card__limit,
 .hive-budget-card__requests {
   margin: 0;

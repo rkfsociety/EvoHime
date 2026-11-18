@@ -1655,6 +1655,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Бюджет и провайдер': 'Budget and provider',
   'Расход дневного бюджета': 'Daily budget spend',
   'Текущий провайдер': 'Current provider',
+  'Модель королевы': 'Queen model',
   'Провайдер улья': 'Hive provider',
   'ключ не настроен': 'key not configured',
   'Лимит:': 'Limit:',

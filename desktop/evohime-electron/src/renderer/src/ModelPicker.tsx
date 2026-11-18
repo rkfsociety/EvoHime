@@ -82,7 +82,9 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   }, [api, provider, shared])
 
   const tier = shared && provider !== 'codex_cli'
-    ? (summary?.profiles?.[provider]?.tier ?? (summary?.provider === provider ? summary.tier : null))
+    ? (summary?.provider === provider
+        ? summary.tier
+        : (summary?.profiles?.[provider]?.tier ?? null))
     : fallbackTier
 
   useEffect(() => {
