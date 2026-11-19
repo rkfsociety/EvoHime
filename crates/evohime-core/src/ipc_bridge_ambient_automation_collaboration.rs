@@ -6,6 +6,7 @@ impl IpcBridge {
         writer: &mut W,
         _request_id: String,
         _client_id: String,
+        conversation_subscription: Option<&ConversationSubscription>,
         _command_hash: String,
         command: Option<generated::command_envelope::Command>,
     ) -> Result<(), IpcBridgeError> {
@@ -38,14 +39,18 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::GetConversationEvents(request)) => {
                 let result = self
-                    .dispatch_conversation_event_log(request, "history")
+                    .dispatch_conversation_event_log(request, "history", None)
                     .await;
                 self.write_conversation_event_log_response(writer, result)
                     .await?;
             }
             Some(generated::command_envelope::Command::SubscribeConversationEvents(request)) => {
                 let result = self
-                    .dispatch_conversation_event_log(request, "subscribed")
+                    .dispatch_conversation_event_log(
+                        request,
+                        "subscribed",
+                        conversation_subscription,
+                    )
                     .await;
                 self.write_conversation_event_log_response(writer, result)
                     .await?;

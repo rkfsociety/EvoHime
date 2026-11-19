@@ -344,10 +344,15 @@ impl IpcBridge {
     /// Task progress reaches the shell this way rather than straight from the
     /// in-memory broadcast: the journal is what assigns sequence numbers, and
     /// the shell relies on them for resync after a reconnect.
-    pub async fn push_journal_tail<W: AsyncWrite + Unpin>(
+    ///
+    /// Conversation live events are emitted only when they match the
+    /// connection-owned `conversation_subscription`; other connections keep
+    /// their own filter.
+    pub(crate) async fn push_journal_tail<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
         after_sequence: u64,
+        conversation_subscription: Option<&ConversationSubscription>,
     ) -> Result<u64, IpcBridgeError> {
         let batch = self
             .journal
@@ -432,7 +437,10 @@ impl IpcBridge {
                         ))
                     })
             } else if record.event_type == "conversation.event" {
-                let subscription = self.conversation_subscription.read().await.clone();
+                let subscription = match conversation_subscription {
+                    Some(subscription) => subscription.read().await.clone(),
+                    None => None,
+                };
                 decode_conversation_event(&record.payload).and_then(|conversation| {
                     let allowed = subscription
                         .as_ref()

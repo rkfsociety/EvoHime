@@ -611,7 +611,11 @@ pub struct ModelConfigSnapshot {
     pub configured: bool,
 }
 
-type ConversationSubscription =
+/// Live conversation filter owned by one authenticated connection.
+///
+/// It is deliberately not part of [`IpcBridge`]: two clients connected to the
+/// same Core must not overwrite each other's conversation subscription.
+pub(crate) type ConversationSubscription =
     Arc<tokio::sync::RwLock<Option<(String, std::collections::BTreeSet<String>)>>>;
 
 /// Core-owned handler for authenticated desktop IPC requests and event projections.
@@ -695,7 +699,6 @@ pub struct IpcBridge {
     /// parent Job Object and is never exposed to renderer/model code.
     browser_backends:
         Arc<tokio::sync::Mutex<HashMap<String, crate::browser_backend::BrowserBackendProcess>>>,
-    conversation_subscription: ConversationSubscription,
     /// Bounded owner for detached IPC workflows and long-running operations.
     background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
     /// Core-owned EvaPulse daemon attached by the process bootstrap.

@@ -20,7 +20,7 @@ fn start_task_route_hint(start: &generated::StartTask) -> Option<String> {
 #[cfg(test)]
 mod start_task_route_tests {
     use super::start_task_route_hint;
-    use crate::generated;
+    use evohime_desktop_ipc::generated;
 
     #[test]
     fn only_hive_system_conversation_can_select_the_hive_route() {

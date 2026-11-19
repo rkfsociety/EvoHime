@@ -230,6 +230,12 @@ async fn serve_connection<R, W>(
     // through one channel so the command loop and the event pump never
     // interleave a half-written frame, and reading a command is never
     // cancelled mid-frame by an event arriving.
+    //
+    // The conversation filter belongs to this connection only, so a second
+    // client subscribing to another chat cannot silence or redirect the
+    // shell's Hive stream.
+    let conversation_subscription: crate::ipc_bridge::ConversationSubscription =
+        Arc::new(tokio::sync::RwLock::new(None));
     let (frames, mut outbound) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTBOUND_FRAME_CAPACITY);
     let writer_task = tokio::spawn(async move {
         while let Some(bytes) = outbound.recv().await {
@@ -244,11 +250,15 @@ async fn serve_connection<R, W>(
 
     let pump = bridge.journalled().map(|mut journalled| {
         let bridge = Arc::clone(&bridge);
+        let subscription = Arc::clone(&conversation_subscription);
         let mut sink = ChannelWriter::new(frames.clone());
         tokio::spawn(async move {
             let mut pushed = bridge.latest_sequence().await;
             while journalled.changed().await.is_ok() {
-                match bridge.push_journal_tail(&mut sink, pushed).await {
+                match bridge
+                    .push_journal_tail(&mut sink, pushed, Some(&subscription))
+                    .await
+                {
                     Ok(sequence) => pushed = sequence,
                     Err(_) => break,
                 }
@@ -259,7 +269,12 @@ async fn serve_connection<R, W>(
     let mut sink = ChannelWriter::new(frames);
     loop {
         if let Err(error) = bridge
-            .process_once_as(Some(&authenticated_client), &mut reader, &mut sink)
+            .process_once_as(
+                Some(&authenticated_client),
+                Some(&conversation_subscription),
+                &mut reader,
+                &mut sink,
+            )
             .await
         {
             let _ = logger.write(

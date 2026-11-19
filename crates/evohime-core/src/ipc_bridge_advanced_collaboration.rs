@@ -170,6 +170,7 @@ impl IpcBridge {
         &self,
         request: generated::ConversationEventLogRequest,
         operation: &str,
+        conversation_subscription: Option<&ConversationSubscription>,
     ) -> generated::ConversationEventLogEvent {
         let limit = if request.limit == 0 {
             100
@@ -182,12 +183,6 @@ impl IpcBridge {
                 &request.conversation_id,
                 "event_schema_unsupported",
             );
-        }
-        if operation == "subscribed" {
-            *self.conversation_subscription.write().await = Some((
-                request.conversation_id.clone(),
-                request.kinds_filter.iter().cloned().collect(),
-            ));
         }
         let invalid = request.conversation_id.is_empty()
             || request.conversation_id.len() > 128
@@ -254,6 +249,14 @@ impl IpcBridge {
                 )
             }
         };
+        if operation == "subscribed" {
+            if let Some(subscription) = conversation_subscription {
+                *subscription.write().await = Some((
+                    request.conversation_id.clone(),
+                    request.kinds_filter.iter().cloned().collect(),
+                ));
+            }
+        }
         let filters = request
             .kinds_filter
             .into_iter()

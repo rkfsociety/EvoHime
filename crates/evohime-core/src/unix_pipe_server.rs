@@ -134,6 +134,8 @@ pub async fn run_unix_pipe(
         };
 
         let connection_bridge = Arc::clone(&bridge);
+        let conversation_subscription: crate::ipc_bridge::ConversationSubscription =
+            Arc::new(tokio::sync::RwLock::new(None));
         let (frames, mut outbound) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTBOUND_FRAME_CAPACITY);
         let writer_task = tokio::spawn(async move {
             while let Some(bytes) = outbound.recv().await {
@@ -147,11 +149,15 @@ pub async fn run_unix_pipe(
         });
         let pump = connection_bridge.journalled().map(|mut journalled| {
             let bridge = Arc::clone(&connection_bridge);
+            let subscription = Arc::clone(&conversation_subscription);
             let mut sink = ChannelWriter::new(frames.clone());
             tokio::spawn(async move {
                 let mut pushed = bridge.latest_sequence().await;
                 while journalled.changed().await.is_ok() {
-                    match bridge.push_journal_tail(&mut sink, pushed).await {
+                    match bridge
+                        .push_journal_tail(&mut sink, pushed, Some(&subscription))
+                        .await
+                    {
                         Ok(sequence) => pushed = sequence,
                         Err(_) => break,
                     }
@@ -162,7 +168,12 @@ pub async fn run_unix_pipe(
         let mut sink = ChannelWriter::new(frames);
         loop {
             if let Err(error) = connection_bridge
-                .process_once_as(Some(&authenticated_client), &mut response_reader, &mut sink)
+                .process_once_as(
+                    Some(&authenticated_client),
+                    Some(&conversation_subscription),
+                    &mut response_reader,
+                    &mut sink,
+                )
                 .await
             {
                 let _ = logger.write(

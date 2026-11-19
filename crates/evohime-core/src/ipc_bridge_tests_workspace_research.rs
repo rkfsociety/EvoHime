@@ -815,6 +815,7 @@ async fn conversation_event_log_ipc_pages_and_live_events_are_typed_and_redacted
         .await
         .expect("message accepts");
     let bridge = IpcBridge::new(journal);
+    let subscription: ConversationSubscription = Arc::new(tokio::sync::RwLock::new(None));
     let page = bridge
         .dispatch_conversation_event_log(
             generated::ConversationEventLogRequest {
@@ -828,6 +829,7 @@ async fn conversation_event_log_ipc_pages_and_live_events_are_typed_and_redacted
                 kinds_filter: Vec::new(),
             },
             "subscribed",
+            Some(&subscription),
         )
         .await;
     assert!(page.error_code.is_empty());
@@ -840,7 +842,7 @@ async fn conversation_event_log_ipc_pages_and_live_events_are_typed_and_redacted
 
     let (mut client, mut server) = duplex(64 * 1024);
     bridge
-        .push_journal_tail(&mut server, 0)
+        .push_journal_tail(&mut server, 0, Some(&subscription))
         .await
         .expect("live tail writes");
     let frame = transport::read_frame(&mut client)
@@ -852,6 +854,94 @@ async fn conversation_event_log_ipc_pages_and_live_events_are_typed_and_redacted
     };
     assert_eq!(live.operation, "live");
     assert_eq!(live.events[0].event_id, page.events[0].event_id);
+}
+
+#[tokio::test]
+async fn conversation_live_subscriptions_are_per_connection() {
+    let directory = tempfile::tempdir().expect("temp directory");
+    let journal =
+        EventJournal::open(directory.path().join("subscriptions.db")).expect("journal opens");
+    for (conversation_id, task_id, client_message_id, prompt) in [
+        ("conversation-1", "task-1", "client-1", "first"),
+        ("conversation-2", "task-2", "client-2", "second"),
+    ] {
+        journal
+            .accept_conversation_message(
+                conversation_id,
+                "workspace-1",
+                task_id,
+                client_message_id,
+                prompt,
+            )
+            .await
+            .expect("message accepts");
+    }
+    let bridge = IpcBridge::new(journal);
+    let first: ConversationSubscription = Arc::new(tokio::sync::RwLock::new(None));
+    let second: ConversationSubscription = Arc::new(tokio::sync::RwLock::new(None));
+    for (subscription, conversation_id) in [(&first, "conversation-1"), (&second, "conversation-2")]
+    {
+        let page = bridge
+            .dispatch_conversation_event_log(
+                generated::ConversationEventLogRequest {
+                    schema_version: 1,
+                    conversation_id: conversation_id.into(),
+                    before_sequence: 0,
+                    after_sequence: 0,
+                    use_before_sequence: false,
+                    use_after_sequence: true,
+                    limit: 20,
+                    kinds_filter: Vec::new(),
+                },
+                "subscribed",
+                Some(subscription),
+            )
+            .await;
+        assert!(page.error_code.is_empty());
+        assert_eq!(page.events.len(), 1);
+    }
+
+    let (mut client_one, mut server_one) = duplex(64 * 1024);
+    let (mut client_two, mut server_two) = duplex(64 * 1024);
+    bridge
+        .push_journal_tail(&mut server_one, 0, Some(&first))
+        .await
+        .expect("first tail writes");
+    bridge
+        .push_journal_tail(&mut server_two, 0, Some(&second))
+        .await
+        .expect("second tail writes");
+
+    let first_event = generated::EventEnvelope::decode(
+        transport::read_frame(&mut client_one)
+            .await
+            .expect("first live frame reads")
+            .as_slice(),
+    )
+    .expect("first live frame decodes");
+    let second_event = generated::EventEnvelope::decode(
+        transport::read_frame(&mut client_two)
+            .await
+            .expect("second live frame reads")
+            .as_slice(),
+    )
+    .expect("second live frame decodes");
+    let Some(generated::event_envelope::Event::ConversationEventLog(first_page)) =
+        first_event.event
+    else {
+        panic!("first live conversation event missing");
+    };
+    let Some(generated::event_envelope::Event::ConversationEventLog(second_page)) =
+        second_event.event
+    else {
+        panic!("second live conversation event missing");
+    };
+    assert_eq!(first_page.conversation_id, "conversation-1");
+    assert_eq!(first_page.events.len(), 1);
+    assert_eq!(first_page.events[0].task_id, "task-1");
+    assert_eq!(second_page.conversation_id, "conversation-2");
+    assert_eq!(second_page.events.len(), 1);
+    assert_eq!(second_page.events[0].task_id, "task-2");
 }
 
 #[tokio::test]
@@ -1046,9 +1136,10 @@ async fn hive_conversation_accepts_the_authenticated_shell_role() {
         client_role: "shell".into(),
     };
     bridge
-        .process_once_as(Some(&shell), &mut server_reader, &mut server_writer)
+        .process_once_as(Some(&shell), None, &mut server_reader, &mut server_writer)
         .await
         .expect("shell command serves");
+
     let started = tokio::time::timeout(std::time::Duration::from_secs(5), events.recv()).await;
     assert!(matches!(started, Ok(Ok(CoreEvent::TaskStarted { .. }))));
     let _ = std::fs::remove_file(path);

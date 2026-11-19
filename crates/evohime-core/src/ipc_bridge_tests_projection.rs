@@ -50,7 +50,7 @@ async fn push_journal_tail_projects_typed_ledger_row_into_execution_event() {
     let (mut client, mut server) = duplex(16 * 1024);
 
     bridge
-        .push_journal_tail(&mut server, 0)
+        .push_journal_tail(&mut server, 0, None)
         .await
         .expect("tail pushes");
     let frame = transport::read_frame(&mut client)
@@ -111,7 +111,7 @@ async fn reconnect_projects_every_intermediate_phase_not_just_running() {
     let (mut client, mut server) = duplex(16 * 1024);
 
     bridge
-        .push_journal_tail(&mut server, 0)
+        .push_journal_tail(&mut server, 0, None)
         .await
         .expect("tail pushes");
 
@@ -159,7 +159,7 @@ async fn push_journal_tail_leaves_generic_rows_unprojected() {
     let (mut client, mut server) = duplex(16 * 1024);
 
     bridge
-        .push_journal_tail(&mut server, 0)
+        .push_journal_tail(&mut server, 0, None)
         .await
         .expect("tail pushes");
     let frame = transport::read_frame(&mut client)
