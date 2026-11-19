@@ -770,13 +770,117 @@ const MAX_HIVE_LOGS_CLIPBOARD_CHARS = 60_000
 const MAX_HIVE_LOG_PAYLOAD_CHARS = 1000
 const HIVE_LOGS_CLIPBOARD_LIMIT = 100
 
+/** Служебные события: в компактном списке логов скрыты, чтобы не заглушать действия Евы. */
+const HIVE_LOG_NOISE_EVENTS: ReadonlySet<string> = new Set([
+  'task.checkpoint.saved',
+  'routing.terminal',
+  'tool.telemetry'
+])
+
+const TOOL_ACTION_LABELS: Record<string, string> = {
+  filesystem_read: 'читает файл',
+  eva_workspace_read_file: 'читает файл',
+  filesystem_patch: 'правит файл',
+  eva_workspace_write_file: 'пишет файл',
+  eva_workspace_run_command: 'запускает команду',
+  eva_workspace_git: 'работает с git',
+  filesystem_list: 'смотрит содержимое папки',
+  analysis_run: 'запускает анализ',
+  goal_create: 'создаёт цель',
+  goal_verify: 'проверяет цель',
+  workflow_start: 'запускает workflow',
+  workflow_status: 'проверяет workflow',
+  workflow_cancel: 'отменяет workflow',
+  workflow_catalog: 'смотрит каталог workflow'
+}
+
+/** Разбирает payload события; Core оборачивает тело в единственный ключ-вариант (`ToolStarted` и т. п.). */
+function eventBody(event: CoreEvent): Record<string, unknown> {
+  if (typeof event.payload !== 'string' || event.payload.trim().length === 0) return {}
+  try {
+    const parsed: unknown = JSON.parse(event.payload)
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const root = parsed as Record<string, unknown>
+    const keys = Object.keys(root)
+    const only = keys.length === 1 ? root[keys[0] as string] : undefined
+    return only !== null && typeof only === 'object' && !Array.isArray(only)
+      ? (only as Record<string, unknown>)
+      : root
+  } catch {
+    return {}
+  }
+}
+
+function shortText(value: string, max: number): string {
+  const single = value.replace(/\s+/g, ' ').trim()
+  return single.length > max ? `${single.slice(0, max)}…` : single
+}
+
+/** «читает файл AGENTS.md» по событию `tool.started`. */
+function describeToolStart(body: Record<string, unknown>): string {
+  const tool = typeof body['tool_name'] === 'string' ? body['tool_name'] : 'инструмент'
+  const action = TOOL_ACTION_LABELS[tool] ?? `вызывает ${tool}`
+  let target = ''
+  if (typeof body['arguments'] === 'string') {
+    try {
+      const args = JSON.parse(body['arguments']) as Record<string, unknown>
+      const raw = args['path'] ?? args['command'] ?? args['file'] ?? args['query']
+      if (typeof raw === 'string') target = shortText(raw, 80)
+    } catch {
+      target = ''
+    }
+  }
+  return target ? `${action}: ${target}` : action
+}
+
+/** Человекочитаемая строка лога; незнакомое событие остаётся подписью по типу. */
+function describeHiveEvent(event: CoreEvent): string {
+  const body = eventBody(event)
+  switch (event.eventType) {
+    case 'tool.started':
+      return `Ева ${describeToolStart(body)}`
+    case 'tool.output': {
+      const output = typeof body['output'] === 'string' ? body['output'] : ''
+      const failed = /^(resource not found|tool execution failed|permission denied)/i.test(output)
+      const tool = typeof body['tool_name'] === 'string' ? body['tool_name'] : 'инструмент'
+      return failed
+        ? `Ошибка инструмента ${tool}: ${shortText(output, 90)}`
+        : `Результат ${tool} получен${output ? ` (${output.length} симв.)` : ''}`
+    }
+    case 'model.context': {
+      const model = typeof body['model'] === 'string' ? body['model'] : ''
+      const tokens = typeof body['estimated_tokens'] === 'number' ? ` · ~${body['estimated_tokens']} токенов` : ''
+      return `Ева думает${model ? ` (${model})` : ''}${tokens}`
+    }
+    default:
+      return `${HIVE_LOG_LABELS[event.eventType] ?? event.eventType}${event.taskId ? ` · ${event.taskId}` : ''}`
+  }
+}
+
+/** Что Королева делает прямо сейчас: по последнему событию её незавершённой задачи. */
+function queenCurrentActivity(events: readonly CoreEvent[]): string {
+  let latestEvent: CoreEvent | undefined
+  for (const event of events) {
+    if (!event.taskId || event.eventType === 'hive_state.snapshot') continue
+    if (event.eventType !== 'tool.started' && event.eventType !== 'tool.output' && event.eventType !== 'model.context') continue
+    if (!latestEvent || event.sequenceId > latestEvent.sequenceId) latestEvent = event
+  }
+  if (!latestEvent) return 'Обрабатывает запрос'
+  const body = eventBody(latestEvent)
+  if (latestEvent.eventType === 'tool.started') return `Ева ${describeToolStart(body)}`
+  if (latestEvent.eventType === 'tool.output') return 'Анализирует результат инструмента'
+  return 'Ева думает над следующим шагом'
+}
+
 function hiveLogEntries(
   events: readonly CoreEvent[],
   observedAt: ReadonlyMap<string, string>,
-  limit: number
+  limit: number,
+  includeNoise = true
 ): readonly HiveLogEntry[] {
   return events
     .filter((event) => event.eventType !== 'hive_state.snapshot')
+    .filter((event) => includeNoise || !HIVE_LOG_NOISE_EVENTS.has(event.eventType))
     .slice(0, limit)
     .map((event) => {
       const key = coreEventKey(event)
@@ -784,7 +888,7 @@ function hiveLogEntries(
         id: key,
         at: observedAt.get(key) ?? '—',
         level: hiveLogLevel(event.eventType),
-        text: `${HIVE_LOG_LABELS[event.eventType] ?? event.eventType}${event.taskId ? ` · ${event.taskId}` : ''}`
+        text: describeHiveEvent(event)
       }
     })
 }
@@ -1104,10 +1208,11 @@ function formatQueenFailureText(errorCodeOrMessage: string): string {
   if (lower === 'permission_denied' || lower.includes('permission denied') || lower.includes('access denied')) {
     return 'Королева Ева: У меня нет прав на выполнение этого действия. Проверьте, что указан правильный путь к песочнице и у меня есть доступ к файлам.'
   }
-  const reason = normalized.length > 0 && normalized !== 'task_failed'
-    ? normalized
-    : 'внутренняя ошибка выполнения'
-  return `Королева Ева: Я не смогла выполнить задачу. Причина: ${reason}. Пожалуйста, проверьте настройки песочницы (eva_workspace_path) или лимиты провайдера.`
+  const generic = normalized.length === 0 || normalized === 'task_failed'
+  if (generic) {
+    return 'Королева Ева: Я не смогла выполнить задачу, Core не сообщил точную причину. Последние действия и ошибки инструментов смотри в «Логи улья» (кнопка «Все логи»).'
+  }
+  return `Королева Ева: Я не смогла выполнить задачу. Причина: ${normalized}. Подробности — в «Логи улья».`
 }
 
 function isQueenThinking(
@@ -2046,7 +2151,7 @@ export function HiveDashboard({
       : fallbackLabel
         ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
-  const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
+  const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6, allLogs)
   const logs = realLogs
   const latestLogId = logs[0]?.id ?? null
   useEffect(() => {
@@ -2107,6 +2212,11 @@ export function HiveDashboard({
   const queenTyping = useMemo(
     () => pulseStatus !== 'sleeping' && isQueenThinking(events, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
     [activeApprovalTaskIds, events, pendingTaskIds, pulseStatus, sendingMessage]
+  )
+  const queenWorking = queenTyping && !paused && !waitingApproval
+  const queenActivity = useMemo(
+    () => (queenTyping ? queenCurrentActivity(events) : ''),
+    [events, queenTyping]
   )
 
   return (
@@ -2263,13 +2373,15 @@ export function HiveDashboard({
                 </div>
                 <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'sleeping'}`}>
                   <span className="hive-dot" aria-hidden="true" />
-                  {translate(queenStatusLabel)}
+                  {translate(queenWorking ? 'Работает' : queenStatusLabel)}
                 </p>
               </div>
               <p className="hive-queen__note">
                 {paused
                   ? `${translate(QUEEN_REASON_LABELS[hive?.queen.reason ?? ''] ?? hive?.queen.reason ?? 'лимит провайдера')} · ${formatWakeAt(wakeAtMs, Date.now())}`
-                  : translate('Координирует агентов и выполняет задачи')}
+                  : queenWorking
+                    ? translate(queenActivity)
+                    : translate('Координирует агентов и выполняет задачи')}
               </p>
             </div>
           </div>
@@ -2461,6 +2573,7 @@ export function HiveDashboard({
             {queenTyping ? (
               <div className="hive-chat__typing" data-testid="queen-typing-indicator" role="status" aria-live="polite">
                 <span>{translate('Королева печатает')}</span>
+                <small className="hive-chat__activity" data-testid="queen-activity"> · {translate(queenActivity)}</small>
                 <span className="hive-chat__dots" aria-hidden="true">
                   <span />
                   <span />
