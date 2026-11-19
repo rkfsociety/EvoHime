@@ -1378,7 +1378,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
             .and(body_partial_json(json!({
-                "model": "llama-3.3-70b-instruct-turbo-free"
+                "model": "llama-3.3-70b-instruct-turbo:free"
             })))
             .respond_with(
                 ResponseTemplate::new(429)
@@ -1391,7 +1391,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
             .and(body_partial_json(json!({
-                "model": "llama-3.1-8b-instruct-free"
+                "model": "llama-3.1-8b-instruct:free"
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "choices": [{
@@ -1422,7 +1422,7 @@ mod tests {
 
         assert_eq!(result.content, "ok-from-fallback");
         assert!(
-            crate::rate_limit_signal::rate_limited_until("llama-3.3-70b-instruct-turbo-free")
+            crate::rate_limit_signal::rate_limited_until("llama-3.3-70b-instruct-turbo:free")
                 .is_some()
         );
     }

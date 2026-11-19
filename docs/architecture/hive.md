@@ -201,7 +201,8 @@ read-only investigation-задача.
 задачами), а статус EvaPulse без настроенного `"hive"` остаётся `sleeping`
 (`primary_route_unavailable`). Выбор основной и резервной модели в настройках
 Улья выполняется из списка моделей выбранного провайдера Улья через каталог
-Core (`core.listModelCatalog` в режимах `hive_catalog` / `hive_fallback_catalog`).
+Core (`core.listModelCatalog` в режимах `hive_catalog` / `hive_fallback_catalog`;
+для `literouter` поддерживается выбор режима бесплатных (`:free`) или платных моделей).
 При 429 gateway публикует process-local cooldown
 в `rate_limit_signal`, поэтому демон не повторяет запрос и не вызывает fallback —
 он просто спит до конца окна.

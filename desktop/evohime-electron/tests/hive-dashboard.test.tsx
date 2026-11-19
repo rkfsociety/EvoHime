@@ -1211,6 +1211,78 @@ describe('hive dashboard', () => {
     expect(screen.queryByText(/Дневной лимит: 650 000 токенов/)).toBeNull()
   })
 
+  it('позволяет выбрать режим бесплатных или платных моделей для LiteRouter в Настройках улья и оставляет в бесплатном режиме только модели с :free', async () => {
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ hive_provider_profile: 'literouter', hive_model: '' })),
+          event('hive.model.catalog', {
+            profile: 'literouter',
+            tier: 'free',
+            models: [
+              'glm-5.3-flash-cheap:free',
+              'llama-3.3-70b-instruct-turbo-free',
+              'deepseek-r1:free',
+              'claude-3-7-sonnet'
+            ],
+            error: null
+          })
+        ]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    const tierSelect = within(dialog).getByLabelText('Режим моделей Улья') as HTMLSelectElement
+    expect(tierSelect.value).toBe('free')
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.listModelCatalog',
+        payload: { mode: 'hive_catalog', profile: 'literouter:free' }
+      })
+    })
+
+    const modelSelect = within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement
+    const freeOptionValues = Array.from(modelSelect.options).map((option) => option.value).filter(Boolean)
+    expect(freeOptionValues).toEqual(['glm-5.3-flash-cheap:free', 'deepseek-r1:free'])
+    expect(freeOptionValues.every((modelId) => modelId.endsWith(':free'))).toBe(true)
+
+    await userEvent.selectOptions(tierSelect, 'paid')
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.listModelCatalog',
+        payload: { mode: 'hive_catalog', profile: 'literouter:paid' }
+      })
+    })
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ hive_provider_profile: 'literouter', hive_model: '' })),
+          event('hive.model.catalog', {
+            profile: 'literouter',
+            tier: 'paid',
+            models: [
+              'glm-5.3-flash-cheap:free',
+              'claude-3-7-sonnet',
+              'gpt-4.1'
+            ],
+            error: null
+          })
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      const paidOptionValues = Array.from(modelSelect.options).map((option) => option.value).filter(Boolean)
+      expect(paidOptionValues).toEqual(['claude-3-7-sonnet', 'gpt-4.1'])
+    })
+  })
+
   it('copies_hive_logs_with_context_and_payloads_to_clipboard', async () => {
     const copied: string[] = []
     const previousApi = window.evohime?.v1

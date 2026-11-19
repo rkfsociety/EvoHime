@@ -8141,6 +8141,7 @@ body {
 
 .hive-provider {
   display: grid;
+  min-width: 0;
   gap: 4px;
 }
 
@@ -8152,12 +8153,14 @@ body {
 }
 
 .hive-provider select {
+  width: 100%;
   min-width: 0;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-input);
   color: var(--fg);
+  box-sizing: border-box;
 }
 
 .hive-model-picker .model-picker {
@@ -8856,6 +8859,10 @@ body {
   align-items: end;
 }
 
+.hive-settings-modal__grid--with-tier {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.75fr) minmax(0, 1.45fr);
+}
+
 .hive-settings-modal__grid--balanced {
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
 }
@@ -8863,15 +8870,22 @@ body {
 .hive-settings-modal__row {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 8px;
 }
 
 .hive-settings-modal__row input,
 .hive-settings-modal select {
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  width: 100%;
   min-width: 0;
   min-height: 34px;
   box-sizing: border-box;
+}
+
+.hive-settings-modal__row select {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hive-settings-modal__row button {
@@ -8999,6 +9013,7 @@ body {
 
 @media (max-width: 680px) {
   .hive-settings-modal__grid,
+  .hive-settings-modal__grid--with-tier,
   .hive-settings-modal__grid--balanced {
     grid-template-columns: minmax(0, 1fr);
   }

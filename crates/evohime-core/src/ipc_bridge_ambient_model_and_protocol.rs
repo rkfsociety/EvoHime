@@ -23,6 +23,42 @@ fn filter_catalog_entries_by_tier(
         .collect()
 }
 
+/// Parses an optional `profile[:tier]` selector for Hive model catalog requests.
+///
+/// When `tier` is omitted, the tier is inferred from the currently configured
+/// Hive model (if it does not end with `:free`, `"paid"`, otherwise `"free"`).
+fn parse_hive_catalog_profile_and_tier<'a>(
+    raw_requested: &'a str,
+    stored_profile: Option<&'a str>,
+    stored_model: Option<&str>,
+) -> (Option<&'a str>, &'static str) {
+    let trimmed = raw_requested.trim();
+    let (requested_profile_part, requested_tier_part) = match trimmed.split_once(':') {
+        Some((prof, tier)) => (prof.trim(), Some(tier.trim())),
+        None => (trimmed, None),
+    };
+    let profile = if !requested_profile_part.is_empty() {
+        Some(requested_profile_part)
+    } else {
+        stored_profile
+    }
+    .map(str::trim)
+    .filter(|value| !value.is_empty());
+    let tier_mode = match requested_tier_part {
+        Some(tier) if tier.eq_ignore_ascii_case("paid") => "paid",
+        Some(tier) if tier.eq_ignore_ascii_case("free") => "free",
+        _ => {
+            let configured_model = stored_model.map(str::trim).filter(|m| !m.is_empty());
+            if configured_model.is_some_and(|m| !m.ends_with(":free")) {
+                "paid"
+            } else {
+                "free"
+            }
+        }
+    };
+    (profile, tier_mode)
+}
+
 fn safe_model_catalog_error_code(
     error: &evohime_model_gateway::providers::ProviderError,
 ) -> &'static str {
@@ -391,15 +427,19 @@ impl IpcBridge {
                         "hive.model.catalog"
                     };
                     let settings = self.journal.hive_settings().await.unwrap_or_default();
-                    let requested_profile = if !request.model_id.trim().is_empty() {
-                        Some(request.model_id.trim())
-                    } else if is_fallback {
-                        settings.hive_fallback_provider_profile.as_deref()
+                    let (requested_profile, tier_mode) = if is_fallback {
+                        parse_hive_catalog_profile_and_tier(
+                            &request.model_id,
+                            settings.hive_fallback_provider_profile.as_deref(),
+                            settings.hive_fallback_model.as_deref(),
+                        )
                     } else {
-                        settings.hive_provider_profile.as_deref()
-                    }
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty());
+                        parse_hive_catalog_profile_and_tier(
+                            &request.model_id,
+                            settings.hive_provider_profile.as_deref(),
+                            settings.hive_model.as_deref(),
+                        )
+                    };
                     let mut adjusted_config = self.gateway_config.clone();
                     if let Some(config) = adjusted_config.as_mut() {
                         if is_fallback {
@@ -436,12 +476,29 @@ impl IpcBridge {
                         }
                         Some(route) if route.configured() => {
                             match evohime_model_gateway::fetch_model_catalog(route).await {
-                                Ok(entries) => (entries.into_iter().map(|e| e.id).collect(), None),
+                                Ok(entries) => (
+                                    filter_catalog_entries_by_tier(
+                                        route.provider,
+                                        tier_mode,
+                                        entries,
+                                    )
+                                    .into_iter()
+                                    .map(|e| e.id)
+                                    .collect(),
+                                    None,
+                                ),
                                 Err(err) => {
                                     let fallback_models = if route.provider
                                         == evohime_model_gateway::providers::ProviderKind::LiteRouter
                                     {
-                                        evohime_model_gateway::model_ranker::get_ranked_models()
+                                        if tier_mode == "free" {
+                                            evohime_model_gateway::model_ranker::get_ranked_models()
+                                                .into_iter()
+                                                .filter(|m| m.ends_with(":free"))
+                                                .collect()
+                                        } else {
+                                            Vec::new()
+                                        }
                                     } else if route.provider_profile_id
                                         == Some(evohime_model_gateway::ProviderProfileId::Rout)
                                     {
@@ -463,7 +520,14 @@ impl IpcBridge {
                         _ => {
                             let static_models = if profile_label.eq_ignore_ascii_case("literouter")
                             {
-                                evohime_model_gateway::model_ranker::get_ranked_models()
+                                if tier_mode == "free" {
+                                    evohime_model_gateway::model_ranker::get_ranked_models()
+                                        .into_iter()
+                                        .filter(|m| m.ends_with(":free"))
+                                        .collect()
+                                } else {
+                                    Vec::new()
+                                }
                             } else if profile_label.eq_ignore_ascii_case("rout") {
                                 evohime_model_gateway::model_ranker::get_rout_ranked_models()
                             } else {
@@ -479,6 +543,7 @@ impl IpcBridge {
                     };
                     let payload = serde_json::json!({
                         "profile": profile_label,
+                        "tier": tier_mode,
                         "models": models,
                         "error": error,
                     });
@@ -813,6 +878,38 @@ mod tests {
                 .map(|e| e.id.as_str())
                 .collect::<Vec<_>>(),
             vec!["gpt-4.1", "o3-mini"]
+        );
+    }
+
+    #[test]
+    fn parse_hive_catalog_profile_and_tier_resolves_explicit_and_inferred_tiers() {
+        assert_eq!(
+            parse_hive_catalog_profile_and_tier("literouter:free", Some("rout"), Some("gpt-4o")),
+            (Some("literouter"), "free")
+        );
+        assert_eq!(
+            parse_hive_catalog_profile_and_tier(
+                "literouter:paid",
+                Some("rout"),
+                Some("deepseek:free")
+            ),
+            (Some("literouter"), "paid")
+        );
+        assert_eq!(
+            parse_hive_catalog_profile_and_tier(
+                "literouter",
+                None,
+                Some("glm-5.3-flash-cheap:free")
+            ),
+            (Some("literouter"), "free")
+        );
+        assert_eq!(
+            parse_hive_catalog_profile_and_tier("literouter", None, Some("claude-3-7-sonnet")),
+            (Some("literouter"), "paid")
+        );
+        assert_eq!(
+            parse_hive_catalog_profile_and_tier("", Some("literouter"), None),
+            (Some("literouter"), "free")
         );
     }
 }

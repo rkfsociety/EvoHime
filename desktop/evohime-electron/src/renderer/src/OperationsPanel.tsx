@@ -2,7 +2,7 @@ import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { HIVE_SYSTEM_CHAT_ID } from '@shared/api'
-import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ModelTier, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { useProviderState } from './provider-state'
@@ -1184,6 +1184,7 @@ export function HiveDashboard({
   const [watchedReposBusy, setWatchedReposBusy] = useState(false)
   const [watchedReposError, setWatchedReposError] = useState<string | null>(null)
   const [hiveProviderProfile, setHiveProviderProfile] = useState('')
+  const [hiveTier, setHiveTier] = useState<ModelTier>('free')
   const [hiveModelDraft, setHiveModelDraft] = useState('')
   const [hiveCatalogModels, setHiveCatalogModels] = useState<readonly string[]>([])
   const [hiveProviderBusy, setHiveProviderBusy] = useState(false)
@@ -1192,6 +1193,7 @@ export function HiveDashboard({
   const [hiveApiKeyBusy, setHiveApiKeyBusy] = useState(false)
   const [hiveApiKeyError, setHiveApiKeyError] = useState<string | null>(null)
   const [hiveFallbackProviderProfile, setHiveFallbackProviderProfile] = useState('')
+  const [hiveFallbackTier, setHiveFallbackTier] = useState<ModelTier>('free')
   const [hiveFallbackModelDraft, setHiveFallbackModelDraft] = useState('')
   const [hiveFallbackCatalogModels, setHiveFallbackCatalogModels] = useState<readonly string[]>([])
   const [hiveFallbackProviderBusy, setHiveFallbackProviderBusy] = useState(false)
@@ -1241,7 +1243,11 @@ export function HiveDashboard({
   }, [hive?.hiveProviderProfile])
   useEffect(() => {
     if (!hive) return
-    setHiveModelDraft(hive.hiveModel ?? '')
+    const configuredModel = (hive.hiveModel ?? '').trim()
+    setHiveModelDraft(configuredModel)
+    if (configuredModel.length > 0) {
+      setHiveTier(configuredModel.endsWith(':free') ? 'free' : 'paid')
+    }
   }, [hive?.hiveModel])
   useEffect(() => {
     if (!hive) return
@@ -1249,55 +1255,84 @@ export function HiveDashboard({
   }, [hive?.hiveFallbackProviderProfile])
   useEffect(() => {
     if (!hive) return
-    setHiveFallbackModelDraft(hive.hiveFallbackModel ?? '')
+    const configuredModel = (hive.hiveFallbackModel ?? '').trim()
+    setHiveFallbackModelDraft(configuredModel)
+    if (configuredModel.length > 0) {
+      setHiveFallbackTier(configuredModel.endsWith(':free') ? 'free' : 'paid')
+    }
   }, [hive?.hiveFallbackModel])
   useEffect(() => {
     if (!api || !connected || !hiveSettingsOpen) return
+    const trimmedProfile = hiveProviderProfile.trim()
+    const profileArg = trimmedProfile === 'literouter'
+      ? `literouter:${hiveTier}`
+      : trimmedProfile
     void api.invoke('core.listModelCatalog', {
       mode: 'hive_catalog',
-      ...(hiveProviderProfile.trim() ? { profile: hiveProviderProfile.trim() } : {})
+      ...(profileArg ? { profile: profileArg } : {})
     }).catch(() => undefined)
-  }, [api, connected, hiveProviderProfile, hiveSettingsOpen])
+  }, [api, connected, hiveProviderProfile, hiveTier, hiveSettingsOpen])
   useEffect(() => {
     if (!api || !connected || !hiveSettingsOpen) return
-    if (!hiveFallbackProviderProfile.trim()) {
+    const trimmedProfile = hiveFallbackProviderProfile.trim()
+    if (!trimmedProfile) {
       setHiveFallbackCatalogModels([])
       return
     }
+    const profileArg = trimmedProfile === 'literouter'
+      ? `literouter:${hiveFallbackTier}`
+      : trimmedProfile
     void api.invoke('core.listModelCatalog', {
       mode: 'hive_fallback_catalog',
-      profile: hiveFallbackProviderProfile.trim()
+      profile: profileArg
     }).catch(() => undefined)
-  }, [api, connected, hiveFallbackProviderProfile, hiveSettingsOpen])
+  }, [api, connected, hiveFallbackProviderProfile, hiveFallbackTier, hiveSettingsOpen])
   const hiveModelCatalogEvent = latest(events, 'hive.model.catalog')
   useEffect(() => {
     if (!hiveModelCatalogEvent) return
     try {
-      const parsed = JSON.parse(hiveModelCatalogEvent.payload) as { models?: unknown }
+      const parsed = JSON.parse(hiveModelCatalogEvent.payload) as { profile?: unknown; tier?: unknown; models?: unknown }
+      const trimmedProfile = hiveProviderProfile.trim()
+      if (trimmedProfile.length > 0 && typeof parsed.profile === 'string' && parsed.profile.trim().length > 0 && parsed.profile.trim() !== trimmedProfile) {
+        return
+      }
+      if (trimmedProfile === 'literouter' && typeof parsed.tier === 'string' && parsed.tier !== hiveTier) {
+        return
+      }
       if (Array.isArray(parsed.models)) {
-        const models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        let models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        if (trimmedProfile === 'literouter') {
+          models = models.filter((modelId) => (hiveTier === 'free' ? modelId.endsWith(':free') : !modelId.endsWith(':free')))
+        }
         setHiveCatalogModels([...new Set(models)])
       }
     } catch {
       // Ignore malformed catalog payload
     }
-  }, [hiveModelCatalogEvent])
+  }, [hiveModelCatalogEvent, hiveProviderProfile, hiveTier])
   const hiveFallbackModelCatalogEvent = latest(events, 'hive.fallback_model.catalog')
   useEffect(() => {
-    if (!hiveFallbackProviderProfile.trim() || !hiveFallbackModelCatalogEvent) return
+    const trimmedProfile = hiveFallbackProviderProfile.trim()
+    if (!trimmedProfile || !hiveFallbackModelCatalogEvent) return
     try {
-      const parsed = JSON.parse(hiveFallbackModelCatalogEvent.payload) as { profile?: unknown; models?: unknown }
-      if (typeof parsed.profile === 'string' && parsed.profile.trim().length > 0 && parsed.profile.trim() !== hiveFallbackProviderProfile.trim()) {
+      const parsed = JSON.parse(hiveFallbackModelCatalogEvent.payload) as { profile?: unknown; tier?: unknown; models?: unknown }
+      if (typeof parsed.profile === 'string' && parsed.profile.trim().length > 0 && parsed.profile.trim() !== trimmedProfile) {
+        return
+      }
+      if (trimmedProfile === 'literouter' && typeof parsed.tier === 'string' && parsed.tier !== hiveFallbackTier) {
         return
       }
       if (Array.isArray(parsed.models)) {
-        const models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        let models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        if (trimmedProfile === 'literouter') {
+          models = models.filter((modelId) => (hiveFallbackTier === 'free' ? modelId.endsWith(':free') : !modelId.endsWith(':free')))
+        }
         setHiveFallbackCatalogModels([...new Set(models)])
       }
     } catch {
       // Ignore malformed catalog payload
     }
-  }, [hiveFallbackModelCatalogEvent, hiveFallbackProviderProfile])
+  }, [hiveFallbackModelCatalogEvent, hiveFallbackProviderProfile, hiveFallbackTier])
   useEffect(() => {
     if (!hive) return
     setDailyBudgetDraft(String(hive.dailyBudgetUsd))
@@ -2602,7 +2637,7 @@ export function HiveDashboard({
               </section>
 
               <section className="hive-settings-section">
-                <div className="hive-settings-modal__grid">
+                <div className={`hive-settings-modal__grid${hiveProviderProfile.trim() === 'literouter' ? ' hive-settings-modal__grid--with-tier' : ''}`}>
                   <label className="hive-provider" htmlFor="hive-provider-profile-select">
                     <span>{translate('Провайдер Улья')}</span>
                     <select
@@ -2625,6 +2660,32 @@ export function HiveDashboard({
                       <option value="ollama">Ollama</option>
                     </select>
                   </label>
+                  {hiveProviderProfile.trim() === 'literouter' ? (
+                    <label className="hive-provider" htmlFor="hive-tier-select">
+                      <span>{translate('Режим моделей Улья')}</span>
+                      <select
+                        id="hive-tier-select"
+                        aria-label={translate('Режим моделей Улья')}
+                        value={hiveTier}
+                        disabled={!connected || hiveProviderBusy}
+                        onChange={(changeEvent) => {
+                          const nextTier = changeEvent.target.value as ModelTier
+                          setHiveTier(nextTier)
+                          if (hiveModelDraft.trim().length > 0) {
+                            const isFree = hiveModelDraft.trim().endsWith(':free')
+                            if ((nextTier === 'free' && !isFree) || (nextTier === 'paid' && isFree)) {
+                              setHiveModelDraft('')
+                            }
+                          }
+                          setHiveProviderError(null)
+                          setHiveProviderSaved(false)
+                        }}
+                      >
+                        <option value="free">{translate('Бесплатные (:free)')}</option>
+                        <option value="paid">{translate('Платные')}</option>
+                      </select>
+                    </label>
+                  ) : null}
                   <label className="hive-provider" htmlFor="hive-model-input">
                     <span>{translate('Модель Улья')}</span>
                     <div className="hive-settings-modal__row">
@@ -2640,7 +2701,10 @@ export function HiveDashboard({
                         }}
                       >
                         <option value="">{translate('По умолчанию провайдера')}</option>
-                        {hiveModelDraft.trim().length > 0 && !hiveCatalogModels.includes(hiveModelDraft.trim()) ? (
+                        {hiveModelDraft.trim().length > 0 &&
+                          !hiveCatalogModels.includes(hiveModelDraft.trim()) &&
+                          (hiveProviderProfile.trim() !== 'literouter' ||
+                            (hiveTier === 'free' ? hiveModelDraft.trim().endsWith(':free') : !hiveModelDraft.trim().endsWith(':free'))) ? (
                           <option value={hiveModelDraft.trim()}>{hiveModelDraft.trim()}</option>
                         ) : null}
                         {hiveCatalogModels.map((modelId) => (
@@ -2695,7 +2759,7 @@ export function HiveDashboard({
               </section>
 
               <section className="hive-settings-section">
-                <div className="hive-settings-modal__grid">
+                <div className={`hive-settings-modal__grid${hiveFallbackProviderProfile.trim() === 'literouter' ? ' hive-settings-modal__grid--with-tier' : ''}`}>
                   <label className="hive-provider" htmlFor="hive-fallback-provider-profile-select">
                     <span>{translate('Резервный провайдер Улья')}</span>
                     <select
@@ -2718,6 +2782,32 @@ export function HiveDashboard({
                       <option value="ollama">Ollama</option>
                     </select>
                   </label>
+                  {hiveFallbackProviderProfile.trim() === 'literouter' ? (
+                    <label className="hive-provider" htmlFor="hive-fallback-tier-select">
+                      <span>{translate('Режим резервных моделей')}</span>
+                      <select
+                        id="hive-fallback-tier-select"
+                        aria-label={translate('Режим резервных моделей')}
+                        value={hiveFallbackTier}
+                        disabled={!connected || hiveFallbackProviderBusy}
+                        onChange={(changeEvent) => {
+                          const nextTier = changeEvent.target.value as ModelTier
+                          setHiveFallbackTier(nextTier)
+                          if (hiveFallbackModelDraft.trim().length > 0) {
+                            const isFree = hiveFallbackModelDraft.trim().endsWith(':free')
+                            if ((nextTier === 'free' && !isFree) || (nextTier === 'paid' && isFree)) {
+                              setHiveFallbackModelDraft('')
+                            }
+                          }
+                          setHiveFallbackProviderError(null)
+                          setHiveFallbackProviderSaved(false)
+                        }}
+                      >
+                        <option value="free">{translate('Бесплатные (:free)')}</option>
+                        <option value="paid">{translate('Платные')}</option>
+                      </select>
+                    </label>
+                  ) : null}
                   <label className="hive-provider" htmlFor="hive-fallback-model-select">
                     <span>{translate('Резервная модель Улья')}</span>
                     <div className="hive-settings-modal__row">
@@ -2733,7 +2823,10 @@ export function HiveDashboard({
                         }}
                       >
                         <option value="">{translate('По умолчанию провайдера')}</option>
-                        {hiveFallbackModelDraft.trim().length > 0 && !hiveFallbackCatalogModels.includes(hiveFallbackModelDraft.trim()) ? (
+                        {hiveFallbackModelDraft.trim().length > 0 &&
+                          !hiveFallbackCatalogModels.includes(hiveFallbackModelDraft.trim()) &&
+                          (hiveFallbackProviderProfile.trim() !== 'literouter' ||
+                            (hiveFallbackTier === 'free' ? hiveFallbackModelDraft.trim().endsWith(':free') : !hiveFallbackModelDraft.trim().endsWith(':free'))) ? (
                           <option value={hiveFallbackModelDraft.trim()}>{hiveFallbackModelDraft.trim()}</option>
                         ) : null}
                         {hiveFallbackCatalogModels.map((modelId) => (

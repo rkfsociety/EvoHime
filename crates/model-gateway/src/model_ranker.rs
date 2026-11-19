@@ -8,11 +8,11 @@ pub const ROUT_DEFAULT_FREE_MODEL: &str = "openai/gpt-6-luna";
 
 /// Ranked list of free LiteRouter models ordered from highest to lowest preference.
 const RANKED_FREE_MODELS: &[(u32, &str)] = &[
-    (1, "llama-3.3-70b-instruct-turbo-free"),
-    (2, "llama-3.1-8b-instruct-free"),
-    (3, "qwen-2.5-72b-instruct-free"),
-    (4, "deepseek-r1-free"),
-    (5, "gemma-2-27b-it-free"),
+    (1, "llama-3.3-70b-instruct-turbo:free"),
+    (2, "llama-3.1-8b-instruct:free"),
+    (3, "qwen-2.5-72b-instruct:free"),
+    (4, "deepseek-r1:free"),
+    (5, "gemma-2-27b-it:free"),
 ];
 
 /// Ranked list of free Rout models ordered by multiplier (cheapest first).
@@ -93,19 +93,20 @@ mod tests {
     fn ranked_models_start_with_llama_3_3_70b_free() {
         let models = get_ranked_models();
         assert!(!models.is_empty());
-        assert_eq!(models[0], "llama-3.3-70b-instruct-turbo-free");
-        assert_eq!(models[1], "llama-3.1-8b-instruct-free");
+        assert_eq!(models[0], "llama-3.3-70b-instruct-turbo:free");
+        assert_eq!(models[1], "llama-3.1-8b-instruct:free");
+        assert!(models.iter().all(|m| m.ends_with(":free")));
     }
 
     #[test]
     fn next_available_model_skips_current_and_active_cooldowns() {
         let now = now_ms();
         let cooldowns = HashMap::from([
-            ("llama-3.3-70b-instruct-turbo-free".to_owned(), now + 60_000),
-            ("llama-3.1-8b-instruct-free".to_owned(), now + 60_000),
+            ("llama-3.3-70b-instruct-turbo:free".to_owned(), now + 60_000),
+            ("llama-3.1-8b-instruct:free".to_owned(), now + 60_000),
         ]);
-        let next = next_available_model("llama-3.3-70b-instruct-turbo-free", &cooldowns);
-        assert_eq!(next.as_deref(), Some("qwen-2.5-72b-instruct-free"));
+        let next = next_available_model("llama-3.3-70b-instruct-turbo:free", &cooldowns);
+        assert_eq!(next.as_deref(), Some("qwen-2.5-72b-instruct:free"));
     }
 
     #[test]
@@ -116,7 +117,7 @@ mod tests {
             .map(|model| (model, now + 60_000))
             .collect();
         assert_eq!(
-            next_available_model("llama-3.3-70b-instruct-turbo-free", &cooldowns),
+            next_available_model("llama-3.3-70b-instruct-turbo:free", &cooldowns),
             None
         );
     }
