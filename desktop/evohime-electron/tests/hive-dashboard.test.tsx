@@ -1004,15 +1004,35 @@ describe('hive dashboard', () => {
     render(
       <HiveDashboard
         connection="connected"
-        events={[event('hive_state.snapshot', snapshot({ watched_repositories: ['D:/repo-one'] }))]}
+        events={[
+          event(
+            'hive_state.snapshot',
+            snapshot({
+              eva_workspace_path: 'C:\\github\\EvoHime',
+              watched_repositories: ['C:\\github\\EvoHime', 'D:/repo-one']
+            })
+          )
+        ]}
       />
     )
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
-    expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
-    expect(screen.getByText('D:/repo-one')).toBeTruthy()
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    const watchedSection = within(dialog).getByTestId('watched-repositories-section')
+    // Path to Eva sources must NOT be rendered inside third-party watched repositories
+    expect(within(watchedSection).queryByText('C:\\github\\EvoHime')).toBeNull()
+    expect(within(watchedSection).getByText('D:/repo-one')).toBeTruthy()
 
     const repoInput = screen.getByRole('textbox', { name: 'Путь к проекту' })
+    await userEvent.type(repoInput, 'c:/github/evohime/')
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить проект' }))
+    expect(
+      within(watchedSection).getByText(
+        'Папка исходников Евы задаётся отдельно выше и не добавляется в сторонние проекты.'
+      )
+    ).toBeTruthy()
+
+    await userEvent.clear(repoInput)
     await userEvent.type(repoInput, 'D:/repo-two')
     await userEvent.click(screen.getByRole('button', { name: 'Добавить проект' }))
 
@@ -1030,6 +1050,12 @@ describe('hive dashboard', () => {
       })
     })
 
+    // Adding or removing a watched repository must not overwrite eva_workspace_path input
+    const evaInput = within(dialog).getByRole('textbox', {
+      name: 'Путь к исходникам Евы (eva_workspace_path)'
+    }) as HTMLInputElement
+    expect(evaInput.value).toBe('C:\\github\\EvoHime')
+
     await userEvent.click(screen.getByRole('button', { name: 'Удалить проект D:/repo-one' }))
     await waitFor(() => {
       expect(calls).toContainEqual({
@@ -1040,6 +1066,7 @@ describe('hive dashboard', () => {
         }
       })
     })
+    expect(evaInput.value).toBe('C:\\github\\EvoHime')
   })
 
   it('ui_can_save_hive_api_key', async () => {

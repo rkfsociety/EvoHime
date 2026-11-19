@@ -5,26 +5,30 @@ impl IpcBridge {
     pub(crate) async fn save_eva_workspace_path(&self, path: &str) -> Result<Vec<u8>, String> {
         let normalized = path.trim();
         let mut settings = self.journal.hive_settings().await?;
-        let previous = settings.watched_repositories.clone();
-        settings.watched_repositories = if normalized.is_empty() {
-            Vec::new()
+        settings.eva_workspace_path = if normalized.is_empty() {
+            None
         } else {
-            vec![normalized.to_owned()]
+            Some(normalized.to_owned())
         };
+        if !normalized.is_empty() {
+            settings
+                .watched_repositories
+                .retain(|repo| !crate::hive_settings::paths_refer_to_same_repo(repo, normalized));
+        }
         if let Err(error) = settings.validate() {
-            settings.watched_repositories = Vec::new();
+            settings.eva_workspace_path = None;
             self.journal.save_hive_settings(&settings).await?;
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
+                "setting_key": "eva_workspace_path",
                 "eva_workspace_path": serde_json::Value::Null,
-                "watched_repositories": [],
+                "watched_repositories": settings.external_watched_repositories(),
                 "self_development_enabled": false,
                 "error_code": error.to_string(),
             }))
             .map_err(|serialization_error| serialization_error.to_string());
         }
-        let _ = previous;
-        let path_is_configured = !settings.watched_repositories.is_empty();
+        let path_is_configured = settings.eva_workspace_path().is_some();
         let error_code = if path_is_configured {
             "".to_owned()
         } else {
@@ -34,18 +38,20 @@ impl IpcBridge {
         self.journal.save_hive_settings(&settings).await?;
         serde_json::to_vec(&serde_json::json!({
             "accepted": path_is_configured,
-            "eva_workspace_path": settings.primary_workspace_path(),
-            "watched_repositories": settings.watched_repositories,
+            "setting_key": "eva_workspace_path",
+            "eva_workspace_path": settings.eva_workspace_path(),
+            "watched_repositories": settings.external_watched_repositories(),
             "self_development_enabled": path_is_configured,
             "error_code": error_code,
         }))
         .map_err(|error| error.to_string())
     }
 
-    /// Validates and persists the list of Git repositories watched by Hive.
+    /// Validates and persists the list of external Git repositories watched by Hive.
     pub(crate) async fn save_watched_repositories(&self, value: &str) -> Result<Vec<u8>, String> {
         let mut settings = self.journal.hive_settings().await?;
-        let previous = settings.watched_repositories.clone();
+        let previous = settings.external_watched_repositories();
+        let eva_path = settings.eva_workspace_path().map(str::to_owned);
         let trimmed = value.trim();
         let parsed: Vec<String> = if trimmed.is_empty() {
             Vec::new()
@@ -57,8 +63,8 @@ impl IpcBridge {
                         "accepted": false,
                         "setting_key": "watched_repositories",
                         "watched_repositories": previous,
-                        "eva_workspace_path": settings.primary_workspace_path(),
-                        "self_development_enabled": !previous.is_empty(),
+                        "eva_workspace_path": settings.eva_workspace_path(),
+                        "self_development_enabled": settings.eva_workspace_path().is_some(),
                         "error_code": format!("invalid watched_repositories payload: {error}"),
                     }))
                     .map_err(|serialization_error| serialization_error.to_string());
@@ -68,8 +74,26 @@ impl IpcBridge {
         let mut normalized = Vec::with_capacity(parsed.len());
         for item in parsed {
             let candidate = item.trim();
-            if candidate.is_empty() || normalized.iter().any(|existing| existing == candidate) {
+            if candidate.is_empty()
+                || normalized.iter().any(|existing: &String| {
+                    crate::hive_settings::paths_refer_to_same_repo(existing, candidate)
+                })
+            {
                 continue;
+            }
+            if eva_path
+                .as_deref()
+                .is_some_and(|eva| crate::hive_settings::paths_refer_to_same_repo(eva, candidate))
+            {
+                return serde_json::to_vec(&serde_json::json!({
+                    "accepted": false,
+                    "setting_key": "watched_repositories",
+                    "watched_repositories": previous,
+                    "eva_workspace_path": settings.eva_workspace_path(),
+                    "self_development_enabled": settings.eva_workspace_path().is_some(),
+                    "error_code": "Папка исходников Евы (eva_workspace_path) настраивается отдельно и не должна добавляться в сторонние проекты Улья.",
+                }))
+                .map_err(|serialization_error| serialization_error.to_string());
             }
             normalized.push(candidate.to_owned());
         }
@@ -79,8 +103,8 @@ impl IpcBridge {
                 "accepted": false,
                 "setting_key": "watched_repositories",
                 "watched_repositories": previous,
-                "eva_workspace_path": previous.first().map(String::as_str),
-                "self_development_enabled": !previous.is_empty(),
+                "eva_workspace_path": settings.eva_workspace_path(),
+                "self_development_enabled": settings.eva_workspace_path().is_some(),
                 "error_code": error.to_string(),
             }))
             .map_err(|serialization_error| serialization_error.to_string());
@@ -89,9 +113,9 @@ impl IpcBridge {
         serde_json::to_vec(&serde_json::json!({
             "accepted": true,
             "setting_key": "watched_repositories",
-            "watched_repositories": settings.watched_repositories,
-            "eva_workspace_path": settings.primary_workspace_path(),
-            "self_development_enabled": !settings.watched_repositories.is_empty(),
+            "watched_repositories": settings.external_watched_repositories(),
+            "eva_workspace_path": settings.eva_workspace_path(),
+            "self_development_enabled": settings.eva_workspace_path().is_some(),
             "error_code": "",
         }))
         .map_err(|error| error.to_string())
@@ -250,8 +274,8 @@ impl IpcBridge {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "daily_budget_usd": settings.daily_budget_usd,
-                "eva_workspace_path": settings.primary_workspace_path(),
-                "self_development_enabled": !settings.watched_repositories.is_empty(),
+                "eva_workspace_path": settings.eva_workspace_path(),
+                "self_development_enabled": settings.eva_workspace_path().is_some(),
                 "error_code": format!(
                     "daily_budget_usd must be a number between 0 and {}",
                     crate::hive_settings::MAX_DAILY_BUDGET_USD
@@ -264,8 +288,8 @@ impl IpcBridge {
             return serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "daily_budget_usd": serde_json::Value::Null,
-                "eva_workspace_path": settings.primary_workspace_path(),
-                "self_development_enabled": !settings.watched_repositories.is_empty(),
+                "eva_workspace_path": settings.eva_workspace_path(),
+                "self_development_enabled": settings.eva_workspace_path().is_some(),
                 "error_code": error.to_string(),
             }))
             .map_err(|serialization_error| serialization_error.to_string());
@@ -274,8 +298,8 @@ impl IpcBridge {
         serde_json::to_vec(&serde_json::json!({
             "accepted": true,
             "daily_budget_usd": settings.daily_budget_usd,
-            "eva_workspace_path": settings.primary_workspace_path(),
-            "self_development_enabled": !settings.watched_repositories.is_empty(),
+            "eva_workspace_path": settings.eva_workspace_path(),
+            "self_development_enabled": settings.eva_workspace_path().is_some(),
             "error_code": "",
         }))
         .map_err(|error| error.to_string())

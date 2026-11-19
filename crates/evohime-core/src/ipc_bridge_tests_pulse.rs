@@ -154,14 +154,10 @@ async fn saves_validated_eva_workspace_path_and_rejects_non_git_directory() {
     let saved: serde_json::Value = serde_json::from_slice(&saved).expect("saved payload");
     assert_eq!(saved["eva_workspace_path"], path);
     assert_eq!(saved["self_development_enabled"], true);
-    assert_eq!(
-        journal
-            .hive_settings()
-            .await
-            .expect("settings load")
-            .watched_repositories,
-        vec![path]
-    );
+    assert_eq!(saved["watched_repositories"], serde_json::json!([]));
+    let persisted = journal.hive_settings().await.expect("settings load");
+    assert_eq!(persisted.eva_workspace_path(), Some(path.as_str()));
+    assert!(persisted.watched_repositories.is_empty());
 
     let plain = tempfile::tempdir().expect("plain directory");
     let rejected = bridge
@@ -174,12 +170,9 @@ async fn saves_validated_eva_workspace_path_and_rejects_non_git_directory() {
     assert!(rejected["error_code"]
         .as_str()
         .is_some_and(|error| !error.is_empty()));
-    assert!(journal
-        .hive_settings()
-        .await
-        .expect("settings reload")
-        .watched_repositories
-        .is_empty());
+    let reloaded = journal.hive_settings().await.expect("settings reload");
+    assert!(reloaded.eva_workspace_path().is_none());
+    assert!(reloaded.watched_repositories.is_empty());
 }
 
 #[tokio::test]

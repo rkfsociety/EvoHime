@@ -974,7 +974,8 @@ impl JournalPulseProbe {
         if !settings.proactive_evolution_enabled {
             return Vec::new();
         }
-        if settings.watched_repositories.is_empty() {
+        let repositories = settings.all_workspace_paths();
+        if repositories.is_empty() {
             return Vec::new();
         }
         let pending = self
@@ -990,7 +991,7 @@ impl JournalPulseProbe {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut items = Vec::new();
-        for workspace_path in &settings.watched_repositories {
+        for workspace_path in repositories {
             let Ok(workspace) =
                 evohime_tool_runtime::self_development::EvaWorkspace::open(workspace_path)
             else {

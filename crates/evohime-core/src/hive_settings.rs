@@ -89,7 +89,10 @@ pub struct HiveSettings {
     /// `0` means no budget at all: a background cycle must not start a task.
     #[serde(default = "default_daily_budget_usd")]
     pub daily_budget_usd: f64,
-    /// Optional isolated Git checkouts watched by Queen / EvaPulse.
+    /// Optional isolated Git checkout of EvoHime used for self-development.
+    #[serde(default)]
+    pub eva_workspace_path: Option<String>,
+    /// Optional external Git repositories watched by Queen / EvaPulse.
     #[serde(default)]
     pub watched_repositories: Vec<String>,
     /// Optional isolated provider profile for Hive (e.g. `"literouter"`, `"rout"`).
@@ -130,6 +133,7 @@ impl Default for HiveSettings {
             max_total_subagents_per_workflow: DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW,
             pulse_interval_secs: DEFAULT_PULSE_INTERVAL_SECS,
             daily_budget_usd: DEFAULT_DAILY_BUDGET_USD,
+            eva_workspace_path: None,
             watched_repositories: Vec::new(),
             hive_provider_profile: None,
             hive_model: None,
@@ -184,19 +188,67 @@ impl HiveSettings {
                 max: MAX_DAILY_BUDGET_USD,
             });
         }
+        if let Some(eva_path) = self.eva_workspace_path() {
+            validate_eva_workspace_path(eva_path)?;
+        }
         for path in &self.watched_repositories {
             validate_eva_workspace_path(path)?;
         }
         Ok(())
     }
 
-    /// Returns the primary watched repository path, if any is configured.
-    pub fn primary_workspace_path(&self) -> Option<&str> {
-        self.watched_repositories
-            .first()
-            .map(String::as_str)
+    /// Returns the isolated Eva self-development repository path, if configured.
+    pub fn eva_workspace_path(&self) -> Option<&str> {
+        self.eva_workspace_path
+            .as_deref()
             .map(str::trim)
             .filter(|path| !path.is_empty())
+    }
+
+    /// Returns external watched repositories excluding `eva_workspace_path`.
+    pub fn external_watched_repositories(&self) -> Vec<String> {
+        let eva = self.eva_workspace_path();
+        self.watched_repositories
+            .iter()
+            .filter(|repo| {
+                let trimmed = repo.trim();
+                !trimmed.is_empty()
+                    && !eva.is_some_and(|eva_path| paths_refer_to_same_repo(trimmed, eva_path))
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Returns all unique workspace paths scanned by EvaPulse (`eva_workspace_path`
+    /// first when configured, followed by external `watched_repositories`).
+    pub fn all_workspace_paths(&self) -> Vec<&str> {
+        let mut all = Vec::new();
+        if let Some(eva_path) = self.eva_workspace_path() {
+            all.push(eva_path);
+        }
+        for repo in &self.watched_repositories {
+            let trimmed = repo.trim();
+            if !trimmed.is_empty()
+                && !all
+                    .iter()
+                    .any(|existing| paths_refer_to_same_repo(existing, trimmed))
+            {
+                all.push(trimmed);
+            }
+        }
+        all
+    }
+
+    /// Returns the primary workspace path (`eva_workspace_path` if configured,
+    /// otherwise the first watched repository).
+    pub fn primary_workspace_path(&self) -> Option<&str> {
+        self.eva_workspace_path().or_else(|| {
+            self.watched_repositories
+                .first()
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+        })
     }
 
     /// Returns the effective per-worker ceiling.
@@ -289,37 +341,40 @@ impl HiveSettings {
             .map_err(|error| HiveSettingsError::Serialization(error.to_string()))
     }
 
-    /// Parses and validates settings loaded from durable storage, migrating
-    /// legacy `eva_workspace_path` into `watched_repositories` when present.
+    /// Parses and validates settings loaded from durable storage, keeping
+    /// `eva_workspace_path` separate from `watched_repositories` and migrating
+    /// legacy single-list records where `eva_workspace_path` was stored inside
+    /// `watched_repositories`.
     pub fn from_json(bytes: &[u8]) -> Result<Self, HiveSettingsError> {
         let mut value: serde_json::Value = serde_json::from_slice(bytes)
             .map_err(|error| HiveSettingsError::Serialization(error.to_string()))?;
         if let Some(map) = value.as_object_mut() {
-            if let Some(legacy_path) = map.remove("eva_workspace_path") {
-                if let Some(path) = legacy_path
-                    .as_str()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                {
-                    let needs_migration = match map.get("watched_repositories") {
-                        None => true,
-                        Some(serde_json::Value::Array(items)) => items.is_empty(),
-                        Some(serde_json::Value::Null) => true,
-                        _ => false,
-                    };
-                    if needs_migration {
+            let has_eva_key = map.contains_key("eva_workspace_path");
+            if !has_eva_key {
+                if let Some(serde_json::Value::Array(items)) = map.get_mut("watched_repositories") {
+                    if let Some(first_str) = items
+                        .first()
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned)
+                    {
+                        items.remove(0);
                         map.insert(
-                            "watched_repositories".to_owned(),
-                            serde_json::Value::Array(vec![serde_json::Value::String(
-                                path.to_owned(),
-                            )]),
+                            "eva_workspace_path".to_owned(),
+                            serde_json::Value::String(first_str),
                         );
                     }
                 }
             }
         }
-        let settings: Self = serde_json::from_value(value)
+        let mut settings: Self = serde_json::from_value(value)
             .map_err(|error| HiveSettingsError::Serialization(error.to_string()))?;
+        if let Some(eva_path) = settings.eva_workspace_path().map(str::to_owned) {
+            settings
+                .watched_repositories
+                .retain(|repo| !paths_refer_to_same_repo(repo, &eva_path));
+        }
         settings.validate()?;
         Ok(settings)
     }
@@ -334,6 +389,7 @@ impl HiveSettings {
                 {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"},
                 {"name": "pulse_interval_secs", "type": "u64", "zero": "invalid"},
                 {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"},
+                {"name": "eva_workspace_path", "type": "optional_existing_git_directory", "default": null},
                 {"name": "watched_repositories", "type": "list_of_existing_git_directories", "default": []},
                 {"name": "hive_provider_profile", "type": "optional_string", "default": null},
                 {"name": "hive_model", "type": "optional_string", "default": null},
@@ -347,6 +403,20 @@ impl HiveSettings {
         .to_string()
         .into_bytes()
     }
+}
+
+/// Compares two repository paths for equality after normalizing slashes,
+/// trimming trailing separators, and applying case-insensitive matching.
+pub fn paths_refer_to_same_repo(left: &str, right: &str) -> bool {
+    fn normalize(raw: &str) -> String {
+        raw.trim()
+            .replace('\\', "/")
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+    }
+    let a = normalize(left);
+    let b = normalize(right);
+    !a.is_empty() && a == b
 }
 
 /// Validates that an Eva self-development workspace path is absolute, exists,
@@ -677,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_legacy_eva_workspace_path_to_watched_repositories() {
+    fn migrates_legacy_eva_workspace_path_and_separates_it_from_watched_repositories() {
         let git_repo = tempfile::tempdir().expect("git directory");
         let status = std::process::Command::new("git")
             .args(["init", "--quiet"])
@@ -693,14 +763,33 @@ mod tests {
             "max_parallel_subagents": 4,
             "max_total_subagents_per_workflow": 64,
             "eva_workspace_path": repo_path,
+            "watched_repositories": [repo_path],
             "proactive_evolution_enabled": true
         })
         .to_string()
         .into_bytes();
 
         let loaded = HiveSettings::from_json(&legacy_json).expect("legacy settings migrate");
-        assert_eq!(loaded.watched_repositories, vec![repo_path]);
+        assert_eq!(loaded.eva_workspace_path(), Some(repo_path.as_str()));
+        assert!(loaded.watched_repositories.is_empty());
         assert!(loaded.proactive_evolution_enabled);
+
+        // Also migrates records written when `eva_workspace_path` key was absent
+        // and stored at `watched_repositories[0]`.
+        let conflated_json = serde_json::json!({
+            "schema_version": HIVE_SETTINGS_SCHEMA_VERSION,
+            "max_subagents_per_worker": 16,
+            "max_parallel_subagents": 4,
+            "max_total_subagents_per_workflow": 64,
+            "watched_repositories": [repo_path],
+            "proactive_evolution_enabled": true
+        })
+        .to_string()
+        .into_bytes();
+        let migrated =
+            HiveSettings::from_json(&conflated_json).expect("conflated settings migrate");
+        assert_eq!(migrated.eva_workspace_path(), Some(repo_path.as_str()));
+        assert!(migrated.watched_repositories.is_empty());
     }
 
     #[test]

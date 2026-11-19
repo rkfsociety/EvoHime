@@ -524,9 +524,11 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       ? root['watched_repositories']
           .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
           .map((item) => item.slice(0, 4_096))
-      : typeof root['eva_workspace_path'] === 'string' && root['eva_workspace_path'].trim().length > 0
-        ? [root['eva_workspace_path'].slice(0, 4_096)]
-        : [],
+          .filter((item) => {
+            const eva = typeof root['eva_workspace_path'] === 'string' ? root['eva_workspace_path'] : ''
+            return !sameRepositoryPath(item, eva)
+          })
+      : [],
     hiveProviderProfile: typeof root['hive_provider_profile'] === 'string' && root['hive_provider_profile'].trim().length > 0
       ? root['hive_provider_profile'].slice(0, 128)
       : null,
@@ -545,6 +547,16 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       ? root['next_wake_at_ms']
       : null
   }
+}
+
+function normalizeRepositoryPath(raw: string): string {
+  return raw.trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+function sameRepositoryPath(left: string, right: string): boolean {
+  const a = normalizeRepositoryPath(left)
+  const b = normalizeRepositoryPath(right)
+  return a.length > 0 && a === b
 }
 
 /** Percentage of a hive counter against its ceiling, clamped to 0–100. */
@@ -1169,6 +1181,8 @@ export function HiveDashboard({
   const [evaWorkspaceBusy, setEvaWorkspaceBusy] = useState(false)
   const [watchedRepositories, setWatchedRepositories] = useState<readonly string[]>([])
   const [newRepoDraft, setNewRepoDraft] = useState('')
+  const [watchedReposBusy, setWatchedReposBusy] = useState(false)
+  const [watchedReposError, setWatchedReposError] = useState<string | null>(null)
   const [hiveProviderProfile, setHiveProviderProfile] = useState('')
   const [hiveModelDraft, setHiveModelDraft] = useState('')
   const [hiveCatalogModels, setHiveCatalogModels] = useState<readonly string[]>([])
@@ -1311,10 +1325,9 @@ export function HiveDashboard({
       }
       if (result.setting_key === 'watched_repositories') {
         if (Array.isArray(result.watched_repositories)) {
-          setWatchedRepositories(result.watched_repositories)
-          setEvaWorkspacePath(result.watched_repositories[0] ?? '')
+          setWatchedRepositories(result.watched_repositories.filter((item) => !sameRepositoryPath(item, evaWorkspacePath)))
         }
-        setEvaWorkspaceError(result.accepted ? null : (result.error_code || 'Не удалось обновить список проектов.'))
+        setWatchedReposError(result.accepted ? null : (result.error_code || 'Не удалось обновить список проектов.'))
         return
       }
       if (result.setting_key === 'hive_provider_profile') {
@@ -1382,8 +1395,12 @@ export function HiveDashboard({
         }
         return
       }
-      setEvaWorkspacePath(result.eva_workspace_path ?? '')
-      setEvaWorkspaceDraft(result.eva_workspace_path ?? '')
+      const nextEvaPath = result.eva_workspace_path ?? ''
+      setEvaWorkspacePath(nextEvaPath)
+      setEvaWorkspaceDraft(nextEvaPath)
+      if (nextEvaPath.length > 0) {
+        setWatchedRepositories((current) => current.filter((item) => !sameRepositoryPath(item, nextEvaPath)))
+      }
       setEvaWorkspaceError(null)
     } catch {
       setEvaWorkspaceError('Core вернул некорректный ответ о пути репозитория.')
@@ -1658,22 +1675,23 @@ export function HiveDashboard({
     if (!api) return
     const trimmed = newRepoDraft.trim()
     if (trimmed.length === 0) {
-      setEvaWorkspaceError('Укажи путь к Git-репозиторию.')
+      setWatchedReposError('Укажи путь к Git-репозиторию.')
       return
     }
-    if (watchedRepositories.includes(trimmed)) {
-      setEvaWorkspaceError('Этот проект уже добавлен в список.')
+    if (sameRepositoryPath(trimmed, evaWorkspacePath) || sameRepositoryPath(trimmed, evaWorkspaceDraft)) {
+      setWatchedReposError('Папка исходников Евы задаётся отдельно выше и не добавляется в сторонние проекты.')
       return
     }
-    setEvaWorkspaceBusy(true)
-    setEvaWorkspaceError(null)
-    setEvaWorkspaceValidation('checking')
-    setEvaWorkspaceValidationMessage(null)
+    if (watchedRepositories.some((repo) => sameRepositoryPath(repo, trimmed))) {
+      setWatchedReposError('Этот проект уже добавлен в список.')
+      return
+    }
+    setWatchedReposBusy(true)
+    setWatchedReposError(null)
     try {
       const validation = await api.invoke('core.validateEvaWorkspacePath', { path: trimmed })
       if (!validation.ok) {
-        setEvaWorkspaceValidation('invalid')
-        setEvaWorkspaceValidationMessage(validation.message)
+        setWatchedReposError(validation.message)
         return
       }
       const nextRepos = [...watchedRepositories, trimmed]
@@ -1682,26 +1700,23 @@ export function HiveDashboard({
         value: JSON.stringify(nextRepos)
       })
       if (!outcome.ok) {
-        setEvaWorkspaceError(outcome.message)
+        setWatchedReposError(outcome.message)
         return
       }
       setWatchedRepositories(nextRepos)
-      setEvaWorkspacePath(nextRepos[0] ?? '')
       setNewRepoDraft('')
-      setEvaWorkspaceValidation('valid')
       requestSnapshot()
     } catch {
-      setEvaWorkspaceValidation('invalid')
-      setEvaWorkspaceError('Не удалось добавить проект: Core не ответил.')
+      setWatchedReposError('Не удалось добавить проект: Core не ответил.')
     } finally {
-      setEvaWorkspaceBusy(false)
+      setWatchedReposBusy(false)
     }
-  }, [api, newRepoDraft, requestSnapshot, watchedRepositories])
+  }, [api, evaWorkspaceDraft, evaWorkspacePath, newRepoDraft, requestSnapshot, watchedRepositories])
 
   const removeWatchedRepository = useCallback(async (targetPath: string): Promise<void> => {
     if (!api) return
-    setEvaWorkspaceBusy(true)
-    setEvaWorkspaceError(null)
+    setWatchedReposBusy(true)
+    setWatchedReposError(null)
     try {
       const nextRepos = watchedRepositories.filter((item) => item !== targetPath)
       const outcome = await api.invoke('core.setHiveSetting', {
@@ -1709,16 +1724,15 @@ export function HiveDashboard({
         value: JSON.stringify(nextRepos)
       })
       if (!outcome.ok) {
-        setEvaWorkspaceError(outcome.message)
+        setWatchedReposError(outcome.message)
         return
       }
       setWatchedRepositories(nextRepos)
-      setEvaWorkspacePath(nextRepos[0] ?? '')
       requestSnapshot()
     } catch {
-      setEvaWorkspaceError('Не удалось удалить проект: Core не ответил.')
+      setWatchedReposError('Не удалось удалить проект: Core не ответил.')
     } finally {
-      setEvaWorkspaceBusy(false)
+      setWatchedReposBusy(false)
     }
   }, [api, requestSnapshot, watchedRepositories])
 
@@ -2550,7 +2564,7 @@ export function HiveDashboard({
                             type="button"
                             className="hive-watched-repos__remove"
                             aria-label={`${translate('Удалить проект')} ${repo}`}
-                            disabled={!connected || evaWorkspaceBusy}
+                            disabled={!connected || watchedReposBusy}
                             onClick={() => void removeWatchedRepository(repo)}
                           >
                             {translate('Удалить')}
@@ -2559,7 +2573,7 @@ export function HiveDashboard({
                       ))}
                     </ul>
                   ) : (
-                    <small className="hive-settings-hint">{translate('Список проектов пуст.')}</small>
+                    <small className="hive-settings-hint">{translate('Список сторонних проектов пуст.')}</small>
                   )}
                   <div className="hive-settings-modal__row">
                     <input
@@ -2569,18 +2583,21 @@ export function HiveDashboard({
                       value={newRepoDraft}
                       onChange={(changeEvent) => {
                         setNewRepoDraft(changeEvent.target.value)
-                        setEvaWorkspaceError(null)
+                        setWatchedReposError(null)
                       }}
                       placeholder="C:\\Projects\\my-repo"
                     />
                     <button
                       type="button"
-                      disabled={!connected || evaWorkspaceBusy}
+                      disabled={!connected || watchedReposBusy}
                       onClick={() => void addWatchedRepository()}
                     >
                       {translate('Добавить проект')}
                     </button>
                   </div>
+                  {watchedReposError ? (
+                    <p role="alert" className="hive-console__error">{translate(watchedReposError)}</p>
+                  ) : null}
                 </div>
               </section>
 
