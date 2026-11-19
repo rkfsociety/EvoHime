@@ -1157,6 +1157,7 @@ const ENGLISH: Readonly<Record<string, string>> = {
   'Подробнее': 'More details',
   'Скопировано': 'Copied',
   'Копировать': 'Copy',
+  'Ошибка копирования': 'Copy failed',
   ' Показан прошлый список.': ' Showing the previous list.',
   'бесплатных': 'free',
   'платных': 'paid',

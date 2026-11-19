@@ -741,6 +741,10 @@ function coreEventKey(event: CoreEvent): string {
   return `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${event.sequenceId}:${event.taskId}:${event.eventType}`
 }
 
+const MAX_HIVE_LOGS_CLIPBOARD_CHARS = 60_000
+const MAX_HIVE_LOG_PAYLOAD_CHARS = 1000
+const HIVE_LOGS_CLIPBOARD_LIMIT = 100
+
 function hiveLogEntries(
   events: readonly CoreEvent[],
   observedAt: ReadonlyMap<string, string>,
@@ -758,6 +762,55 @@ function hiveLogEntries(
         text: `${HIVE_LOG_LABELS[event.eventType] ?? event.eventType}${event.taskId ? ` · ${event.taskId}` : ''}`
       }
     })
+}
+
+function formatHiveLogsForClipboard(
+  events: readonly CoreEvent[],
+  observedAt: ReadonlyMap<string, string>,
+  budget: HiveBudgetView
+): string {
+  const headerParts: string[] = [
+    `Провайдер: ${budget.provider || 'не выбран'}`,
+    `Модель: ${budget.model || 'не известна'}`
+  ]
+  if (budget.fallbackProvider) {
+    headerParts.push(
+      `Резерв: ${budget.fallbackProvider}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} токенов)` : ''}`
+    )
+  }
+  const lines: string[] = [
+    '=== Логи Улья (EvoHime) ===',
+    headerParts.join(' | '),
+    ''
+  ]
+  const relevant = events
+    .filter((event) => event.eventType !== 'hive_state.snapshot')
+    .slice(0, HIVE_LOGS_CLIPBOARD_LIMIT)
+  for (const event of relevant) {
+    const key = coreEventKey(event)
+    const at = observedAt.get(key) ?? '—'
+    const level = hiveLogLevel(event.eventType).toUpperCase()
+    const label = HIVE_LOG_LABELS[event.eventType]
+    const meta = [
+      `seq=${event.sequenceId}`,
+      event.taskId ? `task=${event.taskId}` : ''
+    ].filter(Boolean).join(', ')
+    lines.push(`[${at}] [${level}] ${event.eventType} (${meta})${label ? ` — ${label}` : ''}`)
+    const rawPayload = typeof event.payload === 'string' ? event.payload.trim() : ''
+    if (rawPayload.length > 0 && rawPayload !== '{}') {
+      const singleLine = rawPayload.replace(/\s+/g, ' ')
+      const bounded = singleLine.length > MAX_HIVE_LOG_PAYLOAD_CHARS
+        ? `${singleLine.slice(0, MAX_HIVE_LOG_PAYLOAD_CHARS)}…`
+        : singleLine
+      lines.push(`  payload: ${bounded}`)
+    }
+  }
+  const joined = lines.join('\n')
+  if (joined.length <= MAX_HIVE_LOGS_CLIPBOARD_CHARS) {
+    return joined
+  }
+  const suffix = '\n… (обрезано по лимиту буфера обмена)'
+  return `${joined.slice(0, MAX_HIVE_LOGS_CLIPBOARD_CHARS - suffix.length)}${suffix}`
 }
 
 /** Круговой индикатор эффективности: только SVG, без сторонних библиотек. */
@@ -1129,6 +1182,8 @@ export function HiveDashboard({
   const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
   const [observedAt, setObservedAt] = useState<ReadonlyMap<string, string>>(() => new Map())
   const logListRef = useRef<HTMLOListElement | null>(null)
+  const [logsCopyState, setLogsCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const logsCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [chatDraft, setChatDraft] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
   const [pendingTaskIds, setPendingTaskIds] = useState<ReadonlySet<string>>(() => new Set())
@@ -1787,6 +1842,36 @@ export function HiveDashboard({
       logListRef.current.scrollTop = 0
     }
   }, [latestLogId, allLogs])
+  useEffect(() => {
+    return () => {
+      if (logsCopyTimerRef.current !== null) {
+        clearTimeout(logsCopyTimerRef.current)
+      }
+    }
+  }, [])
+  const copyHiveLogs = useCallback(async (): Promise<void> => {
+    const formatted = formatHiveLogsForClipboard(events, observedAt, budget)
+    if (formatted.length === 0) return
+    let copied = false
+    try {
+      if (api) {
+        copied = await api.writeClipboardText(formatted)
+      } else if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(formatted)
+        copied = true
+      }
+    } catch {
+      copied = false
+    }
+    setLogsCopyState(copied ? 'copied' : 'failed')
+    if (logsCopyTimerRef.current !== null) {
+      clearTimeout(logsCopyTimerRef.current)
+    }
+    logsCopyTimerRef.current = setTimeout(() => {
+      setLogsCopyState('idle')
+      logsCopyTimerRef.current = null
+    }, 2000)
+  }, [api, budget, events, observedAt])
   const combinedPrompts = useMemo(() => {
     const byTask = new Map<string, HiveUserPrompt>()
     for (const item of historyPrompts) {
@@ -2085,6 +2170,20 @@ export function HiveDashboard({
                 <button
                   type="button"
                   className="hive-link-button"
+                  disabled={logs.length === 0}
+                  onClick={() => void copyHiveLogs()}
+                >
+                  {translate(
+                    logsCopyState === 'copied'
+                      ? 'Скопировано'
+                      : logsCopyState === 'failed'
+                        ? 'Ошибка копирования'
+                        : 'Копировать'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="hive-link-button"
                   aria-pressed={allLogs}
                   onClick={() => setAllLogs((value) => !value)}
                 >
@@ -2092,12 +2191,12 @@ export function HiveDashboard({
                 </button>
               </div>
             </div>
-            <ol ref={logListRef} className="hive-log-list">
+            <ol ref={logListRef} className={`hive-log-list${allLogs ? ' hive-log-list--expanded' : ''}`}>
               {logs.map((entry) => (
                 <li key={entry.id} className={`hive-log-row hive-log-row--${entry.level}`}>
                   <span className="hive-log-row__icon" aria-hidden="true"><UiIcon name={HIVE_LOG_ICONS[entry.level]} size={14} /></span>
                   <time className="hive-log-row__time">{entry.at}</time>
-                  <span className="hive-log-row__text">{translate(entry.text)}</span>
+                  <span className="hive-log-row__text" title={translate(entry.text)}>{translate(entry.text)}</span>
                 </li>
               ))}
             </ol>

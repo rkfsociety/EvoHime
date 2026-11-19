@@ -1132,4 +1132,65 @@ describe('hive dashboard', () => {
     expect(screen.queryByText(/Дневной лимит: 650 000 токенов/)).toBeNull()
   })
 
+  it('copies_hive_logs_with_context_and_payloads_to_clipboard', async () => {
+    const copied: string[] = []
+    const previousApi = window.evohime?.v1
+    Object.defineProperty(window, 'evohime', {
+      configurable: true,
+      value: {
+        v1: {
+          ...(previousApi ?? {}),
+          invoke: (async () => ok({})) as EvoHimeApiV1['invoke'],
+          subscribe: () => () => undefined,
+          writeClipboardText: async (text: string) => {
+            copied.push(text)
+            return true
+          }
+        }
+      }
+    })
+
+    try {
+      const user = userEvent.setup()
+      const failedEvent = event('task.failed', { error: 'provider rate limit reached' }, 'task-hive-42')
+      render(
+        <HiveDashboard
+          connection="connected"
+          events={[
+            failedEvent,
+            event(
+              'hive_state.snapshot',
+              snapshot({
+                budget: {
+                  provider: 'literouter',
+                  model: 'llama-3.3-70b-instruct-turbo-free',
+                  fallback_provider: 'rout',
+                  fallback_tokens_remaining: 650000
+                }
+              })
+            )
+          ]}
+          repair={null}
+        />
+      )
+
+      const copyButton = await screen.findByRole('button', { name: 'Копировать' })
+      await user.click(copyButton)
+
+      await waitFor(() => {
+        expect(copied).toHaveLength(1)
+        expect(screen.getByRole('button', { name: 'Скопировано' })).toBeTruthy()
+      })
+      expect(copied[0]).toContain('=== Логи Улья (EvoHime) ===')
+      expect(copied[0]).toContain('Провайдер: literouter | Модель: llama-3.3-70b-instruct-turbo-free | Резерв: rout (650000 токенов)')
+      expect(copied[0]).toContain(`[WARNING] task.failed (seq=${failedEvent.sequenceId}, task=task-hive-42)`)
+      expect(copied[0]).toContain('provider rate limit reached')
+    } finally {
+      Object.defineProperty(window, 'evohime', {
+        configurable: true,
+        value: previousApi ? { v1: previousApi } : undefined
+      })
+    }
+  })
+
 })

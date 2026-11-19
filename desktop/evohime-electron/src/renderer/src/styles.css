@@ -8326,6 +8326,8 @@ body {
   padding: 4px 8px;
   border-radius: 7px;
   background: color-mix(in srgb, var(--bg-sunken) 60%, transparent);
+  user-select: text;
+  cursor: text;
 }
 
 .hive-log-row__icon {
@@ -8336,6 +8338,7 @@ body {
   width: 18px;
   height: 18px;
   border-radius: 6px;
+  user-select: none;
 }
 
 .hive-log-row--success .hive-log-row__icon {
@@ -8531,6 +8534,28 @@ body {
 
 .hive-chat__logs .hive-log-list {
   max-height: 126px;
+}
+
+.hive-chat__logs .hive-log-list--expanded {
+  max-height: 260px;
+  scrollbar-width: thin;
+}
+
+.hive-chat__logs .hive-log-list--expanded::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+}
+
+.hive-chat__logs .hive-log-list--expanded::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.hive-log-list--expanded .hive-log-row__text {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
 }
 
 .hive-chat__messages {
