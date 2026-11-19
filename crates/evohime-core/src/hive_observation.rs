@@ -29,6 +29,18 @@ pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> O
         .map(|_| "hive".to_owned())
 }
 
+/// Returns `"hive_fallback"` when an isolated Hive fallback route is present and configured.
+pub(crate) fn isolated_hive_fallback_route_name(
+    config: Option<&ModelGatewayConfig>,
+) -> Option<String> {
+    let config = config?;
+    config
+        .routes
+        .get("hive_fallback")
+        .filter(|route| route.configured())
+        .map(|_| "hive_fallback".to_owned())
+}
+
 fn route_matches_profile(route: &evohime_model_gateway::ModelRouteConfig, profile: &str) -> bool {
     route
         .provider_profile_id
@@ -54,6 +66,22 @@ pub(crate) fn hive_route_name(
         _ => true,
     };
     matches_requested.then_some(hive_route)
+}
+
+/// Resolves the isolated `"hive_fallback"` route when configured.
+pub(crate) fn hive_fallback_route_name(
+    config: Option<&ModelGatewayConfig>,
+    hive_fallback_provider_profile: Option<&str>,
+) -> Option<String> {
+    let profile = hive_fallback_provider_profile
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let fallback_route = isolated_hive_fallback_route_name(config)?;
+    let matches_requested = match (profile, config.and_then(|c| c.routes.get(&fallback_route))) {
+        (Some(requested), Some(route)) => route_matches_profile(route, requested),
+        _ => true,
+    };
+    matches_requested.then_some(fallback_route)
 }
 
 /// Collects configured provider limits and committed usage strictly for Hive's
@@ -164,6 +192,29 @@ pub(crate) async fn build_hive_observation_for_hive(
         observation.oldest_hour_dispatch_ms = windows.oldest_hour_ms;
         observation.oldest_day_dispatch_ms = windows.oldest_day_ms;
     }
+
+    if let Some(fallback_route) = config
+        .routes
+        .get("hive_fallback")
+        .filter(|r| r.configured())
+    {
+        let fallback_transport = fallback_route.provider.as_str();
+        let fallback_identity = fallback_route
+            .provider_profile_id
+            .map_or(fallback_transport, |p| p.as_str())
+            .to_owned();
+        if fallback_identity != observation.provider {
+            observation.fallback_provider = Some(fallback_identity);
+            if let Some(quota) = fallback_route.daily_token_quota {
+                let used = journal
+                    .provider_tokens_since(day_start_ms, fallback_transport)
+                    .await
+                    .unwrap_or(0);
+                observation.fallback_tokens_remaining = Some(quota.saturating_sub(used));
+            }
+        }
+    }
+
     observation
 }
 
@@ -429,5 +480,30 @@ mod tests {
         assert_eq!(observation.provider, "literouter");
         assert_eq!(observation.model, "llama-3.3-70b-instruct-turbo-free");
         assert!(observation.fallback_provider.is_none());
+
+        let mut routes_with_fallback = configured.routes.clone();
+        routes_with_fallback.insert(
+            "hive_fallback".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::openai_compatible(
+                "sk-hive-fallback-rout",
+                "https://api.rout.my/v1",
+                "openai/gpt-6-luna",
+            )
+            .with_provider_profile(ProviderProfileId::Rout, None),
+        );
+        let configured_with_fallback = ModelGatewayConfig {
+            default_route: "default".to_owned(),
+            routes: routes_with_fallback,
+        };
+        let obs_with_fallback = build_hive_observation_for_hive(
+            &journal,
+            Some(&configured_with_fallback),
+            Some("global-lr-model"),
+            Some("literouter"),
+            None,
+            crate::task_memory::now_millis() as i64,
+        )
+        .await;
+        assert_eq!(obs_with_fallback.fallback_provider.as_deref(), Some("rout"));
     }
 }

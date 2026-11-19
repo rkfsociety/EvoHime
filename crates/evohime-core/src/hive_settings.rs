@@ -98,6 +98,12 @@ pub struct HiveSettings {
     /// Optional model override used specifically by Hive.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hive_model: Option<String>,
+    /// Optional isolated fallback provider profile for Hive (e.g. `"rout"`, `"literouter"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_fallback_provider_profile: Option<String>,
+    /// Optional fallback model override used specifically by Hive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_fallback_model: Option<String>,
     /// Whether EvaPulse may proactively pick uncompleted roadmap items when idle.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
@@ -127,6 +133,8 @@ impl Default for HiveSettings {
             watched_repositories: Vec::new(),
             hive_provider_profile: None,
             hive_model: None,
+            hive_fallback_provider_profile: None,
+            hive_fallback_model: None,
             proactive_evolution_enabled: false,
         }
     }
@@ -329,6 +337,8 @@ impl HiveSettings {
                 {"name": "watched_repositories", "type": "list_of_existing_git_directories", "default": []},
                 {"name": "hive_provider_profile", "type": "optional_string", "default": null},
                 {"name": "hive_model", "type": "optional_string", "default": null},
+                {"name": "hive_fallback_provider_profile", "type": "optional_string", "default": null},
+                {"name": "hive_fallback_model", "type": "optional_string", "default": null},
                 {"name": "proactive_evolution_enabled", "type": "bool", "default": false}
             ],
             "note": "ceilings are safety guards, not a spawn plan",

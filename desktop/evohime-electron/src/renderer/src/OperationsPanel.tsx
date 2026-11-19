@@ -314,6 +314,8 @@ interface HiveStateView {
   readonly watchedRepositories: readonly string[]
   readonly hiveProviderProfile: string | null
   readonly hiveModel: string | null
+  readonly hiveFallbackProviderProfile: string | null
+  readonly hiveFallbackModel: string | null
   readonly proactiveEvolutionEnabled: boolean
   readonly pulseStatus: string
   readonly nextWakeAtMs: number | null
@@ -530,6 +532,12 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       : null,
     hiveModel: typeof root['hive_model'] === 'string' && root['hive_model'].trim().length > 0
       ? root['hive_model'].slice(0, 128)
+      : null,
+    hiveFallbackProviderProfile: typeof root['hive_fallback_provider_profile'] === 'string' && root['hive_fallback_provider_profile'].trim().length > 0
+      ? root['hive_fallback_provider_profile'].slice(0, 128)
+      : null,
+    hiveFallbackModel: typeof root['hive_fallback_model'] === 'string' && root['hive_fallback_model'].trim().length > 0
+      ? root['hive_fallback_model'].slice(0, 128)
       : null,
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
     pulseStatus: text(root['pulse_status'], 16),
@@ -1163,11 +1171,22 @@ export function HiveDashboard({
   const [newRepoDraft, setNewRepoDraft] = useState('')
   const [hiveProviderProfile, setHiveProviderProfile] = useState('')
   const [hiveModelDraft, setHiveModelDraft] = useState('')
+  const [hiveCatalogModels, setHiveCatalogModels] = useState<readonly string[]>([])
   const [hiveProviderBusy, setHiveProviderBusy] = useState(false)
   const [hiveProviderError, setHiveProviderError] = useState<string | null>(null)
   const [hiveApiKeyDraft, setHiveApiKeyDraft] = useState('')
   const [hiveApiKeyBusy, setHiveApiKeyBusy] = useState(false)
   const [hiveApiKeyError, setHiveApiKeyError] = useState<string | null>(null)
+  const [hiveFallbackProviderProfile, setHiveFallbackProviderProfile] = useState('')
+  const [hiveFallbackModelDraft, setHiveFallbackModelDraft] = useState('')
+  const [hiveFallbackCatalogModels, setHiveFallbackCatalogModels] = useState<readonly string[]>([])
+  const [hiveFallbackProviderBusy, setHiveFallbackProviderBusy] = useState(false)
+  const [hiveFallbackProviderError, setHiveFallbackProviderError] = useState<string | null>(null)
+  const [hiveFallbackProviderSaved, setHiveFallbackProviderSaved] = useState(false)
+  const [hiveFallbackApiKeyDraft, setHiveFallbackApiKeyDraft] = useState('')
+  const [hiveFallbackApiKeyBusy, setHiveFallbackApiKeyBusy] = useState(false)
+  const [hiveFallbackApiKeyError, setHiveFallbackApiKeyError] = useState<string | null>(null)
+  const [hiveFallbackApiKeySaved, setHiveFallbackApiKeySaved] = useState(false)
   const [dailyBudgetDraft, setDailyBudgetDraft] = useState('')
   const [dailyBudgetBusy, setDailyBudgetBusy] = useState(false)
   const [dailyBudgetError, setDailyBudgetError] = useState<string | null>(null)
@@ -1212,6 +1231,61 @@ export function HiveDashboard({
   }, [hive?.hiveModel])
   useEffect(() => {
     if (!hive) return
+    setHiveFallbackProviderProfile(hive.hiveFallbackProviderProfile ?? '')
+  }, [hive?.hiveFallbackProviderProfile])
+  useEffect(() => {
+    if (!hive) return
+    setHiveFallbackModelDraft(hive.hiveFallbackModel ?? '')
+  }, [hive?.hiveFallbackModel])
+  useEffect(() => {
+    if (!api || !connected || !hiveSettingsOpen) return
+    void api.invoke('core.listModelCatalog', {
+      mode: 'hive_catalog',
+      ...(hiveProviderProfile.trim() ? { profile: hiveProviderProfile.trim() } : {})
+    }).catch(() => undefined)
+  }, [api, connected, hiveProviderProfile, hiveSettingsOpen])
+  useEffect(() => {
+    if (!api || !connected || !hiveSettingsOpen) return
+    if (!hiveFallbackProviderProfile.trim()) {
+      setHiveFallbackCatalogModels([])
+      return
+    }
+    void api.invoke('core.listModelCatalog', {
+      mode: 'hive_fallback_catalog',
+      profile: hiveFallbackProviderProfile.trim()
+    }).catch(() => undefined)
+  }, [api, connected, hiveFallbackProviderProfile, hiveSettingsOpen])
+  const hiveModelCatalogEvent = latest(events, 'hive.model.catalog')
+  useEffect(() => {
+    if (!hiveModelCatalogEvent) return
+    try {
+      const parsed = JSON.parse(hiveModelCatalogEvent.payload) as { models?: unknown }
+      if (Array.isArray(parsed.models)) {
+        const models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        setHiveCatalogModels([...new Set(models)])
+      }
+    } catch {
+      // Ignore malformed catalog payload
+    }
+  }, [hiveModelCatalogEvent])
+  const hiveFallbackModelCatalogEvent = latest(events, 'hive.fallback_model.catalog')
+  useEffect(() => {
+    if (!hiveFallbackProviderProfile.trim() || !hiveFallbackModelCatalogEvent) return
+    try {
+      const parsed = JSON.parse(hiveFallbackModelCatalogEvent.payload) as { profile?: unknown; models?: unknown }
+      if (typeof parsed.profile === 'string' && parsed.profile.trim().length > 0 && parsed.profile.trim() !== hiveFallbackProviderProfile.trim()) {
+        return
+      }
+      if (Array.isArray(parsed.models)) {
+        const models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        setHiveFallbackCatalogModels([...new Set(models)])
+      }
+    } catch {
+      // Ignore malformed catalog payload
+    }
+  }, [hiveFallbackModelCatalogEvent, hiveFallbackProviderProfile])
+  useEffect(() => {
+    if (!hive) return
     setDailyBudgetDraft(String(hive.dailyBudgetUsd))
   }, [hive?.dailyBudgetUsd])
   useEffect(() => {
@@ -1229,6 +1303,8 @@ export function HiveDashboard({
         watched_repositories?: readonly string[]
         hive_provider_profile?: string | null
         hive_model?: string | null
+        hive_fallback_provider_profile?: string | null
+        hive_fallback_model?: string | null
         daily_budget_usd?: number | null
         proactive_evolution_enabled?: boolean
         error_code?: string
@@ -1256,6 +1332,24 @@ export function HiveDashboard({
           setHiveProviderError(null)
         } else {
           setHiveProviderError(result.error_code || 'Не удалось сохранить модель Улья.')
+        }
+        return
+      }
+      if (result.setting_key === 'hive_fallback_provider_profile') {
+        if (result.accepted) {
+          setHiveFallbackProviderProfile(result.hive_fallback_provider_profile ?? '')
+          setHiveFallbackProviderError(null)
+        } else {
+          setHiveFallbackProviderError(result.error_code || 'Не удалось сохранить резервного провайдера Улья.')
+        }
+        return
+      }
+      if (result.setting_key === 'hive_fallback_model') {
+        if (result.accepted) {
+          setHiveFallbackModelDraft(result.hive_fallback_model ?? '')
+          setHiveFallbackProviderError(null)
+        } else {
+          setHiveFallbackProviderError(result.error_code || 'Не удалось сохранить резервную модель Улья.')
         }
         return
       }
@@ -1683,6 +1777,61 @@ export function HiveDashboard({
     }
   }, [api, hiveApiKeyDraft, requestSnapshot])
 
+  const saveHiveFallbackProviderSettings = useCallback(async (): Promise<void> => {
+    if (!api) return
+    setHiveFallbackProviderBusy(true)
+    setHiveFallbackProviderError(null)
+    setHiveFallbackProviderSaved(false)
+    try {
+      const profileOutcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_fallback_provider_profile',
+        value: hiveFallbackProviderProfile.trim()
+      })
+      if (!profileOutcome.ok) {
+        setHiveFallbackProviderError(profileOutcome.message)
+        return
+      }
+      const modelOutcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_fallback_model',
+        value: hiveFallbackModelDraft.trim()
+      })
+      if (!modelOutcome.ok) {
+        setHiveFallbackProviderError(modelOutcome.message)
+        return
+      }
+      setHiveFallbackProviderSaved(true)
+      requestSnapshot()
+    } catch {
+      setHiveFallbackProviderError('Не удалось сохранить резервного провайдера Улья: Core не ответил.')
+    } finally {
+      setHiveFallbackProviderBusy(false)
+    }
+  }, [api, hiveFallbackModelDraft, hiveFallbackProviderProfile, requestSnapshot])
+
+  const saveHiveFallbackApiKey = useCallback(async (): Promise<void> => {
+    if (!api) return
+    setHiveFallbackApiKeyBusy(true)
+    setHiveFallbackApiKeyError(null)
+    setHiveFallbackApiKeySaved(false)
+    try {
+      const outcome = await api.invoke('core.setHiveSetting', {
+        key: 'hive_fallback_api_key',
+        value: hiveFallbackApiKeyDraft.trim()
+      })
+      if (!outcome.ok) {
+        setHiveFallbackApiKeyError(outcome.message)
+        return
+      }
+      setHiveFallbackApiKeyDraft('')
+      setHiveFallbackApiKeySaved(true)
+      requestSnapshot()
+    } catch {
+      setHiveFallbackApiKeyError('Не удалось сохранить резервный API-ключ Улья: Core не ответил.')
+    } finally {
+      setHiveFallbackApiKeyBusy(false)
+    }
+  }, [api, hiveFallbackApiKeyDraft, requestSnapshot])
+
   const openHiveChat = useCallback(async (): Promise<void> => {
     if (!api) return
     setCommandError(null)
@@ -1829,11 +1978,18 @@ export function HiveDashboard({
     || (normalizedBudgetProvider.length === 0 && selectedProviderKey === 'openai_compatible:rout')
   const routmyConfigured = budget.fallbackProvider === 'rout'
     || provider?.compatibleProfiles?.rout?.configured === true
+  const fallbackLabel = budget.fallbackProvider === 'rout'
+    ? 'Rout'
+    : budget.fallbackProvider === 'literouter'
+      ? 'LiteRouter'
+      : budget.fallbackProvider
   const routmyStatusText = budget.provider === 'rout'
     ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota ?? 650000}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
     : (budget.provider === 'literouter' || budget.provider === 'openrouter') && routmyConfigured
       ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining ?? 650000} ${translate('токенов')})`
-      : null
+      : fallbackLabel
+        ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}`
+        : null
   const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
   const logs = realLogs
   const latestLogId = logs[0]?.id ?? null
@@ -2455,9 +2611,8 @@ export function HiveDashboard({
                   <label className="hive-provider" htmlFor="hive-model-input">
                     <span>{translate('Модель Улья')}</span>
                     <div className="hive-settings-modal__row">
-                      <input
+                      <select
                         id="hive-model-input"
-                        type="text"
                         aria-label={translate('Модель Улья')}
                         value={hiveModelDraft}
                         disabled={!connected || hiveProviderBusy}
@@ -2466,8 +2621,15 @@ export function HiveDashboard({
                           setHiveProviderError(null)
                           setHiveProviderSaved(false)
                         }}
-                        placeholder="gpt-4o-mini:free"
-                      />
+                      >
+                        <option value="">{translate('По умолчанию провайдера')}</option>
+                        {hiveModelDraft.trim().length > 0 && !hiveCatalogModels.includes(hiveModelDraft.trim()) ? (
+                          <option value={hiveModelDraft.trim()}>{hiveModelDraft.trim()}</option>
+                        ) : null}
+                        {hiveCatalogModels.map((modelId) => (
+                          <option key={modelId} value={modelId}>{modelId}</option>
+                        ))}
+                      </select>
                       <button
                         type="button"
                         disabled={!connected || hiveProviderBusy}
@@ -2512,6 +2674,99 @@ export function HiveDashboard({
                   <p role="alert" className="hive-console__error">{translate(hiveApiKeyError)}</p>
                 ) : hiveApiKeySaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('API-ключ Улья сохранён')}</small>
+                ) : null}
+              </section>
+
+              <section className="hive-settings-section">
+                <div className="hive-settings-modal__grid">
+                  <label className="hive-provider" htmlFor="hive-fallback-provider-profile-select">
+                    <span>{translate('Резервный провайдер Улья')}</span>
+                    <select
+                      id="hive-fallback-provider-profile-select"
+                      aria-label={translate('Резервный провайдер Улья')}
+                      value={hiveFallbackProviderProfile}
+                      disabled={!connected || hiveFallbackProviderBusy}
+                      onChange={(changeEvent) => {
+                        setHiveFallbackProviderProfile(changeEvent.target.value)
+                        setHiveFallbackProviderError(null)
+                        setHiveFallbackProviderSaved(false)
+                      }}
+                    >
+                      <option value="">{translate('Отключён')}</option>
+                      <option value="rout">Rout.my</option>
+                      <option value="literouter">LiteRouter</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="openai_compatible">OpenAI-Compatible</option>
+                      <option value="openai_responses">OpenAI Responses</option>
+                      <option value="ollama">Ollama</option>
+                    </select>
+                  </label>
+                  <label className="hive-provider" htmlFor="hive-fallback-model-select">
+                    <span>{translate('Резервная модель Улья')}</span>
+                    <div className="hive-settings-modal__row">
+                      <select
+                        id="hive-fallback-model-select"
+                        aria-label={translate('Резервная модель Улья')}
+                        value={hiveFallbackModelDraft}
+                        disabled={!connected || hiveFallbackProviderBusy || hiveFallbackProviderProfile.trim().length === 0}
+                        onChange={(changeEvent) => {
+                          setHiveFallbackModelDraft(changeEvent.target.value)
+                          setHiveFallbackProviderError(null)
+                          setHiveFallbackProviderSaved(false)
+                        }}
+                      >
+                        <option value="">{translate('По умолчанию провайдера')}</option>
+                        {hiveFallbackModelDraft.trim().length > 0 && !hiveFallbackCatalogModels.includes(hiveFallbackModelDraft.trim()) ? (
+                          <option value={hiveFallbackModelDraft.trim()}>{hiveFallbackModelDraft.trim()}</option>
+                        ) : null}
+                        {hiveFallbackCatalogModels.map((modelId) => (
+                          <option key={modelId} value={modelId}>{modelId}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!connected || hiveFallbackProviderBusy}
+                        onClick={() => void saveHiveFallbackProviderSettings()}
+                      >
+                        {translate(hiveFallbackProviderBusy ? 'Сохранение…' : 'Сохранить резервный провайдер')}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+                {hiveFallbackProviderError ? (
+                  <p role="alert" className="hive-console__error">{translate(hiveFallbackProviderError)}</p>
+                ) : hiveFallbackProviderSaved ? (
+                  <small role="status" className="hive-settings-hint">✓ {translate('Резервный провайдер и модель Улья сохранены')}</small>
+                ) : null}
+                <label className="hive-provider" htmlFor="hive-fallback-api-key-input">
+                  <span>{translate('Резервный API-ключ Улья')}</span>
+                  <div className="hive-settings-modal__row">
+                    <input
+                      id="hive-fallback-api-key-input"
+                      type="password"
+                      aria-label={translate('Резервный API-ключ Улья')}
+                      value={hiveFallbackApiKeyDraft}
+                      disabled={!connected || hiveFallbackApiKeyBusy}
+                      onChange={(changeEvent) => {
+                        setHiveFallbackApiKeyDraft(changeEvent.target.value)
+                        setHiveFallbackApiKeyError(null)
+                        setHiveFallbackApiKeySaved(false)
+                      }}
+                      placeholder="sk-..."
+                    />
+                    <button
+                      type="button"
+                      disabled={!connected || hiveFallbackApiKeyBusy}
+                      onClick={() => void saveHiveFallbackApiKey()}
+                    >
+                      {translate(hiveFallbackApiKeyBusy ? 'Сохранение…' : 'Сохранить резервный ключ')}
+                    </button>
+                  </div>
+                </label>
+                {hiveFallbackApiKeyError ? (
+                  <p role="alert" className="hive-console__error">{translate(hiveFallbackApiKeyError)}</p>
+                ) : hiveFallbackApiKeySaved ? (
+                  <small role="status" className="hive-settings-hint">✓ {translate('Резервный API-ключ Улья сохранён')}</small>
                 ) : null}
               </section>
 

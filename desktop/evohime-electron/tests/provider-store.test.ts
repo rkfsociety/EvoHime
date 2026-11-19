@@ -789,5 +789,13 @@ describe('provider input bounds', () => {
 
     expect(store.saveHiveApiKey('')).toBe(true)
     expect(store.environment()['HIVE_API_KEY']).toBeUndefined()
+
+    expect(store.environment()['HIVE_FALLBACK_API_KEY']).toBeUndefined()
+    expect(store.saveHiveFallbackApiKey('sk-hive-fallback-only')).toBe(true)
+    expect(store.environment()['HIVE_FALLBACK_API_KEY']).toBe('sk-hive-fallback-only')
+    expect(readFileSync(path, 'utf8')).not.toContain('sk-hive-fallback-only')
+
+    expect(store.saveHiveFallbackApiKey('')).toBe(true)
+    expect(store.environment()['HIVE_FALLBACK_API_KEY']).toBeUndefined()
   })
 })

@@ -323,6 +323,12 @@ pub struct HiveStateSnapshot {
     /// Isolated model override configured for the hive, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hive_model: Option<String>,
+    /// Isolated fallback provider profile configured for the hive, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_fallback_provider_profile: Option<String>,
+    /// Isolated fallback model override configured for the hive, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hive_fallback_model: Option<String>,
     /// Whether proactive evolution via EvaPulse is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
@@ -452,6 +458,8 @@ impl HiveStateSnapshot {
             watched_repositories: settings.watched_repositories.clone(),
             hive_provider_profile: settings.hive_provider_profile.clone(),
             hive_model: settings.hive_model.clone(),
+            hive_fallback_provider_profile: settings.hive_fallback_provider_profile.clone(),
+            hive_fallback_model: settings.hive_fallback_model.clone(),
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
             pulse_status: pulse_status_from(observation),
             next_wake_at_ms: observation.pulse_next_wake_at_ms,

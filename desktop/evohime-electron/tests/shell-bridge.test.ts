@@ -142,7 +142,9 @@ const providers = {
   clearKey: () => {
     providerSummary = { ...providerSummary, configured: false }
     return providerSummary
-  }
+  },
+  saveHiveApiKey: () => true,
+  saveHiveFallbackApiKey: () => true
 }
 
 /** Stands in for the chat store; persistence is covered by its own tests. */

@@ -1148,9 +1148,20 @@ impl PulseProbe for JournalPulseProbe {
             let settings = self.journal.hive_settings().await.unwrap_or_default();
             let now_ms = crate::task_memory::now_millis() as i64;
             let selected_model = crate::hive_observation::selected_model_name(&self.selected_model);
+            let mut adjusted_config = self.gateway_config.clone();
+            if let Some(config) = adjusted_config.as_mut() {
+                config.apply_hive_route_overrides(
+                    settings.hive_provider_profile.as_deref(),
+                    settings.hive_model.as_deref(),
+                );
+                config.apply_hive_fallback_route_overrides(
+                    settings.hive_fallback_provider_profile.as_deref(),
+                    settings.hive_fallback_model.as_deref(),
+                );
+            }
             let observation = crate::hive_observation::build_hive_observation_for_hive(
                 &self.journal,
-                self.gateway_config.as_ref(),
+                adjusted_config.as_ref(),
                 selected_model.as_deref(),
                 settings.hive_provider_profile.as_deref(),
                 settings.hive_model.as_deref(),
@@ -1203,7 +1214,7 @@ impl PulseProbe for JournalPulseProbe {
                 snapshot.budget.fallback_tokens_remaining
             };
             let route_is_primary = crate::hive_observation::hive_route_name(
-                self.gateway_config.as_ref(),
+                adjusted_config.as_ref(),
                 settings.hive_provider_profile.as_deref(),
             )
             .is_some();
@@ -1565,22 +1576,21 @@ impl CoordinatorPulseTaskSink {
         Box::pin(async move {
             let mut preferred_route_hint = explicit_hint;
             if preferred_route_hint.is_none() {
-                if gateway_config.is_some() {
-                    let hive_profile = if let Some(journal) = journal.as_ref() {
-                        journal
-                            .hive_settings()
-                            .await
-                            .ok()
-                            .and_then(|settings| settings.hive_provider_profile)
-                            .map(|value| value.trim().to_owned())
-                            .filter(|value| !value.is_empty())
+                if let Some(mut config) = gateway_config {
+                    let settings = if let Some(journal) = journal.as_ref() {
+                        journal.hive_settings().await.ok()
                     } else {
                         None
                     };
-                    preferred_route_hint = crate::hive_observation::hive_route_name(
-                        gateway_config.as_ref(),
-                        hive_profile.as_deref(),
-                    );
+                    let hive_profile = settings
+                        .as_ref()
+                        .and_then(|s| s.hive_provider_profile.as_deref())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    let hive_model = settings.as_ref().and_then(|s| s.hive_model.as_deref());
+                    config.apply_hive_route_overrides(hive_profile, hive_model);
+                    preferred_route_hint =
+                        crate::hive_observation::hive_route_name(Some(&config), hive_profile);
                 } else {
                     preferred_route_hint = primary_route;
                 }
@@ -1603,8 +1613,43 @@ impl CoordinatorPulseTaskSink {
         })
     }
 
-    fn dispatch_fallback_task(&self, _prompt: String) -> PulseFuture<'_, Result<String, String>> {
-        Box::pin(async move { Err("fallback_route_unavailable".to_owned()) })
+    fn dispatch_fallback_task(&self, prompt: String) -> PulseFuture<'_, Result<String, String>> {
+        let journal = self.journal.clone();
+        let gateway_config = self.gateway_config.clone();
+        Box::pin(async move {
+            let mut config =
+                gateway_config.ok_or_else(|| "fallback_route_unavailable".to_owned())?;
+            let settings = if let Some(journal) = journal.as_ref() {
+                journal.hive_settings().await.ok()
+            } else {
+                None
+            };
+            let fallback_profile = settings
+                .as_ref()
+                .and_then(|s| s.hive_fallback_provider_profile.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let fallback_model = settings
+                .as_ref()
+                .and_then(|s| s.hive_fallback_model.as_deref());
+            config.apply_hive_fallback_route_overrides(fallback_profile, fallback_model);
+            let route_name =
+                crate::hive_observation::hive_fallback_route_name(Some(&config), fallback_profile)
+                    .ok_or_else(|| "fallback_route_unavailable".to_owned())?;
+            let task_id = uuid::Uuid::new_v4().to_string();
+            self.coordinator
+                .dispatch(CoreCommand::StartTask {
+                    task_id: task_id.clone(),
+                    prompt,
+                    workspace_root: None,
+                    preferred_route_hint: Some(route_name),
+                    conversation: None,
+                    goal_id: None,
+                })
+                .await
+                .map_err(|error| error.to_string())?;
+            Ok(task_id)
+        })
     }
 }
 

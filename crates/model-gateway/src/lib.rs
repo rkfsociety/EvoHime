@@ -1649,7 +1649,10 @@ impl ModelGateway {
     }
 
     fn route_candidates_for_request(&self, request: &RoutingRequest) -> Vec<RouteCandidate> {
-        self.route_candidates_filtered(request.preferred_route.as_deref() == Some("hive"))
+        self.route_candidates_filtered(
+            request.preferred_route.as_deref() == Some("hive")
+                || request.preferred_route.as_deref() == Some("hive_fallback"),
+        )
     }
 
     fn route_candidates_filtered(&self, hive_only: bool) -> Vec<RouteCandidate> {
@@ -1657,10 +1660,11 @@ impl ModelGateway {
             .routes
             .keys()
             .filter(|route_id| {
+                let is_hive = route_id.as_str() == "hive" || route_id.as_str() == "hive_fallback";
                 if hive_only {
-                    route_id.as_str() == "hive"
+                    is_hive
                 } else {
-                    route_id.as_str() != "hive" || self.default_route == "hive"
+                    !is_hive || self.default_route == route_id.as_str()
                 }
             })
             .collect();
@@ -1705,6 +1709,11 @@ impl ModelGateway {
                 {
                     capabilities.push("image_output".to_string());
                 }
+                let fallback_rank = if route_id.as_str() == "hive_fallback" {
+                    1
+                } else {
+                    0
+                };
                 Some(RouteCandidate {
                     route_id: route_id.clone(),
                     model,
@@ -1713,7 +1722,7 @@ impl ModelGateway {
                     p95_latency_ms: 0,
                     privacy: PrivacyClass::Internal,
                     available: true,
-                    fallback_rank: 0,
+                    fallback_rank,
                 })
             })
             .collect()

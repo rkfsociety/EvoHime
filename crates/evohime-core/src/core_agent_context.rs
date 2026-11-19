@@ -1395,9 +1395,10 @@ impl ToolAgent {
                         | crate::prompt_strategy::StrategyComposition::Decomposition { .. }
                 )
             });
-            let is_hive_route = preferred_route == Some("hive");
-            let effective_route_pin = if is_hive_route {
-                Some("hive")
+            let is_hive_route =
+                preferred_route == Some("hive") || preferred_route == Some("hive_fallback");
+            let effective_route_pin = if preferred_route == Some("hive_fallback") {
+                Some("hive_fallback")
             } else {
                 route_pin
             };
@@ -1406,9 +1407,9 @@ impl ToolAgent {
                 max_cost_micros_per_1k_tokens: bounded_fanout.then_some(0),
                 max_latency_ms: None,
                 required_privacy: PrivacyClass::Internal,
-                allow_fallback: !bounded_fanout && !is_hive_route,
+                allow_fallback: !bounded_fanout,
                 preferred_route: if is_hive_route {
-                    Some("hive".to_owned())
+                    preferred_route.map(str::to_owned)
                 } else {
                     route_pin
                         .map(str::to_owned)

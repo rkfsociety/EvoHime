@@ -240,7 +240,10 @@ describe('hive dashboard', () => {
     render(
       <HiveDashboard
         connection="connected"
-        events={[event('hive_state.snapshot', snapshot())]}
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event('hive.model.catalog', { profile: 'ollama', models: ['qwen2.5-coder:7b', 'llama3.2:3b'], error: null })
+        ]}
       />
     )
 
@@ -254,10 +257,9 @@ describe('hive dashboard', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
     const providerSelect = within(dialog).getByLabelText('Провайдер Улья')
-    const modelInput = within(dialog).getByLabelText('Модель Улья')
+    const modelSelect = within(dialog).getByLabelText('Модель Улья')
     await userEvent.selectOptions(providerSelect, 'ollama')
-    await userEvent.clear(modelInput)
-    await userEvent.type(modelInput, 'qwen2.5-coder:7b')
+    await userEvent.selectOptions(modelSelect, 'qwen2.5-coder:7b')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить провайдер Улья' }))
 
     await waitFor(() => {
@@ -1066,6 +1068,55 @@ describe('hive dashboard', () => {
         }
       })
       expect(screen.getByText(/API-ключ Улья сохранён/)).toBeTruthy()
+    })
+  })
+
+  it('ui_can_save_hive_fallback_provider_and_api_key', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event('hive.fallback_model.catalog', { profile: 'rout', models: ['openai/gpt-6-luna', 'deepseek/deepseek-v4.1-flash'], error: null })
+        ]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    const fallbackProviderSelect = within(dialog).getByLabelText('Резервный провайдер Улья')
+    const fallbackModelSelect = within(dialog).getByLabelText('Резервная модель Улья')
+    await userEvent.selectOptions(fallbackProviderSelect, 'rout')
+    await userEvent.selectOptions(fallbackModelSelect, 'openai/gpt-6-luna')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить резервный провайдер' }))
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: { key: 'hive_fallback_provider_profile', value: 'rout' }
+      })
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: { key: 'hive_fallback_model', value: 'openai/gpt-6-luna' }
+      })
+      expect(within(dialog).getByText(/Резервный провайдер и модель Улья сохранены/)).toBeTruthy()
+    })
+
+    const fallbackKeyInput = within(dialog).getByLabelText('Резервный API-ключ Улья') as HTMLInputElement
+    expect(fallbackKeyInput.type).toBe('password')
+    await userEvent.type(fallbackKeyInput, 'sk-hive-fallback-456')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить резервный ключ' }))
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.setHiveSetting',
+        payload: {
+          key: 'hive_fallback_api_key',
+          value: 'sk-hive-fallback-456'
+        }
+      })
+      expect(within(dialog).getByText(/Резервный API-ключ Улья сохранён/)).toBeTruthy()
     })
   })
 

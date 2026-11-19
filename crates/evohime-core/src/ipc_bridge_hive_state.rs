@@ -153,6 +153,65 @@ impl IpcBridge {
         .map_err(|error| error.to_string())
     }
 
+    /// Validates and persists the isolated fallback provider profile used by Hive.
+    pub(crate) async fn save_hive_fallback_provider_profile(
+        &self,
+        value: &str,
+    ) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let trimmed = value.trim();
+        settings.hive_fallback_provider_profile = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
+        if let Err(error) = settings.validate() {
+            return serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "setting_key": "hive_fallback_provider_profile",
+                "hive_fallback_provider_profile": settings.hive_fallback_provider_profile,
+                "error_code": error.to_string(),
+            }))
+            .map_err(|serialization_error| serialization_error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": "hive_fallback_provider_profile",
+            "hive_fallback_provider_profile": settings.hive_fallback_provider_profile,
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
+    /// Validates and persists the isolated fallback model override used by Hive.
+    pub(crate) async fn save_hive_fallback_model(&self, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let trimmed = value.trim();
+        settings.hive_fallback_model = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_owned())
+        };
+        if let Err(error) = settings.validate() {
+            return serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "setting_key": "hive_fallback_model",
+                "hive_fallback_model": settings.hive_fallback_model,
+                "error_code": error.to_string(),
+            }))
+            .map_err(|serialization_error| serialization_error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": "hive_fallback_model",
+            "hive_fallback_model": settings.hive_fallback_model,
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
     /// Validates a candidate Eva self-development path without persisting it.
     pub(crate) fn validate_eva_workspace_path_payload(
         &self,
@@ -259,6 +318,10 @@ impl IpcBridge {
             "watched_repositories" => self.save_watched_repositories(value).await,
             "hive_provider_profile" => self.save_hive_provider_profile(value).await,
             "hive_model" => self.save_hive_model(value).await,
+            "hive_fallback_provider_profile" => {
+                self.save_hive_fallback_provider_profile(value).await
+            }
+            "hive_fallback_model" => self.save_hive_fallback_model(value).await,
             "daily_budget_usd" => self.save_daily_budget_usd(value).await,
             "proactive_evolution_enabled" => self.save_proactive_evolution_enabled(value).await,
             other => serde_json::to_vec(&serde_json::json!({
@@ -282,9 +345,20 @@ impl IpcBridge {
         let projections = crate::hive_observation::replay_hive_projections(&self.journal).await;
         let roles = crate::hive_observation::persistent_agent_roles(&self.journal).await;
         let selected_model = crate::hive_observation::selected_model_name(&self.selected_model);
+        let mut adjusted_config = self.gateway_config.clone();
+        if let Some(config) = adjusted_config.as_mut() {
+            config.apply_hive_route_overrides(
+                settings.hive_provider_profile.as_deref(),
+                settings.hive_model.as_deref(),
+            );
+            config.apply_hive_fallback_route_overrides(
+                settings.hive_fallback_provider_profile.as_deref(),
+                settings.hive_fallback_model.as_deref(),
+            );
+        }
         let mut observation = crate::hive_observation::build_hive_observation_for_hive(
             &self.journal,
-            self.gateway_config.as_ref(),
+            adjusted_config.as_ref(),
             selected_model.as_deref(),
             settings.hive_provider_profile.as_deref(),
             settings.hive_model.as_deref(),

@@ -186,6 +186,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             hive_settings.hive_provider_profile.as_deref(),
             hive_settings.hive_model.as_deref(),
         );
+        config.apply_hive_fallback_route_overrides(
+            hive_settings.hive_fallback_provider_profile.as_deref(),
+            hive_settings.hive_fallback_model.as_deref(),
+        );
     }
     let model_snapshot = model_config.as_ref().and_then(|config| {
         config

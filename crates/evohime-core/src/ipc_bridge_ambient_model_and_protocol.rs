@@ -382,6 +382,119 @@ impl IpcBridge {
                     .await?;
                     return Ok(());
                 }
+                if request.mode == "hive_catalog" || request.mode == "hive_fallback_catalog" {
+                    let is_fallback = request.mode == "hive_fallback_catalog";
+                    let route_key = if is_fallback { "hive_fallback" } else { "hive" };
+                    let event_type = if is_fallback {
+                        "hive.fallback_model.catalog"
+                    } else {
+                        "hive.model.catalog"
+                    };
+                    let settings = self.journal.hive_settings().await.unwrap_or_default();
+                    let requested_profile = if !request.model_id.trim().is_empty() {
+                        Some(request.model_id.trim())
+                    } else if is_fallback {
+                        settings.hive_fallback_provider_profile.as_deref()
+                    } else {
+                        settings.hive_provider_profile.as_deref()
+                    }
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                    let mut adjusted_config = self.gateway_config.clone();
+                    if let Some(config) = adjusted_config.as_mut() {
+                        if is_fallback {
+                            config.apply_hive_fallback_route_overrides(
+                                requested_profile,
+                                settings.hive_fallback_model.as_deref(),
+                            );
+                        } else {
+                            config.apply_hive_route_overrides(
+                                requested_profile,
+                                settings.hive_model.as_deref(),
+                            );
+                        }
+                    }
+                    let route = adjusted_config
+                        .as_ref()
+                        .and_then(|config| config.routes.get(route_key));
+                    let profile_label = route
+                        .and_then(|r| r.provider_profile_id.map(|id| id.as_str()))
+                        .or_else(|| route.map(|r| r.provider.as_str()))
+                        .or(requested_profile)
+                        .unwrap_or(if is_fallback { "" } else { "rout" });
+                    let (models, error): (Vec<String>, Option<String>) = match route {
+                        Some(route)
+                            if route.provider
+                                == evohime_model_gateway::providers::ProviderKind::Ollama =>
+                        {
+                            match evohime_model_gateway::fetch_model_catalog(route).await {
+                                Ok(entries) => (entries.into_iter().map(|e| e.id).collect(), None),
+                                Err(err) => {
+                                    (Vec::new(), Some(safe_model_catalog_error_code(&err).into()))
+                                }
+                            }
+                        }
+                        Some(route) if route.configured() => {
+                            match evohime_model_gateway::fetch_model_catalog(route).await {
+                                Ok(entries) => (entries.into_iter().map(|e| e.id).collect(), None),
+                                Err(err) => {
+                                    let fallback_models = if route.provider
+                                        == evohime_model_gateway::providers::ProviderKind::LiteRouter
+                                    {
+                                        evohime_model_gateway::model_ranker::get_ranked_models()
+                                    } else if route.provider_profile_id
+                                        == Some(evohime_model_gateway::ProviderProfileId::Rout)
+                                    {
+                                        evohime_model_gateway::model_ranker::get_rout_ranked_models()
+                                    } else {
+                                        Vec::new()
+                                    };
+                                    if !fallback_models.is_empty() {
+                                        (fallback_models, None)
+                                    } else {
+                                        (
+                                            Vec::new(),
+                                            Some(safe_model_catalog_error_code(&err).into()),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            let static_models = if profile_label.eq_ignore_ascii_case("literouter")
+                            {
+                                evohime_model_gateway::model_ranker::get_ranked_models()
+                            } else if profile_label.eq_ignore_ascii_case("rout") {
+                                evohime_model_gateway::model_ranker::get_rout_ranked_models()
+                            } else {
+                                Vec::new()
+                            };
+                            let err_code = if static_models.is_empty() {
+                                Some("provider_not_configured".into())
+                            } else {
+                                None
+                            };
+                            (static_models, err_code)
+                        }
+                    };
+                    let payload = serde_json::json!({
+                        "profile": profile_label,
+                        "models": models,
+                        "error": error,
+                    });
+                    let event = generated::EventEnvelope {
+                        protocol: Some(protocol()),
+                        sequence_id: 0,
+                        task_id: String::new(),
+                        event_type: event_type.into(),
+                        payload: serde_json::to_vec(&payload).unwrap_or_default(),
+                        core_instance_id: self.core_instance_id.clone(),
+                        session_epoch: self.session_epoch,
+                        event: None,
+                    };
+                    transport::write_frame(writer, &event.encode_to_vec()).await?;
+                    return Ok(());
+                }
                 let mode = if request.mode == "paid" {
                     "paid"
                 } else {

@@ -2010,7 +2010,7 @@ export interface CommandPayloads {
   'core.restoreDatabase': { backupPath: string; approvalId: string }
   'core.cancelDatabaseOperation': { operationId: string }
   'core.getModelConfig': Record<string, never>
-  'core.listModelCatalog': { mode: ModelTier }
+  'core.listModelCatalog': { mode: ModelTier | 'hive_catalog' | 'hive_fallback_catalog'; profile?: string }
   'core.selectModel': { model: string }
   'core.getReceiptKeyStatus': Record<string, never>
   'core.trustReceiptGenesis': { genesisKeyId: string; approvalId?: string; source?: string }

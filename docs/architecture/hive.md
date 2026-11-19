@@ -192,11 +192,17 @@ read-only investigation-задача.
 недоступны, демон не выдумывает ноль и не включает платный маршрут. Фоновые
 задачи EvaPulse и системный чат Улья (`hive-system-chat`) строго изолированы на
 собственном маршруте `"hive"` (создаётся из отдельного `HIVE_API_KEY` либо при
-явном выборе локального `ollama`): если Улей не настроен, он не использует
-глобальных провайдеров чата и их API-ключи, `ModelGateway` запрещает fallback
-с `"hive"` на глобальные маршруты (и не допускает выбор `"hive"` обычными
-чатовыми задачами), а статус EvaPulse остаётся `sleeping`
-(`primary_route_unavailable`). При 429 gateway публикует process-local cooldown
+явном выборе локального `ollama`) и опциональном резервном маршруте Улья
+`"hive_fallback"` (`HIVE_FALLBACK_API_KEY`, `hive_fallback_provider_profile`,
+`hive_fallback_model`): если Улей не настроен, он не использует глобальных
+провайдеров чата и их API-ключи, `ModelGateway` разрешает fallback только
+внутри изолированного пула Улья (`"hive"` → `"hive_fallback"`, запрещая переход
+на глобальные маршруты и выбор `"hive"`/`"hive_fallback"` обычными чатовыми
+задачами), а статус EvaPulse без настроенного `"hive"` остаётся `sleeping`
+(`primary_route_unavailable`). Выбор основной и резервной модели в настройках
+Улья выполняется из списка моделей выбранного провайдера Улья через каталог
+Core (`core.listModelCatalog` в режимах `hive_catalog` / `hive_fallback_catalog`).
+При 429 gateway публикует process-local cooldown
 в `rate_limit_signal`, поэтому демон не повторяет запрос и не вызывает fallback —
 он просто спит до конца окна.
 

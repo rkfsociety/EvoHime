@@ -865,13 +865,46 @@ impl ModelGatewayConfig {
             }
         }
 
+        let hive_fallback_key = env::var("HIVE_FALLBACK_API_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        if let Some(hive_fallback_key) = hive_fallback_key {
+            if !routes.contains_key("hive_fallback") {
+                let fallback_profile_raw = env::var("HIVE_FALLBACK_PROVIDER_PROFILE")
+                    .ok()
+                    .or_else(|| env::var("hive_fallback_provider_profile").ok())
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty());
+                let fallback_base = env::var("HIVE_FALLBACK_BASE_URL")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty());
+                let fallback_model = env::var("HIVE_FALLBACK_MODEL")
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_default();
+                let fallback_route = Self::build_hive_route(
+                    hive_fallback_key,
+                    fallback_profile_raw.as_deref(),
+                    fallback_base,
+                    fallback_model,
+                );
+                if fallback_route.validate_provider_profile().is_ok() {
+                    routes.insert("hive_fallback".to_string(), fallback_route);
+                }
+            }
+        }
+
         Ok(Self {
             default_route,
             routes,
         })
     }
 
-    fn build_hive_route(
+    /// Builds an isolated Hive route config for the given profile and model.
+    pub fn build_hive_route(
         hive_key: String,
         hive_profile: Option<&str>,
         hive_base: Option<String>,
@@ -919,16 +952,18 @@ impl ModelGatewayConfig {
         }
     }
 
-    /// Rebuilds the isolated `"hive"` route (when `HIVE_API_KEY` created one,
-    /// or when Hive explicitly targets local `ollama`) using the durable
-    /// `hive_provider_profile` and `hive_model` settings.
-    pub fn apply_hive_route_overrides(&mut self, profile: Option<&str>, model: Option<&str>) {
+    fn apply_named_hive_route_override(
+        &mut self,
+        route_key: &str,
+        profile: Option<&str>,
+        model: Option<&str>,
+    ) {
         let normalized_profile = profile.map(str::trim).filter(|value| !value.is_empty());
         let explicit_model = model
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
-        let Some(existing) = self.routes.get("hive").cloned() else {
+        let Some(existing) = self.routes.get(route_key).cloned() else {
             if normalized_profile.is_some_and(|p| p.eq_ignore_ascii_case("ollama")) {
                 let ollama_route = Self::build_hive_route(
                     String::new(),
@@ -937,7 +972,7 @@ impl ModelGatewayConfig {
                     explicit_model.unwrap_or_default(),
                 );
                 if ollama_route.validate_provider_profile().is_ok() {
-                    self.routes.insert("hive".to_string(), ollama_route);
+                    self.routes.insert(route_key.to_string(), ollama_route);
                 }
             }
             return;
@@ -945,7 +980,7 @@ impl ModelGatewayConfig {
         let Some(requested_profile) = normalized_profile else {
             if let Some(new_model) = explicit_model {
                 if new_model != existing.literouter.model {
-                    if let Some(route) = self.routes.get_mut("hive") {
+                    if let Some(route) = self.routes.get_mut(route_key) {
                         route.literouter.model = new_model;
                     }
                 }
@@ -973,8 +1008,26 @@ impl ModelGatewayConfig {
         let rebuilt =
             Self::build_hive_route(hive_key, Some(requested_profile), None, normalized_model);
         if rebuilt.validate_provider_profile().is_ok() {
-            self.routes.insert("hive".to_string(), rebuilt);
+            self.routes.insert(route_key.to_string(), rebuilt);
         }
+    }
+
+    /// Rebuilds the isolated `"hive"` route (when `HIVE_API_KEY` created one,
+    /// or when Hive explicitly targets local `ollama`) using the durable
+    /// `hive_provider_profile` and `hive_model` settings.
+    pub fn apply_hive_route_overrides(&mut self, profile: Option<&str>, model: Option<&str>) {
+        self.apply_named_hive_route_override("hive", profile, model);
+    }
+
+    /// Rebuilds the isolated `"hive_fallback"` route (when `HIVE_FALLBACK_API_KEY`
+    /// created one, or when fallback explicitly targets local `ollama`) using the
+    /// durable `hive_fallback_provider_profile` and `hive_fallback_model` settings.
+    pub fn apply_hive_fallback_route_overrides(
+        &mut self,
+        profile: Option<&str>,
+        model: Option<&str>,
+    ) {
+        self.apply_named_hive_route_override("hive_fallback", profile, model);
     }
 }
 
@@ -1654,5 +1707,33 @@ mod tests {
             hive.literouter.model,
             crate::model_ranker::get_ranked_models()[0]
         );
+    }
+
+    #[test]
+    fn apply_hive_fallback_route_overrides_builds_isolated_hive_fallback_route() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "hive_fallback".to_string(),
+            ModelRouteConfig::openai_compatible(
+                "sk-hive-fallback-isolated",
+                "https://api.rout.my/v1",
+                "",
+            )
+            .with_provider_profile(ProviderProfileId::Rout, None),
+        );
+        let mut config = ModelGatewayConfig {
+            default_route: "default".to_string(),
+            routes,
+        };
+
+        config.apply_hive_fallback_route_overrides(Some("rout"), Some("openai/gpt-6-luna"));
+        let fallback = config
+            .routes
+            .get("hive_fallback")
+            .expect("hive_fallback route remains");
+        assert_eq!(fallback.provider, ProviderKind::OpenAICompatible);
+        assert_eq!(fallback.provider_profile_id, Some(ProviderProfileId::Rout));
+        assert_eq!(fallback.literouter.api_key, "sk-hive-fallback-isolated");
+        assert_eq!(fallback.literouter.model, "openai/gpt-6-luna");
     }
 }

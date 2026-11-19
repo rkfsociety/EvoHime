@@ -1038,17 +1038,20 @@ function dispatch(
       if (key === null || key.length > 128 || typeof value !== 'string' || value.length > 4_096) {
         return failure('invalid-payload', 'Некорректный параметр настройки улья.')
       }
-      if (key === 'hive_api_key') {
+      if (key === 'hive_api_key' || key === 'hive_fallback_api_key') {
         const normalized = normalizeApiKey(value)
         if (normalized === null) {
           return failure('invalid-payload', 'Некорректный API-ключ Улья.')
         }
-        if (!providers.saveHiveApiKey(normalized)) {
+        const saved = key === 'hive_fallback_api_key'
+          ? providers.saveHiveFallbackApiKey(normalized)
+          : providers.saveHiveApiKey(normalized)
+        if (!saved) {
           log('error', 'shell.hive_provider_encryption_unavailable', {})
           return failure('protocol-error', 'Windows не даёт зашифровать ключ — он не сохранён.')
         }
         // Never log the key value, only whether a credential is configured.
-        log('info', 'shell.hive_api_key_saved', { configured: normalized.length > 0 })
+        log('info', key === 'hive_fallback_api_key' ? 'shell.hive_fallback_api_key_saved' : 'shell.hive_api_key_saved', { configured: normalized.length > 0 })
         return restartCore().then((restarted) => ({ ok: true, value: { accepted: restarted } }))
       }
       log('info', 'shell.command_forwarded', { command })
@@ -1378,9 +1381,15 @@ function dispatch(
       return accepted(client.send({ modelConfig: {} }))
 
     case 'core.listModelCatalog': {
-      const mode = asModelCatalogMode(asRecord(payload)['mode'])
-      if (mode === null) return failure('invalid-payload', 'Некорректный режим каталога моделей.')
-      return accepted(client.send({ modelCatalog: { mode } }))
+      const record = asRecord(payload)
+      const mode = asModelCatalogMode(record['mode'])
+      const profile = asOptionalBoundedString(record['profile'])
+      if (mode === null || profile === null || profile.length > 128) {
+        return failure('invalid-payload', 'Некорректный режим каталога моделей.')
+      }
+      return accepted(client.send({
+        modelCatalog: profile.length > 0 ? { mode, modelId: profile } : { mode }
+      }))
     }
 
     case 'core.selectModel': {
@@ -1758,7 +1767,7 @@ function dispatch(
       const apiKey = normalizeApiKey(value['apiKey'])
       const model = normalizeModel(value['model'])
       const baseUrl = normalizeBaseUrl(value['baseUrl'])
-      const tier = asModelCatalogMode(value['tier'])
+      const tier = asModelTier(value['tier'])
       const profileIdValue = value['profileId']
       const profileId = profileIdValue === undefined ? undefined : asProviderProfileId(profileIdValue)
       const currentSummary = providers.summary()
@@ -3266,8 +3275,12 @@ function asPermissionMode(value: unknown): 'ask' | 'read_only' | 'full' | null {
   return value === 'ask' || value === 'read_only' || value === 'full' ? value : null
 }
 
-function asModelCatalogMode(value: unknown): 'free' | 'paid' | null {
+function asModelTier(value: unknown): 'free' | 'paid' | null {
   return value === 'free' || value === 'paid' ? value : null
+}
+
+function asModelCatalogMode(value: unknown): 'free' | 'paid' | 'hive_catalog' | 'hive_fallback_catalog' | null {
+  return value === 'free' || value === 'paid' || value === 'hive_catalog' || value === 'hive_fallback_catalog' ? value : null
 }
 
 function asFreeAccessProbePolicy(value: unknown): FreeAccessProbePolicy | null {
