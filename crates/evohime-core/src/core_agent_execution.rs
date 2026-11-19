@@ -550,19 +550,15 @@ impl ToolAgent {
                 uuid::Uuid::new_v4()
             }
         };
-        let eva_workspace_path = match &self.journal {
-            Some(journal) => journal
-                .hive_settings()
-                .await
-                .ok()
-                .and_then(|settings| settings.eva_workspace_path().map(str::to_owned)),
-            None => None,
-        };
-        let eva_workspace_configured = eva_workspace_path.as_deref().and_then(|path| {
-            evohime_tool_runtime::self_development::EvaWorkspace::open(path)
+        let workspace_root: std::path::PathBuf = workspace_root.into();
+        let eva_workspace_configured = if hive_world {
+            let workspace_str = workspace_root.to_string_lossy();
+            evohime_tool_runtime::self_development::EvaWorkspace::open(workspace_str.as_ref())
                 .ok()
                 .map(|workspace| workspace.root().to_path_buf())
-        });
+        } else {
+            None
+        };
         // World boundary: Hive tasks use their own permission session, so the
         // workspace permission mode chosen in a chat (a process-global setting)
         // can neither widen nor narrow what the Hive may do, and vice versa.
@@ -579,12 +575,12 @@ impl ToolAgent {
             None
         };
         let context = ToolContext {
-            workspace_root: workspace_root.into(),
+            workspace_root,
             task_id: task_uuid,
             session_id: hive_session_id,
             progress_tx: None,
             eva_workspace_root: eva_workspace_configured,
-            self_development_profile: Some("queen".into()),
+            self_development_profile: hive_world.then(|| "queen".into()),
             agent_depth: 0,
             self_development_test_gate: Default::default(),
         };

@@ -468,4 +468,4 @@ ownership store или blind retry не добавляются.
 - **Слоты задач.** Улей использует отдельный пул `hive_tasks`, чаты — `background_tasks`; исчерпание одного не блокирует другой.
 - **Память.** Для Улья scope памяти и уроков — `task_memory::task_memory_scope_id(root, true)` (`hive-<hash>`), для чатов прежний `workspace_scope_id`.
 - **Права.** Задача Улья выполняется в постоянной permission-сессии (`hive_permission_session`): чтение разрешено, запись, shell, git write, браузер и MCP требуют подтверждения. Глобальный режим рабочей папки чата (`permissionMode`) на Улей не влияет и наоборот.
-- Не разделено: общая git-рабочая копия при параллельной записи в один каталог (см. «Task Worktree Isolation v1»).
+- **Рабочая копия (Git worktree).** Если каталог задачи Улья — Git-репозиторий с `HEAD`, Core автоматически создаёт для задачи изолированный detached worktree в `.evohime/worktrees/hive-*` и направляет туда и `workspace_root`, и `eva_workspace_root`. Чистый worktree удаляется после завершения задачи; dirty worktree сохраняется. В обычных чатах `eva_workspace_root` и профиль `queen` отключены.

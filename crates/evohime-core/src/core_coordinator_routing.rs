@@ -94,6 +94,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
                 None => std::env::current_dir().unwrap_or_default(),
             };
+            let mut worktree_bound = false;
             if let Some(journal) = &state_guard.journal {
                 let database = journal.database().lock().await;
                 if let Ok(Some(binding)) =
@@ -105,9 +106,21 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     let candidate = workspace_root.join(&binding.root_ref);
                     if candidate.is_dir() {
                         workspace_root = candidate;
+                        worktree_bound = true;
                     }
                 }
             }
+            let hive_worktree_lease = if hive_route && !worktree_bound {
+                let lease =
+                    crate::hive_worktree::prepare_for_task(journal.as_ref(), &task_id, &workspace_root)
+                        .await;
+                if let Some(ref lease) = lease {
+                    workspace_root = lease.worktree_root.clone();
+                }
+                lease
+            } else {
+                None
+            };
             if let Some(journal) = &state_guard.journal {
                 let database = journal.database().lock().await;
                 let _ = evohime_local_storage::domains::runs::attach_task_context(
@@ -891,6 +904,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 drop(state_guard);
                 if let Some(kernel_host) = kernel_host {
                     kernel_host.stop_sessions_for_task(&task_id).await;
+                }
+                if let Some(lease) = hive_worktree_lease.as_ref() {
+                    crate::hive_worktree::cleanup_if_clean(journal.as_ref(), lease).await;
                 }
                 if let Err(error) = &result {
                     let _ = events

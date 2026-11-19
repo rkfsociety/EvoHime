@@ -345,6 +345,7 @@ mod core_coordinator;
 pub use core_coordinator::TaskCoordinator;
 mod bounded_tasks;
 mod hive_permission_session;
+mod hive_worktree;
 mod core_domains;
 pub(crate) use core_domains::*;
 pub(crate) mod adapter_contract;
