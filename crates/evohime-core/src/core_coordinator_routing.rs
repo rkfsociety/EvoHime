@@ -178,7 +178,16 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     prompt: evohime_model_provenance::OMITTED_MESSAGE_MARKER.into(),
                 })
                 .await;
-            let Some(background_permit) = state.lock().await.background_tasks.try_acquire() else {
+            // Улей и чаты занимают слоты из разных пулов и не вытесняют друг друга.
+            let acquired = {
+                let guard = state.lock().await;
+                if hive_route {
+                    guard.hive_tasks.try_acquire()
+                } else {
+                    guard.background_tasks.try_acquire()
+                }
+            };
+            let Some(background_permit) = acquired else {
                 let mut state_guard = state.lock().await;
                 state_guard.tasks.remove(&task_id);
                 let events = state_guard.events.clone();

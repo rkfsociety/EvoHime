@@ -35,6 +35,9 @@ pub(crate) struct CoordinatorState {
     audit: crate::audit::AuditTrail,
     retained_children: crate::retained_child::RetainedRegistry,
     background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
+    /// Отдельный пул слотов для задач Улья: Улей и обычные чаты не делят
+    /// ёмкость и не могут вытеснять друг друга.
+    hive_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
     host_telemetry: crate::host_resource_telemetry::HostTelemetryService,
     kernel_host: Option<Arc<crate::analysis_kernel_host::CoreKernelHost>>,
     persistence_error: Option<String>,
@@ -232,6 +235,9 @@ impl TaskCoordinator {
             audit: crate::audit::AuditTrail::default(),
             retained_children: crate::retained_child::RetainedRegistry::default(),
             background_tasks,
+            hive_tasks: Arc::new(crate::bounded_tasks::BoundedTaskGroup::new(
+                crate::bounded_tasks::DEFAULT_CAPACITY,
+            )),
             host_telemetry: crate::host_resource_telemetry::HostTelemetryService::new(
                 crate::host_resource_telemetry::PressurePolicy::default(),
             ),
