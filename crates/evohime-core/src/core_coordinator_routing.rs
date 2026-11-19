@@ -60,8 +60,40 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             let events = state_guard.events.clone();
             let executor = state_guard.executor.clone();
             let journal = state_guard.journal.clone();
-            let mut workspace_root =
-                workspace_root.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+            // Задача Улья без явного workspace работает только в каталоге
+            // исходников из настроек Улья (или в первом добавленном проекте).
+            // Откат на `current_dir()` запрещён: у установленного приложения
+            // это каталог самой установки.
+            let hive_route = preferred_route_hint.as_deref() == Some("hive");
+            let mut workspace_root = match workspace_root {
+                Some(root) => root,
+                None if hive_route => {
+                    let configured = match &journal {
+                        Some(journal) => journal.hive_settings().await.ok().and_then(|settings| {
+                            settings
+                                .primary_workspace_path()
+                                .map(std::path::PathBuf::from)
+                        }),
+                        None => None,
+                    };
+                    match configured.filter(|path| path.is_dir()) {
+                        Some(path) => path,
+                        None => {
+                            state_guard.tasks.remove(&task_id);
+                            drop(state_guard);
+                            emit_task_failed(
+                                &events,
+                                task_id,
+                                "hive workspace is not configured: set the source directory in Hive settings"
+                                    .into(),
+                            )
+                            .await;
+                            return;
+                        }
+                    }
+                }
+                None => std::env::current_dir().unwrap_or_default(),
+            };
             if let Some(journal) = &state_guard.journal {
                 let database = journal.database().lock().await;
                 if let Ok(Some(binding)) =
