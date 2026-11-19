@@ -307,6 +307,7 @@ interface HiveStateView {
     readonly dailyTokensRemaining: number | null
     readonly quotaResetUtcMidnight: boolean
     readonly fallbackProvider: string | null
+    readonly fallbackModel: string | null
     readonly fallbackTokensRemaining: number | null
   }
   readonly dailyBudgetUsd: number
@@ -511,6 +512,9 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       quotaResetUtcMidnight: budget['quota_reset_utc_midnight'] === true,
       fallbackProvider: typeof budget['fallback_provider'] === 'string' && budget['fallback_provider'].length > 0
         ? text(budget['fallback_provider'], 64)
+        : null,
+      fallbackModel: typeof budget['fallback_model'] === 'string' && budget['fallback_model'].trim().length > 0
+        ? text(budget['fallback_model'], 128)
         : null,
       fallbackTokensRemaining: typeof budget['fallback_tokens_remaining'] === 'number' && Number.isSafeInteger(budget['fallback_tokens_remaining']) && budget['fallback_tokens_remaining'] >= 0
         ? budget['fallback_tokens_remaining']
@@ -795,7 +799,7 @@ function formatHiveLogsForClipboard(
   ]
   if (budget.fallbackProvider) {
     headerParts.push(
-      `Резерв: ${budget.fallbackProvider}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} токенов)` : ''}`
+      `Резерв: ${budget.fallbackProvider}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} токенов)` : ''}${budget.fallbackModel ? ` [${budget.fallbackModel}]` : ''}`
     )
   }
   const lines: string[] = [
@@ -933,6 +937,7 @@ const EMPTY_BUDGET: HiveStateView['budget'] = {
   dailyTokensRemaining: null,
   quotaResetUtcMidnight: false,
   fallbackProvider: null,
+  fallbackModel: null,
   fallbackTokensRemaining: null
 }
 
@@ -2032,12 +2037,13 @@ export function HiveDashboard({
     : budget.fallbackProvider === 'literouter'
       ? 'LiteRouter'
       : budget.fallbackProvider
+  const effectiveFallbackModel = budget.fallbackModel || hive?.hiveFallbackModel || null
   const routmyStatusText = budget.provider === 'rout'
     ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota ?? 650000}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
     : (budget.provider === 'literouter' || budget.provider === 'openrouter') && routmyConfigured
-      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining ?? 650000} ${translate('токенов')})`
+      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining ?? 650000} ${translate('токенов')})${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
       : fallbackLabel
-        ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}`
+        ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
   const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6)
   const logs = realLogs
@@ -2342,6 +2348,7 @@ export function HiveDashboard({
             {routmyStatusText ? <p className="hive-budget-card__routmy">{routmyStatusText}</p> : null}
             <small>
               {budget.model ? `${translate('Текущая модель:')} ${budget.model}` : translate('Модель ещё не известна')}
+              {effectiveFallbackModel && !routmyStatusText ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}
               {!isRoutProvider && !configuredCaps ? ` · ${translate('лимиты запросов не настроены')}` : ''}
               {!budget.historyAvailable ? ` · ${translate('история отправок недоступна')}` : ''}
             </small>

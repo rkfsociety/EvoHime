@@ -182,6 +182,9 @@ pub struct HiveBudget {
     /// Configured free fallback provider identifier (e.g. `routmy`), if any.
     #[serde(default)]
     pub fallback_provider: Option<String>,
+    /// Configured model for the fallback provider route, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_model: Option<String>,
     /// Remaining daily tokens for the configured fallback provider, if known.
     #[serde(default)]
     pub fallback_tokens_remaining: Option<u64>,
@@ -253,6 +256,8 @@ pub struct HiveObservation {
     pub quota_reset_utc_midnight: bool,
     /// Configured free fallback provider identifier (e.g. `routmy`), if any.
     pub fallback_provider: Option<String>,
+    /// Configured model for the fallback provider route, if any.
+    pub fallback_model: Option<String>,
     /// Remaining daily tokens for the configured fallback provider, if known.
     pub fallback_tokens_remaining: Option<u64>,
 }
@@ -285,6 +290,7 @@ impl Default for HiveObservation {
             daily_tokens_used: 0,
             quota_reset_utc_midnight: false,
             fallback_provider: None,
+            fallback_model: None,
             fallback_tokens_remaining: None,
         }
     }
@@ -500,6 +506,11 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
             .map(|quota| quota.saturating_sub(observation.daily_tokens_used)),
         quota_reset_utc_midnight: observation.quota_reset_utc_midnight,
         fallback_provider: observation.fallback_provider.clone(),
+        fallback_model: observation
+            .fallback_model
+            .as_deref()
+            .map(bounded_id)
+            .filter(|m| !m.is_empty()),
         fallback_tokens_remaining: observation.fallback_tokens_remaining,
     }
 }

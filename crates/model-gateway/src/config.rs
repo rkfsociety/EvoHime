@@ -978,6 +978,10 @@ impl ModelGatewayConfig {
             return;
         };
         let Some(requested_profile) = normalized_profile else {
+            if route_key == "hive_fallback" {
+                self.routes.remove(route_key);
+                return;
+            }
             if let Some(new_model) = explicit_model {
                 if new_model != existing.literouter.model {
                     if let Some(route) = self.routes.get_mut(route_key) {

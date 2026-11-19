@@ -205,6 +205,10 @@ pub(crate) async fn build_hive_observation_for_hive(
             .to_owned();
         if fallback_identity != observation.provider {
             observation.fallback_provider = Some(fallback_identity);
+            let fb_model = fallback_route.literouter.model.trim();
+            if !fb_model.is_empty() {
+                observation.fallback_model = Some(fb_model.to_owned());
+            }
             if let Some(quota) = fallback_route.daily_token_quota {
                 let used = journal
                     .provider_tokens_since(day_start_ms, fallback_transport)
@@ -505,5 +509,9 @@ mod tests {
         )
         .await;
         assert_eq!(obs_with_fallback.fallback_provider.as_deref(), Some("rout"));
+        assert_eq!(
+            obs_with_fallback.fallback_model.as_deref(),
+            Some("openai/gpt-6-luna")
+        );
     }
 }

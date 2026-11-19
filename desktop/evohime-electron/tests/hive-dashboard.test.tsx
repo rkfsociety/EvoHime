@@ -729,6 +729,7 @@ describe('hive dashboard', () => {
                 daily_cost_available: false,
                 daily_cost_nano_usd: null,
                 fallback_provider: 'rout',
+                fallback_model: 'openai/gpt-6-luna',
                 fallback_tokens_remaining: 650000
               }
             })
@@ -737,7 +738,7 @@ describe('hive dashboard', () => {
         repair={null}
       />
     )
-    expect(await screen.findByText('Резерв: Rout (650000 токенов)')).toBeTruthy()
+    expect(await screen.findByText('Резерв: Rout (650000 токенов) · Модель резерва: openai/gpt-6-luna')).toBeTruthy()
 
     rerender(
       <HiveDashboard
