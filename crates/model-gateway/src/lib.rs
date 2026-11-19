@@ -1643,6 +1643,7 @@ impl ModelGateway {
     /// `RoutingMode::LocalFirst`/`Offline` still work because
     /// `routing_runtime` classifies "local" routes by route id / model name
     /// substring, independent of this candidate metadata.
+    #[cfg(test)]
     fn route_candidates(&self) -> Vec<RouteCandidate> {
         self.route_candidates_filtered(false)
     }

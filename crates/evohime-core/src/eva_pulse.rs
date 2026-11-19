@@ -2160,7 +2160,18 @@ mod tests {
         evohime_model_gateway::clear_rate_limit(model);
         let selected = SelectedModel::default();
         selected.set(model);
-        let probe = JournalPulseProbe::new(journal.clone(), None, selected);
+        let gateway_config = Some(ModelGatewayConfig {
+            default_route: "primary".into(),
+            routes: std::collections::HashMap::from([(
+                "hive".into(),
+                evohime_model_gateway::ModelRouteConfig::literouter(
+                    "hive-test-key",
+                    "http://localhost:1234",
+                    model,
+                ),
+            )]),
+        });
+        let probe = JournalPulseProbe::new(journal.clone(), gateway_config, selected);
         let _ = probe.observe().await.expect("initial observe");
 
         journal
