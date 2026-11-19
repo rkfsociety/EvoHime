@@ -1057,8 +1057,10 @@ async fn analysis_kernel_ipc_is_bounded_idempotent_and_version_checked() {
 
 #[tokio::test]
 async fn list_analysis_kernels_filters_by_task_and_bounds_items() {
-    let journal = EventJournal::open_in_memory().await.unwrap();
-    let bridge = test_bridge(journal);
+    let directory = tempfile::tempdir().expect("temp dir");
+    let journal =
+        EventJournal::open(directory.path().join("kernel-list-ipc.db")).expect("journal opens");
+    let bridge = IpcBridge::new(journal);
     let created_a = bridge
         .dispatch_create_analysis_kernel(generated::CreateAnalysisKernel {
             task_id: "task-a".into(),

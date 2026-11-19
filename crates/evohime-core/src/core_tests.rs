@@ -2137,7 +2137,7 @@ mod tests {
         );
         let gateway = Arc::new(ModelGateway::from_routes("default", routes).expect("gateway"));
         let selected_model = SelectedModel::default();
-        selected_model.set(Some("global-initial".into()));
+        selected_model.set("global-initial");
         let agent = ToolAgent::new(gateway, Arc::new(ToolRegistry::bootstrap()))
             .with_selected_model(selected_model.clone());
         let workspace = std::env::temp_dir().join(format!(
@@ -2181,7 +2181,7 @@ mod tests {
         );
 
         // Mutate global SelectedModel while both runs are in flight; neither run may observe it.
-        selected_model.set(Some("global-mutated".into()));
+        selected_model.set("global-mutated");
 
         let (res_a, res_b) = tokio::join!(fut_a, fut_b);
         assert_eq!(res_a.expect("chat A succeeds"), "done");
@@ -2362,23 +2362,25 @@ mod tests {
             .await
             .expect("dispatch returns");
 
-        let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
-            .await
-            .expect("receives failure event")
-            .expect("event channel open");
-        match event {
-            CoreEvent::TaskFailed { task_id, error } => {
-                assert_eq!(task_id, "task-bad-provider");
-                assert!(error.contains("provider_not_configured"), "{error}");
+        let (task_id, error) = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
+                .await
+                .expect("receives failure event")
+                .expect("event channel open");
+            match event {
+                CoreEvent::TaskFailed { task_id, error } => break (task_id, error),
+                CoreEvent::AssistantDelta { .. } => continue,
+                other => panic!("expected TaskFailed, got {other:?}"),
             }
-            other => panic!("expected TaskFailed, got {other:?}"),
-        }
+        };
+        assert_eq!(task_id, "task-bad-provider");
+        assert!(error.contains("provider_not_configured"), "{error}");
 
         let database = journal.database().lock().await;
         let run_count: i64 = database
             .connection()
             .query_row(
-                "SELECT COUNT(*) FROM agent_runs WHERE task_id = 'task-bad-provider'",
+                "SELECT COUNT(*) FROM agent_run_effects WHERE task_id = 'task-bad-provider'",
                 [],
                 |row| row.get(0),
             )

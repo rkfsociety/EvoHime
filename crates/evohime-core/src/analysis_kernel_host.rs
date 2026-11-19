@@ -17,8 +17,8 @@ use evohime_local_storage::analysis_kernel::{
     ANALYSIS_KERNEL_SCHEMA_VERSION,
 };
 use evohime_tool_runtime::kernel_host::{
-    AnalysisOperation, KernelHost, KernelTaskBinding, KernelToolError, KernelToolRequest,
-    KernelToolResult,
+    AnalysisOperation, AnalysisSensitivity, KernelHost, KernelTaskBinding, KernelToolError,
+    KernelToolRequest, KernelToolResult,
 };
 use sha2::Digest;
 use tokio::sync::Mutex;
@@ -345,7 +345,7 @@ impl CoreKernelHost {
                 let type_hint = request.type_hint.as_deref().unwrap_or("json");
                 let sensitivity = match request.sensitivity {
                     Some(AnalysisSensitivity::Public) => "public",
-                    Some(AnalysisSensitivity::Confidential) => "confidential",
+                    Some(AnalysisSensitivity::Sensitive) => "sensitive",
                     Some(AnalysisSensitivity::Internal) | None => "internal",
                 };
                 serde_json::to_vec(&serde_json::json!({
@@ -697,9 +697,12 @@ mod tests {
     }
 
     async fn test_host() -> CoreKernelHost {
-        let journal = EventJournal::open_in_memory()
-            .await
-            .expect("in-memory journal");
+        let dir = std::env::temp_dir().join(format!(
+            "evohime-kernel-host-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let journal = EventJournal::open(dir.join("journal.db")).expect("journal opens");
         let kernels = Arc::new(Mutex::new(std::collections::HashMap::new()));
         CoreKernelHost::new(journal, kernels)
     }
@@ -793,7 +796,7 @@ mod tests {
         {
             let mut kernels = host.kernels.lock().await;
             let mut session = kernels.get(&first.kernel_id).unwrap().session().clone();
-            session.limits.max_output_bytes = 4;
+            session.limits.output_bytes = 4;
             let mut limited = KernelRuntime::new(session).unwrap();
             limited.start(Instant::now()).unwrap();
             kernels.insert(first.kernel_id.clone(), limited);
