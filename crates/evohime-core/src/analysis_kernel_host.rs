@@ -365,6 +365,15 @@ impl CoreKernelHost {
             _ => request.args.clone(),
         };
 
+        let mut idempotency_hasher = sha2::Sha256::new();
+        idempotency_hasher.update(task_id.as_bytes());
+        idempotency_hasher.update(b"\0");
+        idempotency_hasher.update(kernel_id.as_bytes());
+        idempotency_hasher.update(b"\0");
+        idempotency_hasher.update(operation_name(request.operation).as_bytes());
+        idempotency_hasher.update(b"\0");
+        idempotency_hasher.update(&request.args);
+
         Ok(analysis_kernel::KernelHostRequestV1 {
             version: analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
             request_id: format!("agent-{}", Uuid::new_v4()),
@@ -375,13 +384,7 @@ impl CoreKernelHost {
             requested_capability: None,
             context_refs: Vec::new(),
             correlation_id: format!("agent-{}", task_id),
-            idempotency_key: format!(
-                "{}-{}-{}-{}",
-                task_id,
-                kernel_id,
-                operation_name(request.operation),
-                hex::encode(sha2::Sha256::digest(&request.args))
-            ),
+            idempotency_key: hex::encode(idempotency_hasher.finalize()),
         })
     }
 

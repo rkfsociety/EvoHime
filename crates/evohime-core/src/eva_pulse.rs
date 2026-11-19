@@ -2336,7 +2336,7 @@ mod tests {
             gateway_config,
             selected,
         ));
-        let (coordinator, mut events) = TaskCoordinator::new(8);
+        let (coordinator, mut events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
         let sink = Arc::new(CoordinatorPulseTaskSink::new(
             coordinator,
             Some("hive".into()),
@@ -2478,8 +2478,12 @@ mod tests {
                 ),
             )]),
         });
-        let probe = Arc::new(JournalPulseProbe::new(journal, gateway_config, selected));
-        let (coordinator, mut events) = TaskCoordinator::new(8);
+        let probe = Arc::new(JournalPulseProbe::new(
+            journal.clone(),
+            gateway_config,
+            selected,
+        ));
+        let (coordinator, mut events) = TaskCoordinator::new_with_journal(8, None, journal);
         let sink = Arc::new(CoordinatorPulseTaskSink::new(
             coordinator,
             Some("hive".into()),
