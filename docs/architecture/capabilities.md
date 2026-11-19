@@ -206,9 +206,16 @@ Supervisor имеет allowlisted `evohime-analysis-worker` launch contract и
 аутентифицированный Core command channel для `kernel_launch`, `kernel_execute`
 и `kernel_stop`: фиксированный sibling executable, `trusted-local-1`,
 очищенное окружение и отдельный kill-on-close Job Object с memory/CPU limits.
-IPC добавляет commands 162–165 и events 27–28; Electron main/preload
-маршрутизирует bounded payload, а вкладка `Анализ` показывает только metadata
-projection.
+IPC добавляет commands 162–165, 291 (`ListAnalysisKernels`) и events 27–28;
+Electron main/preload маршрутизирует bounded payload, а панель
+`AnalysisKernelPanel` показывает только metadata projection (без значений
+объектов и абсолютных путей), объединяя `analysis_kernel.list` и live events.
+
+Core подключает `CoreKernelHost` к `ToolRegistry::with_kernel_host` поверх
+общей с `IpcBridge` карты активных runtime, лениво создаёт одну сессию на
+задачу (`session_init_lock`), проверяет `idempotency_key` через
+`AnalysisKernelStore`, переводит `LimitExceeded`/`Crashed` в БД и останавливает
+активные сессии задачи при завершении `AgentRun` в `TaskCoordinator`.
 
 Core отправляет worker-запрос только после повторной admission-проверки,
 использует typed result и переводит runtime в `Crashed` при transport failure;

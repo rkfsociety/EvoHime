@@ -268,6 +268,7 @@ message CreateAnalysisKernel {
   bytes limits_json = 6;
 }
 message GetAnalysisKernel { string kernel_id = 1; uint32 max_objects = 2; }
+message ListAnalysisKernels { string task_id = 1; uint32 max_items = 2; }
 message ExecuteAnalysisKernel {
   string kernel_id = 1;
   string request_id = 2;
@@ -1979,6 +1980,7 @@ message CommandEnvelope {
     SetEvaWorkspacePathCommand set_eva_workspace_path = 288;
     ValidateEvaWorkspacePathCommand validate_eva_workspace_path = 289;
     SetHiveSettingCommand set_hive_setting = 290;
+    ListAnalysisKernels list_analysis_kernels = 291;
   }
 }
 

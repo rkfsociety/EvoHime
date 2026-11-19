@@ -1469,6 +1469,7 @@ export const RENDERER_COMMANDS = [
   'core.conversationBridgeAdapters',
   'core.createAnalysisKernel',
   'core.getAnalysisKernel',
+  'core.listAnalysisKernels',
   'core.executeAnalysisKernel',
   'core.resetAnalysisKernel',
   'core.listRefinementCandidates',
@@ -1858,6 +1859,7 @@ export interface CommandPayloads {
   'core.reasoningOperatorLibrary': { operation: 'list' | 'register' | 'execute'; operatorId?: string; payload?: string; expectedVersion?: number; idempotencyKey?: string }
   'core.createAnalysisKernel': { taskId: string; workspaceId: string; runtimeVersion: string; packageManifestHash: string; policyHash: string; limitsJson?: string }
   'core.getAnalysisKernel': { kernelId: string; maxObjects?: number }
+  'core.listAnalysisKernels': { taskId: string; maxItems?: number }
   'core.executeAnalysisKernel': { kernelId: string; requestId: string; operation: string; args: string; requestedCapability?: string; contextRefs?: readonly string[]; correlationId: string; idempotencyKey: string }
   'core.resetAnalysisKernel': { kernelId: string; expectedRevision: number; idempotencyKey: string }
   'core.listRefinementCandidates': { ownerScope: string; limit?: number }
@@ -2470,6 +2472,7 @@ export interface CommandResults {
   'core.reasoningOperatorLibrary': { accepted: boolean }
   'core.createAnalysisKernel': { accepted: boolean }
   'core.getAnalysisKernel': { accepted: boolean }
+  'core.listAnalysisKernels': { accepted: boolean }
   'core.executeAnalysisKernel': { accepted: boolean }
   'core.resetAnalysisKernel': { accepted: boolean }
   'core.listRefinementCandidates': { accepted: boolean }

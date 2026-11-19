@@ -757,6 +757,16 @@ function dispatch(
       return accepted(client.send({ getAnalysisKernel: { kernelId, maxObjects } }))
     }
 
+    case 'core.listAnalysisKernels': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const maxItems = value['maxItems'] === undefined ? 32 : asBoundedNumber(value['maxItems'], 32)
+      if (taskId === null || taskId.trim().length === 0 || maxItems === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор задачи для списка kernel.')
+      }
+      return accepted(client.send({ listAnalysisKernels: { taskId: taskId.trim(), maxItems } }))
+    }
+
     case 'core.executeAnalysisKernel': {
       const value = asRecord(payload)
       const kernelId = asBoundedString(value['kernelId'])

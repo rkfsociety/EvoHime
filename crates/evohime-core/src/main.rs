@@ -172,7 +172,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // задачи до первого ожидания, поэтому просроченные транскрипты исчезают
     // при запуске, а не через час.
     let ambient_retention_task = evohime_core::spawn_ambient_retention(journal.clone());
-    let tools = std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap());
+    let analysis_kernels = std::sync::Arc::new(tokio::sync::Mutex::new(
+        std::collections::HashMap::new(),
+    ));
+    let kernel_host = std::sync::Arc::new(evohime_core::CoreKernelHost::new(
+        journal.clone(),
+        analysis_kernels.clone(),
+    ));
+    let tools = std::sync::Arc::new(
+        evohime_tool_runtime::ToolRegistry::bootstrap().with_kernel_host(kernel_host.clone()),
+    );
     let _permission_audit_task =
         evohime_core::attach_permission_audit_sink(journal.clone(), &tools).await;
     evohime_core::permission_rules::apply_rules(tools.permissions(), &data_dir).await;
@@ -389,6 +398,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     coordinator
         .attach_routing_approvals(routing_approvals)
         .await;
+    coordinator.attach_kernel_host(kernel_host).await;
     proactivity.attach_coordinator(coordinator.clone()).await;
     if !coordinator.recover_memory_extractions().await {
         tracing::warn!("memory extraction recovery could not acquire a background slot");
@@ -414,6 +424,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         gateway_config,
     )
     .with_selected_model(selected_model)
+    .with_analysis_kernels(analysis_kernels)
     .with_pulse_daemon(std::sync::Arc::new(pulse.clone()))
     .with_proactivity(proactivity)
     .with_workflow_runtime_state(workflow_state)

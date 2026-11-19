@@ -3604,3 +3604,22 @@ records that distinction rather than carrying the baseline result forward.
 - Rust documentation [44493686106](https://github.com/rkfsociety/EvoHime/actions/runs/44493686106) (`success`)
 - Compatible release manifest [44496251576](https://github.com/rkfsociety/EvoHime/actions/runs/44496251576) (`success`)
 
+## Plan 192 — Agent-facing Persistent Analysis Kernel Closure (2026-11-19)
+
+Этапы `192.2–192.4` реализованы в исходниках:
+- Core: `CoreKernelHost` подключён к `ToolRegistry::with_kernel_host` в
+  `crates/evohime-core/src/main.rs` поверх общей с `IpcBridge` карты
+  `analysis_kernels`; добавлены `session_init_lock`, `idempotency_key`
+  кэширование, worker execution на Windows (`EVOHIME_LAUNCH_CONTEXT`),
+  обновление `LimitExceeded`/`Crashed` в `AnalysisKernelStore` и остановка
+  активных сессий задачи в `TaskCoordinator::stop_sessions_for_task`.
+- IPC & UI: добавлена команда `ListAnalysisKernels` (tag `291`) в
+  `evohime.desktop.proto`, маршрутизация `core.listAnalysisKernels` в
+  `shell-bridge.ts`, обновлена и подключена в `OperationsPanel.tsx` панель
+  `AnalysisKernelPanel.tsx` (только metadata, без значений объектов и путей).
+- Локально подтверждены в `desktop/evohime-electron`: `npm run check:protocol`,
+  `npm run typecheck` и `npx vitest run tests/analysis-kernel-panel.test.tsx`.
+- Подняты release-маркеры: `release-versions/core.txt` (`0.0.000485`),
+  `release-versions/ui-bundle.txt` (`0.0.0216`). Полные Rust/Windows CI сборки
+  и публикация модулей выполняются в CI после push.
+

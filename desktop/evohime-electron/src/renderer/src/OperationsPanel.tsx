@@ -8,6 +8,7 @@ import { useShellApi } from './shell-api'
 import { useProviderState } from './provider-state'
 import { ModelPicker } from './ModelPicker'
 import { ImageGenerationPanel } from './ImageGenerationPanel'
+import { AnalysisKernelPanel } from './AnalysisKernelPanel'
 import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
 import { HiveGraph } from './components/HiveGraph'
@@ -3667,6 +3668,7 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
           </ol>
         ) : null}
       </section>
+      <AnalysisKernelPanel connection={connection} events={events} />
     </section>
   )
 }

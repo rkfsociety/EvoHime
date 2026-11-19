@@ -754,7 +754,7 @@ Kernel уже существовал как Core-owned runtime, но не был
   инструмент остаётся в авторизованном snapshot;
 - `classify_call_risk("analysis_run")` = `None`.
 
-Этап не создаёт Core-side host-реализацию, IPC-проекцию и вкладку «Анализ»:
+Этапы 192.2–192.3 также реализованы в исходниках: `CoreKernelHost` подключён к `ToolRegistry::with_kernel_host` в `main.rs` поверх общей с `IpcBridge` карты `analysis_kernels`, добавлена IPC-команда `ListAnalysisKernels` (tag `291`) и панель `AnalysisKernelPanel` в `OperationsPanel`; Rust CI подтверждается после push. (Исторически этап 192.1 не создавал host-реализацию и вкладку «Анализ»:)
 они остаются этапами 192.2–192.4, и до их реализации вызов из агента
 завершается typed `unavailable`. Значения объектов, inline result и абсолютные
 пути в декларацию, каталог и логи не попадают.

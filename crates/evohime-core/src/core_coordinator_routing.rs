@@ -846,7 +846,11 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 let mut state_guard = state.lock().await;
                 state_guard.tasks.remove(&task_id);
                 let events = state_guard.events.clone();
+                let kernel_host = state_guard.kernel_host.clone();
                 drop(state_guard);
+                if let Some(kernel_host) = kernel_host {
+                    kernel_host.stop_sessions_for_task(&task_id).await;
+                }
                 if let Err(error) = &result {
                     let _ = events
                         .send(CoreEvent::RoutingTrace {

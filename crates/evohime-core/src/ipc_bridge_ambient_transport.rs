@@ -320,6 +320,15 @@ impl IpcBridge {
         self
     }
 
+    /// Shares the process-wide map of active analysis kernel runtimes with the agent host.
+    pub fn with_analysis_kernels(
+        mut self,
+        kernels: Arc<tokio::sync::Mutex<HashMap<String, crate::analysis_kernel::KernelRuntime>>>,
+    ) -> Self {
+        self.analysis_kernels = kernels;
+        self
+    }
+
     /// Attaches the process-wide EvaPulse daemon.
     ///
     /// The daemon is spawned once by the Core bootstrap; every IPC connection

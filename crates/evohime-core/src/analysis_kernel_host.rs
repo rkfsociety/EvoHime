@@ -67,6 +67,79 @@ pub struct CoreKernelHost {
     journal: EventJournal,
     /// Process-local map of active kernel runtimes (shared with IPC commands).
     kernels: Arc<Mutex<std::collections::HashMap<String, KernelRuntime>>>,
+    /// Serializes lazy session creation per task so parallel tool calls reuse one session.
+    session_init_lock: Arc<Mutex<()>>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedKernelObjectRef {
+    id: String,
+    logical_name: String,
+    type_hint: String,
+    size: u64,
+    sensitivity: String,
+    persistence: String,
+    content_hash: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedKernelResult {
+    kernel_id: String,
+    inline_result: Option<Vec<u8>>,
+    object_ref: Option<CachedKernelObjectRef>,
+    sensitivity: String,
+    provenance: String,
+}
+
+impl From<&evohime_tool_runtime::kernel_host::KernelToolResult> for CachedKernelResult {
+    fn from(value: &evohime_tool_runtime::kernel_host::KernelToolResult) -> Self {
+        Self {
+            kernel_id: value.kernel_id.clone(),
+            inline_result: value.inline_result.clone(),
+            object_ref: value.object_ref.as_ref().map(|obj| CachedKernelObjectRef {
+                id: obj.id.clone(),
+                logical_name: obj.logical_name.clone(),
+                type_hint: obj.type_hint.clone(),
+                size: obj.size,
+                sensitivity: obj.sensitivity.clone(),
+                persistence: obj.persistence.clone(),
+                content_hash: obj.content_hash.clone(),
+            }),
+            sensitivity: value.sensitivity.clone(),
+            provenance: value.provenance.clone(),
+        }
+    }
+}
+
+impl From<CachedKernelResult> for evohime_tool_runtime::kernel_host::KernelToolResult {
+    fn from(value: CachedKernelResult) -> Self {
+        Self {
+            kernel_id: value.kernel_id,
+            inline_result: value.inline_result,
+            object_ref: value.object_ref.map(|obj| {
+                evohime_tool_runtime::kernel_host::KernelToolObjectRef {
+                    id: obj.id,
+                    logical_name: obj.logical_name,
+                    type_hint: obj.type_hint,
+                    size: obj.size,
+                    sensitivity: obj.sensitivity,
+                    persistence: obj.persistence,
+                    content_hash: obj.content_hash,
+                }
+            }),
+            sensitivity: value.sensitivity,
+            provenance: value.provenance,
+        }
+    }
+}
+
+fn operation_name(operation: AnalysisOperation) -> &'static str {
+    match operation {
+        AnalysisOperation::JsonParse => "json_parse",
+        AnalysisOperation::JsonSelect => "json_select",
+        AnalysisOperation::CsvSummary => "csv_summary",
+        AnalysisOperation::ObjectPut => "object_put",
+    }
 }
 
 impl CoreKernelHost {
@@ -75,7 +148,46 @@ impl CoreKernelHost {
         journal: EventJournal,
         kernels: Arc<Mutex<std::collections::HashMap<String, KernelRuntime>>>,
     ) -> Self {
-        Self { journal, kernels }
+        Self {
+            journal,
+            kernels,
+            session_init_lock: Arc::new(Mutex::new(())),
+        }
+    }
+
+    /// Stops all active kernel sessions belonging to `task_id` when the task finishes.
+    pub async fn stop_sessions_for_task(&self, task_id: &str) {
+        let sessions = {
+            let database = self.journal.database().lock().await;
+            let store = AnalysisKernelStore::new(database.connection());
+            store.list_sessions_for_task(task_id).unwrap_or_default()
+        };
+        let now = crate::task_memory::now_millis() as i64;
+        for session in sessions {
+            if !matches!(
+                session.status,
+                KernelStatus::Created | KernelStatus::Running | KernelStatus::Reset
+            ) {
+                continue;
+            }
+            {
+                let mut kernels = self.kernels.lock().await;
+                if let Some(mut runtime) = kernels.remove(&session.id) {
+                    runtime.stop();
+                }
+            }
+            #[cfg(windows)]
+            if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some() {
+                let _ = analysis_kernel::supervisor_command(serde_json::json!({
+                    "op": "kernel_stop",
+                    "kernel_id": session.id,
+                }))
+                .await;
+            }
+            let database = self.journal.database().lock().await;
+            let store = AnalysisKernelStore::new(database.connection());
+            let _ = store.set_status(&session.id, session.revision, KernelStatus::Stopped, now);
+        }
     }
 
     /// Computes a deterministic workspace identifier from an absolute workspace root.
@@ -90,6 +202,7 @@ impl CoreKernelHost {
         &self,
         binding: &KernelTaskBinding,
     ) -> Result<String, KernelToolError> {
+        let _init_guard = self.session_init_lock.lock().await;
         let workspace_id = Self::workspace_id_from_root(&binding.workspace_root);
         let task_id = binding.task_id.to_string();
 
@@ -220,20 +333,52 @@ impl CoreKernelHost {
             AnalysisOperation::ObjectPut => analysis_kernel::KernelOperation::ObjectPut,
         };
 
+        let args = match request.operation {
+            AnalysisOperation::ObjectPut => {
+                let value: serde_json::Value = serde_json::from_slice(&request.args).map_err(|error| {
+                    KernelToolError::new(
+                        evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT,
+                        format!("invalid object_put value: {error}"),
+                    )
+                })?;
+                let logical_name = request.logical_name.as_deref().unwrap_or("object");
+                let type_hint = request.type_hint.as_deref().unwrap_or("json");
+                let sensitivity = match request.sensitivity {
+                    Some(AnalysisSensitivity::Public) => "public",
+                    Some(AnalysisSensitivity::Confidential) => "confidential",
+                    Some(AnalysisSensitivity::Internal) | None => "internal",
+                };
+                serde_json::to_vec(&serde_json::json!({
+                    "logical_name": logical_name,
+                    "type_hint": type_hint,
+                    "value": value,
+                    "sensitivity": sensitivity,
+                }))
+                .map_err(|error| {
+                    KernelToolError::new(
+                        evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT,
+                        format!("could not encode object_put payload: {error}"),
+                    )
+                })?
+            }
+            _ => request.args.clone(),
+        };
+
         Ok(analysis_kernel::KernelHostRequestV1 {
             version: analysis_kernel::KERNEL_HOST_REQUEST_VERSION,
             request_id: format!("agent-{}", Uuid::new_v4()),
             kernel_id: kernel_id.to_string(),
             session_id: kernel_id.to_string(),
             operation,
-            args: request.args.clone(),
+            args,
             requested_capability: None,
             context_refs: Vec::new(),
             correlation_id: format!("agent-{}", task_id),
             idempotency_key: format!(
-                "{}-{}-{}",
+                "{}-{}-{}-{}",
                 task_id,
                 kernel_id,
+                operation_name(request.operation),
                 hex::encode(sha2::Sha256::digest(&request.args))
             ),
         })
@@ -265,6 +410,41 @@ impl CoreKernelHost {
     }
 }
 
+impl CoreKernelHost {
+    async fn persist_session_status(&self, kernel_id: &str, status: KernelStatus) {
+        let now = crate::task_memory::now_millis() as i64;
+        let database = self.journal.database().lock().await;
+        let store = AnalysisKernelStore::new(database.connection());
+        if let Ok(Some(session)) = store.get_session(kernel_id) {
+            let _ = store.set_status(kernel_id, session.revision, status, now);
+        }
+    }
+
+    fn map_runtime_error(error: analysis_kernel::KernelRuntimeError) -> KernelToolError {
+        let code = match error {
+            analysis_kernel::KernelRuntimeError::NotRunning => {
+                evohime_tool_runtime::kernel_host::KERNEL_UNAVAILABLE
+            }
+            analysis_kernel::KernelRuntimeError::Denied(_) => {
+                evohime_tool_runtime::kernel_host::KERNEL_FORBIDDEN_CAPABILITY
+            }
+            analysis_kernel::KernelRuntimeError::LimitExceeded(_) => {
+                evohime_tool_runtime::kernel_host::KERNEL_LIMIT_EXCEEDED
+            }
+            analysis_kernel::KernelRuntimeError::Operation(_) => {
+                evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT
+            }
+            analysis_kernel::KernelRuntimeError::Contract(
+                AnalysisKernelError::SensitiveInlinePayload,
+            ) => evohime_tool_runtime::kernel_host::KERNEL_SENSITIVE_INLINE_PAYLOAD,
+            analysis_kernel::KernelRuntimeError::Contract(_) => {
+                evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT
+            }
+        };
+        KernelToolError::new(code, error.to_string())
+    }
+}
+
 impl KernelHost for CoreKernelHost {
     fn execute<'a>(
         &'a self,
@@ -272,14 +452,25 @@ impl KernelHost for CoreKernelHost {
         request: KernelToolRequest,
     ) -> Pin<Box<dyn Future<Output = Result<KernelToolResult, KernelToolError>> + Send + 'a>> {
         Box::pin(async move {
-            // 1. Ensure a kernel session exists for this task
+            let op_name = operation_name(request.operation);
             let kernel_id = self.ensure_session_for_task(&task).await?;
-
-            // 2. Convert to kernel host request
             let host_request =
                 self.tool_request_to_host_request(&kernel_id, &request, &task.task_id.to_string())?;
+            let idempotency_key = host_request.idempotency_key.clone();
 
-            // 3. Execute using the existing runtime
+            {
+                let database = self.journal.database().lock().await;
+                let store = AnalysisKernelStore::new(database.connection());
+                if let Ok(Some(cached_bytes)) =
+                    store.get_idempotency(&kernel_id, &idempotency_key, op_name)
+                {
+                    if let Ok(cached) = serde_json::from_slice::<CachedKernelResult>(&cached_bytes)
+                    {
+                        return Ok(cached.into());
+                    }
+                }
+            }
+
             let mut kernels = self.kernels.lock().await;
             let Some(runtime) = kernels.get_mut(&kernel_id) else {
                 return Err(KernelToolError::new(
@@ -288,32 +479,172 @@ impl KernelHost for CoreKernelHost {
                 ));
             };
 
-            match runtime.execute(host_request, Instant::now()) {
-                Ok(response) => Ok(self.host_response_to_tool_result(&kernel_id, response)),
+            #[cfg(windows)]
+            let tool_result = if std::env::var_os("EVOHIME_LAUNCH_CONTEXT").is_some()
+                && !matches!(request.operation, AnalysisOperation::ObjectPut)
+            {
+                let worker_args = match host_request.operation {
+                    analysis_kernel::KernelOperation::CsvSummary => {
+                        serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
+                    }
+                    _ => serde_json::from_slice(&host_request.args).unwrap_or_else(|_| {
+                        serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
+                    }),
+                };
+                if let Err(error) = runtime.admit(&host_request, Instant::now()) {
+                    let is_limit = matches!(error, analysis_kernel::KernelRuntimeError::LimitExceeded(_));
+                    drop(kernels);
+                    if is_limit {
+                        self.persist_session_status(&kernel_id, KernelStatus::LimitExceeded)
+                            .await;
+                    }
+                    return Err(Self::map_runtime_error(error));
+                }
+                drop(kernels);
+                let worker_response = analysis_kernel::supervisor_command(serde_json::json!({
+                    "op": "kernel_execute",
+                    "kernel_id": kernel_id,
+                    "request": {
+                        "request_id": host_request.request_id,
+                        "operation": op_name,
+                        "args": worker_args,
+                    },
+                }))
+                .await;
+                let response = match worker_response {
+                    Ok(value) if value.get("accepted") == Some(&serde_json::Value::Bool(true)) => {
+                        value
+                            .get("response")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null)
+                    }
+                    Ok(value) => {
+                        if let Some(runtime) = self.kernels.lock().await.get_mut(&kernel_id) {
+                            runtime.mark_crashed();
+                        }
+                        self.persist_session_status(&kernel_id, KernelStatus::Crashed)
+                            .await;
+                        return Err(KernelToolError::new(
+                            evohime_tool_runtime::kernel_host::KERNEL_UNAVAILABLE,
+                            value
+                                .get("reason")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or("worker_unavailable"),
+                        ));
+                    }
+                    Err(error) => {
+                        if let Some(runtime) = self.kernels.lock().await.get_mut(&kernel_id) {
+                            runtime.mark_crashed();
+                        }
+                        self.persist_session_status(&kernel_id, KernelStatus::Crashed)
+                            .await;
+                        return Err(KernelToolError::new(
+                            evohime_tool_runtime::kernel_host::KERNEL_UNAVAILABLE,
+                            format!("worker unavailable: {error}"),
+                        ));
+                    }
+                };
+                if response.get("status").and_then(serde_json::Value::as_str) != Some("ok") {
+                    return Err(KernelToolError::new(
+                        evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT,
+                        response
+                            .get("error_class")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("worker_error"),
+                    ));
+                }
+                let inline_result =
+                    serde_json::to_vec(response.get("result").unwrap_or(&serde_json::Value::Null))
+                        .unwrap_or_default();
+                let mut kernels = self.kernels.lock().await;
+                if let Some(runtime) = kernels.get_mut(&kernel_id) {
+                    if let Err(error) = runtime.accept_output(inline_result.len()) {
+                        let is_limit =
+                            matches!(error, analysis_kernel::KernelRuntimeError::LimitExceeded(_));
+                        drop(kernels);
+                        if is_limit {
+                            self.persist_session_status(&kernel_id, KernelStatus::LimitExceeded)
+                                .await;
+                        }
+                        return Err(Self::map_runtime_error(error));
+                    }
+                }
+                KernelToolResult {
+                    kernel_id: kernel_id.clone(),
+                    inline_result: Some(inline_result),
+                    object_ref: None,
+                    sensitivity: analysis_kernel::KernelSensitivity::Internal
+                        .as_str()
+                        .into(),
+                    provenance: "core:analysis-kernel-worker".into(),
+                }
+            } else {
+                match runtime.execute(host_request, Instant::now()) {
+                    Ok(response) => {
+                        let object_ref = response.object_ref.clone();
+                        let result = self.host_response_to_tool_result(&kernel_id, response);
+                        drop(kernels);
+                        if let Some(object) = object_ref {
+                            let database = self.journal.database().lock().await;
+                            let store = AnalysisKernelStore::new(database.connection());
+                            let _ = store.put_object(&object);
+                        }
+                        result
+                    }
+                    Err(error) => {
+                        let is_limit =
+                            matches!(error, analysis_kernel::KernelRuntimeError::LimitExceeded(_));
+                        drop(kernels);
+                        if is_limit {
+                            self.persist_session_status(&kernel_id, KernelStatus::LimitExceeded)
+                                .await;
+                        }
+                        return Err(Self::map_runtime_error(error));
+                    }
+                }
+            };
+
+            #[cfg(not(windows))]
+            let tool_result = match runtime.execute(host_request, Instant::now()) {
+                Ok(response) => {
+                    let object_ref = response.object_ref.clone();
+                    let result = self.host_response_to_tool_result(&kernel_id, response);
+                    drop(kernels);
+                    if let Some(object) = object_ref {
+                        let database = self.journal.database().lock().await;
+                        let store = AnalysisKernelStore::new(database.connection());
+                        let _ = store.put_object(&object);
+                    }
+                    result
+                }
                 Err(error) => {
-                    let code = match error {
-                        analysis_kernel::KernelRuntimeError::NotRunning => {
-                            evohime_tool_runtime::kernel_host::KERNEL_UNAVAILABLE
-                        }
-                        analysis_kernel::KernelRuntimeError::Denied(_) => {
-                            evohime_tool_runtime::kernel_host::KERNEL_FORBIDDEN_CAPABILITY
-                        }
-                        analysis_kernel::KernelRuntimeError::LimitExceeded(_) => {
-                            evohime_tool_runtime::kernel_host::KERNEL_LIMIT_EXCEEDED
-                        }
-                        analysis_kernel::KernelRuntimeError::Operation(_) => {
-                            evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT
-                        }
-                        analysis_kernel::KernelRuntimeError::Contract(
-                            AnalysisKernelError::SensitiveInlinePayload,
-                        ) => evohime_tool_runtime::kernel_host::KERNEL_SENSITIVE_INLINE_PAYLOAD,
-                        analysis_kernel::KernelRuntimeError::Contract(_) => {
-                            evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT
-                        }
-                    };
-                    Err(KernelToolError::new(code, error.to_string()))
+                    let is_limit =
+                        matches!(error, analysis_kernel::KernelRuntimeError::LimitExceeded(_));
+                    drop(kernels);
+                    if is_limit {
+                        self.persist_session_status(&kernel_id, KernelStatus::LimitExceeded)
+                            .await;
+                    }
+                    return Err(Self::map_runtime_error(error));
+                }
+            };
+
+            if let Ok(encoded) = serde_json::to_vec(&CachedKernelResult::from(&tool_result)) {
+                if encoded.len() <= evohime_local_storage::analysis_kernel::ANALYSIS_KERNEL_MAX_IDEMPOTENCY_RESULT_BYTES {
+                    let now = crate::task_memory::now_millis() as i64;
+                    let database = self.journal.database().lock().await;
+                    let store = AnalysisKernelStore::new(database.connection());
+                    let _ = store.put_idempotency(
+                        &kernel_id,
+                        &idempotency_key,
+                        op_name,
+                        &encoded,
+                        now,
+                    );
                 }
             }
+
+            Ok(tool_result)
         })
     }
 }
@@ -363,5 +694,220 @@ mod tests {
         let hash = analysis_run_manifest_hash();
         assert_eq!(hash.len(), 64);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    async fn test_host() -> CoreKernelHost {
+        let journal = EventJournal::open_in_memory()
+            .await
+            .expect("in-memory journal");
+        let kernels = Arc::new(Mutex::new(std::collections::HashMap::new()));
+        CoreKernelHost::new(journal, kernels)
+    }
+
+    #[tokio::test]
+    async fn first_call_creates_and_second_reuses_session() {
+        let host = test_host().await;
+        let binding = test_binding();
+        let first = host
+            .execute(binding.clone(), test_request())
+            .await
+            .expect("first call succeeds");
+        let second = host
+            .execute(
+                binding.clone(),
+                KernelToolRequest {
+                    operation: AnalysisOperation::CsvSummary,
+                    args: b"a,b\n1,2\n3,4".to_vec(),
+                    logical_name: None,
+                    type_hint: None,
+                    sensitivity: None,
+                },
+            )
+            .await
+            .expect("second call reuses session");
+
+        assert_eq!(first.kernel_id, second.kernel_id);
+        assert!(first.inline_result.is_some());
+        assert!(second.inline_result.is_some());
+
+        let db = host.journal.database().lock().await;
+        let store = AnalysisKernelStore::new(db.connection());
+        let sessions = store
+            .list_sessions_for_task(&binding.task_id.to_string())
+            .expect("list sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].package_manifest_hash, analysis_run_manifest_hash());
+        assert_eq!(sessions[0].policy_hash, AGENT_KERNEL_POLICY_HASH);
+    }
+
+    #[tokio::test]
+    async fn idempotent_repeat_returns_cached_result() {
+        let host = test_host().await;
+        let binding = test_binding();
+        let req = test_request();
+        let first = host
+            .execute(binding.clone(), req.clone())
+            .await
+            .expect("first call succeeds");
+
+        host.kernels.lock().await.clear();
+
+        let second = host
+            .execute(binding, req)
+            .await
+            .expect("idempotent repeat succeeds from cache");
+        assert_eq!(first, second);
+    }
+
+    #[tokio::test]
+    async fn sensitive_inline_argument_is_rejected() {
+        let host = test_host().await;
+        let binding = test_binding();
+        let err = host
+            .execute(
+                binding,
+                KernelToolRequest {
+                    operation: AnalysisOperation::JsonParse,
+                    args: br#"{"token":"sk-secret-key-1234567890"}"#.to_vec(),
+                    logical_name: None,
+                    type_hint: None,
+                    sensitivity: None,
+                },
+            )
+            .await
+            .expect_err("sensitive payload must be rejected");
+        assert_eq!(
+            err.code,
+            evohime_tool_runtime::kernel_host::KERNEL_SENSITIVE_INLINE_PAYLOAD
+        );
+    }
+
+    #[tokio::test]
+    async fn output_limit_exceeded_marks_session_limit_exceeded() {
+        let host = test_host().await;
+        let binding = test_binding();
+        let first = host
+            .execute(binding.clone(), test_request())
+            .await
+            .expect("initial call");
+        {
+            let mut kernels = host.kernels.lock().await;
+            let mut session = kernels.get(&first.kernel_id).unwrap().session().clone();
+            session.limits.max_output_bytes = 4;
+            let mut limited = KernelRuntime::new(session).unwrap();
+            limited.start(Instant::now()).unwrap();
+            kernels.insert(first.kernel_id.clone(), limited);
+        }
+
+        let err = host
+            .execute(
+                binding.clone(),
+                KernelToolRequest {
+                    operation: AnalysisOperation::JsonParse,
+                    args: br#"{"long_key":"long_value_1234567890"}"#.to_vec(),
+                    logical_name: None,
+                    type_hint: None,
+                    sensitivity: None,
+                },
+            )
+            .await
+            .expect_err("output budget exceeded");
+        assert_eq!(
+            err.code,
+            evohime_tool_runtime::kernel_host::KERNEL_LIMIT_EXCEEDED
+        );
+
+        let db = host.journal.database().lock().await;
+        let store = AnalysisKernelStore::new(db.connection());
+        let saved = store.get_session(&first.kernel_id).unwrap().unwrap();
+        assert_eq!(saved.status, KernelStatus::LimitExceeded);
+    }
+
+    #[tokio::test]
+    async fn parallel_calls_in_same_task_create_single_session() {
+        let host = test_host().await;
+        let binding = test_binding();
+        let req1 = KernelToolRequest {
+            operation: AnalysisOperation::JsonParse,
+            args: br#"{"a":1}"#.to_vec(),
+            logical_name: None,
+            type_hint: None,
+            sensitivity: None,
+        };
+        let req2 = KernelToolRequest {
+            operation: AnalysisOperation::JsonParse,
+            args: br#"{"b":2}"#.to_vec(),
+            logical_name: None,
+            type_hint: None,
+            sensitivity: None,
+        };
+        let (r1, r2) = tokio::join!(
+            host.execute(binding.clone(), req1),
+            host.execute(binding.clone(), req2)
+        );
+        let r1 = r1.expect("first parallel call");
+        let r2 = r2.expect("second parallel call");
+        assert_eq!(r1.kernel_id, r2.kernel_id);
+
+        let db = host.journal.database().lock().await;
+        let store = AnalysisKernelStore::new(db.connection());
+        let sessions = store
+            .list_sessions_for_task(&binding.task_id.to_string())
+            .unwrap();
+        assert_eq!(sessions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn restart_recovery_fences_running_session_and_next_call_creates_new() {
+        let host = test_host().await;
+        let binding = test_binding();
+        let first = host
+            .execute(binding.clone(), test_request())
+            .await
+            .expect("first call");
+
+        host.kernels.lock().await.clear();
+        let recovered = host.journal.recover_analysis_kernels().await.unwrap();
+        assert_eq!(recovered, 1);
+
+        let second = host
+            .execute(
+                binding.clone(),
+                KernelToolRequest {
+                    operation: AnalysisOperation::JsonParse,
+                    args: br#"{"after":"restart"}"#.to_vec(),
+                    logical_name: None,
+                    type_hint: None,
+                    sensitivity: None,
+                },
+            )
+            .await
+            .expect("next call creates fresh session");
+        assert_ne!(first.kernel_id, second.kernel_id);
+
+        let db = host.journal.database().lock().await;
+        let store = AnalysisKernelStore::new(db.connection());
+        let old = store.get_session(&first.kernel_id).unwrap().unwrap();
+        let new = store.get_session(&second.kernel_id).unwrap().unwrap();
+        assert_eq!(old.status, KernelStatus::Crashed);
+        assert_eq!(new.status, KernelStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn stop_sessions_for_task_stops_active_session() {
+        let host = test_host().await;
+        let binding = test_binding();
+        let first = host
+            .execute(binding.clone(), test_request())
+            .await
+            .expect("first call");
+        host.stop_sessions_for_task(&binding.task_id.to_string())
+            .await;
+
+        assert!(!host.kernels.lock().await.contains_key(&first.kernel_id));
+        let db = host.journal.database().lock().await;
+        let store = AnalysisKernelStore::new(db.connection());
+        let saved = store.get_session(&first.kernel_id).unwrap().unwrap();
+        assert_eq!(saved.status, KernelStatus::Stopped);
     }
 }

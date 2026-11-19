@@ -1260,6 +1260,94 @@ impl IpcBridge {
         analysis_kernel_projection(&session, 0, "")
     }
 
+    pub(crate) async fn dispatch_list_analysis_kernels(
+        &self,
+        request: generated::ListAnalysisKernels,
+    ) -> Vec<u8> {
+        const MAX_ITEMS: usize = 32;
+        const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+        let task_id = request.task_id.trim();
+        if task_id.is_empty() || task_id.len() > 128 {
+            return serde_json::to_vec(&serde_json::json!({
+                "taskId": task_id,
+                "kernels": [],
+                "truncated": false,
+                "errorCode": "invalid_argument",
+            }))
+            .unwrap_or_default();
+        }
+        let max_items = if request.max_items == 0 {
+            MAX_ITEMS
+        } else {
+            (request.max_items as usize).min(MAX_ITEMS)
+        };
+        let database = self.journal.database().lock().await;
+        let store = crate::analysis_kernel::AnalysisKernelStore::new(database.connection());
+        let mut sessions = match store.list_sessions_for_task(task_id) {
+            Ok(sessions) => sessions,
+            Err(_) => {
+                return serde_json::to_vec(&serde_json::json!({
+                    "taskId": task_id,
+                    "kernels": [],
+                    "truncated": false,
+                    "errorCode": "storage_failed",
+                }))
+                .unwrap_or_default();
+            }
+        };
+        sessions.retain(|session| session.task_id == task_id);
+        sessions.sort_by(|left, right| {
+            left.task_id
+                .cmp(&right.task_id)
+                .then(left.created_at_ms.cmp(&right.created_at_ms))
+                .then(left.id.cmp(&right.id))
+        });
+        let mut truncated = sessions.len() > max_items;
+        let mut items = Vec::with_capacity(sessions.len().min(max_items));
+        for session in sessions.into_iter().take(max_items) {
+            let object_count = store
+                .list_objects(&session.id)
+                .map_or(0, |objects| objects.len() as u32);
+            let limits_json = serde_json::to_vec(&session.limits).unwrap_or_default();
+            let entry = serde_json::json!({
+                "schemaVersion": session.schema_version,
+                "kernelId": session.id,
+                "taskId": session.task_id,
+                "workspaceId": session.workspace_id,
+                "runtimeVersion": session.runtime_version,
+                "packageManifestHash": session.package_manifest_hash,
+                "policyHash": session.policy_hash,
+                "status": session.status.as_str(),
+                "revision": session.revision,
+                "limitsJson": String::from_utf8_lossy(&limits_json),
+                "objectCount": object_count,
+                "truncated": false,
+                "errorCode": "",
+            });
+            items.push(entry);
+            let candidate = serde_json::json!({
+                "taskId": task_id,
+                "kernels": &items,
+                "truncated": truncated,
+                "errorCode": "",
+            });
+            if serde_json::to_vec(&candidate)
+                .map_or(true, |bytes| bytes.len() > MAX_RESPONSE_BYTES)
+            {
+                items.pop();
+                truncated = true;
+                break;
+            }
+        }
+        serde_json::to_vec(&serde_json::json!({
+            "taskId": task_id,
+            "kernels": items,
+            "truncated": truncated,
+            "errorCode": "",
+        }))
+        .unwrap_or_default()
+    }
+
     pub(crate) async fn dispatch_get_analysis_kernel(
         &self,
         request: generated::GetAnalysisKernel,

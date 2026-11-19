@@ -690,6 +690,11 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::ListAnalysisKernels(request)) => {
+                let payload = self.dispatch_list_analysis_kernels(request).await;
+                self.write_response(writer, "analysis_kernel.list", payload)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::ExecuteAnalysisKernel(request)) => {
                 let result = self.dispatch_execute_analysis_kernel(request).await;
                 write_analysis_kernel_result(

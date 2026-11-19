@@ -36,6 +36,7 @@ pub(crate) struct CoordinatorState {
     retained_children: crate::retained_child::RetainedRegistry,
     background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
     host_telemetry: crate::host_resource_telemetry::HostTelemetryService,
+    kernel_host: Option<Arc<crate::analysis_kernel_host::CoreKernelHost>>,
     persistence_error: Option<String>,
 }
 
@@ -151,6 +152,14 @@ impl TaskCoordinator {
         self.state.lock().await.routing_approvals = approvals;
     }
 
+    /// Attaches the Core-owned analysis kernel host so finished tasks stop their sessions.
+    pub async fn attach_kernel_host(
+        &self,
+        host: Arc<crate::analysis_kernel_host::CoreKernelHost>,
+    ) {
+        self.state.lock().await.kernel_host = Some(host);
+    }
+
     /// Records a validated host snapshot in the Core-owned bounded ring.
     /// Collectors remain adapters and cannot publish a fabricated pressure
     /// value directly to the renderer or scheduler.
@@ -226,6 +235,7 @@ impl TaskCoordinator {
             host_telemetry: crate::host_resource_telemetry::HostTelemetryService::new(
                 crate::host_resource_telemetry::PressurePolicy::default(),
             ),
+            kernel_host: None,
             persistence_error: None,
         }));
         // The shell is fed from the journal, so it must be told after a record

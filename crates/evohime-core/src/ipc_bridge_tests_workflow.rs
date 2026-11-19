@@ -1054,3 +1054,44 @@ async fn analysis_kernel_ipc_is_bounded_idempotent_and_version_checked() {
         .await;
     assert_eq!(duplicate_reset.error_class, "duplicate_request");
 }
+
+#[tokio::test]
+async fn list_analysis_kernels_filters_by_task_and_bounds_items() {
+    let journal = EventJournal::open_in_memory().await.unwrap();
+    let bridge = test_bridge(journal);
+    let created_a = bridge
+        .dispatch_create_analysis_kernel(generated::CreateAnalysisKernel {
+            task_id: "task-a".into(),
+            workspace_id: "ws-1".into(),
+            runtime_version: "trusted-local-1".into(),
+            package_manifest_hash: "a".repeat(64),
+            policy_hash: "b".repeat(64),
+            limits_json: Vec::new(),
+        })
+        .await;
+    let _created_b = bridge
+        .dispatch_create_analysis_kernel(generated::CreateAnalysisKernel {
+            task_id: "task-b".into(),
+            workspace_id: "ws-1".into(),
+            runtime_version: "trusted-local-1".into(),
+            package_manifest_hash: "a".repeat(64),
+            policy_hash: "b".repeat(64),
+            limits_json: Vec::new(),
+        })
+        .await;
+
+    let list_bytes = bridge
+        .dispatch_list_analysis_kernels(generated::ListAnalysisKernels {
+            task_id: "task-a".into(),
+            max_items: 32,
+        })
+        .await;
+    let parsed: serde_json::Value = serde_json::from_slice(&list_bytes).unwrap();
+    assert_eq!(parsed["taskId"], "task-a");
+    assert_eq!(parsed["errorCode"], "");
+    let kernels = parsed["kernels"].as_array().unwrap();
+    assert_eq!(kernels.len(), 1);
+    assert_eq!(kernels[0]["kernelId"], created_a.kernel_id);
+    assert_eq!(kernels[0]["taskId"], "task-a");
+    assert!(kernels[0].get("inlineResult").is_none());
+}
