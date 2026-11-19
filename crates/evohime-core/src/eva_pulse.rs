@@ -1939,8 +1939,8 @@ mod tests {
 
         let decision = decide(&report, 1_700_000_000_000);
         assert!(
-            matches!(decision, PulseDecision::DispatchPrimary { .. }),
-            "expected DispatchPrimary for free/quota provider with 0 USD budget, got {decision:?}"
+            matches!(decision, PulseDecision::Recover { .. }),
+            "expected Recover for free/quota provider with 0 USD budget, got {decision:?}"
         );
     }
 
