@@ -1216,6 +1216,26 @@ describe('hive dashboard', () => {
     const { rerender } = render(
       <HiveDashboard
         connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ hive_provider_profile: 'literouter', hive_model: '' }))]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    const tierSelect = within(dialog).getByLabelText('Режим моделей Улья') as HTMLSelectElement
+    expect(tierSelect.value).toBe('free')
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.listModelCatalog',
+        payload: { mode: 'hive_catalog', profile: 'literouter:free' }
+      })
+    })
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
         events={[
           event('hive_state.snapshot', snapshot({ hive_provider_profile: 'literouter', hive_model: '' })),
           event('hive.model.catalog', {
@@ -1232,19 +1252,6 @@ describe('hive dashboard', () => {
         ]}
       />
     )
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
-
-    const tierSelect = within(dialog).getByLabelText('Режим моделей Улья') as HTMLSelectElement
-    expect(tierSelect.value).toBe('free')
-
-    await waitFor(() => {
-      expect(calls).toContainEqual({
-        command: 'core.listModelCatalog',
-        payload: { mode: 'hive_catalog', profile: 'literouter:free' }
-      })
-    })
 
     const modelSelect = within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement
     const freeOptionValues = Array.from(modelSelect.options).map((option) => option.value).filter(Boolean)
