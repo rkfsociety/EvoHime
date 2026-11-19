@@ -593,7 +593,11 @@ function countPendingApprovals(events: readonly CoreEvent[], resolvedApprovalIds
   for (const event of newestFirst) {
     if (event.eventType !== 'approval.required') continue
     try {
-      const payload = JSON.parse(event.payload) as { approval_id?: unknown }
+      const parsed = JSON.parse(event.payload) as Record<string, unknown>
+      const tagged = parsed['ApprovalRequired']
+      const payload = tagged !== null && typeof tagged === 'object' && !Array.isArray(tagged)
+        ? tagged as { approval_id?: unknown }
+        : parsed as { approval_id?: unknown }
       if (typeof payload.approval_id !== 'string' || payload.approval_id.length === 0 || resolvedApprovalIds.includes(payload.approval_id)) continue
       if (!pending.has(payload.approval_id)) pending.set(payload.approval_id, { sequence: event.sequenceId, taskId: event.taskId, epoch: event.sessionEpoch ?? 0 })
     } catch {

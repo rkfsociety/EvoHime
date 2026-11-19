@@ -175,12 +175,14 @@ describe('hive dashboard', () => {
   it('approval_banner_shows_and_hides', async () => {
     const events = [
       event('approval.required', {
-        task_id: 'task-1',
-        approval_id: 'approval-1',
-        tool_name: 'terminal_exec',
-        permission: 'Execute',
-        scope: 'workspace',
-        preview: { summary: 'Запустить тесты' }
+        ApprovalRequired: {
+          task_id: 'task-1',
+          approval_id: 'approval-1',
+          tool_name: 'terminal_exec',
+          permission: 'Execute',
+          scope: 'workspace',
+          preview: { summary: 'Запустить тесты' }
+        }
       })
     ]
     render(<HiveDashboard connection="connected" events={events} />)

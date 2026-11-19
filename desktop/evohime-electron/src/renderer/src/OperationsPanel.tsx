@@ -976,7 +976,13 @@ function EfficiencyRing({ percent }: { readonly percent: number }): React.JSX.El
 
 function parseApprovalRequest(event: CoreEvent): ApprovalRequestView | null {
   try {
-    const root = JSON.parse(event.payload) as Record<string, unknown>
+    const parsed = JSON.parse(event.payload) as Record<string, unknown>
+    // Core serializes enum variants as externally tagged objects, e.g.
+    // { "ApprovalRequired": { ... } }. Keep accepting the flat legacy shape.
+    const tagged = parsed['ApprovalRequired']
+    const root = tagged !== null && typeof tagged === 'object' && !Array.isArray(tagged)
+      ? tagged as Record<string, unknown>
+      : parsed
     const text = (key: string, fallback = ''): string => typeof root[key] === 'string' ? (root[key] as string).slice(0, 240) : fallback
     const approvalId = text('approval_id')
     if (!approvalId) return null
