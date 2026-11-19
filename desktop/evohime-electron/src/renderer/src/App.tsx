@@ -25,6 +25,7 @@ import { UiIcon, type UiIconName } from './UiIcon'
 import { applyAppearance, loadAppearance, saveAppearance, type AppearanceSettings } from './appearance'
 import { setAppLocale, translate, useT } from './i18n'
 import { REASON_TEXTS, STATE_TITLES } from './listening-labels'
+import { prependCoreEvents } from './core-event-buffer'
 
 const SettingsModal = lazy(() => import('./SettingsModal').then((module) => ({ default: module.SettingsModal })))
 const ScheduledPanel = lazy(() => import('./ScheduledPanel').then((module) => ({ default: module.ScheduledPanel })))
@@ -163,16 +164,7 @@ export function App(): React.JSX.Element {
       flushTimer = null
       if (pendingCoreEvents.length === 0) return
       const newestFirst = pendingCoreEvents.splice(0).reverse()
-      setEvents((current) => {
-        const combined = [...newestFirst, ...current]
-        const seen = new Set<string>()
-        return combined.filter((item) => {
-          const key = `${item.coreInstanceId ?? 'legacy'}:${item.sessionEpoch ?? 0}:${item.sequenceId}:${item.taskId}:${item.eventType}`
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        }).slice(0, MAX_VISIBLE_EVENTS)
-      })
+      setEvents((current) => prependCoreEvents(current, newestFirst, MAX_VISIBLE_EVENTS))
     }
 
     const unsubscribe = api.subscribe((event) => {
