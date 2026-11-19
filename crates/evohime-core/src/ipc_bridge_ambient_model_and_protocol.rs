@@ -81,8 +81,12 @@ fn safe_model_catalog_error_code(
                 || message.contains("model_not_found")
             {
                 "catalog_model_not_found"
+            } else if message.contains("401") || message.contains("403") {
+                "provider_configuration_error"
             } else if message.contains("too many") {
                 "catalog_too_many_entries"
+            } else if message.contains("http 429") || message.contains("http 5") {
+                "provider_transport_error"
             } else if message.contains("size limit") || message.contains("exceeds size") {
                 "catalog_response_too_large"
             } else {
@@ -488,58 +492,11 @@ impl IpcBridge {
                                     None,
                                 ),
                                 Err(err) => {
-                                    let fallback_models = if route.provider
-                                        == evohime_model_gateway::providers::ProviderKind::LiteRouter
-                                    {
-                                        if tier_mode == "free" {
-                                            evohime_model_gateway::model_ranker::get_ranked_models()
-                                                .into_iter()
-                                                .filter(|m| m.ends_with(":free"))
-                                                .collect()
-                                        } else {
-                                            Vec::new()
-                                        }
-                                    } else if route.provider_profile_id
-                                        == Some(evohime_model_gateway::ProviderProfileId::Rout)
-                                    {
-                                        evohime_model_gateway::model_ranker::get_rout_ranked_models()
-                                    } else {
-                                        Vec::new()
-                                    };
-                                    if !fallback_models.is_empty() {
-                                        (fallback_models, None)
-                                    } else {
-                                        (
-                                            Vec::new(),
-                                            Some(safe_model_catalog_error_code(&err).into()),
-                                        )
-                                    }
+                                    (Vec::new(), Some(safe_model_catalog_error_code(&err).into()))
                                 }
                             }
                         }
-                        _ => {
-                            let static_models = if profile_label.eq_ignore_ascii_case("literouter")
-                            {
-                                if tier_mode == "free" {
-                                    evohime_model_gateway::model_ranker::get_ranked_models()
-                                        .into_iter()
-                                        .filter(|m| m.ends_with(":free"))
-                                        .collect()
-                                } else {
-                                    Vec::new()
-                                }
-                            } else if profile_label.eq_ignore_ascii_case("rout") {
-                                evohime_model_gateway::model_ranker::get_rout_ranked_models()
-                            } else {
-                                Vec::new()
-                            };
-                            let err_code = if static_models.is_empty() {
-                                Some("provider_not_configured".into())
-                            } else {
-                                None
-                            };
-                            (static_models, err_code)
-                        }
+                        _ => (Vec::new(), Some("provider_not_configured".into())),
                     };
                     let payload = serde_json::json!({
                         "profile": profile_label,
@@ -849,6 +806,18 @@ mod tests {
                 "catalog_response_invalid",
             ),
             (
+                evohime_model_gateway::providers::ProviderError::Api(
+                    "provider model catalog request failed with HTTP 401".into(),
+                ),
+                "provider_configuration_error",
+            ),
+            (
+                evohime_model_gateway::providers::ProviderError::Api(
+                    "provider model catalog request failed with HTTP 503".into(),
+                ),
+                "provider_transport_error",
+            ),
+            (
                 evohime_model_gateway::providers::ProviderError::Stream(
                     "stream ended at https://provider.test".into(),
                 ),
@@ -871,6 +840,18 @@ mod tests {
                 "provider model catalog contains too many entries".into(),
             )),
             "catalog_too_many_entries"
+        );
+        assert_eq!(
+            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
+                "provider model catalog request failed with HTTP 401".into(),
+            )),
+            "provider_configuration_error"
+        );
+        assert_eq!(
+            safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(
+                "provider model catalog request failed with HTTP 503".into(),
+            )),
+            "provider_transport_error"
         );
         assert_eq!(
             safe_model_catalog_error_code(&evohime_model_gateway::providers::ProviderError::Api(

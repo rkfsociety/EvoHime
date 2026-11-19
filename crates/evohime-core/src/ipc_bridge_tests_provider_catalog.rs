@@ -562,6 +562,83 @@ async fn rejected_model_selection_keeps_the_ipc_connection_open() {
 }
 
 #[tokio::test]
+async fn hive_model_catalog_does_not_replace_provider_errors_with_static_models() {
+    use prost::Message;
+    use tokio::io::duplex;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&server)
+        .await;
+
+    let journal_path = std::env::temp_dir().join(format!(
+        "evohime-ipc-hive-model-catalog-error-{}-{}.db",
+        std::process::id(),
+        uuid::Uuid::new_v4()
+    ));
+    let journal = EventJournal::open(&journal_path).expect("journal opens");
+    let route =
+        ModelRouteConfig::literouter("test-key", format!("{}/v1", server.uri()), "default:free");
+    let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+    let bridge = IpcBridge::with_coordinator_and_approvals(
+        journal.clone(),
+        coordinator,
+        ApprovalCoordinator::default(),
+        Arc::new(ToolRegistry::bootstrap()),
+        None,
+        Some(ModelGatewayConfig {
+            default_route: "default".into(),
+            routes: HashMap::from([("hive".into(), route)]),
+        }),
+    );
+
+    let (mut client, server_stream) = duplex(64 * 1024);
+    let (mut server_reader, mut server_writer) = tokio::io::split(server_stream);
+    let envelope = generated::CommandEnvelope {
+        protocol: Some(protocol()),
+        request_id: "hive-model-catalog-1".into(),
+        client_id: "shell".into(),
+        core_instance_id: String::new(),
+        session_epoch: 1,
+        command: Some(generated::command_envelope::Command::ModelCatalog(
+            generated::ModelCatalogRequest {
+                mode: "hive_catalog".into(),
+                model_id: "literouter:free".into(),
+                confirm_possible_cost: false,
+                provider: String::new(),
+                profile_id: String::new(),
+            },
+        )),
+    };
+    transport::write_frame(&mut client, &envelope.encode_to_vec())
+        .await
+        .expect("request writes");
+    bridge
+        .process_once(&mut server_reader, &mut server_writer)
+        .await
+        .expect("catalog error must not close the IPC connection");
+    let response = transport::read_frame(&mut client)
+        .await
+        .expect("response reads");
+    let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+    assert_eq!(event.event_type, "hive.model.catalog");
+    let payload: serde_json::Value =
+        serde_json::from_slice(&event.payload).expect("payload decodes");
+    assert_eq!(payload["models"], serde_json::json!([]));
+    assert_eq!(payload["error"], "provider_transport_error");
+
+    drop(bridge);
+    drop(journal);
+    let _ = std::fs::remove_file(journal_path);
+}
+
+#[tokio::test]
 async fn model_catalog_parallel_routes_do_not_pollute_cache() {
     use wiremock::{
         matchers::{method, path},

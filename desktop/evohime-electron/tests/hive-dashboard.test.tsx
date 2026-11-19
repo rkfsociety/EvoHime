@@ -1284,6 +1284,37 @@ describe('hive dashboard', () => {
     })
   })
 
+  it('не подставляет статический список моделей Улья при ошибке каталога и показывает причину', async () => {
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ hive_provider_profile: 'literouter', hive_model: '' }))]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ hive_provider_profile: 'literouter', hive_model: '' })),
+          event('hive.model.catalog', {
+            profile: 'literouter',
+            tier: 'free',
+            models: [],
+            error: 'provider_timeout'
+          })
+        ]}
+      />
+    )
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+    const modelSelect = within(dialog).getByLabelText('Модель Улья') as HTMLSelectElement
+
+    const catalogError = await within(dialog).findByRole('alert')
+    expect(catalogError.textContent).toContain('Провайдер не ответил вовремя.')
+    expect(Array.from(modelSelect.options).map((option) => option.value).filter(Boolean)).toEqual([])
+  })
+
   it('copies_hive_logs_with_context_and_payloads_to_clipboard', async () => {
     const copied: string[] = []
     const previousApi = window.evohime?.v1

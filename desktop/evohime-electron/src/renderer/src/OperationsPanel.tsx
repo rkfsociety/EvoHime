@@ -12,6 +12,7 @@ import { AnalysisKernelPanel } from './AnalysisKernelPanel'
 import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
 import { HiveGraph } from './components/HiveGraph'
+import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 
 interface Props {
   readonly connection: ConnectionState
@@ -1298,6 +1299,8 @@ export function HiveDashboard({
   const [hiveTier, setHiveTier] = useState<ModelTier>('free')
   const [hiveModelDraft, setHiveModelDraft] = useState('')
   const [hiveCatalogModels, setHiveCatalogModels] = useState<readonly string[]>([])
+  const [hiveCatalogError, setHiveCatalogError] = useState<string | null>(null)
+  const [hiveCatalogLoading, setHiveCatalogLoading] = useState(false)
   const [hiveProviderBusy, setHiveProviderBusy] = useState(false)
   const [hiveProviderError, setHiveProviderError] = useState<string | null>(null)
   const [hiveApiKeyDraft, setHiveApiKeyDraft] = useState('')
@@ -1307,6 +1310,8 @@ export function HiveDashboard({
   const [hiveFallbackTier, setHiveFallbackTier] = useState<ModelTier>('free')
   const [hiveFallbackModelDraft, setHiveFallbackModelDraft] = useState('')
   const [hiveFallbackCatalogModels, setHiveFallbackCatalogModels] = useState<readonly string[]>([])
+  const [hiveFallbackCatalogError, setHiveFallbackCatalogError] = useState<string | null>(null)
+  const [hiveFallbackCatalogLoading, setHiveFallbackCatalogLoading] = useState(false)
   const [hiveFallbackProviderBusy, setHiveFallbackProviderBusy] = useState(false)
   const [hiveFallbackProviderError, setHiveFallbackProviderError] = useState<string | null>(null)
   const [hiveFallbackProviderSaved, setHiveFallbackProviderSaved] = useState(false)
@@ -1374,6 +1379,9 @@ export function HiveDashboard({
   }, [hive?.hiveFallbackModel])
   useEffect(() => {
     if (!api || !connected || !hiveSettingsOpen) return
+    setHiveCatalogModels([])
+    setHiveCatalogError(null)
+    setHiveCatalogLoading(true)
     const trimmedProfile = hiveProviderProfile.trim()
     const profileArg = trimmedProfile === 'literouter'
       ? `literouter:${hiveTier}`
@@ -1381,28 +1389,41 @@ export function HiveDashboard({
     void api.invoke('core.listModelCatalog', {
       mode: 'hive_catalog',
       ...(profileArg ? { profile: profileArg } : {})
-    }).catch(() => undefined)
+    }).then((outcome) => {
+      if (!outcome.ok) setHiveCatalogError('Не удалось получить каталог моделей.')
+    }).catch(() => {
+      setHiveCatalogError('Не удалось получить каталог моделей.')
+    }).finally(() => setHiveCatalogLoading(false))
   }, [api, connected, hiveProviderProfile, hiveTier, hiveSettingsOpen])
   useEffect(() => {
     if (!api || !connected || !hiveSettingsOpen) return
     const trimmedProfile = hiveFallbackProviderProfile.trim()
     if (!trimmedProfile) {
       setHiveFallbackCatalogModels([])
+      setHiveFallbackCatalogError(null)
+      setHiveFallbackCatalogLoading(false)
       return
     }
+    setHiveFallbackCatalogModels([])
+    setHiveFallbackCatalogError(null)
+    setHiveFallbackCatalogLoading(true)
     const profileArg = trimmedProfile === 'literouter'
       ? `literouter:${hiveFallbackTier}`
       : trimmedProfile
     void api.invoke('core.listModelCatalog', {
       mode: 'hive_fallback_catalog',
       profile: profileArg
-    }).catch(() => undefined)
+    }).then((outcome) => {
+      if (!outcome.ok) setHiveFallbackCatalogError('Не удалось получить каталог моделей.')
+    }).catch(() => {
+      setHiveFallbackCatalogError('Не удалось получить каталог моделей.')
+    }).finally(() => setHiveFallbackCatalogLoading(false))
   }, [api, connected, hiveFallbackProviderProfile, hiveFallbackTier, hiveSettingsOpen])
   const hiveModelCatalogEvent = latest(events, 'hive.model.catalog')
   useEffect(() => {
     if (!hiveModelCatalogEvent) return
     try {
-      const parsed = JSON.parse(hiveModelCatalogEvent.payload) as { profile?: unknown; tier?: unknown; models?: unknown }
+      const parsed = JSON.parse(hiveModelCatalogEvent.payload) as { profile?: unknown; tier?: unknown; models?: unknown; error?: unknown }
       const trimmedProfile = hiveProviderProfile.trim()
       if (trimmedProfile.length > 0 && typeof parsed.profile === 'string' && parsed.profile.trim().length > 0 && parsed.profile.trim() !== trimmedProfile) {
         return
@@ -1410,6 +1431,7 @@ export function HiveDashboard({
       if (trimmedProfile === 'literouter' && typeof parsed.tier === 'string' && parsed.tier !== hiveTier) {
         return
       }
+      setHiveCatalogLoading(false)
       if (Array.isArray(parsed.models)) {
         let models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
         if (trimmedProfile === 'literouter') {
@@ -1417,6 +1439,8 @@ export function HiveDashboard({
         }
         setHiveCatalogModels([...new Set(models)])
       }
+      const errorCode = safeCatalogErrorCode(parsed.error)
+      setHiveCatalogError(errorCode ? catalogErrorMessage(errorCode) : null)
     } catch {
       // Ignore malformed catalog payload
     }
@@ -1426,13 +1450,14 @@ export function HiveDashboard({
     const trimmedProfile = hiveFallbackProviderProfile.trim()
     if (!trimmedProfile || !hiveFallbackModelCatalogEvent) return
     try {
-      const parsed = JSON.parse(hiveFallbackModelCatalogEvent.payload) as { profile?: unknown; tier?: unknown; models?: unknown }
+      const parsed = JSON.parse(hiveFallbackModelCatalogEvent.payload) as { profile?: unknown; tier?: unknown; models?: unknown; error?: unknown }
       if (typeof parsed.profile === 'string' && parsed.profile.trim().length > 0 && parsed.profile.trim() !== trimmedProfile) {
         return
       }
       if (trimmedProfile === 'literouter' && typeof parsed.tier === 'string' && parsed.tier !== hiveFallbackTier) {
         return
       }
+      setHiveFallbackCatalogLoading(false)
       if (Array.isArray(parsed.models)) {
         let models = parsed.models.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
         if (trimmedProfile === 'literouter') {
@@ -1440,6 +1465,8 @@ export function HiveDashboard({
         }
         setHiveFallbackCatalogModels([...new Set(models)])
       }
+      const errorCode = safeCatalogErrorCode(parsed.error)
+      setHiveFallbackCatalogError(errorCode ? catalogErrorMessage(errorCode) : null)
     } catch {
       // Ignore malformed catalog payload
     }
@@ -2842,6 +2869,8 @@ export function HiveDashboard({
                     </div>
                   </label>
                 </div>
+                {hiveCatalogLoading ? <small role="status" className="hive-settings-hint">{translate('Загрузка каталога моделей…')}</small> : null}
+                {hiveCatalogError ? <p role="alert" className="hive-console__error">{translate('Каталог моделей:')}{translate(hiveCatalogError)}</p> : null}
                 {hiveProviderError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveProviderError)}</p>
                 ) : hiveProviderSaved ? (
@@ -2964,6 +2993,8 @@ export function HiveDashboard({
                     </div>
                   </label>
                 </div>
+                {hiveFallbackCatalogLoading ? <small role="status" className="hive-settings-hint">{translate('Загрузка каталога моделей…')}</small> : null}
+                {hiveFallbackCatalogError ? <p role="alert" className="hive-console__error">{translate('Каталог резервных моделей:')}{translate(hiveFallbackCatalogError)}</p> : null}
                 {hiveFallbackProviderError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveFallbackProviderError)}</p>
                 ) : hiveFallbackProviderSaved ? (
