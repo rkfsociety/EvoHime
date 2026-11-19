@@ -1281,11 +1281,12 @@ impl ModelGateway {
                     if backoff > 0 {
                         tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
                     }
+                    let effective_model = (route == self.default_route).then_some(model).flatten();
                     if let Some(preflight) = &self.route_preflight {
                         if let Err(error) = preflight
                             .check_for_request_async(
                                 &route,
-                                model,
+                                effective_model,
                                 !tools.is_empty(),
                                 current_time_ms(),
                             )
@@ -1303,7 +1304,7 @@ impl ModelGateway {
                         }
                     }
                     let prepared = if let Some(hook) = hook {
-                        let capabilities = self.route_capability_snapshot(&route, model)?;
+                        let capabilities = self.route_capability_snapshot(&route, effective_model)?;
                         hook.prepare(&capabilities, messages, tools).await?
                     } else {
                         PreparedRouteAttempt {
@@ -1314,13 +1315,18 @@ impl ModelGateway {
                     };
                     let dispatched = match prepared.structured_output.as_ref() {
                         Some(contract) => {
-                            self.structured_chat_once(&route, model, &prepared.messages, contract)
-                                .await
+                            self.structured_chat_once(
+                                &route,
+                                effective_model,
+                                &prepared.messages,
+                                contract,
+                            )
+                            .await
                         }
                         None => {
                             self.dispatch_chat_with_options(
                                 &route,
-                                model,
+                                effective_model,
                                 &prepared.messages,
                                 &prepared.tools,
                                 options,
@@ -1334,7 +1340,7 @@ impl ModelGateway {
                                 preflight
                                     .observe_success_async(
                                         &route,
-                                        model,
+                                        effective_model,
                                         &result,
                                         current_time_ms(),
                                     )
@@ -1406,13 +1412,14 @@ impl ModelGateway {
                 .as_deref()
                 .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?,
         };
+        let effective_model = (route == self.default_route).then_some(model).flatten();
         if let Some(preflight) = &self.route_preflight {
             preflight
-                .check_for_request_async(route, model, !tools.is_empty(), current_time_ms())
+                .check_for_request_async(route, effective_model, !tools.is_empty(), current_time_ms())
                 .await?;
         }
         let prepared = if let Some(hook) = hook {
-            let capabilities = self.route_capability_snapshot(route, model)?;
+            let capabilities = self.route_capability_snapshot(route, effective_model)?;
             hook.prepare(&capabilities, messages, tools).await?
         } else {
             PreparedRouteAttempt {
@@ -1423,13 +1430,13 @@ impl ModelGateway {
         };
         let result = match prepared.structured_output.as_ref() {
             Some(contract) => {
-                self.structured_chat_once(route, model, &prepared.messages, contract)
+                self.structured_chat_once(route, effective_model, &prepared.messages, contract)
                     .await?
             }
             None => {
                 self.dispatch_chat_with_options(
                     route,
-                    model,
+                    effective_model,
                     &prepared.messages,
                     &prepared.tools,
                     options,
@@ -1439,7 +1446,7 @@ impl ModelGateway {
         };
         if let Some(preflight) = &self.route_preflight {
             preflight
-                .observe_success_async(route, model, &result, current_time_ms())
+                .observe_success_async(route, effective_model, &result, current_time_ms())
                 .await;
         }
         Ok(PolicyChatResult {
@@ -2202,5 +2209,84 @@ mod tests {
 
         let result = gateway.stream_chat_with_policy(RoutingMode::Balanced, &request, &[]);
         assert!(matches!(result, Err(ProviderError::Config(_))));
+    }
+
+    #[tokio::test]
+    async fn policy_chat_does_not_leak_default_route_model_override_to_alternate_route() {
+        struct RecordingProvider {
+            model: String,
+            seen_model: std::sync::Arc<std::sync::Mutex<Option<Option<String>>>>,
+        }
+
+        impl ModelProvider for RecordingProvider {
+            fn kind(&self) -> ProviderKind {
+                ProviderKind::LiteRouter
+            }
+
+            fn model_name(&self) -> &str {
+                &self.model
+            }
+
+            fn base_url(&self) -> &str {
+                "https://api.literouter.com/v1"
+            }
+
+            fn stream_chat(&self, _messages: &[ChatMessage]) -> crate::providers::TokenStream {
+                Box::pin(futures_util::stream::empty())
+            }
+
+            fn chat_with_tools(
+                &self,
+                model: Option<&str>,
+                _messages: &[ChatMessage],
+                _tools: &[ToolSpec],
+            ) -> crate::providers::ChatFuture {
+                *self.seen_model.lock().expect("lock") = Some(model.map(str::to_owned));
+                Box::pin(async {
+                    Ok(ChatResult {
+                        content: "ok".into(),
+                        thinking: None,
+                        tool_calls: Vec::new(),
+                        usage: None,
+                    })
+                })
+            }
+        }
+
+        let default_seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let hive_seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut routes: HashMap<String, Arc<dyn ModelProvider>> = HashMap::new();
+        routes.insert(
+            "default".into(),
+            Arc::new(RecordingProvider {
+                model: "openai/gpt-6-luna".into(),
+                seen_model: default_seen.clone(),
+            }),
+        );
+        routes.insert(
+            "hive".into(),
+            Arc::new(RecordingProvider {
+                model: "llama-3.3-70b-instruct-turbo-free".into(),
+                seen_model: hive_seen.clone(),
+            }),
+        );
+        let gateway = ModelGateway::from_routes("default", routes).expect("gateway");
+        let mut request = policy_request();
+        request.preferred_route = Some("hive".into());
+
+        let result = gateway
+            .chat_with_tools_with_policy_and_route(
+                RoutingMode::Balanced,
+                &request,
+                Some("openai/gpt-6-luna"),
+                &[ChatMessage::text(crate::providers::ChatRole::User, "ping")],
+                &[],
+            )
+            .await
+            .expect("hive chat succeeds");
+
+        assert_eq!(result.selected_route, "hive");
+        assert_eq!(*hive_seen.lock().expect("lock"), Some(None));
+        assert_eq!(*default_seen.lock().expect("lock"), None);
     }
 }

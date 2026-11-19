@@ -884,7 +884,14 @@ impl ModelGatewayConfig {
             Some("literouter") => ModelRouteConfig::literouter(
                 hive_key,
                 hive_base.unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string()),
-                hive_model,
+                if hive_model.is_empty() {
+                    crate::model_ranker::get_ranked_models()
+                        .into_iter()
+                        .next()
+                        .unwrap_or_default()
+                } else {
+                    hive_model
+                },
             ),
             Some("openai_responses") => ModelRouteConfig::openai_responses(
                 hive_key,
@@ -919,16 +926,40 @@ impl ModelGatewayConfig {
             return;
         };
         let normalized_profile = profile.map(str::trim).filter(|value| !value.is_empty());
-        let normalized_model = model
+        let explicit_model = model
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .unwrap_or_else(|| existing.literouter.model.clone());
-        if normalized_profile.is_none() && normalized_model == existing.literouter.model {
+            .map(str::to_owned);
+        let Some(requested_profile) = normalized_profile else {
+            if let Some(new_model) = explicit_model {
+                if new_model != existing.literouter.model {
+                    if let Some(route) = self.routes.get_mut("hive") {
+                        route.literouter.model = new_model;
+                    }
+                }
+            }
+            return;
+        };
+        let profile_changed = !(existing
+            .provider_profile_id
+            .is_some_and(|id| id.as_str().eq_ignore_ascii_case(requested_profile))
+            || existing
+                .provider
+                .as_str()
+                .eq_ignore_ascii_case(requested_profile));
+        let normalized_model = explicit_model.unwrap_or_else(|| {
+            if profile_changed {
+                String::new()
+            } else {
+                existing.literouter.model.clone()
+            }
+        });
+        if !profile_changed && normalized_model == existing.literouter.model {
             return;
         }
         let hive_key = existing.literouter.api_key;
-        let rebuilt = Self::build_hive_route(hive_key, normalized_profile, None, normalized_model);
+        let rebuilt =
+            Self::build_hive_route(hive_key, Some(requested_profile), None, normalized_model);
         if rebuilt.validate_provider_profile().is_ok() {
             self.routes.insert("hive".to_string(), rebuilt);
         }
@@ -1571,5 +1602,40 @@ mod tests {
         assert_eq!(hive.literouter.api_key, "sk-hive-isolated");
         assert_eq!(hive.literouter.model, "glm-5.3-flash-cheap:free");
         assert_eq!(hive.literouter.base_url, LITEROUTER_DEFAULT_BASE_URL);
+    }
+
+    #[test]
+    fn apply_hive_route_overrides_resets_rout_default_model_when_switching_to_literouter() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "hive".to_string(),
+            ModelRouteConfig::openai_compatible("sk-hive-isolated", "https://api.rout.my/v1", "")
+                .with_provider_profile(ProviderProfileId::Rout, None),
+        );
+        let mut config = ModelGatewayConfig {
+            default_route: "hive".to_string(),
+            routes,
+        };
+
+        // Initial Rout route gets `ROUT_DEFAULT_FREE_MODEL` (`openai/gpt-6-luna`).
+        assert_eq!(
+            config.routes.get("hive").expect("hive route").literouter.model,
+            crate::model_ranker::ROUT_DEFAULT_FREE_MODEL
+        );
+
+        // Switching Hive to LiteRouter without an explicit model must not carry
+        // Rout's default model over into LiteRouter.
+        config.apply_hive_route_overrides(Some("literouter"), None);
+        let hive = config.routes.get("hive").expect("hive route remains");
+        assert_eq!(hive.provider, ProviderKind::LiteRouter);
+        assert_eq!(hive.provider_profile_id, None);
+        assert_ne!(
+            hive.literouter.model,
+            crate::model_ranker::ROUT_DEFAULT_FREE_MODEL
+        );
+        assert_eq!(
+            hive.literouter.model,
+            crate::model_ranker::get_ranked_models()[0]
+        );
     }
 }

@@ -177,13 +177,25 @@ pub(crate) async fn build_hive_observation_for_hive(
     let provider = profile
         .map_or(transport, |profile| profile.as_str())
         .to_owned();
+    let matches_default_provider = config
+        .routes
+        .get(&config.default_route)
+        .is_some_and(|default_route| {
+            default_route.provider == route.provider
+                && default_route.provider_profile_id == route.provider_profile_id
+        });
     // Hive's own model override takes precedence over the global chat selection.
+    // Global chat selection applies only when Hive shares the same provider/profile
+    // as the default route; otherwise an incompatible model (e.g. Rout's
+    // `openai/gpt-6-luna`) would leak into a LiteRouter Hive route.
     let effective_selected = hive_model
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .or_else(|| {
-            selected_model
+            matches_default_provider
+                .then_some(selected_model)
+                .flatten()
                 .map(str::to_owned)
                 .filter(|value| !value.trim().is_empty())
         });
@@ -430,5 +442,47 @@ mod tests {
             hive_route_name(Some(&config), None).as_deref(),
             Some("hive")
         );
+    }
+
+    #[tokio::test]
+    async fn hive_observation_does_not_leak_default_route_model_into_different_hive_provider() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal = EventJournal::open(directory.path().join("hive-provider-isolation.db"))
+            .expect("journal opens");
+        let mut routes = std::collections::HashMap::new();
+        routes.insert(
+            "default".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::openai_compatible(
+                "sk-rout",
+                "https://api.rout.my/v1",
+                "openai/gpt-6-luna",
+            )
+            .with_provider_profile(ProviderProfileId::Rout, None),
+        );
+        routes.insert(
+            "hive".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::literouter(
+                "sk-hive-lr",
+                "https://api.literouter.com/v1",
+                "llama-3.3-70b-instruct-turbo-free",
+            ),
+        );
+        let config = ModelGatewayConfig {
+            default_route: "default".to_owned(),
+            routes,
+        };
+
+        let observation = build_hive_observation_for_hive(
+            &journal,
+            Some(&config),
+            Some("openai/gpt-6-luna"),
+            Some("literouter"),
+            None,
+            crate::task_memory::now_millis() as i64,
+        )
+        .await;
+
+        assert_eq!(observation.provider, "literouter");
+        assert_eq!(observation.model, "llama-3.3-70b-instruct-turbo-free");
     }
 }
