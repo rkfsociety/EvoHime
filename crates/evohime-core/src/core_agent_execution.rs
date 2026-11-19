@@ -1,5 +1,66 @@
 use super::*;
 
+/// Maximum nesting depth for `agent_run` subagents.
+///
+/// The top-level task is depth `0`; a subagent may run at depth `1` but cannot
+/// start another subagent.
+const SUBAGENT_MAX_DEPTH: u32 = 1;
+/// Default model-to-tool iterations for a subagent when the caller omits them.
+const SUBAGENT_DEFAULT_STEPS: usize = 8;
+/// Maximum final-answer bytes returned to the parent model.
+const SUBAGENT_OUTPUT_BYTES: usize = 32 * 1024;
+/// Tools a read-only subagent may see.
+///
+/// The allowlist is deliberately narrower than the parent's tool catalog:
+/// workflow, delegation, browser, app, kernel and mutation tools must never be
+/// reachable from a background subagent without a human-visible approval.
+const SUBAGENT_TOOL_ALLOWLIST: &[&str] = &[
+    "filesystem_read",
+    "filesystem_list",
+    "filesystem_search",
+    "filesystem_stat",
+    "git_status",
+    "git_diff",
+    "git_log",
+    "git_show",
+    "git_blame",
+    "git_changed_files",
+    "memory_search",
+];
+
+fn subagent_tool_allowed(name: &str) -> bool {
+    SUBAGENT_TOOL_ALLOWLIST.contains(&name)
+}
+
+/// Denies every mutating or external permission for one subagent session.
+async fn apply_read_only_subagent_modes(
+    permissions: &evohime_permissions::PermissionEngine,
+    session_id: uuid::Uuid,
+) {
+    use evohime_permissions::{Permission, PermissionMode};
+    for permission in [
+        Permission::FilesystemRead,
+        Permission::GitRead,
+        Permission::MemorySearch,
+    ] {
+        permissions
+            .set_session_mode(session_id, permission, PermissionMode::Allow)
+            .await;
+    }
+    for permission in [
+        Permission::FilesystemWrite,
+        Permission::ShellExecute,
+        Permission::GitWrite,
+        Permission::BrowserAccess,
+        Permission::McpCall,
+        Permission::MicrophoneListen,
+    ] {
+        permissions
+            .set_session_mode(session_id, permission, PermissionMode::Deny)
+            .await;
+    }
+}
+
 fn model_tool_observation(
     tool_name: &str,
     succeeded: bool,
@@ -224,6 +285,145 @@ fn mutation_nudge_message(available: &[String], steps_without_mutation: usize) -
 }
 
 impl ToolAgent {
+    /// Runs one bounded read-only subagent and returns only its final answer.
+    ///
+    /// The subagent gets a fresh task id, a separate read-only permission
+    /// session and a drained event stream, so its tool chatter cannot leak into
+    /// the parent conversation or the Hive dashboard.
+    async fn execute_agent_run(
+        &self,
+        context: &ToolContext,
+        parent_task_id: &str,
+        parent_binding: Option<&crate::SessionBinding>,
+        hive_world: bool,
+        input: serde_json::Value,
+        cancellation: &CancellationToken,
+    ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
+        use evohime_tool_runtime::ToolError;
+
+        let parsed = evohime_tool_runtime::agent::parse_input(&input)?;
+        if context.agent_depth >= SUBAGENT_MAX_DEPTH {
+            return Err(ToolError::Execution(
+                "agent_run cannot start a nested subagent".into(),
+            ));
+        }
+        let depth = context.agent_depth.saturating_add(1);
+        let max_steps = parsed
+            .max_steps
+            .unwrap_or(SUBAGENT_DEFAULT_STEPS)
+            .clamp(1, DEFAULT_TOOL_ITERATIONS);
+        let timeout_cap = evohime_tool_runtime::agent::TIMEOUT.as_millis() as u64;
+        let timeout = std::time::Duration::from_millis(
+            parsed
+                .timeout_ms
+                .unwrap_or(timeout_cap)
+                .clamp(1_000, timeout_cap),
+        );
+        let (sender, mut receiver) = tokio::sync::mpsc::channel::<crate::CoreEvent>(64);
+        let events = EventSink::new(sender);
+        let drain = tokio::spawn(async move { while receiver.recv().await.is_some() {} });
+        // Inherit the parent's provider/profile when one is pinned, but never
+        // inherit its permission mode: the subagent session stays read-only.
+        let session_binding = if parent_binding.is_some() || parsed.model_route.is_some() {
+            let mut binding = parent_binding.cloned().unwrap_or_default();
+            binding.permission_mode = None;
+            if let Some(model) = parsed.model_route.as_ref() {
+                binding.model = Some(model.clone());
+            }
+            Some(binding)
+        } else {
+            None
+        };
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+            tools: Arc::clone(&self.tools),
+            max_iterations: max_steps,
+            approvals: self.approvals.clone(),
+            routing_approvals: self.routing_approvals.clone(),
+            journal: self.journal.clone(),
+            selected_model: self.selected_model.clone(),
+            receipt_keys: self.receipt_keys.clone(),
+            extraction_guard: Arc::clone(&self.extraction_guard),
+            extraction_lease: Arc::clone(&self.extraction_lease),
+            proactivity: self.proactivity.clone(),
+            workflow_registry: Arc::clone(&self.workflow_registry),
+            workflow_state: Arc::clone(&self.workflow_state),
+        };
+        let execution_context = ConversationExecutionContext {
+            preferred_route_hint: hive_world.then(|| "hive".to_owned()),
+            history: Vec::new(),
+            continuation_attempt: None,
+            defer_completion_event: true,
+            conversation_id: None,
+            session_binding,
+            read_only_subagent: true,
+            agent_depth: depth,
+        };
+        let child_task_id = format!("{parent_task_id}:sub-{}", uuid::Uuid::new_v4());
+        // Cancel cooperatively instead of dropping the future: the nested run
+        // still has to clear its read-only permission session on the way out.
+        let run_cancel = cancellation.child_token();
+        let timed_out = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let timer = {
+            let timed_out = Arc::clone(&timed_out);
+            let run_cancel = run_cancel.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(timeout).await;
+                timed_out.store(true, std::sync::atomic::Ordering::SeqCst);
+                run_cancel.cancel();
+            })
+        };
+        // `Box::pin` breaks the async-fn type cycle:
+        // agent_run -> run_once_inner -> agent_run.
+        let result = Box::pin(agent.run_once_with_cancellation(
+            child_task_id,
+            parsed.prompt,
+            context.workspace_root.clone(),
+            &events,
+            run_cancel,
+            execution_context,
+        ))
+        .await;
+        timer.abort();
+        drain.abort();
+        let timed_out = timed_out.load(std::sync::atomic::Ordering::SeqCst);
+        match result {
+            Ok(summary) => {
+                let had_answer = !summary.trim().is_empty();
+                let bounded = bounded_tool_output(
+                    if had_answer {
+                        &summary
+                    } else {
+                        "subagent finished without a final answer"
+                    },
+                    SUBAGENT_OUTPUT_BYTES,
+                );
+                let truncated = had_answer && bounded.len() < summary.len();
+                Ok(evohime_tool_runtime::ToolResult {
+                    output: format!("agent_run (depth={depth}, read-only):\n{bounded}"),
+                    structured: serde_json::json!({
+                        "summary": bounded,
+                        "depth": depth,
+                        "read_only": true,
+                        "step_budget": max_steps,
+                        "truncated": truncated,
+                    }),
+                })
+            }
+            Err(error) => Err(match error {
+                AgentRunError::Timeout(seconds) => {
+                    ToolError::TimedOut(std::time::Duration::from_secs(seconds))
+                }
+                AgentRunError::Cancelled if timed_out => ToolError::TimedOut(timeout),
+                AgentRunError::Cancelled => ToolError::Execution("agent_run was cancelled".into()),
+                other => ToolError::Execution(bounded_tool_output(
+                    &format!("agent_run failed: {other}"),
+                    2_048,
+                )),
+            }),
+        }
+    }
+
     async fn execute_workflow_tool(
         &self,
         context: &ToolContext,
@@ -533,7 +733,14 @@ impl ToolAgent {
         execution_context: ConversationExecutionContext,
     ) -> Result<String, AgentRunError> {
         let hive_world = execution_context.preferred_route_hint.as_deref() == Some("hive");
-        let run_permission_session_id = if !hive_world {
+        let run_permission_session_id = if execution_context.read_only_subagent {
+            // A subagent gets its own session that allows reading only. The
+            // Hive/global mode may permit writes or approvals and must not leak
+            // into background delegation.
+            let session_id = uuid::Uuid::new_v4();
+            apply_read_only_subagent_modes(self.tools.permissions(), session_id).await;
+            Some(session_id)
+        } else if !hive_world {
             if let Some(mode) = execution_context
                 .session_binding
                 .as_ref()
@@ -583,6 +790,8 @@ impl ToolAgent {
             defer_completion_event,
             conversation_id,
             session_binding,
+            read_only_subagent,
+            agent_depth,
         } = execution_context;
         let session_route_pin = if let Some(binding) = session_binding.as_ref() {
             self.gateway
@@ -621,7 +830,7 @@ impl ToolAgent {
             }
         };
         let workspace_root: std::path::PathBuf = workspace_root.into();
-        let eva_workspace_configured = if hive_world {
+        let eva_workspace_configured = if hive_world && !read_only_subagent {
             let workspace_str = workspace_root.to_string_lossy();
             evohime_tool_runtime::self_development::EvaWorkspace::open(workspace_str.as_ref())
                 .ok()
@@ -632,7 +841,7 @@ impl ToolAgent {
         // World boundary: Hive tasks use their own permission session, so the
         // workspace permission mode chosen in a chat (a process-global setting)
         // can neither widen nor narrow what the Hive may do, and vice versa.
-        let hive_session_id = if hive_world {
+        let hive_session_id = if hive_world && !read_only_subagent {
             let session_id = uuid::Uuid::from_u128(crate::hive_permission_session::SESSION_ID);
             for (permission, mode) in crate::hive_permission_session::modes() {
                 self.tools
@@ -650,8 +859,8 @@ impl ToolAgent {
             session_id: hive_session_id.or(run_permission_session_id),
             progress_tx: None,
             eva_workspace_root: eva_workspace_configured,
-            self_development_profile: hive_world.then(|| "queen".into()),
-            agent_depth: 0,
+            self_development_profile: (hive_world && !read_only_subagent).then(|| "queen".into()),
+            agent_depth,
             self_development_test_gate: Default::default(),
         };
         let (
@@ -672,6 +881,17 @@ impl ToolAgent {
         let self_development_intent =
             prompt.contains("eva_workspace_") || prompt.contains("eva_self_development");
         for tool in self.tools.list() {
+            if read_only_subagent && !subagent_tool_allowed(tool.name) {
+                // A subagent may not widen its own surface with workflow,
+                // delegation, network, browser, app or kernel tools.
+                preflight.push((
+                    tool.name,
+                    Ok(evohime_tool_runtime::ToolPreflightDecision::Denied(
+                        evohime_permissions::Permission::ShellExecute,
+                    )),
+                ));
+                continue;
+            }
             if tool
                 .name
                 .starts_with(evohime_tool_runtime::self_development::TOOL_PREFIX)
@@ -2106,6 +2326,15 @@ impl ToolAgent {
                         ),
                         structured: serde_json::Value::Null,
                     }
+                } else if read_only_subagent && !subagent_tool_allowed(&call.name) {
+                    // Executed branches are selected by name, so a hallucinated
+                    // `workflow_start` or `agent_run` must be stopped here even
+                    // though it was never offered in the subagent catalog.
+                    recovery::ToolOutcome::from_error(
+                        evohime_tool_runtime::ToolError::PermissionDenied(
+                            evohime_permissions::Permission::ShellExecute,
+                        ),
+                    )
                 } else if commit_blocked {
                     recovery::ToolOutcome::from_error(
                         evohime_tool_runtime::ToolError::Execution(
@@ -2129,6 +2358,21 @@ impl ToolAgent {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                             result = self.execute_workflow_tool(&context, &task_id, &call.name, input) => result,
                         }
+                    } else if call.name == evohime_tool_runtime::agent::NAME {
+                        let result = self
+                            .execute_agent_run(
+                                &context,
+                                &task_id,
+                                session_binding.as_ref(),
+                                hive_world,
+                                input,
+                                &cancellation,
+                            )
+                            .await;
+                        if cancellation.is_cancelled() {
+                            return Err(AgentRunError::Cancelled);
+                        }
+                        result
                     } else if call.name == "memory_search" {
                         let result = async {
                             let journal = self.journal.as_ref().ok_or_else(|| {
@@ -2979,15 +3223,211 @@ fn tool_preflight_can_be_offered(
 #[cfg(test)]
 mod tests {
     use super::{
-        adaptive_catalog_query, bounded_tool_output, inject_observed_expected_hash,
-        model_tool_observation, request_allows_mutation, tool_preflight_can_be_offered,
-        update_observed_file_revision, ToolAgent, MAX_TRACE_TOOL_OUTPUT_BYTES,
-        TOOL_OUTPUT_TRUNCATION_SUFFIX,
+        adaptive_catalog_query, apply_read_only_subagent_modes, bounded_tool_output,
+        inject_observed_expected_hash, model_tool_observation, request_allows_mutation,
+        subagent_tool_allowed, tool_preflight_can_be_offered, update_observed_file_revision,
+        ToolAgent, MAX_TRACE_TOOL_OUTPUT_BYTES, TOOL_OUTPUT_TRUNCATION_SUFFIX,
     };
     use crate::logging::redact_boundary_text;
     use crate::sensitive_data_guardrails;
-    use evohime_permissions::{Permission, PermissionEngine, PermissionMode};
+    use evohime_permissions::{
+        Permission, PermissionCheck, PermissionDecision, PermissionEngine, PermissionMode,
+    };
     use evohime_tool_runtime::{ToolContext, ToolPreflightDecision, ToolRegistry};
+    use std::sync::Arc;
+
+    #[test]
+    fn subagent_tool_allowlist_stays_read_only() {
+        for allowed in [
+            "filesystem_read",
+            "filesystem_list",
+            "filesystem_search",
+            "filesystem_stat",
+            "git_status",
+            "git_diff",
+            "git_log",
+            "git_show",
+            "git_blame",
+            "git_changed_files",
+            "memory_search",
+        ] {
+            assert!(
+                subagent_tool_allowed(allowed),
+                "{allowed} must stay available"
+            );
+        }
+        for denied in [
+            "filesystem_write",
+            "filesystem_patch",
+            "filesystem_delete",
+            "shell_execute",
+            "git_commit",
+            "git_push",
+            "agent_run",
+            "workflow_start",
+            "workflow_status",
+            "browser_open",
+            "http_fetch",
+            "app_open",
+            "analysis_run",
+            "mcp_call",
+        ] {
+            assert!(!subagent_tool_allowed(denied), "{denied} must not leak");
+        }
+    }
+
+    #[tokio::test]
+    async fn nested_agent_run_is_rejected_before_any_model_call() {
+        use evohime_model_gateway::{providers::mock::MockProvider, ModelGateway};
+
+        let agent = ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(MockProvider::new(
+                "mock",
+                Vec::new(),
+            )))),
+            Arc::new(ToolRegistry::bootstrap()),
+        );
+        let context = ToolContext {
+            workspace_root: std::env::temp_dir(),
+            task_id: uuid::Uuid::new_v4(),
+            session_id: None,
+            progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 1,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                evohime_tool_runtime::self_development::TestGate::default(),
+            )),
+        };
+        let error = agent
+            .execute_agent_run(
+                &context,
+                "task-parent",
+                None,
+                false,
+                serde_json::json!({"prompt": "nested"}),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect_err("nested subagent must be rejected");
+        assert!(error.to_string().contains("nested subagent"));
+    }
+
+    #[test]
+    fn agent_run_executes_a_bounded_read_only_subagent() {
+        std::thread::Builder::new()
+            .name("evohime-subagent-run-test".into())
+            .stack_size(32 * 1024 * 1024)
+            .spawn(|| {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("test runtime builds")
+                    .block_on(agent_run_executes_a_bounded_read_only_subagent_inner());
+            })
+            .expect("test thread starts")
+            .join()
+            .expect("test thread completes");
+    }
+
+    async fn agent_run_executes_a_bounded_read_only_subagent_inner() {
+        use evohime_model_gateway::{
+            providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
+        };
+
+        let workspace = tempfile::tempdir().expect("workspace tempdir");
+        std::fs::write(workspace.path().join("needle.txt"), "needle in a file").expect("fixture");
+        let provider = MockProvider::with_tool_call_sequence(
+            "mock",
+            vec![
+                ChatResult {
+                    content: String::new(),
+                    thinking: None,
+                    tool_calls: vec![NativeToolCall {
+                        id: "search-1".into(),
+                        name: "filesystem_search".into(),
+                        arguments: r#"{"query":"needle"}"#.into(),
+                    }],
+                    usage: None,
+                },
+                ChatResult {
+                    content: "found it".into(),
+                    ..ChatResult::default()
+                },
+            ],
+        );
+        let agent = ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(provider))),
+            Arc::new(ToolRegistry::bootstrap()),
+        );
+        let context = ToolContext {
+            workspace_root: workspace.path().to_path_buf(),
+            task_id: uuid::Uuid::new_v4(),
+            session_id: None,
+            progress_tx: None,
+            eva_workspace_root: None,
+            self_development_profile: None,
+            agent_depth: 0,
+            self_development_test_gate: std::sync::Arc::new(tokio::sync::Mutex::new(
+                evohime_tool_runtime::self_development::TestGate::default(),
+            )),
+        };
+        let result = agent
+            .execute_agent_run(
+                &context,
+                "task-parent",
+                None,
+                false,
+                serde_json::json!({
+                    "prompt": "find needle",
+                    "max_steps": 2,
+                }),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect("subagent succeeds");
+        assert!(result.output.contains("found it"));
+        assert_eq!(result.structured["summary"], serde_json::json!("found it"));
+        assert_eq!(result.structured["read_only"], serde_json::json!(true));
+        assert_eq!(result.structured["depth"], serde_json::json!(1));
+    }
+
+    #[tokio::test]
+    async fn subagent_session_denies_mutation_permissions() {
+        let permissions = PermissionEngine::new();
+        let session = uuid::Uuid::new_v4();
+        apply_read_only_subagent_modes(&permissions, session).await;
+        let check = || PermissionCheck {
+            session_id: Some(session),
+            ..PermissionCheck::default()
+        };
+        for permission in [
+            Permission::FilesystemRead,
+            Permission::GitRead,
+            Permission::MemorySearch,
+        ] {
+            assert_eq!(
+                permissions.check_scoped(permission, &check()).await,
+                PermissionDecision::Allowed,
+                "{permission:?}"
+            );
+        }
+        for permission in [
+            Permission::FilesystemWrite,
+            Permission::ShellExecute,
+            Permission::GitWrite,
+            Permission::BrowserAccess,
+            Permission::McpCall,
+            Permission::MicrophoneListen,
+        ] {
+            assert_eq!(
+                permissions.check_scoped(permission, &check()).await,
+                PermissionDecision::Denied,
+                "{permission:?}"
+            );
+        }
+        permissions.clear_session(session).await;
+    }
 
     #[test]
     fn russian_create_request_keeps_mutation_tools_in_the_catalog_query() {

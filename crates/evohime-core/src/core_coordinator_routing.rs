@@ -513,6 +513,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     defer_completion_event: is_continuation_run,
                                     conversation_id: conversation_id.clone(),
                                     session_binding: session_binding.clone(),
+                                    read_only_subagent: false,
+                                    agent_depth: 0,
                                 },
                                 cancellation.clone(),
                                 events.clone(),

@@ -6,19 +6,23 @@ use std::time::Duration;
 /// Registry identifier for agent subtask delegation.
 pub const NAME: &str = "agent_run";
 /// Input contract and fan-out guidance shown in tool catalogs.
-pub const DESCRIPTION: &str = "Spawn a budgeted subagent with its own prompt. Input: { prompt, max_steps?, timeout_ms?, model_route? }. Fan-out by scheduling multiple agent_run steps without depends_on.";
+pub const DESCRIPTION: &str = "Spawn a budgeted read-only subagent with its own prompt. Input: { prompt, max_steps?, timeout_ms?, model_route? }. The subagent may read files, git history and memory, but cannot edit, run commands, browse, or delegate further. Fan-out by scheduling multiple agent_run steps without depends_on.";
 /// No additional tool permission is checked by this registry adapter.
+///
+/// Core still enforces the subagent's read-only permission session and depth
+/// limit before the nested agent loop starts.
 pub const PERMISSIONS: &[Permission] = &[];
 /// Maximum advertised wall-clock budget for agent delegation.
 pub const TIMEOUT: Duration = Duration::from_secs(180);
 
-/// Registry placeholder; actual subagent execution belongs to agent-runtime.
+/// Registry adapter for `agent_run`.
 ///
-/// This adapter deliberately returns an execution error instead of starting a
-/// second agent runtime from the tool process.
+/// The real nested loop lives in Core (`ToolAgent::execute_agent_run`), which
+/// intercepts the call before the registry. This adapter is the fail-closed
+/// fallback for direct registry consumers and tool simulation.
 pub async fn execute(_ctx: &ToolContext, _input: Value) -> Result<ToolResult, ToolError> {
     Err(ToolError::Execution(
-        "agent_run is executed by the agent subagent backend".into(),
+        "agent_run is executed by the Core agent loop".into(),
     ))
 }
 

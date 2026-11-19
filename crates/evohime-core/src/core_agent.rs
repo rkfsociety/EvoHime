@@ -77,6 +77,14 @@ pub struct ConversationExecutionContext {
     pub conversation_id: Option<String>,
     /// Optional immutable per-run binding for provider, model, and permission mode.
     pub session_binding: Option<crate::core_protocol::SessionBinding>,
+    /// When true this run is an internal `agent_run` subagent: only the
+    /// read-only tool allowlist is offered and writes stay denied.
+    pub read_only_subagent: bool,
+    /// Nesting depth of the current agent loop (`0` is the top-level task).
+    ///
+    /// `agent_run` refuses to start another subagent once the limit is reached,
+    /// so a model cannot build an unbounded recursion chain.
+    pub agent_depth: u32,
 }
 
 /// Coordinates one-shot user approvals for protected agent actions.
@@ -1301,6 +1309,8 @@ impl TaskExecutor for ToolAgent {
                         defer_completion_event: false,
                         conversation_id: None,
                         session_binding: None,
+                        read_only_subagent: false,
+                        agent_depth: 0,
                     },
                 )
                 .await

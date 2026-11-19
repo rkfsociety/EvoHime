@@ -510,6 +510,19 @@ Executor и legacy `SubmitChildRequest`/`SubmitChildReport` используют
 projection несёт `report_status` из enum и `report_summary` не длиннее 512
 символов.
 
+Инструмент `agent_run` выполняет настоящий вложенный agent loop, а не
+заглушку: Core перехватывает вызов до реестра и запускает bounded read-only
+субагента с собственным task id. Субагент видит только `filesystem_read/list/
+search/stat`, `git status/diff/log/show/blame/changed_files` и `memory_search`;
+его отдельная permission-сессия запрещает запись, shell, git write, браузер,
+MCP и микрофон, а workflow, `agent_run`, app и kernel-инструменты не попадают в
+каталог. `max_steps` ограничен 1–32 (по умолчанию 8), `timeout_ms` — не больше
+180 секунд, `model_route` закрепляет модель, а provider/profile наследуются от
+родителя. Глубина вложенности — один уровень: субагент не может запустить ещё
+одного (`agent_run cannot start a nested subagent`). События и tool chatter
+субагента дренируются и не попадают ни в conversation log, ни в дашборд Улья;
+наружу возвращается только итоговый ответ и bounded метаданные.
+
 `OperationsPanel` получил отдельную секцию «Состояние улья», которая раз в 2
 секунды запрашивает read-only команду `core.getHiveState` и отображает
 `HiveStateSnapshot` (`crates/evohime-core/src/hive_state.rs`): королеву, число
@@ -517,7 +530,9 @@ projection несёт `report_status` из enum и `report_summary` не дли�
 полосками прогресса, список активных агентов с ролью, текущим действием,
 глубиной и прогрессом подагентов, а также поток задач Processing / Analyzing /
 Plan. Snapshot собирается из bounded-окна `child.workflow` в журнале, активных
-записей `persistent_agent_registry` и `HiveSettings`; это производная проекция
+записей `persistent_agent_registry` и `HiveSettings`; в окно входят только
+поддеревья, чей корень привязан к `hive-system-chat` (шаблоны обычных чатов в
+дашборд не попадают). Это производная проекция
 без prompt, отчётов и вывода инструментов. Пустой журнал или реестр дают пустые
 массивы и нулевые метрики, а не ошибку. Секция бюджета показывает выбранный
 профиль и модель, committed dispatch-счётчики за скользящие минуту/час/сутки
