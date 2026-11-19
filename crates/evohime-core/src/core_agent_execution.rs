@@ -539,6 +539,8 @@ impl ToolAgent {
             defer_completion_event,
             conversation_id,
         } = execution_context;
+        // World boundary: Hive and chat tasks never share memory scopes.
+        let hive_world = preferred_route.as_deref() == Some("hive");
         let task_id = task_id.into();
         let prompt = prompt.into();
         let task_uuid = match uuid::Uuid::parse_str(&task_id) {
@@ -1026,7 +1028,7 @@ impl ToolAgent {
                     }),
                 ),
             }
-            let scope_id = task_memory::workspace_scope_id(&context.workspace_root);
+            let scope_id = task_memory::task_memory_scope_id(&context.workspace_root, hive_world);
             let mut memories = journal
                 .search_workspace_memory(
                     &scope_id,
@@ -1812,11 +1814,12 @@ impl ToolAgent {
                         }
                     }
                 }
-                self.persist_lesson(&task_id, &context.workspace_root).await;
+                self.persist_lesson(&task_id, &context.workspace_root, hive_world).await;
                 let extraction_source = self
                     .capture_dialog_memory_source(
                         &task_id,
                         &context.workspace_root,
+                        hive_world,
                         &extraction_user_prompt,
                         &final_message,
                         primary_request_id
@@ -2048,7 +2051,7 @@ impl ToolAgent {
                                 )
                             })?;
                             let (query, limit) = evohime_tool_runtime::memory::parse_input(&input)?;
-                            let scope_id = task_memory::workspace_scope_id(&context.workspace_root);
+                            let scope_id = task_memory::task_memory_scope_id(&context.workspace_root, hive_world);
                             let memories = journal
                                 .search_workspace_memory(
                                     &scope_id,
@@ -2774,7 +2777,7 @@ impl ToolAgent {
                             ("failure_count".into(), failures_without_success.to_string()),
                         ],
                     );
-                    self.persist_lesson(&task_id, &context.workspace_root).await;
+                    self.persist_lesson(&task_id, &context.workspace_root, hive_world).await;
                     if defer_completion_event {
                         return Err(AgentRunError::Internal(message));
                     }
@@ -2801,7 +2804,7 @@ impl ToolAgent {
                 ("commit_done".into(), commit_done.to_string()),
             ],
         );
-        self.persist_lesson(&task_id, &context.workspace_root).await;
+        self.persist_lesson(&task_id, &context.workspace_root, hive_world).await;
         if defer_completion_event {
             return Err(AgentRunError::Internal(message));
         }

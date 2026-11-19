@@ -30,6 +30,20 @@ pub fn workspace_scope_id(workspace_root: &Path) -> String {
     format!("workspace-{}", sha256_hex(normalized.as_bytes()))
 }
 
+/// Derives the memory scope ID for a task in a given execution world.
+///
+/// Hive and ordinary chats are separate worlds: even when both work in the
+/// same directory, their memory records live in different scopes. Chat tasks
+/// keep the plain [`workspace_scope_id`], so existing records stay readable.
+pub fn task_memory_scope_id(workspace_root: &Path, hive: bool) -> String {
+    let base = workspace_scope_id(workspace_root);
+    if hive {
+        format!("hive-{}", sha256_hex(base.as_bytes()))
+    } else {
+        base
+    }
+}
+
 /// Derive a deterministic scope ID from workspace root path string.
 /// Used to isolate memory entries between different projects.
 /// Handles case-insensitivity and path separator normalization.
@@ -50,6 +64,7 @@ pub fn project_scope_id(workspace_root: &str) -> String {
 pub fn build_lesson(
     task_id: &str,
     workspace_root: &Path,
+    hive: bool,
     metrics: &[ToolMetricRecord],
 ) -> Option<MemoryRecord> {
     let failures = metrics
@@ -79,7 +94,7 @@ pub fn build_lesson(
     let mut record = MemoryRecord::new(MemoryRecordInput {
         id: format!("lesson-{task_id}-{lesson_key}"),
         scope: MemoryScope::Project,
-        scope_id: workspace_scope_id(workspace_root),
+        scope_id: task_memory_scope_id(workspace_root, hive),
         title: "Подтверждённый урок восстановления инструмента".to_owned(),
         content,
         provenance: format!("task:{task_id}"),
@@ -104,6 +119,16 @@ pub fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hive_and_chat_memory_scopes_differ_for_the_same_directory() {
+        let root = Path::new("C:\\github\\EvoHime");
+        let chat = task_memory_scope_id(root, false);
+        let hive = task_memory_scope_id(root, true);
+        assert_eq!(chat, workspace_scope_id(root));
+        assert_ne!(chat, hive);
+        assert_eq!(hive, task_memory_scope_id(Path::new("c:/github/evohime/"), true));
+    }
 
     #[test]
     fn scope_is_stable_for_windows_path_spelling() {

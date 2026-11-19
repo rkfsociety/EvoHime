@@ -119,6 +119,7 @@ impl ToolAgent {
         &self,
         task_id: &str,
         workspace_root: &std::path::Path,
+        hive: bool,
         user_prompt: &str,
         assistant_reply: &str,
         primary_model_refs: Option<(&str, &str)>,
@@ -199,7 +200,7 @@ impl ToolAgent {
             source_basis: source_basis.clone(),
             source_ref_id: task_id.to_owned(),
             source_revision_hash: revision_hash,
-            scope_id: task_memory::workspace_scope_id(workspace_root),
+            scope_id: task_memory::task_memory_scope_id(workspace_root, hive),
             origin: evohime_local_storage::domains::memory::MemoryExtractionOrigin::Dialog,
             root_execution_id: task_id.to_owned(),
             depth: 0,
@@ -609,14 +610,19 @@ impl ToolAgent {
         }
     }
 
-    pub(super) async fn persist_lesson(&self, task_id: &str, workspace_root: &std::path::Path) {
+    pub(super) async fn persist_lesson(
+        &self,
+        task_id: &str,
+        workspace_root: &std::path::Path,
+        hive: bool,
+    ) {
         let Some(journal) = &self.journal else {
             return;
         };
         let Ok(metrics) = journal.tool_metrics(task_id, 256).await else {
             return;
         };
-        let Some(lesson) = task_memory::build_lesson(task_id, workspace_root, &metrics) else {
+        let Some(lesson) = task_memory::build_lesson(task_id, workspace_root, hive, &metrics) else {
             return;
         };
         let _ = journal.record_lesson(&lesson).await;
@@ -3774,7 +3780,7 @@ mod tests {
         let prompt = "запомни: язык интерфейса русский";
         let reply = "Язык интерфейса русский.";
         let source = agent
-            .capture_dialog_memory_source(task_id, directory.path(), prompt, reply, None, &events)
+            .capture_dialog_memory_source(task_id, directory.path(), false, prompt, reply, None, &events)
             .await
             .expect("durable source is captured");
 
