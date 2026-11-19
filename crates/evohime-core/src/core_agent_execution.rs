@@ -1897,7 +1897,8 @@ impl ToolAgent {
                         }
                     }
                 }
-                self.persist_lesson(&task_id, &context.workspace_root, hive_world).await;
+                self.persist_lesson(&task_id, &context.workspace_root, hive_world)
+                    .await;
                 let extraction_source = self
                     .capture_dialog_memory_source(
                         &task_id,
@@ -2134,7 +2135,10 @@ impl ToolAgent {
                                 )
                             })?;
                             let (query, limit) = evohime_tool_runtime::memory::parse_input(&input)?;
-                            let scope_id = task_memory::task_memory_scope_id(&context.workspace_root, hive_world);
+                            let scope_id = task_memory::task_memory_scope_id(
+                                &context.workspace_root,
+                                hive_world,
+                            );
                             let memories = journal
                                 .search_workspace_memory(
                                     &scope_id,
@@ -2860,7 +2864,8 @@ impl ToolAgent {
                             ("failure_count".into(), failures_without_success.to_string()),
                         ],
                     );
-                    self.persist_lesson(&task_id, &context.workspace_root, hive_world).await;
+                    self.persist_lesson(&task_id, &context.workspace_root, hive_world)
+                        .await;
                     if defer_completion_event {
                         return Err(AgentRunError::Internal(message));
                     }
@@ -2887,7 +2892,8 @@ impl ToolAgent {
                 ("commit_done".into(), commit_done.to_string()),
             ],
         );
-        self.persist_lesson(&task_id, &context.workspace_root, hive_world).await;
+        self.persist_lesson(&task_id, &context.workspace_root, hive_world)
+            .await;
         if defer_completion_event {
             return Err(AgentRunError::Internal(message));
         }

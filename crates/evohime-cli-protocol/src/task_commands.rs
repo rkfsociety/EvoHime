@@ -24,6 +24,11 @@ where
                     conversation_id: String::new(),
                     client_message_id: String::new(),
                     goal_id: String::new(),
+                    provider: String::new(),
+                    profile_id: String::new(),
+                    model: String::new(),
+                    permission_mode: String::new(),
+                    isolation_mode: String::new(),
                 },
             )),
         )

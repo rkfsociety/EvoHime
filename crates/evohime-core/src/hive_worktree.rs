@@ -127,7 +127,8 @@ pub(crate) async fn cleanup_if_clean(journal: Option<&EventJournal>, lease: &Hiv
     if !lease.worktree_root.exists() {
         return;
     }
-    let Some(status_output) = run_git(&lease.worktree_root, &["status", "--porcelain"]).await else {
+    let Some(status_output) = run_git(&lease.worktree_root, &["status", "--porcelain"]).await
+    else {
         return;
     };
     if !status_output.status.success()
@@ -139,7 +140,8 @@ pub(crate) async fn cleanup_if_clean(journal: Option<&EventJournal>, lease: &Hiv
     }
 
     let worktree_str = lease.worktree_root.to_string_lossy().into_owned();
-    let Some(remove_output) = run_git(&lease.base_root, &["worktree", "remove", &worktree_str]).await
+    let Some(remove_output) =
+        run_git(&lease.base_root, &["worktree", "remove", &worktree_str]).await
     else {
         return;
     };
@@ -149,10 +151,9 @@ pub(crate) async fn cleanup_if_clean(journal: Option<&EventJournal>, lease: &Hiv
 
     if let Some(journal) = journal {
         let database = journal.database().lock().await;
-        if let Ok(Some(current)) = evohime_local_storage::domains::workflow::get(
-            database.connection(),
-            &lease.worktree_id,
-        ) {
+        if let Ok(Some(current)) =
+            evohime_local_storage::domains::workflow::get(database.connection(), &lease.worktree_id)
+        {
             let _ = evohime_local_storage::domains::workflow::transition(
                 database.connection(),
                 &lease.worktree_id,
@@ -170,7 +171,10 @@ mod tests {
 
     #[test]
     fn sanitize_worktree_id_strips_unsafe_characters() {
-        assert_eq!(sanitize_worktree_id("hive-123/abc:xyz"), "hive-hive-123abcxyz");
+        assert_eq!(
+            sanitize_worktree_id("hive-123/abc:xyz"),
+            "hive-hive-123abcxyz"
+        );
         assert!(sanitize_worktree_id("///").starts_with("hive-"));
     }
 }

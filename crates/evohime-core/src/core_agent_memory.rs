@@ -622,7 +622,8 @@ impl ToolAgent {
         let Ok(metrics) = journal.tool_metrics(task_id, 256).await else {
             return;
         };
-        let Some(lesson) = task_memory::build_lesson(task_id, workspace_root, hive, &metrics) else {
+        let Some(lesson) = task_memory::build_lesson(task_id, workspace_root, hive, &metrics)
+        else {
             return;
         };
         let _ = journal.record_lesson(&lesson).await;
@@ -3780,7 +3781,15 @@ mod tests {
         let prompt = "запомни: язык интерфейса русский";
         let reply = "Язык интерфейса русский.";
         let source = agent
-            .capture_dialog_memory_source(task_id, directory.path(), false, prompt, reply, None, &events)
+            .capture_dialog_memory_source(
+                task_id,
+                directory.path(),
+                false,
+                prompt,
+                reply,
+                None,
+                &events,
+            )
             .await
             .expect("durable source is captured");
 

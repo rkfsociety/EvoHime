@@ -335,12 +335,13 @@ impl CoreKernelHost {
 
         let args = match request.operation {
             AnalysisOperation::ObjectPut => {
-                let value: serde_json::Value = serde_json::from_slice(&request.args).map_err(|error| {
-                    KernelToolError::new(
-                        evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT,
-                        format!("invalid object_put value: {error}"),
-                    )
-                })?;
+                let value: serde_json::Value =
+                    serde_json::from_slice(&request.args).map_err(|error| {
+                        KernelToolError::new(
+                            evohime_tool_runtime::kernel_host::KERNEL_INVALID_INPUT,
+                            format!("invalid object_put value: {error}"),
+                        )
+                    })?;
                 let logical_name = request.logical_name.as_deref().unwrap_or("object");
                 let type_hint = request.type_hint.as_deref().unwrap_or("json");
                 let sensitivity = match request.sensitivity {
@@ -484,15 +485,18 @@ impl KernelHost for CoreKernelHost {
                 && !matches!(request.operation, AnalysisOperation::ObjectPut)
             {
                 let worker_args = match host_request.operation {
-                    analysis_kernel::KernelOperation::CsvSummary => {
-                        serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
-                    }
+                    analysis_kernel::KernelOperation::CsvSummary => serde_json::Value::String(
+                        String::from_utf8_lossy(&host_request.args).into(),
+                    ),
                     _ => serde_json::from_slice(&host_request.args).unwrap_or_else(|_| {
-                        serde_json::Value::String(String::from_utf8_lossy(&host_request.args).into())
+                        serde_json::Value::String(
+                            String::from_utf8_lossy(&host_request.args).into(),
+                        )
                     }),
                 };
                 if let Err(error) = runtime.admit(&host_request, Instant::now()) {
-                    let is_limit = matches!(error, analysis_kernel::KernelRuntimeError::LimitExceeded(_));
+                    let is_limit =
+                        matches!(error, analysis_kernel::KernelRuntimeError::LimitExceeded(_));
                     drop(kernels);
                     if is_limit {
                         self.persist_session_status(&kernel_id, KernelStatus::LimitExceeded)
@@ -573,9 +577,7 @@ impl KernelHost for CoreKernelHost {
                     kernel_id: kernel_id.clone(),
                     inline_result: Some(inline_result),
                     object_ref: None,
-                    sensitivity: analysis_kernel::KernelSensitivity::Internal
-                        .as_str()
-                        .into(),
+                    sensitivity: analysis_kernel::KernelSensitivity::Internal.as_str().into(),
                     provenance: "core:analysis-kernel-worker".into(),
                 }
             } else {
@@ -697,10 +699,8 @@ mod tests {
     }
 
     async fn test_host() -> CoreKernelHost {
-        let dir = std::env::temp_dir().join(format!(
-            "evohime-kernel-host-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("evohime-kernel-host-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("create temp dir");
         let journal = EventJournal::open(dir.join("journal.db")).expect("journal opens");
         let kernels = Arc::new(Mutex::new(std::collections::HashMap::new()));
@@ -739,7 +739,10 @@ mod tests {
             .list_sessions_for_task(&binding.task_id.to_string())
             .expect("list sessions");
         assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].package_manifest_hash, analysis_run_manifest_hash());
+        assert_eq!(
+            sessions[0].package_manifest_hash,
+            analysis_run_manifest_hash()
+        );
         assert_eq!(sessions[0].policy_hash, AGENT_KERNEL_POLICY_HASH);
     }
 

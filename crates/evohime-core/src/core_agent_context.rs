@@ -1437,10 +1437,7 @@ impl ToolAgent {
             };
             let route_snapshot_hash = self
                 .gateway
-                .provenance_route_snapshot_hash_with_model(
-                    &routing_request,
-                    selected_model,
-                )
+                .provenance_route_snapshot_hash_with_model(&routing_request, selected_model)
                 .map_err(|error| {
                     AgentRunError::Provider(ProviderError::Config(error.to_string()))
                 })?;

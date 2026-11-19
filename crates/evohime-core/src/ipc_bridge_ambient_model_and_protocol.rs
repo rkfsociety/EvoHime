@@ -598,67 +598,70 @@ impl IpcBridge {
         let provider = route
             .map(|route| route.provider.as_str().to_string())
             .unwrap_or_else(|| "unknown".into());
-                let (mut entries, error, ollama, catalog_failure): (
-                    Vec<evohime_model_gateway::ModelCatalogEntry>,
-                    Option<String>,
-                    Option<serde_json::Value>,
-                    Option<crate::free_provider_reliability_routing::CatalogFailureCode>,
-                ) = match route {
-                    Some(route)
-                        if route.provider
-                            == evohime_model_gateway::providers::ProviderKind::Ollama =>
-                    {
-                        let hardware = crate::local_model_runtime_manager::discover_hardware()
-                            .map_err(|error| error.to_string());
-                        match hardware {
-                            Ok(hardware) => {
-                                let device =
-                                    evohime_model_gateway::providers::ollama::OllamaDeviceProfile {
-                                        cpu_threads: hardware.cpu_threads,
-                                        ram_bytes: hardware.ram_bytes,
-                                        disk_free_bytes: hardware.disk_free_bytes,
-                                        accelerator_bytes: hardware.accelerator_bytes,
-                                    };
-                                match evohime_model_gateway::providers::ollama::fetch_catalog(
-                                    &route.literouter,
-                                    device.clone(),
-                                )
-                                .await
-                                {
-                                    Ok(catalog) => {
-                                        // Collect entries and enforce IPC frame size limits
-let mut entries = catalog.installed.clone();
-// Serialize to check size against MAX_FRAME_BYTES
-if let Ok(serialized) = serde_json::to_vec(&entries) {
-                tracing::info!("Model catalog serialized size: {} bytes, entries count: {}", serialized.len(), entries.len());
-    if serialized.len() > evohime_desktop_ipc::MAX_FRAME_BYTES {
-        // Simple hard cap to avoid oversized frames
-        const HARD_CAP: usize = 200;
-        entries.truncate(HARD_CAP);
-        // If still too big, iteratively shrink
-        while let Ok(s) = serde_json::to_vec(&entries) {
-            if s.len() <= evohime_desktop_ipc::MAX_FRAME_BYTES { break; }
-            if entries.is_empty() { break; }
-            entries.truncate(entries.len().saturating_sub(10));
-        }
-    }
-}
-                                        let projection = serde_json::json!({
-                                            "device": catalog.device,
-                                            "recommendations": catalog.recommendations,
-                                            "installed": entries.iter().map(|entry| entry.id.clone()).collect::<Vec<_>>(),
-                                            "error": null,
-                                        });
-                                        (entries, None, Some(projection), None)
+        let (mut entries, error, ollama, catalog_failure): (
+            Vec<evohime_model_gateway::ModelCatalogEntry>,
+            Option<String>,
+            Option<serde_json::Value>,
+            Option<crate::free_provider_reliability_routing::CatalogFailureCode>,
+        ) = match route {
+            Some(route)
+                if route.provider == evohime_model_gateway::providers::ProviderKind::Ollama =>
+            {
+                let hardware = crate::local_model_runtime_manager::discover_hardware()
+                    .map_err(|error| error.to_string());
+                match hardware {
+                    Ok(hardware) => {
+                        let device =
+                            evohime_model_gateway::providers::ollama::OllamaDeviceProfile {
+                                cpu_threads: hardware.cpu_threads,
+                                ram_bytes: hardware.ram_bytes,
+                                disk_free_bytes: hardware.disk_free_bytes,
+                                accelerator_bytes: hardware.accelerator_bytes,
+                            };
+                        match evohime_model_gateway::providers::ollama::fetch_catalog(
+                            &route.literouter,
+                            device.clone(),
+                        )
+                        .await
+                        {
+                            Ok(catalog) => {
+                                // Collect entries and enforce IPC frame size limits
+                                let mut entries = catalog.installed.clone();
+                                // Serialize to check size against MAX_FRAME_BYTES
+                                if let Ok(serialized) = serde_json::to_vec(&entries) {
+                                    tracing::info!("Model catalog serialized size: {} bytes, entries count: {}", serialized.len(), entries.len());
+                                    if serialized.len() > evohime_desktop_ipc::MAX_FRAME_BYTES {
+                                        // Simple hard cap to avoid oversized frames
+                                        const HARD_CAP: usize = 200;
+                                        entries.truncate(HARD_CAP);
+                                        // If still too big, iteratively shrink
+                                        while let Ok(s) = serde_json::to_vec(&entries) {
+                                            if s.len() <= evohime_desktop_ipc::MAX_FRAME_BYTES {
+                                                break;
+                                            }
+                                            if entries.is_empty() {
+                                                break;
+                                            }
+                                            entries.truncate(entries.len().saturating_sub(10));
+                                        }
                                     }
-                                    Err(error) => {
-                                        let recommendations =
-                                            evohime_model_gateway::providers::ollama::recommend_models(
-                                                &device,
-                                                &[],
-                                            );
-                                        let error_code = safe_model_catalog_error_code(&error);
-                                        (
+                                }
+                                let projection = serde_json::json!({
+                                    "device": catalog.device,
+                                    "recommendations": catalog.recommendations,
+                                    "installed": entries.iter().map(|entry| entry.id.clone()).collect::<Vec<_>>(),
+                                    "error": null,
+                                });
+                                (entries, None, Some(projection), None)
+                            }
+                            Err(error) => {
+                                let recommendations =
+                                    evohime_model_gateway::providers::ollama::recommend_models(
+                                        &device,
+                                        &[],
+                                    );
+                                let error_code = safe_model_catalog_error_code(&error);
+                                (
                                             Vec::new(),
                                             Some(error_code.into()),
                                             Some(serde_json::json!({
@@ -669,101 +672,93 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
                                             })),
                                             Some(crate::free_provider_reliability_routing::classify_catalog_error(&error)),
                                         )
-                                    }
-                                }
                             }
-                            Err(_) => (
-                                Vec::new(),
-                                Some("hardware_discovery_failed".into()),
-                                Some(serde_json::json!({
-                                    "recommendations": [],
-                                    "installed": [],
-                                    "error": "hardware_discovery_failed",
-                                })),
-                                Some(crate::free_provider_reliability_routing::CatalogFailureCode::Unknown),
-                            ),
                         }
                     }
-                    Some(route) => match evohime_model_gateway::fetch_model_catalog(route).await {
-                        Ok(entries) => (
-                            filter_catalog_entries_by_tier(route.provider, mode, entries),
-                            None,
-                            None,
-                            None,
-                        ),
-                        Err(error) => (
-                            Vec::new(),
-                            Some(safe_model_catalog_error_code(&error).into()),
-                            None,
-                            Some(
-                                crate::free_provider_reliability_routing::classify_catalog_error(
-                                    &error,
-                                ),
-                            ),
-                        ),
-                    },
-                    None => (
+                    Err(_) => (
                         Vec::new(),
-                        Some("provider_not_configured".into()),
-                        None,
-                        None,
+                        Some("hardware_discovery_failed".into()),
+                        Some(serde_json::json!({
+                            "recommendations": [],
+                            "installed": [],
+                            "error": "hardware_discovery_failed",
+                        })),
+                        Some(crate::free_provider_reliability_routing::CatalogFailureCode::Unknown),
                     ),
-                };
-                if let Some(route) = route {
-                    let cached_entries = self
-                        .remember_provider_catalog_snapshot(route, &entries, catalog_failure)
-                        .await;
-                    if entries.is_empty() {
-                        if let Some(cached_entries) = cached_entries {
-                            entries = filter_catalog_entries_by_tier(
-                                route.provider,
-                                mode,
-                                cached_entries,
-                            );
-                        }
-                    }
                 }
-                let selected_model = self.selected_model.get();
-                let provider_catalog = if let Some(route) = route {
-                    self.provider_catalog_projection(route, selected_model.as_deref())
-                        .await
-                } else {
+            }
+            Some(route) => match evohime_model_gateway::fetch_model_catalog(route).await {
+                Ok(entries) => (
+                    filter_catalog_entries_by_tier(route.provider, mode, entries),
+                    None,
+                    None,
+                    None,
+                ),
+                Err(error) => (
+                    Vec::new(),
+                    Some(safe_model_catalog_error_code(&error).into()),
+                    None,
+                    Some(crate::free_provider_reliability_routing::classify_catalog_error(&error)),
+                ),
+            },
+            None => (
+                Vec::new(),
+                Some("provider_not_configured".into()),
+                None,
+                None,
+            ),
+        };
+        if let Some(route) = route {
+            let cached_entries = self
+                .remember_provider_catalog_snapshot(route, &entries, catalog_failure)
+                .await;
+            if entries.is_empty() {
+                if let Some(cached_entries) = cached_entries {
+                    entries = filter_catalog_entries_by_tier(route.provider, mode, cached_entries);
+                }
+            }
+        }
+        let selected_model = self.selected_model.get();
+        let provider_catalog = if let Some(route) = route {
+            self.provider_catalog_projection(route, selected_model.as_deref())
+                .await
+        } else {
+            serde_json::json!({
+                "schema_version": 1,
+                "provider": null,
+                "catalog": { "state": "unobserved", "model_count": 0 },
+                "models": [],
+                "redacted": true,
+            })
+        };
+        // Лимиты переживают сессию: планировщик контекста и ревью
+        // должны знать окно модели ещё до первого обновления каталога,
+        // а неудачный запрос не должен стирать то, что уже известно.
+        self.remember_model_limits(&provider, &entries).await;
+        let models = entries
+            .iter()
+            .map(|entry| entry.id.clone())
+            .collect::<Vec<_>>();
+        let limits = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.id.clone(),
                     serde_json::json!({
-                        "schema_version": 1,
-                        "provider": null,
-                        "catalog": { "state": "unobserved", "model_count": 0 },
-                        "models": [],
-                        "redacted": true,
-                    })
-                };
-                // Лимиты переживают сессию: планировщик контекста и ревью
-                // должны знать окно модели ещё до первого обновления каталога,
-                // а неудачный запрос не должен стирать то, что уже известно.
-                self.remember_model_limits(&provider, &entries).await;
-                let models = entries
-                    .iter()
-                    .map(|entry| entry.id.clone())
-                    .collect::<Vec<_>>();
-                let limits = entries
-                    .iter()
-                    .map(|entry| {
-                        (
-                            entry.id.clone(),
-                            serde_json::json!({
-                                "context": entry.context_tokens,
-                                "maxOutput": entry.max_output_tokens,
-                            }),
-                        )
-                    })
-                    .collect::<serde_json::Map<_, _>>();
-                serde_json::json!({
-                    "mode": mode,
-                    "models": models,
-                    "limits": limits,
-                    "error": if provider == "ollama" { None } else { error },
-                    "ollama": ollama,
-                    "provider_catalog": provider_catalog,
-                })
+                        "context": entry.context_tokens,
+                        "maxOutput": entry.max_output_tokens,
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        serde_json::json!({
+            "mode": mode,
+            "models": models,
+            "limits": limits,
+            "error": if provider == "ollama" { None } else { error },
+            "ollama": ollama,
+            "provider_catalog": provider_catalog,
+        })
     }
 }
 

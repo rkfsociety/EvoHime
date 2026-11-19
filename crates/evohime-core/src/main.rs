@@ -172,9 +172,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // задачи до первого ожидания, поэтому просроченные транскрипты исчезают
     // при запуске, а не через час.
     let ambient_retention_task = evohime_core::spawn_ambient_retention(journal.clone());
-    let analysis_kernels = std::sync::Arc::new(tokio::sync::Mutex::new(
-        std::collections::HashMap::new(),
-    ));
+    let analysis_kernels =
+        std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
     let kernel_host = std::sync::Arc::new(evohime_core::CoreKernelHost::new(
         journal.clone(),
         analysis_kernels.clone(),

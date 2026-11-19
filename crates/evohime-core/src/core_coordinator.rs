@@ -156,10 +156,7 @@ impl TaskCoordinator {
     }
 
     /// Attaches the Core-owned analysis kernel host so finished tasks stop their sessions.
-    pub async fn attach_kernel_host(
-        &self,
-        host: Arc<crate::analysis_kernel_host::CoreKernelHost>,
-    ) {
+    pub async fn attach_kernel_host(&self, host: Arc<crate::analysis_kernel_host::CoreKernelHost>) {
         self.state.lock().await.kernel_host = Some(host);
     }
 

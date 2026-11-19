@@ -1331,8 +1331,7 @@ impl IpcBridge {
                 "truncated": truncated,
                 "errorCode": "",
             });
-            if serde_json::to_vec(&candidate)
-                .map_or(true, |bytes| bytes.len() > MAX_RESPONSE_BYTES)
+            if serde_json::to_vec(&candidate).map_or(true, |bytes| bytes.len() > MAX_RESPONSE_BYTES)
             {
                 items.pop();
                 truncated = true;

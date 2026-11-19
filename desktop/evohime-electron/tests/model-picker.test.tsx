@@ -124,7 +124,10 @@ describe('model picker', () => {
     const view = render(<ModelPicker connection="connected" events={[]} />)
 
     await waitFor(() =>
-      expect(calls).toContainEqual({ command: 'core.listModelCatalog', payload: { mode: 'paid' } })
+      expect(calls).toContainEqual({
+        command: 'core.listModelCatalog',
+        payload: { mode: 'paid', provider: 'literouter' }
+      })
     )
 
     view.rerender(

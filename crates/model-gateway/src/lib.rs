@@ -887,7 +887,10 @@ impl ModelGateway {
                 .map(|(route_id, _)| route_id)
                 .collect();
             matching.sort();
-            if matching.iter().any(|route_id| *route_id == &self.default_route) {
+            if matching
+                .iter()
+                .any(|route_id| *route_id == &self.default_route)
+            {
                 return Ok(Some(self.default_route.clone()));
             }
             if let Some(route_id) = matching.first() {

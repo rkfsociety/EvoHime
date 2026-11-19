@@ -2206,7 +2206,9 @@ mod tests {
             providers::{ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream},
             tools::{ChatResult, ToolSpec},
         };
-        use evohime_permissions::{Permission, PermissionDecision, PermissionEngine, PermissionMode};
+        use evohime_permissions::{
+            Permission, PermissionDecision, PermissionEngine, PermissionMode,
+        };
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         struct WriteOnceProvider {
@@ -2269,7 +2271,9 @@ mod tests {
         let permissions = PermissionEngine::new();
         // Global mode stays Ask: neither Allow nor Deny is leaked globally.
         permissions.set_all_modes(PermissionMode::Ask).await;
-        let tools = Arc::new(ToolRegistry::bootstrap_with_permissions(permissions.clone()));
+        let tools = Arc::new(ToolRegistry::bootstrap_with_permissions(
+            permissions.clone(),
+        ));
         let gateway = Arc::new(ModelGateway::from_provider(Arc::new(WriteOnceProvider {
             calls: AtomicUsize::new(0),
         })));
@@ -2315,7 +2319,10 @@ mod tests {
         assert!(res_full.is_ok());
 
         // Global permission mode must remain Ask after both runs finish.
-        assert_eq!(permissions.mode(Permission::FilesystemWrite).await, PermissionMode::Ask);
+        assert_eq!(
+            permissions.mode(Permission::FilesystemWrite).await,
+            PermissionMode::Ask
+        );
         assert_eq!(
             permissions.check(Permission::FilesystemWrite).await,
             PermissionDecision::NeedsApproval

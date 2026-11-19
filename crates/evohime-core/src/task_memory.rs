@@ -127,7 +127,10 @@ mod tests {
         let hive = task_memory_scope_id(root, true);
         assert_eq!(chat, workspace_scope_id(root));
         assert_ne!(chat, hive);
-        assert_eq!(hive, task_memory_scope_id(Path::new("c:/github/evohime/"), true));
+        assert_eq!(
+            hive,
+            task_memory_scope_id(Path::new("c:/github/evohime/"), true)
+        );
     }
 
     #[test]

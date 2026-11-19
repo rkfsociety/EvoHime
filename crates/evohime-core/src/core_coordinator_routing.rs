@@ -123,9 +123,12 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
             }
             let hive_worktree_lease = if hive_route && !worktree_bound {
-                let lease =
-                    crate::hive_worktree::prepare_for_task(journal.as_ref(), &task_id, &workspace_root)
-                        .await;
+                let lease = crate::hive_worktree::prepare_for_task(
+                    journal.as_ref(),
+                    &task_id,
+                    &workspace_root,
+                )
+                .await;
                 if let Some(ref lease) = lease {
                     workspace_root = lease.worktree_root.clone();
                 }
@@ -135,10 +138,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             };
             let chat_worktree_lease = if !hive_route
                 && !worktree_bound
-                && session_binding
-                    .as_ref()
-                    .is_some_and(|binding| binding.isolation_mode == IsolationMode::IsolatedWorktree)
-            {
+                && session_binding.as_ref().is_some_and(|binding| {
+                    binding.isolation_mode == IsolationMode::IsolatedWorktree
+                }) {
                 match crate::chat_worktree::prepare_for_chat_task(
                     journal.as_ref(),
                     &task_id,
@@ -950,8 +952,8 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     crate::hive_worktree::cleanup_if_clean(journal.as_ref(), lease).await;
                 }
                 if let Some(lease) = chat_worktree_lease.as_ref() {
-                    let _ = crate::chat_worktree::finalize_chat_worktree(journal.as_ref(), lease)
-                        .await;
+                    let _ =
+                        crate::chat_worktree::finalize_chat_worktree(journal.as_ref(), lease).await;
                 }
                 if let Err(error) = &result {
                     let _ = events
