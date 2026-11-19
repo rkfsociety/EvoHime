@@ -111,7 +111,7 @@ pub async fn run_unix_pipe(
             }
         };
         let (mut response_reader, mut response_writer) = split(stream);
-        match authenticate(
+        let authenticated_client = match authenticate(
             &mut verifier,
             &bridge,
             &logger,
@@ -121,8 +121,8 @@ pub async fn run_unix_pipe(
         )
         .await
         {
-            Ok(true) => {}
-            Ok(false) => continue,
+            Ok(Some(client)) => client,
+            Ok(None) => continue,
             Err(error) => {
                 let _ = logger.write(
                     "warn",
@@ -131,8 +131,9 @@ pub async fn run_unix_pipe(
                 );
                 continue;
             }
-        }
+        };
 
+        let connection_bridge = Arc::clone(&bridge);
         let (frames, mut outbound) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTBOUND_FRAME_CAPACITY);
         let writer_task = tokio::spawn(async move {
             while let Some(bytes) = outbound.recv().await {
@@ -144,8 +145,8 @@ pub async fn run_unix_pipe(
                 }
             }
         });
-        let pump = bridge.journalled().map(|mut journalled| {
-            let bridge = Arc::clone(&bridge);
+        let pump = connection_bridge.journalled().map(|mut journalled| {
+            let bridge = Arc::clone(&connection_bridge);
             let mut sink = ChannelWriter::new(frames.clone());
             tokio::spawn(async move {
                 let mut pushed = bridge.latest_sequence().await;
@@ -160,7 +161,10 @@ pub async fn run_unix_pipe(
 
         let mut sink = ChannelWriter::new(frames);
         loop {
-            if let Err(error) = bridge.process_once(&mut response_reader, &mut sink).await {
+            if let Err(error) = connection_bridge
+                .process_once_as(Some(&authenticated_client), &mut response_reader, &mut sink)
+                .await
+            {
                 let _ = logger.write(
                     "info",
                     "ipc.connection_closed",
@@ -183,7 +187,10 @@ async fn authenticate<R, W>(
     peer: PeerIdentity,
     reader: &mut R,
     writer: &mut W,
-) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
+) -> Result<
+    Option<crate::ipc_bridge::AuthenticatedIpcClient>,
+    Box<dyn std::error::Error + Send + Sync>,
+>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -211,13 +218,13 @@ where
         Ok(frame) => frame?,
         Err(_) => {
             let _ = logger.write("warn", "ipc.handshake_timeout", serde_json::json!({}));
-            return Ok(false);
+            return Ok(None);
         }
     };
     let command = generated::CommandEnvelope::decode(payload.as_slice())?;
     let Some(generated::command_envelope::Command::Handshake(handshake)) = command.command else {
         reject(bridge, writer, "protocol-error").await?;
-        return Ok(false);
+        return Ok(None);
     };
     let request = HandshakeRequest {
         protocol_major: handshake
@@ -232,13 +239,17 @@ where
         capabilities: handshake.capabilities.clone(),
         peer,
     };
-    match verifier.verify(&request, now_ms()) {
+    let client = match verifier.verify(&request, now_ms()) {
         Ok(verified) => {
             let _ = logger.write(
                 "info",
                 "ipc.client_authenticated",
                 serde_json::json!({"role": verified.client_role}),
             );
+            Some(crate::ipc_bridge::AuthenticatedIpcClient {
+                client_id: verified.client_id,
+                client_role: verified.client_role,
+            })
         }
         Err(rejection) => {
             let _ = logger.write(
@@ -247,11 +258,11 @@ where
                 serde_json::json!({"reason": rejection.to_string()}),
             );
             reject(bridge, writer, "auth-rejected").await?;
-            return Ok(false);
+            return Ok(None);
         }
-    }
+    };
     transport::write_frame(writer, &bridge.ready_event().encode_to_vec()).await?;
-    Ok(true)
+    Ok(client)
 }
 
 async fn reject<W: AsyncWrite + Unpin>(

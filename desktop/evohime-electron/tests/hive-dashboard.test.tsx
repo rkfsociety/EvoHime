@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { PROVIDER_PROFILE_IDS, type CommandOutcome, type CoreEvent, type EvoHimeApiV1, type RendererCommand } from '../src/shared/api'
+import { PROVIDER_PROFILE_IDS, type CommandOutcome, type ConversationEventProjection, type CoreEvent, type EvoHimeApiV1, type RendererCommand } from '../src/shared/api'
 import { HiveDashboard } from '../src/renderer/src/OperationsPanel'
 import { PROVIDER_PROFILE_LABELS } from '../src/renderer/src/provider-labels'
 import { getProviderSchema } from '../src/renderer/src/provider-schema'
@@ -17,6 +17,70 @@ function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
 
 function event(eventType: string, payload: Record<string, unknown>, taskId = ''): CoreEvent {
   return { sequenceId: nextSequence++, taskId, eventType, payload: JSON.stringify(payload) }
+}
+
+function hiveConversationPage(operation: 'history' | 'live', entries: readonly { kind: string; taskId: string; payload: Record<string, unknown> }[], firstSequence = 1): CoreEvent {
+  const events: ConversationEventProjection[] = entries.map((entry, index) => ({
+    schemaVersion: 1,
+    conversationId: 'hive-system-chat',
+    eventId: `hive-${operation}-${nextSequence}-${index}`,
+    sequence: firstSequence + index,
+    timestampMs: firstSequence + index,
+    kind: entry.kind,
+    category: 'message',
+    payload: entry.payload,
+    correlationId: '',
+    causationId: '',
+    taskId: entry.taskId,
+    runId: entry.taskId,
+    turnId: entry.taskId,
+    clientMessageId: '',
+    persistenceClass: 'durable',
+    sensitivity: 'internal'
+  }))
+  return {
+    coreInstanceId: 'test-core',
+    sessionEpoch: 1,
+    sequenceId: 0,
+    taskId: '',
+    eventType: `conversation.${operation}`,
+    payload: '',
+    conversationEventLog: {
+      schemaVersion: 1,
+      operation,
+      conversationId: 'hive-system-chat',
+      events,
+      oldestSequence: events[0]?.sequence ?? 0,
+      newestSequence: events.at(-1)?.sequence ?? 0,
+      hasOlder: false,
+      hasNewer: false,
+      earliestAvailableSequence: 1,
+      errorCode: ''
+    }
+  }
+}
+
+function hiveConversationAcceptError(errorCode: string): CoreEvent {
+  return {
+    coreInstanceId: 'test-core',
+    sessionEpoch: 1,
+    sequenceId: 0,
+    taskId: '',
+    eventType: 'conversation.accept',
+    payload: '',
+    conversationEventLog: {
+      schemaVersion: 1,
+      operation: 'accept',
+      conversationId: 'hive-system-chat',
+      events: [],
+      oldestSequence: 0,
+      newestSequence: 0,
+      hasOlder: false,
+      hasNewer: false,
+      earliestAvailableSequence: 0,
+      errorCode
+    }
+  }
 }
 
 /** Snapshot ровно в том виде, в каком его публикует Core (schema v5). */
@@ -113,6 +177,7 @@ beforeEach(() => {
       if (command === 'core.validateEvaWorkspacePath') return ok({ accepted: true })
       if (command === 'core.setHiveSetting') return ok({ accepted: true })
       if (command === 'chat.open') return ok(null)
+      if (command === 'core.getConversationEvents' || command === 'core.subscribeConversationEvents') return ok({ accepted: true })
       if (command === 'chat.create') {
         return ok({
           id: 'chat-created-1',
@@ -174,16 +239,17 @@ describe('hive dashboard', () => {
 
   it('approval_banner_shows_and_hides', async () => {
     const events = [
-      event('approval.required', {
-        ApprovalRequired: {
-          task_id: 'task-1',
+      hiveConversationPage('history', [{
+        kind: 'approval_required',
+        taskId: 'task-1',
+        payload: {
           approval_id: 'approval-1',
           tool_name: 'terminal_exec',
           permission: 'Execute',
           scope: 'workspace',
           preview: { summary: 'Запустить тесты' }
         }
-      })
+      }])
     ]
     render(<HiveDashboard connection="connected" events={events} />)
 
@@ -438,8 +504,10 @@ describe('hive dashboard', () => {
       <HiveDashboard
         connection="connected"
         events={[
-          event('task.completed', { summary: 'done' }, 'task-9'),
-          event('task.failed', { error: 'boom' }, 'task-10'),
+          hiveConversationPage('history', [
+            { kind: 'task_completed', taskId: 'task-9', payload: { status: 'completed' } },
+            { kind: 'task_failed', taskId: 'task-10', payload: { error_code: 'task_failed' } }
+          ]),
           event('hive_state.snapshot', snapshot())
         ]}
       />
@@ -451,7 +519,12 @@ describe('hive dashboard', () => {
   })
 
   it('сохраняет выбранный интервал обновления и показывает время получения событий', async () => {
-    render(<HiveDashboard connection="connected" events={[event('task.completed', {}, 'task-1')]} />)
+    render(<HiveDashboard connection="connected" events={[
+      hiveConversationPage('history', [
+        { kind: 'task_completed', taskId: 'task-timestamp', payload: { status: 'completed' } }
+      ]),
+      event('hive_state.snapshot', snapshot())
+    ]} />)
 
     const interval = screen.getByLabelText('Интервал обновления')
     await userEvent.selectOptions(interval, '5000')
@@ -587,7 +660,9 @@ describe('hive dashboard', () => {
   it('ui_shows_queen_typing_indicator', async () => {
     const initialEvents = [
       event('hive_state.snapshot', snapshot()),
-      event('task.started', { prompt: 'Проверь состояние улья' }, 'task-typing-1')
+      hiveConversationPage('history', [
+        { kind: 'task_started', taskId: 'task-typing-1', payload: { prompt: 'Проверь состояние улья' } }
+      ])
     ]
     const { rerender } = render(
       <HiveDashboard
@@ -602,8 +677,11 @@ describe('hive dashboard', () => {
     rerender(
       <HiveDashboard
         connection="connected"
-        events={[
-          event('task.completed', { final_message: 'Улей работает штатно.' }, 'task-typing-1'),
+      events={[
+          hiveConversationPage('live', [
+            { kind: 'assistant_message_finalized', taskId: 'task-typing-1', payload: { content: 'Улей работает штатно.' } },
+            { kind: 'task_completed', taskId: 'task-typing-1', payload: { status: 'completed' } }
+          ], 2),
           ...initialEvents
         ]}
       />
@@ -612,13 +690,48 @@ describe('hive dashboard', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
     })
-    expect(screen.getByText('Улей работает штатно.')).toBeTruthy()
+    expect(within(screen.getByRole('log')).getByText('Улей работает штатно.')).toBeTruthy()
+  })
+
+  it('hive_chat_ignores_tasks_from_regular_conversations', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event('task.started', { prompt: 'Обычный пользовательский запрос' }, 'regular-chat-task'),
+          event('agent.message.delta', { content: 'Чужой ответ' }, 'regular-chat-task')
+        ]}
+      />
+    )
+
+    expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
+    expect(screen.queryByText('Обычный пользовательский запрос')).toBeNull()
+    expect(screen.queryByText('Чужой ответ')).toBeNull()
+  })
+
+  it('hive_chat_subscribes_to_its_own_conversation_log', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot())]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(calls).toContainEqual({
+        command: 'core.subscribeConversationEvents',
+        payload: expect.objectContaining({ conversationId: 'hive-system-chat', afterSequence: 0 })
+      })
+    })
   })
 
   it('ui_stops_typing_indicator_on_task_failed', async () => {
     const initialEvents = [
       event('hive_state.snapshot', snapshot()),
-      event('task.started', { prompt: 'Проверь файлы песочницы' }, 'task-fail-1')
+      hiveConversationPage('history', [
+        { kind: 'task_started', taskId: 'task-fail-1', payload: { prompt: 'Проверь файлы песочницы' } }
+      ])
     ]
     const { rerender } = render(
       <HiveDashboard
@@ -633,8 +746,11 @@ describe('hive dashboard', () => {
     rerender(
       <HiveDashboard
         connection="connected"
-        events={[
-          event('task.failed', { error_code: 'permission_denied' }, 'task-fail-1'),
+      events={[
+          hiveConversationPage('live', [
+            { kind: 'assistant_message_failed', taskId: 'task-fail-1', payload: { error_code: 'permission_denied' } },
+            { kind: 'task_failed', taskId: 'task-fail-1', payload: { error_code: 'permission_denied' } }
+          ], 2),
           ...initialEvents
         ]}
       />
@@ -646,23 +762,69 @@ describe('hive dashboard', () => {
     expect(screen.getByText(/Королева Ева: У меня нет прав на выполнение этого действия/)).toBeTruthy()
   })
 
+  it('ui_stops_typing_indicator_when_core_rejects_the_message', async () => {
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot())]}
+      />
+    )
+    const input = await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })
+    await userEvent.type(input, 'Запрос Улью')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    expect(await screen.findByTestId('queen-typing-indicator')).toBeTruthy()
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          hiveConversationAcceptError('idempotency_conflict'),
+          event('hive_state.snapshot', snapshot())
+        ]}
+      />
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
+    })
+    expect(screen.getByRole('alert').textContent).toContain('уже отправлено')
+  })
+
+  it('hive_chat_indicates_pending_send_without_leaking_other_chat_activity', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event('task.started', { prompt: 'Чужая задача' }, 'another-chat-task')
+        ]}
+      />
+    )
+    const input = await screen.findByRole('textbox', { name: 'Сообщение Королеве Еве' })
+    await userEvent.type(input, 'Запрос Улью')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    expect(await screen.findByTestId('queen-typing-indicator')).toBeTruthy()
+    expect(screen.getByText('Запрос Улью')).toBeTruthy()
+    expect(screen.queryByText('Чужая задача')).toBeNull()
+  })
+
   it('ui_duplicates_approval_request_in_hive_chat', async () => {
     render(
       <HiveDashboard
         connection="connected"
         events={[
           event('hive_state.snapshot', snapshot()),
-          event(
-            'approval.required',
-            {
+          hiveConversationPage('history', [{
+            kind: 'approval_required',
+            taskId: 'task-apr-1',
+            payload: {
               approval_id: 'apr-chat-1',
               tool_name: 'eva_workspace_git',
               permission: 'GitWrite',
               scope: 'origin/main',
               preview: { summary: 'Разрешить push изменений?' }
-            },
-            'task-apr-1'
-          )
+            }
+          }])
         ]}
       />
     )
@@ -825,7 +987,10 @@ describe('hive dashboard', () => {
 
   it('hive_logs_keep_latest_on_top_and_reset_scroll', async () => {
     const initialEvents: CoreEvent[] = [
-      { sequenceId: 1, coreInstanceId: 'core-1', sessionEpoch: 1, taskId: 'task-old', eventType: 'task.completed', payload: '{}' }
+      event('hive_state.snapshot', snapshot()),
+      hiveConversationPage('history', [
+        { kind: 'task_completed', taskId: 'task-old', payload: { status: 'completed' } }
+      ])
     ]
     const { rerender } = render(<HiveDashboard connection="connected" events={initialEvents} />)
 
@@ -835,7 +1000,9 @@ describe('hive dashboard', () => {
     list.scrollTop = 120
 
     const updatedEvents: CoreEvent[] = [
-      { sequenceId: 1, coreInstanceId: 'core-2', sessionEpoch: 2, taskId: 'task-new', eventType: 'task.failed', payload: '{}' },
+      hiveConversationPage('live', [
+        { kind: 'task_failed', taskId: 'task-new', payload: { error_code: 'task_failed' } }
+      ], 2),
       ...initialEvents
     ]
     rerender(<HiveDashboard connection="connected" events={updatedEvents} />)
@@ -936,7 +1103,9 @@ describe('hive dashboard', () => {
   it('ui_stops_typing_when_pulse_sleeps', async () => {
     const initialEvents = [
       event('hive_state.snapshot', snapshot({ pulse_status: 'active' })),
-      event('task.started', { prompt: 'Проверь состояние улья' }, 'task-sleep-1')
+      hiveConversationPage('history', [
+        { kind: 'task_started', taskId: 'task-sleep-1', payload: { prompt: 'Проверь состояние улья' } }
+      ])
     ]
     const { rerender } = render(
       <HiveDashboard
@@ -953,7 +1122,7 @@ describe('hive dashboard', () => {
         connection="connected"
         events={[
           event('hive_state.snapshot', snapshot({ pulse_status: 'sleeping' })),
-          event('task.started', { prompt: 'Проверь состояние улья' }, 'task-sleep-1')
+          ...initialEvents.slice(1)
         ]}
       />
     )
@@ -1344,7 +1513,9 @@ describe('hive dashboard', () => {
 
     try {
       const user = userEvent.setup()
-      const failedEvent = event('task.failed', { error: 'provider rate limit reached' }, 'task-hive-42')
+      const failedEvent = hiveConversationPage('history', [
+        { kind: 'task_failed', taskId: 'task-hive-42', payload: { error_code: 'provider_rate_limit' } }
+      ])
       render(
         <HiveDashboard
           connection="connected"
@@ -1375,8 +1546,8 @@ describe('hive dashboard', () => {
       })
       expect(copied[0]).toContain('=== Логи Улья (EvoHime) ===')
       expect(copied[0]).toContain('Провайдер: literouter | Модель: llama-3.3-70b-instruct-turbo-free | Резерв: rout (650000 токенов)')
-      expect(copied[0]).toContain(`[WARNING] task.failed (seq=${failedEvent.sequenceId}, task=task-hive-42)`)
-      expect(copied[0]).toContain('provider rate limit reached')
+      expect(copied[0]).toContain('[WARNING] task.failed (seq=1, task=task-hive-42)')
+      expect(copied[0]).toContain('provider_rate_limit')
     } finally {
       Object.defineProperty(window, 'evohime', {
         configurable: true,

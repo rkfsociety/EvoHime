@@ -2,7 +2,7 @@ import { translate } from './i18n'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { HIVE_SYSTEM_CHAT_ID } from '@shared/api'
-import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, CoreEvent, ModelTier, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
+import type { AmbientProposal, AmbientProposalList, ChatProviderMode, ConnectionState, ConversationEventProjection, CoreEvent, ModelTier, ProviderLimits, ProviderSummary, RepairStatus } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { useProviderState } from './provider-state'
@@ -13,6 +13,14 @@ import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
 import { HiveGraph } from './components/HiveGraph'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
+import {
+  applyConversationEvents,
+  applyInitialConversationHistory,
+  conversationEvents,
+  createConversationProjection,
+  prependConversationEvents,
+  resumeAtRetainedBoundary
+} from './conversation-projection'
 
 interface Props {
   readonly connection: ConnectionState
@@ -837,6 +845,12 @@ function describeToolStart(body: Record<string, unknown>): string {
 /** Человекочитаемая строка лога; незнакомое событие остаётся подписью по типу. */
 function describeHiveEvent(event: CoreEvent): string {
   const body = eventBody(event)
+  if (event.eventType === 'task.failed' && !body['error_code'] && !body['error']) {
+    return `Задача остановлена с ошибкой · ${event.taskId}`
+  }
+  if (event.eventType === 'task.completed' && !body['final_message'] && !body['summary']) {
+    return `Задача завершена · ${event.taskId}`
+  }
   switch (event.eventType) {
     case 'tool.started':
       return `Ева ${describeToolStart(body)}`
@@ -877,17 +891,21 @@ function hiveLogEntries(
   events: readonly CoreEvent[],
   observedAt: ReadonlyMap<string, string>,
   limit: number,
-  includeNoise = true
+  includeNoise = true,
+  chatTaskIds: ReadonlySet<string> = new Set(),
+  observedAtFor: (event: CoreEvent) => string = (event) => observedAt.get(coreEventKey(event)) ?? '—'
 ): readonly HiveLogEntry[] {
   return events
     .filter((event) => event.eventType !== 'hive_state.snapshot')
+    .filter((event) => !event.taskId || chatTaskIds.has(event.taskId) || event.taskId.startsWith('eva-pulse-'))
     .filter((event) => includeNoise || !HIVE_LOG_NOISE_EVENTS.has(event.eventType))
+    .sort((left, right) => right.sequenceId - left.sequenceId)
     .slice(0, limit)
     .map((event) => {
       const key = coreEventKey(event)
       return {
         id: key,
-        at: observedAt.get(key) ?? '—',
+        at: observedAtFor(event),
         level: hiveLogLevel(event.eventType),
         text: describeHiveEvent(event)
       }
@@ -897,7 +915,9 @@ function hiveLogEntries(
 function formatHiveLogsForClipboard(
   events: readonly CoreEvent[],
   observedAt: ReadonlyMap<string, string>,
-  budget: HiveStateView['budget']
+  budget: HiveStateView['budget'],
+  chatTaskIds: ReadonlySet<string> = new Set(),
+  observedAtFor: (event: CoreEvent) => string = (event) => observedAt.get(coreEventKey(event)) ?? '—'
 ): string {
   const headerParts: string[] = [
     `Провайдер: ${budget.provider || 'не выбран'}`,
@@ -915,10 +935,11 @@ function formatHiveLogsForClipboard(
   ]
   const relevant = events
     .filter((event) => event.eventType !== 'hive_state.snapshot')
+    .filter((event) => !event.taskId || chatTaskIds.has(event.taskId) || event.taskId.startsWith('eva-pulse-'))
+    .sort((left, right) => right.sequenceId - left.sequenceId)
     .slice(0, HIVE_LOGS_CLIPBOARD_LIMIT)
   for (const event of relevant) {
-    const key = coreEventKey(event)
-    const at = observedAt.get(key) ?? '—'
+    const at = observedAtFor(event)
     const level = hiveLogLevel(event.eventType).toUpperCase()
     const label = HIVE_LOG_LABELS[event.eventType]
     const meta = [
@@ -976,7 +997,7 @@ function EfficiencyRing({ percent }: { readonly percent: number }): React.JSX.El
 
 function parseApprovalRequest(event: CoreEvent): ApprovalRequestView | null {
   try {
-    const parsed = JSON.parse(event.payload) as Record<string, unknown>
+    const parsed = eventBody(event)
     // Core serializes enum variants as externally tagged objects, e.g.
     // { "ApprovalRequired": { ... } }. Keep accepting the flat legacy shape.
     const tagged = parsed['ApprovalRequired']
@@ -1083,6 +1104,41 @@ function readEventString(payload: Record<string, unknown> | null, key: string): 
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function transcriptEventPayload(event: ConversationEventProjection): string {
+  const body = typeof event.payload === 'object' && event.payload !== null
+    ? event.payload as Record<string, unknown>
+    : {}
+  if (event.kind === 'assistant_message_started') {
+    return JSON.stringify({ prompt: typeof body['prompt'] === 'string' ? body['prompt'] : '' })
+  }
+  if (event.kind === 'assistant_message_delta') {
+    return JSON.stringify({ content: typeof body['content'] === 'string' ? body['content'] : '' })
+  }
+  if (event.kind === 'assistant_message_finalized') {
+    return JSON.stringify({ final_message: typeof body['content'] === 'string' ? body['content'] : '' })
+  }
+  return JSON.stringify(event.payload)
+}
+
+function projectHiveChatEvents(events: readonly ConversationEventProjection[]): readonly CoreEvent[] {
+  return events.map((event) => ({
+    sequenceId: event.sequence,
+    taskId: event.taskId,
+    eventType: event.kind === 'assistant_message_started' ? 'task.started'
+      : event.kind === 'task_started' ? 'task.started'
+      : event.kind === 'assistant_message_delta' ? 'agent.message.delta'
+        : event.kind === 'assistant_message_finalized' ? 'agent.message.finalized'
+          : event.kind === 'assistant_message_failed' ? 'agent.message.failed'
+            : event.kind === 'task_completed' ? 'task.completed'
+              : event.kind === 'task_failed' ? 'task.failed'
+                : event.kind === 'task_stopped' ? 'task.stopped'
+                  : event.kind.replaceAll('_', '.'),
+    payload: transcriptEventPayload(event),
+    executionEvent: null,
+    conversationEventLog: null
+  }))
+}
+
 function extractHiveChatMessages(
   events: readonly CoreEvent[],
   userPrompts: readonly HiveUserPrompt[],
@@ -1150,7 +1206,7 @@ function extractHiveChatMessages(
       continue
     }
 
-    if (event.eventType === 'task.completed') {
+    if (event.eventType === 'task.completed' || event.eventType === 'agent.message.finalized') {
       const finalMessage = readEventString(payload, 'final_message') || readEventString(payload, 'summary')
       const existing = queenByTask.get(taskKey)
       if (finalMessage.length > 0 && (!existing || existing.text.trim().length === 0)) {
@@ -1220,6 +1276,22 @@ function formatQueenFailureText(errorCodeOrMessage: string): string {
     return 'Королева Ева: Я не смогла выполнить задачу, Core не сообщил точную причину. Последние действия и ошибки инструментов смотри в «Логи улья» (кнопка «Все логи»).'
   }
   return `Королева Ева: Я не смогла выполнить задачу. Причина: ${normalized}. Подробности — в «Логи улья».`
+}
+
+/** Поясняет отказ Core при приёме сообщения в чат Улья. */
+function hiveAcceptErrorMessage(errorCode: string): string {
+  switch (errorCode) {
+    case 'forbidden':
+      return 'Core отклонил сообщение: чат Улья доступен только оболочке EvoHime.'
+    case 'idempotency_conflict':
+      return 'Это сообщение уже отправлено Королеве Еве.'
+    case 'dispatch_unknown':
+      return 'Не удалось подтвердить запуск задачи. Проверьте состояние Улья и повторите отправку.'
+    case 'invalid_argument':
+      return 'Сообщение для Королевы Евы отклонено как некорректное.'
+    default:
+      return 'Core отклонил сообщение для Королевы Евы. Подробности — в логах Core.'
+  }
 }
 
 function isQueenThinking(
@@ -1346,8 +1418,47 @@ export function HiveDashboard({
   const [pendingTaskIds, setPendingTaskIds] = useState<ReadonlySet<string>>(() => new Set())
   const [localPrompts, setLocalPrompts] = useState<readonly HiveUserPrompt[]>([])
   const [historyPrompts, setHistoryPrompts] = useState<readonly HiveUserPrompt[]>([])
+  const [hiveConversationLogEvents, setHiveConversationLogEvents] = useState<readonly ConversationEventProjection[]>([])
+  const hiveConversationRef = useRef(createConversationProjection(HIVE_SYSTEM_CHAT_ID))
+  const hiveSubscriptionRef = useRef<{ key: string; requestId: string } | null>(null)
+  const hiveSeenPagesRef = useRef(new Set<string>())
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
+  const hiveChatTaskIds = useMemo(
+    () => new Set([...hiveConversationLogEvents, ...localPrompts.map((prompt) => ({ taskId: prompt.taskId }))]
+      .map((item) => item.taskId)
+      .filter(Boolean)),
+    [hiveConversationLogEvents, localPrompts]
+  )
+  const hiveConversationObservedAt = useMemo(() => {
+    const received = new Map<string, string>()
+    for (const event of events) {
+      const page = event.conversationEventLog
+      if (page?.conversationId !== HIVE_SYSTEM_CHAT_ID) continue
+      const at = observedAt.get(coreEventKey(event))
+      if (!at) continue
+      for (const item of page.events) received.set(item.eventId, at)
+    }
+    return received
+  }, [events, observedAt])
+  const observedAtForHiveEvent = useCallback((event: CoreEvent): string => {
+    const direct = observedAt.get(coreEventKey(event))
+    if (direct) return direct
+    const kind = event.eventType === 'agent.message.finalized' ? 'assistant_message_finalized'
+      : event.eventType === 'agent.message.failed' ? 'assistant_message_failed'
+        : event.eventType === 'task.started' ? 'task_started'
+          : event.eventType === 'agent.message.delta' ? 'assistant_message_delta'
+            : event.eventType === 'task.completed' ? 'task_completed'
+              : event.eventType === 'task.failed' ? 'task_failed'
+                : event.eventType === 'task.stopped' ? 'task_stopped'
+                  : event.eventType === 'approval.required' ? 'approval_required'
+                    : event.eventType === 'tool.started' ? 'tool_started'
+                      : event.eventType === 'tool.output' ? 'tool_output'
+                        : event.eventType.replaceAll('.', '_')
+    const conversationEventId = hiveConversationLogEvents.find((item) => item.sequence === event.sequenceId
+      && item.taskId === event.taskId && item.kind === kind)?.eventId
+    return conversationEventId ? hiveConversationObservedAt.get(conversationEventId) ?? '—' : '—'
+  }, [hiveConversationLogEvents, hiveConversationObservedAt, observedAt])
   const watchedReposKey = hive ? hive.watchedRepositories.join('\n') : ''
   useEffect(() => {
     if (!hive) return
@@ -1676,35 +1787,185 @@ export function HiveDashboard({
   }, [api])
 
   useEffect(() => {
+    hiveSeenPagesRef.current.clear()
+    if (!api || !connected) return
+
+    const requestHistory = (): void => {
+      void api.invoke('core.getConversationEvents', {
+        conversationId: HIVE_SYSTEM_CHAT_ID,
+        limit: 200
+      })
+    }
+    requestHistory()
+    return () => {
+      hiveSubscriptionRef.current = null
+    }
+  }, [api, connected])
+
+  useEffect(() => {
+    if (!api || !connected) return
+    const subscriptionKey = `${HIVE_SYSTEM_CHAT_ID}:${connection}`
+    if (hiveSubscriptionRef.current?.key === subscriptionKey) return
+    const current = hiveConversationRef.current
+    const afterSequence = current.sync.state === 'gap'
+      ? current.lastSequence
+      : current.sync.state === 'cursor-expired'
+        ? Math.max(0, current.sync.earliestAvailableSequence - 1)
+        : current.lastSequence
+    const requestId = `${subscriptionKey}:${Date.now()}`
+    hiveSubscriptionRef.current = { key: subscriptionKey, requestId }
+    void api.invoke('core.subscribeConversationEvents', {
+      conversationId: HIVE_SYSTEM_CHAT_ID,
+      afterSequence,
+      limit: 200
+    }).then((outcome) => {
+      if (!outcome.ok && hiveSubscriptionRef.current?.requestId === requestId) {
+        hiveSubscriptionRef.current = null
+      }
+    }).catch(() => {
+      if (hiveSubscriptionRef.current?.requestId === requestId) {
+        hiveSubscriptionRef.current = null
+      }
+    })
+  }, [api, connected, connection])
+
+  useEffect(() => {
+    const pages: NonNullable<CoreEvent['conversationEventLog']>[] = []
+    for (const event of events) {
+      const page = event.conversationEventLog
+      if (page?.conversationId !== HIVE_SYSTEM_CHAT_ID) continue
+      const key = event.sequenceId === 0
+        ? `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${page.operation}:${page.conversationId}:${page.errorCode}:${page.events.map((item) => `${item.sequence}:${item.eventId}`).join(',')}`
+        : `${event.coreInstanceId ?? 'legacy'}:${event.sessionEpoch ?? 0}:${event.sequenceId}:${page.operation}:${page.oldestSequence}:${page.newestSequence}`
+      if (hiveSeenPagesRef.current.has(key)) continue
+      hiveSeenPagesRef.current.add(key)
+      if (hiveSeenPagesRef.current.size > 1000) {
+        const oldest = hiveSeenPagesRef.current.values().next().value
+        if (oldest) hiveSeenPagesRef.current.delete(oldest)
+      }
+      pages.push(page)
+    }
+    if (pages.length === 0) return
+
+    let next = hiveConversationRef.current
+    let acceptError = ''
+    for (const page of [...pages].reverse()) {
+      if (page.errorCode === 'cursor_expired') {
+        next = { ...next, sync: { state: 'cursor-expired', earliestAvailableSequence: page.earliestAvailableSequence } }
+        continue
+      }
+      if (page.operation === 'accept' && page.errorCode !== '') {
+        acceptError = page.errorCode
+        continue
+      }
+      if (page.errorCode !== '') continue
+      if (next.sync.state === 'cursor-expired' && page.events[0]?.sequence === page.earliestAvailableSequence) {
+        next = resumeAtRetainedBoundary(next, page.earliestAvailableSequence)
+      }
+      const known = conversationEvents(next)
+      const olderPage = known.length > 0 && page.events.length > 0
+        && page.events.every((item) => item.sequence < (known[0]?.sequence ?? Number.MAX_SAFE_INTEGER))
+      if (olderPage) {
+        next = prependConversationEvents(next, page.events)
+      } else if (page.operation === 'live' || page.operation === 'subscribed') {
+        next = applyConversationEvents(next, page.events)
+      } else if (!next.historyReady) {
+        next = applyInitialConversationHistory(next, page.events)
+      } else {
+        next = applyConversationEvents(next, page.events)
+      }
+    }
+    if (next.sync.state === 'gap') {
+      void api?.invoke('core.getConversationEvents', {
+        conversationId: HIVE_SYSTEM_CHAT_ID,
+        afterSequence: next.lastSequence,
+        limit: 200
+      })
+    }
+    if (acceptError !== '') {
+      // A rejected `startTask` never reaches the task stream, so it cannot
+      // produce a terminal event; without this the indicator would stay on.
+      const started = new Set(conversationEvents(next).map((item) => item.taskId))
+      setPendingTaskIds((current) => {
+        const remaining = [...current].filter((taskId) => started.has(taskId))
+        return remaining.length === current.size ? current : new Set(remaining)
+      })
+      setCommandError(hiveAcceptErrorMessage(acceptError))
+    }
+    if (next === hiveConversationRef.current) return
+    hiveConversationRef.current = next
+    setHiveConversationLogEvents(conversationEvents(next))
+  }, [api, events])
+
+  useEffect(() => {
     if (pendingTaskIds.size === 0) return
     const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
+    const chatEvents = projectHiveChatEvents(hiveConversationLogEvents)
     setPendingTaskIds((current) => {
       let changed = false
       const next = new Set(current)
       for (const taskId of current) {
-        if (events.some((event) => event.taskId === taskId && terminalTypes.has(event.eventType))) {
+        if (chatEvents.some((event) => event.taskId === taskId && terminalTypes.has(event.eventType))) {
           next.delete(taskId)
           changed = true
         }
       }
       return changed ? next : current
     })
-  }, [events, pendingTaskIds.size])
+  }, [hiveConversationLogEvents, pendingTaskIds.size])
+
+  const hiveEvents = useMemo(
+    () => [
+      ...projectHiveChatEvents(hiveConversationLogEvents),
+        ...events.filter((event) => event.eventType === 'hive_state.snapshot'
+          || event.eventType.startsWith('hive.')
+          || event.eventType.startsWith('eva_pulse.'))
+    ],
+    [events, hiveConversationLogEvents]
+  )
+  const hiveChatEvents = useMemo(
+    () => projectHiveChatEvents(hiveConversationLogEvents),
+    [hiveConversationLogEvents]
+  )
 
   const activeApprovals = useMemo(() => {
     const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
     const resolved = new Set([...resolvedApprovalIds, ...resolvedLocally])
     const byId = new Map<string, { request: ApprovalRequestView; sequence: number }>()
-    const newestFirst = [...events].sort((left, right) => right.sequenceId - left.sequenceId)
+    const newestFirst = [...hiveEvents].sort((left, right) => right.sequenceId - left.sequenceId)
     for (const event of newestFirst) {
       if (event.eventType !== 'approval.required') continue
-      if (events.some((candidate) => candidate.taskId === event.taskId && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))) continue
+      if (hiveEvents.some((candidate) => candidate.taskId === event.taskId && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))) continue
       const request = parseApprovalRequest(event)
       if (!request || resolved.has(request.approvalId)) continue
       if (!byId.has(request.approvalId)) byId.set(request.approvalId, { request, sequence: event.sequenceId })
     }
-    return [...byId.values()].map((item) => item.request)
-  }, [events, resolvedApprovalIds, resolvedLocally])
+    return [...byId.entries()]
+      .filter(([approvalId]) => !resolved.has(approvalId))
+      .map(([, item]) => item.request)
+  }, [hiveEvents, resolvedApprovalIds, resolvedLocally])
+
+  const approvalsFromConversationLog = useMemo(() => {
+    const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
+    const resolved = new Set([...resolvedApprovalIds, ...resolvedLocally])
+    const requests = new Map<string, { request: ApprovalRequestView; sequence: number }>()
+    const orderedEvents = [...hiveChatEvents].sort((left, right) => right.sequenceId - left.sequenceId)
+    for (const event of orderedEvents) {
+      if (event.eventType !== 'approval.required') continue
+      if (orderedEvents.some((candidate) => candidate.taskId === event.taskId
+        && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))) continue
+      const request = parseApprovalRequest(event)
+      if (!request || resolved.has(request.approvalId) || requests.has(request.approvalId)) continue
+      requests.set(request.approvalId, { request, sequence: event.sequenceId })
+    }
+    return [...requests.values()].map((entry) => entry.request)
+  }, [hiveChatEvents, resolvedApprovalIds, resolvedLocally])
+  const effectiveActiveApprovals = useMemo(() => {
+    const merged = new Map<string, ApprovalRequestView>()
+    for (const request of activeApprovals) merged.set(request.approvalId, request)
+    for (const request of approvalsFromConversationLog) merged.set(request.approvalId, request)
+    return [...merged.values()]
+  }, [activeApprovals, approvalsFromConversationLog])
 
   const approvalResolved = useCallback(async (approval: ApprovalRequestView, granted: boolean) => {
     if (!api || resolvingApprovalIds.has(approval.approvalId)) return
@@ -2109,6 +2370,7 @@ export function HiveDashboard({
         next.delete(nextTaskId)
         return next
       })
+      setLocalPrompts((current) => current.filter((prompt) => prompt.taskId !== nextTaskId))
       setCommandError('Не удалось отправить сообщение Королеве Еве.')
     } finally {
       setSendingMessage(false)
@@ -2128,7 +2390,7 @@ export function HiveDashboard({
   const capacityLabel = hiveCapacity > 0 ? hiveCapacity : agentsOnline
   const paused = hive?.queen.status === 'budget_exhausted' && budget.historyAvailable
   const queenActive = hive?.queen.status === 'active'
-  const waitingApproval = activeApprovals.length > 0
+  const waitingApproval = effectiveActiveApprovals.length > 0
   const queenStatusLabel = paused
     ? 'Спит'
     : waitingApproval
@@ -2184,7 +2446,7 @@ export function HiveDashboard({
       : fallbackLabel
         ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
-  const realLogs = hiveLogEntries(events, observedAt, allLogs ? 40 : 6, allLogs)
+  const realLogs = hiveLogEntries(hiveEvents, observedAt, allLogs ? 40 : 6, allLogs, hiveChatTaskIds, observedAtForHiveEvent)
   const logs = realLogs
   const latestLogId = logs[0]?.id ?? null
   useEffect(() => {
@@ -2200,7 +2462,7 @@ export function HiveDashboard({
     }
   }, [])
   const copyHiveLogs = useCallback(async (): Promise<void> => {
-    const formatted = formatHiveLogsForClipboard(events, observedAt, budget)
+    const formatted = formatHiveLogsForClipboard(hiveEvents, observedAt, budget, hiveChatTaskIds, observedAtForHiveEvent)
     if (formatted.length === 0) return
     let copied = false
     try {
@@ -2221,7 +2483,7 @@ export function HiveDashboard({
       setLogsCopyState('idle')
       logsCopyTimerRef.current = null
     }, 2000)
-  }, [api, budget, events, observedAt])
+  }, [api, budget, hiveChatTaskIds, hiveEvents, observedAt, observedAtForHiveEvent])
   const combinedPrompts = useMemo(() => {
     const byTask = new Map<string, HiveUserPrompt>()
     for (const item of historyPrompts) {
@@ -2235,21 +2497,21 @@ export function HiveDashboard({
     return [...byTask.values()]
   }, [historyPrompts, localPrompts])
   const hiveChatMessages = useMemo(
-    () => extractHiveChatMessages(events, combinedPrompts, 5),
-    [combinedPrompts, events]
+    () => extractHiveChatMessages(hiveChatEvents, combinedPrompts, 5),
+    [combinedPrompts, hiveChatEvents]
   )
   const activeApprovalTaskIds = useMemo(
-    () => new Set(activeApprovals.map((approval) => approval.taskId).filter(Boolean)),
-    [activeApprovals]
+    () => new Set(effectiveActiveApprovals.map((approval) => approval.taskId).filter(Boolean)),
+    [effectiveActiveApprovals]
   )
   const queenTyping = useMemo(
-    () => pulseStatus !== 'sleeping' && isQueenThinking(events, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
-    [activeApprovalTaskIds, events, pendingTaskIds, pulseStatus, sendingMessage]
+    () => pulseStatus !== 'sleeping' && isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
+    [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, pulseStatus, sendingMessage]
   )
   const queenWorking = queenTyping && !paused && !waitingApproval
   const queenActivity = useMemo(
-    () => (queenTyping ? queenCurrentActivity(events) : ''),
-    [events, queenTyping]
+    () => (queenTyping ? queenCurrentActivity(hiveChatEvents) : ''),
+    [hiveChatEvents, queenTyping]
   )
 
   return (
@@ -2309,7 +2571,7 @@ export function HiveDashboard({
         </div>
       </header>
 
-      {activeApprovals.map((approval) => (
+      {effectiveActiveApprovals.map((approval) => (
         <ApprovalRequest
           key={approval.approvalId}
           request={approval}
@@ -2562,7 +2824,7 @@ export function HiveDashboard({
           </section>
 
           <div className="hive-chat__messages" role="log" aria-live="polite">
-            {hiveChatMessages.length === 0 && activeApprovals.length === 0 && !queenTyping ? (
+            {hiveChatMessages.length === 0 && effectiveActiveApprovals.length === 0 && !queenTyping ? (
               <p className="hive-empty">{translate('Напиши Королеве Еве — здесь отобразятся последние сообщения диалога.')}</p>
             ) : null}
             {hiveChatMessages.map((message) => (
@@ -2576,7 +2838,7 @@ export function HiveDashboard({
                 <p className="hive-chat__text">{message.text}</p>
               </div>
             ))}
-            {activeApprovals.map((approval) => (
+            {effectiveActiveApprovals.map((approval) => (
               <div key={`chat-approval-${approval.approvalId}`} className="hive-chat__approval" data-testid="hive-chat-approval">
                 <div className="hive-chat__approval-body">
                   <span className="hive-chat__author">{translate('Запрос подтверждения')}</span>

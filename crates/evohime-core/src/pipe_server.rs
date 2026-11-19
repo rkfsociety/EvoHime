@@ -175,7 +175,7 @@ pub async fn run_windows_pipe(
         let (mut reader, mut writer) = split(server);
         let mut verifier = HandshakeVerifier::new(context.clone(), DEFAULT_NONCE_TTL_MS)
             .map_err(|error| std::io::Error::other(error.to_string()))?;
-        match authenticate(
+        let authenticated_client = match authenticate(
             &mut verifier,
             &bridge,
             &logger,
@@ -186,8 +186,8 @@ pub async fn run_windows_pipe(
         )
         .await
         {
-            Ok(true) => {}
-            Ok(false) => continue,
+            Ok(Some(client)) => client,
+            Ok(None) => continue,
             Err(error) => {
                 let _ = logger.write(
                     "warn",
@@ -196,7 +196,7 @@ pub async fn run_windows_pipe(
                 );
                 continue;
             }
-        }
+        };
 
         // Each authenticated client gets its own task. The accept loop must
         // keep a second pipe instance listening while the shell holds its
@@ -207,6 +207,7 @@ pub async fn run_windows_pipe(
         tokio::spawn(serve_connection(
             connection_bridge,
             connection_logger,
+            authenticated_client,
             reader,
             writer,
         ));
@@ -217,6 +218,7 @@ pub async fn run_windows_pipe(
 async fn serve_connection<R, W>(
     bridge: Arc<IpcBridge>,
     logger: Arc<StructuredLogger>,
+    authenticated_client: crate::ipc_bridge::AuthenticatedIpcClient,
     mut reader: R,
     mut writer: W,
 ) where
@@ -256,7 +258,10 @@ async fn serve_connection<R, W>(
 
     let mut sink = ChannelWriter::new(frames);
     loop {
-        if let Err(error) = bridge.process_once(&mut reader, &mut sink).await {
+        if let Err(error) = bridge
+            .process_once_as(Some(&authenticated_client), &mut reader, &mut sink)
+            .await
+        {
             let _ = logger.write(
                 "warn",
                 "ipc.connection_closed",
@@ -273,9 +278,9 @@ async fn serve_connection<R, W>(
 
 /// Runs the challenge/response exchange for one connection.
 ///
-/// Returns `Ok(true)` when the connection may proceed to the command loop and
-/// `Ok(false)` when it was refused and the listener should wait for the next
-/// client.
+/// Returns the verified client identity when the connection may proceed to the
+/// command loop, and `Ok(None)` when it was refused and the listener should
+/// wait for the next client.
 async fn authenticate<R, W>(
     verifier: &mut HandshakeVerifier,
     bridge: &IpcBridge,
@@ -284,7 +289,10 @@ async fn authenticate<R, W>(
     enforce: bool,
     reader: &mut R,
     writer: &mut W,
-) -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
+) -> Result<
+    Option<crate::ipc_bridge::AuthenticatedIpcClient>,
+    Box<dyn std::error::Error + Send + Sync>,
+>
 where
     R: tokio::io::AsyncRead + Unpin,
     W: tokio::io::AsyncWrite + Unpin,
@@ -313,7 +321,7 @@ where
         Ok(frame) => frame?,
         Err(_) => {
             let _ = logger.write("warn", "ipc.handshake_timeout", serde_json::json!({}));
-            return Ok(false);
+            return Ok(None);
         }
     };
     // The client has now written to the pipe, which is what Windows requires
@@ -336,7 +344,7 @@ where
         // error and never mutates state.
         let _ = logger.write("warn", "ipc.handshake_expected", serde_json::json!({}));
         reject(bridge, writer, "protocol-error").await?;
-        return Ok(false);
+        return Ok(None);
     };
 
     let request = HandshakeRequest {
@@ -353,13 +361,17 @@ where
         peer,
     };
 
-    match verifier.verify(&request, now_ms()) {
+    let authenticated_client = match verifier.verify(&request, now_ms()) {
         Ok(verified) => {
             let _ = logger.write(
                 "info",
                 "ipc.client_authenticated",
                 serde_json::json!({"role": verified.client_role}),
             );
+            Some(crate::ipc_bridge::AuthenticatedIpcClient {
+                client_id: verified.client_id,
+                client_role: verified.client_role,
+            })
         }
         Err(rejection) => {
             let unauthenticated_legacy = !enforce
@@ -376,18 +388,19 @@ where
                     serde_json::json!({"reason": rejection.to_string()}),
                 );
                 reject(bridge, writer, "auth-rejected").await?;
-                return Ok(false);
+                return Ok(None);
             }
             let _ = logger.write(
                 "warn",
                 "ipc.client_unauthenticated",
                 serde_json::json!({"reason": rejection.to_string()}),
             );
+            None
         }
-    }
+    };
 
     transport::write_frame(writer, &bridge.ready_event().encode_to_vec()).await?;
-    Ok(true)
+    Ok(authenticated_client)
 }
 
 async fn reject<W: tokio::io::AsyncWrite + Unpin>(

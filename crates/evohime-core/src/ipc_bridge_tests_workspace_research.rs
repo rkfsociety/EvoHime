@@ -942,6 +942,119 @@ async fn start_task_retry_is_idempotent_and_conflict_returns_typed_non_success()
 }
 
 #[tokio::test]
+async fn hive_conversation_rejects_clients_without_the_shell_role() {
+    let path = std::env::temp_dir().join(format!(
+        "evohime-ipc-hive-forbidden-{}-{}.db",
+        std::process::id(),
+        uuid::Uuid::now_v7()
+    ));
+    let journal = EventJournal::open(&path).expect("journal opens");
+    let (coordinator, mut events) = TaskCoordinator::new_with_journal(16, None, journal.clone());
+    let bridge = IpcBridge::with_coordinator(journal, coordinator);
+    let (mut client, server) = duplex(64 * 1024);
+    let (mut server_reader, mut server_writer) = tokio::io::split(server);
+    let command = generated::CommandEnvelope {
+        protocol: Some(protocol()),
+        request_id: "hive-forbidden".into(),
+        // A command frame may claim any client id; only the handshake identity
+        // decides whether the Hive route is reachable.
+        client_id: "electron-shell".into(),
+        core_instance_id: String::new(),
+        session_epoch: 0,
+        command: Some(generated::command_envelope::Command::StartTask(
+            generated::StartTask {
+                task_id: "task-hive-forbidden".into(),
+                prompt: "Исполняй".into(),
+                workspace_path: ".".into(),
+                preferred_route_hint: "hive".into(),
+                execution_kind: "dialogue".into(),
+                conversation_id: "hive-system-chat".into(),
+                client_message_id: "client-message-hive-forbidden".into(),
+                ..Default::default()
+            },
+        )),
+    };
+    transport::write_frame(&mut client, &command.encode_to_vec())
+        .await
+        .expect("forbidden command writes");
+    bridge
+        .process_once(&mut server_reader, &mut server_writer)
+        .await
+        .expect("forbidden command serves");
+    let frame = transport::read_frame(&mut client)
+        .await
+        .expect("typed rejection reads");
+    let envelope = generated::EventEnvelope::decode(frame.as_slice()).expect("rejection decodes");
+    let Some(generated::event_envelope::Event::ConversationEventLog(result)) = envelope.event
+    else {
+        panic!("conversation rejection missing");
+    };
+    assert_eq!(result.operation, "accept");
+    assert_eq!(result.error_code, "forbidden");
+    assert_eq!(result.conversation_id, "hive-system-chat");
+
+    let dispatched =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.recv()).await;
+    assert!(
+        !matches!(dispatched, Ok(Ok(CoreEvent::TaskStarted { .. }))),
+        "a client without the shell role dispatched a Hive task"
+    );
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn hive_conversation_accepts_the_authenticated_shell_role() {
+    let path = std::env::temp_dir().join(format!(
+        "evohime-ipc-hive-shell-{}-{}.db",
+        std::process::id(),
+        uuid::Uuid::now_v7()
+    ));
+    // A plain directory keeps Hive worktree isolation out of this repository.
+    let workspace = std::env::temp_dir().join(format!(
+        "evohime-ipc-hive-workspace-{}",
+        uuid::Uuid::now_v7()
+    ));
+    std::fs::create_dir_all(&workspace).expect("hive workspace creates");
+    let journal = EventJournal::open(&path).expect("journal opens");
+    let (coordinator, mut events) = TaskCoordinator::new_with_journal(16, None, journal.clone());
+    let bridge = IpcBridge::with_coordinator(journal, coordinator);
+    let (mut client, server) = duplex(64 * 1024);
+    let (mut server_reader, mut server_writer) = tokio::io::split(server);
+    let command = generated::CommandEnvelope {
+        protocol: Some(protocol()),
+        request_id: "hive-shell".into(),
+        client_id: "electron-shell".into(),
+        core_instance_id: String::new(),
+        session_epoch: 0,
+        command: Some(generated::command_envelope::Command::StartTask(
+            generated::StartTask {
+                task_id: "task-hive-shell".into(),
+                prompt: "Исполняй".into(),
+                workspace_path: workspace.to_string_lossy().into_owned(),
+                execution_kind: "dialogue".into(),
+                conversation_id: "hive-system-chat".into(),
+                client_message_id: "client-message-hive-shell".into(),
+                ..Default::default()
+            },
+        )),
+    };
+    transport::write_frame(&mut client, &command.encode_to_vec())
+        .await
+        .expect("shell command writes");
+    let shell = AuthenticatedIpcClient {
+        client_id: "electron-shell".into(),
+        client_role: "shell".into(),
+    };
+    bridge
+        .process_once_as(Some(&shell), &mut server_reader, &mut server_writer)
+        .await
+        .expect("shell command serves");
+    let started = tokio::time::timeout(std::time::Duration::from_secs(5), events.recv()).await;
+    assert!(matches!(started, Ok(Ok(CoreEvent::TaskStarted { .. }))));
+    let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
 async fn handshake_exposes_runtime_identity() {
     let path =
         std::env::temp_dir().join(format!("evohime-ipc-handshake-{}.db", std::process::id()));

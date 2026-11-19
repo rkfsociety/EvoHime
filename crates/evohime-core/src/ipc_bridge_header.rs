@@ -705,6 +705,18 @@ pub struct IpcBridge {
     pulse: Option<Arc<crate::eva_pulse::EvaPulseDaemon>>,
 }
 
+/// Client identity confirmed by the connection handshake.
+///
+/// The command envelope carries a self-declared `client_id`; only this value
+/// may gate privileged routes such as the Hive conversation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AuthenticatedIpcClient {
+    /// Verified client identifier from the handshake allowance.
+    pub(crate) client_id: String,
+    /// Verified client role (`shell`, `listener`, or `cli`).
+    pub(crate) client_role: String,
+}
+
 /// Проект, под которым живут принятые предложения. Речь у стола не
 /// принадлежит рабочему каталогу, поэтому у неё собственная строка проекта — по
 /// той же причине, по которой ambient-память живёт в scope `workspace/ambient`.

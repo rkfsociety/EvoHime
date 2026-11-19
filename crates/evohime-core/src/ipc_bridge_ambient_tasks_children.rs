@@ -1,11 +1,70 @@
 use super::*;
 
+/// Только подтверждённый shell-клиент Electron владеет чатом Улья.
+fn is_trusted_hive_shell(client: Option<&AuthenticatedIpcClient>) -> bool {
+    client.is_some_and(|identity| identity.client_role == "shell")
+}
+
+fn start_task_route_hint(start: &generated::StartTask) -> Option<String> {
+    if start.conversation_id == "hive-system-chat" {
+        return Some("hive".into());
+    }
+    match start.preferred_route_hint.as_str() {
+        "local" | "cloud" => Some(start.preferred_route_hint.clone()),
+        "codex_cli" if start.execution_kind == "coding" => Some("codex_cli".into()),
+        // Route hints are user-selectable except for the isolated Hive route.
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod start_task_route_tests {
+    use super::start_task_route_hint;
+    use crate::generated;
+
+    #[test]
+    fn only_hive_system_conversation_can_select_the_hive_route() {
+        let ordinary = generated::StartTask {
+            conversation_id: "ordinary-chat".into(),
+            preferred_route_hint: "hive".into(),
+            ..Default::default()
+        };
+        assert_eq!(start_task_route_hint(&ordinary), None);
+
+        let unbound = generated::StartTask {
+            preferred_route_hint: "hive".into(),
+            ..Default::default()
+        };
+        assert_eq!(start_task_route_hint(&unbound), None);
+
+        let hive = generated::StartTask {
+            conversation_id: "hive-system-chat".into(),
+            preferred_route_hint: "cloud".into(),
+            ..Default::default()
+        };
+        assert_eq!(start_task_route_hint(&hive).as_deref(), Some("hive"));
+    }
+
+    #[test]
+    fn hive_chat_requires_the_authenticated_shell_role() {
+        let client = |client_role: &str| super::super::AuthenticatedIpcClient {
+            client_id: "electron-shell".into(),
+            client_role: client_role.into(),
+        };
+        assert!(super::is_trusted_hive_shell(Some(&client("shell"))));
+        assert!(!super::is_trusted_hive_shell(Some(&client("cli"))));
+        assert!(!super::is_trusted_hive_shell(Some(&client("listener"))));
+        assert!(!super::is_trusted_hive_shell(None));
+    }
+}
+
 impl IpcBridge {
     pub(super) async fn dispatch_tasks_children<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
         request_id: String,
         client_id: String,
+        authenticated_client: Option<&AuthenticatedIpcClient>,
         command_hash: String,
         command: Option<generated::command_envelope::Command>,
     ) -> Result<(), IpcBridgeError> {
@@ -186,6 +245,16 @@ impl IpcBridge {
                     .await?;
             }
             Some(generated::command_envelope::Command::StartTask(start)) => {
+                let trusted_hive_shell = is_trusted_hive_shell(authenticated_client);
+                let hive_conversation = start.conversation_id == "hive-system-chat";
+                if hive_conversation && !trusted_hive_shell {
+                    self.write_conversation_event_log_response(
+                        writer,
+                        conversation_event_log_error("accept", &start.conversation_id, "forbidden"),
+                    )
+                    .await?;
+                    return Ok(());
+                }
                 let has_conversation = !start.conversation_id.is_empty();
                 let has_client_message = !start.client_message_id.is_empty();
                 if has_conversation != has_client_message {
@@ -273,6 +342,11 @@ impl IpcBridge {
                 }
                 if should_dispatch {
                     let session_binding = build_session_binding_from_start_task(&start);
+                    let preferred_route_hint = if trusted_hive_shell && hive_conversation {
+                        Some("hive".into())
+                    } else {
+                        start_task_route_hint(&start)
+                    };
                     if let Some(coordinator) = &self.coordinator {
                         let dispatched = coordinator
                             .dispatch(CoreCommand::StartTask {
@@ -280,19 +354,7 @@ impl IpcBridge {
                                 prompt: start.prompt,
                                 workspace_root: (!start.workspace_path.is_empty())
                                     .then(|| std::path::PathBuf::from(start.workspace_path)),
-                                preferred_route_hint: if start.conversation_id == "hive-system-chat"
-                                    || start.preferred_route_hint == "hive"
-                                {
-                                    Some("hive".into())
-                                } else {
-                                    match start.preferred_route_hint.as_str() {
-                                        "local" | "cloud" => Some(start.preferred_route_hint),
-                                        "codex_cli" if start.execution_kind == "coding" => {
-                                            Some("codex_cli".into())
-                                        }
-                                        _ => None,
-                                    }
-                                },
+                                preferred_route_hint,
                                 conversation: conversation_context,
                                 goal_id: (!start.goal_id.is_empty()).then_some(start.goal_id),
                                 session_binding,

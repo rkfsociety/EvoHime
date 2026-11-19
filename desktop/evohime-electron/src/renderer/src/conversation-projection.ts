@@ -486,9 +486,11 @@ export function conversationEventsToCoreEvents(
       if (eventType === null) {
         projected = null
       } else {
-        const payload = event.kind === 'assistant_message_finalized'
-          ? { TaskCompleted: { task_id: event.taskId, final_message: textPayload(event.payload, 'content') } }
-          : event.kind === 'assistant_message_delta'
+        const payload = event.kind === 'assistant_message_started'
+          ? { prompt: textPayload(event.payload, 'prompt') }
+          : event.kind === 'assistant_message_finalized'
+            ? { final_message: textPayload(event.payload, 'content') }
+            : event.kind === 'assistant_message_delta'
             ? { AssistantDelta: { task_id: event.taskId, content: textPayload(event.payload, 'content') } }
             : event.kind === 'usage_snapshot'
               ? {
@@ -518,13 +520,17 @@ export function conversationEventsToCoreEvents(
 
 function coreEventType(kind: string): string | null {
   const mapping: Record<string, string> = {
+    assistant_message_started: 'task.started',
     assistant_message_delta: 'agent.message.delta',
     assistant_message_finalized: 'task.completed',
     assistant_message_failed: 'task.failed',
+    task_completed: 'task.completed',
+    task_failed: 'task.failed',
     tool_started: 'tool.started',
     tool_output: 'tool.output',
     approval_required: 'approval.required',
     task_started: 'task.started',
+    task_progress: 'workflow.progress',
     task_stopped: 'task.stopped',
     usage_snapshot: 'model.context',
     file_activity: 'storage.progress',
@@ -532,8 +538,7 @@ function coreEventType(kind: string): string | null {
     child_run_summary: 'child.workflow',
     recovery_snapshot: 'task.recovery',
     goal_snapshot: 'goal.updated',
-    artifact_snapshot: 'artifact.saved',
-    task_progress: 'workflow.progress'
+    artifact_snapshot: 'artifact.saved'
   }
   return mapping[kind] ?? null
 }

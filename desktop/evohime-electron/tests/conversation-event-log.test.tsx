@@ -6,6 +6,7 @@ import {
   applyConversationEvents,
   batchAssistantDeltas,
   conversationEvents,
+  conversationEventsToCoreEvents,
   createConversationProjection,
   prependConversationEvents,
   projectUsage,
@@ -119,6 +120,17 @@ describe('conversation projection', () => {
     expect(batchAssistantDeltas(events)).toMatchObject([
       { kind: 'failed', content: 'client_blocked' }
     ])
+  })
+
+  it('projects task terminal events for lifecycle tracking', () => {
+    const events = conversationEventsToCoreEvents([
+      event(1, 'start', 'assistant_message_started', { prompt: 'start' }),
+      event(2, 'final', 'assistant_message_finalized', { content: 'done' }),
+      event(3, 'failure', 'task_failed', { error_code: 'timeout' })
+    ])
+    expect(events.map((item) => item.eventType)).toEqual(['task.started', 'task.completed', 'task.failed'])
+    expect(JSON.parse(events[0]?.payload ?? '{}')).toEqual({ prompt: 'start' })
+    expect(JSON.parse(events[1]?.payload ?? '{}')).toEqual({ final_message: 'done' })
   })
 
   it('never applies events from another conversation', () => {
