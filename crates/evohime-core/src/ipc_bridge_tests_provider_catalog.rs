@@ -560,3 +560,85 @@ async fn rejected_model_selection_keeps_the_ipc_connection_open() {
     drop(journal);
     let _ = std::fs::remove_file(journal_path);
 }
+
+#[tokio::test]
+async fn model_catalog_parallel_routes_do_not_pollute_cache() {
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    let server_a = MockServer::start().await;
+    let server_b = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{ "id": "route-a-model:free" }]
+        })))
+        .mount(&server_a)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": [{ "id": "route-b-model" }]
+        })))
+        .mount(&server_b)
+        .await;
+
+    let mut routes = std::collections::HashMap::new();
+    let route_a = evohime_model_gateway::ModelRouteConfig {
+        provider: evohime_model_gateway::providers::ProviderKind::LiteRouter,
+        literouter: evohime_model_gateway::config::LiteRouterConfig {
+            api_key: "key-a".into(),
+            base_url: format!("{}/v1", server_a.uri()),
+            model: "route-a-model:free".into(),
+        },
+        ..evohime_model_gateway::ModelRouteConfig::openai_compatible(
+            "key-a",
+            format!("{}/v1", server_a.uri()),
+            "route-a-model:free",
+        )
+    };
+    let mut route_b = evohime_model_gateway::ModelRouteConfig::openai_compatible(
+        "key-b",
+        format!("{}/v1", server_b.uri()),
+        "route-b-model",
+    );
+    route_b.provider_profile_id = Some(evohime_model_gateway::ProviderProfileId::Custom);
+    routes.insert("default".to_string(), route_a);
+    routes.insert("custom-alt".to_string(), route_b);
+    let gateway_config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "default".to_string(),
+        routes,
+    };
+
+    let directory = tempfile::tempdir().expect("temp dir");
+    let journal_path = directory.path().join("catalog-parallel-routes.db");
+    let journal = EventJournal::open(&journal_path).expect("journal opens");
+    let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+    let bridge = IpcBridge::with_coordinator_and_approvals(
+        journal.clone(),
+        coordinator,
+        ApprovalCoordinator::default(),
+        Arc::new(ToolRegistry::bootstrap()),
+        None,
+        Some(gateway_config),
+    );
+
+    let (res_a, res_b) = tokio::join!(
+        bridge.fetch_model_catalog_payload("free", Some("literouter"), None),
+        bridge.fetch_model_catalog_payload("paid", Some("openai_compatible"), Some("custom")),
+    );
+
+    assert_eq!(res_a["models"], serde_json::json!(["route-a-model:free"]));
+    assert_eq!(res_b["models"], serde_json::json!(["route-b-model"]));
+    let cache = bridge
+        .provider_catalog_snapshots
+        .read()
+        .expect("cache read lock");
+    assert_eq!(cache.len(), 2);
+
+    drop(cache);
+    drop(bridge);
+    let _ = std::fs::remove_file(journal_path);
+}

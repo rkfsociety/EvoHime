@@ -344,6 +344,7 @@ pub use core_agent::{
 mod core_coordinator;
 pub use core_coordinator::TaskCoordinator;
 mod bounded_tasks;
+mod chat_worktree;
 mod hive_permission_session;
 mod hive_worktree;
 mod core_domains;

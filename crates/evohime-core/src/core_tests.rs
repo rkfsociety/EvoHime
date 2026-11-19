@@ -2157,6 +2157,7 @@ mod tests {
                     profile_id: None,
                     model: Some("model-chat-a".into()),
                     permission_mode: None,
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
@@ -2173,6 +2174,7 @@ mod tests {
                     profile_id: None,
                     model: Some("model-chat-b".into()),
                     permission_mode: None,
+                    ..Default::default()
                 }),
                 ..Default::default()
             },
@@ -2357,6 +2359,7 @@ mod tests {
                     profile_id: None,
                     model: None,
                     permission_mode: None,
+                    ..Default::default()
                 }),
             })
             .await

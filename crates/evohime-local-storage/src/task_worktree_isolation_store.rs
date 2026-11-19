@@ -71,6 +71,34 @@ pub fn transition(
     Ok(c.execute("UPDATE task_worktrees SET state=?1,version=version+1,updated_at_ms=?2 WHERE worktree_id=?3 AND version=?4", params![state,now,id,expected_version as i64])? == 1)
 }
 
+/// Lists non-terminal worktree records whose idempotency key starts with `prefix`.
+pub fn list_active_by_idempotency_prefix(
+    c: &Connection,
+    prefix: &str,
+) -> rusqlite::Result<Vec<TaskWorktreeRecord>> {
+    let pattern = format!("{prefix}%");
+    let mut stmt = c.prepare(
+        "SELECT worktree_id,task_id,repository_scope,branch,root_ref,base_commit,state,version,idempotency_key,updated_at_ms \
+         FROM task_worktrees WHERE idempotency_key LIKE ?1 AND state IN ('ready', 'recovery_pending') \
+         ORDER BY updated_at_ms ASC",
+    )?;
+    let rows = stmt.query_map(params![pattern], |row| {
+        Ok(TaskWorktreeRecord {
+            worktree_id: row.get(0)?,
+            task_id: row.get(1)?,
+            repository_scope: row.get(2)?,
+            branch: row.get(3)?,
+            root_ref: row.get(4)?,
+            base_commit: row.get(5)?,
+            state: row.get(6)?,
+            version: row.get::<_, i64>(7)? as u64,
+            idempotency_key: row.get(8)?,
+            updated_at_ms: row.get(9)?,
+        })
+    })?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

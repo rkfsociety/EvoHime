@@ -10,6 +10,16 @@ pub struct ConversationTaskContext {
     pub before_sequence: u64,
 }
 
+/// Режим файловой изоляции для запускаемой задачи чата.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum IsolationMode {
+    /// Задача выполняется напрямую в общем рабочем каталоге (`workspace_root`).
+    #[default]
+    SharedWorkspace,
+    /// Задача выполняется в выделенном `git worktree` в служебном каталоге.
+    IsolatedWorktree,
+}
+
 /// Неизменяемая привязка провайдера, модели и режима прав для одного запуска задачи.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionBinding {
@@ -21,6 +31,8 @@ pub struct SessionBinding {
     pub model: Option<String>,
     /// Явный режим разрешений уровня запуска (`Allow` = full, `Ask` = ask, `Deny` = read_only).
     pub permission_mode: Option<evohime_permissions::PermissionMode>,
+    /// Режим файловой изоляции (`SharedWorkspace` по умолчанию или `IsolatedWorktree`).
+    pub isolation_mode: IsolationMode,
 }
 
 /// Запросы, которыми внутренние компоненты Core вызывают операции runtime и

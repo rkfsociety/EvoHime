@@ -133,6 +133,34 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             } else {
                 None
             };
+            let chat_worktree_lease = if !hive_route
+                && !worktree_bound
+                && session_binding
+                    .as_ref()
+                    .is_some_and(|binding| binding.isolation_mode == IsolationMode::IsolatedWorktree)
+            {
+                match crate::chat_worktree::prepare_for_chat_task(
+                    journal.as_ref(),
+                    &task_id,
+                    &workspace_root,
+                    None,
+                )
+                .await
+                {
+                    Ok(lease) => {
+                        workspace_root = lease.worktree_root.clone();
+                        Some(lease)
+                    }
+                    Err(error) => {
+                        state_guard.tasks.remove(&task_id);
+                        drop(state_guard);
+                        emit_task_failed(&events, task_id, error).await;
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
             if let Some(journal) = &state_guard.journal {
                 let database = journal.database().lock().await;
                 let _ = evohime_local_storage::domains::runs::attach_task_context(
@@ -920,6 +948,10 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                 }
                 if let Some(lease) = hive_worktree_lease.as_ref() {
                     crate::hive_worktree::cleanup_if_clean(journal.as_ref(), lease).await;
+                }
+                if let Some(lease) = chat_worktree_lease.as_ref() {
+                    let _ = crate::chat_worktree::finalize_chat_worktree(journal.as_ref(), lease)
+                        .await;
                 }
                 if let Err(error) = &result {
                     let _ = events

@@ -560,21 +560,40 @@ impl IpcBridge {
                     transport::write_frame(writer, &event.encode_to_vec()).await?;
                     return Ok(());
                 }
-                let mode = if request.mode == "paid" {
-                    "paid"
-                } else {
-                    "free"
+                let payload = self
+                    .fetch_model_catalog_payload(&request.mode, None, None)
+                    .await;
+                let event = generated::EventEnvelope {
+                    protocol: Some(protocol()),
+                    sequence_id: 0,
+                    task_id: String::new(),
+                    event_type: "model.catalog".into(),
+                    payload: serde_json::to_vec(&payload).unwrap_or_default(),
+                    core_instance_id: self.core_instance_id.clone(),
+                    session_epoch: self.session_epoch,
+                    event: None,
                 };
-                let provider = self
-                    .gateway_config
-                    .as_ref()
-                    .and_then(|config| config.routes.get(&config.default_route))
-                    .map(|route| route.provider.as_str().to_string())
-                    .unwrap_or_else(|| "unknown".into());
-                let route = self
-                    .gateway_config
-                    .as_ref()
-                    .and_then(|config| config.routes.get(&config.default_route));
+                transport::write_frame(writer, &event.encode_to_vec()).await?;
+            }
+
+            _ => unreachable!("command routed to the wrong domain"),
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn fetch_model_catalog_payload(
+        &self,
+        raw_mode: &str,
+        requested_provider: Option<&str>,
+        requested_profile_id: Option<&str>,
+    ) -> serde_json::Value {
+        let mode = if raw_mode == "paid" { "paid" } else { "free" };
+        let route = self.gateway_config.as_ref().and_then(|config| {
+            resolve_catalog_route(config, requested_provider, requested_profile_id)
+        });
+        let provider = route
+            .map(|route| route.provider.as_str().to_string())
+            .unwrap_or_else(|| "unknown".into());
                 let (mut entries, error, ollama, catalog_failure): (
                     Vec<evohime_model_gateway::ModelCatalogEntry>,
                     Option<String>,
@@ -733,31 +752,74 @@ if let Ok(serialized) = serde_json::to_vec(&entries) {
                         )
                     })
                     .collect::<serde_json::Map<_, _>>();
-                let payload = serde_json::json!({
+                serde_json::json!({
                     "mode": mode,
                     "models": models,
                     "limits": limits,
                     "error": if provider == "ollama" { None } else { error },
                     "ollama": ollama,
                     "provider_catalog": provider_catalog,
-                });
-                let event = generated::EventEnvelope {
-                    protocol: Some(protocol()),
-                    sequence_id: 0,
-                    task_id: String::new(),
-                    event_type: "model.catalog".into(),
-                    payload: serde_json::to_vec(&payload).unwrap_or_default(),
-                    core_instance_id: self.core_instance_id.clone(),
-                    session_epoch: self.session_epoch,
-                    event: None,
-                };
-                transport::write_frame(writer, &event.encode_to_vec()).await?;
-            }
-
-            _ => unreachable!("command routed to the wrong domain"),
-        }
-        Ok(())
+                })
     }
+}
+
+fn resolve_catalog_route<'a>(
+    config: &'a evohime_model_gateway::ModelGatewayConfig,
+    provider: Option<&str>,
+    profile_id: Option<&str>,
+) -> Option<&'a evohime_model_gateway::ModelRouteConfig> {
+    let requested_provider = provider.map(str::trim).filter(|value| !value.is_empty());
+    let requested_profile = profile_id.map(str::trim).filter(|value| !value.is_empty());
+    if requested_provider.is_none() && requested_profile.is_none() {
+        return config.routes.get(&config.default_route);
+    }
+
+    let requested_kind =
+        requested_provider.and_then(evohime_model_gateway::providers::ProviderKind::parse);
+    let matches_provider =
+        |route_id: &str, route: &evohime_model_gateway::ModelRouteConfig| -> bool {
+            let Some(req_provider) = requested_provider else {
+                return true;
+            };
+            route_id.eq_ignore_ascii_case(req_provider)
+                || route.provider.as_str().eq_ignore_ascii_case(req_provider)
+                || requested_kind.is_some_and(|kind| route.provider == kind)
+        };
+
+    if let Some(req_profile) = requested_profile {
+        let mut matching: Vec<(&String, &evohime_model_gateway::ModelRouteConfig)> = config
+            .routes
+            .iter()
+            .filter(|(route_id, route)| {
+                let profile_matches = route
+                    .provider_profile_id
+                    .is_some_and(|id| id.as_str().eq_ignore_ascii_case(req_profile))
+                    || route_id.eq_ignore_ascii_case(req_profile);
+                profile_matches && matches_provider(route_id, route)
+            })
+            .collect();
+        matching.sort_by(|(left, _), (right, _)| left.cmp(right));
+        if let Some((_, route)) = matching
+            .iter()
+            .find(|(route_id, _)| *route_id == &config.default_route)
+        {
+            return Some(route);
+        }
+        return matching.first().map(|(_, route)| *route);
+    }
+
+    if let Some(default_route) = config.routes.get(&config.default_route) {
+        if matches_provider(&config.default_route, default_route) {
+            return Some(default_route);
+        }
+    }
+    let mut matching: Vec<(&String, &evohime_model_gateway::ModelRouteConfig)> = config
+        .routes
+        .iter()
+        .filter(|(route_id, route)| matches_provider(route_id, route))
+        .collect();
+    matching.sort_by(|(left, _), (right, _)| left.cmp(right));
+    matching.first().map(|(_, route)| *route)
 }
 
 #[cfg(test)]
