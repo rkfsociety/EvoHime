@@ -3588,3 +3588,19 @@ execution: the runtime has no repository checkout and the public clone attempt
 could not resolve GitHub. The pre-follow-up exact-SHA CI above is evidence only
 for `f034f3d`; the new Core patch is pending its own CI. This documentation
 records that distinction rather than carrying the baseline result forward.
+
+## Plan 196 — Canonical Tool ID Lexicon Closure (2026-11-19)
+
+План `196` (канонический лексикон `tool_id` с разделителем `_`, удаление
+`provider_function_name` / `canonical_tool_call_name`, legacy-приём на входных
+границах через `ToolRegistry::resolve_tool_id` и `resolve_tool_call_name`,
+перенос контракта в [`architecture/capabilities.md`](architecture/capabilities.md)
+и [`current-state.md`](current-state.md)) закрыт и удалён из `docs/plans/`.
+
+Подтверждённые зелёные CI-запуски на ветке `main`:
+- Core module [44493778497](https://github.com/rkfsociety/EvoHime/actions/runs/44493778497) (`success`)
+- UI bundle module [44493782086](https://github.com/rkfsociety/EvoHime/actions/runs/44493782086) (`success`)
+- Shell-host module [44493774333](https://github.com/rkfsociety/EvoHime/actions/runs/44493774333) (`success`)
+- Rust documentation [44493686106](https://github.com/rkfsociety/EvoHime/actions/runs/44493686106) (`success`)
+- Compatible release manifest [44496251576](https://github.com/rkfsociety/EvoHime/actions/runs/44496251576) (`success`)
+

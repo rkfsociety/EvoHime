@@ -15,7 +15,7 @@
 ## Закрытые направления
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
 и evidence в канонические документы. К закрытым относятся планы `01–179`,
-`183`, `189–190` (включая `144`); планы `127–130` закрыты как MVP-контуры
+`183`, `189–190` (включая `144`) и `196`; планы `127–130` закрыты как MVP-контуры
 с явно сохранёнными `unavailable` deployment/adapter gates. Их отсутствие
 из каталога не означает отсутствие контракта: он находится в
 `architecture.md`, `docs/architecture/*.md` и `current-state.md`.
@@ -39,16 +39,15 @@
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 196 | [Канонический лексикон tool id без подмены имён](196-0-core-tool-id-canonical-lexicon.md) | active; id равно wire-имени, legacy-точки только на чтение |
 | 197 | [Изолированные сессии чатов (провайдер, модель, права и worktree)](197-0-chat-session-isolation.md) | active; per-chat session isolation и мульти-маршрутный ModelGateway |
 
-Незавершённые numbered plans: `180–181`, `184–188` и `191–197`.
+Незавершённые numbered plans: `180–181`, `184–188`, `191–195` и `197`.
 
 Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
 зависимостей; следующий номер — `198`, текущий active catalog — `180–181`,
-`184–188` и `191–197`. Номера issues в активных планах — исторические
+`184–188`, `191–195` и `197`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 
