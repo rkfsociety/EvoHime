@@ -949,7 +949,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     kernel_host.stop_sessions_for_task(&task_id).await;
                 }
                 if let Some(lease) = hive_worktree_lease.as_ref() {
-                    crate::hive_worktree::cleanup_if_clean(journal.as_ref(), lease).await;
+                    crate::hive_worktree::cleanup_if_clean(journal.as_ref(), lease, &task_id).await;
                 }
                 if let Some(lease) = chat_worktree_lease.as_ref() {
                     let _ =

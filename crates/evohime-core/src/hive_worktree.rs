@@ -123,9 +123,27 @@ pub(crate) async fn prepare_for_task(
 /// Removes a Hive task worktree after execution if and only if its working tree
 /// is completely clean. Dirty worktrees are preserved so unintegrated work is
 /// never lost.
-pub(crate) async fn cleanup_if_clean(journal: Option<&EventJournal>, lease: &HiveWorktreeLease) {
+///
+/// A detached workflow started by this task may still run inside the worktree
+/// after the agent has answered. Removing the directory then would break the
+/// child agents' reads, so cleanup waits until every workflow run owned by the
+/// task reaches a terminal state.
+pub(crate) async fn cleanup_if_clean(
+    journal: Option<&EventJournal>,
+    lease: &HiveWorktreeLease,
+    task_id: &str,
+) {
     if !lease.worktree_root.exists() {
         return;
+    }
+    if let Some(journal) = journal {
+        if journal
+            .has_active_workflow_run(task_id)
+            .await
+            .unwrap_or(true)
+        {
+            return;
+        }
     }
     let Some(status_output) = run_git(&lease.worktree_root, &["status", "--porcelain"]).await
     else {

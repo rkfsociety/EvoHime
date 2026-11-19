@@ -112,6 +112,26 @@ fn a_run_is_stored_with_its_nodes_and_read_back_unchanged() {
 }
 
 #[test]
+fn active_run_query_keeps_resumable_runs_and_ignores_terminal_ones() {
+    let connection = connection();
+    insert_run(&connection, &run("run-pending"), &[]).expect("insert pending");
+    assert!(has_active_run_for_task(&connection, "task-1").expect("pending is active"));
+    assert!(!has_active_run_for_task(&connection, "task-2").expect("other task is empty"));
+
+    update_run_state(&connection, "run-pending", RunState::Completed, "", 2_000).expect("complete");
+    assert!(!has_active_run_for_task(&connection, "task-1").expect("completed is terminal"));
+
+    let mut interrupted = run("run-interrupted");
+    interrupted.task_id = "task-3".into();
+    interrupted.state = RunState::Interrupted;
+    insert_run(&connection, &interrupted, &[]).expect("insert interrupted");
+    assert!(
+        has_active_run_for_task(&connection, "task-3").expect("interrupted is resumable"),
+        "an interrupted run may still resume inside the worktree"
+    );
+}
+
+#[test]
 fn guided_run_and_recipe_link_are_committed_together() {
     let connection = connection();
     let record = run("guided-run-1");

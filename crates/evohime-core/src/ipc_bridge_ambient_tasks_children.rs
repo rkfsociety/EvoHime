@@ -6,7 +6,7 @@ fn is_trusted_hive_shell(client: Option<&AuthenticatedIpcClient>) -> bool {
 }
 
 fn start_task_route_hint(start: &generated::StartTask) -> Option<String> {
-    if start.conversation_id == "hive-system-chat" {
+    if start.conversation_id == crate::conversation_event_log::HIVE_SYSTEM_CHAT_ID {
         return Some("hive".into());
     }
     match start.preferred_route_hint.as_str() {
@@ -246,7 +246,8 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 let trusted_hive_shell = is_trusted_hive_shell(authenticated_client);
-                let hive_conversation = start.conversation_id == "hive-system-chat";
+                let hive_conversation =
+                    start.conversation_id == crate::conversation_event_log::HIVE_SYSTEM_CHAT_ID;
                 if hive_conversation && !trusted_hive_shell {
                     self.write_conversation_event_log_response(
                         writer,

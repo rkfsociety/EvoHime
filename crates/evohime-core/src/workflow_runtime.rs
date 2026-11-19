@@ -468,6 +468,16 @@ impl EventJournal {
         store::get_run(database.connection(), run_id)
     }
 
+    /// Returns whether the task still has a workflow run that may execute more
+    /// nodes.
+    pub async fn has_active_workflow_run(
+        &self,
+        task_id: &str,
+    ) -> Result<bool, store::WorkflowStoreError> {
+        let database = self.database.lock().await;
+        store::has_active_run_for_task(database.connection(), task_id)
+    }
+
     /// Lists workflow runs, bounded by the requested page size.
     pub async fn list_workflow_runs(
         &self,

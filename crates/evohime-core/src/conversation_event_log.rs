@@ -58,6 +58,12 @@ pub fn user_message_draft(content: &str) -> Result<ConversationEventDraft, Conve
     )
 }
 
+/// Identifier of the Queen's system conversation.
+///
+/// The IPC boundary uses it to assign the isolated Hive route, and the Hive
+/// dashboard uses it to scope child-agent projections to its own world.
+pub(crate) const HIVE_SYSTEM_CHAT_ID: &str = "hive-system-chat";
+
 pub fn project_core_event(
     event_type: &str,
     payload: &[u8],

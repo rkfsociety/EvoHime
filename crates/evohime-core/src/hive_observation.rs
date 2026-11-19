@@ -285,7 +285,75 @@ pub(crate) async fn replay_hive_projections(journal: &EventJournal) -> Vec<Child
             by_child.insert(projection.child_task_id.clone(), projection);
         }
     }
-    by_child.into_values().collect()
+    let parents: std::collections::BTreeMap<String, String> = by_child
+        .values()
+        .map(|projection| {
+            (
+                projection.child_task_id.clone(),
+                projection.parent_task_id.clone(),
+            )
+        })
+        .collect();
+    let roots: std::collections::BTreeSet<String> = by_child
+        .keys()
+        .map(|child| projection_root_task(child, &parents))
+        .collect();
+    let hive_roots = hive_root_task_ids(journal, &roots).await;
+    by_child
+        .into_values()
+        .filter(|projection| {
+            hive_roots.contains(&projection_root_task(&projection.child_task_id, &parents))
+        })
+        .collect()
+}
+
+/// Resolves the task that started the whole child subtree.
+///
+/// A hop-2 child names its worker as the parent, so filtering only by
+/// `parent_task_id` would drop it. Walking to the top keeps the whole fan-out.
+fn projection_root_task(
+    child_task_id: &str,
+    parents: &std::collections::BTreeMap<String, String>,
+) -> String {
+    let mut current = child_task_id;
+    // MAX_CHILD_DEPTH is 2; the bound only guards corrupt cyclic payloads.
+    for _ in 0..8 {
+        let Some(parent) = parents.get(current) else {
+            return current.to_string();
+        };
+        if !parents.contains_key(parent) {
+            return parent.clone();
+        }
+        current = parent;
+    }
+    current.to_string()
+}
+
+/// Keeps child projections that belong to the Hive world.
+///
+/// Ordinary chats may start the same workflow templates, so the shared replay
+/// window is scoped to roots bound to `hive-system-chat` (or to the EvaPulse
+/// background prefix, which has no chat binding).
+async fn hive_root_task_ids(
+    journal: &EventJournal,
+    roots: &std::collections::BTreeSet<String>,
+) -> std::collections::BTreeSet<String> {
+    let mut result = std::collections::BTreeSet::new();
+    let database = journal.database().lock().await;
+    for root in roots {
+        if root.starts_with("eva-pulse-") {
+            result.insert(root.clone());
+            continue;
+        }
+        if let Ok(Some((conversation_id, _, _))) =
+            evohime_local_storage::domains::audit::task_binding(database.connection(), root)
+        {
+            if conversation_id == crate::conversation_event_log::HIVE_SYSTEM_CHAT_ID {
+                result.insert(root.clone());
+            }
+        }
+    }
+    result
 }
 
 /// Lists active role profiles from the persistent agent registry.
@@ -323,6 +391,93 @@ pub(crate) fn selected_model_name(selected: &SelectedModel) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn child_projection(parent: &str, child: &str) -> crate::child_workflow::ChildProjection {
+        crate::child_workflow::ChildProjection {
+            event_id: format!("{child}:running"),
+            parent_task_id: parent.into(),
+            child_task_id: child.into(),
+            role: "researcher".into(),
+            revision: 1,
+            state: crate::child_workflow::CoordinatorState::Running,
+            reason_code: None,
+            parent_sequence: 1,
+            budget: None,
+            lease_live: true,
+            dead_letter: false,
+            depth: 1,
+            report_status: None,
+            report_summary: None,
+            spawned_subagents: 0,
+            planned_ceiling: 0,
+            extensions_granted: 0,
+            lazy_waiting: 0,
+            in_flight_subagents: 0,
+            extension_requested: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn child_projection_window_keeps_only_hive_owned_agents() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let journal =
+            EventJournal::open(directory.path().join("hive-scope.db")).expect("journal opens");
+        for (conversation, task) in [
+            (
+                crate::conversation_event_log::HIVE_SYSTEM_CHAT_ID,
+                "queen-task",
+            ),
+            ("ordinary-chat", "chat-task"),
+        ] {
+            journal
+                .accept_conversation_message(
+                    conversation,
+                    "workspace",
+                    task,
+                    &format!("client-{task}"),
+                    "prompt",
+                )
+                .await
+                .expect("binding accepts");
+        }
+        for (task_id, parent, child) in [
+            ("queen-task", "queen-task", "queen-task:worker"),
+            (
+                "queen-task:worker",
+                "queen-task:worker",
+                "queen-task:worker:hop2",
+            ),
+            ("chat-task", "chat-task", "chat-task:worker"),
+            ("eva-pulse-task", "eva-pulse-task", "eva-pulse-task:worker"),
+        ] {
+            journal
+                .record(&crate::CoreEvent::ChildWorkflowProjection {
+                    task_id: task_id.into(),
+                    projection: child_projection(parent, child),
+                })
+                .await
+                .expect("projection journals");
+        }
+
+        let ids: Vec<String> = replay_hive_projections(&journal)
+            .await
+            .into_iter()
+            .map(|projection| projection.child_task_id)
+            .collect();
+        assert!(ids.contains(&"queen-task:worker".to_string()));
+        assert!(
+            ids.contains(&"queen-task:worker:hop2".to_string()),
+            "a hop-2 child inherits its root from the worker"
+        );
+        assert!(
+            ids.contains(&"eva-pulse-task:worker".to_string()),
+            "EvaPulse roots have no chat binding but belong to the Hive"
+        );
+        assert!(
+            !ids.contains(&"chat-task:worker".to_string()),
+            "a child started by an ordinary chat is not a Hive agent"
+        );
+    }
 
     #[tokio::test]
     async fn task_metrics_come_from_durable_coordinator_events() {

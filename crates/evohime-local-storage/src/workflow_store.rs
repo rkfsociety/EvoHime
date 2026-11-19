@@ -634,6 +634,24 @@ pub fn list_runs(
     Ok(records)
 }
 
+/// Returns whether the task still owns a workflow run that can execute more
+/// nodes (including `interrupted` runs that may be resumed).
+///
+/// The terminal set mirrors [`RunState::is_terminal`].
+pub fn has_active_run_for_task(
+    connection: &Connection,
+    task_id: &str,
+) -> Result<bool, WorkflowStoreError> {
+    let active: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM workflow_runs
+         WHERE task_id = ?1
+           AND state NOT IN ('completed','failed','cancelled','degraded')",
+        params![task_id],
+        |row| row.get(0),
+    )?;
+    Ok(active > 0)
+}
+
 fn map_run(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkflowRunRecord> {
     let state: String = row.get(10)?;
     let cancel: i64 = row.get(14)?;
