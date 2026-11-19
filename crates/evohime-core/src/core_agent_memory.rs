@@ -29,6 +29,12 @@ struct ProvenancedExtractorContext {
     generation: i64,
 }
 
+pub(super) struct DialogMemorySourceContext<'a> {
+    pub(super) task_id: &'a str,
+    pub(super) workspace_root: &'a std::path::Path,
+    pub(super) hive: bool,
+}
+
 type MemoryExtractorResult = Result<Option<String>, &'static str>;
 
 async fn emit_memory_extraction_diagnostic(
@@ -117,9 +123,7 @@ impl ToolAgent {
     /// primary turn complete. The source body remains in the existing journal.
     pub(super) async fn capture_dialog_memory_source(
         &self,
-        task_id: &str,
-        workspace_root: &std::path::Path,
-        hive: bool,
+        context: DialogMemorySourceContext<'_>,
         user_prompt: &str,
         assistant_reply: &str,
         primary_model_refs: Option<(&str, &str)>,
@@ -142,7 +146,7 @@ impl ToolAgent {
             emit_memory_extraction_diagnostic(
                 events,
                 MemoryExtractionDiagnostic {
-                    task_id,
+                    task_id: context.task_id,
                     source_id: None,
                     origin: "dialog",
                     stage: "source",
@@ -157,7 +161,7 @@ impl ToolAgent {
             write_model_trace(
                 "memory.extraction.skipped",
                 serde_json::json!({
-                    "task_id": task_id,
+                    "task_id": context.task_id,
                     "mode": mode.as_str(),
                     "reason": error.to_string(),
                 }),
@@ -167,7 +171,7 @@ impl ToolAgent {
         emit_memory_extraction_diagnostic(
             events,
             MemoryExtractionDiagnostic {
-                task_id,
+                task_id: context.task_id,
                 source_id: None,
                 origin: "dialog",
                 stage: "source",
@@ -189,7 +193,7 @@ impl ToolAgent {
             b"evohime-memory-source-basis:v1\0",
             &[
                 "dialog",
-                task_id,
+                context.task_id,
                 &revision_hash,
                 request_ref.as_deref().unwrap_or_default(),
                 response_ref.as_deref().unwrap_or_default(),
@@ -198,11 +202,11 @@ impl ToolAgent {
         let input = evohime_local_storage::domains::memory::CaptureSourceInput {
             source_id: source_basis.clone(),
             source_basis: source_basis.clone(),
-            source_ref_id: task_id.to_owned(),
+            source_ref_id: context.task_id.to_owned(),
             source_revision_hash: revision_hash,
-            scope_id: task_memory::task_memory_scope_id(workspace_root, hive),
+            scope_id: task_memory::task_memory_scope_id(context.workspace_root, context.hive),
             origin: evohime_local_storage::domains::memory::MemoryExtractionOrigin::Dialog,
-            root_execution_id: task_id.to_owned(),
+            root_execution_id: context.task_id.to_owned(),
             depth: 0,
             source_order: now_ms as i64,
             primary_request_id: request_ref.clone(),
@@ -216,7 +220,7 @@ impl ToolAgent {
                 emit_memory_extraction_diagnostic(
                     events,
                     MemoryExtractionDiagnostic {
-                    task_id,
+                    task_id: context.task_id,
                     source_id: Some(&source_id),
                     origin: "dialog",
                     stage: "source",
@@ -244,7 +248,7 @@ impl ToolAgent {
                 emit_memory_extraction_diagnostic(
                     events,
                     MemoryExtractionDiagnostic {
-                    task_id,
+                    task_id: context.task_id,
                     source_id: Some(&source_id),
                     origin: "dialog",
                     stage: "source",
@@ -269,7 +273,7 @@ impl ToolAgent {
                 emit_memory_extraction_diagnostic(
                     events,
                     MemoryExtractionDiagnostic {
-                    task_id,
+                    task_id: context.task_id,
                     source_id: None,
                     origin: "dialog",
                     stage: "source",
@@ -287,7 +291,7 @@ impl ToolAgent {
                 emit_memory_extraction_diagnostic(
                     events,
                     MemoryExtractionDiagnostic {
-                    task_id,
+                    task_id: context.task_id,
                     source_id: None,
                     origin: "dialog",
                     stage: "source",
@@ -302,7 +306,7 @@ impl ToolAgent {
                 write_model_trace(
                     "memory.extraction.suppressed",
                     serde_json::json!({
-                        "task_id": task_id,
+                        "task_id": context.task_id,
                         "error_code": "source_capture_failed",
                         "operation": "dialog",
                     }),
@@ -3782,9 +3786,11 @@ mod tests {
         let reply = "Язык интерфейса русский.";
         let source = agent
             .capture_dialog_memory_source(
-                task_id,
-                directory.path(),
-                false,
+                DialogMemorySourceContext {
+                    task_id,
+                    workspace_root: directory.path(),
+                    hive: false,
+                },
                 prompt,
                 reply,
                 None,

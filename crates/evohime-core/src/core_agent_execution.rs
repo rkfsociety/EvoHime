@@ -1901,9 +1901,11 @@ impl ToolAgent {
                     .await;
                 let extraction_source = self
                     .capture_dialog_memory_source(
-                        &task_id,
-                        &context.workspace_root,
-                        hive_world,
+                        memory::DialogMemorySourceContext {
+                            task_id: &task_id,
+                            workspace_root: &context.workspace_root,
+                            hive: hive_world,
+                        },
                         &extraction_user_prompt,
                         &final_message,
                         primary_request_id

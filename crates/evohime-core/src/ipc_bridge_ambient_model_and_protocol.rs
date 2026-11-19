@@ -797,7 +797,7 @@ fn resolve_catalog_route<'a>(
                 profile_matches && matches_provider(route_id, route)
             })
             .collect();
-        matching.sort_by(|(left, _), (right, _)| left.cmp(right));
+        matching.sort_by_key(|(route_id, _)| *route_id);
         if let Some((_, route)) = matching
             .iter()
             .find(|(route_id, _)| *route_id == &config.default_route)
@@ -817,7 +817,7 @@ fn resolve_catalog_route<'a>(
         .iter()
         .filter(|(route_id, route)| matches_provider(route_id, route))
         .collect();
-    matching.sort_by(|(left, _), (right, _)| left.cmp(right));
+    matching.sort_by_key(|(route_id, _)| *route_id);
     matching.first().map(|(_, route)| *route)
 }
 
