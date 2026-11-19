@@ -186,7 +186,16 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     evohime_core::permission_rules::apply_rules(tools.permissions(), &data_dir).await;
     let approvals = evohime_core::ApprovalCoordinator::default();
     let routing_approvals = evohime_core::RoutingApprovalRegistry::default();
-    let mut model_config = evohime_model_gateway::ModelGatewayConfig::from_env().ok();
+    let mut model_config = match evohime_model_gateway::ModelGatewayConfig::from_env() {
+        Ok(config) => Some(config),
+        Err(error) => {
+            // Keep Core available for local features, but preserve the cause:
+            // otherwise catalog requests only report a misleading missing
+            // provider route when the gateway configuration failed to load.
+            tracing::error!(%error, "model gateway configuration could not be loaded");
+            None
+        }
+    };
     if let (Some(config), Ok(hive_settings)) =
         (model_config.as_mut(), journal.hive_settings().await)
     {

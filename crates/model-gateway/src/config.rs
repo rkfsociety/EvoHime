@@ -835,7 +835,10 @@ impl ModelGatewayConfig {
 
         if let Ok(raw_additional) = env::var("MODEL_ADDITIONAL_ROUTES_JSON") {
             if !raw_additional.trim().is_empty() {
-                let additional = parse_routes_from_json(&raw_additional)?;
+                // Additional routes intentionally do not contain the primary
+                // route selected by MODEL_DEFAULT_ROUTE. Parse and validate
+                // their entries, but do not require them to define that route.
+                let additional = parse_additional_routes_from_json(&raw_additional)?;
                 for (name, additional_route) in additional.routes {
                     if name != default_route && name != "hive" && name != "hive_fallback" {
                         routes.entry(name).or_insert(additional_route);
@@ -1118,6 +1121,19 @@ struct EnvRouteConfig {
 }
 
 fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, ProviderError> {
+    parse_routes_json(raw_routes, true)
+}
+
+fn parse_additional_routes_from_json(
+    raw_routes: &str,
+) -> Result<ModelGatewayConfig, ProviderError> {
+    parse_routes_json(raw_routes, false)
+}
+
+fn parse_routes_json(
+    raw_routes: &str,
+    require_default_route: bool,
+) -> Result<ModelGatewayConfig, ProviderError> {
     let routes: HashMap<String, EnvRouteConfig> = serde_json::from_str(raw_routes)
         .map_err(|error| ProviderError::Config(error.to_string()))?;
     let default_route = env::var("MODEL_DEFAULT_ROUTE").unwrap_or_else(|_| "default".to_string());
@@ -1203,7 +1219,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
         parsed_routes.insert(name, route_config);
     }
 
-    if !parsed_routes.contains_key(&default_route) {
+    if require_default_route && !parsed_routes.contains_key(&default_route) {
         return Err(ProviderError::Config(format!(
             "default model route '{default_route}' is missing from MODEL_ROUTES_JSON"
         )));
@@ -1476,6 +1492,35 @@ mod tests {
             RequestPacingConfig::LITEROUTER_INTERVAL_MS
         );
         assert!(literouter.model_rate_limits.is_empty());
+    }
+
+    #[test]
+    fn additional_routes_json_does_not_require_a_default_route() {
+        let raw = serde_json::json!({
+            "literouter": {
+                "provider": "literouter",
+                "api_key": "lr-test",
+                "model": "deepseek:free"
+            },
+            "openai_compatible:deepseek": {
+                "provider": "openai_compatible",
+                "api_key": "deepseek-test",
+                "base_url": "https://api.deepseek.com/v1",
+                "model": "deepseek-chat",
+                "provider_profile_id": "deepseek"
+            }
+        });
+
+        let parsed = parse_additional_routes_from_json(&raw.to_string())
+            .expect("additional routes do not need a primary route");
+
+        assert_eq!(parsed.routes.len(), 2);
+        assert!(parsed.routes.contains_key("literouter"));
+        assert_eq!(
+            parsed.routes["openai_compatible:deepseek"].provider_profile_id,
+            Some(ProviderProfileId::DeepSeek)
+        );
+        assert!(parse_routes_from_json(&raw.to_string()).is_err());
     }
 
     #[test]
