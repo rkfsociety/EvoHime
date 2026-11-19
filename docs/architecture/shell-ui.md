@@ -271,3 +271,43 @@ event pages through the existing `afterSequence` contract, fetches the next
 page when full, allows only one projection cycle at a time, and stops only
 after a terminal run's final page has been observed. Reconnect starts a new
 cycle from the retained event cursor; unmount/run change clears timers.
+
+## Per-chat session isolation (Plan 197)
+
+Each chat inside the single `evohime-core.exe` process runs as an isolated
+logical session without spawning a second Core process or restarting Core when
+switching already-configured providers or models in the composer:
+
+- **Provider pool:** `ProviderStore.environment()` exports the active provider's
+  variables plus all other configured profiles in `MODEL_ADDITIONAL_ROUTES_JSON`
+  (`ModelGatewayConfig::from_env` merges them into `ModelGateway`, reserving
+  `default`, `hive`, and `hive_fallback`). `provider.select` no longer calls
+  `restartCore()`; Core restarts only when secrets change (`provider.save` /
+  `provider.clearKey`).
+- **Immutable `SessionBinding`:** `StartTask` (`evohime.desktop.proto` fields
+  `provider`, `profile_id`, `model`, `permission_mode`, `isolation_mode`) maps
+  to `CoreCommand::StartTask.session_binding`. `ToolAgent` resolves the route
+  and pinned model once at run start (`ModelGateway::resolve_route`,
+  `route_pin`) instead of reading global `SelectedModel` per iteration, and
+  unconfigured providers fail immediately with `provider_not_configured` before
+  creating an `agent_run` effect.
+- **Per-run `PermissionMode`:** When `SessionBinding.permission_mode` is set,
+  `ToolAgent` allocates an ephemeral `PermissionEngine` session UUID (`session_id`
+  in `ToolContext`, excluding `MicrophoneListen`) and clears it on run exit
+  without mutating global workspace modes or bypassing `PolicyRuleSet`.
+- **Per-route `ModelCatalog`:** `ModelCatalogRequest` accepts optional
+  `provider` and `profile_id`; `IpcBridge::fetch_model_catalog_payload`
+  resolves the matching route and caches snapshots in `ProviderCatalogCache`
+  keyed by `provider_catalog_scope_key` (distinct per `(provider, profile_id,
+  base_url)`).
+- **Optional `git worktree` sandbox (`chat_worktree`):** When
+  `IsolationMode::IsolatedWorktree` is requested, Core allocates a detached
+  worktree in a service directory outside the repository tree (`idempotency_key`
+  prefix `chat_session:`), fails closed with `isolated_worktree_unavailable` on
+  non-Git workspaces, cleans up clean worktrees on completion, preserves dirty
+  worktrees for explicit apply/discard, and marks orphaned dirty worktrees
+  `recovery_pending` on restart.
+- **Shell persistence:** `chats.json` additively stores optional
+  `session?: ChatSessionSettings` per chat (`chat.saveSessionSettings`), and
+  composer pickers (`ChatProviderPicker`, `ModelPicker`, isolation selector)
+  bind to the active `chatId`.

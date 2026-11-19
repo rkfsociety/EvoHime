@@ -62,6 +62,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 193 | Agent Coordination, Loop Guards и Session Recall | active implementation contract |
 | 194 | Background Jobs Control Center | active implementation contract |
 | 195 | Capability Extensions и Workflow Composition | active implementation contract |
+| 197 | Изолированные сессии чатов (провайдер, модель, права и worktree) | реализован в checkout 2026-11-19; CI и закрытие ожидают push |
 
 Планы 01–173 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым

@@ -1349,3 +1349,25 @@ anonymous HTTPS GET к `api.github.com`, с redirect запретом, отве�
 tests, а также renderer regression test. Локальные tests/build/typecheck и
 visual preview не запускались; exact-commit CI для checkout не доступен до
 push, поэтому implementation correctness остаётся pending CI.
+
+## Plan 197 — Изолированные сессии чатов (реализован в checkout 2026-11-19; CI ожидает push)
+
+Каждый чат выполняется как независимая логическая сессия внутри одного процесса
+Core: `ModelGateway` хранит пул всех настроенных профилей провайдеров
+(`MODEL_ADDITIONAL_ROUTES_JSON`, `ProviderRouteKey`), `CoreCommand::StartTask` и
+`ToolAgent` фиксируют неизменяемый `SessionBinding` (`provider`, `profile_id`,
+`model`, `permission_mode`, `isolation_mode`) на уровне запуска, `PermissionMode`
+изолируется через per-run `session_id` с очисткой при завершении, `ModelCatalog`
+разрешает маршрут по `(provider, profile_id)` с изоляцией `ProviderCatalogCache`,
+а `chat_worktree` обеспечивает опциональный `git worktree` вне дерева исходников
+с recovery осиротевших worktree. В Electron `provider.select` больше не вызывает
+`restartCore()`, `chats.json` аддитивно хранит `session?: ChatSessionSettings`,
+и пикеры композера привязаны к активному `chatId`.
+
+Локально прошли фокусные проверки: `evohime-model-gateway` (3 теста на
+`resolve_route` и `route_pin`), `evohime-core` (`session_binding_*` — 3 теста,
+`chat_worktree` — 3 теста, `model_catalog_parallel_routes_do_not_pollute_cache`
+— 1 тест), Electron `npm run check:protocol`, `npm run typecheck`, `vitest`
+(`shell-bridge.test.ts`, `provider-store.test.ts`, `chat-store.test.ts` — 121
+тест), `git diff --check`. Полный workspace CI, `cargo doc` и Real-Core E2E
+ожидают push.
