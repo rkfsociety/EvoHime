@@ -188,11 +188,21 @@ fn classify_failure(error: &ProviderError) -> FailureCategory {
     provider_contract::classify_provider_error(error)
 }
 
+/// Stable lookup key for resolving a configured provider route in [`ModelGateway`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProviderRouteKey {
+    /// Transport/provider name (for example `"literouter"` or `"openai_compatible"`).
+    pub provider: String,
+    /// Optional vendor/profile identifier within the transport.
+    pub profile_id: Option<String>,
+}
+
 /// Entry point for chat completions.
 pub struct ModelGateway {
     default_route: String,
     default_provider: Arc<dyn ModelProvider>,
     routes: HashMap<String, Arc<dyn ModelProvider>>,
+    route_profiles: HashMap<String, Option<ProviderProfileId>>,
     route_preflight: Option<Arc<dyn RoutePreflight>>,
 }
 
@@ -711,8 +721,10 @@ impl ModelGateway {
             route.validate_provider_profile()?;
         }
         let mut routes = HashMap::new();
+        let mut route_profiles = HashMap::new();
         for (name, route_config) in &config.routes {
             routes.insert(name.clone(), build_provider(route_config)?);
+            route_profiles.insert(name.clone(), route_config.provider_profile_id);
         }
 
         let default_provider = routes
@@ -723,6 +735,7 @@ impl ModelGateway {
             default_route: config.default_route.clone(),
             default_provider,
             routes,
+            route_profiles,
             route_preflight: None,
         })
     }
@@ -733,6 +746,7 @@ impl ModelGateway {
             default_route: "default".to_string(),
             default_provider: provider.clone(),
             routes: HashMap::from([("default".to_string(), provider)]),
+            route_profiles: HashMap::new(),
             route_preflight: None,
         }
     }
@@ -750,6 +764,7 @@ impl ModelGateway {
             default_route,
             default_provider,
             routes,
+            route_profiles: HashMap::new(),
             route_preflight: None,
         })
     }
@@ -817,6 +832,91 @@ impl ModelGateway {
             default_route: config.default_route.clone(),
             routes,
         })
+    }
+
+    /// Returns the default model name configured for a specific route.
+    pub fn route_model_name(&self, route: &str) -> Result<&str, ProviderError> {
+        Ok(self.provider_for_route(route)?.model_name())
+    }
+
+    /// Resolves a [`ProviderRouteKey`] to a configured route name.
+    pub fn resolve_route_key(&self, key: &ProviderRouteKey) -> Result<String, ProviderError> {
+        self.resolve_route(Some(key.provider.as_str()), key.profile_id.as_deref())?
+            .ok_or_else(|| ProviderError::Config("provider_not_configured: empty route key".into()))
+    }
+
+    /// Resolves optional `(provider, profile_id)` session preferences to a configured route name.
+    ///
+    /// Returns `Ok(None)` when both inputs are absent or blank. Returns a
+    /// `provider_not_configured` error when a non-empty provider or profile is requested
+    /// that does not match any configured route in this gateway.
+    pub fn resolve_route(
+        &self,
+        provider: Option<&str>,
+        profile_id: Option<&str>,
+    ) -> Result<Option<String>, ProviderError> {
+        let requested_provider = provider.map(str::trim).filter(|value| !value.is_empty());
+        let requested_profile = profile_id.map(str::trim).filter(|value| !value.is_empty());
+        if requested_provider.is_none() && requested_profile.is_none() {
+            return Ok(None);
+        }
+
+        let requested_kind = requested_provider.and_then(ProviderKind::parse);
+        let matches_provider = |route_id: &str, candidate: &Arc<dyn ModelProvider>| -> bool {
+            let Some(req_provider) = requested_provider else {
+                return true;
+            };
+            route_id.eq_ignore_ascii_case(req_provider)
+                || candidate.kind().as_str().eq_ignore_ascii_case(req_provider)
+                || requested_kind.is_some_and(|kind| candidate.kind() == kind)
+        };
+
+        if let Some(req_profile) = requested_profile {
+            let mut matching: Vec<&String> = self
+                .routes
+                .iter()
+                .filter(|(route_id, candidate)| {
+                    let profile_matches = self
+                        .route_profiles
+                        .get(*route_id)
+                        .and_then(|profile| *profile)
+                        .is_some_and(|profile| profile.as_str().eq_ignore_ascii_case(req_profile))
+                        || route_id.eq_ignore_ascii_case(req_profile);
+                    profile_matches && matches_provider(route_id, candidate)
+                })
+                .map(|(route_id, _)| route_id)
+                .collect();
+            matching.sort();
+            if matching.iter().any(|route_id| *route_id == &self.default_route) {
+                return Ok(Some(self.default_route.clone()));
+            }
+            if let Some(route_id) = matching.first() {
+                return Ok(Some((*route_id).clone()));
+            }
+            return Err(ProviderError::Config(format!(
+                "provider_not_configured: provider={requested_provider:?}, profile_id={requested_profile:?}"
+            )));
+        }
+
+        if let Some(default_provider) = self.routes.get(&self.default_route) {
+            if matches_provider(&self.default_route, default_provider) {
+                return Ok(Some(self.default_route.clone()));
+            }
+        }
+        let mut matching: Vec<&String> = self
+            .routes
+            .iter()
+            .filter(|(route_id, candidate)| matches_provider(route_id, candidate))
+            .map(|(route_id, _)| route_id)
+            .collect();
+        matching.sort();
+        if let Some(route_id) = matching.first() {
+            return Ok(Some((*route_id).clone()));
+        }
+
+        Err(ProviderError::Config(format!(
+            "provider_not_configured: provider={requested_provider:?}, profile_id={requested_profile:?}"
+        )))
     }
 
     /// Returns the provider kind for the default route.
@@ -1281,7 +1381,10 @@ impl ModelGateway {
                     if backoff > 0 {
                         tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
                     }
-                    let effective_model = (route == self.default_route).then_some(model).flatten();
+                    let effective_model = (route == self.default_route
+                        || route_pin == Some(route.as_str()))
+                    .then_some(model)
+                    .flatten();
                     if let Some(preflight) = &self.route_preflight {
                         if let Err(error) = preflight
                             .check_for_request_async(
@@ -1413,7 +1516,9 @@ impl ModelGateway {
                 .as_deref()
                 .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?,
         };
-        let effective_model = (route == self.default_route).then_some(model).flatten();
+        let effective_model = (route == self.default_route || route_pin == Some(route))
+            .then_some(model)
+            .flatten();
         if let Some(preflight) = &self.route_preflight {
             preflight
                 .check_for_request_async(
@@ -1504,7 +1609,9 @@ impl ModelGateway {
             self.route_candidates_for_request(request)
                 .into_iter()
                 .map(|candidate| {
-                    let model = if candidate.route_id == self.default_route {
+                    let apply_override = candidate.route_id == self.default_route
+                        || request.preferred_route.as_deref() == Some(candidate.route_id.as_str());
+                    let model = if apply_override {
                         model_override
                             .map(str::trim)
                             .filter(|model| !model.is_empty())
@@ -2410,5 +2517,144 @@ mod tests {
             .expect("hive request succeeds");
         assert_eq!(hive_result.selected_route, "hive");
         assert!(hive_result.fallback_chain.is_empty());
+    }
+
+    #[test]
+    fn resolve_route_supports_provider_and_profile_keys() {
+        let mut routes = HashMap::new();
+        routes.insert(
+            "default".to_string(),
+            Arc::new(MockProvider::new("mock-default", vec!["ok".into()]))
+                as Arc<dyn ModelProvider>,
+        );
+        routes.insert(
+            "alt".to_string(),
+            Arc::new(MockProvider::new("mock-alt", vec!["ok".into()])) as Arc<dyn ModelProvider>,
+        );
+        let mut gateway = ModelGateway::from_routes("default", routes).expect("valid routes");
+        gateway
+            .route_profiles
+            .insert("alt".to_string(), Some(ProviderProfileId::OpenAi));
+
+        assert_eq!(gateway.resolve_route(None, None).expect("empty"), None);
+        assert_eq!(
+            gateway
+                .resolve_route(Some("mock"), None)
+                .expect("default mock route"),
+            Some("default".to_string())
+        );
+        assert_eq!(
+            gateway
+                .resolve_route_key(&ProviderRouteKey {
+                    provider: "mock".to_string(),
+                    profile_id: Some("openai".to_string()),
+                })
+                .expect("profile route"),
+            "alt"
+        );
+        let err = gateway
+            .resolve_route(Some("openai_compatible"), None)
+            .expect_err("unconfigured provider fails");
+        assert!(err.to_string().contains("provider_not_configured"));
+    }
+
+    #[tokio::test]
+    async fn pinned_alternate_route_receives_session_model_override() {
+        struct RecordingProvider {
+            model: String,
+            seen_models: Arc<std::sync::Mutex<Vec<Option<String>>>>,
+        }
+
+        impl ModelProvider for RecordingProvider {
+            fn kind(&self) -> ProviderKind {
+                ProviderKind::LiteRouter
+            }
+
+            fn model_name(&self) -> &str {
+                &self.model
+            }
+
+            fn base_url(&self) -> &str {
+                "https://api.literouter.com/v1"
+            }
+
+            fn stream_chat(&self, _messages: &[ChatMessage]) -> crate::providers::TokenStream {
+                Box::pin(futures_util::stream::empty())
+            }
+
+            fn chat_with_tools(
+                &self,
+                model: Option<&str>,
+                _messages: &[ChatMessage],
+                _tools: &[ToolSpec],
+            ) -> crate::providers::ChatFuture {
+                self.seen_models
+                    .lock()
+                    .expect("lock")
+                    .push(model.map(str::to_owned));
+                Box::pin(async {
+                    Ok(ChatResult {
+                        content: "ok".into(),
+                        thinking: None,
+                        tool_calls: Vec::new(),
+                        usage: None,
+                    })
+                })
+            }
+        }
+
+        let seen_models = Arc::new(std::sync::Mutex::new(Vec::<Option<String>>::new()));
+        let seen_default = Arc::new(std::sync::Mutex::new(Vec::<Option<String>>::new()));
+        let mut routes = HashMap::new();
+        routes.insert(
+            "default".to_string(),
+            Arc::new(RecordingProvider {
+                model: "default-model".to_string(),
+                seen_models: seen_default.clone(),
+            }) as Arc<dyn ModelProvider>,
+        );
+        routes.insert(
+            "alt".to_string(),
+            Arc::new(RecordingProvider {
+                model: "alt-default-model".to_string(),
+                seen_models: seen_models.clone(),
+            }) as Arc<dyn ModelProvider>,
+        );
+        let gateway = ModelGateway::from_routes("default", routes).expect("valid routes");
+
+        let mut request = RoutingRequest {
+            required_capabilities: vec!["chat".to_string()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: false,
+            preferred_route: Some("alt".into()),
+            task_class: None,
+            offline: false,
+            allow_cloud: true,
+            estimated_input_tokens: 0,
+            quality_delta: 0.05,
+        };
+        request.preferred_route = Some("alt".into());
+        let result = gateway
+            .chat_with_tools_with_policy_and_route_hook_options(
+                RoutingMode::Balanced,
+                &request,
+                Some("alt-session-model"),
+                &[ChatMessage::text(crate::providers::ChatRole::User, "ping")],
+                &[],
+                None,
+                ChatRequestOptions::default(),
+                Some("alt"),
+            )
+            .await
+            .expect("pinned route succeeds");
+
+        assert_eq!(result.selected_route, "alt");
+        assert_eq!(
+            seen_models.lock().expect("lock").as_slice(),
+            &[Some("alt-session-model".to_string())]
+        );
+        assert!(seen_default.lock().expect("lock").is_empty());
     }
 }

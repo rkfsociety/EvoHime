@@ -1607,6 +1607,7 @@ impl CoordinatorPulseTaskSink {
                     preferred_route_hint: Some(preferred_route_hint),
                     conversation: None,
                     goal_id: None,
+                    session_binding: None,
                 })
                 .await
                 .map_err(|error| error.to_string())?;
@@ -1646,6 +1647,7 @@ impl CoordinatorPulseTaskSink {
                     preferred_route_hint: Some(route_name),
                     conversation: None,
                     goal_id: None,
+                    session_binding: None,
                 })
                 .await
                 .map_err(|error| error.to_string())?;

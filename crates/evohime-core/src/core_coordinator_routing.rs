@@ -41,6 +41,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             preferred_route_hint,
             conversation,
             goal_id,
+            session_binding,
         } => {
             let cancellation = CancellationToken::new();
             let run_id = format!("agent-{}", uuid::Uuid::new_v4());
@@ -59,6 +60,17 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             }
             let events = state_guard.events.clone();
             let executor = state_guard.executor.clone();
+            if let (Some(executor), Some(binding)) = (&executor, &session_binding) {
+                if let Err(error) = executor.resolve_session_route(
+                    binding.provider.as_deref(),
+                    binding.profile_id.as_deref(),
+                ) {
+                    state_guard.tasks.remove(&task_id);
+                    drop(state_guard);
+                    emit_task_failed(&events, task_id, error).await;
+                    return;
+                }
+            }
             let journal = state_guard.journal.clone();
             // Задача Улья без явного workspace работает только в каталоге
             // исходников из настроек Улья (или в первом добавленном проекте).
@@ -470,6 +482,7 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                                     continuation_attempt: current_attempt,
                                     defer_completion_event: is_continuation_run,
                                     conversation_id: conversation_id.clone(),
+                                    session_binding: session_binding.clone(),
                                 },
                                 cancellation.clone(),
                                 events.clone(),
@@ -1447,6 +1460,7 @@ mod timeout_tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: Some(goal_id.into()),
+                session_binding: None,
             })
             .await
             .expect("task dispatches");
@@ -1665,6 +1679,7 @@ mod timeout_tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: Some(goal_id.into()),
+                session_binding: None,
             })
             .await
             .expect("task dispatches");
@@ -1909,6 +1924,7 @@ mod timeout_tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("task dispatches");

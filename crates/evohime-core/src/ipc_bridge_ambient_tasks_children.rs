@@ -294,6 +294,7 @@ impl IpcBridge {
                                 },
                                 conversation: conversation_context,
                                 goal_id: (!start.goal_id.is_empty()).then_some(start.goal_id),
+                                session_binding: None,
                             })
                             .await;
                         if has_conversation {

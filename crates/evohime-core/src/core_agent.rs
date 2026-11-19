@@ -75,6 +75,8 @@ pub struct ConversationExecutionContext {
     pub defer_completion_event: bool,
     /// Optional conversation/chat identifier associated with this task.
     pub conversation_id: Option<String>,
+    /// Optional immutable per-run binding for provider, model, and permission mode.
+    pub session_binding: Option<crate::core_protocol::SessionBinding>,
 }
 
 /// Coordinates one-shot user approvals for protected agent actions.
@@ -278,6 +280,15 @@ pub trait TaskExecutor: Send + Sync {
             cancellation,
             events,
         )
+    }
+
+    /// Validates and resolves an optional `(provider, profile_id)` session binding.
+    fn resolve_session_route(
+        &self,
+        _provider: Option<&str>,
+        _profile_id: Option<&str>,
+    ) -> Result<Option<String>, String> {
+        Ok(None)
     }
 
     /// Evaluates a continuation gate; implementations without gate support report unavailable.
@@ -906,6 +917,8 @@ struct AssembleModelContextInput<'a> {
     /// обязан принять их в loadout независимо от формулировки prompt.
     mutation_authorized: bool,
     selected_model: Option<&'a str>,
+    route_provider: Option<&'a str>,
+    route_default_model: Option<&'a str>,
 }
 
 struct CallModelInput<'a> {
@@ -924,6 +937,7 @@ struct CallModelInput<'a> {
     total_token_budget: u32,
     max_output_tokens: Option<u32>,
     route_pin: Option<&'a str>,
+    selected_model: Option<&'a str>,
 }
 
 pub(crate) struct ModelRequestEnvelopeInput<'a> {
@@ -1286,6 +1300,7 @@ impl TaskExecutor for ToolAgent {
                         continuation_attempt: None,
                         defer_completion_event: false,
                         conversation_id: None,
+                        session_binding: None,
                     },
                 )
                 .await
@@ -1338,6 +1353,16 @@ impl TaskExecutor for ToolAgent {
                 )
                 .await
         })
+    }
+
+    fn resolve_session_route(
+        &self,
+        provider: Option<&str>,
+        profile_id: Option<&str>,
+    ) -> Result<Option<String>, String> {
+        self.gateway
+            .resolve_route(provider, profile_id)
+            .map_err(|error| error.to_string())
     }
 
     fn extract_ambient_memory(

@@ -443,6 +443,14 @@ impl PermissionEngine {
             .remove(&(session_id, permission));
     }
 
+    /// Removes all session-specific mode overrides for `session_id`.
+    pub async fn clear_session(&self, session_id: Uuid) {
+        self.session_modes
+            .write()
+            .await
+            .retain(|(sid, _), _| *sid != session_id);
+    }
+
     /// Adds or replaces a path grant, optionally scoped to a session and TTL.
     pub async fn set_path_grant(
         &self,

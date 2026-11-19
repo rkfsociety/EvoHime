@@ -518,6 +518,7 @@ mod tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("start dispatches");
@@ -583,6 +584,7 @@ mod tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("start dispatches");
@@ -647,6 +649,7 @@ mod tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("start dispatches");
@@ -1048,6 +1051,7 @@ mod tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("start dispatches");
@@ -1333,6 +1337,7 @@ mod tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("command dispatches");
@@ -1433,6 +1438,7 @@ mod tests {
                     before_sequence: current.event.sequence,
                 }),
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("task dispatches");
@@ -1694,6 +1700,7 @@ mod tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("start dispatches");
@@ -1802,6 +1809,7 @@ mod tests {
                 preferred_route_hint: None,
                 conversation: None,
                 goal_id: None,
+                session_binding: None,
             })
             .await
             .expect("task dispatches");
@@ -2047,5 +2055,336 @@ mod tests {
             assert!(!json.is_empty());
             assert!(json.len() <= observability::MAX_EVENT_BYTES);
         }
+    }
+
+    #[tokio::test]
+    async fn session_binding_isolates_parallel_providers_and_models() {
+        use crate::{ConversationExecutionContext, SelectedModel, SessionBinding};
+        use evohime_model_gateway::{
+            providers::{ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream},
+            tools::{ChatResult, ToolSpec},
+        };
+
+        struct RouteRecorder {
+            kind: ProviderKind,
+            default_model: String,
+            seen: Arc<std::sync::Mutex<Vec<Option<String>>>>,
+            delay_ms: u64,
+        }
+
+        impl ModelProvider for RouteRecorder {
+            fn kind(&self) -> ProviderKind {
+                self.kind
+            }
+
+            fn model_name(&self) -> &str {
+                &self.default_model
+            }
+
+            fn base_url(&self) -> &str {
+                "https://example.invalid/v1"
+            }
+
+            fn stream_chat(&self, _messages: &[ChatMessage]) -> TokenStream {
+                Box::pin(futures_util::stream::empty())
+            }
+
+            fn chat_with_tools(
+                &self,
+                model: Option<&str>,
+                _messages: &[ChatMessage],
+                _tools: &[ToolSpec],
+            ) -> ChatFuture {
+                let seen = self.seen.clone();
+                let recorded = model.map(str::to_owned);
+                let delay_ms = self.delay_ms;
+                Box::pin(async move {
+                    if delay_ms > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
+                    seen.lock().expect("lock").push(recorded);
+                    Ok(ChatResult {
+                        content: "done".into(),
+                        thinking: None,
+                        tool_calls: Vec::new(),
+                        usage: None,
+                    })
+                })
+            }
+        }
+
+        let seen_default = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_alt = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut routes: std::collections::HashMap<String, Arc<dyn ModelProvider>> =
+            std::collections::HashMap::new();
+        routes.insert(
+            "default".into(),
+            Arc::new(RouteRecorder {
+                kind: ProviderKind::LiteRouter,
+                default_model: "default-base".into(),
+                seen: seen_default.clone(),
+                delay_ms: 40,
+            }),
+        );
+        routes.insert(
+            "alt".into(),
+            Arc::new(RouteRecorder {
+                kind: ProviderKind::OpenAICompatible,
+                default_model: "alt-base".into(),
+                seen: seen_alt.clone(),
+                delay_ms: 40,
+            }),
+        );
+        let gateway = Arc::new(ModelGateway::from_routes("default", routes).expect("gateway"));
+        let selected_model = SelectedModel::default();
+        selected_model.set(Some("global-initial".into()));
+        let agent = ToolAgent::new(gateway, Arc::new(ToolRegistry::bootstrap()))
+            .with_selected_model(selected_model.clone());
+        let workspace = std::env::temp_dir().join(format!(
+            "evohime-session-isolation-models-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&workspace).expect("create workspace");
+        let (tx, _rx) = tokio::sync::mpsc::channel(32);
+
+        let fut_a = agent.execute_in_conversation(
+            "task-a".into(),
+            "hello a".into(),
+            workspace.clone(),
+            ConversationExecutionContext {
+                session_binding: Some(SessionBinding {
+                    provider: Some("literouter".into()),
+                    profile_id: None,
+                    model: Some("model-chat-a".into()),
+                    permission_mode: None,
+                }),
+                ..Default::default()
+            },
+            CancellationToken::new(),
+            EventSink::new(tx.clone()),
+        );
+        let fut_b = agent.execute_in_conversation(
+            "task-b".into(),
+            "hello b".into(),
+            workspace.clone(),
+            ConversationExecutionContext {
+                session_binding: Some(SessionBinding {
+                    provider: Some("openai_compatible".into()),
+                    profile_id: None,
+                    model: Some("model-chat-b".into()),
+                    permission_mode: None,
+                }),
+                ..Default::default()
+            },
+            CancellationToken::new(),
+            EventSink::new(tx),
+        );
+
+        // Mutate global SelectedModel while both runs are in flight; neither run may observe it.
+        selected_model.set(Some("global-mutated".into()));
+
+        let (res_a, res_b) = tokio::join!(fut_a, fut_b);
+        assert_eq!(res_a.expect("chat A succeeds"), "done");
+        assert_eq!(res_b.expect("chat B succeeds"), "done");
+        assert_eq!(
+            seen_default.lock().expect("lock").as_slice(),
+            &[Some("model-chat-a".to_string())]
+        );
+        assert_eq!(
+            seen_alt.lock().expect("lock").as_slice(),
+            &[Some("model-chat-b".to_string())]
+        );
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn session_binding_isolates_parallel_permission_modes() {
+        use crate::{ConversationExecutionContext, SessionBinding};
+        use evohime_model_gateway::{
+            providers::{ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream},
+            tools::{ChatResult, ToolSpec},
+        };
+        use evohime_permissions::{Permission, PermissionDecision, PermissionEngine, PermissionMode};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct WriteOnceProvider {
+            calls: AtomicUsize,
+        }
+
+        impl ModelProvider for WriteOnceProvider {
+            fn kind(&self) -> ProviderKind {
+                ProviderKind::LiteRouter
+            }
+
+            fn model_name(&self) -> &str {
+                "mock-model"
+            }
+
+            fn base_url(&self) -> &str {
+                "https://example.invalid/v1"
+            }
+
+            fn stream_chat(&self, _messages: &[ChatMessage]) -> TokenStream {
+                Box::pin(futures_util::stream::empty())
+            }
+
+            fn chat_with_tools(
+                &self,
+                _model: Option<&str>,
+                _messages: &[ChatMessage],
+                _tools: &[ToolSpec],
+            ) -> ChatFuture {
+                let count = self.calls.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    if count < 2 {
+                        let target = if count == 0 { "a.txt" } else { "b.txt" };
+                        Ok(ChatResult {
+                            content: String::new(),
+                            thinking: None,
+                            tool_calls: vec![NativeToolCall {
+                                id: format!("call-{count}"),
+                                name: "write_file".into(),
+                                arguments: serde_json::json!({
+                                    "path": target,
+                                    "content": "hello",
+                                })
+                                .to_string(),
+                            }],
+                            usage: None,
+                        })
+                    } else {
+                        Ok(ChatResult {
+                            content: "finished".into(),
+                            thinking: None,
+                            tool_calls: Vec::new(),
+                            usage: None,
+                        })
+                    }
+                })
+            }
+        }
+
+        let permissions = PermissionEngine::new();
+        // Global mode stays Ask: neither Allow nor Deny is leaked globally.
+        permissions.set_all_modes(PermissionMode::Ask).await;
+        let tools = Arc::new(ToolRegistry::bootstrap_with_permissions(permissions.clone()));
+        let gateway = Arc::new(ModelGateway::from_provider(Arc::new(WriteOnceProvider {
+            calls: AtomicUsize::new(0),
+        })));
+        let agent = ToolAgent::new(gateway, tools);
+        let workspace = std::env::temp_dir().join(format!(
+            "evohime-session-isolation-perms-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&workspace).expect("create workspace");
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+
+        let fut_readonly = agent.execute_in_conversation(
+            "task-readonly".into(),
+            "write a.txt".into(),
+            workspace.clone(),
+            ConversationExecutionContext {
+                session_binding: Some(SessionBinding {
+                    permission_mode: Some(PermissionMode::Deny),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            CancellationToken::new(),
+            EventSink::new(tx.clone()),
+        );
+        let fut_full = agent.execute_in_conversation(
+            "task-full".into(),
+            "write b.txt".into(),
+            workspace.clone(),
+            ConversationExecutionContext {
+                session_binding: Some(SessionBinding {
+                    permission_mode: Some(PermissionMode::Allow),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            CancellationToken::new(),
+            EventSink::new(tx.clone()),
+        );
+
+        let (res_ro, res_full) = tokio::join!(fut_readonly, fut_full);
+        assert!(res_ro.is_ok());
+        assert!(res_full.is_ok());
+
+        // Global permission mode must remain Ask after both runs finish.
+        assert_eq!(permissions.mode(Permission::FilesystemWrite).await, PermissionMode::Ask);
+        assert_eq!(
+            permissions.check(Permission::FilesystemWrite).await,
+            PermissionDecision::NeedsApproval
+        );
+
+        // Drain events and ensure read_only did not trigger an approval request.
+        drop(tx);
+        while let Some(event) = rx.recv().await {
+            if let CoreEvent::ApprovalRequired { task_id, .. } = event {
+                panic!("unexpected approval prompt for {task_id}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn session_binding_rejects_unconfigured_provider_before_creating_agent_run() {
+        use crate::SessionBinding;
+
+        let dir = std::env::temp_dir().join(format!(
+            "evohime-session-unconfigured-provider-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).expect("create dir");
+        let journal = EventJournal::open(dir.join("journal.db")).expect("journal opens");
+        let gateway = Arc::new(evohime_model_gateway::mock_gateway(vec!["ok".into()]));
+        let agent = Arc::new(ToolAgent::new(gateway, Arc::new(ToolRegistry::bootstrap())));
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_journal(32, Some(agent), journal.clone());
+
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-bad-provider".into(),
+                prompt: "hello".into(),
+                workspace_root: Some(dir.clone()),
+                preferred_route_hint: None,
+                conversation: None,
+                goal_id: None,
+                session_binding: Some(SessionBinding {
+                    provider: Some("nonexistent_provider".into()),
+                    profile_id: None,
+                    model: None,
+                    permission_mode: None,
+                }),
+            })
+            .await
+            .expect("dispatch returns");
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(2), events.recv())
+            .await
+            .expect("receives failure event")
+            .expect("event channel open");
+        match event {
+            CoreEvent::TaskFailed { task_id, error } => {
+                assert_eq!(task_id, "task-bad-provider");
+                assert!(error.contains("provider_not_configured"), "{error}");
+            }
+            other => panic!("expected TaskFailed, got {other:?}"),
+        }
+
+        let database = journal.database().lock().await;
+        let run_count: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM agent_runs WHERE task_id = 'task-bad-provider'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query agent_runs");
+        assert_eq!(run_count, 0);
+        drop(database);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -10,6 +10,19 @@ pub struct ConversationTaskContext {
     pub before_sequence: u64,
 }
 
+/// Неизменяемая привязка провайдера, модели и режима прав для одного запуска задачи.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionBinding {
+    /// Запрошенный провайдер/транспорт (например, `"literouter"`, `"openai_compatible"`, `"ollama"`).
+    pub provider: Option<String>,
+    /// Необязательный идентификатор профиля провайдера (например, `"openai"`, `"openrouter"`).
+    pub profile_id: Option<String>,
+    /// Явный идентификатор модели, закреплённый за этим запуском.
+    pub model: Option<String>,
+    /// Явный режим разрешений уровня запуска (`Allow` = full, `Ask` = ask, `Deny` = read_only).
+    pub permission_mode: Option<evohime_permissions::PermissionMode>,
+}
+
 /// Запросы, которыми внутренние компоненты Core вызывают операции runtime и
 /// передают результат через одноразовый канал ответа. Этот тип не является
 /// транспортным IPC-сообщением: внешние клиенты используют версии протокола
@@ -30,6 +43,8 @@ pub enum CoreCommand {
         conversation: Option<ConversationTaskContext>,
         /// Optional Core-owned Goal ID to bind and drive until completion.
         goal_id: Option<String>,
+        /// Optional per-run session binding (provider, profile, model, permission mode).
+        session_binding: Option<SessionBinding>,
     },
     /// Останавливает выполняемую задачу по её идентификатору.
     StopTask {

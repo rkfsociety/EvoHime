@@ -70,6 +70,7 @@ impl IpcBridge {
                                         preferred_route_hint: None,
                                         conversation: None,
                                         goal_id: None,
+                                        session_binding: None,
                                     })
                                     .await;
                             }

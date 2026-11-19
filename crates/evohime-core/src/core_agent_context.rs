@@ -678,9 +678,12 @@ impl ToolAgent {
                     sample_index: Some(sample_index),
                     total_token_budget: input.total_token_budget,
                     max_output_tokens: Some(max_output_tokens),
-                    route_pin: samples
-                        .first()
-                        .map(|sample| sample.result.selected_route.as_str()),
+                    route_pin: input.route_pin.or_else(|| {
+                        samples
+                            .first()
+                            .map(|sample| sample.result.selected_route.as_str())
+                    }),
+                    selected_model: input.selected_model,
                 })
                 .await?;
             let usage = sample.result.result.usage.ok_or_else(|| {
@@ -781,7 +784,8 @@ impl ToolAgent {
                 sample_index: Some(0),
                 total_token_budget: input.total_token_budget,
                 max_output_tokens: Some(planning_output),
-                route_pin: None,
+                route_pin: input.route_pin,
+                selected_model: input.selected_model,
             })
             .await?;
         if planning.result.result.has_tool_calls()
@@ -853,7 +857,8 @@ impl ToolAgent {
                     })?),
                     total_token_budget: input.total_token_budget,
                     max_output_tokens: Some(max_output_tokens),
-                    route_pin: Some(&expected_route),
+                    route_pin: input.route_pin.or(Some(&expected_route)),
+                    selected_model: input.selected_model,
                 })
                 .await?;
             if child.result.result.has_tool_calls()
@@ -922,11 +927,18 @@ impl ToolAgent {
             intent_prompt,
             mutation_authorized,
             selected_model,
+            route_provider,
+            route_default_model,
         } = input;
         let model_call_id = format_model_call_id(task_id, continuation_attempt, iteration);
         let now = task_memory::now_millis() as i64;
-        let provider = self.gateway.provider_kind().as_str().to_string();
-        let model = effective_model_name(self.gateway.model_name(), selected_model);
+        let provider = route_provider
+            .map(str::to_owned)
+            .unwrap_or_else(|| self.gateway.provider_kind().as_str().to_string());
+        let model = effective_model_name(
+            route_default_model.unwrap_or_else(|| self.gateway.model_name()),
+            selected_model,
+        );
         let contents: std::collections::HashMap<String, &str> = messages
             .iter()
             .enumerate()
@@ -1299,6 +1311,7 @@ impl ToolAgent {
             total_token_budget: _,
             max_output_tokens,
             route_pin,
+            selected_model,
         } = input;
         let resilience_policy = model_resilience_policy::builtin_policy();
         let purpose = model_purpose_routing::purpose_for_task_class(task_class);
@@ -1371,7 +1384,7 @@ impl ToolAgent {
                     "attempt": attempt + 1,
                     "model_attempt_id": logical_request_id,
                     "model": provider_model_for_trace(
-                        self.selected_model.get().map(|model| model.to_string()),
+                        selected_model.map(str::to_owned),
                     ),
                     "timeout_secs": config.model_timeout_secs,
                     "resilience_policy": model_resilience_policy::CONTRACT_ID,
@@ -1426,7 +1439,7 @@ impl ToolAgent {
                 .gateway
                 .provenance_route_snapshot_hash_with_model(
                     &routing_request,
-                    self.selected_model.get().as_deref(),
+                    selected_model,
                 )
                 .map_err(|error| {
                     AgentRunError::Provider(ProviderError::Config(error.to_string()))
@@ -1518,13 +1531,12 @@ impl ToolAgent {
                 }),
                 _ => None,
             };
-            let selected_model = self.selected_model.get();
             let model_request = self
                 .gateway
                 .chat_with_tools_with_policy_and_route_hook_options(
                     RoutingMode::Balanced,
                     &routing_request,
-                    selected_model.as_deref(),
+                    selected_model,
                     &provider_messages,
                     effective_specs,
                     strategy_hook
@@ -1583,7 +1595,7 @@ impl ToolAgent {
                                 "attempt": attempt + 1,
                                 "model_attempt_id": logical_request_id,
                                 "model": provider_model_for_trace(
-                                    self.selected_model.get().map(|model| model.to_string()),
+                                    selected_model.map(str::to_owned),
                                 ),
                                 "purpose": purpose.as_str(),
                                 "error_code": error_code,
@@ -1605,7 +1617,7 @@ impl ToolAgent {
                             "attempt": attempt + 1,
                             "model_attempt_id": logical_request_id,
                             "model": provider_model_for_trace(
-                                self.selected_model.get().map(|model| model.to_string()),
+                                selected_model.map(str::to_owned),
                             ),
                             "purpose": purpose.as_str(),
                             "error_code": error_code,

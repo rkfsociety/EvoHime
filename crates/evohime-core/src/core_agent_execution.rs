@@ -532,13 +532,83 @@ impl ToolAgent {
         cancellation: CancellationToken,
         execution_context: ConversationExecutionContext,
     ) -> Result<String, AgentRunError> {
+        let hive_world = execution_context.preferred_route_hint.as_deref() == Some("hive");
+        let run_permission_session_id = if !hive_world {
+            if let Some(mode) = execution_context
+                .session_binding
+                .as_ref()
+                .and_then(|binding| binding.permission_mode)
+            {
+                let session_id = uuid::Uuid::new_v4();
+                apply_session_permission_mode(self.tools.permissions(), session_id, mode).await;
+                Some(session_id)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let result = self
+            .run_once_inner(
+                task_id,
+                prompt,
+                workspace_root,
+                events,
+                cancellation,
+                execution_context,
+                run_permission_session_id,
+            )
+            .await;
+        if let Some(session_id) = run_permission_session_id {
+            self.tools.permissions().clear_session(session_id).await;
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_once_inner(
+        &self,
+        task_id: impl Into<String>,
+        prompt: impl Into<String>,
+        workspace_root: impl Into<std::path::PathBuf>,
+        events: &EventSink,
+        cancellation: CancellationToken,
+        execution_context: ConversationExecutionContext,
+        run_permission_session_id: Option<uuid::Uuid>,
+    ) -> Result<String, AgentRunError> {
         let ConversationExecutionContext {
             preferred_route_hint: preferred_route,
             history: conversation_history,
             continuation_attempt,
             defer_completion_event,
             conversation_id,
+            session_binding,
         } = execution_context;
+        let session_route_pin = if let Some(binding) = session_binding.as_ref() {
+            self.gateway
+                .resolve_route(binding.provider.as_deref(), binding.profile_id.as_deref())
+                .map_err(AgentRunError::Provider)?
+        } else {
+            None
+        };
+        let pinned_selected_model = session_binding
+            .as_ref()
+            .and_then(|binding| binding.model.as_deref())
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+            .map(str::to_owned)
+            .or_else(|| self.selected_model.get().map(|model| model.to_string()));
+        let route_default_model = session_route_pin
+            .as_deref()
+            .and_then(|route| self.gateway.route_model_name(route).ok())
+            .unwrap_or_else(|| self.gateway.model_name())
+            .to_owned();
+        let route_provider_name = session_route_pin
+            .as_deref()
+            .and_then(|route| self.gateway.route_provider_kind(route).ok())
+            .unwrap_or_else(|| self.gateway.provider_kind())
+            .as_str()
+            .to_owned();
         // World boundary: Hive and chat tasks never share memory scopes.
         let hive_world = preferred_route.as_deref() == Some("hive");
         let task_id = task_id.into();
@@ -577,7 +647,7 @@ impl ToolAgent {
         let context = ToolContext {
             workspace_root,
             task_id: task_uuid,
-            session_id: hive_session_id,
+            session_id: hive_session_id.or(run_permission_session_id),
             progress_tx: None,
             eva_workspace_root: eva_workspace_configured,
             self_development_profile: hive_world.then(|| "queen".into()),
@@ -1236,9 +1306,8 @@ impl ToolAgent {
                     }),
                 );
             }
-            let selected_model = self.selected_model.get();
             let effective_model =
-                effective_model_name(self.gateway.model_name(), selected_model.as_deref());
+                effective_model_name(&route_default_model, pinned_selected_model.as_deref());
             write_model_trace(
                 "model.request",
                 serde_json::json!({
@@ -1292,7 +1361,9 @@ impl ToolAgent {
                     specs: &specs,
                     intent_prompt: &user_prompt,
                     mutation_authorized,
-                    selected_model: selected_model.as_deref(),
+                    selected_model: pinned_selected_model.as_deref(),
+                    route_provider: Some(&route_provider_name),
+                    route_default_model: Some(&route_default_model),
                 })
                 .await;
             if few_shot_message.as_ref().is_some_and(|expected| {
@@ -1370,7 +1441,8 @@ impl ToolAgent {
                     sample_index: None,
                     total_token_budget: assembled.plan.profile.hard_limit_tokens,
                     max_output_tokens: None,
-                    route_pin: None,
+                    route_pin: session_route_pin.as_deref(),
+                    selected_model: pinned_selected_model.as_deref(),
                 }) => result?,
             };
             let _previous_request_id = std::mem::replace(
@@ -2826,6 +2898,37 @@ impl ToolAgent {
             })
             .await;
         Ok(message)
+    }
+}
+
+/// Применяет per-run режим разрешений к отдельной сессии `PermissionEngine`,
+/// не затрагивая глобальные настройки и `MicrophoneListen`.
+async fn apply_session_permission_mode(
+    permissions: &evohime_permissions::PermissionEngine,
+    session_id: uuid::Uuid,
+    mode: evohime_permissions::PermissionMode,
+) {
+    use evohime_permissions::{Permission, PermissionMode};
+
+    for permission in [
+        Permission::FilesystemRead,
+        Permission::FilesystemWrite,
+        Permission::ShellExecute,
+        Permission::GitRead,
+        Permission::GitWrite,
+        Permission::BrowserAccess,
+        Permission::McpCall,
+        Permission::MemorySearch,
+    ] {
+        let effective = match (mode, permission) {
+            (PermissionMode::Deny, Permission::FilesystemRead | Permission::GitRead) => {
+                PermissionMode::Allow
+            }
+            _ => mode,
+        };
+        permissions
+            .set_session_mode(session_id, permission, effective)
+            .await;
     }
 }
 
