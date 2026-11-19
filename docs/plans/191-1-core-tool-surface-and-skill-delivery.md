@@ -14,17 +14,17 @@ timeouts; меняется только способ объявления и п�
 Обязательные исправления внутри этапа:
 
 1. Заполнить явные input schemas для всех инструментов, у которых сейчас
-   срабатывает заглушка `{"input":{...}}`: `cargo.*`, `archive.*`, `logs.*`,
+   срабатывает заглушка `{"input":{...}}`: `cargo_*`, `archive_*`, `logs_*`,
    `git_status`, `git_log`, `git_show`, `git_blame`, `git_changed_files`,
    `git_branch`, `git_merge`, `git_rebase`, `git_reset`, `git_revert`,
    `git_stash`, `git_tag`, `git_remote`, `filesystem_stat`, `filesystem_mkdir`,
-   `app.*`, `browser.*`, `utility.*`, `process_run`, `shell_execute`, `mcp_call`,
+   `app_*`, `browser_*`, `utility_*`, `process_run`, `shell_execute`, `mcp_call`,
    `memory_search`, `agent_run`.
 2. Сверить каждую схему с полями, которые реально разбирает адаптер; для
    `filesystem_patch` добавить обязательный `expected_hash`, для
    `filesystem_write` сохранить опциональность, но описать инъекцию Core.
-3. Убрать из объявлений инструменты без исполнения: `process.spawn` (нет
-   регистрации) и `browser.session.*` / `agent_run`, если backend не появляется
+3. Убрать из объявлений инструменты без исполнения: legacy `process.spawn` (нет
+   регистрации) и `browser_session_*` / `agent_run`, если backend не появляется
    в этом этапе. Удаление регистрации, реестровые записи и `legacy_parser.rs`
    правятся одним изменением, чтобы не осталось имён, которые модель может
    вызвать.
@@ -44,9 +44,10 @@ task-only commit для формы `git_commit`.
 
 ### Опциональные
 
-Восстановление `agent_run` через backend и `browser.session.*` через настоящий
+Восстановление `agent_run` через backend и `browser_session_*` через настоящий
 session runtime не блокируют этап; при их отсутствии инструменты просто не
-объявляются.
+объявляются. Все обновлённые и новые tool id следуют каноническому `_`-лексикону
+плана 196.
 
 ## Recovery и rollback
 

@@ -50,6 +50,9 @@ Candidate проходит существующий review/verification/promotio
 
 - Планы 184/185 могут поставлять trace/scenario evidence refs, но не блокируют campaign lifecycle.
 - the Core-owned Prompt Strategy Profiles contract in `../architecture/model-routing.md` and grounded research refs are optional hypothesis evidence.
+- План 197 использует тот же `task_worktree_isolation` / `agent_git_change_sets`
+  owner с отдельным `purpose = chat_session`; cleanup экспериментов не должен
+  удалять worktree чат-сессий и наоборот.
 
 ## Критерии готовности
 

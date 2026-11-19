@@ -51,6 +51,19 @@ Core: выбор провайдера, профиля, модели и режи�
 - Лимит `BoundedTaskGroup` (`DEFAULT_CAPACITY = 16`) сохраняется общим на Core.
 - Существующие команды `SelectModel` и `PermissionMode` сохраняются как
   defaults/legacy-фоллбэк для CLI (`eva`) и вызовов без per-chat полей.
+- Выбор `(provider, profile_id)` в `SessionBinding` — это *requested route*,
+  который проходит через `ModelGateway` privacy/egress gate (план 181 при
+  наличии не обходится и может отклонить маршрут fail-closed).
+- `PermissionMode` на уровне `AgentRun` может только сужать права чата
+  (`read_only` / `ask`), не обходя `permissions.json` и trust-ограничения
+  (планы 180, 195).
+- `isolated_worktree` использует единый `task_worktree_isolation` /
+  `agent_git_change_sets` owner с отдельным `purpose = chat_session`, не
+  создавая второго worktree-менеджера и не затрагивая worktree экспериментов
+  (план 188).
+- Дочерние задачи (`child` / `TeamSession`, план 193) наследуют
+  `SessionBinding` родительского чата; параллельные chat runs проецируются в
+  `background-execution/v1` (план 194) с `conversation_id`.
 
 ## Изменяемые контракты
 - `crates/desktop-ipc/proto/evohime.desktop.proto` и генерируемые TS/Rust

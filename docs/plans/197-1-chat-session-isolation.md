@@ -10,7 +10,8 @@
      а не только один `default_route`.
    - Хранить в `ModelGateway` карту инстансов провайдеров по стабильному
      ключу маршрута `ProviderRouteKey { provider, profile_id }` с fallback на
-     `default_route`.
+     `default_route`. Выбор маршрута проходит через единый routing/privacy
+     gate (`required_privacy` / план 181), а не в обход него.
    - Сохранить общий `rate_limit_signal` по паре `(provider, model)` для
      корректной защиты от `429` при параллельных чатах на одном ключе.
 2. **Неизменяемая привязка сессии на уровне задачи (`SessionBinding`):**
@@ -21,7 +22,8 @@
      `self.selected_model.get()` внутри цикла итераций: задача один раз при
      старте фиксирует свой `effective_route` и `effective_model` (с fallback
      на `default_route` и `SelectedModel`, только если в `StartTask` они не
-     заданы).
+     заданы). Дочерние задачи (`child` / `TeamSession`) наследуют
+     `SessionBinding` родительского `AgentRun`.
 3. **Per-run изоляция `PermissionMode`:**
    - Вместо мутации единого `PermissionEngine` при каждом переключении в UI,
      передавать `permission_mode` конкретной задачи в контекст выполнения

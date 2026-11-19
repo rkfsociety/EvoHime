@@ -26,7 +26,7 @@ dispatch, честные input schemas, отсутствие рекламиру�
   `additionalProperties:false` объявлен обязательным (`manifest.rs:264`).
 - `manifest.rs:44-47` объявляет `filesystem_patch` без обязательного
   `expected_hash`, который требует `tools/patch.rs:22`.
-- `manifest.rs:116` объявляет схему для незарегистрированного `process.spawn`.
+- `manifest.rs:116` объявляет схему для незарегистрированного legacy `process.spawn`.
 - `tools/agent.rs:19-23` и `tools/browser_session.rs:48-50` всегда возвращают
   ошибку, но остаются в реестре, в каталоге модели и в
   `evohime-core/src/legacy_parser.rs:5-33`.
@@ -36,7 +36,7 @@ dispatch, честные input schemas, отсутствие рекламиру�
   `doctor.rs:409-420` не сигналит о деградации.
 - `adaptive_tool_catalog.rs:296-303` токенизирует только ASCII, а
   `191-201` при нулевом совпадении отдаёт алфавитно первые 8 инструментов, то
-  есть `agent_run`, `app.*`, `archive.*`, `browser.*`.
+  есть `agent_run`, `app_*`, `archive_*`, `browser_*`.
 - `adaptive_tool_catalog.rs:75-103` содержит `SelectionCache`, который не
   используется вне тестов.
 - `core_prelude.rs:651-777` собирает системный промпт из ~25 код-условий без
@@ -125,7 +125,7 @@ skills и durable trace. Направление не создаёт второй
 - Переписывание sandbox, revision-safe boundary, SSRF-защиты или
   approval/receipt-механизма.
 - Реализация `agent_run` как настоящего subagent backend и восстановление
-  `browser.session.*`.
+  `browser_session_*`.
 - Семантический (model-based) выбор инструментов как обязательный путь.
 - Исполнение skill-скриптов, install/network hooks или model invocation из
   skill package.

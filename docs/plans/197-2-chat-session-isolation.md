@@ -16,7 +16,8 @@
    - Подключить режим `isolation_mode` (`shared_workspace` по умолчанию /
      `isolated_worktree` для пишущих задач в git-репозитории) в
      `core_coordinator_routing.rs` с опорой на существующие контракты
-     `taskWorktreeIsolation` и `agent_git_change_sets`.
+     `taskWorktreeIsolation` и `agent_git_change_sets` с явным
+     `purpose = chat_session` (без конфликта с worktree экспериментов плана 188).
    - При `isolated_worktree` Core создаёт для задачи/чата выделенный
      `git worktree` в служебном каталоге (не внутри дерева исходников),
      подставляет его как `workspace_root` для инструментов этой задачи и

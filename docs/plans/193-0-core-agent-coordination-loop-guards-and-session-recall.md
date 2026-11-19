@@ -51,6 +51,7 @@
 - План 184 усиливает regression evidence; deterministic loop guards не должны зависеть от LLM evaluator.
 - План 185 может потреблять guard outcomes для multi-turn scenarios.
 - Remote A2A providers не обязательны: локальная координация должна работать без сети.
+- План 197 (per-chat `SessionBinding`): при наличии per-run контекста чата `child` и `TeamSession` наследуют его маршрут, модель и ограничение `PermissionMode` от родительского run.
 
 ## Recovery и rollback
 Unknown/partial execution trace не считается прогрессом. После рестарта running assignments сверяются с существующими leases/generation fencing и переходят в typed unknown_after_restart/interrupted, без blind retry. Дубликат handoff не создаёт повторный эффект: используются существующие idempotency keys и source revisions. Guard может остановить/приостановить только текущий run; он не отменяет внешние эффекты и не повышает права. Rollback отключает новые guard/query projections и coordinator policy profile, сохраняя исходные records.

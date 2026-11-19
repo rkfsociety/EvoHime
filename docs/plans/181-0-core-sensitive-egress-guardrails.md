@@ -54,6 +54,8 @@ reversible raw PII.
 - Plan 180 A2A can consume the common contract when available; this plan must
   still keep current external-agent egress safe without requiring new A2A.
 - Future OCR/image/audio classification is explicitly outside V1.
+- План 197 (per-chat `SessionBinding`) передаёт requested route через этот же
+  `ModelGateway` routing/privacy gate, не обходя `required_privacy`.
 
 ## Критерии готовности
 

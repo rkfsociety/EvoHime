@@ -89,7 +89,13 @@ recovery, verification, rollback и release evidence.
   EventJournal и memory/context owners;
 - `194` использует background-execution/v1 и не создаёт второй scheduler;
 - `195` использует existing capability, skill, workflow и component updater
-  owners; arbitrary executable plugins запрещены.
+  owners; arbitrary executable plugins запрещены;
+- `196` задаёт единый канонический лексикон tool id (`^[a-z][a-z0-9_]*$`,
+  разделитель `_`); планы `191–195` и `197` используют только канонические id;
+- `197` изолирует провайдера, модель, `PermissionMode` и опционально `git worktree`
+  на уровне чата (`SessionBinding`) внутри одного Core, проходя через
+  `ModelGateway` privacy gate (`181`), общий `task_worktree_isolation` (`188`),
+  наследование для `child`/`TeamSession` (`193`) и проекцию `194`.
 
 ## Проверка
 Перед реализацией overview и после каждого этапа сверяйте план с кодом,
