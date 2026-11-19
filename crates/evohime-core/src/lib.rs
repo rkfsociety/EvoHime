@@ -344,6 +344,7 @@ pub use core_agent::{
 mod core_coordinator;
 pub use core_coordinator::TaskCoordinator;
 mod bounded_tasks;
+mod hive_permission_session;
 mod core_domains;
 pub(crate) use core_domains::*;
 pub(crate) mod adapter_contract;

@@ -563,10 +563,25 @@ impl ToolAgent {
                 .ok()
                 .map(|workspace| workspace.root().to_path_buf())
         });
+        // World boundary: Hive tasks use their own permission session, so the
+        // workspace permission mode chosen in a chat (a process-global setting)
+        // can neither widen nor narrow what the Hive may do, and vice versa.
+        let hive_session_id = if hive_world {
+            let session_id = uuid::Uuid::from_u128(crate::hive_permission_session::SESSION_ID);
+            for (permission, mode) in crate::hive_permission_session::modes() {
+                self.tools
+                    .permissions()
+                    .set_session_mode(session_id, permission, mode)
+                    .await;
+            }
+            Some(session_id)
+        } else {
+            None
+        };
         let context = ToolContext {
             workspace_root: workspace_root.into(),
             task_id: task_uuid,
-            session_id: None,
+            session_id: hive_session_id,
             progress_tx: None,
             eva_workspace_root: eva_workspace_configured,
             self_development_profile: Some("queen".into()),

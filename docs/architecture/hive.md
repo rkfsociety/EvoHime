@@ -459,3 +459,13 @@ source переводятся в `unknown_after_restart`; неизвестное
 deadline поверх существующих `run_leases`, `agent_run_leases` и child
 checkpoint leases. Wrong owner, stale generation и expiry fail closed; новый
 ownership store или blind retry не добавляются.
+
+## Граница миров: Улей и обычные чаты
+
+Улей (чат `hive-system-chat`, route hint `hive`) и обычные чаты — разные миры. Они могут работать параллельно и даже в одном каталоге, но не делят состояние выполнения:
+
+- **Рабочий каталог.** Задача Улья без явного `workspace_path` идёт в `eva_workspace_path` из настроек Улья, иначе в первый добавленный проект; без настроенного каталога падает с `hive workspace is not configured`. Откат на `current_dir()` для Улья запрещён.
+- **Слоты задач.** Улей использует отдельный пул `hive_tasks`, чаты — `background_tasks`; исчерпание одного не блокирует другой.
+- **Память.** Для Улья scope памяти и уроков — `task_memory::task_memory_scope_id(root, true)` (`hive-<hash>`), для чатов прежний `workspace_scope_id`.
+- **Права.** Задача Улья выполняется в постоянной permission-сессии (`hive_permission_session`): чтение разрешено, запись, shell, git write, браузер и MCP требуют подтверждения. Глобальный режим рабочей папки чата (`permissionMode`) на Улей не влияет и наоборот.
+- Не разделено: общая git-рабочая копия при параллельной записи в один каталог (см. «Task Worktree Isolation v1»).
