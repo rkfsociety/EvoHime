@@ -3712,7 +3712,10 @@ async fn read_bounded_validation_file(path: &std::path::Path) -> std::io::Result
 
 #[cfg(test)]
 mod tests {
-    use super::{read_bounded_validation_file, ToolAgent, MAX_MEMORY_VALIDATION_FILE_BYTES};
+    use super::{
+        read_bounded_validation_file, DialogMemorySourceContext, ToolAgent,
+        MAX_MEMORY_VALIDATION_FILE_BYTES,
+    };
     use crate::{CoreEvent, EventJournal, EventSink};
     use evohime_model_gateway::providers::{
         ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
