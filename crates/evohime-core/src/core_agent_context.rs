@@ -1395,16 +1395,26 @@ impl ToolAgent {
                         | crate::prompt_strategy::StrategyComposition::Decomposition { .. }
                 )
             });
+            let is_hive_route = preferred_route == Some("hive");
+            let effective_route_pin = if is_hive_route {
+                Some("hive")
+            } else {
+                route_pin
+            };
             let routing_request = RoutingRequest {
                 required_capabilities: vec!["chat".into()],
                 max_cost_micros_per_1k_tokens: bounded_fanout.then_some(0),
                 max_latency_ms: None,
                 required_privacy: PrivacyClass::Internal,
-                allow_fallback: !bounded_fanout,
-                preferred_route: route_pin
-                    .map(str::to_owned)
-                    .or(policy_route_hint)
-                    .or_else(|| preferred_route.map(str::to_owned)),
+                allow_fallback: !bounded_fanout && !is_hive_route,
+                preferred_route: if is_hive_route {
+                    Some("hive".to_owned())
+                } else {
+                    route_pin
+                        .map(str::to_owned)
+                        .or(policy_route_hint)
+                        .or_else(|| preferred_route.map(str::to_owned))
+                },
                 task_class: task_class.map(str::to_owned),
                 offline: bounded_fanout,
                 allow_cloud: !bounded_fanout,
@@ -1523,7 +1533,7 @@ impl ToolAgent {
                         max_output_tokens,
                         max_retries: max_output_tokens.map(|_| 0),
                     },
-                    route_pin,
+                    effective_route_pin,
                 );
             let result: Result<evohime_model_gateway::PolicyChatResult, ProviderError> =
                 match await_with_optional_timeout(timeout_duration, model_request).await {

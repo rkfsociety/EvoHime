@@ -281,11 +281,8 @@ impl EvaPulseDaemon {
         let sink = Arc::new(
             CoordinatorPulseTaskSink::new(
                 coordinator,
-                crate::hive_observation::background_route_name(gateway_config.as_ref()),
+                crate::hive_observation::isolated_hive_route_name(gateway_config.as_ref()),
             )
-            .with_fallback_route(crate::hive_observation::fallback_routmy_route_name(
-                gateway_config.as_ref(),
-            ))
             .with_hive_settings_source(journal, gateway_config),
         );
         let daemon = Self::spawn(probe, sink, EvaPulseOptions::default(), logger);
@@ -1182,11 +1179,7 @@ impl PulseProbe for JournalPulseProbe {
             } else {
                 Vec::new()
             };
-            let rate_limit_model = if observation.model.is_empty() {
-                selected_model.as_deref().unwrap_or("")
-            } else {
-                observation.model.as_str()
-            };
+            let rate_limit_model = observation.model.as_str();
             let rate_limited_until_ms = if rate_limit_model.is_empty() {
                 None
             } else {
@@ -1209,26 +1202,11 @@ impl PulseProbe for JournalPulseProbe {
             } else {
                 snapshot.budget.fallback_tokens_remaining
             };
-            let route_is_primary =
-                if crate::hive_observation::isolated_hive_route_name(self.gateway_config.as_ref())
-                    .is_some()
-                {
-                    true
-                } else if settings
-                    .hive_provider_profile
-                    .as_deref()
-                    .is_some_and(|profile| !profile.trim().is_empty())
-                {
-                    crate::hive_observation::hive_route_name(
-                        self.gateway_config.as_ref(),
-                        settings.hive_provider_profile.as_deref(),
-                    )
-                    .is_some()
-                } else {
-                    crate::hive_observation::route_is_background_primary(
-                        self.gateway_config.as_ref(),
-                    )
-                };
+            let route_is_primary = crate::hive_observation::hive_route_name(
+                self.gateway_config.as_ref(),
+                settings.hive_provider_profile.as_deref(),
+            )
+            .is_some();
             let eva_workspace_path = settings.primary_workspace_path().map(str::to_owned);
             Ok(PulseCycleReport {
                 interval_secs: settings.pulse_interval_secs,
@@ -1493,7 +1471,6 @@ fn is_terminal_failure(projection: &crate::child_workflow::ChildProjection) -> b
 pub(crate) struct CoordinatorPulseTaskSink {
     coordinator: TaskCoordinator,
     primary_route: Option<String>,
-    fallback_route: Option<String>,
     preferred_route_hint: Option<String>,
     journal: Option<EventJournal>,
     gateway_config: Option<ModelGatewayConfig>,
@@ -1505,20 +1482,14 @@ impl CoordinatorPulseTaskSink {
         Self {
             coordinator,
             primary_route,
-            fallback_route: None,
             preferred_route_hint: None,
             journal: None,
             gateway_config: None,
         }
     }
 
-    /// Attaches an optional free fallback route (e.g. `routmy`).
-    pub(crate) fn with_fallback_route(mut self, fallback_route: Option<String>) -> Self {
-        self.fallback_route = fallback_route;
-        self
-    }
-
     /// Sets an explicit `preferred_route_hint` for Hive background tasks.
+    #[allow(dead_code)]
     pub(crate) fn with_preferred_route_hint(mut self, hint: Option<String>) -> Self {
         self.preferred_route_hint = hint
             .map(|value| value.trim().to_owned())
@@ -1594,40 +1565,35 @@ impl CoordinatorPulseTaskSink {
         Box::pin(async move {
             let mut preferred_route_hint = explicit_hint;
             if preferred_route_hint.is_none() {
-                let hive_profile = if let Some(journal) = journal.as_ref() {
-                    journal
-                        .hive_settings()
-                        .await
-                        .ok()
-                        .and_then(|settings| settings.hive_provider_profile)
-                        .map(|value| value.trim().to_owned())
-                        .filter(|value| !value.is_empty())
-                } else {
-                    None
-                };
-                if let Some(profile) = hive_profile.as_deref() {
+                if gateway_config.is_some() {
+                    let hive_profile = if let Some(journal) = journal.as_ref() {
+                        journal
+                            .hive_settings()
+                            .await
+                            .ok()
+                            .and_then(|settings| settings.hive_provider_profile)
+                            .map(|value| value.trim().to_owned())
+                            .filter(|value| !value.is_empty())
+                    } else {
+                        None
+                    };
                     preferred_route_hint = crate::hive_observation::hive_route_name(
                         gateway_config.as_ref(),
-                        Some(profile),
-                    )
-                    .or_else(|| Some(profile.to_owned()));
+                        hive_profile.as_deref(),
+                    );
                 } else {
-                    preferred_route_hint =
-                        crate::hive_observation::isolated_hive_route_name(gateway_config.as_ref());
+                    preferred_route_hint = primary_route;
                 }
             }
-            if preferred_route_hint.is_none() {
-                // A route is required: without the primary LiteRouter route the
-                // daemon must not fall back to a paid DeepSeek profile.
-                primary_route.ok_or_else(|| "primary_route_unavailable".to_owned())?;
-            }
+            let preferred_route_hint =
+                preferred_route_hint.ok_or_else(|| "primary_route_unavailable".to_owned())?;
             let task_id = uuid::Uuid::new_v4().to_string();
             self.coordinator
                 .dispatch(CoreCommand::StartTask {
                     task_id: task_id.clone(),
                     prompt,
                     workspace_root: None,
-                    preferred_route_hint,
+                    preferred_route_hint: Some(preferred_route_hint),
                     conversation: None,
                     goal_id: None,
                 })
@@ -1637,24 +1603,8 @@ impl CoordinatorPulseTaskSink {
         })
     }
 
-    fn dispatch_fallback_task(&self, prompt: String) -> PulseFuture<'_, Result<String, String>> {
-        let fallback_route = self.fallback_route.clone();
-        Box::pin(async move {
-            let route = fallback_route.ok_or_else(|| "fallback_route_unavailable".to_owned())?;
-            let task_id = uuid::Uuid::new_v4().to_string();
-            self.coordinator
-                .dispatch(CoreCommand::StartTask {
-                    task_id: task_id.clone(),
-                    prompt,
-                    workspace_root: None,
-                    preferred_route_hint: Some(route),
-                    conversation: None,
-                    goal_id: None,
-                })
-                .await
-                .map_err(|error| error.to_string())?;
-            Ok(task_id)
-        })
+    fn dispatch_fallback_task(&self, _prompt: String) -> PulseFuture<'_, Result<String, String>> {
+        Box::pin(async move { Err("fallback_route_unavailable".to_owned()) })
     }
 }
 
@@ -2314,11 +2264,11 @@ mod tests {
         let gateway_config = Some(ModelGatewayConfig {
             default_route: "primary".into(),
             routes: std::collections::HashMap::from([(
-                "primary".into(),
+                "hive".into(),
                 evohime_model_gateway::ModelRouteConfig::literouter(
-                    "test-key",
+                    "hive-test-key",
                     "http://localhost:1234",
-                    "primary",
+                    "hive-model",
                 ),
             )]),
         });
@@ -2330,7 +2280,7 @@ mod tests {
         let (coordinator, mut events) = TaskCoordinator::new(8);
         let sink = Arc::new(CoordinatorPulseTaskSink::new(
             coordinator,
-            Some("primary".into()),
+            Some("hive".into()),
         ));
 
         let report_1 = probe.observe().await.expect("observe 1");
@@ -2461,11 +2411,11 @@ mod tests {
         let gateway_config = Some(ModelGatewayConfig {
             default_route: "primary".into(),
             routes: std::collections::HashMap::from([(
-                "primary".into(),
+                "hive".into(),
                 evohime_model_gateway::ModelRouteConfig::literouter(
-                    "test-key",
+                    "hive-test-key",
                     "http://localhost:1234",
-                    "primary",
+                    "hive-model",
                 ),
             )]),
         });
@@ -2473,7 +2423,7 @@ mod tests {
         let (coordinator, mut events) = TaskCoordinator::new(8);
         let sink = Arc::new(CoordinatorPulseTaskSink::new(
             coordinator,
-            Some("primary".into()),
+            Some("hive".into()),
         ));
 
         let report = probe.observe().await.expect("observe");
@@ -2943,9 +2893,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hive_uses_own_provider() {
+    async fn hive_never_uses_global_providers_when_unconfigured() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let journal = EventJournal::open(directory.path().join("pulse-own-provider.db"))
+        let journal = EventJournal::open(directory.path().join("pulse-unconfigured-hive.db"))
             .expect("journal opens");
         let settings = HiveSettings {
             hive_provider_profile: Some("literouter".into()),
@@ -2957,61 +2907,45 @@ mod tests {
             .await
             .expect("save settings");
 
-        let mut deepseek_route = evohime_model_gateway::ModelRouteConfig::literouter(
-            "paid-key",
-            "https://api.deepseek.com",
-            "deepseek-chat",
-        );
-        deepseek_route.provider_profile_id =
-            Some(evohime_model_gateway::ProviderProfileId::DeepSeek);
         let literouter_route = evohime_model_gateway::ModelRouteConfig::literouter(
-            "free-key",
+            "global-free-key",
             "http://localhost:1234",
             "free-default",
         );
+        let rout_route = evohime_model_gateway::ModelRouteConfig::openai_compatible(
+            "global-rout-key",
+            "https://api.rout.my/v1",
+            "",
+        )
+        .with_provider_profile(evohime_model_gateway::ProviderProfileId::Rout, None);
 
         let gateway_config = ModelGatewayConfig {
-            default_route: "deepseek".into(),
+            default_route: "default".into(),
             routes: std::collections::HashMap::from([
-                ("deepseek".into(), deepseek_route),
-                ("literouter".into(), literouter_route),
+                ("default".into(), literouter_route),
+                ("rout".into(), rout_route),
             ]),
         };
 
         let selected = SelectedModel::default();
-        selected.set("deepseek-chat");
+        selected.set("free-default");
         let probe = JournalPulseProbe::new(journal.clone(), Some(gateway_config.clone()), selected);
-        let mut report = probe.observe().await.expect("observe");
-        assert!(report.route_is_primary);
-        assert_eq!(report.selected_provider.as_deref(), Some("literouter"));
-        report.failed_workers = vec!["child-failed".into()];
-        assert_eq!(
-            decide(&report, crate::task_memory::now_millis() as i64),
-            PulseDecision::Recover {
-                failed_workers: vec!["child-failed".into()],
-            }
-        );
+        let report = probe.observe().await.expect("observe");
+        assert!(!report.route_is_primary);
+        assert!(report.selected_provider.is_none());
+        assert!(report.fallback_provider.is_none());
 
         let (mut coordinator, _events) = TaskCoordinator::new(8);
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
         coordinator.set_command_sender_for_test(tx);
         let sink = CoordinatorPulseTaskSink::new(coordinator, None)
             .with_hive_settings_source(journal, Some(gateway_config));
-        let task_id = sink
+        let err = sink
             .dispatch_recovery(&[], None)
             .await
-            .expect("dispatches with hive own provider");
-        assert!(!task_id.is_empty());
-        let command = rx.recv().await.expect("command sent");
-        match command {
-            CoreCommand::StartTask {
-                preferred_route_hint,
-                ..
-            } => {
-                assert_eq!(preferred_route_hint.as_deref(), Some("literouter"));
-            }
-            _ => panic!("unexpected command sent to coordinator"),
-        }
+            .expect_err("unconfigured hive must not dispatch on global providers");
+        assert_eq!(err, "primary_route_unavailable");
+        assert!(rx.try_recv().is_err());
     }
 
     #[tokio::test]

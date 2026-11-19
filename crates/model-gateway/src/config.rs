@@ -919,17 +919,29 @@ impl ModelGatewayConfig {
         }
     }
 
-    /// Rebuilds the isolated `"hive"` route (when `HIVE_API_KEY` created one)
-    /// using the durable `hive_provider_profile` and `hive_model` settings.
+    /// Rebuilds the isolated `"hive"` route (when `HIVE_API_KEY` created one,
+    /// or when Hive explicitly targets local `ollama`) using the durable
+    /// `hive_provider_profile` and `hive_model` settings.
     pub fn apply_hive_route_overrides(&mut self, profile: Option<&str>, model: Option<&str>) {
-        let Some(existing) = self.routes.get("hive").cloned() else {
-            return;
-        };
         let normalized_profile = profile.map(str::trim).filter(|value| !value.is_empty());
         let explicit_model = model
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned);
+        let Some(existing) = self.routes.get("hive").cloned() else {
+            if normalized_profile.is_some_and(|p| p.eq_ignore_ascii_case("ollama")) {
+                let ollama_route = Self::build_hive_route(
+                    String::new(),
+                    Some("ollama"),
+                    None,
+                    explicit_model.unwrap_or_default(),
+                );
+                if ollama_route.validate_provider_profile().is_ok() {
+                    self.routes.insert("hive".to_string(), ollama_route);
+                }
+            }
+            return;
+        };
         let Some(requested_profile) = normalized_profile else {
             if let Some(new_model) = explicit_model {
                 if new_model != existing.literouter.model {

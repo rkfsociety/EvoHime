@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, isAbsolute, join, win32 } from 'node:path'
 
 import {
+  HIVE_SYSTEM_CHAT_ID,
   PROVIDER_KINDS,
   RENDERER_COMMANDS,
   defaultRequestPacing,
@@ -247,7 +248,7 @@ function dispatch(
       const goalId = value['goalId'] === undefined ? '' : asGoalToken(value['goalId'])
       const preferredRouteHint = value['preferredRouteHint'] === undefined || value['preferredRouteHint'] === null
         ? null
-        : value['preferredRouteHint'] === 'local' || value['preferredRouteHint'] === 'cloud' || value['preferredRouteHint'] === 'codex_cli' ? value['preferredRouteHint'] : undefined
+        : value['preferredRouteHint'] === 'local' || value['preferredRouteHint'] === 'cloud' || value['preferredRouteHint'] === 'codex_cli' || value['preferredRouteHint'] === 'hive' ? value['preferredRouteHint'] : undefined
       const executionKind = value['executionKind'] === undefined ? 'dialogue'
         : value['executionKind'] === 'dialogue' || value['executionKind'] === 'coding' ? value['executionKind'] : undefined
       if (taskId === null || prompt === null || workspacePath === null || conversationId === null || clientMessageId === null || goalId === null || (conversationId.length === 0) !== (clientMessageId.length === 0) || preferredRouteHint === undefined || executionKind === undefined) {
@@ -260,11 +261,12 @@ function dispatch(
         // a visible "Полный доступ" can never race with a stale Core mode.
         applyWorkspacePermissionMode(client, workspaces.permissionMode(workspacePath))
       }
+      const effectiveRouteHint = conversationId === HIVE_SYSTEM_CHAT_ID ? 'hive' : (preferredRouteHint ?? '')
       const startTask = {
         taskId,
         prompt,
         workspacePath,
-        preferredRouteHint: preferredRouteHint ?? '',
+        preferredRouteHint: effectiveRouteHint,
         executionKind,
         ...(goalId.length > 0 ? { goalId } : {})
       }

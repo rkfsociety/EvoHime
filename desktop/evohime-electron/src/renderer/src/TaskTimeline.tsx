@@ -1,7 +1,7 @@
 import { formatTime, translate, useAppLocale } from './i18n'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import type { ChatMessage, ChatProviderMode, ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
+import { HIVE_SYSTEM_CHAT_ID, type ChatMessage, type ChatProviderMode, type ChatRecord, type ConnectionState, type CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -544,8 +544,8 @@ export function TaskTimeline({
       workspacePath: workspace ?? '',
       conversationId: conversationLog.conversationId,
       clientMessageId,
-      preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
-      executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue'
+      preferredRouteHint: conversationLog.conversationId === HIVE_SYSTEM_CHAT_ID ? 'hive' : (providerMode === 'codex_cli' ? 'codex_cli' : 'cloud'),
+      executionKind: conversationLog.conversationId === HIVE_SYSTEM_CHAT_ID ? 'dialogue' : (providerMode === 'codex_cli' ? 'coding' : 'dialogue')
     })
     if (!outcome.ok) {
       setConversationProjection((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
@@ -684,8 +684,8 @@ export function TaskTimeline({
       workspacePath: workspace ?? '',
       conversationId: targetChatId,
       clientMessageId,
-      preferredRouteHint: providerMode === 'codex_cli' ? 'codex_cli' : 'cloud',
-      executionKind: providerMode === 'codex_cli' ? 'coding' : 'dialogue',
+      preferredRouteHint: targetChatId === HIVE_SYSTEM_CHAT_ID ? 'hive' : (providerMode === 'codex_cli' ? 'codex_cli' : 'cloud'),
+      executionKind: targetChatId === HIVE_SYSTEM_CHAT_ID ? 'dialogue' : (providerMode === 'codex_cli' ? 'coding' : 'dialogue'),
       ...(goalId ? { goalId } : {})
     })
     setBusy(false)

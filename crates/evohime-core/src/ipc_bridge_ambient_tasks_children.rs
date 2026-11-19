@@ -279,12 +279,18 @@ impl IpcBridge {
                                 prompt: start.prompt,
                                 workspace_root: (!start.workspace_path.is_empty())
                                     .then(|| std::path::PathBuf::from(start.workspace_path)),
-                                preferred_route_hint: match start.preferred_route_hint.as_str() {
-                                    "local" | "cloud" => Some(start.preferred_route_hint),
-                                    "codex_cli" if start.execution_kind == "coding" => {
-                                        Some("codex_cli".into())
+                                preferred_route_hint: if start.conversation_id == "hive-system-chat"
+                                    || start.preferred_route_hint == "hive"
+                                {
+                                    Some("hive".into())
+                                } else {
+                                    match start.preferred_route_hint.as_str() {
+                                        "local" | "cloud" => Some(start.preferred_route_hint),
+                                        "codex_cli" if start.execution_kind == "coding" => {
+                                            Some("codex_cli".into())
+                                        }
+                                        _ => None,
                                     }
-                                    _ => None,
                                 },
                                 conversation: conversation_context,
                                 goal_id: (!start.goal_id.is_empty()).then_some(start.goal_id),

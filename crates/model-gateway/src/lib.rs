@@ -1475,7 +1475,7 @@ impl ModelGateway {
         request: &RoutingRequest,
         limits: RuntimeLimits,
     ) -> Result<RoutingRuntime, RuntimeError> {
-        let candidates = self.route_candidates();
+        let candidates = self.route_candidates_for_request(request);
         RoutingRuntime::plan(mode, request, &candidates, limits)
     }
 
@@ -1495,7 +1495,7 @@ impl ModelGateway {
         now_ms: u64,
     ) -> Result<RoutePolicySnapshot, SnapshotError> {
         let candidates =
-            self.route_candidates()
+            self.route_candidates_for_request(request)
                 .into_iter()
                 .map(|candidate| {
                     let model = if candidate.route_id == self.default_route {
@@ -1638,17 +1638,37 @@ impl ModelGateway {
     /// `routing_runtime` classifies "local" routes by route id / model name
     /// substring, independent of this candidate metadata.
     fn route_candidates(&self) -> Vec<RouteCandidate> {
-        let mut route_ids: Vec<&String> = self.routes.keys().collect();
+        self.route_candidates_filtered(false)
+    }
+
+    fn route_candidates_for_request(&self, request: &RoutingRequest) -> Vec<RouteCandidate> {
+        self.route_candidates_filtered(request.preferred_route.as_deref() == Some("hive"))
+    }
+
+    fn route_candidates_filtered(&self, hive_only: bool) -> Vec<RouteCandidate> {
+        let mut route_ids: Vec<&String> = self
+            .routes
+            .keys()
+            .filter(|route_id| {
+                if hive_only {
+                    route_id.as_str() == "hive"
+                } else {
+                    route_id.as_str() != "hive" || self.default_route == "hive"
+                }
+            })
+            .collect();
         route_ids.sort();
         let now_ms = current_time_ms();
-        let requires_verified_free = self
-            .route_preflight
-            .as_ref()
-            .is_some_and(|preflight| preflight.requires_verified_free_route());
-        let prefers_verified_free = self
-            .route_preflight
-            .as_ref()
-            .is_some_and(|preflight| preflight.prefers_verified_free_routes());
+        let requires_verified_free = !hive_only
+            && self
+                .route_preflight
+                .as_ref()
+                .is_some_and(|preflight| preflight.requires_verified_free_route());
+        let prefers_verified_free = !hive_only
+            && self
+                .route_preflight
+                .as_ref()
+                .is_some_and(|preflight| preflight.prefers_verified_free_routes());
         route_ids
             .into_iter()
             .filter_map(|route_id| {
@@ -2288,5 +2308,85 @@ mod tests {
         assert_eq!(result.selected_route, "hive");
         assert_eq!(*hive_seen.lock().expect("lock"), Some(None));
         assert_eq!(*default_seen.lock().expect("lock"), None);
+    }
+
+    #[tokio::test]
+    async fn hive_route_request_never_falls_back_to_global_routes_when_unconfigured() {
+        let mut routes: HashMap<String, Arc<dyn ModelProvider>> = HashMap::new();
+        routes.insert(
+            "default".into(),
+            Arc::new(MockProvider::new("global-model:free", vec!["global".into()])),
+        );
+        routes.insert(
+            "rout".into(),
+            Arc::new(MockProvider::new("rout-model:free", vec!["rout".into()])),
+        );
+        let gateway = ModelGateway::from_routes("default", routes).expect("gateway");
+        let mut request = policy_request();
+        request.allow_fallback = true;
+        request.preferred_route = Some("hive".into());
+
+        let outcome = gateway
+            .chat_with_tools_with_policy_and_route(
+                RoutingMode::Balanced,
+                &request,
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "ping")],
+                &[],
+            )
+            .await;
+
+        assert!(
+            outcome.is_err(),
+            "unconfigured hive must not dispatch to global routes"
+        );
+    }
+
+    #[tokio::test]
+    async fn hive_and_global_routes_stay_mutually_isolated_regardless_of_cost() {
+        let mut routes: HashMap<String, Arc<dyn ModelProvider>> = HashMap::new();
+        routes.insert(
+            "default".into(),
+            Arc::new(MockProvider::new("global-paid-model", vec!["global".into()])),
+        );
+        routes.insert(
+            "hive".into(),
+            Arc::new(MockProvider::new("hive-model:free", vec!["hive".into()])),
+        );
+        let gateway = ModelGateway::from_routes("default", routes).expect("gateway");
+
+        // Regular chat request must not pick the isolated "hive" route even when hive is cheaper.
+        let mut global_request = policy_request();
+        global_request.allow_fallback = true;
+        global_request.preferred_route = None;
+        let global_result = gateway
+            .chat_with_tools_with_policy_and_route(
+                RoutingMode::Balanced,
+                &global_request,
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "ping")],
+                &[],
+            )
+            .await
+            .expect("global request succeeds");
+        assert_eq!(global_result.selected_route, "default");
+        assert!(global_result.fallback_chain.is_empty());
+
+        // Hive request must stay strictly on "hive" with no global fallback chain.
+        let mut hive_request = policy_request();
+        hive_request.allow_fallback = true;
+        hive_request.preferred_route = Some("hive".into());
+        let hive_result = gateway
+            .chat_with_tools_with_policy_and_route(
+                RoutingMode::Balanced,
+                &hive_request,
+                None,
+                &[ChatMessage::text(crate::providers::ChatRole::User, "ping")],
+                &[],
+            )
+            .await
+            .expect("hive request succeeds");
+        assert_eq!(hive_result.selected_route, "hive");
+        assert!(hive_result.fallback_chain.is_empty());
     }
 }

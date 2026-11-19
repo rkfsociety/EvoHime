@@ -1732,7 +1732,7 @@ export function HiveDashboard({
         workspacePath: '',
         conversationId: HIVE_SYSTEM_CHAT_ID,
         clientMessageId,
-        preferredRouteHint: 'cloud',
+        preferredRouteHint: 'hive',
         executionKind: 'dialogue'
       })
       if (!outcome.ok) {
@@ -2443,7 +2443,7 @@ export function HiveDashboard({
                         setHiveProviderSaved(false)
                       }}
                     >
-                      <option value="">{translate('По умолчанию (глобальный)')}</option>
+                      <option value="">{translate('По умолчанию (Rout.my)')}</option>
                       <option value="literouter">LiteRouter</option>
                       <option value="rout">Rout.my</option>
                       <option value="deepseek">DeepSeek</option>
@@ -2484,12 +2484,12 @@ export function HiveDashboard({
                   <small role="status" className="hive-settings-hint">✓ {translate('Провайдер и модель Улья сохранены')}</small>
                 ) : null}
                 <label className="hive-provider" htmlFor="hive-api-key-input">
-                  <span>{translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}</span>
+                  <span>{translate('API-ключ Улья (обязателен для работы Улья)')}</span>
                   <div className="hive-settings-modal__row">
                     <input
                       id="hive-api-key-input"
                       type="password"
-                      aria-label={translate('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)')}
+                      aria-label={translate('API-ключ Улья (обязателен для работы Улья)')}
                       value={hiveApiKeyDraft}
                       disabled={!connected || hiveApiKeyBusy}
                       onChange={(changeEvent) => {

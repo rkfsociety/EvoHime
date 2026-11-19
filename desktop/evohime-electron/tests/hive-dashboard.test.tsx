@@ -563,6 +563,7 @@ describe('hive dashboard', () => {
         prompt: 'Исправь баг в коде',
         workspacePath: '',
         conversationId: 'hive-system-chat',
+        preferredRouteHint: 'hive',
         executionKind: 'dialogue'
       })
     })
@@ -1050,7 +1051,7 @@ describe('hive dashboard', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
     expect(await screen.findByRole('dialog', { name: 'Настройки улья' })).toBeTruthy()
 
-    const keyInput = screen.getByLabelText('API-ключ Улья (оставьте пустым, чтобы использовать глобальный)') as HTMLInputElement
+    const keyInput = screen.getByLabelText('API-ключ Улья (обязателен для работы Улья)') as HTMLInputElement
     expect(keyInput.type).toBe('password')
 
     await userEvent.type(keyInput, 'sk-hive-secret-123')

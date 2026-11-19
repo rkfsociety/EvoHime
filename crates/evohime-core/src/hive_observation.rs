@@ -6,7 +6,6 @@
 //! collection here means the panel and the daemon can never disagree about the
 //! budget or about which route is primary.
 
-use evohime_model_gateway::providers::ProviderKind;
 use evohime_model_gateway::{ModelGatewayConfig, ProviderProfileId};
 
 use crate::child_workflow::ChildProjection;
@@ -19,43 +18,6 @@ use crate::EventJournal;
 
 /// Bounded replay window used for the hive projection.
 pub(crate) const HIVE_REPLAY_WINDOW: u32 = 512;
-
-/// Whether the active route is the free LiteRouter primary that background work
-/// is allowed to use.
-///
-/// EvaPulse never falls back to a paid DeepSeek profile: when the route is not
-/// LiteRouter (or an explicit DeepSeek profile), the daemon may still observe
-/// the hive but must not dispatch a recovery task.
-pub(crate) fn route_is_background_primary(config: Option<&ModelGatewayConfig>) -> bool {
-    let Some(config) = config else {
-        return false;
-    };
-    let Some(route) = config.routes.get(&config.default_route) else {
-        return false;
-    };
-    route.provider == ProviderKind::LiteRouter
-        && route.provider_profile_id != Some(ProviderProfileId::DeepSeek)
-}
-
-/// Returns the route name background work may use, if it is the primary route.
-pub(crate) fn background_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
-    route_is_background_primary(config).then(|| {
-        config
-            .as_ref()
-            .map(|config| config.default_route.clone())
-            .unwrap_or_default()
-    })
-}
-
-/// Returns the configured free fallback route name (`rout`), if present and configured.
-pub(crate) fn fallback_routmy_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
-    let config = config?;
-    config.routes.iter().find_map(|(name, route)| {
-        (route.provider_profile_id == Some(ProviderProfileId::Rout)
-            && !route.literouter.api_key.trim().is_empty())
-        .then(|| name.clone())
-    })
-}
 
 /// Returns `"hive"` when an isolated Hive route is present and configured.
 pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
@@ -74,8 +36,11 @@ fn route_matches_profile(route: &evohime_model_gateway::ModelRouteConfig, profil
         || route.provider.as_str().eq_ignore_ascii_case(profile)
 }
 
-/// Resolves the route name for Hive based on `hive_provider_profile`, falling
-/// back to the standard background route (`LiteRouter -> Rout`) when unset.
+/// Resolves the isolated `"hive"` route when configured.
+///
+/// Hive never falls back to global chat routes or global provider API keys:
+/// if the isolated `"hive"` route is missing or does not match the requested
+/// `hive_provider_profile`, this returns `None`.
 pub(crate) fn hive_route_name(
     config: Option<&ModelGatewayConfig>,
     hive_provider_profile: Option<&str>,
@@ -83,59 +48,23 @@ pub(crate) fn hive_route_name(
     let profile = hive_provider_profile
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    if let Some(hive_route) = isolated_hive_route_name(config) {
-        let matches_requested = match (profile, config.and_then(|c| c.routes.get(&hive_route))) {
-            (Some(requested), Some(route)) => route_matches_profile(route, requested),
-            _ => true,
-        };
-        if matches_requested {
-            return Some(hive_route);
-        }
-    }
-    let Some(profile) = profile else {
-        return background_route_name(config).or_else(|| fallback_routmy_route_name(config));
+    let hive_route = isolated_hive_route_name(config)?;
+    let matches_requested = match (profile, config.and_then(|c| c.routes.get(&hive_route))) {
+        (Some(requested), Some(route)) => route_matches_profile(route, requested),
+        _ => true,
     };
-    let Some(config) = config else {
-        return Some(profile.to_owned());
-    };
-    if let Some((name, _)) = config
-        .routes
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(profile))
-    {
-        return Some(name.clone());
-    }
-    if let Some((name, _)) = config
-        .routes
-        .iter()
-        .find(|(_, route)| route_matches_profile(route, profile))
-    {
-        return Some(name.clone());
-    }
-    None
+    matches_requested.then_some(hive_route)
 }
 
-/// Collects configured provider limits and committed usage for the active route.
+/// Collects configured provider limits and committed usage strictly for Hive's
+/// own isolated `"hive"` route.
 ///
-/// The projection is additive: a missing route configuration leaves caps unset;
-/// an unreadable provenance row preserves known caps but marks the counters
-/// unavailable so the caller cannot mistake missing history for zero.
-pub(crate) async fn build_hive_observation(
-    journal: &EventJournal,
-    gateway_config: Option<&ModelGatewayConfig>,
-    selected_model: Option<&str>,
-    now_ms: i64,
-) -> HiveObservation {
-    build_hive_observation_for_hive(journal, gateway_config, selected_model, None, None, now_ms)
-        .await
-}
-
-/// Collects configured provider limits and committed usage for Hive, preferring
-/// Hive's own provider profile and model override when configured.
+/// When Hive is not configured, global routes and global chat models are never
+/// substituted: the returned observation leaves provider, model, and caps unset.
 pub(crate) async fn build_hive_observation_for_hive(
     journal: &EventJournal,
     gateway_config: Option<&ModelGatewayConfig>,
-    selected_model: Option<&str>,
+    _selected_model: Option<&str>,
     hive_provider_profile: Option<&str>,
     hive_model: Option<&str>,
     now_ms: i64,
@@ -153,20 +82,11 @@ pub(crate) async fn build_hive_observation_for_hive(
     let hive_profile = hive_provider_profile
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let route_name = if hive_profile.is_some() {
-        hive_route_name(Some(config), hive_profile)
-    } else if let Some(hive_route) = isolated_hive_route_name(Some(config)) {
-        Some(hive_route)
-    } else {
-        Some(config.default_route.clone())
-    };
+    let route_name = hive_route_name(Some(config), hive_profile);
     let Some(route) = route_name
         .as_deref()
         .and_then(|name| config.routes.get(name))
     else {
-        if let Some(profile) = hive_profile {
-            observation.provider = profile.to_owned();
-        }
         return observation;
     };
     // The ledger records the transport kind, so dispatch counters must be
@@ -177,28 +97,12 @@ pub(crate) async fn build_hive_observation_for_hive(
     let provider = profile
         .map_or(transport, |profile| profile.as_str())
         .to_owned();
-    let matches_default_provider = config
-        .routes
-        .get(&config.default_route)
-        .is_some_and(|default_route| {
-            default_route.provider == route.provider
-                && default_route.provider_profile_id == route.provider_profile_id
-        });
-    // Hive's own model override takes precedence over the global chat selection.
-    // Global chat selection applies only when Hive shares the same provider/profile
-    // as the default route; otherwise an incompatible model (e.g. Rout's
-    // `openai/gpt-6-luna`) would leak into a LiteRouter Hive route.
+    // Hive uses only its own model override or the isolated `"hive"` route's
+    // configured model; global chat model selection never leaks into Hive.
     let effective_selected = hive_model
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            matches_default_provider
-                .then_some(selected_model)
-                .flatten()
-                .map(str::to_owned)
-                .filter(|value| !value.trim().is_empty())
-        });
+        .map(str::to_owned);
     let model = crate::core_agent::effective_model_name(
         &route.literouter.model,
         effective_selected.as_deref(),
@@ -233,20 +137,6 @@ pub(crate) async fn build_hive_observation_for_hive(
         observation.quota_reset_utc_midnight = route.quota_reset_utc_midnight;
         if let Ok(used) = journal.provider_tokens_since(day_start_ms, transport).await {
             observation.daily_tokens_used = used;
-        }
-    }
-    if route.provider == ProviderKind::LiteRouter {
-        if let Some(fallback_name) = fallback_routmy_route_name(Some(config)) {
-            if let Some(fallback_route) = config.routes.get(&fallback_name) {
-                observation.fallback_provider = Some(ProviderProfileId::Rout.as_str().to_owned());
-                if let Some(quota) = fallback_route.daily_token_quota {
-                    let used = journal
-                        .provider_tokens_since(day_start_ms, fallback_route.provider.as_str())
-                        .await
-                        .unwrap_or(0);
-                    observation.fallback_tokens_remaining = Some(quota.saturating_sub(used));
-                }
-            }
         }
     }
     observation.minute_cap = limits.rpm;
@@ -406,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn hive_route_name_prefers_requested_profile_over_mismatched_hive_route() {
+    fn hive_route_name_uses_only_isolated_hive_route_never_global_routes() {
         let mut routes = std::collections::HashMap::new();
         routes.insert(
             "hive".to_owned(),
@@ -426,14 +316,12 @@ mod tests {
             ),
         );
         let config = ModelGatewayConfig {
-            default_route: "rout".to_owned(),
+            default_route: "literouter".to_owned(),
             routes,
         };
 
-        assert_eq!(
-            hive_route_name(Some(&config), Some("literouter")).as_deref(),
-            Some("literouter")
-        );
+        // Must never fall back to the global "literouter" route when "hive" is a different profile.
+        assert_eq!(hive_route_name(Some(&config), Some("literouter")), None);
         assert_eq!(
             hive_route_name(Some(&config), Some("rout")).as_deref(),
             Some("hive")
@@ -442,23 +330,76 @@ mod tests {
             hive_route_name(Some(&config), None).as_deref(),
             Some("hive")
         );
+
+        // Without an isolated "hive" route, Hive stays unconfigured even when global routes exist.
+        let mut global_only_routes = std::collections::HashMap::new();
+        global_only_routes.insert(
+            "default".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::literouter(
+                "lr-global-key",
+                "https://api.literouter.com/v1",
+                "glm-5.3-flash-cheap:free",
+            ),
+        );
+        global_only_routes.insert(
+            "rout".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::openai_compatible(
+                "sk-global-rout",
+                "https://api.rout.my/v1",
+                "",
+            )
+            .with_provider_profile(ProviderProfileId::Rout, None),
+        );
+        let global_only = ModelGatewayConfig {
+            default_route: "default".to_owned(),
+            routes: global_only_routes,
+        };
+        assert_eq!(hive_route_name(Some(&global_only), None), None);
+        assert_eq!(hive_route_name(Some(&global_only), Some("literouter")), None);
+        assert_eq!(hive_route_name(Some(&global_only), Some("rout")), None);
     }
 
     #[tokio::test]
-    async fn hive_observation_does_not_leak_default_route_model_into_different_hive_provider() {
+    async fn hive_observation_does_not_leak_global_routes_or_models_when_unconfigured() {
         let directory = tempfile::tempdir().expect("temp dir");
         let journal = EventJournal::open(directory.path().join("hive-provider-isolation.db"))
             .expect("journal opens");
         let mut routes = std::collections::HashMap::new();
         routes.insert(
             "default".to_owned(),
+            evohime_model_gateway::ModelRouteConfig::literouter(
+                "sk-global-lr",
+                "https://api.literouter.com/v1",
+                "global-lr-model",
+            ),
+        );
+        routes.insert(
+            "rout".to_owned(),
             evohime_model_gateway::ModelRouteConfig::openai_compatible(
-                "sk-rout",
+                "sk-global-rout",
                 "https://api.rout.my/v1",
                 "openai/gpt-6-luna",
             )
             .with_provider_profile(ProviderProfileId::Rout, None),
         );
+        let unconfigured = ModelGatewayConfig {
+            default_route: "default".to_owned(),
+            routes: routes.clone(),
+        };
+
+        let empty_obs = build_hive_observation_for_hive(
+            &journal,
+            Some(&unconfigured),
+            Some("global-lr-model"),
+            None,
+            None,
+            crate::task_memory::now_millis() as i64,
+        )
+        .await;
+        assert!(empty_obs.provider.is_empty());
+        assert!(empty_obs.model.is_empty());
+        assert!(empty_obs.fallback_provider.is_none());
+
         routes.insert(
             "hive".to_owned(),
             evohime_model_gateway::ModelRouteConfig::literouter(
@@ -467,15 +408,15 @@ mod tests {
                 "llama-3.3-70b-instruct-turbo-free",
             ),
         );
-        let config = ModelGatewayConfig {
+        let configured = ModelGatewayConfig {
             default_route: "default".to_owned(),
             routes,
         };
 
         let observation = build_hive_observation_for_hive(
             &journal,
-            Some(&config),
-            Some("openai/gpt-6-luna"),
+            Some(&configured),
+            Some("global-lr-model"),
             Some("literouter"),
             None,
             crate::task_memory::now_millis() as i64,
@@ -484,5 +425,6 @@ mod tests {
 
         assert_eq!(observation.provider, "literouter");
         assert_eq!(observation.model, "llama-3.3-70b-instruct-turbo-free");
+        assert!(observation.fallback_provider.is_none());
     }
 }
