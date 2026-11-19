@@ -160,7 +160,8 @@ describe('provider store', () => {
     store.save({ provider: 'literouter', apiKey: 'sk-literouter', model: 'router-model', baseUrl: '', tier: 'free' })
     store.save({ provider: 'openai_compatible', apiKey: 'sk-openai', model: 'gpt-model', baseUrl: '', tier: 'paid' })
 
-    expect(store.environment()).toEqual({
+    const env = store.environment()
+    expect(env).toMatchObject({
       MODEL_PROVIDER: 'openai_compatible',
       MODEL_FREE_ACCESS_ROUTING_MODE: 'any',
       MODEL_FREE_ACCESS_ALLOW_PAID_FALLBACK: 'false',
@@ -176,6 +177,13 @@ describe('provider store', () => {
       OPENAI_BASE_URL: 'https://api.openai.com/v1',
       MODEL_PROVIDER_PROFILE_ID: 'openai',
       MODEL_PROVIDER_CREDENTIAL_BINDING: expect.stringMatching(/^credential:[0-9a-f-]{36}$/)
+    })
+    expect(JSON.parse(env['MODEL_ADDITIONAL_ROUTES_JSON'] ?? '{}')).toMatchObject({
+      literouter: {
+        provider: 'literouter',
+        api_key: 'sk-literouter',
+        model: 'router-model'
+      }
     })
     expect(store.summary().profiles.literouter.configured).toBe(true)
 

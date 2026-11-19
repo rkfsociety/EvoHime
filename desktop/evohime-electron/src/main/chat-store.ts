@@ -6,9 +6,16 @@ import { dirname, join } from 'node:path'
 import {
   HIVE_SYSTEM_CHAT_ID,
   HIVE_SYSTEM_WORKSPACE_ID,
+  PROVIDER_KINDS,
+  PROVIDER_PROFILE_IDS,
+  type ChatIsolationMode,
   type ChatMessage,
   type ChatRecord,
+  type ChatSessionSettings,
   type ChatSummary,
+  type PermissionMode,
+  type ProviderKind,
+  type ProviderProfileId,
   type WorkbenchPresentation
 } from '@shared/api'
 
@@ -218,6 +225,28 @@ export class ChatStore {
     })
   }
 
+  async saveSessionSettings(chatId: string, value: ChatSessionSettings): Promise<ChatRecord | null> {
+    return this.mutate(async () => {
+      const current = (await this.read()).chats
+      const existing = current.find((item) => item.id === chatId)
+      if (!existing) return null
+      const session = normalizeSessionSettings(value)
+      const updated: ChatRecord = session ? { ...existing, session } : {
+        id: existing.id,
+        workspacePath: existing.workspacePath,
+        title: existing.title,
+        createdMs: existing.createdMs,
+        updatedMs: existing.updatedMs,
+        taskIds: existing.taskIds,
+        messages: existing.messages,
+        workbenchPresentation: existing.workbenchPresentation
+      }
+      const chats = current.map((item) => (item.id === chatId ? updated : item))
+      await this.write({ chats })
+      return updated
+    })
+  }
+
   /** Drops every chat of a workspace the user stopped tracking. */
   async removeWorkspace(workspacePath: string): Promise<void> {
     const normalized = normalizeWorkspacePath(workspacePath)
@@ -381,7 +410,8 @@ function summarize(chat: ChatRecord): ChatSummary {
     workspacePath: chat.workspacePath,
     title: chat.title,
     updatedMs: chat.updatedMs,
-    messageCount: chat.messages.length
+    messageCount: chat.messages.length,
+    ...(chat.session ? { session: chat.session } : {})
   }
 }
 
@@ -412,6 +442,7 @@ function parseChat(value: unknown): ChatRecord | null {
   const taskIds = Array.isArray(record['taskIds'])
     ? record['taskIds'].filter((item): item is string => typeof item === 'string')
     : []
+  const session = parseSessionSettings(record['session'])
   return {
     id,
     workspacePath,
@@ -422,8 +453,50 @@ function parseChat(value: unknown): ChatRecord | null {
     createdMs: numeric(record['createdMs']),
     updatedMs: numeric(record['updatedMs']),
     taskIds: taskIds.slice(-MAX_MESSAGES_PER_CHAT),
-      messages
-      , workbenchPresentation: parseWorkbenchPresentation(record['workbenchPresentation'])
+    messages,
+    workbenchPresentation: parseWorkbenchPresentation(record['workbenchPresentation']),
+    ...(session !== undefined ? { session } : {})
+  }
+}
+
+function normalizeSessionSettings(value: ChatSessionSettings): ChatSessionSettings | undefined {
+  return parseSessionSettings(value)
+}
+
+function parseSessionSettings(value: unknown): ChatSessionSettings | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const provider =
+    typeof record['provider'] === 'string' && (PROVIDER_KINDS as readonly string[]).includes(record['provider'])
+      ? (record['provider'] as ProviderKind)
+      : undefined
+  const profileId =
+    provider === 'openai_compatible' &&
+    typeof record['profileId'] === 'string' &&
+    (PROVIDER_PROFILE_IDS as readonly string[]).includes(record['profileId'])
+      ? (record['profileId'] as ProviderProfileId)
+      : undefined
+  const model =
+    typeof record['model'] === 'string' && record['model'].trim().length > 0
+      ? record['model'].trim().slice(0, 128)
+      : undefined
+  const permissionMode =
+    record['permissionMode'] === 'read_only' ||
+    record['permissionMode'] === 'ask' ||
+    record['permissionMode'] === 'full'
+      ? (record['permissionMode'] as PermissionMode)
+      : undefined
+  const isolationMode =
+    record['isolationMode'] === 'shared_workspace' || record['isolationMode'] === 'isolated_worktree'
+      ? (record['isolationMode'] as ChatIsolationMode)
+      : undefined
+  if (!provider && !profileId && !model && !permissionMode && !isolationMode) return undefined
+  return {
+    ...(provider ? { provider } : {}),
+    ...(profileId ? { profileId } : {}),
+    ...(model ? { model } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
+    ...(isolationMode ? { isolationMode } : {})
   }
 }
 

@@ -272,6 +272,7 @@ impl IpcBridge {
                     }
                 }
                 if should_dispatch {
+                    let session_binding = build_session_binding_from_start_task(&start);
                     if let Some(coordinator) = &self.coordinator {
                         let dispatched = coordinator
                             .dispatch(CoreCommand::StartTask {
@@ -294,7 +295,7 @@ impl IpcBridge {
                                 },
                                 conversation: conversation_context,
                                 goal_id: (!start.goal_id.is_empty()).then_some(start.goal_id),
-                                session_binding: None,
+                                session_binding,
                             })
                             .await;
                         if has_conversation {
@@ -845,4 +846,38 @@ impl IpcBridge {
         }
         Ok(())
     }
+}
+
+fn build_session_binding_from_start_task(
+    start: &generated::StartTask,
+) -> Option<crate::SessionBinding> {
+    let provider = (!start.provider.trim().is_empty()).then(|| start.provider.trim().to_owned());
+    let profile_id =
+        (!start.profile_id.trim().is_empty()).then(|| start.profile_id.trim().to_owned());
+    let model = (!start.model.trim().is_empty()).then(|| start.model.trim().to_owned());
+    let permission_mode = match start.permission_mode.trim() {
+        "full" => Some(PermissionMode::Allow),
+        "read_only" => Some(PermissionMode::Deny),
+        "ask" => Some(PermissionMode::Ask),
+        _ => None,
+    };
+    let isolation_mode = match start.isolation_mode.trim() {
+        "isolated_worktree" => crate::IsolationMode::IsolatedWorktree,
+        _ => crate::IsolationMode::SharedWorkspace,
+    };
+    if provider.is_none()
+        && profile_id.is_none()
+        && model.is_none()
+        && permission_mode.is_none()
+        && isolation_mode == crate::IsolationMode::SharedWorkspace
+    {
+        return None;
+    }
+    Some(crate::SessionBinding {
+        provider,
+        profile_id,
+        model,
+        permission_mode,
+        isolation_mode,
+    })
 }

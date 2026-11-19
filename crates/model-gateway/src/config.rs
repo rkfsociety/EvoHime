@@ -833,6 +833,17 @@ impl ModelGatewayConfig {
             }
         }
 
+        if let Ok(raw_additional) = env::var("MODEL_ADDITIONAL_ROUTES_JSON") {
+            if !raw_additional.trim().is_empty() {
+                let additional = parse_routes_from_json(&raw_additional)?;
+                for (name, additional_route) in additional.routes {
+                    if name != default_route && name != "hive" && name != "hive_fallback" {
+                        routes.entry(name).or_insert(additional_route);
+                    }
+                }
+            }
+        }
+
         let hive_key = env::var("HIVE_API_KEY")
             .ok()
             .map(|value| value.trim().to_string())

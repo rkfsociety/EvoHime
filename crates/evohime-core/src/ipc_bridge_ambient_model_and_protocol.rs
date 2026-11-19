@@ -561,7 +561,11 @@ impl IpcBridge {
                     return Ok(());
                 }
                 let payload = self
-                    .fetch_model_catalog_payload(&request.mode, None, None)
+                    .fetch_model_catalog_payload(
+                        &request.mode,
+                        (!request.provider.is_empty()).then_some(request.provider.as_str()),
+                        (!request.profile_id.is_empty()).then_some(request.profile_id.as_str()),
+                    )
                     .await;
                 let event = generated::EventEnvelope {
                     protocol: Some(protocol()),

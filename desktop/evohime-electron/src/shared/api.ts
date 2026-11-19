@@ -851,6 +851,18 @@ export interface ChatMessage {
   readonly atMs: number
 }
 
+/** Filesystem isolation mode for a chat session. */
+export type ChatIsolationMode = 'shared_workspace' | 'isolated_worktree'
+
+/** Per-chat session settings persisted additively in `chats.json`. */
+export interface ChatSessionSettings {
+  readonly provider?: ProviderKind
+  readonly profileId?: ProviderProfileId
+  readonly model?: string
+  readonly permissionMode?: PermissionMode
+  readonly isolationMode?: ChatIsolationMode
+}
+
 /** A conversation of the shell, optionally scoped to one workspace. */
 export interface ChatRecord {
   readonly id: string
@@ -862,6 +874,7 @@ export interface ChatRecord {
   readonly taskIds: readonly string[]
   readonly messages: readonly ChatMessage[]
   readonly workbenchPresentation: WorkbenchPresentation
+  readonly session?: ChatSessionSettings
 }
 
 export interface WorkbenchPresentation {
@@ -877,6 +890,7 @@ export interface ChatSummary {
   readonly title: string
   readonly updatedMs: number
   readonly messageCount: number
+  readonly session?: ChatSessionSettings
 }
 
 /**
@@ -1554,6 +1568,7 @@ export const RENDERER_COMMANDS = [
   'chat.appendPrompt',
   'chat.getWorkbenchPresentation',
   'chat.saveWorkbenchPresentation',
+  'chat.saveSessionSettings',
   'chat.remove',
   'review.pickPlan',
   'review.start',
@@ -1776,7 +1791,7 @@ export interface CommandPayloads {
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
   'workspace.forget': { path: string }
-  'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | 'hive' | null; executionKind?: 'dialogue' | 'coding'; goalId?: string }
+  'core.startTask': { taskId: string; prompt: string; workspacePath: string; conversationId?: string; clientMessageId?: string; preferredRouteHint?: 'local' | 'cloud' | 'codex_cli' | 'hive' | null; executionKind?: 'dialogue' | 'coding'; goalId?: string; provider?: ProviderKind; profileId?: ProviderProfileId; model?: string; permissionMode?: PermissionMode; isolationMode?: ChatIsolationMode }
   'core.getConversationEvents': { conversationId: string; beforeSequence?: number; afterSequence?: number; limit?: number; kindsFilter?: readonly string[] }
   'core.subscribeConversationEvents': { conversationId: string; afterSequence: number; limit?: number; kindsFilter?: readonly string[] }
   'core.getConversationWorkbench': { conversationId: string; workspaceId: string; runId?: string; backendSnapshotHash?: string; capabilitySnapshotHash?: string; afterSequence?: number; limit?: number }
@@ -2012,7 +2027,7 @@ export interface CommandPayloads {
   'core.restoreDatabase': { backupPath: string; approvalId: string }
   'core.cancelDatabaseOperation': { operationId: string }
   'core.getModelConfig': Record<string, never>
-  'core.listModelCatalog': { mode: ModelTier | 'hive_catalog' | 'hive_fallback_catalog'; profile?: string }
+  'core.listModelCatalog': { mode: ModelTier | 'hive_catalog' | 'hive_fallback_catalog'; profile?: string; provider?: ProviderKind; profileId?: ProviderProfileId }
   'core.selectModel': { model: string }
   'core.getReceiptKeyStatus': Record<string, never>
   'core.trustReceiptGenesis': { genesisKeyId: string; approvalId?: string; source?: string }
@@ -2053,6 +2068,7 @@ export interface CommandPayloads {
   'chat.remove': { chatId: string }
   'chat.getWorkbenchPresentation': { chatId: string }
   'chat.saveWorkbenchPresentation': { chatId: string; presentation: WorkbenchPresentation }
+  'chat.saveSessionSettings': { chatId: string; session: ChatSessionSettings }
   /** `directory` — папка, открытая в диалоге; пустая строка = выбор системы. */
   'review.pickPlan': { directory?: string }
   /** `sourcePaths` — пути проверяемых файлов: по ним ядро читает соседние планы, на которые они ссылаются. */
@@ -2563,6 +2579,7 @@ export interface CommandResults {
   'chat.remove': readonly ChatSummary[]
   'chat.getWorkbenchPresentation': WorkbenchPresentation
   'chat.saveWorkbenchPresentation': WorkbenchPresentation
+  'chat.saveSessionSettings': ChatRecord | null
   /** `directory` — папка выбранного файла, чтобы следующий диалог открылся в ней. */
   'review.pickPlan': { cancelled: boolean; files: readonly PlanFile[]; directory: string }
   'review.start': { accepted: boolean; reviewId: string }

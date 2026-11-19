@@ -1,7 +1,7 @@
 import { formatTime, translate, useAppLocale } from './i18n'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { HIVE_SYSTEM_CHAT_ID, type ChatMessage, type ChatProviderMode, type ChatRecord, type ConnectionState, type CoreEvent } from '@shared/api'
+import { HIVE_SYSTEM_CHAT_ID, type ChatIsolationMode, type ChatMessage, type ChatProviderMode, type ChatRecord, type ChatSessionSettings, type ConnectionState, type CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -183,6 +183,8 @@ export function TaskTimeline({
       ? stored
       : 'literouter'
   })
+  const [chatModel, setChatModel] = useState('')
+  const [chatIsolationMode, setChatIsolationMode] = useState<ChatIsolationMode>('shared_workspace')
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const [conversationLog, setConversationLog] = useState<ConversationProjectionState | null>(null)
   const [loadingOlderHistory, setLoadingOlderHistory] = useState(false)
@@ -210,6 +212,57 @@ export function TaskTimeline({
   const subscriptionCursorRef = useRef<string | null>(null)
   const previousConnectionRef = useRef<ConnectionState>(connection)
   const conversationLogRef = useRef<ConversationProjectionState | null>(null)
+
+  useEffect(() => {
+    if (chat?.session?.provider) {
+      setProviderMode(chat.session.provider)
+    }
+    setChatModel(chat?.session?.model ?? '')
+    setChatIsolationMode(chat?.session?.isolationMode ?? 'shared_workspace')
+  }, [chat?.id, chat?.session?.isolationMode, chat?.session?.model, chat?.session?.provider])
+
+  const persistChatSession = useCallback(
+    (patch: Partial<ChatSessionSettings>) => {
+      const nextSession: ChatSessionSettings = {
+        ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
+        ...(chatModel.length > 0 ? { model: chatModel } : {}),
+        ...(chatIsolationMode ? { isolationMode: chatIsolationMode } : {}),
+        ...patch
+      }
+      if (!api || !chatId) return
+      void api.invoke('chat.saveSessionSettings', { chatId, session: nextSession }).then((outcome) => {
+        if (outcome.ok && outcome.value) setChat(outcome.value)
+      })
+    },
+    [api, chatId, chatIsolationMode, chatModel, providerMode]
+  )
+
+  const handleChatProviderChange = useCallback(
+    (next: ChatProviderMode) => {
+      setProviderMode(next)
+      setChatModel('')
+      if (next !== 'codex_cli') {
+        persistChatSession({ provider: next, model: '' })
+      }
+    },
+    [persistChatSession]
+  )
+
+  const handleChatModelChange = useCallback(
+    (nextModel: string) => {
+      setChatModel(nextModel)
+      persistChatSession({ model: nextModel })
+    },
+    [persistChatSession]
+  )
+
+  const handleChatIsolationChange = useCallback(
+    (nextIsolation: ChatIsolationMode) => {
+      setChatIsolationMode(nextIsolation)
+      persistChatSession({ isolationMode: nextIsolation })
+    },
+    [persistChatSession]
+  )
 
   const setConversationProjection = useCallback((updater: (current: ConversationProjectionState | null) => ConversationProjectionState | null) => {
     setConversationLog((current) => {
@@ -545,13 +598,16 @@ export function TaskTimeline({
       conversationId: conversationLog.conversationId,
       clientMessageId,
       preferredRouteHint: conversationLog.conversationId === HIVE_SYSTEM_CHAT_ID ? 'hive' : (providerMode === 'codex_cli' ? 'codex_cli' : 'cloud'),
-      executionKind: conversationLog.conversationId === HIVE_SYSTEM_CHAT_ID ? 'dialogue' : (providerMode === 'codex_cli' ? 'coding' : 'dialogue')
+      executionKind: conversationLog.conversationId === HIVE_SYSTEM_CHAT_ID ? 'dialogue' : (providerMode === 'codex_cli' ? 'coding' : 'dialogue'),
+      ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
+      ...(chatModel.length > 0 ? { model: chatModel } : {}),
+      ...(chatIsolationMode === 'isolated_worktree' ? { isolationMode: chatIsolationMode } : {})
     })
     if (!outcome.ok) {
       setConversationProjection((current) => current ? markOptimisticFailed(current, clientMessageId) : current)
       setCommandError(outcome.message)
     }
-  }, [api, conversationLog, providerMode, setConversationProjection, workspace])
+  }, [api, chatIsolationMode, chatModel, conversationLog, providerMode, setConversationProjection, workspace])
 
   const timelineItems = useMemo(() => {
     if (conversation.length > 0) {
@@ -686,6 +742,9 @@ export function TaskTimeline({
       clientMessageId,
       preferredRouteHint: targetChatId === HIVE_SYSTEM_CHAT_ID ? 'hive' : (providerMode === 'codex_cli' ? 'codex_cli' : 'cloud'),
       executionKind: targetChatId === HIVE_SYSTEM_CHAT_ID ? 'dialogue' : (providerMode === 'codex_cli' ? 'coding' : 'dialogue'),
+      ...(providerMode !== 'codex_cli' ? { provider: providerMode } : {}),
+      ...(chatModel.length > 0 ? { model: chatModel } : {}),
+      ...(chatIsolationMode === 'isolated_worktree' ? { isolationMode: chatIsolationMode } : {}),
       ...(goalId ? { goalId } : {})
     })
     setBusy(false)
@@ -1064,15 +1123,23 @@ export function TaskTimeline({
               <div className="composer__control-group">
                 <ComposerIcon name="link" className="composer__control-icon" />
                 <ChatProviderPicker
+                  perChat
                   connection={connection}
                   value={providerMode}
-                  onChange={setProviderMode}
+                  onChange={handleChatProviderChange}
                   disabled={busy}
                 />
               </div>
               <div className="composer__control-group composer__control-group--model">
                 <ComposerIcon name="box" className="composer__control-icon" />
-                <ModelPicker connection={connection} events={events} provider={providerMode} use="agent" />
+                <ModelPicker
+                  connection={connection}
+                  events={events}
+                  provider={providerMode}
+                  selectedModel={chatModel}
+                  onSelectChatModel={handleChatModelChange}
+                  use="agent"
+                />
               </div>
               <div className="composer__control-group">
                 <ComposerIcon name="lock" className="composer__control-icon" />
@@ -1083,6 +1150,19 @@ export function TaskTimeline({
                   onOpenChange={setToolsMenuOpen}
                 />
               </div>
+              {workspace !== null && chatId !== HIVE_SYSTEM_CHAT_ID ? (
+                <div className="composer__control-group">
+                  <select
+                    aria-label={translate("Изоляция файлов")}
+                    value={chatIsolationMode}
+                    disabled={busy || !connected}
+                    onChange={(event) => handleChatIsolationChange(event.target.value as ChatIsolationMode)}
+                  >
+                    <option value="shared_workspace">{translate("Общая папка")}</option>
+                    <option value="isolated_worktree">{translate("Изолированный worktree")}</option>
+                  </select>
+                </div>
+              ) : null}
               {!connected ? <p className="shell__reason">{translate("Core недоступен: запуск и управление задачей приостановлены.")}</p> : null}
             </div>
           </div>

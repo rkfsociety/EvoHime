@@ -1521,3 +1521,39 @@ describe('Core image-generation bridge', () => {
     expect(sent).toHaveLength(0)
   })
 })
+
+describe('Per-chat session isolation bridge (Plan 197.3)', () => {
+  it('forwards per-chat provider, profileId, model, permissionMode, and isolationMode in core.startTask and core.listModelCatalog', () => {
+    const startOutcome = invoke('core.startTask', {
+      taskId: 'task-session-1',
+      prompt: 'check files',
+      workspacePath: '',
+      provider: 'openai_compatible',
+      profileId: 'openrouter',
+      model: 'qwen/qwen3-coder:free',
+      permissionMode: 'read_only',
+      isolationMode: 'isolated_worktree'
+    })
+    expect(startOutcome).toMatchObject({ ok: true, value: { accepted: true } })
+    expect(sent.at(-1)?.['startTask']).toMatchObject({
+      taskId: 'task-session-1',
+      provider: 'openai_compatible',
+      profileId: 'openrouter',
+      model: 'qwen/qwen3-coder:free',
+      permissionMode: 'read_only',
+      isolationMode: 'isolated_worktree'
+    })
+
+    const catalogOutcome = invoke('core.listModelCatalog', {
+      mode: 'free',
+      provider: 'openai_compatible',
+      profileId: 'openrouter'
+    })
+    expect(catalogOutcome).toMatchObject({ ok: true, value: { accepted: true } })
+    expect(sent.at(-1)?.['modelCatalog']).toMatchObject({
+      mode: 'free',
+      provider: 'openai_compatible',
+      profileId: 'openrouter'
+    })
+  })
+})

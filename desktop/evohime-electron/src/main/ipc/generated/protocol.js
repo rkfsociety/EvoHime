@@ -1329,6 +1329,8 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [mode] ModelCatalogRequest mode
                  * @property {string|null} [modelId] ModelCatalogRequest modelId
                  * @property {boolean|null} [confirmPossibleCost] ModelCatalogRequest confirmPossibleCost
+                 * @property {string|null} [provider] ModelCatalogRequest provider
+                 * @property {string|null} [profileId] ModelCatalogRequest profileId
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -1385,6 +1387,22 @@ export const evohime = $root.evohime = (() => {
                 ModelCatalogRequest.prototype.confirmPossibleCost = false;
 
                 /**
+                 * ModelCatalogRequest provider.
+                 * @member {string} provider
+                 * @memberof evohime.desktop.v1.ModelCatalogRequest
+                 * @instance
+                 */
+                ModelCatalogRequest.prototype.provider = "";
+
+                /**
+                 * ModelCatalogRequest profileId.
+                 * @member {string} profileId
+                 * @memberof evohime.desktop.v1.ModelCatalogRequest
+                 * @instance
+                 */
+                ModelCatalogRequest.prototype.profileId = "";
+
+                /**
                  * Encodes the specified ModelCatalogRequest message. Does not implicitly {@link evohime.desktop.v1.ModelCatalogRequest.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.ModelCatalogRequest
@@ -1406,6 +1424,10 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 2, wireType 2 =*/18).string(message.modelId);
                     if (message.confirmPossibleCost != null && $Object.hasOwnProperty.call(message, "confirmPossibleCost") && message.confirmPossibleCost !== false)
                         writer.uint32(/* id 3, wireType 0 =*/24).bool(message.confirmPossibleCost);
+                    if (message.provider != null && $Object.hasOwnProperty.call(message, "provider") && message.provider !== "")
+                        writer.uint32(/* id 4, wireType 2 =*/34).string(message.provider);
+                    if (message.profileId != null && $Object.hasOwnProperty.call(message, "profileId") && message.profileId !== "")
+                        writer.uint32(/* id 5, wireType 2 =*/42).string(message.profileId);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -1475,6 +1497,24 @@ export const evohime = $root.evohime = (() => {
                                     message.confirmPossibleCost = value;
                                 else
                                     delete message.confirmPossibleCost;
+                                continue;
+                            }
+                        case 4: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.provider = value;
+                                else
+                                    delete message.provider;
+                                continue;
+                            }
+                        case 5: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.profileId = value;
+                                else
+                                    delete message.profileId;
                                 continue;
                             }
                         }
@@ -11243,6 +11283,11 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [conversationId] StartTask conversationId
                  * @property {string|null} [clientMessageId] StartTask clientMessageId
                  * @property {string|null} [goalId] StartTask goalId
+                 * @property {string|null} [provider] StartTask provider
+                 * @property {string|null} [profileId] StartTask profileId
+                 * @property {string|null} [model] StartTask model
+                 * @property {string|null} [permissionMode] StartTask permissionMode
+                 * @property {string|null} [isolationMode] StartTask isolationMode
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -11339,6 +11384,46 @@ export const evohime = $root.evohime = (() => {
                 StartTask.prototype.goalId = "";
 
                 /**
+                 * StartTask provider.
+                 * @member {string} provider
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.provider = "";
+
+                /**
+                 * StartTask profileId.
+                 * @member {string} profileId
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.profileId = "";
+
+                /**
+                 * StartTask model.
+                 * @member {string} model
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.model = "";
+
+                /**
+                 * StartTask permissionMode.
+                 * @member {string} permissionMode
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.permissionMode = "";
+
+                /**
+                 * StartTask isolationMode.
+                 * @member {string} isolationMode
+                 * @memberof evohime.desktop.v1.StartTask
+                 * @instance
+                 */
+                StartTask.prototype.isolationMode = "";
+
+                /**
                  * Encodes the specified StartTask message. Does not implicitly {@link evohime.desktop.v1.StartTask.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.StartTask
@@ -11370,6 +11455,16 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 7, wireType 2 =*/58).string(message.clientMessageId);
                     if (message.goalId != null && $Object.hasOwnProperty.call(message, "goalId") && message.goalId !== "")
                         writer.uint32(/* id 8, wireType 2 =*/66).string(message.goalId);
+                    if (message.provider != null && $Object.hasOwnProperty.call(message, "provider") && message.provider !== "")
+                        writer.uint32(/* id 9, wireType 2 =*/74).string(message.provider);
+                    if (message.profileId != null && $Object.hasOwnProperty.call(message, "profileId") && message.profileId !== "")
+                        writer.uint32(/* id 10, wireType 2 =*/82).string(message.profileId);
+                    if (message.model != null && $Object.hasOwnProperty.call(message, "model") && message.model !== "")
+                        writer.uint32(/* id 11, wireType 2 =*/90).string(message.model);
+                    if (message.permissionMode != null && $Object.hasOwnProperty.call(message, "permissionMode") && message.permissionMode !== "")
+                        writer.uint32(/* id 12, wireType 2 =*/98).string(message.permissionMode);
+                    if (message.isolationMode != null && $Object.hasOwnProperty.call(message, "isolationMode") && message.isolationMode !== "")
+                        writer.uint32(/* id 13, wireType 2 =*/106).string(message.isolationMode);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -11484,6 +11579,51 @@ export const evohime = $root.evohime = (() => {
                                     message.goalId = value;
                                 else
                                     delete message.goalId;
+                                continue;
+                            }
+                        case 9: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.provider = value;
+                                else
+                                    delete message.provider;
+                                continue;
+                            }
+                        case 10: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.profileId = value;
+                                else
+                                    delete message.profileId;
+                                continue;
+                            }
+                        case 11: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.model = value;
+                                else
+                                    delete message.model;
+                                continue;
+                            }
+                        case 12: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.permissionMode = value;
+                                else
+                                    delete message.permissionMode;
+                                continue;
+                            }
+                        case 13: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.isolationMode = value;
+                                else
+                                    delete message.isolationMode;
                                 continue;
                             }
                         }

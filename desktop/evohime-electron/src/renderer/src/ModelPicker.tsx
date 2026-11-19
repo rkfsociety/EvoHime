@@ -34,10 +34,12 @@ export interface ModelPickerProps {
   readonly provider: ChatProviderMode
   readonly use?: ModelUse
   readonly onModelChange?: (model: string) => void
+  readonly selectedModel?: string
+  readonly onSelectChatModel?: (model: string) => void
   readonly disabled?: boolean
 }
 
-export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent', onModelChange, disabled = false }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
+export function ModelPicker({ connection, events, provider = 'literouter', use = 'agent', onModelChange, selectedModel, onSelectChatModel, disabled = false }: ModelPickerProps & { readonly provider?: ChatProviderMode }): React.JSX.Element | null {
   const api = useShellApi()
   const { shared, summary } = useProviderState()
   const connected = CONNECTED_STATES.includes(connection)
@@ -90,8 +92,13 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     : fallbackTier
 
   useEffect(() => {
+    if (selectedModel === undefined) return
+    setCurrent(selectedModel)
+  }, [selectedModel])
+
+  useEffect(() => {
     if (!api || !connected || provider === 'codex_cli' || tier === null) return
-    void api.invoke('core.listModelCatalog', { mode: tier })
+    void api.invoke('core.listModelCatalog', { mode: tier, provider })
     void api.invoke('core.getModelConfig', {})
   }, [api, connected, provider, tier])
 
@@ -202,6 +209,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       setCurrent(model)
       setError(null)
       setSelectionError(null)
+      if (onSelectChatModel && provider !== 'codex_cli') {
+        onSelectChatModel(model)
+        onModelChangeRef.current?.(model)
+        return
+      }
       pendingSelection.current = model
       autoSelectionBlocked.current = false
       const outcome = provider === 'codex_cli'
@@ -212,7 +224,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
         setSelectionError(outcome.message)
       } else onModelChangeRef.current?.(model)
     },
-    [api, provider]
+    [api, onSelectChatModel, provider]
   )
 
   const requiredCapability = use === 'agent' ? 'tool_calls' : 'chat'

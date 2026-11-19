@@ -23,10 +23,11 @@ export interface ChatProviderPickerProps {
   readonly value: ChatProviderMode
   readonly onChange: (value: ChatProviderMode) => void
   readonly disabled?: boolean
+  readonly perChat?: boolean
 }
 
 /** One provider/mode choice for the next chat task. */
-export function ChatProviderPicker({ connection, value, onChange, disabled = false }: ChatProviderPickerProps): React.JSX.Element {
+export function ChatProviderPicker({ connection, value, onChange, disabled = false, perChat = false }: ChatProviderPickerProps): React.JSX.Element {
   const api = useShellApi()
   const { summary, apply } = useProviderState()
   const [codex, setCodex] = useState<CodexStatus | null>(null)
@@ -75,17 +76,18 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
   // Keep the composer selection tied to that same Core-backed snapshot rather
   // than leaving a valid but stale localStorage choice selected.
   useEffect(() => {
+    if (perChat) return
     const preferred = summary?.provider
     // Codex CLI is a task route, not the persisted API-provider profile. Once
     // it is selected, the API profile must not immediately overwrite it.
     if (value === 'codex_cli' || !preferred || !options.some((option) => option.value === preferred) || preferred === value) return
     window.localStorage.setItem('evohime.chat-provider-mode', preferred)
     onChange(preferred)
-  }, [onChange, options, summary?.provider, value])
+  }, [onChange, options, perChat, summary?.provider, value])
 
   const select = async (next: ChatProviderMode): Promise<void> => {
     if (!api || next === value || switching) return
-    if (next !== 'codex_cli') {
+    if (!perChat && next !== 'codex_cli') {
       setSwitching(true)
       try {
         const outcome = await api.invoke('provider.select', { provider: next })
@@ -95,7 +97,9 @@ export function ChatProviderPicker({ connection, value, onChange, disabled = fal
         setSwitching(false)
       }
     }
-    window.localStorage.setItem('evohime.chat-provider-mode', next)
+    if (!perChat) {
+      window.localStorage.setItem('evohime.chat-provider-mode', next)
+    }
     onChange(next)
   }
 

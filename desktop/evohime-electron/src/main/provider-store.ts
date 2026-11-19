@@ -554,6 +554,10 @@ export class ProviderStore {
     if (hiveKey) environment['HIVE_API_KEY'] = hiveKey
     const hiveFallbackKey = this.decryptSecret(document.hiveFallbackApiKeySecret)
     if (hiveFallbackKey) environment['HIVE_FALLBACK_API_KEY'] = hiveFallbackKey
+    const additionalRoutes = this.collectAdditionalRoutes(document)
+    if (Object.keys(additionalRoutes).length > 0) {
+      environment['MODEL_ADDITIONAL_ROUTES_JSON'] = JSON.stringify(additionalRoutes)
+    }
     if (document.provider === 'ollama') {
       environment['OLLAMA_BASE_URL'] = profile.baseUrl || OLLAMA_DEFAULT_BASE_URL
       if (profile.model) environment['OLLAMA_MODEL'] = profile.model
@@ -596,6 +600,59 @@ export class ProviderStore {
       }
     }
     return environment
+  }
+
+  private collectAdditionalRoutes(document: StoredDocument): Record<string, Record<string, unknown>> {
+    const routes: Record<string, Record<string, unknown>> = {}
+    const activeCompatibleProfileId =
+      document.provider === 'openai_compatible'
+        ? profileFor(document, 'openai_compatible').profileId
+        : undefined
+
+    const addProfileRoute = (
+      routeKey: string,
+      kind: ProviderKind,
+      stored: StoredProfile,
+      apiKey: string
+    ): void => {
+      routes[routeKey] = {
+        provider: kind,
+        ...(apiKey ? { api_key: apiKey } : {}),
+        ...(stored.baseUrl ? { base_url: stored.baseUrl } : {}),
+        ...(stored.model ? { model: stored.model } : {}),
+        ...(kind === 'openai_compatible' ? { provider_profile_id: stored.profileId } : {}),
+        ...(kind === 'openai_compatible' && stored.profileId === 'cloudflare_workers_ai' && stored.accountId
+          ? { provider_account_id: stored.accountId }
+          : {}),
+        ...(stored.credentialBinding ? { provider_credential_binding: stored.credentialBinding } : {})
+      }
+    }
+
+    for (const kind of PROVIDER_KINDS) {
+      if (kind === document.provider) continue
+      const stored = document.profiles[kind]
+      if (!stored) continue
+      if (kind === 'ollama') {
+        if (stored.baseUrl || stored.model) {
+          addProfileRoute('ollama', 'ollama', stored, '')
+        }
+        continue
+      }
+      const apiKey = this.decryptSecret(stored.secret)
+      if (!apiKey) continue
+      addProfileRoute(kind, kind, stored, apiKey)
+    }
+
+    for (const profileId of PROVIDER_PROFILE_IDS) {
+      if (profileId === activeCompatibleProfileId) continue
+      const stored = document.compatibleProfiles[profileId]
+      if (!stored) continue
+      const apiKey = this.decryptSecret(stored.secret)
+      if (!apiKey) continue
+      addProfileRoute(`openai_compatible:${profileId}`, 'openai_compatible', stored, apiKey)
+    }
+
+    return routes
   }
 
   private decryptSecret(secret: string): string {

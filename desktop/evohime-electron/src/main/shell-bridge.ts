@@ -251,11 +251,43 @@ function dispatch(
         : value['preferredRouteHint'] === 'local' || value['preferredRouteHint'] === 'cloud' || value['preferredRouteHint'] === 'codex_cli' || value['preferredRouteHint'] === 'hive' ? value['preferredRouteHint'] : undefined
       const executionKind = value['executionKind'] === undefined ? 'dialogue'
         : value['executionKind'] === 'dialogue' || value['executionKind'] === 'coding' ? value['executionKind'] : undefined
-      if (taskId === null || prompt === null || workspacePath === null || conversationId === null || clientMessageId === null || goalId === null || (conversationId.length === 0) !== (clientMessageId.length === 0) || preferredRouteHint === undefined || executionKind === undefined) {
+      const provider = value['provider'] === undefined ? undefined : asProviderKind(value['provider'])
+      const profileId = value['profileId'] === undefined ? undefined : asProviderProfileId(value['profileId'])
+      const model = value['model'] === undefined ? undefined : normalizeModel(value['model'])
+      const permissionMode =
+        value['permissionMode'] === undefined
+          ? undefined
+          : value['permissionMode'] === 'read_only' ||
+              value['permissionMode'] === 'ask' ||
+              value['permissionMode'] === 'full'
+            ? value['permissionMode']
+            : null
+      const isolationMode =
+        value['isolationMode'] === undefined
+          ? undefined
+          : value['isolationMode'] === 'shared_workspace' || value['isolationMode'] === 'isolated_worktree'
+            ? value['isolationMode']
+            : null
+      if (
+        taskId === null ||
+        prompt === null ||
+        workspacePath === null ||
+        conversationId === null ||
+        clientMessageId === null ||
+        goalId === null ||
+        (conversationId.length === 0) !== (clientMessageId.length === 0) ||
+        preferredRouteHint === undefined ||
+        executionKind === undefined ||
+        provider === null ||
+        profileId === null ||
+        model === null ||
+        permissionMode === null ||
+        isolationMode === null
+      ) {
         return failure('invalid-payload', 'Некорректные параметры задачи.')
       }
       log('info', 'shell.command_forwarded', { command })
-      if (workspacePath.length > 0) {
+      if (workspacePath.length > 0 && permissionMode === undefined) {
         // The picker is optimistic and its initial sync is asynchronous. Make
         // the persisted workspace mode authoritative at the task boundary so
         // a visible "Полный доступ" can never race with a stale Core mode.
@@ -268,7 +300,12 @@ function dispatch(
         workspacePath,
         preferredRouteHint: effectiveRouteHint,
         executionKind,
-        ...(goalId.length > 0 ? { goalId } : {})
+        ...(goalId.length > 0 ? { goalId } : {}),
+        ...(provider ? { provider } : {}),
+        ...(profileId ? { profileId } : {}),
+        ...(model && model.length > 0 ? { model } : {}),
+        ...(permissionMode ? { permissionMode } : {}),
+        ...(isolationMode ? { isolationMode } : {})
       }
       return accepted(client.send({ startTask: conversationId.length > 0
         ? { ...startTask, conversationId, clientMessageId }
@@ -1394,11 +1431,18 @@ function dispatch(
       const record = asRecord(payload)
       const mode = asModelCatalogMode(record['mode'])
       const profile = asOptionalBoundedString(record['profile'])
-      if (mode === null || profile === null || profile.length > 128) {
+      const provider = record['provider'] === undefined ? undefined : asProviderKind(record['provider'])
+      const profileId = record['profileId'] === undefined ? undefined : asProviderProfileId(record['profileId'])
+      if (mode === null || profile === null || profile.length > 128 || provider === null || profileId === null) {
         return failure('invalid-payload', 'Некорректный режим каталога моделей.')
       }
       return accepted(client.send({
-        modelCatalog: profile.length > 0 ? { mode, modelId: profile } : { mode }
+        modelCatalog: {
+          mode,
+          ...(profile.length > 0 ? { modelId: profile } : {}),
+          ...(provider ? { provider } : {}),
+          ...(profileId ? { profileId } : {})
+        }
       }))
     }
 
@@ -1659,6 +1703,51 @@ function dispatch(
       )
     }
 
+    case 'chat.saveSessionSettings': {
+      const value = asRecord(payload)
+      const chatId = asBoundedString(value['chatId'])
+      const sessionRecord = asRecord(value['session'])
+      const provider = sessionRecord['provider'] === undefined ? undefined : asProviderKind(sessionRecord['provider'])
+      const profileId = sessionRecord['profileId'] === undefined ? undefined : asProviderProfileId(sessionRecord['profileId'])
+      const model = sessionRecord['model'] === undefined ? undefined : normalizeModel(sessionRecord['model'])
+      const permissionMode =
+        sessionRecord['permissionMode'] === undefined
+          ? undefined
+          : sessionRecord['permissionMode'] === 'read_only' ||
+              sessionRecord['permissionMode'] === 'ask' ||
+              sessionRecord['permissionMode'] === 'full'
+            ? sessionRecord['permissionMode']
+            : null
+      const isolationMode =
+        sessionRecord['isolationMode'] === undefined
+          ? undefined
+          : sessionRecord['isolationMode'] === 'shared_workspace' ||
+              sessionRecord['isolationMode'] === 'isolated_worktree'
+            ? sessionRecord['isolationMode']
+            : null
+      if (
+        chatId === null ||
+        provider === null ||
+        profileId === null ||
+        model === null ||
+        permissionMode === null ||
+        isolationMode === null
+      ) {
+        return failure('invalid-payload', 'Некорректные настройки сессии чата.')
+      }
+      return chatOperation(
+        chats.saveSessionSettings(chatId, {
+          ...(provider ? { provider } : {}),
+          ...(profileId ? { profileId } : {}),
+          ...(model && model.length > 0 ? { model } : {}),
+          ...(permissionMode ? { permissionMode } : {}),
+          ...(isolationMode ? { isolationMode } : {})
+        }),
+        log,
+        (saved) => ({ ok: true, value: saved })
+      )
+    }
+
     case 'review.pickPlan':
       return pickReviewPlan(asRecord(payload)['directory'], workspaces.list().selected)
 
@@ -1878,7 +1967,7 @@ function dispatch(
       if (!profile?.configured) return failure('invalid-payload', 'Сначала настрой ключ выбранного провайдера.')
       const selectedSummary = providers.select(provider, profileId ?? undefined)
       log('info', 'shell.provider_selected', { provider, ...(profileId ? { profileId } : {}) })
-      return restartCore().then((restarted) => ({ ok: true, value: { summary: selectedSummary, restarted } }))
+      return { ok: true, value: { summary: selectedSummary, restarted: false } }
     }
 
     case 'provider.clearKey': {

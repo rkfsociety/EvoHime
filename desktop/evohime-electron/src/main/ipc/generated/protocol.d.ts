@@ -561,6 +561,12 @@ export namespace evohime {
                 /** ModelCatalogRequest confirmPossibleCost. */
                 confirmPossibleCost: boolean;
 
+                /** ModelCatalogRequest provider. */
+                provider: string;
+
+                /** ModelCatalogRequest profileId. */
+                profileId: string;
+
                 /**
                  * Encodes the specified ModelCatalogRequest message. Does not implicitly {@link evohime.desktop.v1.ModelCatalogRequest.verify|verify} messages.
                  * @param message ModelCatalogRequest message or plain object to encode
@@ -600,6 +606,12 @@ export namespace evohime {
 
                     /** ModelCatalogRequest confirmPossibleCost */
                     confirmPossibleCost?: (boolean|null);
+
+                    /** ModelCatalogRequest provider */
+                    provider?: (string|null);
+
+                    /** ModelCatalogRequest profileId */
+                    profileId?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];
@@ -4433,6 +4445,21 @@ export namespace evohime {
                 /** StartTask goalId. */
                 goalId: string;
 
+                /** StartTask provider. */
+                provider: string;
+
+                /** StartTask profileId. */
+                profileId: string;
+
+                /** StartTask model. */
+                model: string;
+
+                /** StartTask permissionMode. */
+                permissionMode: string;
+
+                /** StartTask isolationMode. */
+                isolationMode: string;
+
                 /**
                  * Encodes the specified StartTask message. Does not implicitly {@link evohime.desktop.v1.StartTask.verify|verify} messages.
                  * @param message StartTask message or plain object to encode
@@ -4487,6 +4514,21 @@ export namespace evohime {
 
                     /** StartTask goalId */
                     goalId?: (string|null);
+
+                    /** StartTask provider */
+                    provider?: (string|null);
+
+                    /** StartTask profileId */
+                    profileId?: (string|null);
+
+                    /** StartTask model */
+                    model?: (string|null);
+
+                    /** StartTask permissionMode */
+                    permissionMode?: (string|null);
+
+                    /** StartTask isolationMode */
+                    isolationMode?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

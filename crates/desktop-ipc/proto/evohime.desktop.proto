@@ -61,6 +61,10 @@ message ModelCatalogRequest {
   string model_id = 2;
   // The shell sets this only after an explicit user cost warning is accepted.
   bool confirm_possible_cost = 3;
+  // Optional per-chat provider override for catalog lookup.
+  string provider = 4;
+  // Optional per-chat provider profile identifier for catalog lookup.
+  string profile_id = 5;
 }
 
 // Selects the model used for the next request. The gateway resolves the model
@@ -432,6 +436,16 @@ message StartTask {
   string client_message_id = 7;
   // Optional Core-owned Goal ID to bind and drive until completion.
   string goal_id = 8;
+  // Optional per-chat provider transport override.
+  string provider = 9;
+  // Optional per-chat provider profile identifier.
+  string profile_id = 10;
+  // Optional per-chat pinned model identifier.
+  string model = 11;
+  // Optional per-chat permission mode ("read_only", "ask", "full").
+  string permission_mode = 12;
+  // Optional per-chat filesystem isolation mode ("shared_workspace", "isolated_worktree").
+  string isolation_mode = 13;
 }
 
 // Bounded read-only workspace browsing for the native Files surface.
