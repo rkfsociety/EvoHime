@@ -767,7 +767,7 @@ function hiveLogEntries(
 function formatHiveLogsForClipboard(
   events: readonly CoreEvent[],
   observedAt: ReadonlyMap<string, string>,
-  budget: HiveBudgetView
+  budget: HiveStateView['budget']
 ): string {
   const headerParts: string[] = [
     `Провайдер: ${budget.provider || 'не выбран'}`,

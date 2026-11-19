@@ -1304,7 +1304,8 @@ impl ModelGateway {
                         }
                     }
                     let prepared = if let Some(hook) = hook {
-                        let capabilities = self.route_capability_snapshot(&route, effective_model)?;
+                        let capabilities =
+                            self.route_capability_snapshot(&route, effective_model)?;
                         hook.prepare(&capabilities, messages, tools).await?
                     } else {
                         PreparedRouteAttempt {
@@ -1415,7 +1416,12 @@ impl ModelGateway {
         let effective_model = (route == self.default_route).then_some(model).flatten();
         if let Some(preflight) = &self.route_preflight {
             preflight
-                .check_for_request_async(route, effective_model, !tools.is_empty(), current_time_ms())
+                .check_for_request_async(
+                    route,
+                    effective_model,
+                    !tools.is_empty(),
+                    current_time_ms(),
+                )
                 .await?;
         }
         let prepared = if let Some(hook) = hook {
@@ -2315,7 +2321,10 @@ mod tests {
         let mut routes: HashMap<String, Arc<dyn ModelProvider>> = HashMap::new();
         routes.insert(
             "default".into(),
-            Arc::new(MockProvider::new("global-model:free", vec!["global".into()])),
+            Arc::new(MockProvider::new(
+                "global-model:free",
+                vec!["global".into()],
+            )),
         );
         routes.insert(
             "rout".into(),
@@ -2347,7 +2356,10 @@ mod tests {
         let mut routes: HashMap<String, Arc<dyn ModelProvider>> = HashMap::new();
         routes.insert(
             "default".into(),
-            Arc::new(MockProvider::new("global-paid-model", vec!["global".into()])),
+            Arc::new(MockProvider::new(
+                "global-paid-model",
+                vec!["global".into()],
+            )),
         );
         routes.insert(
             "hive".into(),

@@ -1631,7 +1631,12 @@ mod tests {
 
         // Initial Rout route gets `ROUT_DEFAULT_FREE_MODEL` (`openai/gpt-6-luna`).
         assert_eq!(
-            config.routes.get("hive").expect("hive route").literouter.model,
+            config
+                .routes
+                .get("hive")
+                .expect("hive route")
+                .literouter
+                .model,
             crate::model_ranker::ROUT_DEFAULT_FREE_MODEL
         );
 

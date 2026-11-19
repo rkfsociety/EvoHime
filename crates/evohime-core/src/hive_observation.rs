@@ -355,7 +355,10 @@ mod tests {
             routes: global_only_routes,
         };
         assert_eq!(hive_route_name(Some(&global_only), None), None);
-        assert_eq!(hive_route_name(Some(&global_only), Some("literouter")), None);
+        assert_eq!(
+            hive_route_name(Some(&global_only), Some("literouter")),
+            None
+        );
         assert_eq!(hive_route_name(Some(&global_only), Some("rout")), None);
     }
 
