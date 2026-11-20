@@ -39,14 +39,15 @@
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
 | 197 | [Изолированные сессии чатов (провайдер, модель, права и worktree)](197-0-chat-session-isolation.md) | active; per-chat session isolation и мульти-маршрутный ModelGateway |
+| 198 | [Независимые EvaPulse и Улей](198-0-independent-eva-pulse-and-hive.md) | active; разделение внешнего pulse runtime и дома Королевы Евы |
 
-Незавершённые numbered plans: `180–181`, `184–188`, `191`, `193–195` и `197`.
+Незавершённые numbered plans: `180–181`, `184–188`, `191`, `193–195`, `197` и `198`.
 
 Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
-зависимостей; следующий номер — `198`, текущий active catalog — `180–181`,
-`184–188`, `191`, `193–195` и `197`. Номера issues в активных планах — исторические
+зависимостей; следующий номер — `199`, текущий active catalog — `180–181`,
+`184–188`, `191`, `193–195`, `197` и `198`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 

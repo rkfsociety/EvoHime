@@ -1,0 +1,28 @@
+# План 198.2 — Runtime isolation, delivery и recovery
+
+## Контракт runtime
+
+- EvaPulse владеет только собственным scheduler, status, cancellation,
+  outbox и retry/dead-letter.
+- Hive boundary владеет приёмом сообщения, решением Королевы и созданием
+  Hive-owned task через обычный coordinator path.
+- Принятые Hive tasks переживают остановку EvaPulse; непринятые сообщения не
+  создают task и остаются в EvaPulse outbox/dead-letter.
+
+## Работа
+
+1. Разделить bootstrap и lifecycle owners.
+2. Реализовать bounded adapter `EvaPulseClient`/`HiveSignalReceiver`.
+3. Передавать только typed request в Королеву; её решение и task binding
+   фиксировать в журнале.
+4. Добавить fencing по correlation/message id и deterministic retry policy.
+5. Убрать `togglePulse` как способ управления внутренним состоянием Улья;
+   отдельные команды управляют соответствующей системой.
+
+## Verification
+
+- независимый start/stop/crash/restart каждого runtime;
+- принятие, отклонение, defer, duplicate и TTL expiry;
+- EvaPulse crash не отменяет Hive task;
+- Hive restart не запускает EvaPulse cycle автоматически;
+- supervisor/heartbeat и bounded-resource tests.
