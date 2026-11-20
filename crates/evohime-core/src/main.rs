@@ -447,7 +447,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )
     .with_selected_model(selected_model)
     .with_analysis_kernels(analysis_kernels)
-    .with_pulse_daemon(std::sync::Arc::new(pulse.clone()))
+    .with_pulse_controller(std::sync::Arc::new(
+        evohime_core::eva_pulse::EvaPulseController::new(pulse.clone()),
+    ))
     .with_proactivity(proactivity)
     .with_workflow_runtime_state(workflow_state)
     .with_provider_catalog_cache(provider_catalog_cache)

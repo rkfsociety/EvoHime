@@ -264,6 +264,38 @@ pub struct EvaPulseDaemon {
     inner: Arc<Inner>,
 }
 
+/// Narrow lifecycle owner exposed to IPC and diagnostics.
+///
+/// The bridge can control and observe EvaPulse without receiving the daemon's
+/// probe, task sink, or internal loop state. Hive state remains a separate
+/// projection and is not owned by this controller.
+#[derive(Clone)]
+pub struct EvaPulseController {
+    daemon: EvaPulseDaemon,
+}
+
+impl EvaPulseController {
+    /// Creates a control handle for one Core-owned EvaPulse daemon.
+    pub fn new(daemon: EvaPulseDaemon) -> Self {
+        Self { daemon }
+    }
+
+    /// Enables or parks EvaPulse without changing Hive-owned task state.
+    pub fn set_enabled(&self, enabled: bool) {
+        self.daemon.set_enabled(enabled);
+    }
+
+    /// Returns the independent EvaPulse lifecycle projection.
+    pub fn status(&self) -> PulseStatus {
+        self.daemon.status()
+    }
+
+    /// Stops EvaPulse without cancelling already accepted Hive tasks.
+    pub fn shutdown(&self) {
+        self.daemon.shutdown();
+    }
+}
+
 impl EvaPulseDaemon {
     /// Starts the production daemon backed by the durable journal.
     ///

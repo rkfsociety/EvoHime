@@ -1,5 +1,13 @@
 # План 198.2 — Runtime isolation, delivery и recovery
 
+## Текущий прогресс
+
+Добавлен отдельный `EvaPulseController`: IPC получает только narrow lifecycle
+control/status owner, а не полный daemon с probe/task sink. Остановка Pulse
+через этот owner не обращается к Hive task state и не отменяет уже принятые
+Hive-задачи. Полное разделение bootstrap, независимый recovery и typed signal
+receiver остаются в scope этапа.
+
 ## Контракт runtime
 
 - EvaPulse владеет только собственным scheduler, status, cancellation,

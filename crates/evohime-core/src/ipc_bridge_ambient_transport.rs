@@ -334,6 +334,17 @@ impl IpcBridge {
     /// The daemon is spawned once by the Core bootstrap; every IPC connection
     /// shares the same handle so a toggle from one shell is seen by all.
     pub fn with_pulse_daemon(mut self, pulse: Arc<crate::eva_pulse::EvaPulseDaemon>) -> Self {
+        self.pulse = Some(Arc::new(crate::eva_pulse::EvaPulseController::new(
+            (*pulse).clone(),
+        )));
+        self
+    }
+
+    /// Attaches only the EvaPulse lifecycle owner to the IPC bridge.
+    pub fn with_pulse_controller(
+        mut self,
+        pulse: Arc<crate::eva_pulse::EvaPulseController>,
+    ) -> Self {
         self.pulse = Some(pulse);
         self
     }

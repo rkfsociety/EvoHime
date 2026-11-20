@@ -705,7 +705,7 @@ pub struct IpcBridge {
     ///
     /// `None` in tests and console workflows means the toggle reports
     /// `pulse_unavailable` instead of pretending a daemon is running.
-    pulse: Option<Arc<crate::eva_pulse::EvaPulseDaemon>>,
+    pulse: Option<Arc<crate::eva_pulse::EvaPulseController>>,
 }
 
 /// Client identity confirmed by the connection handshake.
