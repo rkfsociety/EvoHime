@@ -507,10 +507,8 @@ impl ModelRouteConfig {
     ) -> Self {
         self.provider_profile_id = Some(profile_id);
         self.provider_account_id = account_id;
-        if profile_id == ProviderProfileId::Rout {
-            if self.literouter.model.trim().is_empty() {
-                self.literouter.model = crate::model_ranker::ROUT_DEFAULT_FREE_MODEL.to_owned();
-            }
+        if profile_id == ProviderProfileId::Rout && self.literouter.model.trim().is_empty() {
+            self.literouter.model = crate::model_ranker::ROUT_DEFAULT_FREE_MODEL.to_owned();
         }
         self
     }
