@@ -38,6 +38,7 @@ impl PulseProbe for CalmProbe {
                 selected_provider: Some("literouter".to_owned()),
                 fallback_provider: None,
                 routmy_tokens_remaining: None,
+                quota_reset_utc_midnight: false,
                 allow_paid_fallback: false,
                 literouter_all_models_exhausted: false,
             })
