@@ -205,27 +205,13 @@ jobs:
         with:
           shared-key: rust-windows-${{ runner.arch }}
           cache-on-failure: true
-      - name: Сборка тестовых бинарников Rust-инфраструктуры
-        run: >-
-          cargo test --locked --no-run
-          -p evohime-permissions
-          -p evohime-tool-runtime
-          -p evohime-model-gateway
-          -p evohime-core
-          -p evohime-local-storage
-          -p evohime-desktop-ipc
-          -p evohime-updater
-          -p evohime-receipts
-          -p evohime-listener-contract
-          -p evohime-listener-audio
-          -p evohime-listener-ipc
-          -p evohime-listener
       - name: Тесты основной Rust-инфраструктуры
         shell: pwsh
         run: |
-          # Compilation is a separate step, so these limits bound test execution
-          # only; counting a cold build against one package made the bounded
-          # wrapper kill evohime-core mid-run.
+          # Run each package directly so Cargo does not compile the complete
+          # test graph once in a shared --no-run step and then invoke Cargo
+          # again for every package. The per-package limits still bound both
+          # compilation and test execution.
           function Invoke-BoundedCargoTest([string]$package, [int]$timeoutMinutes) {
             Write-Host "Testing package: $package"
             $process = Start-Process -FilePath 'cargo.exe' -ArgumentList @('test', '--locked', '-p', $package) -NoNewWindow -PassThru
