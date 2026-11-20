@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   CommandOutcome,
@@ -218,6 +218,25 @@ describe('model picker', () => {
         payload: { model: 'first:free' }
       })
     )
+  })
+
+  it('does not let the global model config overwrite a chat-scoped selection', async () => {
+    const onSelectChatModel = vi.fn()
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[
+          event('model.catalog', { mode: 'free', models: ['chat-model:free', 'global-model:free'] }),
+          event('model.config', { model: 'global-model:free' })
+        ]}
+        selectedModel="chat-model:free"
+        onSelectChatModel={onSelectChatModel}
+        use="text"
+      />
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /Модель/ }).textContent).toContain('chat-model:free'))
+    expect(onSelectChatModel).not.toHaveBeenCalledWith('global-model:free')
   })
 
   it('reports a rejected selection without retrying it automatically', async () => {

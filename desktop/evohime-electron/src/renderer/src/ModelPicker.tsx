@@ -59,6 +59,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
   const autoSelectionBlocked = useRef(false)
   const onModelChangeRef = useRef(onModelChange)
   onModelChangeRef.current = onModelChange
+  const chatScoped = onSelectChatModel !== undefined
 
   useEffect(() => {
     setFallbackTier(null)
@@ -75,8 +76,11 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     setConfigLoaded(false)
     pendingSelection.current = null
     autoSelectionBlocked.current = false
-    onModelChangeRef.current?.('')
-  }, [provider])
+    // A chat-scoped picker receives its model from chat.session.model. Resetting
+    // the global picker here must not clear the model persisted for the chat
+    // during mount, reconnect, or a provider catalogue refresh.
+    if (!chatScoped) onModelChangeRef.current?.('')
+  }, [chatScoped, provider])
 
   useEffect(() => {
     if (shared || !api || provider === 'codex_cli') return
@@ -108,8 +112,10 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       if (outcome.ok) {
         setCodexModels(outcome.value.models)
         setCodexRateLimits(outcome.value.rateLimits)
-        setCurrent(outcome.value.selectedModel)
-        if (outcome.value.selectedModel.length > 0) onModelChangeRef.current?.(outcome.value.selectedModel)
+        if (!chatScoped) {
+          setCurrent(outcome.value.selectedModel)
+          if (outcome.value.selectedModel.length > 0) onModelChangeRef.current?.(outcome.value.selectedModel)
+        }
         setError(outcome.value.error)
       }
     })
@@ -169,7 +175,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
     // Core reports the persisted route model in the catalogue projection. Use
     // it before the automatic first-model choice so a restart keeps the model
     // the user selected instead of silently picking the first entry.
-    if (current === '' && configuredModel.length > 0 && catalogModels.includes(configuredModel)) {
+    if (!chatScoped && current === '' && configuredModel.length > 0 && catalogModels.includes(configuredModel)) {
       setCurrent(configuredModel)
       onModelChangeRef.current?.(configuredModel)
     }
@@ -189,11 +195,15 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       ? catalogProjection['configured_model_eligible']
       : null
     setCatalogStatus(state ? { state, credentialStatus, failureCode, configuredModelEligible, providerIdentity } : null)
-  }, [catalog, provider, use])
+  }, [catalog, chatScoped, current, provider, use])
 
   useEffect(() => {
     if (provider === 'codex_cli') return
     if (!config) return
+    if (chatScoped) {
+      setConfigLoaded(true)
+      return
+    }
     const parsed = parseJson(config.payload)
     if (typeof parsed['model'] === 'string') {
       if (pendingSelection.current === parsed['model']) pendingSelection.current = null
@@ -201,7 +211,7 @@ export function ModelPicker({ connection, events, provider = 'literouter', use =
       onModelChangeRef.current?.(parsed['model'])
     }
     setConfigLoaded(true)
-  }, [config, provider])
+  }, [chatScoped, config, provider])
 
   const select = useCallback(
     async (model: string) => {
