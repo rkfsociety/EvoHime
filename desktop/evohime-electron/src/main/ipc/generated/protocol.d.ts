@@ -34793,6 +34793,15 @@ export namespace evohime {
                 /** SensitiveDataGuardrailsEvent errorCode. */
                 errorCode: string;
 
+                /** SensitiveDataGuardrailsEvent detectorPackHash. */
+                detectorPackHash: string;
+
+                /** SensitiveDataGuardrailsEvent disposition. */
+                disposition: string;
+
+                /** SensitiveDataGuardrailsEvent findingsJson. */
+                findingsJson: string;
+
                 /**
                  * Encodes the specified SensitiveDataGuardrailsEvent message. Does not implicitly {@link evohime.desktop.v1.SensitiveDataGuardrailsEvent.verify|verify} messages.
                  * @param message SensitiveDataGuardrailsEvent message or plain object to encode
@@ -34853,6 +34862,15 @@ export namespace evohime {
 
                     /** SensitiveDataGuardrailsEvent errorCode */
                     errorCode?: (string|null);
+
+                    /** SensitiveDataGuardrailsEvent detectorPackHash */
+                    detectorPackHash?: (string|null);
+
+                    /** SensitiveDataGuardrailsEvent disposition */
+                    disposition?: (string|null);
+
+                    /** SensitiveDataGuardrailsEvent findingsJson */
+                    findingsJson?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

@@ -91401,6 +91401,9 @@ export const evohime = $root.evohime = (() => {
                  * @property {number|null} [matchCount] SensitiveDataGuardrailsEvent matchCount
                  * @property {boolean|null} [blocked] SensitiveDataGuardrailsEvent blocked
                  * @property {string|null} [errorCode] SensitiveDataGuardrailsEvent errorCode
+                 * @property {string|null} [detectorPackHash] SensitiveDataGuardrailsEvent detectorPackHash
+                 * @property {string|null} [disposition] SensitiveDataGuardrailsEvent disposition
+                 * @property {string|null} [findingsJson] SensitiveDataGuardrailsEvent findingsJson
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -91513,6 +91516,30 @@ export const evohime = $root.evohime = (() => {
                 SensitiveDataGuardrailsEvent.prototype.errorCode = "";
 
                 /**
+                 * SensitiveDataGuardrailsEvent detectorPackHash.
+                 * @member {string} detectorPackHash
+                 * @memberof evohime.desktop.v1.SensitiveDataGuardrailsEvent
+                 * @instance
+                 */
+                SensitiveDataGuardrailsEvent.prototype.detectorPackHash = "";
+
+                /**
+                 * SensitiveDataGuardrailsEvent disposition.
+                 * @member {string} disposition
+                 * @memberof evohime.desktop.v1.SensitiveDataGuardrailsEvent
+                 * @instance
+                 */
+                SensitiveDataGuardrailsEvent.prototype.disposition = "";
+
+                /**
+                 * SensitiveDataGuardrailsEvent findingsJson.
+                 * @member {string} findingsJson
+                 * @memberof evohime.desktop.v1.SensitiveDataGuardrailsEvent
+                 * @instance
+                 */
+                SensitiveDataGuardrailsEvent.prototype.findingsJson = "";
+
+                /**
                  * Encodes the specified SensitiveDataGuardrailsEvent message. Does not implicitly {@link evohime.desktop.v1.SensitiveDataGuardrailsEvent.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.SensitiveDataGuardrailsEvent
@@ -91548,6 +91575,12 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 9, wireType 0 =*/72).bool(message.blocked);
                     if (message.errorCode != null && $Object.hasOwnProperty.call(message, "errorCode") && message.errorCode !== "")
                         writer.uint32(/* id 10, wireType 2 =*/82).string(message.errorCode);
+                    if (message.detectorPackHash != null && $Object.hasOwnProperty.call(message, "detectorPackHash") && message.detectorPackHash !== "")
+                        writer.uint32(/* id 11, wireType 2 =*/90).string(message.detectorPackHash);
+                    if (message.disposition != null && $Object.hasOwnProperty.call(message, "disposition") && message.disposition !== "")
+                        writer.uint32(/* id 12, wireType 2 =*/98).string(message.disposition);
+                    if (message.findingsJson != null && $Object.hasOwnProperty.call(message, "findingsJson") && message.findingsJson !== "")
+                        writer.uint32(/* id 13, wireType 2 =*/106).string(message.findingsJson);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -91680,6 +91713,33 @@ export const evohime = $root.evohime = (() => {
                                     message.errorCode = value;
                                 else
                                     delete message.errorCode;
+                                continue;
+                            }
+                        case 11: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.detectorPackHash = value;
+                                else
+                                    delete message.detectorPackHash;
+                                continue;
+                            }
+                        case 12: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.disposition = value;
+                                else
+                                    delete message.disposition;
+                                continue;
+                            }
+                        case 13: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.findingsJson = value;
+                                else
+                                    delete message.findingsJson;
                                 continue;
                             }
                         }

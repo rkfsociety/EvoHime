@@ -1338,7 +1338,12 @@ mod tests {
         let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
         let decoded: HiveStateSnapshot =
             serde_json::from_slice(&encoded).expect("snapshot deserializes");
-        assert_eq!(decoded, snapshot);
+        // Pulse status is intentionally an IPC projection detail and is not
+        // serialized in this compatibility payload.
+        let mut expected = snapshot.clone();
+        expected.pulse_status.clear();
+        expected.next_wake_at_ms = None;
+        assert_eq!(decoded, expected);
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("valid json");
         assert_eq!(value["schema_version"], HIVE_STATE_SCHEMA_VERSION);
         assert!(value.get("pulse_status").is_none());

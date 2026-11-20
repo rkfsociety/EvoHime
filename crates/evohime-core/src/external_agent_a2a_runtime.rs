@@ -45,7 +45,10 @@ pub struct ValidatedRemoteArtifact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportOutcome {
     /// The remote endpoint accepted the request and returned a stable id.
-    Accepted { remote_task_id: String },
+    Accepted {
+        /// Stable task identifier assigned by the remote endpoint.
+        remote_task_id: String,
+    },
     /// The request may have been accepted but no safe response was received.
     UnknownOutcome,
     /// The endpoint was unavailable without creating an ambiguous submit.
