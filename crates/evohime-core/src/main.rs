@@ -1023,6 +1023,19 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             "Контекст: модель={model}; workspace={workspace_path}; инструментов={}; токены={estimated_tokens}/{context_limit_tokens}",
             tools.len()
         ),
+        evohime_core::CoreEvent::ModelTrace {
+            phase,
+            iteration,
+            model,
+            route,
+            tool_call_count,
+            latency_ms,
+            ..
+        } => console_line!(
+            "model.trace {phase}: iteration={iteration}; model={model}; route={}; tool_calls={tool_call_count}; latency_ms={}",
+            route.as_deref().unwrap_or("—"),
+            latency_ms.map_or_else(|| "—".into(), |value| value.to_string())
+        ),
         evohime_core::CoreEvent::RoutingTrace { trace, .. } => console_line!(
             "routing.terminal: route={} status={:?} fallback={}",
             trace.selected_route.as_deref().unwrap_or("—"),

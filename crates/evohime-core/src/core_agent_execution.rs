@@ -1647,6 +1647,27 @@ impl ToolAgent {
                 specs = assembled.tool_specs.clone();
             }
             let step_loadout = assembled.loadout.clone();
+            let model_call_started_at = Instant::now();
+            let _ = events
+                .send(CoreEvent::ModelTrace {
+                    task_id: task_id.clone(),
+                    phase: "request".into(),
+                    iteration,
+                    model: effective_model.clone(),
+                    route: Some(route_provider_name.clone()),
+                    message_count: request_messages.len(),
+                    tool_count: specs.len(),
+                    tool_call_count: 0,
+                    estimated_input_tokens: assembled.ledger().estimated_prompt_tokens as usize,
+                    input_tokens: None,
+                    output_tokens: None,
+                    request_id: None,
+                    response_id: None,
+                    content_bytes: None,
+                    latency_ms: None,
+                    content_sha256: None,
+                })
+                .await;
 
             let provenance_result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
@@ -1780,6 +1801,29 @@ impl ToolAgent {
                     "usage": result.usage
                 }),
             );
+            let usage = result.usage.as_ref();
+            let _ = events
+                .send(CoreEvent::ModelTrace {
+                    task_id: task_id.clone(),
+                    phase: "response".into(),
+                    iteration,
+                    model: effective_model.clone(),
+                    route: Some(selected_route.clone()),
+                    message_count: request_messages.len(),
+                    tool_count: specs.len(),
+                    tool_call_count: result.tool_calls.len(),
+                    estimated_input_tokens: assembled.ledger().estimated_prompt_tokens as usize,
+                    input_tokens: usage.map(|value| value.prompt_tokens as u64),
+                    output_tokens: usage.map(|value| value.completion_tokens as u64),
+                    request_id: Some(provenance_result.request_id.clone()),
+                    response_id: Some(provenance_result.response_id.clone()),
+                    content_bytes: Some(result.content.len()),
+                    latency_ms: Some(model_call_started_at.elapsed().as_millis() as u64),
+                    content_sha256: Some(hex::encode(sha2::Sha256::digest(
+                        result.content.as_bytes(),
+                    ))),
+                })
+                .await;
             let mut tool_calls = result.tool_calls.clone();
             for call in &mut tool_calls {
                 if let Some(canonical_name) =

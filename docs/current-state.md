@@ -194,6 +194,16 @@ reopen не оставляет частичных строк.
 текст итогового сообщения модели не считается доказательством недоступности
 инструментов. Старые IPC-клиенты игнорируют эти additive optional fields.
 
+Для сквозного разбора работы агента Core также пишет в тот же durable journal
+события `model.trace` с фазами `request` и `response`. В них видны итерация,
+модель и маршрут, размеры контекста, число tool schemas/tool calls, фактический
+usage, latency и request/response IDs; тело prompt, reasoning и ответа модели
+не сохраняются, а для ответа остаётся только content digest. `TracePanel` и
+Markdown-экспорт показывают эти события рядом с `model.context`, tool calls,
+approval и terminal outcome, поэтому последовательность «контекст → вызов
+модели → ответ → инструмент/следующий вызов» восстанавливается по одному
+conversation-bound trace.
+
 Conversation-bound `task.failed` trace events передаются в renderer как
 redacted terminal projection: в payload остаются только bounded `error_code`,
 `source` и `operation` (или безопасная детерминированная классификация), а для

@@ -178,6 +178,13 @@ pub fn project_core_event(
             "internal",
             usage_summary(&normalized),
         )?),
+        "model.trace" => events.push(draft(
+            "model_trace",
+            "model",
+            "compactable",
+            "internal",
+            model_trace_summary(&normalized),
+        )?),
         "memory.extraction" => events.push(draft(
             "memory_extraction_status",
             "memory",
@@ -617,6 +624,33 @@ fn usage_summary(value: &serde_json::Value) -> serde_json::Value {
     serde_json::Value::Object(output)
 }
 
+fn model_trace_summary(value: &serde_json::Value) -> serde_json::Value {
+    let mut output = serde_json::Map::new();
+    for key in [
+        "task_id",
+        "phase",
+        "iteration",
+        "model",
+        "route",
+        "message_count",
+        "tool_count",
+        "tool_call_count",
+        "estimated_input_tokens",
+        "input_tokens",
+        "output_tokens",
+        "request_id",
+        "response_id",
+        "content_bytes",
+        "latency_ms",
+        "content_sha256",
+    ] {
+        if let Some(item) = value.get(key) {
+            output.insert(key.into(), item.clone());
+        }
+    }
+    serde_json::Value::Object(output)
+}
+
 fn child_summary(value: &serde_json::Value) -> serde_json::Value {
     let projection = value.get("projection").unwrap_or(value);
     let mut output = serde_json::Map::new();
@@ -814,6 +848,24 @@ mod tests {
                 "{event_type}"
             );
         }
+    }
+
+    #[test]
+    fn model_trace_projection_keeps_lifecycle_metadata_without_content() {
+        let projected = project_core_event(
+            "model.trace",
+            br#"{"task_id":"task-1","phase":"response","iteration":2,"model":"gpt-test","route":"cloud","message_count":4,"tool_count":8,"tool_call_count":1,"estimated_input_tokens":42,"input_tokens":50,"output_tokens":12,"request_id":"req-1","response_id":"resp-1","content_bytes":99,"latency_ms":123,"content_sha256":"abc"}"#,
+        )
+        .unwrap();
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].kind, "model_trace");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&projected[0].renderer_payload).expect("renderer JSON");
+        assert_eq!(payload["phase"], "response");
+        assert_eq!(payload["tool_call_count"], 1);
+        assert_eq!(payload["content_sha256"], "abc");
+        assert!(payload.get("content").is_none());
+        assert!(payload.get("prompt").is_none());
     }
 
     #[test]

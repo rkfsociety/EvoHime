@@ -419,6 +419,30 @@ export function formatConversationTranscript(events: readonly ConversationEventP
         lines.push('')
         break
       }
+      case 'model_trace': {
+        // Keep request/response lifecycle metadata visible in exports; the raw
+        // model payload is intentionally absent at the Core boundary.
+        const phase = safeTraceToken(payload['phase'])
+        if (phase === 'request' || phase === 'response') {
+          flushStream()
+          lines.push(
+            `#### Модель ${phase === 'request' ? '→ запрос' : '← ответ'} ` +
+            `(iteration=${numberField(payload, 'iteration')}, ` +
+            `model=${safeTraceToken(payload['model']) ?? 'unknown'}, ` +
+            `route=${safeTraceToken(payload['route']) ?? 'unknown'})`
+          )
+          lines.push(
+            `messages=${numberField(payload, 'message_count')} ` +
+            `tools=${numberField(payload, 'tool_count')} ` +
+            `tool_calls=${numberField(payload, 'tool_call_count')} ` +
+            `input_tokens=${numberField(payload, 'input_tokens')} ` +
+            `output_tokens=${numberField(payload, 'output_tokens')} ` +
+            `latency_ms=${numberField(payload, 'latency_ms')}`
+          )
+          lines.push('')
+        }
+        break
+      }
       default:
         break
     }

@@ -2146,6 +2146,45 @@ pub enum CoreEvent {
         /// Bounded routing trace, including the terminal decision and diagnostics.
         trace: evohime_model_gateway::RoutingTrace,
     },
+    /// Redacted lifecycle marker for one model request or response.
+    ///
+    /// This deliberately contains only bounded metadata and digests. Prompt
+    /// text, reasoning, credentials and the model response body never cross
+    /// this event boundary.
+    ModelTrace {
+        /// Task that owns the model call.
+        task_id: String,
+        /// `request` before dispatch or `response` after provider completion.
+        phase: String,
+        /// Zero-based model/tool-loop iteration.
+        iteration: usize,
+        /// Selected model identifier.
+        model: String,
+        /// Selected route/provider identifier, when known.
+        route: Option<String>,
+        /// Number of messages in the provider-bound request.
+        message_count: usize,
+        /// Number of tool schemas in the provider-bound request.
+        tool_count: usize,
+        /// Number of tool calls returned by the provider.
+        tool_call_count: usize,
+        /// Estimated input tokens before dispatch.
+        estimated_input_tokens: usize,
+        /// Actual provider usage, when returned.
+        input_tokens: Option<u64>,
+        /// Actual provider usage, when returned.
+        output_tokens: Option<u64>,
+        /// Provider request identifier, when available.
+        request_id: Option<String>,
+        /// Provider response identifier, when available.
+        response_id: Option<String>,
+        /// Response content byte count; content itself is never included.
+        content_bytes: Option<usize>,
+        /// Elapsed provider-call time for a response event.
+        latency_ms: Option<u64>,
+        /// Stable content digest for correlating a response without retaining it.
+        content_sha256: Option<String>,
+    },
     /// Non-terminal request to approve a policy-controlled reroute.
     PendingRoutingApproval {
         /// Task waiting for the user's routing decision.

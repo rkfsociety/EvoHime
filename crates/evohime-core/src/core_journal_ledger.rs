@@ -17,6 +17,7 @@ impl EventJournal {
     pub async fn record(&self, event: &CoreEvent) -> Result<i64, StorageError> {
         let task_id = match event {
             CoreEvent::ModelContext { task_id, .. }
+            | CoreEvent::ModelTrace { task_id, .. }
             | CoreEvent::RoutingTrace { task_id, .. }
             | CoreEvent::PendingRoutingApproval { task_id, .. }
             | CoreEvent::TaskStarted { task_id, .. }
@@ -113,6 +114,7 @@ impl EventJournal {
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
+            CoreEvent::ModelTrace { .. } => "model.trace",
             CoreEvent::RoutingTrace { .. } => "routing.terminal",
             CoreEvent::PendingRoutingApproval { .. } => "routing.pending_approval",
             CoreEvent::TaskStarted { .. } => "task.started",
