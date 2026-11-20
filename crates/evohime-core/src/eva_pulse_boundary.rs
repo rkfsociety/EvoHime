@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::{CoreCommand, TaskCoordinator};
+use crate::{CoreCommand, EventJournal, TaskCoordinator};
 
 /// Version of the EvaPulse-to-Hive envelope contract.
 pub const CONTRACT_VERSION: u32 = 1;
@@ -184,6 +184,7 @@ pub fn validate_result(result: &HiveSignalResult) -> Result<(), BoundaryError> {
 pub(crate) struct HiveSignalReceiver {
     coordinator: TaskCoordinator,
     seen: Arc<Mutex<HashMap<String, String>>>,
+    journal: Option<EventJournal>,
 }
 
 impl HiveSignalReceiver {
@@ -192,7 +193,14 @@ impl HiveSignalReceiver {
         Self {
             coordinator,
             seen: Arc::new(Mutex::new(HashMap::new())),
+            journal: None,
         }
+    }
+
+    /// Attaches the Core journal used to recover accepted signals after restart.
+    pub(crate) fn with_journal(mut self, journal: EventJournal) -> Self {
+        self.journal = Some(journal);
+        self
     }
 
     /// Accepts a signal and creates one Hive-owned task after validation.
@@ -214,6 +222,33 @@ impl HiveSignalReceiver {
         };
         validate_result(&result).map_err(|error| format!("hive_result_rejected:{error}"))?;
         let idempotency_key = signal.idempotency_key.clone();
+        if let Some(journal) = self.journal.as_ref() {
+            let latest = journal.latest_sequence().await;
+            let records = journal
+                .replay(
+                    latest.saturating_sub(MAX_SEEN_IDEMPOTENCY_KEYS as i64),
+                    MAX_SEEN_IDEMPOTENCY_KEYS,
+                )
+                .await
+                .map_err(|error| format!("hive_signal_replay_failed:{error}"))?;
+            for record in records
+                .iter()
+                .filter(|record| record.event_type == "eva_pulse.signal.accepted")
+            {
+                let Ok(stored) = serde_json::from_slice::<DurableAcceptance>(&record.payload)
+                else {
+                    continue;
+                };
+                if stored.idempotency_key == idempotency_key {
+                    let mut seen = self
+                        .seen
+                        .lock()
+                        .map_err(|_| "hive_signal_dedup_lock_poisoned".to_owned())?;
+                    seen.insert(idempotency_key.clone(), stored.task_id.clone());
+                    return Ok(stored.task_id);
+                }
+            }
+        }
         let task_id = uuid::Uuid::new_v4().to_string();
         {
             let mut seen = self
@@ -248,8 +283,30 @@ impl HiveSignalReceiver {
                 seen.remove(&idempotency_key);
             }
         }
-        dispatch_result.map(|_| task_id)
+        dispatch_result?;
+        if let Some(journal) = self.journal.as_ref() {
+            let payload = serde_json::to_vec(&DurableAcceptance {
+                idempotency_key,
+                task_id: task_id.clone(),
+                message_id: signal.message_id,
+                correlation_id: signal.correlation_id,
+            })
+            .map_err(|error| format!("hive_signal_encode_failed:{error}"))?;
+            journal
+                .record_audit(&task_id, "eva_pulse.signal.accepted", &payload)
+                .await
+                .map_err(|error| format!("hive_signal_persist_failed:{error}"))?;
+        }
+        Ok(task_id)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct DurableAcceptance {
+    idempotency_key: String,
+    task_id: String,
+    message_id: String,
+    correlation_id: String,
 }
 
 #[cfg(test)]

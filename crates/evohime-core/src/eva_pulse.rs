@@ -1572,6 +1572,9 @@ impl CoordinatorPulseTaskSink {
         gateway_config: Option<ModelGatewayConfig>,
     ) -> Self {
         self.journal = Some(journal);
+        if let Some(journal) = self.journal.as_ref() {
+            self.receiver = self.receiver.clone().with_journal(journal.clone());
+        }
         self.gateway_config = gateway_config;
         self
     }

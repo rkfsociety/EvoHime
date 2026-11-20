@@ -13,7 +13,9 @@ adapter над существующим `TaskCoordinator`; durable idempotency/o
 разделение bootstrap остаются следующими подэтапами. До перезапуска Core
 receiver удерживает bounded fence из 512 `idempotency_key` и возвращает уже
 созданный `task_id` при повторной доставке; при ошибке dispatch reservation
-освобождается.
+освобождается. При подключённом `EventJournal` receiver восстанавливает
+последние 512 acceptance-записей после перезапуска Core и сохраняет новый
+результат как redacted `eva_pulse.signal.accepted`; prompt в journal не пишется.
 
 ## Контракт
 
