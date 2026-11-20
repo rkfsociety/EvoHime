@@ -222,6 +222,7 @@ pub mod execution_trace_evaluation;
 pub(crate) mod export;
 pub mod extension_conformance_kit;
 pub mod external_agent_a2a;
+pub mod external_agent_a2a_runtime;
 pub(crate) mod external_coding_agent_adapter;
 pub mod free_provider_reliability_routing;
 pub(crate) mod github_public_repository;

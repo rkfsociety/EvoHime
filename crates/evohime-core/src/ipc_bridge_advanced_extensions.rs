@@ -186,6 +186,268 @@ impl IpcBridge {
         let mut error_code = "";
         match request.operation.as_str() {
             "list" | "status" => {}
+            "a2a_status" => {
+                let a2a = self.a2a_runtime.lock().await;
+                projection = serde_json::json!({
+                    "protocol": "a2a",
+                    "protocol_version": crate::external_coding_agent_adapter::A2A_PROTOCOL_VERSION,
+                    "profile_count": a2a.profiles.len(),
+                    "card_count": a2a.cards.len(),
+                    "binding_count": a2a.bindings.len(),
+                    "raw_payload": false,
+                    "credentials": false,
+                });
+            }
+            "a2a_profile_upsert" => {
+                let payload: crate::external_agent_a2a::RemoteAgentProfile =
+                    match serde_json::from_slice(&request.payload) {
+                        Ok(value) => value,
+                        Err(_) => {
+                            status = "rejected";
+                            error_code = "invalid_profile";
+                            state = AgentState::Unavailable;
+                            return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"state":state,"protocol":"a2a","error_code":error_code,"projection_json":{"raw_payload":false}});
+                        }
+                    };
+                let mut a2a = self.a2a_runtime.lock().await;
+                match a2a.register_profile(payload.clone()) {
+                    Ok(()) => {
+                        if let Ok(database) = self.journal.database().try_lock() {
+                            let _ = evohime_local_storage::external_agent_a2a_store::upsert_profile(
+                                database.connection(),
+                                evohime_local_storage::external_agent_a2a_store::A2aProfileInput {
+                                    profile_id: &payload.id,
+                                    revision: payload.revision,
+                                    display_name: &payload.display_name,
+                                    protocol_kind: &serde_json::to_string(&payload.protocol_kind)
+                                        .unwrap_or_default(),
+                                    endpoint_origin: &payload.endpoint.origin,
+                                    allow_loopback: payload.endpoint.allow_loopback,
+                                    allowed_ports_json: &serde_json::to_string(
+                                        &payload.endpoint.allowed_ports,
+                                    )
+                                    .unwrap_or_default(),
+                                    auth_profile_ref: payload.auth_profile_ref.as_deref(),
+                                    skill_allowlist_json: &serde_json::to_string(
+                                        &payload.skill_allowlist,
+                                    )
+                                    .unwrap_or_default(),
+                                    capability_allowlist_json: &serde_json::to_string(
+                                        &payload.capability_allowlist,
+                                    )
+                                    .unwrap_or_default(),
+                                    privacy_ceiling: &serde_json::to_string(
+                                        &payload.privacy_ceiling,
+                                    )
+                                    .unwrap_or_default(),
+                                    concurrency_limit: payload.concurrency_limit,
+                                    enabled: payload.enabled,
+                                    content_hash: &payload.content_hash,
+                                    now_ms: chrono::Utc::now().timestamp_millis(),
+                                },
+                            );
+                        }
+                        projection = serde_json::json!({"protocol":"a2a","profile_id":payload.id,"revision":payload.revision,"content_hash":payload.content_hash,"enabled":payload.enabled,"raw_payload":false,"credentials":false});
+                    }
+                    Err(error) => {
+                        status = "rejected";
+                        let _ = error;
+                        error_code = "a2a_profile_rejected";
+                        state = AgentState::Unavailable;
+                    }
+                }
+            }
+            "a2a_refresh_card" => {
+                #[derive(Deserialize)]
+                struct RefreshCard {
+                    profile_id: String,
+                    card_json: String,
+                    ttl_ms: i64,
+                }
+                let payload: RefreshCard = match serde_json::from_slice(&request.payload) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        status = "rejected";
+                        error_code = "invalid_card";
+                        state = AgentState::Unavailable;
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"state":state,"protocol":"a2a","error_code":error_code,"projection_json":{"raw_payload":false}});
+                    }
+                };
+                let mut a2a = self.a2a_runtime.lock().await;
+                match a2a.refresh_card(
+                    &payload.profile_id,
+                    payload.card_json.as_bytes(),
+                    chrono::Utc::now().timestamp_millis(),
+                    payload.ttl_ms,
+                ) {
+                    Ok(card) => {
+                        if let Ok(database) = self.journal.database().try_lock() {
+                            let _ = evohime_local_storage::external_agent_a2a_store::insert_card_snapshot(
+                                database.connection(),
+                                evohime_local_storage::external_agent_a2a_store::A2aCardSnapshotInput {
+                                    profile_id: &card.profile_id,
+                                    profile_revision: card.profile_revision,
+                                    normalized_hash: &card.normalized_hash,
+                                    raw_hash: &card.raw_hash,
+                                    origin: &card.origin,
+                                    protocol_version: card.protocol_version,
+                                    fetched_at_ms: card.fetched_at_ms,
+                                    expires_at_ms: card.expires_at_ms,
+                                    supports_streaming: card.supports_streaming,
+                                    skills_json: &serde_json::to_string(&card.skills).unwrap_or_default(),
+                                    schema_hashes_json: &serde_json::to_string(&card.schema_hashes).unwrap_or_default(),
+                                    auth_schemes_json: &serde_json::to_string(&card.auth_schemes).unwrap_or_default(),
+                                    now_ms: chrono::Utc::now().timestamp_millis(),
+                                },
+                            );
+                        }
+                        projection = serde_json::json!({"protocol":"a2a","profile_id":card.profile_id,"profile_revision":card.profile_revision,"normalized_hash":card.normalized_hash,"raw_hash":card.raw_hash,"expires_at_ms":card.expires_at_ms,"supports_streaming":card.supports_streaming,"raw_payload":false,"credentials":false});
+                    }
+                    Err(error) => {
+                        status = "rejected";
+                        let _ = error;
+                        error_code = "a2a_card_rejected";
+                        state = AgentState::Unavailable;
+                    }
+                }
+            }
+            "a2a_register_task" => {
+                #[derive(Deserialize)]
+                struct RegisterTask {
+                    profile_id: String,
+                    delegation_id: String,
+                    parent_grant_ref: String,
+                    capability: String,
+                    objective: String,
+                    required_privacy: evohime_model_gateway::PrivacyClass,
+                    idempotency_key: String,
+                    artifact_budget: u32,
+                    capsule_id: String,
+                    context_refs: Vec<String>,
+                    parent_grant_hash: String,
+                    policy_hash: String,
+                }
+                let payload: RegisterTask = match serde_json::from_slice(&request.payload) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        status = "rejected";
+                        error_code = "invalid_delegation";
+                        state = AgentState::Unavailable;
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"state":state,"protocol":"a2a","error_code":error_code,"projection_json":{"raw_payload":false}});
+                    }
+                };
+                let mut a2a = self.a2a_runtime.lock().await;
+                match a2a.register_task(
+                    &payload.profile_id,
+                    payload.delegation_id,
+                    payload.parent_grant_ref,
+                    payload.capability,
+                    &payload.objective,
+                    payload.required_privacy,
+                    payload.idempotency_key,
+                    payload.artifact_budget,
+                    payload.capsule_id,
+                    payload.context_refs,
+                    payload.parent_grant_hash,
+                    payload.policy_hash,
+                    chrono::Utc::now().timestamp_millis(),
+                ) {
+                    Ok((request, capsule, binding)) => {
+                        projection = serde_json::json!({
+                            "protocol": "a2a",
+                            "binding_id": binding.binding_id,
+                            "delegation_id": binding.delegation_id,
+                            "request_hash": request.request_hash,
+                            "capsule_hash": capsule.content_hash,
+                            "state": binding.state,
+                            "raw_payload": false,
+                            "credentials": false,
+                        });
+                    }
+                    Err(error) => {
+                        let _ = error;
+                        status = "rejected";
+                        error_code = "a2a_delegation_rejected";
+                        state = AgentState::Unavailable;
+                    }
+                }
+            }
+            "a2a_transition" | "a2a_reconcile" => {
+                let payload: serde_json::Value = match serde_json::from_slice(&request.payload) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        status = "rejected";
+                        error_code = "invalid_payload";
+                        state = AgentState::Unavailable;
+                        return serde_json::json!({"schema_version":1,"request_id":request.request_id,"operation":request.operation,"status":status,"state":state,"protocol":"a2a","error_code":error_code,"projection_json":{"raw_payload":false}});
+                    }
+                };
+                let binding_id = payload
+                    .get("binding_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let expected_revision = payload
+                    .get("expected_revision")
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or_default();
+                let mut a2a = self.a2a_runtime.lock().await;
+                let result = if request.operation == "a2a_reconcile" {
+                    a2a.reconcile(
+                        binding_id,
+                        payload
+                            .get("remote_task_id")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
+                        expected_revision,
+                        chrono::Utc::now().timestamp_millis(),
+                    )
+                } else {
+                    let next: crate::external_agent_a2a::RemoteTaskState = payload
+                        .get("state")
+                        .cloned()
+                        .and_then(|value| serde_json::from_value(value).ok())
+                        .unwrap_or(crate::external_agent_a2a::RemoteTaskState::Unavailable);
+                    a2a.transition(
+                        binding_id,
+                        next,
+                        expected_revision,
+                        chrono::Utc::now().timestamp_millis(),
+                    )
+                };
+                match result {
+                    Ok(binding) => {
+                        if let Ok(database) = self.journal.database().try_lock() {
+                            let _ = evohime_local_storage::external_agent_a2a_store::upsert_task_binding(
+                                database.connection(),
+                                evohime_local_storage::external_agent_a2a_store::A2aTaskBindingInput {
+                                    binding_id: &binding.binding_id,
+                                    delegation_id: &binding.delegation_id,
+                                    remote_task_id: binding.remote_task_id.as_deref(),
+                                    state: &serde_json::to_string(&binding.state).unwrap_or_default().trim_matches('"'),
+                                    reconciliation: &serde_json::to_string(&binding.reconciliation).unwrap_or_default().trim_matches('"'),
+                                    attempt: binding.attempt,
+                                    idempotency_key: &binding.idempotency_key,
+                                    request_hash: &binding.request_hash,
+                                    capsule_hash: &binding.capsule_hash,
+                                    policy_hash: &binding.policy_hash,
+                                    revision: binding.revision,
+                                    created_at_ms: binding.created_at_ms,
+                                    updated_at_ms: binding.updated_at_ms,
+                                    content_hash: &binding.content_hash,
+                                },
+                            );
+                        }
+                        projection = crate::external_agent_a2a::binding_projection(&binding)
+                    }
+                    Err(error) => {
+                        let _ = error;
+                        status = "rejected";
+                        error_code = "a2a_transition_rejected";
+                        state = AgentState::Unavailable;
+                    }
+                }
+            }
             "start" => {
                 let payload: ExternalAgentCommandPayload<'_> = match serde_json::from_slice(
                     &request.payload,

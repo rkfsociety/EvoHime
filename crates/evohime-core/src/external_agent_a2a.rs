@@ -850,7 +850,7 @@ pub fn transition_remote_task(
     };
     let allowed = matches!(
         (current, next),
-        (Registered, Submitting)
+        (Registered, Submitting | Unavailable)
             | (
                 Submitting,
                 Submitted | UnknownOutcome | Rejected | Failed | Unavailable

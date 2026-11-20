@@ -692,6 +692,10 @@ pub struct IpcBridge {
     tool_simulation: Arc<tokio::sync::Mutex<crate::tool_simulation_runtime::ToolSimulationRuntime>>,
     external_agents:
         Arc<tokio::sync::Mutex<crate::external_coding_agent_adapter::ExternalAgentRegistry>>,
+    /// A2A lifecycle state is a protocol extension of the external-agent owner;
+    /// it never creates a second scheduler or credential authority.
+    a2a_runtime:
+        Arc<tokio::sync::Mutex<crate::external_agent_a2a_runtime::A2aRuntimeRegistry>>,
     role_profiles: Arc<tokio::sync::Mutex<crate::agent_role_profiles::AgentRoleProfilesRegistry>>,
     team_sop: Arc<tokio::sync::Mutex<crate::team_sop_protocols::TeamSopRegistry>>,
     human_work_items: Arc<tokio::sync::Mutex<crate::human_work_items::HumanWorkItemsRegistry>>,

@@ -96,7 +96,7 @@ bounded-context фасады в `src/domains.rs`. Все исторически�
 сокращение оставшихся модулей требует миграции их фактических потребителей
 в доменные фасады.
 
-## Core-owned A2A remote-agent bridge (plan 180, stage 1)
+## Core-owned A2A remote-agent bridge (plan 180, implementation stages 1–3)
 
 `crates/evohime-core/src/external_agent_a2a.rs` добавляет bounded Core-owned
 contract для outbound A2A remote-agent backend как protocol/backend extension
@@ -113,9 +113,13 @@ metadata-only persistence (schema v181) для профилей, хэшей card
 task bindings; миграция `v181.rs` создаёт `a2a_remote_profiles`,
 `a2a_card_snapshots` и `a2a_task_bindings`. `ExternalAgentProtocolKind`
 расширен версионированным `A2a` backend kind с проверкой версии протокола в
-`validate_preset`. Сетевого доступа, discovery, inbound listener и второго
-runtime/scheduler/storage authority на этом этапе нет — они относятся к
-этапам 180.2–180.3.
+`validate_preset`. Runtime facade выполняет только outbound profile-owned
+discovery/submit/status/cancel с bounded body, redirect-off и post-DNS
+SSRF/private-address gate; remote artifacts принимаются только inline после
+quota/MIME/hash validation. Authenticated external-agent IPC предоставляет
+redacted A2A operations, а restart recovery переводит nonterminal bindings в
+reconcile-only states. Inbound listener, dynamic discovery, credential
+forwarding и второй runtime/scheduler/storage authority отсутствуют.
 
 ## Image generation and editing
 

@@ -340,7 +340,7 @@ snapshot; due slot проверяет drift/rebinding и передаёт inputs
 WorkflowRuntime. Migration — explicit Core operation с bounded mapping,
 preview и новой immutable revision; temporary overrides не изменяют storage.
 
-### Core-Owned A2A Remote-Agent Bridge v1 (plan 180, stage 1)
+### Core-Owned A2A Remote-Agent Bridge v1 (plan 180, stages 1–3)
 
 `crates/evohime-core/src/external_agent_a2a.rs` реализует Core‑owned outbound A2A remote‑agent backend как protocol/backend extension существующего external‑agent owner (`external_coding_agent_adapter`). Он определяет bounded untrusted profile/card/delegation/capsule/task‑binding contracts с deterministic validation, SHA‑256 хэшированием и детерминированными переходами состояний. Card claims никогда не дают локальных capability; сырые карты, заголовки, куки, транскрипты, токены и сырые цели никогда не попадают в persistent или projected структуры — сохраняются только id, ссылки, хэши и типизированное состояние.
 
@@ -358,7 +358,9 @@ Contracts:
 
 `crates/evohime-core/src/external_coding_agent_adapter.rs` расширен версионированным A2A backend kind (`ExternalAgentProtocolKind::A2a { protocol_version: u32 }`) и валидацией preset, которая отклоняет неправильные версии протокола и несоответствующие метки протокола.
 
-Все юнит‑тесты проходят; fmt/clippy clean. Никакой inbound HTTP/webhook listener не вводится, не создаётся второго runtime, scheduler, storage или team‑roster authority.
+`external_agent_a2a_runtime.rs` добавляет bounded runtime facade: profile-owned card parsing, post-DNS SSRF/private-address checks, redirect-off HTTP transport, hash-bound submit/status/cancel, inline-only artifact validation и restart recovery. Authenticated external-agent IPC принимает только metadata-only A2A operations (`a2a_status`, `a2a_profile_upsert`, `a2a_refresh_card`, `a2a_register_task`, `a2a_transition`, `a2a_reconcile`); renderer не выполняет discovery, HTTP или auth.
+
+Детерминированные unit/runtime checks покрывают SSRF/private DNS results, oversized/invalid cards, redirect rejection, URL artifact rejection, ambiguous transport и lifecycle recovery. Никакой inbound HTTP/webhook listener не вводится, не создаётся второго runtime, scheduler, storage или team‑roster authority; полный CI test/clippy gate остаётся обязательным перед release closure.
 
 ### Agent Middleware Pipeline v1
 
