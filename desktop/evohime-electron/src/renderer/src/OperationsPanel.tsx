@@ -342,6 +342,13 @@ interface HiveStateView {
   readonly nextWakeAtMs: number | null
 }
 
+/** Normalized view of the independent `eva_pulse.status` projection. */
+interface EvaPulseStateView {
+  readonly status: string
+  readonly enabled: boolean
+  readonly nextWakeAtMs: number | null
+}
+
 const KIND_LABELS: Record<string, string> = {
   preference: 'предпочтение',
   constraint: 'ограничение',
@@ -590,6 +597,26 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
       ? root['next_wake_at_ms']
       : null
+  }
+}
+
+function parseEvaPulseState(event: CoreEvent | undefined): EvaPulseStateView | null {
+  if (!event) return null
+  try {
+    const parsed = JSON.parse(event.payload) as Record<string, unknown>
+    if (parsed['schema_version'] !== 1 || parsed['owner'] !== 'eva_pulse') return null
+    const status = parsed['status']
+    if (typeof status !== 'string' || status.length > 32) return null
+    const nextWakeAtMs = parsed['next_wake_at_ms']
+    return {
+      status: status.slice(0, 32),
+      enabled: parsed['enabled'] === true,
+      nextWakeAtMs: typeof nextWakeAtMs === 'number' && Number.isSafeInteger(nextWakeAtMs)
+        ? nextWakeAtMs
+        : null
+    }
+  } catch {
+    return null
   }
 }
 
@@ -1548,6 +1575,7 @@ export function HiveDashboard({
   const hiveSeenPagesRef = useRef(new Set<string>())
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
+  const pulse = useMemo(() => parseEvaPulseState(latest(events, 'eva_pulse.status')), [events])
   const hiveChatTaskIds = useMemo(
     () => new Set([...hiveConversationLogEvents, ...localPrompts.map((prompt) => ({ taskId: prompt.taskId }))]
       .map((item) => item.taskId)
@@ -1884,16 +1912,17 @@ export function HiveDashboard({
   const requestSnapshot = useCallback((): void => {
     if (!api) return
     void api.invoke('core.getHiveState', {}).catch(() => undefined)
+    void api.invoke('core.getEvaPulseStatus', {}).catch(() => undefined)
   }, [api])
 
   // Snapshot polling is read-only and bounded by the chosen interval. EvaPulse
   // here is the dashboard's live mode: it never starts or stops the hive.
   useEffect(() => {
-    if (!api || !connected || !preference.pulse) return
+    if (!api || !connected) return
     requestSnapshot()
     const timer = window.setInterval(requestSnapshot, preference.intervalMs)
     return () => window.clearInterval(timer)
-  }, [api, connected, preference.intervalMs, preference.pulse, requestSnapshot])
+  }, [api, connected, preference.intervalMs, requestSnapshot])
 
   useEffect(() => {
     if (!api) return
@@ -2582,8 +2611,10 @@ export function HiveDashboard({
         ? 'Активна'
         : 'Спит'
   const wakeAtMs = hive?.queen.wakeAtMs ?? null
-  const pulseNextWakeAtMs = hive?.nextWakeAtMs ?? null
-  const pulseStatus = hive?.pulseStatus ?? ''
+  // Legacy Core versions put Pulse fields into hive_state.snapshot. Prefer the
+  // independent projection and fall back only when it has not arrived yet.
+  const pulseNextWakeAtMs = pulse?.nextWakeAtMs ?? hive?.nextWakeAtMs ?? null
+  const pulseStatus = pulse?.status ?? hive?.pulseStatus ?? ''
   const pulseStatusLabel = pulseStatus === 'active'
     ? 'EvaPulse активен'
     : pulseStatus === 'sleeping'

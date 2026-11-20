@@ -304,6 +304,29 @@ describe('hive dashboard', () => {
     expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
   })
 
+  it('предпочитает отдельную EvaPulse projection снимку Улья', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ pulse_status: 'active', next_wake_at_ms: null })),
+          event('eva_pulse.status', {
+            schema_version: 1,
+            owner: 'eva_pulse',
+            status: 'sleeping',
+            enabled: true,
+            next_wake_at_ms: Date.now() + 60_000
+          })
+        ]}
+      />
+    )
+
+    expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
+    await waitFor(() => {
+      expect(calls.some((call) => call.command === 'core.getEvaPulseStatus')).toBe(true)
+    })
+  })
+
   it('показывает бюджет на дашборде и настраивает провайдера и модель в Настройках улья', async () => {
     render(
       <HiveDashboard
