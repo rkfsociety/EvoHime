@@ -17,6 +17,10 @@ concurrency:
   group: evohime-module-${{ github.workflow }}
   cancel-in-progress: true
 
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
 jobs:
   linux-contract:
     name: cli — Linux contract

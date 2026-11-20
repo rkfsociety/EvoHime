@@ -27,6 +27,10 @@ concurrency:
   group: rustdoc-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
 jobs:
   docs:
     name: Workspace rustdoc and doc-tests

@@ -19,6 +19,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
 jobs:
   build:
     name: ${{ inputs.module }} — tests and build

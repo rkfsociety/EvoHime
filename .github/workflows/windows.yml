@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
 concurrency:
   # Previous groups were held by runner-lost zombie runs. Version the group so
   # a recovery push cannot remain pending behind a stale reservation.
