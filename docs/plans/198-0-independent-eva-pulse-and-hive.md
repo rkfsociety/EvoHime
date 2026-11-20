@@ -1,6 +1,6 @@
 # План 198.0 — Независимые EvaPulse и Улей
 
-Статус: active implementation contract. План исправляет границу владения между
+Статус: implementation complete in checkout; CI/release closure pending. План исправляет границу владения между
 внешним EvaPulse и Ульем. Улей остаётся домом Королевы Евы (матери-пчелы), её
 агентов, задач, approvals, рабочих пространств и истории. EvaPulse становится
 отдельным runtime, который может обмениваться с Ульем только через
@@ -123,17 +123,17 @@ approval, не попавший в conversation projection Улья, теряе�
 
 ## Критерии готовности
 
-- [ ] EvaPulse больше не получает `TaskCoordinator` и не создаёт Hive tasks
+- [x] EvaPulse больше не получает `TaskCoordinator` и не создаёт Hive tasks
   напрямую.
-- [ ] Улей и EvaPulse имеют независимые status/lifecycle/recovery owners.
-- [ ] Внешний сигнал EvaPulse может быть принят только через typed boundary и
+- [x] Улей и EvaPulse имеют независимые status/lifecycle/recovery owners.
+- [x] Внешний сигнал EvaPulse может быть принят только через typed boundary и
   после принятия получает Hive-owned task binding.
-- [ ] Любое approval для Hive task, включая task с `origin = eva_pulse`, видно
+- [x] Любое approval для Hive task, включая task с `origin = eva_pulse`, видно
   в панели Улья и разрешается только через `core.resolveApproval`.
-- [ ] Остановка EvaPulse не останавливает Королеву или уже принятые задачи.
-- [ ] Остановка Улья не изменяет состояние EvaPulse.
-- [ ] UI не представляет EvaPulse как режим или замену Улья.
-- [ ] Есть focused Rust/Electron tests, recovery tests, protocol checks и
-  redacted release evidence.
-- [ ] `architecture/hive.md`, `architecture.md`, `current-state.md` и
+- [x] Остановка EvaPulse не останавливает Королеву или уже принятые задачи.
+- [x] Остановка Улья не изменяет состояние EvaPulse.
+- [x] UI не представляет EvaPulse как режим или замену Улья.
+- [x] Есть focused Rust/Electron tests, recovery tests и protocol checks;
+  redacted release evidence ожидает CI.
+- [x] `architecture/hive.md`, `architecture.md`, `current-state.md` и
   `release-evidence.md` согласованы с реализованной границей.

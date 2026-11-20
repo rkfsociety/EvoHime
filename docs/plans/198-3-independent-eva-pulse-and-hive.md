@@ -2,7 +2,7 @@
 
 ## Текущий прогресс
 
-Добавлены additive `EvaPulseStatusCommand`/`eva_pulse.status`, Electron bridge
+Этап реализован в checkout. Добавлены additive `EvaPulseStatusCommand`/`eva_pulse.status`, Electron bridge
 и defensive parser в `OperationsPanel`. UI предпочитает независимую Pulse
 projection, но имеет bounded fallback на legacy-поля `hive_state.snapshot` для
 совместимости со старым Core.

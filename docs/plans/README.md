@@ -1,7 +1,7 @@
 # Планы реализации
 
 Каталог `docs/plans/` содержит только незавершённые implementation contracts.
-Обновлено: 2026-11-17. Наличие комплекта `NN-0` ... `NN-4` означает, что
+Обновлено: 2026-11-20. Наличие комплекта `NN-0` ... `NN-4` означает, что
 направление ещё не закрыто; статус реализации не выводится из одного файла
 плана.
 
@@ -38,8 +38,8 @@
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 197 | [Изолированные сессии чатов (провайдер, модель, права и worktree)](197-0-chat-session-isolation.md) | active; per-chat session isolation и мульти-маршрутный ModelGateway |
-| 198 | [Независимые EvaPulse и Улей](198-0-independent-eva-pulse-and-hive.md) | active; разделение внешнего pulse runtime и дома Королевы Евы |
+| 197 | [Изолированные сессии чатов (провайдер, модель, права и worktree)](197-0-chat-session-isolation.md) | implementation complete in checkout; CI/release closure pending |
+| 198 | [Независимые EvaPulse и Улей](198-0-independent-eva-pulse-and-hive.md) | implementation complete in checkout (`e1e26fed`); CI/release closure pending |
 
 Незавершённые numbered plans: `180–181`, `184–188`, `191`, `193–195`, `197` и `198`.
 

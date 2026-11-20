@@ -1,13 +1,13 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-18.
+Обновлено: 2026-11-20.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
 [`release-evidence.md`](release-evidence.md); пошаговые незавершённые работы — в
 [`plans/README.md`](plans/README.md).
 
-## Независимые EvaPulse и Hive (plan 198)
+## Независимые EvaPulse и Hive (plan 198, реализация в checkout)
 
 EvaPulse и Hive разделены на уровне Core: `HiveSignalReceiver` принимает только
 версионированный bounded signal, проверяет TTL/identity/idempotency и создаёт
@@ -17,7 +17,8 @@ Hive-owned task через обычный coordinator path. Acceptance и dead-l
 сообщения. Lifecycle Pulse отдаётся отдельной `eva_pulse.status` projection и не
 входит в сериализуемый Hive snapshot.
 
-OperationsPanel больше не представляет EvaPulse как переключатель или режим
+Реализация завершена в checkout на `e1e26fed`; CI/release closure ещё не
+подтверждены. OperationsPanel больше не представляет EvaPulse как переключатель или режим
 Улья: состояние Pulse отображается диагностически, а typing Королевы и ручное
 обновление snapshot не зависят от Pulse lifecycle. `core.togglePulse` сохранён
 как authenticated compatibility/diagnostic command для старых клиентов.

@@ -2,7 +2,7 @@
 
 ## Текущий прогресс
 
-Добавлен отдельный `EvaPulseController`: IPC получает только narrow lifecycle
+Этап реализован в checkout. Добавлен отдельный `EvaPulseController`: IPC получает только narrow lifecycle
 control/status owner, а не полный daemon с probe/task sink. Остановка Pulse
 через этот owner не обращается к Hive task state и не отменяет уже принятые
 Hive-задачи. Полное разделение bootstrap, независимый recovery и typed signal

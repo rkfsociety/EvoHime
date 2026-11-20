@@ -1,5 +1,8 @@
 # План 198.4 — Verification, документация и release evidence
 
+Статус: реализация и каноническая документация завершены в checkout;
+CI/release evidence и формальное удаление plan-файлов ожидают push.
+
 ## Проверки
 
 - focused Rust tests для envelope, storage, boundary, lifecycle и recovery;

@@ -1,11 +1,20 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-11-17.
+Обновлено: 2026-11-20.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
+
+## Plan 198 — Независимые EvaPulse и Hive (checkout 2026-11-20)
+
+- На `e1e26fed` завершена реализация Core boundary, bounded acceptance/dead-letter
+  retention, независимого EvaPulse status projection и UI-развязки Hive.
+- Каноническая документация обновлена в `architecture/hive.md` и
+  `current-state.md`. Exact CI run и публикация модуля ожидают push.
+- Plan-файлы 198 пока сохраняются как implementation contract до подтверждения
+  полного CI/release gate; удаление из `docs/plans/` преждевременно.
 
 Опубликованный code baseline — `cbd5aa6539ff873248a418ceb133e61fcb91417d`,
 синхронизированный с `origin/main` на 2026-09-21. Текущий task-local checkout
@@ -3622,4 +3631,3 @@ records that distinction rather than carrying the baseline result forward.
 - Подняты release-маркеры: `release-versions/core.txt` (`0.0.000485`),
   `release-versions/ui-bundle.txt` (`0.0.0216`). Полные Rust/Windows CI сборки
   и публикация модулей выполняются в CI после push.
-

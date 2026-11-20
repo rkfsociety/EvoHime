@@ -1,6 +1,6 @@
 # План разработки EvoHime Desktop
 
-Обновлено: 2026-11-13.
+Обновлено: 2026-11-20.
 
 ## Цель
 Сохранять стабильный локальный Windows AI-agent: пользователь запускает один
@@ -64,6 +64,7 @@ restart подтверждаются отдельно. Автоматическ�
 | 194 | Background Jobs Control Center | active implementation contract |
 | 195 | Capability Extensions и Workflow Composition | active implementation contract |
 | 197 | Изолированные сессии чатов (провайдер, модель, права и worktree) | реализован в checkout 2026-11-19; CI и закрытие ожидают push |
+| 198 | Независимые EvaPulse и Улей | реализован в checkout 2026-11-20 (`e1e26fed`); CI и закрытие ожидают push |
 
 Планы 01–173 закрыты и удалены из временного каталога после переноса
 контрактов и evidence в канонические документы. Нельзя считать план закрытым

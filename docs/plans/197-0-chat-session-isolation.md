@@ -1,6 +1,6 @@
 # План 197.0 — Изолированные сессии чатов (провайдер, модель, права и worktree)
 
-Статус: active implementation contract. План использует существующие
+Статус: implementation complete in checkout; CI/release closure pending. План использует существующие
 `TaskCoordinator`, `ModelGateway`, `PermissionEngine`, `EventJournal` и
 `BoundedTaskGroup`; второго Core-процесса или второго планировщика не создаёт.
 

@@ -1,6 +1,6 @@
 # План 197.4 — Verification, документация и release evidence
 
-Статус: active implementation contract. Этап закрывает план 197 после
+Статус: implementation complete in checkout; CI/release closure pending. Этап закрывает план 197 после
 реализации 197.1–197.3.
 
 ## Scope и изменяемые контракты

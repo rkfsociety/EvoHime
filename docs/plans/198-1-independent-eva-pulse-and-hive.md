@@ -2,7 +2,7 @@
 
 ## Текущий прогресс
 
-Добавлен Core-домен `eva_pulse_boundary` с версионированными signal/result
+Этап реализован в checkout. Добавлен Core-домен `eva_pulse_boundary` с версионированными signal/result
 envelopes, bounded payload, TTL, identity/idempotency и проверкой того, что
 `HiveTaskOrigin` не превращается в capability. Интеграция с durable storage и
 замена прямого dispatch в `EvaPulseDaemon` остаются следующими подэтапами.
