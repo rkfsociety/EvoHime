@@ -647,8 +647,11 @@ function hiveLimitsDraftFromStored(limits: ProviderLimits): HiveRequestLimitsDra
     rpm: limits.rpm,
     // Values matching the conventional RPM-derived windows are treated as
     // automatic, including settings written by older versions of the UI.
-    rph: limits.rpm > 0 && limits.rph === limits.rpm * 60 ? null : limits.rph,
-    rpd: limits.rpm > 0 && limits.rpd === limits.rpm * 1440 ? null : limits.rpd
+    // The empty state (`rpm == 0`, zero windows) is automatic as well, so an
+    // untouched editor keeps deriving both windows from a freshly typed RPM
+    // instead of pinning them to an explicit zero.
+    rph: limits.rph === limits.rpm * 60 ? null : limits.rph,
+    rpd: limits.rpd === limits.rpm * 1440 ? null : limits.rpd
   }
 }
 

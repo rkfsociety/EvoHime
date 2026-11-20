@@ -477,14 +477,17 @@ pub fn evaluate_egress(
     } else {
         None
     };
-    let disposition = if destination == DestinationClass::Command && !summary.findings.is_empty() {
-        EgressDisposition::RequiresApproval
-    } else if destination == DestinationClass::External
-        && summary
+    let needs_approval = if destination == DestinationClass::Command {
+        !summary.findings.is_empty()
+    } else if destination == DestinationClass::External {
+        summary
             .findings
             .iter()
             .any(|finding| finding.kind == SensitiveEntityKind::Credential)
-    {
+    } else {
+        false
+    };
+    let disposition = if needs_approval {
         EgressDisposition::RequiresApproval
     } else if transformed {
         EgressDisposition::Transformed
@@ -604,7 +607,7 @@ fn luhn_valid(value: &str) -> bool {
         sum += value;
         double = !double;
     }
-    value.len() >= 13 && sum % 10 == 0
+    value.len() >= 13 && sum.is_multiple_of(10)
 }
 
 fn has_iban(input: &str) -> bool {

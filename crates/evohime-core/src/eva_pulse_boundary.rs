@@ -300,7 +300,7 @@ impl HiveSignalReceiver {
                 seen.remove(&idempotency_key);
             }
             let reason = "hive_task_dispatch_failed";
-            self.persist_dead_letter(&signal, &reason).await;
+            self.persist_dead_letter(&signal, reason).await;
             return Err(error);
         }
         if let Some(journal) = self.journal.as_ref() {

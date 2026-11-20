@@ -201,7 +201,10 @@ mod provider_error_diagnostic_tests {
                 code: Some("context_length_exceeded".into()),
                 param: Some("messages".into()),
                 message: Some(
-                    "rejected sk-testsecret at https://provider.test/path?token=leak".into(),
+                    // Тело после `sk-` должно быть реалистично длинным: короткие
+                    // фрагменты детектор секретов намеренно не считает токеном.
+                    "rejected sk-testsecret-0123456789abcdef at https://provider.test/path?token=leak"
+                        .into(),
                 ),
                 request_id: Some("req_123".into()),
                 response_body_bytes: 256,

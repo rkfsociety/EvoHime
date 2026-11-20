@@ -12,7 +12,30 @@ output, transcripts, absolute paths и PII запрещены.
 - На `e1e26fed` завершена реализация Core boundary, bounded acceptance/dead-letter
   retention, независимого EvaPulse status projection и UI-развязки Hive.
 - Каноническая документация обновлена в `architecture/hive.md` и
-  `current-state.md`. Exact CI run и публикация модуля ожидают push.
+  `current-state.md`.
+- Первый post-push module gate был красным по двум причинам, обе исправлены в
+  checkout:
+  - `core module` [44780612139](https://github.com/rkfsociety/EvoHime/actions/runs/44780612139):
+    `core_agent::context::provider_error_diagnostic_tests::provider_diagnostics_are_redacted_before_trace_projection`
+    падал на `!serialized.contains("sk-testsecret")`. После сужения детектора
+    секретов (`MIN_SECRET_BODY_LEN = 12`, коммит `edc742f4`) короткий маркер в
+    тесте больше не распознавался как credential и попадал в trace как есть.
+    Тест использует реалистично длинное тело токена, поэтому проверка снова
+    проверяет redaction, а не детектор.
+  - `ui-bundle module` [44780617073](https://github.com/rkfsociety/EvoHime/actions/runs/44780617073):
+    `ui_stops_typing_when_pulse_sleeps` ожидал, что переход EvaPulse в
+    `sleeping` гасит индикатор «Королева печатает». Этот тест закреплял
+    нарушение границы плана 198; он заменён на
+    `ui_typing_indicator_does_not_depend_on_pulse_status`, который проверяет
+    обратное: незавершённая задача Улья держит индикатор, а `eva_pulse.status`
+    независимо показывает сон Pulse.
+- Локально подтверждены `cargo test -p evohime-core --lib provider_error_diagnostic`
+  (2/2), `cargo test -p evohime-core --lib sensitive_data_guardrails` (13/13),
+  `cargo test -p evohime-core --lib eva_pulse` (31/31),
+  `cargo clippy --locked -p evohime-core --all-targets -- -D warnings`,
+  `cargo fmt --all -- --check`, Electron `check:protocol`, `typecheck` и
+  focused `tests/hive-dashboard.test.tsx` (41/41) вместе с
+  `tests/provider-form.test.tsx` (25/25).
 - Plan-файлы 198 пока сохраняются как implementation contract до подтверждения
   полного CI/release gate; удаление из `docs/plans/` преждевременно.
 

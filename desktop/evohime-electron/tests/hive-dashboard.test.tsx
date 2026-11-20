@@ -1104,36 +1104,41 @@ describe('hive dashboard', () => {
     expect(screen.queryByText(/Лимит запросов провайдера/)).toBeNull()
   })
 
-  it('ui_stops_typing_when_pulse_sleeps', async () => {
-    const initialEvents = [
-      event('hive_state.snapshot', snapshot({ pulse_status: 'active' })),
-      hiveConversationPage('history', [
-        { kind: 'task_started', taskId: 'task-sleep-1', payload: { prompt: 'Проверь состояние улья' } }
-      ])
-    ]
+  it('ui_typing_indicator_does_not_depend_on_pulse_status', async () => {
+    const conversation = hiveConversationPage('history', [
+      { kind: 'task_started', taskId: 'task-sleep-1', payload: { prompt: 'Проверь состояние улья' } }
+    ])
     const { rerender } = render(
       <HiveDashboard
         connection="connected"
-        events={initialEvents}
+        events={[event('hive_state.snapshot', snapshot({ pulse_status: 'active' })), conversation]}
       />
     )
 
     const indicator = await screen.findByTestId('queen-typing-indicator')
     expect(indicator.textContent).toContain('Королева печатает')
 
+    // Pulse lifecycle и typing Королевы — независимые проекции: засыпание
+    // EvaPulse не обрывает индикатор незавершённой задачи Улья.
     rerender(
       <HiveDashboard
         connection="connected"
         events={[
           event('hive_state.snapshot', snapshot({ pulse_status: 'sleeping' })),
-          ...initialEvents.slice(1)
+          event('eva_pulse.status', {
+            schema_version: 1,
+            owner: 'eva_pulse',
+            status: 'sleeping',
+            enabled: true,
+            next_wake_at_ms: Date.now() + 60_000
+          }),
+          conversation
         ]}
       />
     )
 
-    await waitFor(() => {
-      expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
-    })
+    expect(await screen.findByTestId('queen-typing-indicator')).toBeTruthy()
+    expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
   })
 
   it('hive_uses_dedicated_chat', async () => {
