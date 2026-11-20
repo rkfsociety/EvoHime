@@ -46,7 +46,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: core-linux-release
+          shared-key: rust-linux-${{ runner.arch }}
           cache-on-failure: true
       - run: cargo fmt --all -- --check
       - run: cargo test --locked -p evohime-desktop-ipc
@@ -84,7 +84,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: core-windows-test
+          shared-key: rust-windows-${{ runner.arch }}
           cache-on-failure: true
       - name: Core format
         run: cargo fmt --all -- --check
@@ -130,7 +130,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: core-windows-release
+          shared-key: rust-windows-${{ runner.arch }}
           cache-on-failure: true
       - name: Core release build
         run: cargo build --locked --release -p evohime-core

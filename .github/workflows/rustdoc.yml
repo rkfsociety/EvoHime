@@ -39,6 +39,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: rust-windows-${{ runner.arch }}
+          cache-on-failure: true
       - name: Check documentation links and stale references
         shell: pwsh
         run: ./scripts/documentation.tests.ps1
