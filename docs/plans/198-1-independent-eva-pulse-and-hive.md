@@ -18,6 +18,9 @@ receiver удерживает bounded fence из 512 `idempotency_key` и воз
 результат как redacted `eva_pulse.signal.accepted`; prompt в journal не пишется.
 Непринятые сигналы получают bounded `eva_pulse.signal.dead_letter` с
 детерминированным reason code; исходный текст ошибки и payload не сохраняются.
+Для обоих signal event kinds действует bounded count-retention: не более 512
+последних `accepted` и 512 последних `dead_letter`; остальные journal events
+не затрагиваются.
 
 ## Контракт
 

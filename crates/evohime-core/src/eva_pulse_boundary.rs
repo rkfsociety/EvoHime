@@ -20,6 +20,8 @@ pub const MAX_TTL_MS: i64 = 24 * 60 * 60 * 1_000;
 pub const MAX_ID_BYTES: usize = 128;
 /// Maximum number of idempotency keys retained by one live receiver.
 pub const MAX_SEEN_IDEMPOTENCY_KEYS: usize = 512;
+/// Maximum number of durable acceptance/dead-letter records retained per kind.
+pub const MAX_DURABLE_SIGNAL_RECORDS: usize = 512;
 
 /// Provenance of a Hive task. This is metadata, not an authorization grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -308,6 +310,7 @@ impl HiveSignalReceiver {
                 .record_audit(&task_id, "eva_pulse.signal.accepted", &payload)
                 .await
                 .map_err(|error| format!("hive_signal_persist_failed:{error}"))?;
+            self.retain_signal_records(journal).await;
         }
         Ok(task_id)
     }
@@ -331,6 +334,24 @@ impl HiveSignalReceiver {
                 &payload,
             )
             .await;
+        self.retain_signal_records(journal).await;
+    }
+
+    async fn retain_signal_records(&self, journal: &EventJournal) {
+        let Ok(database) = journal.database.try_lock() else {
+            return;
+        };
+        let limit = MAX_DURABLE_SIGNAL_RECORDS as i64;
+        let _ = database.connection().execute(
+            "DELETE FROM events
+             WHERE event_type IN ('eva_pulse.signal.accepted', 'eva_pulse.signal.dead_letter')
+               AND sequence_id NOT IN (
+                   SELECT sequence_id FROM events
+                   WHERE event_type = events.event_type
+                   ORDER BY sequence_id DESC LIMIT ?1
+               )",
+            [limit],
+        );
     }
 }
 
