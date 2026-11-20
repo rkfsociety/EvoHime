@@ -7,6 +7,21 @@ release-gates и результаты отдельных завершённых 
 [`release-evidence.md`](release-evidence.md); пошаговые незавершённые работы — в
 [`plans/README.md`](plans/README.md).
 
+## Независимые EvaPulse и Hive (plan 198)
+
+EvaPulse и Hive разделены на уровне Core: `HiveSignalReceiver` принимает только
+версионированный bounded signal, проверяет TTL/identity/idempotency и создаёт
+Hive-owned task через обычный coordinator path. Acceptance и dead-letter записи
+пишутся в bounded journal retention; повторная доставка не создаёт второй task.
+Проверка срока действия выполняется в момент приёма, а не по времени создания
+сообщения. Lifecycle Pulse отдаётся отдельной `eva_pulse.status` projection и не
+входит в сериализуемый Hive snapshot.
+
+OperationsPanel больше не представляет EvaPulse как переключатель или режим
+Улья: состояние Pulse отображается диагностически, а typing Королевы и ручное
+обновление snapshot не зависят от Pulse lifecycle. `core.togglePulse` сохранён
+как authenticated compatibility/diagnostic command для старых клиентов.
+
 Headless Linux CLI `eva` автоматически читает настройки провайдера из
 `$XDG_CONFIG_HOME/evohime/provider.env` (по умолчанию
 `~/.config/evohime/provider.env`) перед запуском Core. Файл и каталог получают

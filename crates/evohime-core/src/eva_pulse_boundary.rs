@@ -212,7 +212,12 @@ impl HiveSignalReceiver {
         prompt: String,
         preferred_route_hint: String,
     ) -> Result<String, String> {
-        if let Err(error) = validate_signal(&signal, signal.created_at_ms) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+            .unwrap_or(i64::MAX);
+        if let Err(error) = validate_signal(&signal, now_ms) {
             let reason = format!("hive_signal_rejected:{error}");
             self.persist_dead_letter(&signal, &reason).await;
             return Err(reason);
@@ -424,6 +429,14 @@ mod tests {
             validate_signal(&oversized, 2_000),
             Err(BoundaryError::PayloadTooLarge)
         );
+    }
+
+    #[test]
+    fn rejects_signal_that_expired_before_receiver_acceptance() {
+        let mut expired = signal();
+        expired.created_at_ms = 1;
+        expired.expires_at_ms = 2;
+        assert_eq!(validate_signal(&expired, 3), Err(BoundaryError::Expired));
     }
 
     #[test]

@@ -813,7 +813,6 @@ const HIVE_INTERVALS = [1000, 2000, 5000, 10000] as const
 const HIVE_PREFERENCE_KEY = 'evohime.hive.dashboard.v1'
 
 interface HivePreference {
-  readonly pulse: boolean
   readonly intervalMs: number
 }
 
@@ -822,15 +821,15 @@ function loadHivePreference(): HivePreference {
   try {
     const stored: unknown = JSON.parse(window.localStorage.getItem(HIVE_PREFERENCE_KEY) ?? 'null')
     if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
-      return { pulse: true, intervalMs: 2000 }
+      return { intervalMs: 2000 }
     }
     const record = stored as Record<string, unknown>
     const interval = typeof record['intervalMs'] === 'number' && (HIVE_INTERVALS as readonly number[]).includes(record['intervalMs'])
       ? record['intervalMs']
       : 2000
-    return { pulse: record['pulse'] !== false, intervalMs: interval }
+    return { intervalMs: interval }
   } catch {
-    return { pulse: true, intervalMs: 2000 }
+    return { intervalMs: 2000 }
   }
 }
 
@@ -2311,18 +2310,6 @@ export function HiveDashboard({
     }
   }, [api, requestSnapshot])
 
-  // The switch is a Core runtime control, not only a local display option:
-  // false parks the daemon, true lets it run a cycle immediately. The local
-  // preference still owns the snapshot polling interval in this window.
-  const togglePulse = useCallback((enabled: boolean): void => {
-    updatePreference({ ...preference, pulse: enabled })
-    if (!api) return
-    setCommandError(null)
-    void api.invoke('core.togglePulse', { enabled }).then((outcome) => {
-      if (!outcome.ok) setCommandError(outcome.message)
-    }).catch(() => setCommandError('Не удалось переключить EvaPulse: оболочка не ответила.'))
-  }, [api, preference, updatePreference])
-
   const addWatchedRepository = useCallback(async (): Promise<void> => {
     if (!api) return
     const trimmed = newRepoDraft.trim()
@@ -2719,8 +2706,8 @@ export function HiveDashboard({
     [effectiveActiveApprovals]
   )
   const queenTyping = useMemo(
-    () => pulseStatus !== 'sleeping' && isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
-    [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, pulseStatus, sendingMessage]
+    () => isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
+    [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, sendingMessage]
   )
   const queenWorking = queenTyping && !paused && !waitingApproval
   const queenActivity = useMemo(
@@ -2738,19 +2725,9 @@ export function HiveDashboard({
         </div>
         <div className="hive-console__controls">
           <span className={`status-pill status-pill--${connection}`}>{translate(connection)}</span>
-          <div className="hive-switch">
-            <span className="hive-switch__label" id="hive-pulse-label">{translate('Авто-режим (EvaPulse)')}</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={preference.pulse}
-              aria-labelledby="hive-pulse-label"
-              className={`hive-switch__control${preference.pulse ? ' hive-switch__control--on' : ''}`}
-              onClick={() => togglePulse(!preference.pulse)}
-            >
-              <span aria-hidden="true" />
-            </button>
-            <small className="hive-switch__status" aria-live="polite">{translate(pulseStatusLabel)}</small>
+          <div className="hive-switch" aria-live="polite">
+            <span className="hive-switch__label">{translate('Автономность Королевы')}</span>
+            <small className="hive-switch__status">{translate('Управляется Core')}</small>
           </div>
           <button
             type="button"
@@ -2777,11 +2754,9 @@ export function HiveDashboard({
               ))}
             </select>
           </label>
-          {!preference.pulse ? (
-            <button type="button" className="hive-console__refresh" onClick={requestSnapshot} disabled={!connected}>
-              {translate('Обновить сейчас')}
-            </button>
-          ) : null}
+          <button type="button" className="hive-console__refresh" onClick={requestSnapshot} disabled={!connected}>
+            {translate('Обновить сейчас')}
+          </button>
         </div>
       </header>
 

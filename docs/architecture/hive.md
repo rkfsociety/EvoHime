@@ -114,7 +114,8 @@ queen-side `lazy_delegation::extend_delegation` и только в предел�
 (`crates/evohime-core/src/hive_state.rs`) агрегирует последние `child.workflow`
 записи журнала (окно не больше 512 событий), настройки `HiveSettings` и роли
 активных записей `persistent_agent_registry`. В окно попадают только поддеревья,
-корень которых привязан к `hive-system-chat` или принадлежит EvaPulse:
+корень которых привязан к `hive-system-chat` или принят через typed boundary
+EvaPulse:
 одинаковые шаблоны, запущенные обычным чатом, не становятся «агентами улья».
 Snapshot содержит статус королевы,
 счётчики (`total_agents_online`, `active_tasks`, `efficiency_percent`), департаменты
@@ -127,11 +128,10 @@ Snapshot содержит статус королевы,
 запускает и не останавливает агентов, не содержит prompt, отчётов или вывода
 инструментов, а пустой журнал или реестр дают пустые массивы и нули вместо
 ошибки. Electron запрашивает её командой `core.getHiveState` (proto command 286,
-ответ — событие `hive_state.snapshot`, schema version 6) раз в 2 секунды и
-показывает её на отдельной вкладке «Улей». Snapshot также несёт
-`pulse_status` (`active`/`disabled`/`sleeping`) и `next_wake_at_ms`
-Core-демона `EvaPulse`; значение берётся у самого демона, а не вычисляется в
-UI. Budget-секция агрегирует за
+ответ — событие `hive_state.snapshot`) раз в 2 секунды и показывает её на
+отдельной вкладке «Улей». Lifecycle и `next_wake_at_ms` EvaPulse не являются
+частью Hive snapshot: оболочка получает их отдельной командой
+`core.getEvaPulseStatus` как `eva_pulse.status`. Budget-секция агрегирует за
 скользящие минуту/час/сутки только committed dispatch-маркеры выбранной модели
 и RPM/RPH/RPD из активной route configuration; нулевой cap означает
 «без настроенного лимита». Дневная квота токенов считается по фактическому
@@ -231,12 +231,11 @@ Live-подписка на typed log принадлежит конкретном
 не позволяет активности обычного чата зажечь индикатор Королевы или появиться в
 мини-чате Улья.
 
-Тумблер «Авто-режим (EvaPulse)» вызывает `core.togglePulse` (proto command 287,
-ответ `pulse.status`). `false` немедленно останавливает цикл (`pulse_status =
-disabled`), `true` будит его и запускает цикл без ожидания интервала. Статус и
-`next_wake_at_ms` приходят обратно в `hive_state.snapshot`; renderer только
-отображает их и не вычисляет бюджет или окно сам. Бюджет и task metrics также
-читаются из этой проекции, а не из фиксированных значений UI.
+`core.togglePulse` остаётся authenticated compatibility/diagnostic command, но
+не является режимом Улья: панель не управляет расписанием EvaPulse и не связывает
+его lifecycle с typing, approvals или жизненным циклом Королевы. Renderer только
+отображает отдельную `eva_pulse.status` projection и не вычисляет бюджет,
+recovery или окно сам.
 
 Поле `parent_is_child` само по себе — утверждение вызывающей стороны, а не
 доказательство. Доверие к нему проверяется по runtime-маркеру
