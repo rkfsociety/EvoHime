@@ -1713,17 +1713,57 @@ body {
   list-style: none;
 }
 
+.activity__call {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.activity__call-icon {
+  flex: 0 0 10px;
+  color: var(--accent);
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+}
+
+.activity__call-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 7px;
+}
+
+.activity__detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-family: var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .activity__tool {
   display: block;
-  margin-bottom: 4px;
   color: var(--fg-muted);
-  font-family: var(--mono);
   font-size: 12px;
 }
 
 .activity__pending {
   color: var(--fg-faint);
   font-size: 12px;
+}
+
+.activity__outputs {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 3px 0 2px;
+  padding: 0 0 0 21px;
+  list-style: none;
 }
 
 .activity__output {

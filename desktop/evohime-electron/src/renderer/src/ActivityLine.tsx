@@ -43,16 +43,26 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
         </span>
       </button>
 
+      <ol className="activity__calls" aria-label={translate("Шаги работы модели")}>
+        {calls.map((call, index) => (
+          <li key={`${call.tool}-${index}`} className="activity__call">
+            <span className="activity__call-icon" aria-hidden="true">{call.running ? '◌' : '·'}</span>
+            <span className="activity__call-copy">
+              <span className="activity__tool">{translate(toolLabel(call.tool))}</span>
+              {callDetail(call.output) ? <span className="activity__detail">{translate(callDetail(call.output))}</span> : null}
+            </span>
+            {call.running ? (
+              <span className="activity__pending">{translate("выполняется…")}</span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+
       {open ? (
-        <ol className="activity__calls">
+        <ol className="activity__outputs" aria-label={translate("Результаты шагов")}>
           {calls.map((call, index) => (
             <li key={`${call.tool}-${index}`}>
-              <span className="activity__tool">{translate(toolLabel(call.tool))}</span>
-              {call.running ? (
-                <span className="activity__pending">{translate("выполняется…")}</span>
-              ) : (
-                <pre className="activity__output">{call.output || translate("без вывода")}</pre>
-              )}
+              <pre className="activity__output">{call.output || translate("без вывода")}</pre>
             </li>
           ))}
         </ol>
@@ -84,6 +94,27 @@ function liveDetail(output: string): string {
       if (event.type === 'turn.started') return 'подготавливаю ответ'
     } catch {
       // A chunk can end in the middle of a JSONL record; wait for the next one.
+    }
+  }
+  return ''
+}
+
+/** Extract only useful navigation metadata for the always-visible progress row. */
+function callDetail(output: string | null): string {
+  if (!output) return ''
+  const lines = output.split(/\r?\n/).reverse()
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const event = JSON.parse(trimmed) as Record<string, unknown>
+      const item = event.item && typeof event.item === 'object' ? event.item as Record<string, unknown> : event
+      for (const key of ['path', 'pattern', 'include', 'command', 'query']) {
+        const value = item[key]
+        if (typeof value === 'string' && value.trim()) return shorten(value)
+      }
+    } catch {
+      // Tool output is commonly JSONL; ignore partial records and keep the row compact.
     }
   }
   return ''
