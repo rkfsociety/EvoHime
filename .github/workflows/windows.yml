@@ -248,6 +248,11 @@ jobs:
           }
       - uses: actions/upload-artifact@v7
         with:
+          name: evohime-core-release
+          path: target/release/evohime-core.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
           name: native-build-output
           path: native-build-output
           if-no-files-found: error
@@ -336,9 +341,10 @@ jobs:
         working-directory: desktop/evohime-electron
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v8
         with:
-          toolchain: stable-x86_64-pc-windows-msvc
+          name: evohime-core-release
+          path: target/release
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -348,9 +354,14 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Разрешённые установщики зависимостей
         run: node scripts/postinstall-allowlist.mjs
-      - name: Сборка Core для real-Core IPC E2E
+      - name: Проверка загруженного Core для real-Core IPC E2E
         working-directory: .
-        run: cargo build --locked --release -p evohime-core
+        shell: pwsh
+        run: |
+          $core = Join-Path $env:GITHUB_WORKSPACE 'target\release\evohime-core.exe'
+          if (-not (Test-Path -LiteralPath $core -PathType Leaf)) {
+            throw "Downloaded Core executable missing: $core"
+          }
       - name: Обязательный real-Core IPC E2E
         shell: pwsh
         run: |
