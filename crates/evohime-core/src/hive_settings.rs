@@ -16,8 +16,8 @@
 //! `schema_agent_configurations` store under the `hive` scope, so this module
 //! does not add a second configuration owner or a new database table.
 
-use serde::{Deserialize, Serialize};
 use evohime_model_gateway::ProviderLimits;
+use serde::{Deserialize, Serialize};
 
 use crate::child_contracts::MAX_CHILD_DEPTH;
 
@@ -221,13 +221,20 @@ impl HiveSettings {
                 max: MAX_DAILY_BUDGET_USD,
             });
         }
-        for limits in [self.hive_provider_limits, self.hive_fallback_provider_limits] {
-            if [limits.rpm, limits.rph, limits.rpd].iter().any(|limit| *limit > 10_000) {
+        for limits in [
+            self.hive_provider_limits,
+            self.hive_fallback_provider_limits,
+        ] {
+            if [limits.rpm, limits.rph, limits.rpd]
+                .iter()
+                .any(|limit| *limit > 10_000)
+            {
                 return Err(HiveSettingsError::InvalidProviderLimit);
             }
         }
         if self.hive_daily_token_quota > 1_000_000_000_000
-            || self.hive_fallback_daily_token_quota > 1_000_000_000_000 {
+            || self.hive_fallback_daily_token_quota > 1_000_000_000_000
+        {
             return Err(HiveSettingsError::InvalidProviderLimit);
         }
         if let Some(eva_path) = self.eva_workspace_path() {
@@ -411,8 +418,15 @@ impl HiveSettings {
             }
         }
         if let Some(map) = value.as_object_mut() {
-            if map.get("schema_version").and_then(serde_json::Value::as_u64) == Some(1) {
-                map.insert("schema_version".to_owned(), serde_json::json!(HIVE_SETTINGS_SCHEMA_VERSION));
+            if map
+                .get("schema_version")
+                .and_then(serde_json::Value::as_u64)
+                == Some(1)
+            {
+                map.insert(
+                    "schema_version".to_owned(),
+                    serde_json::json!(HIVE_SETTINGS_SCHEMA_VERSION),
+                );
             }
         }
         let mut settings: Self = serde_json::from_value(value)
