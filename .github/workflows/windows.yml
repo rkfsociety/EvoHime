@@ -271,6 +271,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/evohime-electron/package-lock.json
       - name: Установка Electron-зависимостей для license metadata
         working-directory: desktop/evohime-electron
         run: npm ci --ignore-scripts
@@ -310,6 +312,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/evohime-electron/package-lock.json
       - name: Установка Electron-зависимостей без lifecycle scripts
         run: npm ci --ignore-scripts
       - name: Разрешённые установщики зависимостей
@@ -346,6 +350,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/evohime-electron/package-lock.json
       - name: Установка Electron-зависимостей без lifecycle scripts
         run: npm ci --ignore-scripts
       - name: Разрешённые установщики зависимостей

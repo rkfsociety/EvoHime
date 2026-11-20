@@ -51,6 +51,8 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/evohime-electron/package-lock.json
       - name: Установка Electron-зависимостей без lifecycle scripts
         working-directory: desktop/evohime-electron
         run: npm ci --ignore-scripts
