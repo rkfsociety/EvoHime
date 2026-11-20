@@ -1,5 +1,12 @@
 # План 198.1 — Core boundary, schema и storage
 
+## Текущий прогресс
+
+Добавлен Core-домен `eva_pulse_boundary` с версионированными signal/result
+envelopes, bounded payload, TTL, identity/idempotency и проверкой того, что
+`HiveTaskOrigin` не превращается в capability. Интеграция с durable storage и
+замена прямого dispatch в `EvaPulseDaemon` остаются следующими подэтапами.
+
 ## Контракт
 
 - Ввести версионированные typed envelopes для сообщений EvaPulse и ответов
