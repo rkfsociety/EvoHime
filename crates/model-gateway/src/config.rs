@@ -129,7 +129,11 @@ pub struct ModelRateLimitConfig {
     #[serde(default)]
     pub rpd: u32,
     /// Optional daily token ceiling for this route (normally set on `"*"`).
-    #[serde(default, alias = "dailyTokenQuota", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        alias = "dailyTokenQuota",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub daily_token_quota: Option<u64>,
     /// Whether the token ceiling resets at UTC midnight.
     #[serde(default, alias = "quotaResetUtcMidnight")]
@@ -523,7 +527,10 @@ impl ModelRouteConfig {
         self.model_rate_limits.insert(
             "*".to_owned(),
             ModelRateLimitConfig {
-                enabled: limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0 || daily_token_quota.is_some(),
+                enabled: limits.rpm > 0
+                    || limits.rph > 0
+                    || limits.rpd > 0
+                    || daily_token_quota.is_some(),
                 rpm: limits.rpm,
                 rph: limits.rph,
                 rpd: limits.rpd,
@@ -586,7 +593,11 @@ impl ModelRouteConfig {
             .get("*")
             .filter(|limits| limits.enabled)
         {
-            return ProviderLimits { rpm: limits.rpm, rph: limits.rph, rpd: limits.rpd };
+            return ProviderLimits {
+                rpm: limits.rpm,
+                rph: limits.rph,
+                rpd: limits.rpd,
+            };
         }
 
         self.provider_limits
@@ -602,7 +613,12 @@ impl ModelRouteConfig {
                     .get("*")
                     .filter(|limits| limits.enabled && limits.daily_token_quota.is_some())
             })
-            .map(|limits| (limits.daily_token_quota.unwrap_or_default(), limits.quota_reset_utc_midnight))
+            .map(|limits| {
+                (
+                    limits.daily_token_quota.unwrap_or_default(),
+                    limits.quota_reset_utc_midnight,
+                )
+            })
             .or_else(|| {
                 self.daily_token_quota
                     .map(|quota| (quota, self.quota_reset_utc_midnight))
@@ -793,8 +809,17 @@ impl ModelGatewayConfig {
             .with_credential_binding(env::var("MODEL_PROVIDER_CREDENTIAL_BINDING").ok())
             .with_request_pacing(RequestPacingConfig::from_env(provider))
             .with_model_rate_limits(model_rate_limits_from_env()?);
-        if let Some((quota, reset)) = route.model_rate_limits.get("*").filter(|limits| limits.enabled)
-            .map(|limits| (limits.daily_token_quota.filter(|quota| *quota > 0), limits.quota_reset_utc_midnight)) {
+        if let Some((quota, reset)) = route
+            .model_rate_limits
+            .get("*")
+            .filter(|limits| limits.enabled)
+            .map(|limits| {
+                (
+                    limits.daily_token_quota.filter(|quota| *quota > 0),
+                    limits.quota_reset_utc_midnight,
+                )
+            })
+        {
             route = route.with_daily_token_quota(quota, reset);
         }
         if provider == ProviderKind::OpenAICompatible {
@@ -1085,7 +1110,10 @@ impl ModelGatewayConfig {
             *route = route
                 .clone()
                 .with_model_rate_limits(model_rate_limits)
-                .with_daily_token_quota((token_quota > 0).then_some(token_quota), quota_reset_utc_midnight);
+                .with_daily_token_quota(
+                    (token_quota > 0).then_some(token_quota),
+                    quota_reset_utc_midnight,
+                );
         }
     }
 
@@ -1125,7 +1153,7 @@ fn validate_model_rate_limits(
 ) -> Result<(), ProviderError> {
     if limits.len() > 64
         || limits.iter().any(|(model, limit)| {
-                (model.is_empty() && model != "*")
+            (model.is_empty() && model != "*")
                 || model.chars().count() > 128
                 || model.contains('\0')
                 || model.chars().any(char::is_whitespace)
@@ -1263,8 +1291,14 @@ fn parse_routes_json(
             route_config =
                 route_config.with_provider_profile(profile_id, route.provider_account_id);
         }
-        let route_wide_quota = model_rate_limits.get("*").filter(|limit| limit.enabled).and_then(|limit| limit.daily_token_quota).filter(|quota| *quota > 0);
-        let route_wide_quota_reset = model_rate_limits.get("*").is_some_and(|limit| limit.enabled && limit.quota_reset_utc_midnight);
+        let route_wide_quota = model_rate_limits
+            .get("*")
+            .filter(|limit| limit.enabled)
+            .and_then(|limit| limit.daily_token_quota)
+            .filter(|quota| *quota > 0);
+        let route_wide_quota_reset = model_rate_limits
+            .get("*")
+            .is_some_and(|limit| limit.enabled && limit.quota_reset_utc_midnight);
         route_config = route_config
             .with_credential_binding(route.provider_credential_binding)
             .with_request_pacing(request_pacing)
@@ -1609,7 +1643,10 @@ mod tests {
     fn provider_limits_require_explicit_configuration() {
         let route = ModelRouteConfig::literouter("lr-key", LITEROUTER_DEFAULT_BASE_URL, "");
 
-        assert_eq!(route.effective_limits("some-model:free"), ProviderLimits::default());
+        assert_eq!(
+            route.effective_limits("some-model:free"),
+            ProviderLimits::default()
+        );
 
         let overridden = route.clone().with_model_rate_limits(HashMap::from([(
             "*".to_owned(),
@@ -1647,6 +1684,30 @@ mod tests {
             openai.effective_limits(OPENAI_DEFAULT_MODEL),
             fallback_limits
         );
+    }
+
+    #[test]
+    fn enabled_model_limits_override_wildcard_and_disabled_model_falls_back() {
+        let mut route = ModelRouteConfig::literouter("key", LITEROUTER_DEFAULT_BASE_URL, "model");
+        let limits = |enabled, rpm| ModelRateLimitConfig {
+            enabled,
+            rpm,
+            rph: 0,
+            rpd: 0,
+            daily_token_quota: None,
+            quota_reset_utc_midnight: false,
+            pricing: None,
+        };
+        route.model_rate_limits.insert("*".into(), limits(true, 10));
+        route
+            .model_rate_limits
+            .insert("model".into(), limits(true, 3));
+        assert_eq!(route.effective_limits("model").rpm, 3);
+        route
+            .model_rate_limits
+            .insert("model".into(), limits(false, 3));
+        assert_eq!(route.effective_limits("model").rpm, 10);
+        assert_eq!(route.effective_limits("other").rpm, 10);
     }
 
     #[test]
