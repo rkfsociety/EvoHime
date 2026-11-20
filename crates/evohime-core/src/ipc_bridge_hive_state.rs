@@ -379,12 +379,6 @@ impl IpcBridge {
         let Ok(limits) = parsed else {
             return self.hive_limit_rejected(key, "request limits must contain rpm, rph and rpd");
         };
-        if [limits.rpm, limits.rph, limits.rpd]
-            .iter()
-            .any(|limit| *limit > 10_000)
-        {
-            return self.hive_limit_rejected(key, "request limits must be between 0 and 10000");
-        }
         let (setting_key, output_key) = if key == "hive_provider_limits" {
             settings.hive_provider_limits = limits;
             (key, "hive_provider_limits")

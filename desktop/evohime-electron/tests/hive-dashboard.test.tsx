@@ -1349,7 +1349,7 @@ describe('hive dashboard', () => {
         && (call.payload as { key?: string }).key === 'hive_request_limits')
       expect(save).toBeTruthy()
       expect(JSON.parse((save?.payload as { value: string }).value)).toEqual({
-        primary_limits: { rpm: 12, rph: 0, rpd: 0 },
+        primary_limits: { rpm: 12, rph: 720, rpd: 17280 },
         fallback_limits: { rpm: 0, rph: 0, rpd: 0 },
         primary_token_quota: 500_000,
         fallback_token_quota: 0,
