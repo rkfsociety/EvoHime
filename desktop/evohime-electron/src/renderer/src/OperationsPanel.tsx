@@ -456,7 +456,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   // Core может отставать от UI. Известные версии проекции читаются с defaults
   // для отсутствующих секций; неизвестная версия отклоняется целиком.
   const version = root['schema_version']
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6) return null
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7) return null
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)

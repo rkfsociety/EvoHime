@@ -6,6 +6,8 @@
 и defensive parser в `OperationsPanel`. UI предпочитает независимую Pulse
 projection, но имеет bounded fallback на legacy-поля `hive_state.snapshot` для
 совместимости со старым Core.
+В schema v7 новые Hive snapshots перестают сериализовать legacy Pulse-поля;
+старые schema 1–6 продолжают читаться через fallback.
 
 ## UI-контракт
 

@@ -18,7 +18,7 @@ use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
-pub const HIVE_STATE_SCHEMA_VERSION: u32 = 6;
+pub const HIVE_STATE_SCHEMA_VERSION: u32 = 7;
 /// Name shown for the single queen in the local hive.
 pub const DEFAULT_QUEEN_NAME: &str = "EvoHime";
 /// Maximum number of departments rendered at once.
@@ -387,8 +387,10 @@ pub struct HiveStateSnapshot {
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
     /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
+    #[serde(default, skip_serializing)]
     pub pulse_status: String,
     /// Unix milliseconds at which the daemon plans its next cycle.
+    #[serde(default, skip_serializing)]
     pub next_wake_at_ms: Option<i64>,
 }
 
