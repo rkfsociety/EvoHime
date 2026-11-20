@@ -19,6 +19,11 @@ pub const MAX_JSON_DEPTH: usize = 16;
 pub const MAX_JSON_NODES: usize = 512;
 /// Number of trailing characters retained between streaming chunks.
 pub const STREAM_CARRY_CHARS: usize = 96;
+/// Minimum number of body characters after a secret-token prefix.
+///
+/// Real provider secrets (`sk-…`, `ghp_…`, `xoxb-…`, `AKIA…`) are long opaque
+/// strings; the minimum keeps ordinary words like "task-only" from matching.
+pub const MIN_SECRET_BODY_LEN: usize = 12;
 
 /// Built-in sensitive value detector used by a redaction rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1043,9 +1048,15 @@ fn find_matches(input: &str, detector: Detector) -> Vec<(usize, usize)> {
                         .find(char::is_whitespace)
                         .map(|offset| start + offset)
                         .unwrap_or(input.len());
-                    (start, end)
+                    (start, end, *prefix)
                 })
             })
+            // A real provider secret is a long opaque token; require a
+            // minimum body length so words like "task-only" never match.
+            .filter(|(start, end, prefix)| {
+                end.saturating_sub(*start) >= prefix.len() + MIN_SECRET_BODY_LEN
+            })
+            .map(|(start, end, _)| (start, end))
             .collect(),
         Detector::Email => input
             .match_indices('@')
@@ -1139,6 +1150,24 @@ mod tests {
             default_policy("provider").policy_hash,
             default_policy("provider").policy_hash
         );
+    }
+    #[test]
+    fn secret_detector_ignores_short_word_fragments() {
+        // "task-only" contains "sk-", but it is not a secret token.
+        let summary = classify_text("git_commit — только с task-only сообщением").unwrap();
+        assert!(summary.findings.is_empty());
+        assert_eq!(summary.required_privacy, "public");
+        assert!(find_matches("task-only", Detector::SecretToken).is_empty());
+    }
+    #[test]
+    fn secret_detector_still_matches_long_tokens() {
+        let token = "sk-abcdefghijklmnopqrstuvwxyz0123456789";
+        let summary = classify_text(&format!("key: {token}")).unwrap();
+        assert!(summary
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::Credential));
+        assert_eq!(summary.required_privacy, "restricted");
     }
     #[test]
     fn all_actions_are_supported() {
