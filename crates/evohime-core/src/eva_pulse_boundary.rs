@@ -183,7 +183,7 @@ pub fn validate_result(result: &HiveSignalResult) -> Result<(), BoundaryError> {
 /// contract: it supplies only a validated signal, prompt, and already-resolved
 /// route. The receiver remains the owner of the decision-to-task transition.
 #[derive(Clone)]
-pub(crate) struct HiveSignalReceiver {
+pub struct HiveSignalReceiver {
     coordinator: TaskCoordinator,
     seen: Arc<Mutex<HashMap<String, String>>>,
     journal: Option<EventJournal>,
@@ -191,7 +191,7 @@ pub(crate) struct HiveSignalReceiver {
 
 impl HiveSignalReceiver {
     /// Creates a receiver backed by the existing Core coordinator.
-    pub(crate) fn new(coordinator: TaskCoordinator) -> Self {
+    pub fn new(coordinator: TaskCoordinator) -> Self {
         Self {
             coordinator,
             seen: Arc::new(Mutex::new(HashMap::new())),
@@ -200,7 +200,7 @@ impl HiveSignalReceiver {
     }
 
     /// Attaches the Core journal used to recover accepted signals after restart.
-    pub(crate) fn with_journal(mut self, journal: EventJournal) -> Self {
+    pub fn with_journal(mut self, journal: EventJournal) -> Self {
         self.journal = Some(journal);
         self
     }

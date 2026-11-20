@@ -332,7 +332,7 @@ impl EvaPulseDaemon {
         journal: EventJournal,
         gateway_config: Option<ModelGatewayConfig>,
         selected_model: SelectedModel,
-        coordinator: TaskCoordinator,
+        receiver: HiveSignalReceiver,
         logger: Option<Arc<StructuredLogger>>,
     ) -> Self {
         let probe = Arc::new(JournalPulseProbe::new(
@@ -341,8 +341,8 @@ impl EvaPulseDaemon {
             selected_model,
         ));
         let sink = Arc::new(
-            CoordinatorPulseTaskSink::new(
-                coordinator,
+            CoordinatorPulseTaskSink::new_with_receiver(
+                receiver,
                 crate::hive_observation::isolated_hive_route_name(gateway_config.as_ref()),
             )
             .with_hive_settings_source(journal, gateway_config),
@@ -1605,8 +1605,16 @@ pub(crate) struct CoordinatorPulseTaskSink {
 impl CoordinatorPulseTaskSink {
     /// Creates a sink bound to the coordinator and the allowed route name.
     pub(crate) fn new(coordinator: TaskCoordinator, primary_route: Option<String>) -> Self {
+        Self::new_with_receiver(HiveSignalReceiver::new(coordinator), primary_route)
+    }
+
+    /// Creates a sink using the Core-owned Hive boundary receiver.
+    pub(crate) fn new_with_receiver(
+        receiver: HiveSignalReceiver,
+        primary_route: Option<String>,
+    ) -> Self {
         Self {
-            receiver: HiveSignalReceiver::new(coordinator),
+            receiver,
             primary_route,
             preferred_route_hint: None,
             journal: None,
