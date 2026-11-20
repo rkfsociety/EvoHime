@@ -776,13 +776,31 @@ impl IpcBridge {
             return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"invalid_destination"});
         }
         let snapshot = crate::sensitive_data_guardrails::default_policy(destination);
+        let mut disposition = "detected";
+        let mut findings_json = "[]".to_owned();
         let metadata = if request.operation == "evaluate" {
             let Some(input) = payload["input"].as_str() else {
                 return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"input_required"});
             };
+            let summary = match crate::sensitive_data_guardrails::classify_text(input) {
+                Ok(summary) => summary,
+                Err(error) => {
+                    return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":error.to_string()})
+                }
+            };
+            findings_json =
+                serde_json::to_string(&summary.findings).unwrap_or_else(|_| "[]".into());
             match crate::sensitive_data_guardrails::redact_text(&snapshot, input) {
-                Ok(result) => result.metadata,
+                Ok(result) => {
+                    disposition = if result.metadata.match_count == 0 {
+                        "allow"
+                    } else {
+                        "transformed"
+                    };
+                    result.metadata
+                }
                 Err(crate::sensitive_data_guardrails::GuardrailError::Blocked(metadata)) => {
+                    disposition = "blocked";
                     metadata
                 }
                 Err(error) => {
@@ -803,7 +821,7 @@ impl IpcBridge {
         } else {
             return serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"rejected","error_code":"unsupported_operation"});
         };
-        serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"ok","policy_hash":metadata.policy_hash,"destination":metadata.destination,"action":metadata.action.map(|action| format!("{action:?}").to_ascii_lowercase()),"match_count":metadata.match_count,"blocked":metadata.blocked,"error_code":""})
+        serde_json::json!({"request_id":request.request_id,"operation":request.operation,"status":"ok","policy_hash":metadata.policy_hash,"destination":metadata.destination,"action":metadata.action.map(|action| format!("{action:?}").to_ascii_lowercase()),"match_count":metadata.match_count,"blocked":metadata.blocked,"disposition":disposition,"findings_json":findings_json,"error_code":""})
     }
 
     pub(crate) async fn write_sensitive_data_guardrails_response<W: AsyncWrite + Unpin>(
@@ -823,6 +841,9 @@ impl IpcBridge {
             match_count: value["match_count"].as_u64().unwrap_or_default() as u32,
             blocked: value["blocked"].as_bool().unwrap_or(false),
             error_code: value["error_code"].as_str().unwrap_or_default().into(),
+            detector_pack_hash: crate::sensitive_data_guardrails::detector_pack_hash(),
+            disposition: value["disposition"].as_str().unwrap_or_default().into(),
+            findings_json: value["findings_json"].as_str().unwrap_or_default().into(),
         };
         transport::write_frame(
             writer,

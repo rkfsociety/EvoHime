@@ -259,6 +259,8 @@ pub mod schema_driven_agent_configuration_store;
 pub mod scratchpad_store;
 /// Persistence for semantic activity motion system state.
 pub mod semantic_activity_motion_system_store;
+/// Metadata-only persistence for sensitive egress decisions.
+pub mod sensitive_egress_store;
 /// Persistence for skill source lifecycle records.
 pub mod skill_source_lifecycle_store;
 pub(crate) mod skill_trust_pipeline_store;
@@ -316,7 +318,7 @@ pub use backup::{
 };
 
 /// Current schema version installed by [`LocalDatabase`].
-pub const SCHEMA_VERSION: u32 = 183;
+pub const SCHEMA_VERSION: u32 = 184;
 
 pub use records::{
     EventRecord, ImportedTask, ProjectPolicyRecord, ProjectRecord, ProvenanceRecord,

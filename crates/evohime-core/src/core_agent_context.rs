@@ -255,10 +255,46 @@ fn guarded_provider_messages(
         .iter()
         .map(|message| {
             let mut message = message.clone();
-            match redact_boundary_text("model", &message.content) {
-                Ok(value) => {
-                    message.content = value;
+            let snapshot = sensitive_data_guardrails::default_policy("model");
+            match sensitive_data_guardrails::evaluate_egress(
+                &snapshot,
+                sensitive_data_guardrails::DestinationClass::Provider,
+                "model",
+                &message.content,
+            ) {
+                Ok((decision, transformed))
+                    if matches!(
+                        decision.disposition,
+                        sensitive_data_guardrails::EgressDisposition::Allow
+                            | sensitive_data_guardrails::EgressDisposition::Transformed
+                    ) =>
+                {
+                    if let Some(value) = transformed {
+                        message.content = value;
+                    }
                     Ok(message)
+                }
+                Ok((decision, _)) => {
+                    let error_code = match decision.disposition {
+                        sensitive_data_guardrails::EgressDisposition::RequiresApproval => {
+                            "sensitive_data_approval_required"
+                        }
+                        sensitive_data_guardrails::EgressDisposition::Blocked => {
+                            "sensitive_data_blocked"
+                        }
+                        _ => "egress_guardrail_unavailable",
+                    };
+                    write_model_trace(
+                        "model.egress_blocked",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "error_code": error_code,
+                            "message_bytes": message.content.len(),
+                        }),
+                    );
+                    Err(AgentRunError::Provider(ProviderError::Api(
+                        error_code.into(),
+                    )))
                 }
                 Err(error) => {
                     let error_code = match error {
@@ -1417,7 +1453,7 @@ impl ToolAgent {
             } else {
                 route_pin
             };
-            let routing_request = RoutingRequest {
+            let mut routing_request = RoutingRequest {
                 required_capabilities: vec!["chat".into()],
                 max_cost_micros_per_1k_tokens: bounded_fanout.then_some(0),
                 max_latency_ms: None,
@@ -1437,6 +1473,23 @@ impl ToolAgent {
                 estimated_input_tokens,
                 quality_delta: 0.05,
             };
+            // Content-derived privacy is raised before route resolution.  The
+            // exact payload is still scanned again by `guarded_provider_messages`
+            // immediately before dispatch; this pass must never lower the
+            // caller/profile requirement.
+            let content_privacy = messages
+                .iter()
+                .map(|message| {
+                    sensitive_data_guardrails::classify_text(&message.content)
+                        .map(|summary| sensitive_data_guardrails::required_privacy(&summary))
+                        .map_err(|_| AgentRunError::Internal("egress_guardrail_unavailable".into()))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .max()
+                .unwrap_or(PrivacyClass::Public);
+            routing_request.required_privacy =
+                routing_request.required_privacy.max(content_privacy);
             let route_snapshot_hash = self
                 .gateway
                 .provenance_route_snapshot_hash_with_model(&routing_request, selected_model)

@@ -3542,7 +3542,7 @@ GitHub Actions результаты:
   завершился `success` и опубликовал fixed compatible set manifest.
 
 Эти результаты подтверждают перечисленные CI gates для указанного commit;
-они не являются доказательством реализации активных планов 180–181 и
+они не являются доказательством реализации активного плана 180 и
 184–188. Rust documentation workflow для этого SHA отдельно не засчитывается:
 в доступном снимке его запуск оставался queued, поэтому rustdoc/doc-tests
 здесь не отмечены как пройденные. Локальные проверки в этой сессии не
@@ -3643,3 +3643,15 @@ records that distinction rather than carrying the baseline result forward.
 - Подняты release-маркеры: `release-versions/core.txt` (`0.0.000485`),
   `release-versions/ui-bundle.txt` (`0.0.0216`). Полные Rust/Windows CI сборки
   и публикация модулей выполняются в CI после push.
+## Core-owned sensitive egress guardrails v1 (plan 181)
+
+Implemented locally on `main`: the existing v1 guardrail now has detector pack
+v1, metadata-only classification for email/credentials/private keys, phone,
+Luhn cards, IBAN mod-97 and contextual tax identifiers, monotonic privacy
+derivation before route selection, exact final payload evaluation and a
+metadata-only schema v184. Provider/command/external decisions bind payload,
+route/destination, policy and detector references; transforms produce a new
+hash, approvals expose only categories/counts/reason codes, and unsupported
+OCR/image/audio or remote sanitizer paths remain blocked. CI verification is
+pending for this local commit; no claim of passing full Rust/IPC integration
+or Electron checks is made here.

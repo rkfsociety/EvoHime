@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 
 /// Current schema version for sensitive-data policies and metadata.
 pub const CONTRACT_VERSION: u32 = 1;
+/// Version of the deterministic detector pack used by the PII boundary.
+pub const DETECTOR_PACK_VERSION: u32 = 1;
 /// Maximum input size scanned by one redaction operation.
 pub const MAX_INPUT_BYTES: usize = 64 * 1024;
 /// Maximum nested JSON depth traversed by structured redaction.
@@ -30,6 +32,123 @@ pub enum Detector {
     BearerToken,
     /// Detects private-key material that must be blocked.
     PrivateKey,
+    /// Detects a labelled or E.164 phone number.
+    Phone,
+    /// Detects a payment-card number with a valid Luhn checksum.
+    PaymentCard,
+    /// Detects an IBAN with a valid country prefix and mod-97 checksum.
+    Iban,
+    /// Detects a narrowly contextual national/tax identifier.
+    NationalTaxId,
+}
+
+/// Bounded category of a finding. Raw values and spans are intentionally absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SensitiveEntityKind {
+    /// Email address.
+    Email,
+    /// Secret or bearer credential.
+    Credential,
+    /// Private key material.
+    PrivateKey,
+    /// Telephone number.
+    Phone,
+    /// Payment-card number.
+    PaymentCard,
+    /// International bank account number.
+    Iban,
+    /// Contextually detected national/tax number.
+    NationalTaxId,
+}
+
+/// Confidence assigned by a local deterministic detector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FindingConfidence {
+    /// Structural and checksum/context evidence is present.
+    High,
+    /// Structural evidence is present but no checksum is available.
+    Medium,
+}
+
+/// Metadata-only finding returned by classification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SensitiveFinding {
+    /// Entity category, never the matched value.
+    pub kind: SensitiveEntityKind,
+    /// Detector pack version that produced the finding.
+    pub detector_version: u32,
+    /// Bounded confidence.
+    pub confidence: FindingConfidence,
+}
+
+/// Stable classification summary keyed by the exact payload digest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClassificationSummary {
+    /// Detector pack version.
+    pub detector_pack_version: u32,
+    /// SHA-256 of the exact input bytes.
+    pub payload_hash: String,
+    /// Unique, bounded metadata findings.
+    pub findings: Vec<SensitiveFinding>,
+    /// Derived minimum privacy required before route selection.
+    pub required_privacy: String,
+    /// Whether the detector completed without exceeding a bound.
+    pub complete: bool,
+}
+
+/// Destination class used by the final egress decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DestinationClass {
+    /// Core-local processing.
+    LocalTrusted,
+    /// A configured provider or tool boundary.
+    Provider,
+    /// An external agent or remote service.
+    External,
+    /// A command process whose network isolation is not guaranteed.
+    Command,
+}
+
+/// Terminal disposition of an exact-payload egress decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressDisposition {
+    /// Exact payload may be dispatched.
+    Allow,
+    /// Caller must obtain an approval bound to all hashes.
+    RequiresApproval,
+    /// Payload was transformed and must be dispatched only in its new form.
+    Transformed,
+    /// Dispatch is denied.
+    Blocked,
+    /// Detector/policy data was unavailable or exceeded a bound.
+    Unavailable,
+    /// Previously scanned payload no longer matches.
+    PayloadChanged,
+}
+
+/// Metadata-only binding for a final egress decision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EgressDecision {
+    /// Terminal disposition.
+    pub disposition: EgressDisposition,
+    /// Exact original payload hash.
+    pub payload_hash: String,
+    /// Hash of transformed payload, when applicable.
+    pub transformed_payload_hash: Option<String>,
+    /// Route/destination reference, never a credential or URL with credentials.
+    pub destination: String,
+    /// Policy and detector references.
+    pub policy_hash: String,
+    /// Detector pack version.
+    pub detector_pack_version: u32,
+    /// Entity categories and counts, without raw matches.
+    pub findings: Vec<SensitiveFinding>,
+    /// Stable reason code.
+    pub reason_code: String,
 }
 
 /// Transformation applied when a detector finds a value.
@@ -179,6 +298,30 @@ pub fn default_policy(destination: impl Into<String>) -> PolicySnapshot {
                 detector: Detector::PrivateKey,
                 action: Action::Block,
             },
+            SensitiveDataRule {
+                id: "phone".into(),
+                version: 1,
+                detector: Detector::Phone,
+                action: Action::Mask,
+            },
+            SensitiveDataRule {
+                id: "payment_card".into(),
+                version: 1,
+                detector: Detector::PaymentCard,
+                action: Action::Mask,
+            },
+            SensitiveDataRule {
+                id: "iban".into(),
+                version: 1,
+                detector: Detector::Iban,
+                action: Action::Mask,
+            },
+            SensitiveDataRule {
+                id: "national_tax_id".into(),
+                version: 1,
+                detector: Detector::NationalTaxId,
+                action: Action::Mask,
+            },
         ],
         max_input_bytes: MAX_INPUT_BYTES,
         max_json_depth: MAX_JSON_DEPTH,
@@ -194,6 +337,270 @@ pub fn default_policy(destination: impl Into<String>) -> PolicySnapshot {
             }
         }
     }
+}
+
+/// Computes the immutable hash of the active detector pack.
+pub fn detector_pack_hash() -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"evohime-sensitive-detector-pack-v1\0");
+    for detector in [
+        Detector::Email,
+        Detector::SecretToken,
+        Detector::BearerToken,
+        Detector::PrivateKey,
+        Detector::Phone,
+        Detector::PaymentCard,
+        Detector::Iban,
+        Detector::NationalTaxId,
+    ] {
+        hasher.update(format!("{detector:?};").as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
+/// Classifies bounded text without returning values, offsets, or context.
+///
+/// The summary is safe to persist and is keyed by the exact payload hash. A
+/// detector never authorizes a destructive transform unless its structural or
+/// checksum evidence is sufficient.
+pub fn classify_text(input: &str) -> Result<ClassificationSummary, GuardrailError> {
+    if input.len() > MAX_INPUT_BYTES {
+        return Err(GuardrailError::InputTooLarge);
+    }
+    let mut findings = Vec::new();
+    let mut add = |kind: SensitiveEntityKind, confidence: FindingConfidence| {
+        if !findings
+            .iter()
+            .any(|finding: &SensitiveFinding| finding.kind == kind)
+        {
+            findings.push(SensitiveFinding {
+                kind,
+                detector_version: DETECTOR_PACK_VERSION,
+                confidence,
+            });
+        }
+    };
+    if !find_matches(input, Detector::Email).is_empty() {
+        add(SensitiveEntityKind::Email, FindingConfidence::High);
+    }
+    if !find_matches(input, Detector::SecretToken).is_empty()
+        || !find_matches(input, Detector::BearerToken).is_empty()
+    {
+        add(SensitiveEntityKind::Credential, FindingConfidence::High);
+    }
+    if !find_matches(input, Detector::PrivateKey).is_empty() {
+        add(SensitiveEntityKind::PrivateKey, FindingConfidence::High);
+    }
+    if has_phone(input) {
+        add(SensitiveEntityKind::Phone, FindingConfidence::High);
+    }
+    if has_payment_card(input) {
+        add(SensitiveEntityKind::PaymentCard, FindingConfidence::High);
+    }
+    if has_iban(input) {
+        add(SensitiveEntityKind::Iban, FindingConfidence::High);
+    }
+    if has_contextual_tax_id(input) {
+        add(
+            SensitiveEntityKind::NationalTaxId,
+            FindingConfidence::Medium,
+        );
+    }
+    let required_privacy = if findings.iter().any(|finding| {
+        matches!(
+            finding.kind,
+            SensitiveEntityKind::Credential | SensitiveEntityKind::PrivateKey
+        )
+    }) {
+        "restricted"
+    } else if findings.is_empty() {
+        "public"
+    } else {
+        "sensitive"
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    Ok(ClassificationSummary {
+        detector_pack_version: DETECTOR_PACK_VERSION,
+        payload_hash: hex::encode(hasher.finalize()),
+        findings,
+        required_privacy: required_privacy.into(),
+        complete: true,
+    })
+}
+
+/// Raises an upstream model-gateway privacy requirement monotonically.
+pub fn required_privacy(summary: &ClassificationSummary) -> evohime_model_gateway::PrivacyClass {
+    match summary.required_privacy.as_str() {
+        "restricted" => evohime_model_gateway::PrivacyClass::Restricted,
+        "sensitive" => evohime_model_gateway::PrivacyClass::Sensitive,
+        "internal" => evohime_model_gateway::PrivacyClass::Internal,
+        _ => evohime_model_gateway::PrivacyClass::Public,
+    }
+}
+
+/// Scans the exact serialized payload immediately before an external effect.
+/// The returned binding changes whenever payload, policy, or detector output
+/// changes; callers must not dispatch any other payload using this decision.
+pub fn evaluate_egress(
+    snapshot: &PolicySnapshot,
+    destination: DestinationClass,
+    route_ref: &str,
+    payload: &str,
+) -> Result<(EgressDecision, Option<String>), GuardrailError> {
+    let summary = classify_text(payload)?;
+    let payload_hash = summary.payload_hash.clone();
+    let result = match redact_text(snapshot, payload) {
+        Ok(result) => result,
+        Err(GuardrailError::Blocked(metadata)) => {
+            return Ok((
+                decision(
+                    &summary,
+                    EgressDisposition::Blocked,
+                    route_ref,
+                    snapshot,
+                    None,
+                    "blocking_entity",
+                ),
+                None,
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+    let transformed = result.value != payload;
+    let transformed_hash = if transformed {
+        Some(sha256(&result.value))
+    } else {
+        None
+    };
+    let disposition = if destination == DestinationClass::Command && !summary.findings.is_empty() {
+        EgressDisposition::RequiresApproval
+    } else if destination == DestinationClass::External
+        && summary
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::Credential)
+    {
+        EgressDisposition::RequiresApproval
+    } else if transformed {
+        EgressDisposition::Transformed
+    } else {
+        EgressDisposition::Allow
+    };
+    let decision = decision(
+        &summary,
+        disposition,
+        route_ref,
+        snapshot,
+        transformed_hash,
+        if transformed {
+            "payload_transformed"
+        } else {
+            "no_finding"
+        },
+    );
+    Ok((decision, transformed.then_some(result.value)))
+}
+
+fn decision(
+    summary: &ClassificationSummary,
+    disposition: EgressDisposition,
+    destination: &str,
+    snapshot: &PolicySnapshot,
+    transformed_payload_hash: Option<String>,
+    reason_code: &str,
+) -> EgressDecision {
+    EgressDecision {
+        disposition,
+        payload_hash: summary.payload_hash.clone(),
+        transformed_payload_hash,
+        destination: destination.to_owned(),
+        policy_hash: snapshot.policy_hash.clone(),
+        detector_pack_version: summary.detector_pack_version,
+        findings: summary.findings.clone(),
+        reason_code: reason_code.to_owned(),
+    }
+}
+
+fn digits(value: &str) -> String {
+    value.chars().filter(char::is_ascii_digit).collect()
+}
+
+fn has_phone(input: &str) -> bool {
+    let lower = input.to_ascii_lowercase();
+    let labelled = lower.contains("phone") || lower.contains("телефон") || lower.contains("mobile");
+    let number = digits(input);
+    (number.len() >= 10 && number.len() <= 15) && (labelled || input.trim_start().starts_with('+'))
+}
+
+fn has_payment_card(input: &str) -> bool {
+    let number = digits(input);
+    (13..=19).contains(&number.len()) && luhn_valid(&number)
+}
+
+fn luhn_valid(value: &str) -> bool {
+    if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return false;
+    }
+    let mut sum = 0u32;
+    let mut double = false;
+    for digit in value.bytes().rev().map(|byte| byte - b'0') {
+        let mut value = u32::from(digit);
+        if double {
+            value *= 2;
+            if value > 9 {
+                value -= 9;
+            }
+        }
+        sum += value;
+        double = !double;
+    }
+    value.len() >= 13 && sum % 10 == 0
+}
+
+fn has_iban(input: &str) -> bool {
+    input
+        .split(|character: char| {
+            character.is_whitespace() || matches!(character, ',' | ';' | '(' | ')')
+        })
+        .any(|part| {
+            let compact: String = part
+                .chars()
+                .filter(|character| character.is_ascii_alphanumeric())
+                .collect();
+            (15..=34).contains(&compact.len())
+                && compact.len() >= 4
+                && compact[..2]
+                    .chars()
+                    .all(|character| character.is_ascii_uppercase())
+                && compact[2..4]
+                    .chars()
+                    .all(|character| character.is_ascii_digit())
+                && iban_mod97(&compact) == 1
+        })
+}
+
+fn iban_mod97(value: &str) -> u32 {
+    let rotated = format!("{}{}", &value[4..], &value[..4]);
+    rotated.chars().fold(0u32, |remainder, character| {
+        let digits = if character.is_ascii_digit() {
+            character.to_digit(10).unwrap_or(0)
+        } else {
+            u32::from(character as u8 - b'A') + 10
+        };
+        (remainder * 10 + digits) % 97
+    })
+}
+
+fn has_contextual_tax_id(input: &str) -> bool {
+    let lower = input.to_ascii_lowercase();
+    let labelled = ["tax", "vat", "inn", "tin", "налог", "инн"]
+        .iter()
+        .any(|label| lower.contains(label));
+    labelled
+        && input
+            .split(|character: char| !character.is_ascii_digit())
+            .any(|part| (8..=14).contains(&part.len()))
 }
 
 /// Validates a policy and computes its versioned integrity digest.
@@ -614,7 +1021,68 @@ fn find_matches(input: &str, detector: Detector) -> Vec<(usize, usize)> {
                 }
             })
             .collect(),
+        Detector::Phone => token_matches(input, |token| {
+            let number = digits(token);
+            number.len() >= 10
+                && number.len() <= 15
+                && (token.starts_with('+') || input_context_has_phone_label(input, token))
+        }),
+        Detector::PaymentCard => token_matches(input, |token| {
+            (13..=19).contains(&token.len()) && luhn_valid(token)
+        }),
+        Detector::Iban => token_matches(input, |token| {
+            (15..=34).contains(&token.len())
+                && token.len() >= 4
+                && token[..2]
+                    .chars()
+                    .all(|character| character.is_ascii_uppercase())
+                && token[2..4]
+                    .chars()
+                    .all(|character| character.is_ascii_digit())
+                && iban_mod97(token) == 1
+        }),
+        Detector::NationalTaxId => token_matches(input, |token| {
+            (8..=14).contains(&token.len()) && input_context_has_tax_label(input, token)
+        }),
     }
+}
+
+fn token_matches<F>(input: &str, predicate: F) -> Vec<(usize, usize)>
+where
+    F: Fn(&str) -> bool,
+{
+    let mut result = Vec::new();
+    let mut start = None;
+    for (index, character) in input
+        .char_indices()
+        .chain(std::iter::once((input.len(), ' ')))
+    {
+        let allowed = character.is_ascii_alphanumeric() || character == '+';
+        if allowed && start.is_none() {
+            start = Some(index);
+        } else if !allowed {
+            if let Some(start) = start.take() {
+                if predicate(&input[start..index]) {
+                    result.push((start, index));
+                }
+            }
+        }
+    }
+    result
+}
+
+fn input_context_has_phone_label(input: &str, token: &str) -> bool {
+    let lower = input.to_ascii_lowercase();
+    let _ = token;
+    lower.contains("phone") || lower.contains("телефон") || lower.contains("mobile")
+}
+
+fn input_context_has_tax_label(input: &str, token: &str) -> bool {
+    let lower = input.to_ascii_lowercase();
+    let _ = token;
+    ["tax", "vat", "inn", "tin", "налог", "инн"]
+        .iter()
+        .any(|label| lower.contains(label))
 }
 
 #[cfg(test)]
@@ -696,6 +1164,57 @@ mod tests {
             redact_text_chunked(&default_policy("tool"), &input),
             Err(GuardrailError::InputTooLarge)
         ));
+    }
+
+    #[test]
+    fn pii_detectors_require_structure_or_context() {
+        let summary =
+            classify_text("phone +1 (415) 555-2671 card 4111 1111 1111 1111 tax 123456789")
+                .unwrap();
+        assert!(summary
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::Phone));
+        assert!(summary
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::PaymentCard));
+        assert!(summary
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::NationalTaxId));
+        assert_eq!(summary.required_privacy, "sensitive");
+        assert!(!classify_text("uuid 123e4567-e89b-12d3-a456-426614174000")
+            .unwrap()
+            .findings
+            .iter()
+            .any(|finding| finding.kind == SensitiveEntityKind::NationalTaxId));
+    }
+
+    #[test]
+    fn final_gate_binds_exact_payload_and_blocks_private_key() {
+        let snapshot = default_policy("provider");
+        let (decision, transformed) = evaluate_egress(
+            &snapshot,
+            DestinationClass::Provider,
+            "provider:test",
+            "contact user@example.com",
+        )
+        .unwrap();
+        assert_eq!(decision.disposition, EgressDisposition::Transformed);
+        assert!(transformed.is_some());
+        assert_ne!(
+            decision.payload_hash,
+            decision.transformed_payload_hash.unwrap_or_default()
+        );
+        let (blocked, _) = evaluate_egress(
+            &snapshot,
+            DestinationClass::External,
+            "remote:test",
+            "-----BEGIN PRIVATE KEY-----",
+        )
+        .unwrap();
+        assert_eq!(blocked.disposition, EgressDisposition::Blocked);
     }
     #[test]
     fn restart_is_ephemeral() {

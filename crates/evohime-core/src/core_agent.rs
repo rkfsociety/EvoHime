@@ -365,6 +365,17 @@ impl ModelAgent {
             ChatMessage::text(ChatRole::System, AGENT_IDENTITY_PROMPT),
             ChatMessage::text(ChatRole::User, prompt),
         ];
+        let content_privacy = messages
+            .iter()
+            .map(|message| {
+                sensitive_data_guardrails::classify_text(&message.content)
+                    .map(|summary| sensitive_data_guardrails::required_privacy(&summary))
+                    .map_err(|_| AgentRunError::Internal("egress_guardrail_unavailable".into()))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .max()
+            .unwrap_or(PrivacyClass::Public);
         let provider_messages = messages
             .iter()
             .map(|message| {
@@ -380,7 +391,7 @@ impl ModelAgent {
                 required_capabilities: vec!["chat".into()],
                 max_cost_micros_per_1k_tokens: None,
                 max_latency_ms: None,
-                required_privacy: PrivacyClass::Internal,
+                required_privacy: PrivacyClass::Internal.max(content_privacy),
                 allow_fallback: true,
                 preferred_route: None,
                 task_class: None,

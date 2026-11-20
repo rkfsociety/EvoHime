@@ -140,8 +140,17 @@ capability and otherwise shows its unavailable state.
 keystore или сигнатур секретов с upload/POST-признаками отклоняются fail-closed.
 Это блокирует известную форму command-based сбора и отправки секретов, но не
 является сетевой изоляцией ОС и не гарантирует перехват собственного сетевого
-кода произвольного executable; полная Core-owned egress boundary остаётся
-незавершённым планом 181.
+кода произвольного executable; при отсутствии process-level guarantee внешний
+dispatch получает typed `unsupported`/`blocked` outcome.
+
+Core-owned sensitive egress boundary завершена в `sensitive_data_guardrails`:
+versioned detector pack v1 классифицирует email/credentials/private keys,
+phone, Luhn payment cards, IBAN mod-97 и contextual tax IDs без хранения raw
+findings. Classification summary поднимает `required_privacy` до route
+selection, а exact final payload перед provider/tool/agent effect повторно
+проходит destination-aware gate с payload/policy/detector binding. Schema v184
+добавляет metadata-only `sensitive_egress_decisions`; OCR/image/audio и remote
+sanitizer остаются явно unsupported.
 
 Все 22 workspace packages проходят локальный rustdoc gate для каждого library
 target с `-D missing_docs`, `broken_intra_doc_links` и `invalid_html_tags`.
@@ -1025,7 +1034,7 @@ production build и bundle check, native package smoke. Полный Rust suite 
 
 ## Статус очереди на момент синхронизации
 
-Незавершённый каталог содержит планы `180–181` и `184–188`; планы `01–179`, `183` и `189` закрыты. Планы `102`,
+Незавершённый каталог содержит план `180` и планы `184–188`; планы `01–179`, `181`, `183` и `189` закрыты. Планы `102`,
 `118–130` и `144` реализованы и закрыты; их подтверждённые контракты находятся
 в `architecture.md` и `docs/architecture/*.md`, а evidence — в `release-evidence.md`. Точный порядок
 выбирается по blocking dependencies в [`plans/README.md`](plans/README.md), а

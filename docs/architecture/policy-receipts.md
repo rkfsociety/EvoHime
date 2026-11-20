@@ -137,7 +137,25 @@ policy. Environment наследуется только через scrubbed allo
 изоляция: произвольный разрешённый executable может иметь собственный сетевой
 код. Поэтому профильное `NetworkPolicy::Deny` само по себе не следует считать
 принудительно применённым firewall; неизвестные способы исходящего трафика
-остаются отдельной задачей плана 181.
+получают typed `unsupported`/`blocked`: при отсутствии process-level
+guarantee Core не считает `NetworkPolicy` firewall и не выполняет внешний
+dispatch.
+
+## Sensitive egress guardrails v1 (plan 181)
+
+`sensitive_data_guardrails` владеет versioned detector pack (`v1`) и
+metadata-only `ClassificationSummary`, keyed by exact payload SHA-256.
+Email/credential/private-key detectors сохранены; добавлены bounded phone,
+Luhn card, IBAN mod-97 и contextual tax detectors. Findings содержат только
+category/version/confidence. Derived privacy поднимается до route selection,
+а `evaluate_egress` повторно сканирует exact serialized payload после freeze.
+Его decision связывает payload, policy, detector pack и destination; changed,
+unknown, overflow и block не имеют weaker fallback. Transform выдаёт новый
+payload hash.
+
+Provider/command/external boundaries не получают raw findings. Schema v184
+хранит только hashes, categories/counts, disposition и reason code; OCR,
+image, audio и удалённый sanitizer в v1 не поддерживаются.
 
 На Windows restricted backend использует Job Object с `KILL_ON_JOB_CLOSE`;
 timeout/cancel/drop очищает дерево. Required backend failure происходит до

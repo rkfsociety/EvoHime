@@ -3043,6 +3043,9 @@ message SensitiveDataGuardrailsEvent {
   uint32 match_count = 8;
   bool blocked = 9;
   string error_code = 10;
+  string detector_pack_hash = 11;
+  string disposition = 12;
+  string findings_json = 13;
 }
 
 // Plan 41: bounded metadata-only execution policy projection. Command text,
