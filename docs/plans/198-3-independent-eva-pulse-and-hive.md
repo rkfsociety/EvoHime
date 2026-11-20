@@ -8,6 +8,8 @@ projection, но имеет bounded fallback на legacy-поля `hive_state.sn
 совместимости со старым Core.
 В schema v7 новые Hive snapshots перестают сериализовать legacy Pulse-поля;
 старые schema 1–6 продолжают читаться через fallback.
+Rust regression gate проверяет schema version и отсутствие Pulse-полей в новом
+JSON snapshot.
 
 ## UI-контракт
 

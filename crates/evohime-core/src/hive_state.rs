@@ -1340,6 +1340,9 @@ mod tests {
             serde_json::from_slice(&encoded).expect("snapshot deserializes");
         assert_eq!(decoded, snapshot);
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("valid json");
+        assert_eq!(value["schema_version"], HIVE_STATE_SCHEMA_VERSION);
+        assert!(value.get("pulse_status").is_none());
+        assert!(value.get("next_wake_at_ms").is_none());
         assert!(value["budget"]["hour_cap"].is_number());
         assert_eq!(value["queen"]["reason"], "");
     }
