@@ -17,47 +17,6 @@ fn start_task_route_hint(start: &generated::StartTask) -> Option<String> {
     }
 }
 
-#[cfg(test)]
-mod start_task_route_tests {
-    use super::start_task_route_hint;
-    use evohime_desktop_ipc::generated;
-
-    #[test]
-    fn only_hive_system_conversation_can_select_the_hive_route() {
-        let ordinary = generated::StartTask {
-            conversation_id: "ordinary-chat".into(),
-            preferred_route_hint: "hive".into(),
-            ..Default::default()
-        };
-        assert_eq!(start_task_route_hint(&ordinary), None);
-
-        let unbound = generated::StartTask {
-            preferred_route_hint: "hive".into(),
-            ..Default::default()
-        };
-        assert_eq!(start_task_route_hint(&unbound), None);
-
-        let hive = generated::StartTask {
-            conversation_id: "hive-system-chat".into(),
-            preferred_route_hint: "cloud".into(),
-            ..Default::default()
-        };
-        assert_eq!(start_task_route_hint(&hive).as_deref(), Some("hive"));
-    }
-
-    #[test]
-    fn hive_chat_requires_the_authenticated_shell_role() {
-        let client = |client_role: &str| super::super::AuthenticatedIpcClient {
-            client_id: "electron-shell".into(),
-            client_role: client_role.into(),
-        };
-        assert!(super::is_trusted_hive_shell(Some(&client("shell"))));
-        assert!(!super::is_trusted_hive_shell(Some(&client("cli"))));
-        assert!(!super::is_trusted_hive_shell(Some(&client("listener"))));
-        assert!(!super::is_trusted_hive_shell(None));
-    }
-}
-
 impl IpcBridge {
     pub(super) async fn dispatch_tasks_children<W: AsyncWrite + Unpin>(
         &self,
@@ -943,4 +902,45 @@ fn build_session_binding_from_start_task(
         permission_mode,
         isolation_mode,
     })
+}
+
+#[cfg(test)]
+mod start_task_route_tests {
+    use super::start_task_route_hint;
+    use evohime_desktop_ipc::generated;
+
+    #[test]
+    fn only_hive_system_conversation_can_select_the_hive_route() {
+        let ordinary = generated::StartTask {
+            conversation_id: "ordinary-chat".into(),
+            preferred_route_hint: "hive".into(),
+            ..Default::default()
+        };
+        assert_eq!(start_task_route_hint(&ordinary), None);
+
+        let unbound = generated::StartTask {
+            preferred_route_hint: "hive".into(),
+            ..Default::default()
+        };
+        assert_eq!(start_task_route_hint(&unbound), None);
+
+        let hive = generated::StartTask {
+            conversation_id: "hive-system-chat".into(),
+            preferred_route_hint: "cloud".into(),
+            ..Default::default()
+        };
+        assert_eq!(start_task_route_hint(&hive).as_deref(), Some("hive"));
+    }
+
+    #[test]
+    fn hive_chat_requires_the_authenticated_shell_role() {
+        let client = |client_role: &str| super::super::AuthenticatedIpcClient {
+            client_id: "electron-shell".into(),
+            client_role: client_role.into(),
+        };
+        assert!(super::is_trusted_hive_shell(Some(&client("shell"))));
+        assert!(!super::is_trusted_hive_shell(Some(&client("cli"))));
+        assert!(!super::is_trusted_hive_shell(Some(&client("listener"))));
+        assert!(!super::is_trusted_hive_shell(None));
+    }
 }
