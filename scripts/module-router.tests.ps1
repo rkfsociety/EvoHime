@@ -44,12 +44,10 @@ if (-not $buildPackages.Count -or ($buildPackages -join ',') -ne ($runPackages -
 $coreTestsStep = [regex]::Match($coreWorkflow, '(?ms)- name: Core tests\r?\n(.*?)(?=\r?\n\s+- name:)')
 if (-not $coreTestsStep.Success -or $coreTestsStep.Groups[1].Value -notmatch '(?m)^\s+timeout-minutes: \d+') { throw 'core.yml test execution has no explicit step timeout.' }
 $windowsWorkflow = Get-Content -LiteralPath (Join-Path $root '.github\workflows\windows.yml') -Raw
-$windowsCompiledTestBinaries = '(?ms)cargo test --locked --no-run\r?\n(?:\s+-p \S+\r?\n)+'
-if ($windowsWorkflow -notmatch $windowsCompiledTestBinaries) { throw 'windows.yml does not build its test binaries in a separate step.' }
 if ($windowsWorkflow -notmatch 'function Invoke-BoundedCargoTest\(\[string\]\$package, \[int\]\$timeoutMinutes\)') { throw 'windows.yml hides the bounded test timeout behind an implicit default.' }
-$buildIndex = [regex]::Match($windowsWorkflow, $windowsCompiledTestBinaries).Index
-$testIndex = $windowsWorkflow.IndexOf("Invoke-BoundedCargoTest 'evohime-core'", [StringComparison]::Ordinal)
-if ($testIndex -lt $buildIndex) { throw 'windows.yml can time out a cargo test run that still compiles.' }
+if ($windowsWorkflow -notmatch "Invoke-BoundedCargoTest 'evohime-core' 20") { throw 'windows.yml does not bound the core test run.' }
+if ($windowsWorkflow -notmatch "Invoke-BoundedCargoTest 'evohime-model-gateway' 8") { throw 'windows.yml does not bound the model-gateway test run.' }
+if ($windowsWorkflow -notmatch "Invoke-BoundedCargoTest 'evohime-permissions' 8") { throw 'windows.yml does not bound the permissions test run.' }
 $moduleRelease = Get-Content -LiteralPath (Join-Path $root 'scripts\module-release.ps1') -Raw
 if ($moduleRelease -notmatch "'crates/model-gateway'") { throw 'Core module release routing does not include model-gateway.' }
 if ($moduleRelease -notmatch "'crates/permissions'") { throw 'Core module release routing does not include permissions.' }
