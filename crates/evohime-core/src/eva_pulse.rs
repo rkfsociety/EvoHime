@@ -2960,7 +2960,7 @@ mod tests {
         assert_eq!(
             decide(&report, now_ms),
             PulseDecision::Sleep {
-                wake_at_ms: Some(next_utc_midnight(now_ms)),
+                wake_at_ms: Some(quota_wake_at(now_ms, report.quota_reset_utc_midnight)),
                 reason: "routmy_quota_exhausted",
             }
         );
@@ -2978,7 +2978,10 @@ mod tests {
         assert_eq!(
             decide(&fallback_exhausted, now_ms),
             PulseDecision::Sleep {
-                wake_at_ms: Some(next_utc_midnight(now_ms)),
+                wake_at_ms: Some(quota_wake_at(
+                    now_ms,
+                    fallback_exhausted.quota_reset_utc_midnight,
+                )),
                 reason: "routmy_quota_exhausted",
             }
         );
