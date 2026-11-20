@@ -163,7 +163,13 @@ pub(crate) async fn build_hive_observation_for_hive(
     if let Some(quota) = route.daily_token_quota {
         observation.daily_token_quota = Some(quota);
         observation.quota_reset_utc_midnight = route.quota_reset_utc_midnight;
-        if let Ok(used) = journal.provider_tokens_since(day_start_ms, transport).await {
+        if let Ok(used) = journal
+            .provider_tokens_since(
+                quota_window_start_ms(observation.now_ms, route.quota_reset_utc_midnight),
+                transport,
+            )
+            .await
+        {
             observation.daily_tokens_used = used;
         }
     }
@@ -210,8 +216,13 @@ pub(crate) async fn build_hive_observation_for_hive(
                 observation.fallback_model = Some(fb_model.to_owned());
             }
             if let Some(quota) = fallback_route.daily_token_quota {
+                observation.fallback_daily_token_quota = Some(quota);
+                observation.fallback_quota_reset_utc_midnight = fallback_route.quota_reset_utc_midnight;
                 let used = journal
-                    .provider_tokens_since(day_start_ms, fallback_transport)
+                    .provider_tokens_since(
+                        quota_window_start_ms(observation.now_ms, fallback_route.quota_reset_utc_midnight),
+                        fallback_transport,
+                    )
                     .await
                     .unwrap_or(0);
                 observation.fallback_tokens_remaining = Some(quota.saturating_sub(used));
@@ -220,6 +231,14 @@ pub(crate) async fn build_hive_observation_for_hive(
     }
 
     observation
+}
+
+fn quota_window_start_ms(now_ms: i64, reset_utc_midnight: bool) -> i64 {
+    if reset_utc_midnight {
+        now_ms.div_euclid(HIVE_DAY_WINDOW_MS) * HIVE_DAY_WINDOW_MS
+    } else {
+        now_ms.saturating_sub(HIVE_DAY_WINDOW_MS)
+    }
 }
 
 async fn task_metrics(journal: &EventJournal, now_ms: i64) -> (u32, u64) {

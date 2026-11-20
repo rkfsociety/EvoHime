@@ -319,6 +319,8 @@ interface HiveStateView {
     readonly fallbackProvider: string | null
     readonly fallbackModel: string | null
     readonly fallbackTokensRemaining: number | null
+    readonly fallbackDailyTokenQuota: number | null
+    readonly fallbackQuotaResetUtcMidnight: boolean
   }
   readonly dailyBudgetUsd: number
   readonly evaWorkspacePath: string | null
@@ -327,6 +329,14 @@ interface HiveStateView {
   readonly hiveModel: string | null
   readonly hiveFallbackProviderProfile: string | null
   readonly hiveFallbackModel: string | null
+  readonly hiveProviderLimits: ProviderLimits
+  readonly hiveFallbackProviderLimits: ProviderLimits
+  readonly hiveDailyTokenQuota: number
+  readonly hiveFallbackDailyTokenQuota: number
+  readonly hiveTokenQuotaConfigured: boolean
+  readonly hiveFallbackTokenQuotaConfigured: boolean
+  readonly hiveQuotaResetUtcMidnight: boolean
+  readonly hiveFallbackQuotaResetUtcMidnight: boolean
   readonly proactiveEvolutionEnabled: boolean
   readonly pulseStatus: string
   readonly nextWakeAtMs: number | null
@@ -439,7 +449,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   // Core может отставать от UI. Известные версии проекции читаются с defaults
   // для отсутствующих секций; неизвестная версия отклоняется целиком.
   const version = root['schema_version']
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5) return null
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7) return null
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -528,7 +538,11 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
         : null,
       fallbackTokensRemaining: typeof budget['fallback_tokens_remaining'] === 'number' && Number.isSafeInteger(budget['fallback_tokens_remaining']) && budget['fallback_tokens_remaining'] >= 0
         ? budget['fallback_tokens_remaining']
-        : null
+        : null,
+      fallbackDailyTokenQuota: typeof budget['fallback_daily_token_quota'] === 'number' && Number.isSafeInteger(budget['fallback_daily_token_quota']) && budget['fallback_daily_token_quota'] >= 0
+        ? budget['fallback_daily_token_quota']
+        : null,
+      fallbackQuotaResetUtcMidnight: budget['fallback_quota_reset_utc_midnight'] === true
     },
     dailyBudgetUsd: typeof root['daily_budget_usd'] === 'number' && Number.isFinite(root['daily_budget_usd']) && root['daily_budget_usd'] >= 0
       ? Math.min(root['daily_budget_usd'], 10_000)
@@ -555,6 +569,22 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
     hiveFallbackModel: typeof root['hive_fallback_model'] === 'string' && root['hive_fallback_model'].trim().length > 0
       ? root['hive_fallback_model'].slice(0, 128)
       : null,
+    hiveProviderLimits: {
+      rpm: count(record(root['hive_provider_limits'])['rpm'], 10_000),
+      rph: count(record(root['hive_provider_limits'])['rph'], 10_000),
+      rpd: count(record(root['hive_provider_limits'])['rpd'], 10_000)
+    },
+    hiveFallbackProviderLimits: {
+      rpm: count(record(root['hive_fallback_provider_limits'])['rpm'], 10_000),
+      rph: count(record(root['hive_fallback_provider_limits'])['rph'], 10_000),
+      rpd: count(record(root['hive_fallback_provider_limits'])['rpd'], 10_000)
+    },
+    hiveDailyTokenQuota: count(root['hive_daily_token_quota'], 1_000_000_000_000),
+    hiveFallbackDailyTokenQuota: count(root['hive_fallback_daily_token_quota'], 1_000_000_000_000),
+    hiveTokenQuotaConfigured: root['hive_token_quota_configured'] === true,
+    hiveFallbackTokenQuotaConfigured: root['hive_fallback_token_quota_configured'] === true,
+    hiveQuotaResetUtcMidnight: root['hive_quota_reset_utc_midnight'] === true,
+    hiveFallbackQuotaResetUtcMidnight: root['hive_fallback_quota_reset_utc_midnight'] === true,
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
     pulseStatus: text(root['pulse_status'], 16),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
@@ -577,6 +607,68 @@ function sameRepositoryPath(left: string, right: string): boolean {
 function hivePercent(value: number, ceiling: number): number {
   if (ceiling <= 0) return 0
   return Math.max(0, Math.min(100, Math.round((value / ceiling) * 100)))
+}
+
+function HiveRequestLimitsEditor({
+  label,
+  limits,
+  quota,
+  resetAtUtcMidnight,
+  disabled,
+  onLimitsChange,
+  onQuotaChange,
+  onResetChange
+}: {
+  readonly label: string
+  readonly limits: ProviderLimits
+  readonly quota: string
+  readonly resetAtUtcMidnight: boolean
+  readonly disabled: boolean
+  readonly onLimitsChange: (limits: ProviderLimits) => void
+  readonly onQuotaChange: (quota: string) => void
+  readonly onResetChange: (reset: boolean) => void
+}): React.JSX.Element {
+  const prefix = label === 'Основной провайдер Улья' ? 'hive-primary' : 'hive-fallback'
+  return (
+    <fieldset className="provider-form__tier" aria-label={translate(label)}>
+      <legend>{translate(label)}</legend>
+      <div className="provider-form__grid">
+        {(['rpm', 'rph', 'rpd'] as const).map((key) => (
+          <label key={key} htmlFor={`${prefix}-${key}`}>
+            {key.toUpperCase()}
+            <input
+              id={`${prefix}-${key}`}
+              aria-label={`${translate(label)} ${key.toUpperCase()}`}
+              type="number"
+              min={0}
+              max={10_000}
+              step={1}
+              value={limits[key]}
+              disabled={disabled}
+              onChange={(event) => onLimitsChange({ ...limits, [key]: Number(event.target.value) || 0 })}
+            />
+          </label>
+        ))}
+      </div>
+      <label htmlFor={`${prefix}-daily-token-quota`}>
+        {translate('Дневная квота токенов (0 — без лимита)')}
+        <input
+          id={`${prefix}-daily-token-quota`}
+          type="number"
+          min={0}
+          max={1_000_000_000_000}
+          step={1}
+          value={quota}
+          disabled={disabled}
+          onChange={(event) => onQuotaChange(event.target.value)}
+        />
+      </label>
+      <label>
+        <input type="checkbox" checked={resetAtUtcMidnight} disabled={disabled || !quota || quota === '0'} onChange={(event) => onResetChange(event.target.checked)} />
+        {translate('Сброс в полночь UTC')}
+      </label>
+    </fieldset>
+  )
 }
 
 // `events` holds the newest event first (App.tsx prepends on receipt), so
@@ -1071,7 +1163,9 @@ const EMPTY_BUDGET: HiveStateView['budget'] = {
   quotaResetUtcMidnight: false,
   fallbackProvider: null,
   fallbackModel: null,
-  fallbackTokensRemaining: null
+  fallbackTokensRemaining: null,
+  fallbackDailyTokenQuota: null,
+  fallbackQuotaResetUtcMidnight: false
 }
 
 /** Formats the exact reset moment Core computed, never a fixed default. */
@@ -1403,6 +1497,15 @@ export function HiveDashboard({
   const [hiveProviderSaved, setHiveProviderSaved] = useState(false)
   const [hiveApiKeySaved, setHiveApiKeySaved] = useState(false)
   const [dailyBudgetSaved, setDailyBudgetSaved] = useState(false)
+  const [hivePrimaryLimitsDraft, setHivePrimaryLimitsDraft] = useState<ProviderLimits>({ rpm: 0, rph: 0, rpd: 0 })
+  const [hiveFallbackLimitsDraft, setHiveFallbackLimitsDraft] = useState<ProviderLimits>({ rpm: 0, rph: 0, rpd: 0 })
+  const [hivePrimaryQuotaDraft, setHivePrimaryQuotaDraft] = useState('0')
+  const [hiveFallbackQuotaDraft, setHiveFallbackQuotaDraft] = useState('0')
+  const [hivePrimaryQuotaResetDraft, setHivePrimaryQuotaResetDraft] = useState(false)
+  const [hiveFallbackQuotaResetDraft, setHiveFallbackQuotaResetDraft] = useState(false)
+  const [hiveLimitsBusy, setHiveLimitsBusy] = useState(false)
+  const [hiveLimitsError, setHiveLimitsError] = useState<string | null>(null)
+  const [hiveLimitsSaved, setHiveLimitsSaved] = useState(false)
   const [proactiveEvolutionEnabled, setProactiveEvolutionEnabled] = useState(false)
   const [proactiveEvolutionBusy, setProactiveEvolutionBusy] = useState(false)
   const [proactiveEvolutionError, setProactiveEvolutionError] = useState<string | null>(null)
@@ -1594,6 +1697,15 @@ export function HiveDashboard({
   }, [hive?.dailyBudgetUsd])
   useEffect(() => {
     if (!hive) return
+    setHivePrimaryLimitsDraft(hive.hiveProviderLimits)
+    setHiveFallbackLimitsDraft(hive.hiveFallbackProviderLimits)
+    setHivePrimaryQuotaDraft(String(hive.hiveTokenQuotaConfigured ? hive.hiveDailyTokenQuota : 0))
+    setHiveFallbackQuotaDraft(String(hive.hiveFallbackTokenQuotaConfigured ? hive.hiveFallbackDailyTokenQuota : 0))
+    setHivePrimaryQuotaResetDraft(hive.hiveQuotaResetUtcMidnight)
+    setHiveFallbackQuotaResetDraft(hive.hiveFallbackQuotaResetUtcMidnight)
+  }, [hive?.hiveProviderLimits.rpm, hive?.hiveProviderLimits.rph, hive?.hiveProviderLimits.rpd, hive?.hiveFallbackProviderLimits.rpm, hive?.hiveFallbackProviderLimits.rph, hive?.hiveFallbackProviderLimits.rpd, hive?.hiveDailyTokenQuota, hive?.hiveFallbackDailyTokenQuota, hive?.hiveTokenQuotaConfigured, hive?.hiveFallbackTokenQuotaConfigured, hive?.hiveQuotaResetUtcMidnight, hive?.hiveFallbackQuotaResetUtcMidnight])
+  useEffect(() => {
+    if (!hive) return
     setProactiveEvolutionEnabled(hive.proactiveEvolutionEnabled)
   }, [hive?.proactiveEvolutionEnabled])
   const hiveSettingsResult = latest(events, 'hive_settings.saved')
@@ -1612,6 +1724,12 @@ export function HiveDashboard({
         daily_budget_usd?: number | null
         proactive_evolution_enabled?: boolean
         error_code?: string
+      }
+      if (result.setting_key === 'hive_request_limits') {
+        setHiveLimitsBusy(false)
+        setHiveLimitsSaved(result.accepted === true)
+        setHiveLimitsError(result.accepted ? null : (result.error_code || 'Core отклонил лимиты Улья.'))
+        return
       }
       if (result.setting_key === 'watched_repositories') {
         if (Array.isArray(result.watched_repositories)) {
@@ -2075,6 +2193,42 @@ export function HiveDashboard({
     }
   }, [api, dailyBudgetDraft, requestSnapshot])
 
+  const saveHiveRequestLimits = useCallback(async (): Promise<void> => {
+    if (!api) return
+    const values = [hivePrimaryLimitsDraft.rpm, hivePrimaryLimitsDraft.rph, hivePrimaryLimitsDraft.rpd,
+      hiveFallbackLimitsDraft.rpm, hiveFallbackLimitsDraft.rph, hiveFallbackLimitsDraft.rpd]
+    const primaryQuota = Number(hivePrimaryQuotaDraft)
+    const fallbackQuota = Number(hiveFallbackQuotaDraft)
+    if (values.some((value) => !Number.isInteger(value) || value < 0 || value > 10_000)
+      || !Number.isSafeInteger(primaryQuota) || primaryQuota < 0 || primaryQuota > 1_000_000_000_000
+      || !Number.isSafeInteger(fallbackQuota) || fallbackQuota < 0 || fallbackQuota > 1_000_000_000_000) {
+      setHiveLimitsError('Лимиты запросов должны быть 0–10000, квота токенов — целым числом от 0 до 1000000000000.')
+      return
+    }
+    setHiveLimitsBusy(true)
+    setHiveLimitsError(null)
+    setHiveLimitsSaved(false)
+    try {
+      const value = JSON.stringify({
+        primary_limits: hivePrimaryLimitsDraft,
+        fallback_limits: hiveFallbackLimitsDraft,
+        primary_token_quota: primaryQuota,
+        fallback_token_quota: fallbackQuota,
+        primary_quota_reset_utc_midnight: hivePrimaryQuotaResetDraft,
+        fallback_quota_reset_utc_midnight: hiveFallbackQuotaResetDraft
+      })
+      const outcome = await api.invoke('core.setHiveSetting', { key: 'hive_request_limits', value })
+      if (!outcome.ok) {
+        setHiveLimitsError(outcome.message)
+        setHiveLimitsBusy(false)
+        return
+      }
+    } catch {
+      setHiveLimitsError('Не удалось сохранить лимиты Улья: Core не ответил.')
+      setHiveLimitsBusy(false)
+    }
+  }, [api, hiveFallbackLimitsDraft, hiveFallbackQuotaDraft, hiveFallbackQuotaResetDraft, hivePrimaryLimitsDraft, hivePrimaryQuotaDraft, hivePrimaryQuotaResetDraft, requestSnapshot])
+
   const toggleProactiveEvolution = useCallback(async (nextEnabled: boolean): Promise<void> => {
     if (!api) return
     setProactiveEvolutionBusy(true)
@@ -2440,9 +2594,9 @@ export function HiveDashboard({
       : budget.fallbackProvider
   const effectiveFallbackModel = budget.fallbackModel || hive?.hiveFallbackModel || null
   const routmyStatusText = budget.provider === 'rout'
-    ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota ?? 650000}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
+    ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
     : (budget.provider === 'literouter' || budget.provider === 'openrouter') && routmyConfigured
-      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining ?? 650000} ${translate('токенов')})${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
+      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining} ${translate('токенов')})${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
       : fallbackLabel
         ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
@@ -3298,6 +3452,36 @@ export function HiveDashboard({
                 ) : hiveFallbackApiKeySaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('Резервный API-ключ Улья сохранён')}</small>
                 ) : null}
+              </section>
+
+              <section className="hive-settings-section">
+                <h3>{translate('Лимиты запросов и токенов Улья')}</h3>
+                <small className="hive-settings-hint">{translate('Настройки действуют только на изолированные основной и резервный маршруты Улья. Ноль означает без ограничения.')}</small>
+                <HiveRequestLimitsEditor
+                  label="Основной провайдер Улья"
+                  limits={hivePrimaryLimitsDraft}
+                  quota={hivePrimaryQuotaDraft}
+                  resetAtUtcMidnight={hivePrimaryQuotaResetDraft}
+                  disabled={!connected || hiveLimitsBusy}
+                  onLimitsChange={setHivePrimaryLimitsDraft}
+                  onQuotaChange={setHivePrimaryQuotaDraft}
+                  onResetChange={setHivePrimaryQuotaResetDraft}
+                />
+                <HiveRequestLimitsEditor
+                  label="Резервный провайдер Улья"
+                  limits={hiveFallbackLimitsDraft}
+                  quota={hiveFallbackQuotaDraft}
+                  resetAtUtcMidnight={hiveFallbackQuotaResetDraft}
+                  disabled={!connected || hiveLimitsBusy}
+                  onLimitsChange={setHiveFallbackLimitsDraft}
+                  onQuotaChange={setHiveFallbackQuotaDraft}
+                  onResetChange={setHiveFallbackQuotaResetDraft}
+                />
+                <button type="button" disabled={!connected || hiveLimitsBusy} onClick={() => void saveHiveRequestLimits()}>
+                  {translate(hiveLimitsBusy ? 'Сохранение…' : 'Сохранить лимиты Улья')}
+                </button>
+                {hiveLimitsError ? <p role="alert" className="hive-console__error">{translate(hiveLimitsError)}</p> : null}
+                {hiveLimitsSaved ? <small role="status" className="hive-settings-hint">✓ {translate('Лимиты Улья сохранены')}</small> : null}
               </section>
 
               <section className="hive-settings-section">

@@ -67,7 +67,7 @@ function buildOpenAICompatibleProfileSchema(profileId: ProviderProfileId): Provi
     showTierSelector: false,
     supportsRequestPacing: false,
     supportsFreeAccessProbe: isOpenRouter || isCloudflare,
-    supportsModelLimits: !isRout,
+    supportsModelLimits: true,
     supportsEvidenceRouting: isOpenRouter,
     supportsAutoProbe: isOpenRouter,
     supportsLocalModelDownload: false,
@@ -107,7 +107,7 @@ const LITEROUTER_SCHEMA: ProviderUISchema = {
   description: DEFAULT_API_KEY_DESCRIPTION,
   saveButtonLabel: DEFAULT_SAVE_BUTTON_LABEL,
   pacingHint:
-    'LiteRouter ограничивает частоту сообщений по тарифу, поэтому пауза включена по умолчанию. Для остальных провайдеров она по умолчанию выключена; настройка хранится отдельно для каждого провайдера.'
+    'Пауза — дополнительное локальное ограничение EvoHime. Она выключена по умолчанию и не отражает лимиты аккаунта провайдера.'
 }
 
 export const PROVIDER_SCHEMAS: Record<string, ProviderUISchema> = {
@@ -139,7 +139,7 @@ export const PROVIDER_SCHEMAS: Record<string, ProviderUISchema> = {
     showTierSelector: false,
     supportsRequestPacing: false,
     supportsFreeAccessProbe: false,
-    supportsModelLimits: false,
+    supportsModelLimits: true,
     supportsEvidenceRouting: false,
     supportsAutoProbe: false,
     supportsLocalModelDownload: true,

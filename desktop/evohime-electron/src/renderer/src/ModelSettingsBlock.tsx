@@ -7,6 +7,8 @@ export interface ModelLimitDraft {
   readonly rpm: string
   readonly rph: string
   readonly rpd: string
+  readonly dailyTokenQuota: string
+  readonly quotaResetUtcMidnight: boolean
   readonly pricingEnabled: boolean
   readonly inputUsdPer1M: string
   readonly cachedInputUsdPer1M: string
@@ -36,15 +38,15 @@ export function ModelSettingsBlock({
 }: ModelSettingsBlockProps): React.JSX.Element {
   return (
     <fieldset className="provider-form__tier" aria-label={translate('Лимиты запросов модели')}>
-      <legend>{translate('Лимиты запросов модели')}</legend>
+      <legend>{translate('Лимиты запросов провайдера и моделей')}</legend>
       <p className="provider-form__hint">
-        {translate('Ноль означает без ограничения. Лимиты независимы для каждой модели выбранного провайдера; выключены по умолчанию.')}
+        {translate('Ноль означает без ограничения. Задай общие лимиты для всех моделей или отдельные лимиты для конкретных моделей; по умолчанию ограничения выключены.')}
       </p>
       <div className="provider-form__model-cards">
         {entries.map((entry, index) => {
           const trimmedModel = entry.modelId.trim()
-          const hasCustomOption = trimmedModel.length > 0 && !catalogModels.includes(trimmedModel)
-          const hasOptions = catalogModels.length > 0 || hasCustomOption
+          const hasCustomOption = trimmedModel.length > 0 && trimmedModel !== '*' && !catalogModels.includes(trimmedModel)
+          const hasOptions = true
           const allowManualInput = catalogModels.length === 0 && index > 0
           const modelInputId = `provider-limit-model-${entry.key}`
           const rpmId = `provider-model-rpm-${entry.key}`
@@ -83,6 +85,7 @@ export function ModelSettingsBlock({
                           {trimmedModel} ({translate('текущая, не найдена в каталоге')})
                         </option>
                       ) : null}
+                      <option value="*">{translate('Все модели провайдера')}</option>
                       {catalogModels.map((modelId) => (
                         <option key={modelId} value={modelId}>
                           {modelId}
@@ -110,7 +113,7 @@ export function ModelSettingsBlock({
                   onChange={(event) => onUpdateEntry(entry.key, { enabled: event.target.checked })}
                   disabled={busy || trimmedModel.length === 0}
                 />
-                {translate('Включить лимиты для этой модели')}
+                {translate(trimmedModel === '*' ? 'Включить общие лимиты провайдера' : 'Включить лимиты для этой модели')}
               </label>
 
               <div className="provider-form__grid">
@@ -155,7 +158,7 @@ export function ModelSettingsBlock({
                 </label>
               </div>
 
-              <label>
+              {trimmedModel !== '*' ? <label>
                 <input
                   type="checkbox"
                   checked={entry.pricingEnabled}
@@ -163,9 +166,36 @@ export function ModelSettingsBlock({
                   disabled={busy || trimmedModel.length === 0}
                 />
                 {translate('Указать стоимость токенов (USD за 1 млн)')}
-              </label>
+              </label> : null}
 
-              <div className="provider-form__grid">
+              {trimmedModel === '*' ? (
+                <>
+                  <label htmlFor={`provider-daily-token-quota-${entry.key}`}>
+                    {translate('Дневная квота токенов (0 — без лимита)')}
+                    <input
+                      id={`provider-daily-token-quota-${entry.key}`}
+                      type="number"
+                      min={0}
+                      max={1_000_000_000_000}
+                      step={1}
+                      value={entry.dailyTokenQuota}
+                      onChange={(event) => onUpdateEntry(entry.key, { dailyTokenQuota: event.target.value })}
+                      disabled={busy || !entry.enabled}
+                    />
+                  </label>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={entry.quotaResetUtcMidnight}
+                      onChange={(event) => onUpdateEntry(entry.key, { quotaResetUtcMidnight: event.target.checked })}
+                      disabled={busy || !entry.enabled || !entry.dailyTokenQuota}
+                    />
+                    {translate('Сброс в полночь UTC')}
+                  </label>
+                </>
+              ) : null}
+
+              {trimmedModel !== '*' ? <div className="provider-form__grid">
                 <label htmlFor={priceInputId}>
                   {translate('Вход ($ / 1M)')}
                   <input
@@ -205,7 +235,7 @@ export function ModelSettingsBlock({
                     disabled={busy || !entry.pricingEnabled}
                   />
                 </label>
-              </div>
+              </div> : null}
             </div>
           )
         })}

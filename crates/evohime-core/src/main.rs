@@ -207,6 +207,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             hive_settings.hive_fallback_provider_profile.as_deref(),
             hive_settings.hive_fallback_model.as_deref(),
         );
+        config.apply_hive_route_limits(
+            "hive",
+            hive_settings.hive_provider_limits,
+            hive_settings.hive_daily_token_quota,
+            hive_settings.hive_quota_reset_utc_midnight,
+        );
+        config.apply_hive_route_limits(
+            "hive_fallback",
+            hive_settings.hive_fallback_provider_limits,
+            hive_settings.hive_fallback_daily_token_quota,
+            hive_settings.hive_fallback_quota_reset_utc_midnight,
+        );
     }
     let model_snapshot = model_config.as_ref().and_then(|config| {
         config
@@ -287,6 +299,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 config,
                 provider_catalog_cache.clone(),
             )
+            .with_quota_journal(journal.clone())
             .with_free_access_policy(
                 free_access_routing_mode,
                 allow_paid_free_fallback,

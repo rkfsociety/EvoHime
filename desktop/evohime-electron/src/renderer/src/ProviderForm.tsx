@@ -102,7 +102,7 @@ function buildModelLimitDrafts(
   if (limits) {
     for (const [modelId, settings] of Object.entries(limits)) {
       const trimmed = modelId.trim()
-      if (!trimmed || seen.has(trimmed)) continue
+      if (trimmed.length === 0 || seen.has(trimmed)) continue
       seen.add(trimmed)
       entries.push({
         key: nextKey(),
@@ -111,12 +111,31 @@ function buildModelLimitDrafts(
         rpm: String(settings.rpm ?? 0),
         rph: String(settings.rph ?? 0),
         rpd: String(settings.rpd ?? 0),
+        dailyTokenQuota: String(settings.dailyTokenQuota ?? ''),
+        quotaResetUtcMidnight: settings.quotaResetUtcMidnight === true,
         pricingEnabled: settings.pricing !== undefined,
         inputUsdPer1M: String(settings.pricing?.inputUsdPer1M ?? 0),
         cachedInputUsdPer1M: String(settings.pricing?.cachedInputUsdPer1M ?? 0),
         outputUsdPer1M: String(settings.pricing?.outputUsdPer1M ?? 0)
       })
     }
+  }
+
+  if (!seen.has('*')) {
+    entries.unshift({
+      key: nextKey(),
+      modelId: '*',
+      enabled: false,
+      rpm: '0',
+      rph: '0',
+      rpd: '0',
+      dailyTokenQuota: '',
+      quotaResetUtcMidnight: false,
+      pricingEnabled: false,
+      inputUsdPer1M: '0',
+      cachedInputUsdPer1M: '0',
+      outputUsdPer1M: '0'
+    })
   }
 
   if (trimmedActive && !seen.has(trimmedActive)) {
@@ -127,6 +146,8 @@ function buildModelLimitDrafts(
       rpm: '0',
       rph: '0',
       rpd: '0',
+      dailyTokenQuota: '',
+      quotaResetUtcMidnight: false,
       pricingEnabled: false,
       inputUsdPer1M: '0',
       cachedInputUsdPer1M: '0',
@@ -142,6 +163,8 @@ function buildModelLimitDrafts(
       rpm: '0',
       rph: '0',
       rpd: '0',
+      dailyTokenQuota: '',
+      quotaResetUtcMidnight: false,
       pricingEnabled: false,
       inputUsdPer1M: '0',
       cachedInputUsdPer1M: '0',
@@ -176,9 +199,9 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
   const [probePolicy, setProbePolicy] = useState<FreeAccessProbePolicy>('disabled')
   const [routingMode, setRoutingMode] = useState<FreeAccessRoutingMode>('any')
   const [allowPaidFallback, setAllowPaidFallback] = useState(false)
-  const [pacingEnabled, setPacingEnabled] = useState(true)
-  const [pacingInterval, setPacingInterval] = useState('8000')
-  const [pacingFreeInterval, setPacingFreeInterval] = useState('18948')
+  const [pacingEnabled, setPacingEnabled] = useState(false)
+  const [pacingInterval, setPacingInterval] = useState('0')
+  const [pacingFreeInterval, setPacingFreeInterval] = useState('0')
   const [catalogModels, setCatalogModels] = useState<readonly string[]>([])
   const cardKeySeq = useRef(0)
   const nextCardKey = useCallback(() => {
@@ -394,6 +417,8 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           rpm: '0',
           rph: '0',
           rpd: '0',
+          dailyTokenQuota: '',
+          quotaResetUtcMidnight: false,
           pricingEnabled: false,
           inputUsdPer1M: '0',
           cachedInputUsdPer1M: '0',
@@ -423,7 +448,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
     if (schema.supportsModelLimits) {
       for (const entry of modelLimitEntries) {
         const trimmedModel = entry.modelId.trim()
-        if (!trimmedModel) continue
+        if (!trimmedModel && trimmedModel !== '*') continue
         const rpm = parseModelCap(entry.rpm)
         const rph = parseModelCap(entry.rph)
         const rpd = parseModelCap(entry.rpd)
@@ -431,8 +456,17 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           setStatus({ kind: 'failed', message: 'Лимиты RPM/RPH/RPD должны быть целыми числами от 0 до 10000.' })
           return
         }
+        let dailyTokenQuota: number | null = null
+        if (trimmedModel === '*' && entry.dailyTokenQuota.trim().length > 0) {
+          const parsedQuota = Number(entry.dailyTokenQuota)
+          if (!Number.isSafeInteger(parsedQuota) || parsedQuota < 0 || parsedQuota > 1_000_000_000_000) {
+            setStatus({ kind: 'failed', message: 'Дневная квота токенов должна быть целым числом от 0 до 1000000000000.' })
+            return
+          }
+          dailyTokenQuota = parsedQuota > 0 ? parsedQuota : null
+        }
         let pricing: ModelRateLimitSettings['pricing']
-        if (entry.pricingEnabled) {
+        if (entry.pricingEnabled && trimmedModel !== '*') {
           const inputUsdPer1M = parseModelPrice(entry.inputUsdPer1M)
           const cachedInputUsdPer1M = parseModelPrice(entry.cachedInputUsdPer1M)
           const outputUsdPer1M = parseModelPrice(entry.outputUsdPer1M)
@@ -447,6 +481,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
           rpm,
           rph,
           rpd,
+          ...(trimmedModel === '*' ? { dailyTokenQuota, quotaResetUtcMidnight: entry.quotaResetUtcMidnight } : {}),
           ...(pricing ? { pricing } : {})
         }
       }
@@ -465,9 +500,7 @@ export function ProviderForm({ connection = 'starting', events = [] }: ProviderF
       freeAccessRoutingMode: routingMode,
       allowPaidFallback: routingMode === 'prefer_free' && allowPaidFallback,
       requestPacing: { enabled: pacingEnabled, intervalMs, freeIntervalMs },
-      modelRateLimits: schema.supportsModelLimits
-        ? nextModelRateLimits
-        : (selectedProfile?.modelRateLimits ?? {}),
+      modelRateLimits: schema.supportsModelLimits ? nextModelRateLimits : (selectedProfile?.modelRateLimits ?? {}),
       ...(provider === 'openai_compatible' ? { profileId } : {}),
       ...(schema.requiresAccountId ? { accountId } : {})
     })

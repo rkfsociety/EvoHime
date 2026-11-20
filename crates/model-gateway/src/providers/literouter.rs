@@ -384,9 +384,24 @@ impl LiteRouterProvider {
 
     /// Whether a rolling cap is actually configured for this model.
     fn tracks_model_limits(&self, model: &str) -> bool {
-        self.model_rate_limits.get(model).is_some_and(|limits| {
+        self.model_limits_for(model).is_some_and(|limits| {
             limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
         })
+    }
+
+    fn model_limits_for(&self, model: &str) -> Option<&ModelRateLimitConfig> {
+        self.model_rate_limits
+            .get(model)
+            .filter(|limits| limits.enabled)
+            .or_else(|| self.model_rate_limits.get("*").filter(|limits| limits.enabled))
+    }
+
+    fn request_limit_key<'a>(&self, model: &'a str) -> &'a str {
+        if self.model_rate_limits.get(model).is_some_and(|limits| limits.enabled) {
+            model
+        } else {
+            "*"
+        }
     }
 
     async fn wait_for_request_slot(&self, model: &str) {
@@ -403,11 +418,11 @@ impl LiteRouterProvider {
                 gate.last_request
                     .and_then(|previous| interval.checked_sub(previous.elapsed()))
             });
-            if let Some(limits) = self.model_rate_limits.get(model).filter(|limits| {
+            if let Some(limits) = self.model_limits_for(model).filter(|limits| {
                 limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
             }) {
                 let now = Instant::now();
-                let timestamps = gate.model_requests.entry(model.to_owned()).or_default();
+                let timestamps = gate.model_requests.entry(self.request_limit_key(model).to_owned()).or_default();
                 while timestamps.front().is_some_and(|started| {
                     now.duration_since(*started) >= Duration::from_secs(86_400)
                 }) {
@@ -447,7 +462,7 @@ impl LiteRouterProvider {
             gate.last_request = Some(now);
             if self.tracks_model_limits(model) {
                 gate.model_requests
-                    .entry(model.to_owned())
+                    .entry(self.request_limit_key(model).to_owned())
                     .or_default()
                     .push_back(now);
             }
@@ -1051,6 +1066,8 @@ mod tests {
                 rpm: 1,
                 rph: 0,
                 rpd: 0,
+                daily_token_quota: None,
+                quota_reset_utc_midnight: false,
                 pricing: None,
             },
         );
@@ -1344,17 +1361,17 @@ mod tests {
 
     #[test]
     fn paces_free_and_paid_models() {
-        let pacing = RequestPacingConfig::for_provider(ProviderKind::LiteRouter);
+        let pacing = RequestPacingConfig { enabled: true, interval_ms: 8_000, free_interval_ms: 18_948 };
         assert_eq!(
             pacing.interval_for_model("some-model:free"),
             Some(Duration::from_millis(
-                RequestPacingConfig::LITEROUTER_FREE_INTERVAL_MS
+                18_948
             ))
         );
         assert_eq!(
             pacing.interval_for_model("gemini-3.1-flash-lite-thinking"),
             Some(Duration::from_millis(
-                RequestPacingConfig::LITEROUTER_INTERVAL_MS
+                8_000
             ))
         );
         assert_eq!(

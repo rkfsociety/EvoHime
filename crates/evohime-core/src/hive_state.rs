@@ -18,7 +18,7 @@ use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
-pub const HIVE_STATE_SCHEMA_VERSION: u32 = 5;
+pub const HIVE_STATE_SCHEMA_VERSION: u32 = 7;
 /// Name shown for the single queen in the local hive.
 pub const DEFAULT_QUEEN_NAME: &str = "EvoHime";
 /// Maximum number of departments rendered at once.
@@ -179,6 +179,12 @@ pub struct HiveBudget {
     /// Whether `daily_token_quota` resets at 00:00 UTC.
     #[serde(default)]
     pub quota_reset_utc_midnight: bool,
+    /// Configured fallback token quota, if any.
+    #[serde(default)]
+    pub fallback_daily_token_quota: Option<u64>,
+    /// Whether the fallback token quota resets at UTC midnight.
+    #[serde(default)]
+    pub fallback_quota_reset_utc_midnight: bool,
     /// Configured free fallback provider identifier (e.g. `routmy`), if any.
     #[serde(default)]
     pub fallback_provider: Option<String>,
@@ -254,6 +260,10 @@ pub struct HiveObservation {
     pub daily_tokens_used: u64,
     /// Whether the active route's daily token quota resets at 00:00 UTC.
     pub quota_reset_utc_midnight: bool,
+    /// Configured fallback token quota, if any.
+    pub fallback_daily_token_quota: Option<u64>,
+    /// Whether the fallback token quota resets at UTC midnight.
+    pub fallback_quota_reset_utc_midnight: bool,
     /// Configured free fallback provider identifier (e.g. `routmy`), if any.
     pub fallback_provider: Option<String>,
     /// Configured model for the fallback provider route, if any.
@@ -289,6 +299,8 @@ impl Default for HiveObservation {
             daily_token_quota: None,
             daily_tokens_used: 0,
             quota_reset_utc_midnight: false,
+            fallback_daily_token_quota: None,
+            fallback_quota_reset_utc_midnight: false,
             fallback_provider: None,
             fallback_model: None,
             fallback_tokens_remaining: None,
@@ -335,6 +347,30 @@ pub struct HiveStateSnapshot {
     /// Isolated fallback model override configured for the hive, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hive_fallback_model: Option<String>,
+    /// Configured global RPM/RPH/RPD request caps for the Hive provider.
+    #[serde(default)]
+    pub hive_provider_limits: ProviderLimits,
+    /// Configured global RPM/RPH/RPD caps for the Hive fallback provider.
+    #[serde(default)]
+    pub hive_fallback_provider_limits: ProviderLimits,
+    /// Daily token quota configured for the primary Hive route (`0` means unlimited).
+    #[serde(default)]
+    pub hive_daily_token_quota: u64,
+    /// Daily token quota configured for the fallback Hive route (`0` means unlimited).
+    #[serde(default)]
+    pub hive_fallback_daily_token_quota: u64,
+    /// Whether the primary route quota was explicitly configured.
+    #[serde(default)]
+    pub hive_token_quota_configured: bool,
+    /// Whether the fallback route quota was explicitly configured.
+    #[serde(default)]
+    pub hive_fallback_token_quota_configured: bool,
+    /// Whether the primary route token quota resets at UTC midnight.
+    #[serde(default)]
+    pub hive_quota_reset_utc_midnight: bool,
+    /// Whether the fallback route token quota resets at UTC midnight.
+    #[serde(default)]
+    pub hive_fallback_quota_reset_utc_midnight: bool,
     /// Whether proactive evolution via EvaPulse is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
@@ -466,6 +502,14 @@ impl HiveStateSnapshot {
             hive_model: settings.hive_model.clone(),
             hive_fallback_provider_profile: settings.hive_fallback_provider_profile.clone(),
             hive_fallback_model: settings.hive_fallback_model.clone(),
+            hive_provider_limits: settings.hive_provider_limits,
+            hive_fallback_provider_limits: settings.hive_fallback_provider_limits,
+            hive_daily_token_quota: settings.hive_daily_token_quota,
+            hive_fallback_daily_token_quota: settings.hive_fallback_daily_token_quota,
+            hive_token_quota_configured: settings.hive_token_quota_configured,
+            hive_fallback_token_quota_configured: settings.hive_fallback_token_quota_configured,
+            hive_quota_reset_utc_midnight: settings.hive_quota_reset_utc_midnight,
+            hive_fallback_quota_reset_utc_midnight: settings.hive_fallback_quota_reset_utc_midnight,
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
             pulse_status: pulse_status_from(observation),
             next_wake_at_ms: observation.pulse_next_wake_at_ms,
@@ -512,6 +556,8 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
             .map(bounded_id)
             .filter(|m| !m.is_empty()),
         fallback_tokens_remaining: observation.fallback_tokens_remaining,
+        fallback_daily_token_quota: observation.fallback_daily_token_quota,
+        fallback_quota_reset_utc_midnight: observation.fallback_quota_reset_utc_midnight,
     }
 }
 

@@ -1642,6 +1642,7 @@ pub(crate) fn free_access_evidence_scope_key(
 pub struct ProviderCatalogRoutePreflight {
     config: evohime_model_gateway::ModelGatewayConfig,
     cache: ProviderCatalogCache,
+    quota_journal: Option<crate::EventJournal>,
     free_access_mode: crate::free_access_probe::FreeAccessRoutingMode,
     allow_paid_fallback: bool,
     free_access_probe: Option<Arc<crate::free_access_probe::FreeAccessProbeCoordinator>>,
@@ -1657,11 +1658,18 @@ impl ProviderCatalogRoutePreflight {
         Self {
             config,
             cache,
+            quota_journal: None,
             free_access_mode: crate::free_access_probe::FreeAccessRoutingMode::Any,
             allow_paid_fallback: false,
             free_access_probe: None,
             free_access_evidence: None,
         }
+    }
+
+    /// Enables durable token-quota checks using Core's usage journal.
+    pub fn with_quota_journal(mut self, journal: crate::EventJournal) -> Self {
+        self.quota_journal = Some(journal);
+        self
     }
 
     /// Applies explicit free-access routing and consented probe policy.
@@ -1682,6 +1690,12 @@ impl ProviderCatalogRoutePreflight {
 
 impl RoutePreflight for ProviderCatalogRoutePreflight {
     fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError> {
+        if self.config.routes.get(route).is_some_and(|config| {
+            let model = model.unwrap_or(&config.literouter.model);
+            config.effective_daily_token_quota(model).is_some_and(|(quota, _)| quota > 0)
+        }) {
+            return Err(ProviderError::Config("provider_quota_requires_async_preflight".into()));
+        }
         self.check_with_requirements(route, model, false, now_ms)
     }
 
@@ -1692,7 +1706,39 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
         requires_tool_calls: bool,
         now_ms: u64,
     ) -> Result<(), ProviderError> {
+        self.check(route, model, now_ms)?;
         self.check_with_requirements(route, model, requires_tool_calls, now_ms)
+    }
+
+    fn check_for_request_async<'a>(
+        &'a self,
+        route: &'a str,
+        model: Option<&'a str>,
+        requires_tool_calls: bool,
+        now_ms: u64,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ProviderError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.check_with_requirements(route, model, requires_tool_calls, now_ms)?;
+            let config = self.config.routes.get(route)
+                .ok_or_else(|| ProviderError::Config("provider_route_not_configured".into()))?;
+            let effective_model = model.filter(|value| !value.trim().is_empty())
+                .unwrap_or(&config.literouter.model);
+            if let Some((quota, midnight)) = config.effective_daily_token_quota(effective_model) {
+                if quota > 0 {
+                    let journal = self.quota_journal.as_ref()
+                        .ok_or_else(|| ProviderError::Config("provider_quota_usage_unavailable".into()))?;
+                    let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
+                    let day = crate::hive_state::HIVE_DAY_WINDOW_MS;
+                    let start = if midnight { now.div_euclid(day) * day } else { now.saturating_sub(day) };
+                    let used = journal.provider_tokens_since(start, config.provider.as_str()).await
+                        .map_err(|_| ProviderError::Config("provider_quota_usage_unavailable".into()))?;
+                    if used >= quota {
+                        return Err(ProviderError::Config("provider_quota_exhausted".into()));
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 
     fn observe_success_async<'a>(

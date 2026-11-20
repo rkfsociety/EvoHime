@@ -1,5 +1,16 @@
 use super::*;
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HiveRequestLimitsUpdate {
+    primary_limits: evohime_model_gateway::ProviderLimits,
+    fallback_limits: evohime_model_gateway::ProviderLimits,
+    primary_token_quota: u64,
+    fallback_token_quota: u64,
+    primary_quota_reset_utc_midnight: bool,
+    fallback_quota_reset_utc_midnight: bool,
+}
+
 impl IpcBridge {
     /// Validates and persists the isolated checkout used by self-development.
     pub(crate) async fn save_eva_workspace_path(&self, path: &str) -> Result<Vec<u8>, String> {
@@ -335,6 +346,110 @@ impl IpcBridge {
         .map_err(|error| error.to_string())
     }
 
+    async fn save_hive_request_limits_batch(&self, value: &str) -> Result<Vec<u8>, String> {
+        let key = "hive_request_limits";
+        let Ok(update) = serde_json::from_str::<HiveRequestLimitsUpdate>(value) else {
+            return self.hive_limit_rejected(key, "invalid request limits payload");
+        };
+        let mut settings = self.journal.hive_settings().await?;
+        settings.hive_provider_limits = update.primary_limits;
+        settings.hive_fallback_provider_limits = update.fallback_limits;
+        settings.hive_daily_token_quota = update.primary_token_quota;
+        settings.hive_fallback_daily_token_quota = update.fallback_token_quota;
+        settings.hive_quota_reset_utc_midnight = update.primary_quota_reset_utc_midnight;
+        settings.hive_fallback_quota_reset_utc_midnight = update.fallback_quota_reset_utc_midnight;
+        settings.hive_token_quota_configured = true;
+        settings.hive_fallback_token_quota_configured = true;
+        if let Err(error) = settings.validate() {
+            return self.hive_limit_rejected(key, &error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true, "setting_key": key, "error_code": ""
+        })).map_err(|error| error.to_string())
+    }
+
+    async fn save_hive_request_limits(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let parsed = serde_json::from_str::<evohime_model_gateway::ProviderLimits>(value);
+        let Ok(limits) = parsed else {
+            return self.hive_limit_rejected(key, "request limits must contain rpm, rph and rpd");
+        };
+        if [limits.rpm, limits.rph, limits.rpd].iter().any(|limit| *limit > 10_000) {
+            return self.hive_limit_rejected(key, "request limits must be between 0 and 10000");
+        }
+        let (setting_key, output_key) = if key == "hive_provider_limits" {
+            settings.hive_provider_limits = limits;
+            (key, "hive_provider_limits")
+        } else {
+            settings.hive_fallback_provider_limits = limits;
+            (key, "hive_fallback_provider_limits")
+        };
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": setting_key,
+            output_key: limits,
+            "error_code": ""
+        })).map_err(|error| error.to_string())
+    }
+
+    async fn save_hive_token_quota(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let quota = value.trim().parse::<u64>().ok().filter(|quota| *quota <= 1_000_000_000_000);
+        let Some(quota) = quota else {
+            return self.hive_limit_rejected(key, "daily token quota must be between 0 and 1000000000000");
+        };
+        let (setting_key, configured_key, output_key) = if key == "hive_daily_token_quota" {
+            settings.hive_daily_token_quota = quota;
+            settings.hive_token_quota_configured = true;
+            (key, "hive_token_quota_configured", "hive_daily_token_quota")
+        } else {
+            settings.hive_fallback_daily_token_quota = quota;
+            settings.hive_fallback_token_quota_configured = true;
+            (key, "hive_fallback_token_quota_configured", "hive_fallback_daily_token_quota")
+        };
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": setting_key,
+            output_key: quota,
+            configured_key: true,
+            "error_code": ""
+        })).map_err(|error| error.to_string())
+    }
+
+    async fn save_hive_quota_reset(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let reset = match value.trim() {
+            "true" | "1" => true,
+            "false" | "0" => false,
+            _ => return self.hive_limit_rejected(key, "quota reset flag must be true or false"),
+        };
+        let (setting_key, output_key) = if key == "hive_quota_reset_utc_midnight" {
+            settings.hive_quota_reset_utc_midnight = reset;
+            (key, "hive_quota_reset_utc_midnight")
+        } else {
+            settings.hive_fallback_quota_reset_utc_midnight = reset;
+            (key, "hive_fallback_quota_reset_utc_midnight")
+        };
+        self.journal.save_hive_settings(&settings).await?;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": setting_key,
+            output_key: reset,
+            "error_code": ""
+        })).map_err(|error| error.to_string())
+    }
+
+    fn hive_limit_rejected(&self, key: &str, error: &str) -> Result<Vec<u8>, String> {
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": false,
+            "setting_key": key,
+            "error_code": error
+        })).map_err(|serialization_error| serialization_error.to_string())
+    }
+
     /// Updates a named HiveSettings entry in Core durable storage.
     pub(crate) async fn set_hive_setting(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
         match key.trim() {
@@ -347,6 +462,10 @@ impl IpcBridge {
             }
             "hive_fallback_model" => self.save_hive_fallback_model(value).await,
             "daily_budget_usd" => self.save_daily_budget_usd(value).await,
+            "hive_request_limits" => self.save_hive_request_limits_batch(value).await,
+            "hive_provider_limits" | "hive_fallback_provider_limits" => self.save_hive_request_limits(key, value).await,
+            "hive_daily_token_quota" | "hive_fallback_daily_token_quota" => self.save_hive_token_quota(key, value).await,
+            "hive_quota_reset_utc_midnight" | "hive_fallback_quota_reset_utc_midnight" => self.save_hive_quota_reset(key, value).await,
             "proactive_evolution_enabled" => self.save_proactive_evolution_enabled(value).await,
             other => serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
@@ -378,6 +497,18 @@ impl IpcBridge {
             config.apply_hive_fallback_route_overrides(
                 settings.hive_fallback_provider_profile.as_deref(),
                 settings.hive_fallback_model.as_deref(),
+            );
+            config.apply_hive_route_limits(
+                "hive",
+                settings.hive_provider_limits,
+                settings.hive_daily_token_quota,
+                settings.hive_quota_reset_utc_midnight,
+            );
+            config.apply_hive_route_limits(
+                "hive_fallback",
+                settings.hive_fallback_provider_limits,
+                settings.hive_fallback_daily_token_quota,
+                settings.hive_fallback_quota_reset_utc_midnight,
             );
         }
         let mut observation = crate::hive_observation::build_hive_observation_for_hive(

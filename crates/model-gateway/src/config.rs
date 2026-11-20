@@ -43,11 +43,6 @@ impl Default for RequestPacingConfig {
 impl RequestPacingConfig {
     /// Largest accepted interval; a misconfigured value stays bounded.
     pub const MAX_INTERVAL_MS: u64 = 3_600_000;
-    /// LiteRouter tier window for regular models.
-    pub const LITEROUTER_INTERVAL_MS: u64 = 8_000;
-    /// LiteRouter free-tier budget: 190 requests per hour.
-    pub const LITEROUTER_FREE_INTERVAL_MS: u64 = 18_948;
-
     /// Builds a policy that never waits between request starts.
     pub fn disabled() -> Self {
         Self {
@@ -59,18 +54,12 @@ impl RequestPacingConfig {
 
     /// Returns the built-in policy for a provider transport.
     pub fn for_provider(provider: ProviderKind) -> Self {
-        match provider {
-            ProviderKind::LiteRouter => Self {
-                enabled: true,
-                interval_ms: Self::LITEROUTER_INTERVAL_MS,
-                free_interval_ms: Self::LITEROUTER_FREE_INTERVAL_MS,
-            },
-            _ => Self::disabled(),
-        }
+        let _ = provider;
+        Self::disabled()
     }
 
     /// Reads the `MODEL_PROVIDER_REQUEST_PACING_*` environment variables,
-    /// falling back to the provider defaults.
+    /// falling back to an unlimited, disabled policy.
     pub fn from_env(provider: ProviderKind) -> Self {
         let default = Self::for_provider(provider);
         Self {
@@ -139,6 +128,12 @@ pub struct ModelRateLimitConfig {
     /// Maximum requests in a rolling day; zero means unlimited.
     #[serde(default)]
     pub rpd: u32,
+    /// Optional daily token ceiling for this route (normally set on `"*"`).
+    #[serde(default, alias = "dailyTokenQuota", skip_serializing_if = "Option::is_none")]
+    pub daily_token_quota: Option<u64>,
+    /// Whether the token ceiling resets at UTC midnight.
+    #[serde(default, alias = "quotaResetUtcMidnight")]
+    pub quota_reset_utc_midnight: bool,
     /// Optional user-configured token pricing in USD per 1M tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<ModelPricingConfig>,
@@ -241,9 +236,6 @@ pub enum ProviderProfileId {
     #[serde(rename = "anymodel")]
     AnyModel,
 }
-
-/// Default daily free token quota for the `rout` provider profile.
-pub const ROUT_DAILY_TOKEN_QUOTA: u64 = 650_000;
 
 impl ProviderProfileId {
     /// Returns the stable serialized identifier.
@@ -503,10 +495,6 @@ impl ModelRouteConfig {
         self.provider_profile_id = Some(profile_id);
         self.provider_account_id = account_id;
         if profile_id == ProviderProfileId::Rout {
-            if self.daily_token_quota.is_none() {
-                self.daily_token_quota = Some(ROUT_DAILY_TOKEN_QUOTA);
-                self.quota_reset_utc_midnight = true;
-            }
             if self.literouter.model.trim().is_empty() {
                 self.literouter.model = crate::model_ranker::ROUT_DEFAULT_FREE_MODEL.to_owned();
             }
@@ -522,6 +510,28 @@ impl ModelRouteConfig {
     ) -> Self {
         self.daily_token_quota = daily_token_quota;
         self.quota_reset_utc_midnight = quota_reset_utc_midnight;
+        self
+    }
+
+    /// Replaces the route-wide limits with a wildcard model entry.
+    pub fn with_route_wide_limits(
+        mut self,
+        limits: ProviderLimits,
+        daily_token_quota: Option<u64>,
+        quota_reset_utc_midnight: bool,
+    ) -> Self {
+        self.model_rate_limits.insert(
+            "*".to_owned(),
+            ModelRateLimitConfig {
+                enabled: limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0 || daily_token_quota.is_some(),
+                rpm: limits.rpm,
+                rph: limits.rph,
+                rpd: limits.rpd,
+                daily_token_quota,
+                quota_reset_utc_midnight,
+                pricing: None,
+            },
+        );
         self
     }
 
@@ -556,7 +566,7 @@ impl ModelRouteConfig {
     ///
     /// Precedence:
     /// 1. Enabled per-model `model_rate_limits` entry for `model`.
-    /// 2. For `ProviderKind::LiteRouter`, limits derived from `request_pacing` when enabled.
+    /// 2. Route-wide `"*"` entry in `model_rate_limits`.
     /// 3. Route-level `provider_limits` fallback.
     pub fn effective_limits(&self, model: &str) -> ProviderLimits {
         if let Some(limits) = self
@@ -571,23 +581,32 @@ impl ModelRouteConfig {
             };
         }
 
-        if self.provider == ProviderKind::LiteRouter {
-            if let Some(interval) = self.request_pacing.interval_for_model(model) {
-                let interval_ms = u64::try_from(interval.as_millis())
-                    .unwrap_or(u64::MAX)
-                    .max(1);
-                let rpm = u32::try_from(60_000 / interval_ms).unwrap_or(u32::MAX);
-                let rph = ((3_600_000.0_f64 / interval_ms as f64).round() as u64)
-                    .min(u64::from(u32::MAX)) as u32;
-                return ProviderLimits {
-                    rpm,
-                    rph,
-                    rpd: self.provider_limits.rpd,
-                };
-            }
+        if let Some(limits) = self
+            .model_rate_limits
+            .get("*")
+            .filter(|limits| limits.enabled)
+        {
+            return ProviderLimits { rpm: limits.rpm, rph: limits.rph, rpd: limits.rpd };
         }
 
         self.provider_limits
+    }
+
+    /// Returns the configured token quota for `model`, with an enabled wildcard fallback.
+    pub fn effective_daily_token_quota(&self, model: &str) -> Option<(u64, bool)> {
+        self.model_rate_limits
+            .get(model)
+            .filter(|limits| limits.enabled && limits.daily_token_quota.is_some())
+            .or_else(|| {
+                self.model_rate_limits
+                    .get("*")
+                    .filter(|limits| limits.enabled && limits.daily_token_quota.is_some())
+            })
+            .map(|limits| (limits.daily_token_quota.unwrap_or_default(), limits.quota_reset_utc_midnight))
+            .or_else(|| {
+                self.daily_token_quota
+                    .map(|quota| (quota, self.quota_reset_utc_midnight))
+            })
     }
 
     /// Validates that an explicit profile uses its trusted transport endpoint.
@@ -774,6 +793,10 @@ impl ModelGatewayConfig {
             .with_credential_binding(env::var("MODEL_PROVIDER_CREDENTIAL_BINDING").ok())
             .with_request_pacing(RequestPacingConfig::from_env(provider))
             .with_model_rate_limits(model_rate_limits_from_env()?);
+        if let Some((quota, reset)) = route.model_rate_limits.get("*").filter(|limits| limits.enabled)
+            .map(|limits| (limits.daily_token_quota.filter(|quota| *quota > 0), limits.quota_reset_utc_midnight)) {
+            route = route.with_daily_token_quota(quota, reset);
+        }
         if provider == ProviderKind::OpenAICompatible {
             let profile_id =
                 match env::var("MODEL_PROVIDER_PROFILE_ID") {
@@ -1037,6 +1060,35 @@ impl ModelGatewayConfig {
         self.apply_named_hive_route_override("hive", profile, model);
     }
 
+    /// Applies durable request and token caps to the isolated Hive routes.
+    pub fn apply_hive_route_limits(
+        &mut self,
+        route_key: &str,
+        limits: ProviderLimits,
+        token_quota: u64,
+        quota_reset_utc_midnight: bool,
+    ) {
+        if let Some(route) = self.routes.get_mut(route_key) {
+            let mut model_rate_limits = route.model_rate_limits.clone();
+            model_rate_limits.insert(
+                "*".to_owned(),
+                ModelRateLimitConfig {
+                    enabled: limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0 || token_quota > 0,
+                    rpm: limits.rpm,
+                    rph: limits.rph,
+                    rpd: limits.rpd,
+                    daily_token_quota: (token_quota > 0).then_some(token_quota),
+                    quota_reset_utc_midnight,
+                    pricing: None,
+                },
+            );
+            *route = route
+                .clone()
+                .with_model_rate_limits(model_rate_limits)
+                .with_daily_token_quota((token_quota > 0).then_some(token_quota), quota_reset_utc_midnight);
+        }
+    }
+
     /// Rebuilds the isolated `"hive_fallback"` route (when `HIVE_FALLBACK_API_KEY`
     /// created one, or when fallback explicitly targets local `ollama`) using the
     /// durable `hive_fallback_provider_profile` and `hive_fallback_model` settings.
@@ -1073,7 +1125,7 @@ fn validate_model_rate_limits(
 ) -> Result<(), ProviderError> {
     if limits.len() > 64
         || limits.iter().any(|(model, limit)| {
-            model.is_empty()
+                (model.is_empty() && model != "*")
                 || model.chars().count() > 128
                 || model.contains('\0')
                 || model.chars().any(char::is_whitespace)
@@ -1211,10 +1263,14 @@ fn parse_routes_json(
             route_config =
                 route_config.with_provider_profile(profile_id, route.provider_account_id);
         }
+        let route_wide_quota = model_rate_limits.get("*").filter(|limit| limit.enabled).and_then(|limit| limit.daily_token_quota).filter(|quota| *quota > 0);
+        let route_wide_quota_reset = model_rate_limits.get("*").is_some_and(|limit| limit.enabled && limit.quota_reset_utc_midnight);
         route_config = route_config
             .with_credential_binding(route.provider_credential_binding)
             .with_request_pacing(request_pacing)
-            .with_model_rate_limits(model_rate_limits);
+            .with_model_rate_limits(model_rate_limits)
+            .with_daily_token_quota(route_wide_quota, route_wide_quota_reset);
+        validate_model_rate_limits(&route_config.model_rate_limits)?;
         route_config.validate_provider_profile()?;
         parsed_routes.insert(name, route_config);
     }
@@ -1397,19 +1453,11 @@ mod tests {
     }
 
     #[test]
-    fn request_pacing_defaults_only_for_literouter() {
+    fn request_pacing_defaults_are_disabled_for_all_providers() {
         let literouter = RequestPacingConfig::for_provider(ProviderKind::LiteRouter);
-        assert!(literouter.enabled);
-        assert_eq!(literouter.interval_ms, 8_000);
-        assert_eq!(literouter.free_interval_ms, 18_948);
-        assert_eq!(
-            literouter.interval_for_model("deepseek:free"),
-            Some(Duration::from_millis(18_948))
-        );
-        assert_eq!(
-            literouter.interval_for_model("deepseek"),
-            Some(Duration::from_millis(8_000))
-        );
+        assert_eq!(literouter, RequestPacingConfig::disabled());
+        assert_eq!(literouter.interval_for_model("deepseek:free"), None);
+        assert_eq!(literouter.interval_for_model("deepseek"), None);
 
         for provider in [
             ProviderKind::OpenAICompatible,
@@ -1486,11 +1534,8 @@ mod tests {
         assert_eq!(limits.rph, 200);
         assert_eq!(limits.rpd, 1000);
         let literouter = parsed.routes.get("literouter").expect("literouter route");
-        assert!(literouter.request_pacing.enabled);
-        assert_eq!(
-            literouter.request_pacing.interval_ms,
-            RequestPacingConfig::LITEROUTER_INTERVAL_MS
-        );
+        assert!(!literouter.request_pacing.enabled);
+        assert_eq!(literouter.request_pacing.interval_ms, 0);
         assert!(literouter.model_rate_limits.is_empty());
     }
 
@@ -1561,26 +1606,20 @@ mod tests {
     }
 
     #[test]
-    fn provider_limits_are_derived_from_pacing() {
+    fn provider_limits_require_explicit_configuration() {
         let route = ModelRouteConfig::literouter("lr-key", LITEROUTER_DEFAULT_BASE_URL, "");
 
-        let regular = route.effective_limits("llama-3.3-70b-instruct-turbo-free");
-        assert_eq!(regular.rpm, 7);
-        assert_eq!(regular.rph, 450);
-        assert_eq!(regular.rpd, 0);
-
-        let free_suffix = route.effective_limits("some-model:free");
-        assert_eq!(free_suffix.rpm, 3);
-        assert_eq!(free_suffix.rph, 190);
-        assert_eq!(free_suffix.rpd, 0);
+        assert_eq!(route.effective_limits("some-model:free"), ProviderLimits::default());
 
         let overridden = route.clone().with_model_rate_limits(HashMap::from([(
-            "some-model:free".to_owned(),
+            "*".to_owned(),
             ModelRateLimitConfig {
                 enabled: true,
                 rpm: 12,
                 rph: 120,
                 rpd: 1_000,
+                daily_token_quota: None,
+                quota_reset_utc_midnight: false,
                 pricing: None,
             },
         )]));
@@ -1611,7 +1650,7 @@ mod tests {
     }
 
     #[test]
-    fn rout_profile_has_daily_token_quota() {
+    fn rout_profile_has_no_implicit_daily_token_quota() {
         assert_eq!(
             ProviderProfileId::parse("rout"),
             Some(ProviderProfileId::Rout)
@@ -1633,9 +1672,8 @@ mod tests {
             "deepseek-chat",
         )
         .with_provider_profile(ProviderProfileId::Rout, None);
-        assert_eq!(route.daily_token_quota, Some(650_000));
-        assert_eq!(route.daily_token_quota, Some(ROUT_DAILY_TOKEN_QUOTA));
-        assert!(route.quota_reset_utc_midnight);
+        assert_eq!(route.daily_token_quota, None);
+        assert!(!route.quota_reset_utc_midnight);
         assert!(!route.request_pacing.enabled);
         assert!(route.validate_provider_profile().is_ok());
 

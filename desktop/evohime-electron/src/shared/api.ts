@@ -726,6 +726,8 @@ export interface ModelRateLimitSettings {
   readonly rpm: number
   readonly rph: number
   readonly rpd: number
+  readonly dailyTokenQuota?: number | null
+  readonly quotaResetUtcMidnight?: boolean
   readonly pricing?: ModelPricingSettings
 }
 
@@ -733,15 +735,14 @@ export type ProviderModelRateLimits = Readonly<Record<string, ModelRateLimitSett
 
 /** Largest interval the shell and Core accept for one request pause. */
 export const REQUEST_PACING_MAX_INTERVAL_MS = 3_600_000
-/** LiteRouter tier window between regular-model messages. */
-export const REQUEST_PACING_DEFAULT_INTERVAL_MS = 8_000
-/** LiteRouter free-tier budget: 190 requests per hour. */
-export const REQUEST_PACING_DEFAULT_FREE_INTERVAL_MS = 18_948
+/** Legacy intervals are retained for settings migration; no provider cap is assumed. */
+export const REQUEST_PACING_DEFAULT_INTERVAL_MS = 0
+export const REQUEST_PACING_DEFAULT_FREE_INTERVAL_MS = 0
 
-/** Built-in pacing for a provider: only LiteRouter needs it. */
-export function defaultRequestPacing(provider: ProviderKind): RequestPacingSettings {
+/** Pacing is disabled by default for every provider. */
+export function defaultRequestPacing(_provider: ProviderKind): RequestPacingSettings {
   return {
-    enabled: provider === 'literouter',
+    enabled: false,
     intervalMs: REQUEST_PACING_DEFAULT_INTERVAL_MS,
     freeIntervalMs: REQUEST_PACING_DEFAULT_FREE_INTERVAL_MS
   }

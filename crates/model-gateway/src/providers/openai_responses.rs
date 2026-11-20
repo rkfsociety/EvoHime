@@ -95,11 +95,17 @@ impl OpenAIResponsesProvider {
                     (elapsed < interval).then_some(interval - elapsed)
                 })
             });
-            if let Some(limits) = self.model_rate_limits.get(model).filter(|limits| {
-                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-            }) {
+            if let Some(limits) = self
+                .model_rate_limits
+                .get(model)
+                .filter(|limits| limits.enabled)
+                .or_else(|| self.model_rate_limits.get("*").filter(|limits| {
+                    limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+                }))
+            {
                 let now = Instant::now();
-                let timestamps = previous.model_requests.entry(model.to_owned()).or_default();
+                let key = if self.model_rate_limits.get(model).is_some_and(|limits| limits.enabled) { model } else { "*" };
+                let timestamps = previous.model_requests.entry(key.to_owned()).or_default();
                 while timestamps.front().is_some_and(|started| {
                     now.duration_since(*started) >= Duration::from_secs(86_400)
                 }) {
@@ -137,12 +143,18 @@ impl OpenAIResponsesProvider {
             }
             let now = Instant::now();
             previous.last_request = Some(now);
-            if self.model_rate_limits.get(model).is_some_and(|limits| {
-                limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-            }) {
+            if self
+                .model_rate_limits
+                .get(model)
+                .filter(|limits| limits.enabled)
+                .or_else(|| self.model_rate_limits.get("*").filter(|limits| {
+                    limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+                }))
+                .is_some()
+            {
                 previous
                     .model_requests
-                    .entry(model.to_owned())
+                    .entry(if self.model_rate_limits.get(model).is_some_and(|limits| limits.enabled) { model } else { "*" }.to_owned())
                     .or_default()
                     .push_back(now);
             }

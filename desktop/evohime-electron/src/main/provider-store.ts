@@ -223,14 +223,24 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
   }
   const pricing = normalizeModelPricing(value['pricing'])
   if (pricing === null) return null
-  return pricing === undefined ? result : { ...result, pricing }
+  const dailyTokenQuota = value['dailyTokenQuota'] ?? value['daily_token_quota']
+  if (dailyTokenQuota !== undefined && dailyTokenQuota !== null &&
+    (typeof dailyTokenQuota !== 'number' || !Number.isSafeInteger(dailyTokenQuota) || dailyTokenQuota < 0 || dailyTokenQuota > 1_000_000_000_000)) return null
+  const quotaResetUtcMidnight = value['quotaResetUtcMidnight'] ?? value['quota_reset_utc_midnight'] ?? false
+  if (quotaResetUtcMidnight !== undefined && typeof quotaResetUtcMidnight !== 'boolean') return null
+  return {
+    ...result,
+    ...(pricing !== undefined ? { pricing } : {}),
+    ...(dailyTokenQuota !== undefined ? { dailyTokenQuota: dailyTokenQuota as number | null } : {}),
+    ...(quotaResetUtcMidnight !== undefined ? { quotaResetUtcMidnight } : {})
+  }
 }
 export function normalizeModelRateLimits(value: unknown): ProviderModelRateLimits | null {
   if (value === undefined) return {}
   if (!isRecord(value) || Object.keys(value).length > MAX_MODEL_RATE_LIMIT_MODELS) return null
   const result: Record<string, ModelRateLimitSettings> = {}
   for (const [model, settings] of Object.entries(value)) {
-    if (model.length === 0 || model.length > MAX_MODEL_CHARS || /[\s\0]/.test(model)) return null
+    if ((model.length === 0 && model !== '*') || model.length > MAX_MODEL_CHARS || /[\s\0]/.test(model)) return null
     const normalized = normalizeModelRate(settings)
     if (normalized === null) return null
     result[model] = normalized
@@ -624,7 +634,8 @@ export class ProviderStore {
         ...(kind === 'openai_compatible' && stored.profileId === 'cloudflare_workers_ai' && stored.accountId
           ? { provider_account_id: stored.accountId }
           : {}),
-        ...(stored.credentialBinding ? { provider_credential_binding: stored.credentialBinding } : {})
+        ...(stored.credentialBinding ? { provider_credential_binding: stored.credentialBinding } : {}),
+        model_rate_limits: stored.modelRateLimits
       }
     }
 

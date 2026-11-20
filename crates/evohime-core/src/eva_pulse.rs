@@ -39,7 +39,7 @@ const MAX_SEEN_FAILURES: usize = 512;
 const MAX_ROADMAP_ITEMS: usize = 30;
 /// Fallback interval used when settings cannot be read.
 const FALLBACK_INTERVAL: Duration = Duration::from_secs(1_800);
-/// Minimum remaining tokens required to dispatch background work via `rout.my`.
+/// Keep a small response allowance so a quota-limited provider can complete a task.
 const ROUTMY_MIN_TOKENS_THRESHOLD: u64 = 1_000;
 
 /// Boxed future used by the probe/sink seams.
@@ -129,6 +129,8 @@ pub(crate) struct PulseCycleReport {
     pub fallback_provider: Option<evohime_model_gateway::providers::ProviderKind>,
     /// Remaining daily tokens for `rout.my`, if configured.
     pub routmy_tokens_remaining: Option<u64>,
+    /// Whether the selected token quota resets at UTC midnight.
+    pub quota_reset_utc_midnight: bool,
     /// Whether paid fallback (e.g. DeepSeek) is explicitly allowed in settings.
     pub allow_paid_fallback: bool,
     /// Whether all free LiteRouter models are currently in cooldown.
@@ -477,9 +479,7 @@ impl Inner {
                     report.failed_worker_contexts.clone()
                 };
                 let can_use_routmy = report.fallback_provider.is_some()
-                    && report
-                        .routmy_tokens_remaining
-                        .is_some_and(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
+                    && report.routmy_tokens_remaining.is_none_or(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
 
                 if report.literouter_all_models_exhausted {
                     if let (Some(fallback_provider), true) =
@@ -547,8 +547,7 @@ impl Inner {
                     }
                     Err(error) if is_all_models_exhausted_error(&error) => {
                         if let Some(fallback_provider) = report.fallback_provider {
-                            if report.routmy_tokens_remaining.unwrap_or(0)
-                                >= ROUTMY_MIN_TOKENS_THRESHOLD
+                            if report.routmy_tokens_remaining.is_none_or(|remaining| remaining >= ROUTMY_MIN_TOKENS_THRESHOLD)
                             {
                                 self.dispatch_recovery_via_fallback(
                                     &contexts,
@@ -558,7 +557,7 @@ impl Inner {
                                 )
                                 .await;
                             } else if !report.allow_paid_fallback {
-                                let wake_at = next_utc_midnight(now);
+                                let wake_at = quota_wake_at(now, report.quota_reset_utc_midnight);
                                 self.publish(
                                     HIVE_PULSE_SLEEPING,
                                     Some(wake_at),
@@ -770,18 +769,18 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
         .is_some_and(|rem| rem < ROUTMY_MIN_TOKENS_THRESHOLD);
     if routmy_active && routmy_exhausted && !report.allow_paid_fallback {
         return PulseDecision::Sleep {
-            wake_at_ms: Some(next_utc_midnight(now_ms)),
+            wake_at_ms: Some(quota_wake_at(now_ms, report.quota_reset_utc_midnight)),
             reason: "routmy_quota_exhausted",
         };
     }
     let routmy_fallback_available = report.fallback_provider.is_some()
         && report
             .routmy_tokens_remaining
-            .is_some_and(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
+            .is_none_or(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
     if report.literouter_all_models_exhausted && !routmy_fallback_available {
         if report.fallback_provider.is_some() && routmy_exhausted && !report.allow_paid_fallback {
             return PulseDecision::Sleep {
-                wake_at_ms: Some(next_utc_midnight(now_ms)),
+                wake_at_ms: Some(quota_wake_at(now_ms, report.quota_reset_utc_midnight)),
                 reason: "routmy_quota_exhausted",
             };
         }
@@ -821,6 +820,10 @@ fn is_all_models_exhausted_error(error: &str) -> bool {
 
 pub(crate) fn next_utc_midnight(now_ms: i64) -> i64 {
     (now_ms.div_euclid(HIVE_DAY_WINDOW_MS) + 1).saturating_mul(HIVE_DAY_WINDOW_MS)
+}
+
+fn quota_wake_at(now_ms: i64, reset_utc_midnight: bool) -> i64 {
+    if reset_utc_midnight { next_utc_midnight(now_ms) } else { now_ms.saturating_add(3_600_000) }
 }
 
 fn next_wake_at(interval: Duration) -> Option<i64> {
@@ -1159,6 +1162,18 @@ impl PulseProbe for JournalPulseProbe {
                     settings.hive_fallback_provider_profile.as_deref(),
                     settings.hive_fallback_model.as_deref(),
                 );
+                config.apply_hive_route_limits(
+                    "hive",
+                    settings.hive_provider_limits,
+                    settings.hive_daily_token_quota,
+                    settings.hive_quota_reset_utc_midnight,
+                );
+                config.apply_hive_route_limits(
+                    "hive_fallback",
+                    settings.hive_fallback_provider_limits,
+                    settings.hive_fallback_daily_token_quota,
+                    settings.hive_fallback_quota_reset_utc_midnight,
+                );
             }
             let observation = crate::hive_observation::build_hive_observation_for_hive(
                 &self.journal,
@@ -1209,7 +1224,16 @@ impl PulseProbe for JournalPulseProbe {
                 .fallback_provider
                 .as_deref()
                 .map(|_| evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
-            let routmy_tokens_remaining = if observation.provider == "rout" {
+            let configured_rout_quota = settings.hive_daily_token_quota > 0
+                || settings.hive_fallback_daily_token_quota > 0;
+            let quota_reset_utc_midnight = if observation.provider == "rout" {
+                settings.hive_quota_reset_utc_midnight
+            } else {
+                settings.hive_fallback_quota_reset_utc_midnight
+            };
+            let routmy_tokens_remaining = if !configured_rout_quota {
+                None
+            } else if observation.provider == "rout" {
                 snapshot.budget.daily_tokens_remaining
             } else {
                 snapshot.budget.fallback_tokens_remaining
@@ -1236,6 +1260,7 @@ impl PulseProbe for JournalPulseProbe {
                 selected_provider,
                 fallback_provider,
                 routmy_tokens_remaining,
+                quota_reset_utc_midnight,
                 allow_paid_fallback,
                 literouter_all_models_exhausted: false,
             })
@@ -1590,6 +1615,14 @@ impl CoordinatorPulseTaskSink {
                         .filter(|value| !value.is_empty());
                     let hive_model = settings.as_ref().and_then(|s| s.hive_model.as_deref());
                     config.apply_hive_route_overrides(hive_profile, hive_model);
+                    if let Some(settings) = settings.as_ref() {
+                        config.apply_hive_route_limits(
+                            "hive",
+                            settings.hive_provider_limits,
+                            settings.hive_daily_token_quota,
+                            settings.hive_quota_reset_utc_midnight,
+                        );
+                    }
                     preferred_route_hint =
                         crate::hive_observation::hive_route_name(Some(&config), hive_profile);
                 } else {
@@ -1635,6 +1668,14 @@ impl CoordinatorPulseTaskSink {
                 .as_ref()
                 .and_then(|s| s.hive_fallback_model.as_deref());
             config.apply_hive_fallback_route_overrides(fallback_profile, fallback_model);
+            if let Some(settings) = settings.as_ref() {
+                config.apply_hive_route_limits(
+                    "hive_fallback",
+                    settings.hive_fallback_provider_limits,
+                    settings.hive_fallback_daily_token_quota,
+                    settings.hive_fallback_quota_reset_utc_midnight,
+                );
+            }
             let route_name =
                 crate::hive_observation::hive_fallback_route_name(Some(&config), fallback_profile)
                     .ok_or_else(|| "fallback_route_unavailable".to_owned())?;
@@ -1894,6 +1935,7 @@ mod tests {
             selected_provider: Some("literouter".to_owned()),
             fallback_provider: None,
             routmy_tokens_remaining: None,
+            quota_reset_utc_midnight: false,
             allow_paid_fallback: false,
             literouter_all_models_exhausted: false,
         }

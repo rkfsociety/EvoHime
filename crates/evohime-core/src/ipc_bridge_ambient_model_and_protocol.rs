@@ -457,6 +457,21 @@ impl IpcBridge {
                                 settings.hive_model.as_deref(),
                             );
                         }
+                        if is_fallback {
+                            config.apply_hive_route_limits(
+                                route_key,
+                                settings.hive_fallback_provider_limits,
+                                settings.hive_fallback_daily_token_quota,
+                                settings.hive_fallback_quota_reset_utc_midnight,
+                            );
+                        } else {
+                            config.apply_hive_route_limits(
+                                route_key,
+                                settings.hive_provider_limits,
+                                settings.hive_daily_token_quota,
+                                settings.hive_quota_reset_utc_midnight,
+                            );
+                        }
                     }
                     let route = adjusted_config
                         .as_ref()

@@ -17,11 +17,12 @@
 //! does not add a second configuration owner or a new database table.
 
 use serde::{Deserialize, Serialize};
+use evohime_model_gateway::ProviderLimits;
 
 use crate::child_contracts::MAX_CHILD_DEPTH;
 
 /// Version of the persisted [`HiveSettings`] contract.
-pub const HIVE_SETTINGS_SCHEMA_VERSION: u32 = 1;
+pub const HIVE_SETTINGS_SCHEMA_VERSION: u32 = 2;
 /// Default per-worker sub-agent ceiling.
 pub const DEFAULT_MAX_SUBAGENTS_PER_WORKER: u32 = 16;
 /// Default number of sub-agents a worker may keep in flight.
@@ -107,6 +108,30 @@ pub struct HiveSettings {
     /// Optional fallback model override used specifically by Hive.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hive_fallback_model: Option<String>,
+    /// User-defined request caps for the isolated primary Hive provider.
+    #[serde(default)]
+    pub hive_provider_limits: ProviderLimits,
+    /// Optional daily token quota for the isolated primary Hive provider.
+    #[serde(default)]
+    pub hive_daily_token_quota: u64,
+    /// Whether the primary token quota resets at UTC midnight.
+    #[serde(default)]
+    pub hive_quota_reset_utc_midnight: bool,
+    /// User-defined request caps for the isolated Hive fallback provider.
+    #[serde(default)]
+    pub hive_fallback_provider_limits: ProviderLimits,
+    /// Optional daily token quota for the isolated Hive fallback provider.
+    #[serde(default)]
+    pub hive_fallback_daily_token_quota: u64,
+    /// Whether the fallback token quota resets at UTC midnight.
+    #[serde(default)]
+    pub hive_fallback_quota_reset_utc_midnight: bool,
+    /// Whether a primary token quota was explicitly configured by the user.
+    #[serde(default)]
+    pub hive_token_quota_configured: bool,
+    /// Whether a fallback token quota was explicitly configured by the user.
+    #[serde(default)]
+    pub hive_fallback_token_quota_configured: bool,
     /// Whether EvaPulse may proactively pick uncompleted roadmap items when idle.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
@@ -139,6 +164,14 @@ impl Default for HiveSettings {
             hive_model: None,
             hive_fallback_provider_profile: None,
             hive_fallback_model: None,
+            hive_provider_limits: ProviderLimits::default(),
+            hive_daily_token_quota: 0,
+            hive_quota_reset_utc_midnight: false,
+            hive_fallback_provider_limits: ProviderLimits::default(),
+            hive_fallback_daily_token_quota: 0,
+            hive_fallback_quota_reset_utc_midnight: false,
+            hive_token_quota_configured: false,
+            hive_fallback_token_quota_configured: false,
             proactive_evolution_enabled: false,
         }
     }
@@ -187,6 +220,15 @@ impl HiveSettings {
                 value: self.daily_budget_usd,
                 max: MAX_DAILY_BUDGET_USD,
             });
+        }
+        for limits in [self.hive_provider_limits, self.hive_fallback_provider_limits] {
+            if [limits.rpm, limits.rph, limits.rpd].iter().any(|limit| *limit > 10_000) {
+                return Err(HiveSettingsError::InvalidProviderLimit);
+            }
+        }
+        if self.hive_daily_token_quota > 1_000_000_000_000
+            || self.hive_fallback_daily_token_quota > 1_000_000_000_000 {
+            return Err(HiveSettingsError::InvalidProviderLimit);
         }
         if let Some(eva_path) = self.eva_workspace_path() {
             validate_eva_workspace_path(eva_path)?;
@@ -368,6 +410,11 @@ impl HiveSettings {
                 }
             }
         }
+        if let Some(map) = value.as_object_mut() {
+            if map.get("schema_version").and_then(serde_json::Value::as_u64) == Some(1) {
+                map.insert("schema_version".to_owned(), serde_json::json!(HIVE_SETTINGS_SCHEMA_VERSION));
+            }
+        }
         let mut settings: Self = serde_json::from_value(value)
             .map_err(|error| HiveSettingsError::Serialization(error.to_string()))?;
         if let Some(eva_path) = settings.eva_workspace_path().map(str::to_owned) {
@@ -395,6 +442,14 @@ impl HiveSettings {
                 {"name": "hive_model", "type": "optional_string", "default": null},
                 {"name": "hive_fallback_provider_profile", "type": "optional_string", "default": null},
                 {"name": "hive_fallback_model", "type": "optional_string", "default": null},
+                {"name": "hive_provider_limits", "type": "provider_limits", "default": {"rpm": 0, "rph": 0, "rpd": 0}},
+                {"name": "hive_daily_token_quota", "type": "u64", "default": 0},
+                {"name": "hive_quota_reset_utc_midnight", "type": "bool", "default": false},
+                {"name": "hive_fallback_provider_limits", "type": "provider_limits", "default": {"rpm": 0, "rph": 0, "rpd": 0}},
+                {"name": "hive_fallback_daily_token_quota", "type": "u64", "default": 0},
+                {"name": "hive_fallback_quota_reset_utc_midnight", "type": "bool", "default": false},
+                {"name": "hive_token_quota_configured", "type": "bool", "default": false},
+                {"name": "hive_fallback_token_quota_configured", "type": "bool", "default": false},
                 {"name": "proactive_evolution_enabled", "type": "bool", "default": false}
             ],
             "note": "ceilings are safety guards, not a spawn plan",
@@ -510,6 +565,8 @@ pub enum HiveSettingsError {
         /// Hard upper bound.
         max: f64,
     },
+    /// A provider request or daily token limit exceeds its hard safety bound.
+    InvalidProviderLimit,
     /// The settings could not be serialized or parsed.
     Serialization(String),
 }
@@ -563,6 +620,7 @@ impl std::fmt::Display for HiveSettingsError {
             Self::InvalidDailyBudget { value, max } => {
                 write!(f, "daily_budget_usd {value} is outside 0..={max}")
             }
+            Self::InvalidProviderLimit => write!(f, "provider limit is outside the accepted range"),
             Self::Serialization(message) => {
                 write!(f, "hive settings serialization failed: {message}")
             }
