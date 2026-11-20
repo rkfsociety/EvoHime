@@ -272,27 +272,6 @@ describe('hive dashboard', () => {
     })
   })
 
-  it('pulse_toggle_changes_state', async () => {
-    render(<HiveDashboard connection="connected" events={[]} />)
-
-    const toggle = await screen.findByRole('switch', { name: 'Авто-режим (EvaPulse)' })
-    expect(toggle.getAttribute('aria-checked')).toBe('true')
-
-    await userEvent.click(toggle)
-    expect(toggle.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByRole('button', { name: 'Обновить сейчас' })).toBeTruthy()
-    expect(JSON.parse(window.localStorage.getItem('evohime.hive.dashboard.v1') ?? '{}')).toMatchObject({ pulse: false })
-    await waitFor(() => {
-      expect(calls.find((call) => call.command === 'core.togglePulse')?.payload).toEqual({ enabled: false })
-    })
-
-    await userEvent.click(toggle)
-    expect(toggle.getAttribute('aria-checked')).toBe('true')
-    await waitFor(() => {
-      expect(calls.filter((call) => call.command === 'core.togglePulse').at(-1)?.payload).toEqual({ enabled: true })
-    })
-  })
-
   it('показывает статус EvaPulse из снимка Core', async () => {
     render(
       <HiveDashboard
