@@ -17,12 +17,13 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use evohime_model_gateway::ModelGatewayConfig;
 
 use crate::child_workflow::CoordinatorState;
 use crate::core_agent::SelectedModel;
+use crate::eva_pulse_boundary::{self, EvaPulseSignal, EvaPulseSignalKind};
 use crate::hive_settings::HiveSettings;
 use crate::hive_state::{
     HiveStateSnapshot, HIVE_DAY_WINDOW_MS, HIVE_PULSE_ACTIVE, HIVE_PULSE_DISABLED,
@@ -1592,6 +1593,33 @@ fn build_recovery_prompt(
     recovery_task_prompt(&incident, workspace_path)
 }
 
+/// Applies the typed EvaPulse → Hive boundary before creating a Hive task.
+///
+/// The model prompt is intentionally not placed in the signal envelope. The
+/// envelope carries only bounded routing metadata; the accepted signal is
+/// then translated into the existing Core task path below.
+fn validate_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<(), String> {
+    let now_ms: i64 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "pulse_clock_before_unix_epoch".to_owned())?
+        .as_millis()
+        .try_into()
+        .map_err(|_| "pulse_clock_out_of_range".to_owned())?;
+    let signal = EvaPulseSignal {
+        schema_version: eva_pulse_boundary::CONTRACT_VERSION,
+        message_id: uuid::Uuid::new_v4().to_string(),
+        correlation_id: uuid::Uuid::new_v4().to_string(),
+        source: "eva-pulse".to_owned(),
+        idempotency_key: uuid::Uuid::new_v4().to_string(),
+        kind: signal_kind,
+        created_at_ms: now_ms,
+        expires_at_ms: now_ms + 30 * 60 * 1_000,
+        payload: Vec::new(),
+    };
+    eva_pulse_boundary::validate_signal(&signal, now_ms)
+        .map_err(|error| format!("hive_signal_rejected:{error}"))
+}
+
 impl PulseTaskSink for CoordinatorPulseTaskSink {
     fn dispatch_recovery(
         &self,
@@ -1599,7 +1627,7 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
         eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>> {
         let prompt = build_recovery_prompt(failed_workers, eva_workspace_path);
-        self.dispatch_primary_task(prompt)
+        self.dispatch_primary_task(prompt, EvaPulseSignalKind::RecoveryReview)
     }
 
     fn dispatch_recovery_fallback(
@@ -1609,7 +1637,7 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
         _fallback_provider: evohime_model_gateway::providers::ProviderKind,
     ) -> PulseFuture<'_, Result<String, String>> {
         let prompt = build_recovery_prompt(failed_workers, eva_workspace_path);
-        self.dispatch_fallback_task(prompt)
+        self.dispatch_fallback_task(prompt, EvaPulseSignalKind::RecoveryReview)
     }
 
     fn dispatch_evolution(
@@ -1618,17 +1646,22 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
         _eva_workspace_path: Option<&str>,
     ) -> PulseFuture<'_, Result<String, String>> {
         let prompt = proactive_evolution_prompt(items);
-        self.dispatch_primary_task(prompt)
+        self.dispatch_primary_task(prompt, EvaPulseSignalKind::EvolutionReview)
     }
 }
 
 impl CoordinatorPulseTaskSink {
-    fn dispatch_primary_task(&self, prompt: String) -> PulseFuture<'_, Result<String, String>> {
+    fn dispatch_primary_task(
+        &self,
+        prompt: String,
+        signal_kind: EvaPulseSignalKind,
+    ) -> PulseFuture<'_, Result<String, String>> {
         let primary_route = self.primary_route.clone();
         let explicit_hint = self.preferred_route_hint.clone();
         let journal = self.journal.clone();
         let gateway_config = self.gateway_config.clone();
         Box::pin(async move {
+            validate_hive_signal(signal_kind)?;
             if let Some(journal) = journal.as_ref() {
                 let settings = journal.hive_settings().await.unwrap_or_default();
                 if hive_route_quota_exhausted(
@@ -1690,10 +1723,15 @@ impl CoordinatorPulseTaskSink {
         })
     }
 
-    fn dispatch_fallback_task(&self, prompt: String) -> PulseFuture<'_, Result<String, String>> {
+    fn dispatch_fallback_task(
+        &self,
+        prompt: String,
+        signal_kind: EvaPulseSignalKind,
+    ) -> PulseFuture<'_, Result<String, String>> {
         let journal = self.journal.clone();
         let gateway_config = self.gateway_config.clone();
         Box::pin(async move {
+            validate_hive_signal(signal_kind)?;
             if let Some(journal) = journal.as_ref() {
                 let settings = journal.hive_settings().await.unwrap_or_default();
                 if hive_route_quota_exhausted(
