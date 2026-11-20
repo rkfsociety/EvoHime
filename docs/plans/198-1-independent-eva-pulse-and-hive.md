@@ -16,6 +16,8 @@ receiver удерживает bounded fence из 512 `idempotency_key` и воз
 освобождается. При подключённом `EventJournal` receiver восстанавливает
 последние 512 acceptance-записей после перезапуска Core и сохраняет новый
 результат как redacted `eva_pulse.signal.accepted`; prompt в journal не пишется.
+Непринятые сигналы получают bounded `eva_pulse.signal.dead_letter` с
+детерминированным reason code; исходный текст ошибки и payload не сохраняются.
 
 ## Контракт
 

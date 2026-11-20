@@ -210,8 +210,11 @@ impl HiveSignalReceiver {
         prompt: String,
         preferred_route_hint: String,
     ) -> Result<String, String> {
-        validate_signal(&signal, signal.created_at_ms)
-            .map_err(|error| format!("hive_signal_rejected:{error}"))?;
+        if let Err(error) = validate_signal(&signal, signal.created_at_ms) {
+            let reason = format!("hive_signal_rejected:{error}");
+            self.persist_dead_letter(&signal, &reason).await;
+            return Err(reason);
+        }
         let result = HiveSignalResult {
             schema_version: CONTRACT_VERSION,
             message_id: signal.message_id.clone(),
@@ -229,8 +232,15 @@ impl HiveSignalReceiver {
                     latest.saturating_sub(MAX_SEEN_IDEMPOTENCY_KEYS as i64),
                     MAX_SEEN_IDEMPOTENCY_KEYS,
                 )
-                .await
-                .map_err(|error| format!("hive_signal_replay_failed:{error}"))?;
+                .await;
+            let records = match records {
+                Ok(records) => records,
+                Err(error) => {
+                    let reason = format!("hive_signal_replay_failed:{error}");
+                    self.persist_dead_letter(&signal, &reason).await;
+                    return Err(reason);
+                }
+            };
             for record in records
                 .iter()
                 .filter(|record| record.event_type == "eva_pulse.signal.accepted")
@@ -278,12 +288,14 @@ impl HiveSignalReceiver {
             })
             .await
             .map_err(|error| error.to_string());
-        if dispatch_result.is_err() {
+        if let Err(error) = dispatch_result {
             if let Ok(mut seen) = self.seen.lock() {
                 seen.remove(&idempotency_key);
             }
+            let reason = "hive_task_dispatch_failed";
+            self.persist_dead_letter(&signal, &reason).await;
+            return Err(error);
         }
-        dispatch_result?;
         if let Some(journal) = self.journal.as_ref() {
             let payload = serde_json::to_vec(&DurableAcceptance {
                 idempotency_key,
@@ -299,6 +311,27 @@ impl HiveSignalReceiver {
         }
         Ok(task_id)
     }
+
+    async fn persist_dead_letter(&self, signal: &EvaPulseSignal, reason: &str) {
+        let Some(journal) = self.journal.as_ref() else {
+            return;
+        };
+        let Ok(payload) = serde_json::to_vec(&DurableDeadLetter {
+            message_id: bounded_identity(&signal.message_id),
+            correlation_id: bounded_identity(&signal.correlation_id),
+            idempotency_key: bounded_identity(&signal.idempotency_key),
+            reason: bounded_reason(reason),
+        }) else {
+            return;
+        };
+        let _ = journal
+            .record_audit(
+                "eva-pulse-dead-letter",
+                "eva_pulse.signal.dead_letter",
+                &payload,
+            )
+            .await;
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -307,6 +340,22 @@ struct DurableAcceptance {
     task_id: String,
     message_id: String,
     correlation_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct DurableDeadLetter {
+    message_id: String,
+    correlation_id: String,
+    idempotency_key: String,
+    reason: String,
+}
+
+fn bounded_identity(value: &str) -> String {
+    value.chars().take(MAX_ID_BYTES).collect()
+}
+
+fn bounded_reason(value: &str) -> String {
+    value.chars().take(MAX_ID_BYTES).collect()
 }
 
 #[cfg(test)]
