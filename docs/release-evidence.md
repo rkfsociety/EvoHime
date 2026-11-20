@@ -16,6 +16,18 @@ output, transcripts, absolute paths и PII запрещены.
 - Plan-файлы 198 пока сохраняются как implementation contract до подтверждения
   полного CI/release gate; удаление из `docs/plans/` преждевременно.
 
+## Plan 197 — Изолированные сессии чатов (закрыт 2026-11-20)
+
+- Реализация `SessionBinding`, multi-route `ModelGateway`, per-chat Electron
+  state и optional chat worktree вошла в origin/main через `930f93ab`–`be702a60`.
+- Первый release attempt на `248a6a55` был красным из-за module/router gates;
+  после исправлений baseline `0a853f88` прошёл Core, UI bundle, shell-host, CLI,
+  compatible manifest и остальные module release workflows: все перечисленные
+  результаты `success`.
+- Контракт перенесён в `architecture/model-routing.md` и
+  `architecture/shell-ui.md`; временные plan-файлы удалены после подтверждения
+  реализации и CI evidence.
+
 Опубликованный code baseline — `cbd5aa6539ff873248a418ceb133e61fcb91417d`,
 синхронизированный с `origin/main` на 2026-09-21. Текущий task-local checkout
 дополнительно подключает действия композера renderer: выбор файлов текущего

@@ -15,7 +15,7 @@
 ## Закрытые направления
 Временные plan-файлы закрытых направлений удалены после переноса их контракта
 и evidence в канонические документы. К закрытым относятся планы `01–179`,
-`183`, `189–190` (включая `144`), `192` и `196`; планы `127–130` закрыты как MVP-контуры
+`183`, `189–190` (включая `144`), `192`, `196` и `197`; планы `127–130` закрыты как MVP-контуры
 с явно сохранёнными `unavailable` deployment/adapter gates. Их отсутствие
 из каталога не означает отсутствие контракта: он находится в
 `architecture.md`, `docs/architecture/*.md` и `current-state.md`.
@@ -38,16 +38,15 @@
 | 193 | [Agent Coordination, Loop Guards и Session Recall](193-0-core-agent-coordination-loop-guards-and-session-recall.md) | active; анализ DeepSeek Harness, audit checkout и trace evidence 2026-11-17 (лимит шагов маскировался как completed) |
 | 194 | [Background Jobs Control Center](194-0-core-background-jobs-control-center.md) | active; UX/IPC поверх реализованного background-execution/v1 |
 | 195 | [Capability Extensions и Workflow Composition](195-0-core-capability-extension-and-workflow-composition.md) | active; declarative extension поверх существующих owners |
-| 197 | [Изолированные сессии чатов (провайдер, модель, права и worktree)](197-0-chat-session-isolation.md) | implementation complete in checkout; CI/release closure pending |
 | 198 | [Независимые EvaPulse и Улей](198-0-independent-eva-pulse-and-hive.md) | implementation complete in checkout (`e1e26fed`); CI/release closure pending |
 
-Незавершённые numbered plans: `180–181`, `184–188`, `191`, `193–195`, `197` и `198`.
+Незавершённые numbered plans: `180–181`, `184–188`, `191`, `193–195` и `198`.
 
 Номера `149–172` и `182–183` являются закрытыми идентификаторами очереди.
 Пропуск `144` намеренный: это закрытый план модульного обновления. Новая
 работа получает следующий свободный номер только после проверки дубликатов и
 зависимостей; следующий номер — `199`, текущий active catalog — `180–181`,
-`184–188`, `191`, `193–195`, `197` и `198`. Номера issues в активных планах — исторические
+`184–188`, `191`, `193–195` и `198`. Номера issues в активных планах — исторические
 идентификаторы постановок и не являются текущим источником статуса или
 критерием закрытия.
 

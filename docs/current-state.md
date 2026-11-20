@@ -1413,7 +1413,7 @@ tests, а также renderer regression test. Локальные tests/build/ty
 visual preview не запускались; exact-commit CI для checkout не доступен до
 push, поэтому implementation correctness остаётся pending CI.
 
-## Plan 197 — Изолированные сессии чатов (реализован в checkout 2026-11-19; CI ожидает push)
+## Plan 197 — Изолированные сессии чатов (закрыт 2026-11-20)
 
 Каждый чат выполняется как независимая логическая сессия внутри одного процесса
 Core: `ModelGateway` хранит пул всех настроенных профилей провайдеров
@@ -1432,5 +1432,6 @@ Core: `ModelGateway` хранит пул всех настроенных про�
 `chat_worktree` — 3 теста, `model_catalog_parallel_routes_do_not_pollute_cache`
 — 1 тест), Electron `npm run check:protocol`, `npm run typecheck`, `vitest`
 (`shell-bridge.test.ts`, `provider-store.test.ts`, `chat-store.test.ts` — 121
-тест), `git diff --check`. Полный workspace CI, `cargo doc` и Real-Core E2E
-ожидают push.
+тест), `git diff --check`. Последующий baseline `0a853f88` прошёл Core, UI
+bundle, shell-host, CLI, compatible manifest и остальные module release gates;
+исторические workflow/run IDs записаны в `release-evidence.md`.
