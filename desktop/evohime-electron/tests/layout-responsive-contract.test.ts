@@ -9,6 +9,7 @@ const stylesheet = readFileSync(resolve(testDirectory, '../src/renderer/src/styl
 const projectSidebar = readFileSync(resolve(testDirectory, '../src/renderer/src/ProjectSidebar.tsx'), 'utf8')
 const taskTimeline = readFileSync(resolve(testDirectory, '../src/renderer/src/TaskTimeline.tsx'), 'utf8')
 const appSource = readFileSync(resolve(testDirectory, '../src/renderer/src/App.tsx'), 'utf8')
+const tracePanel = readFileSync(resolve(testDirectory, '../src/renderer/src/TracePanel.tsx'), 'utf8')
 
 describe('responsive shell layout contract', () => {
   it('uses a dedicated icon rail and a separate workspace/chat column', () => {
@@ -56,6 +57,13 @@ describe('responsive shell layout contract', () => {
     expect(stylesheet).toContain('position: absolute;')
     expect(stylesheet).toContain('inset: 0 0 0 auto;')
     expect(stylesheet).toContain('width: min(400px, 100%);')
+  })
+
+  it('gives the trace transcript its own scroll container', () => {
+    expect(stylesheet).toContain('.trace-panel__content {')
+    expect(stylesheet).toContain('overflow-y: auto;')
+    expect(stylesheet).toContain('scrollbar-gutter: stable;')
+    expect(tracePanel).toContain('className="trace-panel__content"')
   })
 
   it('turns auxiliary conversation panels into a bounded drawer on narrow windows', () => {

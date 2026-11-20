@@ -139,27 +139,29 @@ export function TracePanel({ chatId, chatRevision = 0, events, shellDiagnostics 
           <div><dt>{translate("Последний sequence")}</dt><dd>{translate(state?.lastSequence ?? 0)}</dd></div>
           <div><dt>Workspace</dt><dd title={workspace ?? undefined}>{workspace ?? translate("не выбран")}</dd></div>
         </dl>
-        {saveStatus ? <p className="trace-panel__reason" role="status">{translate(saveStatus)}</p> : null}
-        {state?.reason ? <p className="trace-panel__reason">{translate("Причина:")}{translate(safeTraceReason(state.reason))}</p> : null}
-        <OllamaFallbackNotice events={traceEvents} shellDiagnostics={shellDiagnostics} />
-        <ShellDiagnosticsView diagnostics={shellDiagnostics} />
-        {chatId !== null && conversationEvents.length > 0 ? (
-          <section className="trace-panel__transcript" aria-label={translate('Транскрипт беседы')}>
-            <h3>{translate('Транскрипт беседы')}</h3>
-            <pre>{formatConversationTranscript(conversationEvents).join('\n')}</pre>
-          </section>
-        ) : null}
-        {chatId === null ? (
-          <p className="trace-panel__empty">{translate("Выбери чат, чтобы открыть его трейс.")}</p>
-        ) : traceEvents.length === 0 ? (
-          <p className="trace-panel__empty">{translate("События появятся после запуска задачи в этом чате.")}</p>
-        ) : (
-          <ol className="trace-panel__events">
-            {translate(traceEvents.map((event) => (
-              <TraceEventItem key={`${event.sequenceId}-${event.eventType}`} event={event} />
-            )))}
-          </ol>
-        )}
+        <div className="trace-panel__content">
+          {saveStatus ? <p className="trace-panel__reason" role="status">{translate(saveStatus)}</p> : null}
+          {state?.reason ? <p className="trace-panel__reason">{translate("Причина:")}{translate(safeTraceReason(state.reason))}</p> : null}
+          <OllamaFallbackNotice events={traceEvents} shellDiagnostics={shellDiagnostics} />
+          <ShellDiagnosticsView diagnostics={shellDiagnostics} />
+          {chatId !== null && conversationEvents.length > 0 ? (
+            <section className="trace-panel__transcript" aria-label={translate('Транскрипт беседы')}>
+              <h3>{translate('Транскрипт беседы')}</h3>
+              <pre>{formatConversationTranscript(conversationEvents).join('\n')}</pre>
+            </section>
+          ) : null}
+          {chatId === null ? (
+            <p className="trace-panel__empty">{translate("Выбери чат, чтобы открыть его трейс.")}</p>
+          ) : traceEvents.length === 0 ? (
+            <p className="trace-panel__empty">{translate("События появятся после запуска задачи в этом чате.")}</p>
+          ) : (
+            <ol className="trace-panel__events">
+              {translate(traceEvents.map((event) => (
+                <TraceEventItem key={`${event.sequenceId}-${event.eventType}`} event={event} />
+              )))}
+            </ol>
+          )}
+        </div>
     </aside>
   )
 }
