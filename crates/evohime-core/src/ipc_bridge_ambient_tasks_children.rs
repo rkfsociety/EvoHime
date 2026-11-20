@@ -517,6 +517,20 @@ impl IpcBridge {
                 };
                 self.write_response(writer, "pulse.status", payload).await?;
             }
+            Some(generated::command_envelope::Command::EvaPulseStatus(_)) => {
+                let payload = match self.pulse.as_ref() {
+                    Some(pulse) => serde_json::to_vec(&pulse.snapshot())?,
+                    None => serde_json::to_vec(&serde_json::json!({
+                        "schema_version": 1,
+                        "owner": "eva_pulse",
+                        "status": "unavailable",
+                        "enabled": false,
+                        "next_wake_at_ms": null,
+                    }))?,
+                };
+                self.write_response(writer, "eva_pulse.status", payload)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::SetEvaWorkspacePath(request)) => {
                 let payload = self
                     .save_eva_workspace_path(&request.path)

@@ -1514,6 +1514,7 @@ export const RENDERER_COMMANDS = [
   'core.sendChildFollowUp',
   'core.deleteRetainedChild',
   'core.getHiveState',
+  'core.getEvaPulseStatus',
   'core.togglePulse',
   'core.setEvaWorkspacePath',
   'core.validateEvaWorkspacePath',
@@ -1940,6 +1941,7 @@ export interface CommandPayloads {
   }
   'core.deleteRetainedChild': { childId: string; expectedRegistryVersion?: number }
   'core.getHiveState': Record<string, never>
+  'core.getEvaPulseStatus': Record<string, never>
   'core.togglePulse': { enabled: boolean }
   'core.setEvaWorkspacePath': { path: string }
   'core.validateEvaWorkspacePath': { path: string }
@@ -2519,6 +2521,7 @@ export interface CommandResults {
   'core.sendChildFollowUp': { accepted: boolean }
   'core.deleteRetainedChild': { accepted: boolean }
   'core.getHiveState': { accepted: boolean }
+  'core.getEvaPulseStatus': { accepted: boolean }
   'core.togglePulse': { accepted: boolean }
   'core.setEvaWorkspacePath': { accepted: boolean }
   'core.validateEvaWorkspacePath': { accepted: boolean }

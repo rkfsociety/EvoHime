@@ -1995,6 +1995,7 @@ message CommandEnvelope {
     ValidateEvaWorkspacePathCommand validate_eva_workspace_path = 289;
     SetHiveSettingCommand set_hive_setting = 290;
     ListAnalysisKernels list_analysis_kernels = 291;
+    EvaPulseStatusCommand eva_pulse_status = 292;
   }
 }
 
@@ -2014,6 +2015,13 @@ message TogglePulseCommand {
   uint32 schema_version = 1;
   string request_id = 2;
   bool enabled = 3;
+}
+
+// Reads the independent EvaPulse lifecycle projection. This does not return
+// Hive task state and does not change the daemon.
+message EvaPulseStatusCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
 }
 
 // Configures the isolated Git checkout available to Queen self-development.

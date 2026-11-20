@@ -11,7 +11,9 @@ receiver остаются в scope этапа.
 Добавлен versioned `EvaPulseSnapshot` с явным owner `eva_pulse`; он может быть
 передан отдельным IPC projection без включения Pulse lifecycle в Hive-owned
 snapshot. Текущий legacy `hive_state.snapshot` и `togglePulse` пока сохранены
-для обратной совместимости.
+для обратной совместимости. Добавлена additive-команда `EvaPulseStatusCommand`
+и response kind `eva_pulse.status`; старый `togglePulse` остаётся compatibility
+alias только для управления включением daemon.
 
 ## Контракт runtime
 
