@@ -1,7 +1,9 @@
 name: native package acceptance
 
-# Native package acceptance запускается только вручную.
+# Полный native package acceptance запускается только вручную; на PR
+# выполняются только targeted-проверки затронутого графа.
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -136,7 +138,7 @@ jobs:
         shell: pwsh
         run: ./scripts/documentation.tests.ps1
 
-  # На push/PR проверяется только изменённый Rust-граф.
+  # На PR проверяется только изменённый Rust-граф.
   rust-targeted:
     name: Rust — изменённые компоненты
     needs: changes
@@ -291,7 +293,7 @@ jobs:
           path: artifacts/eval-gate/summary.jsonl
           if-no-files-found: ignore
 
-  # На push/PR проверяется и собирается только Electron shell.
+  # На PR проверяется и собирается только изменённый Electron shell.
   electron-targeted:
     name: Electron — изменённый shell
     needs: changes
