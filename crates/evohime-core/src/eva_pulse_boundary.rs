@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{CoreCommand, TaskCoordinator};
+
 /// Version of the EvaPulse-to-Hive envelope contract.
 pub const CONTRACT_VERSION: u32 = 1;
 /// Maximum UTF-8 payload carried by one signal.
@@ -167,6 +169,57 @@ pub fn validate_result(result: &HiveSignalResult) -> Result<(), BoundaryError> {
         return Err(BoundaryError::InvalidIdentity);
     }
     Ok(())
+}
+
+/// Core-owned receiver that turns an accepted signal into a normal Hive task.
+///
+/// EvaPulse does not get access to the coordinator through this type's public
+/// contract: it supplies only a validated signal, prompt, and already-resolved
+/// route. The receiver remains the owner of the decision-to-task transition.
+#[derive(Clone)]
+pub(crate) struct HiveSignalReceiver {
+    coordinator: TaskCoordinator,
+}
+
+impl HiveSignalReceiver {
+    /// Creates a receiver backed by the existing Core coordinator.
+    pub(crate) fn new(coordinator: TaskCoordinator) -> Self {
+        Self { coordinator }
+    }
+
+    /// Accepts a signal and creates one Hive-owned task after validation.
+    pub(crate) async fn accept(
+        &self,
+        signal: EvaPulseSignal,
+        prompt: String,
+        preferred_route_hint: String,
+    ) -> Result<String, String> {
+        validate_signal(&signal, signal.created_at_ms)
+            .map_err(|error| format!("hive_signal_rejected:{error}"))?;
+        let result = HiveSignalResult {
+            schema_version: CONTRACT_VERSION,
+            message_id: signal.message_id.clone(),
+            correlation_id: signal.correlation_id.clone(),
+            outcome: HiveSignalOutcome::Accepted,
+            task_origin: Some(HiveTaskOrigin::EvaPulse),
+            reason: "accepted".to_owned(),
+        };
+        validate_result(&result).map_err(|error| format!("hive_result_rejected:{error}"))?;
+        let task_id = uuid::Uuid::new_v4().to_string();
+        self.coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: task_id.clone(),
+                prompt,
+                workspace_root: None,
+                preferred_route_hint: Some(preferred_route_hint),
+                conversation: None,
+                goal_id: None,
+                session_binding: None,
+            })
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok(task_id)
+    }
 }
 
 #[cfg(test)]

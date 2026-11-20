@@ -23,7 +23,7 @@ use evohime_model_gateway::ModelGatewayConfig;
 
 use crate::child_workflow::CoordinatorState;
 use crate::core_agent::SelectedModel;
-use crate::eva_pulse_boundary::{self, EvaPulseSignal, EvaPulseSignalKind};
+use crate::eva_pulse_boundary::{self, EvaPulseSignal, EvaPulseSignalKind, HiveSignalReceiver};
 use crate::hive_settings::HiveSettings;
 use crate::hive_state::{
     HiveStateSnapshot, HIVE_DAY_WINDOW_MS, HIVE_PULSE_ACTIVE, HIVE_PULSE_DISABLED,
@@ -1536,7 +1536,7 @@ fn is_terminal_failure(projection: &crate::child_workflow::ChildProjection) -> b
 
 /// Production sink: one bounded Core task, never a paid provider fallback.
 pub(crate) struct CoordinatorPulseTaskSink {
-    coordinator: TaskCoordinator,
+    receiver: HiveSignalReceiver,
     primary_route: Option<String>,
     preferred_route_hint: Option<String>,
     journal: Option<EventJournal>,
@@ -1547,7 +1547,7 @@ impl CoordinatorPulseTaskSink {
     /// Creates a sink bound to the coordinator and the allowed route name.
     pub(crate) fn new(coordinator: TaskCoordinator, primary_route: Option<String>) -> Self {
         Self {
-            coordinator,
+            receiver: HiveSignalReceiver::new(coordinator),
             primary_route,
             preferred_route_hint: None,
             journal: None,
@@ -1598,7 +1598,7 @@ fn build_recovery_prompt(
 /// The model prompt is intentionally not placed in the signal envelope. The
 /// envelope carries only bounded routing metadata; the accepted signal is
 /// then translated into the existing Core task path below.
-fn validate_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<(), String> {
+fn build_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<EvaPulseSignal, String> {
     let now_ms: i64 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| "pulse_clock_before_unix_epoch".to_owned())?
@@ -1617,7 +1617,8 @@ fn validate_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<(), String> {
         payload: Vec::new(),
     };
     eva_pulse_boundary::validate_signal(&signal, now_ms)
-        .map_err(|error| format!("hive_signal_rejected:{error}"))
+        .map_err(|error| format!("hive_signal_rejected:{error}"))?;
+    Ok(signal)
 }
 
 impl PulseTaskSink for CoordinatorPulseTaskSink {
@@ -1660,8 +1661,9 @@ impl CoordinatorPulseTaskSink {
         let explicit_hint = self.preferred_route_hint.clone();
         let journal = self.journal.clone();
         let gateway_config = self.gateway_config.clone();
+        let receiver = self.receiver.clone();
         Box::pin(async move {
-            validate_hive_signal(signal_kind)?;
+            let signal = build_hive_signal(signal_kind)?;
             if let Some(journal) = journal.as_ref() {
                 let settings = journal.hive_settings().await.unwrap_or_default();
                 if hive_route_quota_exhausted(
@@ -1706,20 +1708,7 @@ impl CoordinatorPulseTaskSink {
             }
             let preferred_route_hint =
                 preferred_route_hint.ok_or_else(|| "primary_route_unavailable".to_owned())?;
-            let task_id = uuid::Uuid::new_v4().to_string();
-            self.coordinator
-                .dispatch(CoreCommand::StartTask {
-                    task_id: task_id.clone(),
-                    prompt,
-                    workspace_root: None,
-                    preferred_route_hint: Some(preferred_route_hint),
-                    conversation: None,
-                    goal_id: None,
-                    session_binding: None,
-                })
-                .await
-                .map_err(|error| error.to_string())?;
-            Ok(task_id)
+            receiver.accept(signal, prompt, preferred_route_hint).await
         })
     }
 
@@ -1730,8 +1719,9 @@ impl CoordinatorPulseTaskSink {
     ) -> PulseFuture<'_, Result<String, String>> {
         let journal = self.journal.clone();
         let gateway_config = self.gateway_config.clone();
+        let receiver = self.receiver.clone();
         Box::pin(async move {
-            validate_hive_signal(signal_kind)?;
+            let signal = build_hive_signal(signal_kind)?;
             if let Some(journal) = journal.as_ref() {
                 let settings = journal.hive_settings().await.unwrap_or_default();
                 if hive_route_quota_exhausted(
@@ -1772,20 +1762,7 @@ impl CoordinatorPulseTaskSink {
             let route_name =
                 crate::hive_observation::hive_fallback_route_name(Some(&config), fallback_profile)
                     .ok_or_else(|| "fallback_route_unavailable".to_owned())?;
-            let task_id = uuid::Uuid::new_v4().to_string();
-            self.coordinator
-                .dispatch(CoreCommand::StartTask {
-                    task_id: task_id.clone(),
-                    prompt,
-                    workspace_root: None,
-                    preferred_route_hint: Some(route_name),
-                    conversation: None,
-                    goal_id: None,
-                    session_binding: None,
-                })
-                .await
-                .map_err(|error| error.to_string())?;
-            Ok(task_id)
+            receiver.accept(signal, prompt, route_name).await
         })
     }
 }

@@ -7,8 +7,10 @@ envelopes, bounded payload, TTL, identity/idempotency и проверкой то
 `HiveTaskOrigin` не превращается в capability. Интеграция с durable storage и
 замена прямого dispatch в `EvaPulseDaemon` остаются следующими подэтапами.
 Перед созданием recovery/evolution-задачи `CoordinatorPulseTaskSink` уже
-прогоняет bounded metadata envelope через эту валидацию; сам dispatch пока
-сохраняется как compatibility adapter до появления `HiveSignalReceiver`.
+прогоняет bounded metadata envelope через эту валидацию. `HiveSignalReceiver`
+теперь владеет переходом `accepted → Hive task` и является compatibility
+adapter над существующим `TaskCoordinator`; durable idempotency/outbox и полное
+разделение bootstrap остаются следующими подэтапами.
 
 ## Контракт
 
