@@ -187,6 +187,13 @@ reopen не оставляет частичных строк.
 `FullSnapshot`, а серия одинаковых gap-ответов ограничена тремя попытками —
 иначе UI навсегда оставался в состоянии «связь с Core потеряна».
 
+`model.context` дополнительно фиксирует bounded lifecycle-поля вызова: номер
+итерации, лимит tool-capable итераций, `tool_calls_allowed` и typed
+`terminal_reason`. Поэтому trace может отличить обычный вызов с доступными
+инструментами от последнего tool-free шага `iteration_limit_final_answer`;
+текст итогового сообщения модели не считается доказательством недоступности
+инструментов. Старые IPC-клиенты игнорируют эти additive optional fields.
+
 Conversation-bound `task.failed` trace events передаются в renderer как
 redacted terminal projection: в payload остаются только bounded `error_code`,
 `source` и `operation` (или безопасная детерминированная классификация), а для

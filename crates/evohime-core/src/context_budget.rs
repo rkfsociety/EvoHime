@@ -1518,6 +1518,10 @@ mod tests {
             estimated_tokens: 42,
             context_limit_tokens: 128_000,
             context: Some(Box::new(assembled.projection())),
+            iteration: Some(0),
+            max_iterations: Some(32),
+            tool_calls_allowed: Some(true),
+            terminal_reason: None,
         };
         let payload = serde_json::to_value(&event).expect("event serializes");
         let serialized = serde_json::to_string(&event).expect("event serializes to JSON");
@@ -1529,6 +1533,10 @@ mod tests {
 
         // Новая схема присутствует и читается новым клиентом.
         assert!(body.get("context").is_some());
+        assert_eq!(body["iteration"], serde_json::json!(0));
+        assert_eq!(body["max_iterations"], serde_json::json!(32));
+        assert_eq!(body["tool_calls_allowed"], serde_json::json!(true));
+        assert!(body.get("terminal_reason").is_none());
         assert_eq!(
             body["context"]["schema_version"],
             serde_json::json!(MODEL_CONTEXT_SCHEMA_VERSION)

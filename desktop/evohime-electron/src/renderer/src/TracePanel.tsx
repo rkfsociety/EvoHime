@@ -528,6 +528,8 @@ function appendTraceSummary(lines: string[], events: readonly CoreEvent[]): void
   const tools = new Map<string, TraceToolSummary>()
   const routingStatuses = new Map<string, number>()
   const toolFailures: string[] = []
+  const modelContexts: string[] = []
+  let explicitToolUnavailable = false
   const sequences = events.map((event) => event.sequenceId).filter(Number.isFinite)
   let completed = 0
   let failed = 0
@@ -565,6 +567,27 @@ function appendTraceSummary(lines: string[], events: readonly CoreEvent[]): void
       const status = safeTraceToken(payload?.terminal_status) ?? 'unknown'
       routingStatuses.set(status, (routingStatuses.get(status) ?? 0) + 1)
     }
+    if (event.eventType === 'model.context') {
+      const iteration = typeof payload?.iteration === 'number' ? payload.iteration : null
+      const maxIterations = typeof payload?.max_iterations === 'number' ? payload.max_iterations : null
+      const toolCallsAllowed = typeof payload?.tool_calls_allowed === 'boolean' ? payload.tool_calls_allowed : null
+      const terminalReason = safeTraceToken(payload?.terminal_reason)
+      if (iteration !== null || maxIterations !== null || toolCallsAllowed !== null || terminalReason !== null) {
+        modelContexts.push(
+          `- sequence=${event.sequenceId} iteration=${iteration ?? 'unknown'} max_iterations=${maxIterations ?? 'unknown'} ` +
+          `tool_calls_allowed=${toolCallsAllowed === null ? 'unknown' : toolCallsAllowed ? 'yes' : 'no'} ` +
+          `terminal_reason=${terminalReason ?? 'none'}`
+        )
+      }
+    }
+    if (event.eventType === 'tool.telemetry' && payload?.ok === false) {
+      const failureKind = safeTraceToken(payload.failure_kind) ?? ''
+      explicitToolUnavailable ||= /tool[_-]?(unavailable|disabled)|catalog[_-]?(unavailable|missing)/i.test(failureKind)
+    }
+    if (event.eventType === 'task.failed') {
+      const errorCode = safeTraceToken(payload?.error_code) ?? ''
+      explicitToolUnavailable ||= /tool[_-]?(unavailable|disabled)|catalog[_-]?(unavailable|missing)/i.test(errorCode)
+    }
   }
 
   const uniqueSequences = new Set(sequences)
@@ -598,6 +621,15 @@ function appendTraceSummary(lines: string[], events: readonly CoreEvent[]): void
     for (const [status, count] of [...routingStatuses.entries()].sort(([left], [right]) => left.localeCompare(right))) {
       lines.push(`- ${status}=${count}`)
     }
+  }
+  lines.push('trace_evidence:')
+  lines.push(`- explicit_tool_unavailability=${explicitToolUnavailable ? 'observed' : 'not_observed'}`)
+  lines.push('- model_text_claims_are_evidence=no')
+  if (modelContexts.length > 0) {
+    lines.push('- model_context_lifecycle:')
+    lines.push(...modelContexts)
+  } else {
+    lines.push('- model_context_lifecycle=not_available_in_export')
   }
   lines.push('')
 }

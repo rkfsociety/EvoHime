@@ -1627,6 +1627,10 @@ impl ToolAgent {
                     estimated_tokens: assembled.ledger().estimated_prompt_tokens as usize,
                     context_limit_tokens: assembled.plan.profile.hard_limit_tokens as usize,
                     context: Some(Box::new(assembled.projection())),
+                    iteration: Some(iteration),
+                    max_iterations: Some(self.max_iterations),
+                    tool_calls_allowed: Some(!final_iteration),
+                    terminal_reason: final_iteration.then(|| "iteration_limit_final_answer".into()),
                 })
                 .await;
             if let Some(refusal) = assembled.plan.unavailable.as_ref() {

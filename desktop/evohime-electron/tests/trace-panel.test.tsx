@@ -429,6 +429,26 @@ describe('trace panel', () => {
     expect(trace).toContain('task_outcome=completed:1 failed:0 stopped:0')
     expect(trace).toContain('tool=filesystem_search started=1 outputs=1 telemetry=1 ok=1 failed=0 pending=0')
     expect(trace).toContain('tool.output=1')
+    expect(trace).toContain('explicit_tool_unavailability=not_observed')
+    expect(trace).toContain('model_text_claims_are_evidence=no')
+  })
+
+  it('records when Core intentionally disables tools for the iteration-limit answer', () => {
+    const trace = formatTrace(null, null, [{
+      sequenceId: 30,
+      taskId: 'task-1',
+      eventType: 'model.context',
+      payload: JSON.stringify({
+        model: 'safe-model',
+        iteration: 32,
+        max_iterations: 32,
+        tool_calls_allowed: false,
+        terminal_reason: 'iteration_limit_final_answer'
+      })
+    }])
+
+    expect(trace).toContain('tool_calls_allowed=no terminal_reason=iteration_limit_final_answer')
+    expect(trace).toContain('model_text_claims_are_evidence=no')
   })
 
   it('exports safe filesystem boundary diagnostics without the requested path', () => {

@@ -2125,6 +2125,18 @@ pub enum CoreEvent {
         /// клиенты игнорируют неизвестное поле, поэтому major bump не нужен.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         context: Option<Box<crate::context_budget::ModelContextProjection>>,
+        /// Zero-based model/tool-loop iteration that produced this context.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        iteration: Option<usize>,
+        /// Configured maximum number of tool-capable iterations for the task.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_iterations: Option<usize>,
+        /// Whether tool calls were admitted for this model request.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_calls_allowed: Option<bool>,
+        /// Typed reason for a tool-free terminal model request, when applicable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        terminal_reason: Option<String>,
     },
     /// Terminal Core-owned routing decision. Intermediate attempts stay in
     /// diagnostics; the renderer receives this bounded projection only.
