@@ -53,8 +53,9 @@ impl RequestPacingConfig {
     }
 
     /// Returns the built-in policy for a provider transport.
-    pub fn for_provider(provider: ProviderKind) -> Self {
-        let _ = provider;
+    ///
+    /// No transport gets an implicit pause: pacing is an explicit user setting.
+    pub fn for_provider(_provider: ProviderKind) -> Self {
         Self::disabled()
     }
 
@@ -142,6 +143,14 @@ pub struct ModelRateLimitConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<ModelPricingConfig>,
 }
+
+/// Upper bound accepted for one route's configured daily token quota.
+///
+/// The bound only rejects implausible configuration values; it is not a
+/// product-imposed budget. It matches the ceiling the shell form and
+/// `HiveSettings` accept, so a value that reaches Core is never rejected here
+/// and the whole provider configuration keeps loading.
+pub const MAX_DAILY_TOKEN_QUOTA: u64 = 1_000_000_000_000;
 
 /// Unified provider request rate limits across rolling time windows.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -524,6 +533,8 @@ impl ModelRouteConfig {
         daily_token_quota: Option<u64>,
         quota_reset_utc_midnight: bool,
     ) -> Self {
+        // A zero quota is "no quota", matching the rest of the settings paths.
+        let daily_token_quota = daily_token_quota.filter(|quota| *quota > 0);
         self.model_rate_limits.insert(
             "*".to_owned(),
             ModelRateLimitConfig {
@@ -1094,26 +1105,11 @@ impl ModelGatewayConfig {
         quota_reset_utc_midnight: bool,
     ) {
         if let Some(route) = self.routes.get_mut(route_key) {
-            let mut model_rate_limits = route.model_rate_limits.clone();
-            model_rate_limits.insert(
-                "*".to_owned(),
-                ModelRateLimitConfig {
-                    enabled: limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0 || token_quota > 0,
-                    rpm: limits.rpm,
-                    rph: limits.rph,
-                    rpd: limits.rpd,
-                    daily_token_quota: (token_quota > 0).then_some(token_quota),
-                    quota_reset_utc_midnight,
-                    pricing: None,
-                },
-            );
+            let token_quota = (token_quota > 0).then_some(token_quota);
             *route = route
                 .clone()
-                .with_model_rate_limits(model_rate_limits)
-                .with_daily_token_quota(
-                    (token_quota > 0).then_some(token_quota),
-                    quota_reset_utc_midnight,
-                );
+                .with_route_wide_limits(limits, token_quota, quota_reset_utc_midnight)
+                .with_daily_token_quota(token_quota, quota_reset_utc_midnight);
         }
     }
 
@@ -1153,13 +1149,16 @@ fn validate_model_rate_limits(
 ) -> Result<(), ProviderError> {
     if limits.len() > 64
         || limits.iter().any(|(model, limit)| {
-            (model.is_empty() && model != "*")
+            model.is_empty()
                 || model.chars().count() > 128
                 || model.contains('\0')
                 || model.chars().any(char::is_whitespace)
                 || [limit.rpm, limit.rph, limit.rpd]
                     .iter()
                     .any(|value| *value > 10_000)
+                || limit
+                    .daily_token_quota
+                    .is_some_and(|quota| quota > MAX_DAILY_TOKEN_QUOTA)
                 || limit.pricing.is_some_and(|pricing| {
                     !valid_pricing_rate(pricing.input_usd_per_1m)
                         || !valid_pricing_rate(pricing.cached_input_usd_per_1m)
@@ -1683,6 +1682,61 @@ mod tests {
         assert_eq!(
             openai.effective_limits(OPENAI_DEFAULT_MODEL),
             fallback_limits
+        );
+    }
+
+    #[test]
+    fn daily_token_quota_uses_model_then_wildcard_then_route_defaults() {
+        let mut route = ModelRouteConfig::literouter("key", LITEROUTER_DEFAULT_BASE_URL, "model");
+        assert_eq!(route.effective_daily_token_quota("model"), None);
+
+        route = route.with_daily_token_quota(Some(1_000), false);
+        assert_eq!(
+            route.effective_daily_token_quota("model"),
+            Some((1_000, false))
+        );
+
+        let limits = |enabled, quota, reset| ModelRateLimitConfig {
+            enabled,
+            rpm: 0,
+            rph: 0,
+            rpd: 0,
+            daily_token_quota: Some(quota),
+            quota_reset_utc_midnight: reset,
+            pricing: None,
+        };
+        route
+            .model_rate_limits
+            .insert("*".into(), limits(true, 2_000, true));
+        assert_eq!(
+            route.effective_daily_token_quota("model"),
+            Some((2_000, true))
+        );
+
+        route
+            .model_rate_limits
+            .insert("model".into(), limits(true, 3_000, false));
+        assert_eq!(
+            route.effective_daily_token_quota("model"),
+            Some((3_000, false))
+        );
+
+        route
+            .model_rate_limits
+            .insert("model".into(), limits(false, 3_000, false));
+        assert_eq!(
+            route.effective_daily_token_quota("model"),
+            Some((2_000, true))
+        );
+
+        route
+            .model_rate_limits
+            .get_mut("*")
+            .expect("wildcard")
+            .enabled = false;
+        assert_eq!(
+            route.effective_daily_token_quota("model"),
+            Some((1_000, false))
         );
     }
 

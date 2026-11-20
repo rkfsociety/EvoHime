@@ -18,7 +18,7 @@ use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
-pub const HIVE_STATE_SCHEMA_VERSION: u32 = 7;
+pub const HIVE_STATE_SCHEMA_VERSION: u32 = 6;
 /// Name shown for the single queen in the local hive.
 pub const DEFAULT_QUEEN_NAME: &str = "EvoHime";
 /// Maximum number of departments rendered at once.
@@ -32,6 +32,18 @@ pub const HIVE_MINUTE_WINDOW_MS: i64 = 60_000;
 pub const HIVE_HOUR_WINDOW_MS: i64 = 3_600_000;
 /// Rolling window the per-model daily cap is enforced over, in milliseconds.
 pub const HIVE_DAY_WINDOW_MS: i64 = 86_400_000;
+/// Start of the window a token quota is measured over.
+///
+/// `reset_utc_midnight` selects calendar days, otherwise the window rolls over
+/// the last 24 hours.
+pub fn quota_window_start_ms(now_ms: i64, reset_utc_midnight: bool) -> i64 {
+    if reset_utc_midnight {
+        now_ms.div_euclid(HIVE_DAY_WINDOW_MS) * HIVE_DAY_WINDOW_MS
+    } else {
+        now_ms.saturating_sub(HIVE_DAY_WINDOW_MS)
+    }
+}
+
 /// Queen status: the hive is working.
 pub const HIVE_QUEEN_ACTIVE: &str = "active";
 /// Queen status: no child task is running.

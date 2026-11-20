@@ -104,9 +104,9 @@ LiteRouter сообщает о превышении лимита тарифа о
 
 | Переменная | По умолчанию | Назначение |
 | --- | --- | --- |
-| `MODEL_PROVIDER_REQUEST_PACING_ENABLED` | `true` только для LiteRouter | включает паузу |
-| `MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS` | `8000` | интервал для обычных моделей |
-| `MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS` | `18948` | интервал для `:free` моделей |
+| `MODEL_PROVIDER_REQUEST_PACING_ENABLED` | `false` | включает паузу |
+| `MODEL_PROVIDER_REQUEST_PACING_INTERVAL_MS` | `0` | интервал для обычных моделей |
+| `MODEL_PROVIDER_REQUEST_PACING_FREE_INTERVAL_MS` | `0` | интервал для `:free` моделей |
 
 
 ## Retry-параметры

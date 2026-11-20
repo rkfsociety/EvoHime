@@ -91,6 +91,7 @@ fn usage_is_recorded_without_touching_the_immutable_entry() {
             cache_read_input_tokens: Some(120),
             estimator_drift: 0.034,
             recorded_at: 2_000,
+            route_scope: "primary".to_string(),
         })
         .expect("usage recorded");
     let read = store.get("ledger-1").expect("read").expect("entry");
@@ -131,6 +132,7 @@ fn deepseek_daily_usage_projection_includes_actual_cache_hits_and_model() {
             cache_read_input_tokens: Some(65),
             estimator_drift: 0.0,
             recorded_at: 2_000,
+            route_scope: "primary".to_string(),
         })
         .expect("usage recorded");
 
@@ -177,6 +179,7 @@ fn deepseek_daily_usage_excludes_other_routes_and_pre_midnight_requests() {
                 cache_read_input_tokens: None,
                 estimator_drift: 0.0,
                 recorded_at: 2_000,
+                route_scope: "primary".to_string(),
             })
             .expect("usage recorded");
     }
@@ -187,6 +190,46 @@ fn deepseek_daily_usage_excludes_other_routes_and_pre_midnight_requests() {
     assert_eq!(usage.len(), 1);
     assert_eq!(usage[0].request_at, 2_000);
     assert_eq!(usage[0].recorded_at, 2_000);
+}
+
+#[test]
+fn route_token_totals_only_count_matching_route_scope() {
+    let database = database("route-token-scope");
+    let store = ContextLedgerStore::new(database.connection()).expect("store opens");
+    for (id, scope, prompt, completion) in [
+        ("primary-1", "primary", 100_u32, 20_u32),
+        ("primary-2", "primary", 50, 5),
+        ("hive-1", "hive", 900, 90),
+        ("legacy-1", "", 7, 7),
+    ] {
+        let mut written = entry(id, "session-1", 1_000);
+        written.provider = "openai_compatible".into();
+        written.model = "deepseek-flash".into();
+        written.finalize_hash();
+        store.append(&written).expect("append succeeds");
+        store
+            .record_usage(&ContextLedgerUsage {
+                ledger_id: id.to_string(),
+                actual_prompt_tokens: prompt,
+                actual_completion_tokens: completion,
+                cache_read_input_tokens: None,
+                estimator_drift: 0.0,
+                recorded_at: 2_000,
+                route_scope: scope.to_string(),
+            })
+            .expect("usage recorded");
+    }
+
+    assert_eq!(
+        store.route_tokens_since(1_500, "primary").expect("primary"),
+        175
+    );
+    assert_eq!(store.route_tokens_since(1_500, "hive").expect("hive"), 990);
+    assert_eq!(store.route_tokens_since(1_500, "").expect("legacy"), 14);
+    assert_eq!(
+        store.route_tokens_since(1_500, "unknown").expect("unknown"),
+        0
+    );
 }
 
 #[test]
@@ -271,6 +314,7 @@ fn rotation_removes_old_entries_together_with_their_usage_rows() {
             cache_read_input_tokens: None,
             estimator_drift: 0.0,
             recorded_at: old,
+            route_scope: "primary".to_string(),
         })
         .expect("usage recorded");
 

@@ -1690,12 +1690,6 @@ impl ProviderCatalogRoutePreflight {
 
 impl RoutePreflight for ProviderCatalogRoutePreflight {
     fn check(&self, route: &str, model: Option<&str>, now_ms: u64) -> Result<(), ProviderError> {
-        if self.config.routes.get(route).is_some_and(|config| {
-            let model = model.unwrap_or(&config.literouter.model);
-            config.effective_daily_token_quota(model).is_some_and(|(quota, _)| quota > 0)
-        }) {
-            return Err(ProviderError::Config("provider_quota_requires_async_preflight".into()));
-        }
         self.check_with_requirements(route, model, false, now_ms)
     }
 
@@ -1706,7 +1700,6 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
         requires_tool_calls: bool,
         now_ms: u64,
     ) -> Result<(), ProviderError> {
-        self.check(route, model, now_ms)?;
         self.check_with_requirements(route, model, requires_tool_calls, now_ms)
     }
 
@@ -1716,28 +1709,11 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
         model: Option<&'a str>,
         requires_tool_calls: bool,
         now_ms: u64,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ProviderError>> + Send + 'a>> {
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), ProviderError>> + Send + 'a>>
+    {
         Box::pin(async move {
             self.check_with_requirements(route, model, requires_tool_calls, now_ms)?;
-            let config = self.config.routes.get(route)
-                .ok_or_else(|| ProviderError::Config("provider_route_not_configured".into()))?;
-            let effective_model = model.filter(|value| !value.trim().is_empty())
-                .unwrap_or(&config.literouter.model);
-            if let Some((quota, midnight)) = config.effective_daily_token_quota(effective_model) {
-                if quota > 0 {
-                    let journal = self.quota_journal.as_ref()
-                        .ok_or_else(|| ProviderError::Config("provider_quota_usage_unavailable".into()))?;
-                    let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
-                    let day = crate::hive_state::HIVE_DAY_WINDOW_MS;
-                    let start = if midnight { now.div_euclid(day) * day } else { now.saturating_sub(day) };
-                    let used = journal.provider_tokens_since(start, config.provider.as_str()).await
-                        .map_err(|_| ProviderError::Config("provider_quota_usage_unavailable".into()))?;
-                    if used >= quota {
-                        return Err(ProviderError::Config("provider_quota_exhausted".into()));
-                    }
-                }
-            }
-            Ok(())
+            self.check_token_quota(route, model, now_ms).await
         })
     }
 
@@ -1821,6 +1797,46 @@ impl RoutePreflight for ProviderCatalogRoutePreflight {
 }
 
 impl ProviderCatalogRoutePreflight {
+    /// Enforces the configured daily token quota of one route.
+    ///
+    /// Usage is attributed per route scope, so routes that share a transport
+    /// kind keep separate budgets. An unverifiable quota fails closed instead
+    /// of spending tokens blind.
+    async fn check_token_quota(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        now_ms: u64,
+    ) -> Result<(), ProviderError> {
+        let Some(route_config) = self.config.routes.get(route) else {
+            return Ok(());
+        };
+        let effective_model = model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| route_config.literouter.model.trim());
+        let Some((quota, reset_utc_midnight)) = route_config
+            .effective_daily_token_quota(effective_model)
+            .filter(|(quota, _)| *quota > 0)
+        else {
+            return Ok(());
+        };
+        let journal = self
+            .quota_journal
+            .as_ref()
+            .ok_or_else(|| ProviderError::Config("provider_quota_usage_unavailable".into()))?;
+        let now_ms = i64::try_from(now_ms).unwrap_or(i64::MAX);
+        let start_ms = crate::hive_state::quota_window_start_ms(now_ms, reset_utc_midnight);
+        let used = journal
+            .route_tokens_since(start_ms, route)
+            .await
+            .map_err(|_| ProviderError::Config("provider_quota_usage_unavailable".into()))?;
+        if used >= quota {
+            return Err(ProviderError::Config("provider_quota_exhausted".into()));
+        }
+        Ok(())
+    }
+
     fn check_with_requirements(
         &self,
         route: &str,

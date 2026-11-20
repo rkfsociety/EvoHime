@@ -982,7 +982,9 @@ describe('hive dashboard', () => {
 
     const routSchema = getProviderSchema('openai_compatible', 'rout')
     expect(routSchema.defaultTier).toBe('free')
-    expect(routSchema.supportsModelLimits).toBe(false)
+    // EvoHime no longer imposes a hidden Rout quota: request limits and the
+    // daily token quota are user-configured like for any other provider.
+    expect(routSchema.supportsModelLimits).toBe(true)
   })
 
   it('hive_logs_keep_latest_on_top_and_reset_scroll', async () => {
@@ -1316,6 +1318,44 @@ describe('hive dashboard', () => {
         }
       })
       expect(within(dialog).getByText(/Резервный API-ключ Улья сохранён/)).toBeTruthy()
+    })
+  })
+
+  it('ui_can_save_hive_request_limits_and_token_quota', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot())]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    const primary = within(dialog).getByRole('group', { name: 'Лимиты основного маршрута Улья' })
+    const rpm = within(primary).getByLabelText('Лимиты основного маршрута Улья RPM') as HTMLInputElement
+    await userEvent.clear(rpm)
+    await userEvent.type(rpm, '12')
+    const quota = within(primary).getByLabelText('Дневная квота токенов (0 — без лимита)') as HTMLInputElement
+    await userEvent.clear(quota)
+    await userEvent.type(quota, '500000')
+    await userEvent.click(within(primary).getByLabelText('Сброс в полночь UTC'))
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить лимиты Улья' }))
+
+    await waitFor(() => {
+      const save = calls.find((call) =>
+        call.command === 'core.setHiveSetting'
+        && (call.payload as { key?: string }).key === 'hive_request_limits')
+      expect(save).toBeTruthy()
+      expect(JSON.parse((save?.payload as { value: string }).value)).toEqual({
+        primary_limits: { rpm: 12, rph: 0, rpd: 0 },
+        fallback_limits: { rpm: 0, rph: 0, rpd: 0 },
+        primary_token_quota: 500_000,
+        fallback_token_quota: 0,
+        primary_quota_reset_utc_midnight: true,
+        fallback_quota_reset_utc_midnight: false
+      })
     })
   })
 

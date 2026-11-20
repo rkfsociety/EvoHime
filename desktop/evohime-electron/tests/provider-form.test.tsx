@@ -166,8 +166,13 @@ describe('provider form', () => {
       acknowledgeProbePossibleCost: false,
       freeAccessRoutingMode: 'any',
       allowPaidFallback: false,
-      requestPacing: { enabled: true, intervalMs: 8000, freeIntervalMs: 18948 },
-      modelRateLimits: { 'deepseek:free': { enabled: false, rpm: 0, rph: 0, rpd: 0 } }
+      requestPacing: { enabled: false, intervalMs: 0, freeIntervalMs: 0 },
+      modelRateLimits: {
+        // The wildcard card is always present so provider-wide limits and the
+        // daily token quota stay reachable even with a single model.
+        '*': { enabled: false, rpm: 0, rph: 0, rpd: 0, dailyTokenQuota: null, quotaResetUtcMidnight: false },
+        'deepseek:free': { enabled: false, rpm: 0, rph: 0, rpd: 0 }
+      }
     })
     await waitFor(() => expect(screen.getByText(/Core перезапущен/)).toBeTruthy())
     // The stored value is never echoed back into the form.
@@ -177,12 +182,21 @@ describe('provider form', () => {
 
   it('saves disabled per-model request limits by default and lets the user enable them', async () => {
     renderProviderForm()
-    expect(await screen.findByLabelText('ID модели')).toBeTruthy()
-    expect((screen.getByRole('checkbox', { name: /Включить лимиты для этой модели/i }) as HTMLInputElement).checked).toBe(false)
+    // Wait until the stored summary is applied: the active model card and the
+    // wildcard card are both present afterwards.
+    await waitFor(() => {
+      expect((screen.getAllByLabelText('ID модели') as HTMLSelectElement[]).map((field) => field.value))
+        .toEqual(['deepseek:free', '*'])
+    })
+    const modelFields = screen.getAllByLabelText('ID модели') as HTMLSelectElement[]
+    const perModelIndex = modelFields.findIndex((field) => field.value === 'deepseek:free')
+    const perModelToggle = screen.getByRole('checkbox', { name: /Включить лимиты для этой модели/i }) as HTMLInputElement
+    expect(perModelToggle.checked).toBe(false)
     await userEvent.type(screen.getByLabelText('Ключ API'), 'sk-rate-limit-test')
-    await userEvent.click(screen.getByRole('checkbox', { name: /Включить лимиты для этой модели/i }))
-    await userEvent.clear(screen.getByLabelText('RPM'))
-    await userEvent.type(screen.getByLabelText('RPM'), '12')
+    await userEvent.click(perModelToggle)
+    const rpm = screen.getAllByLabelText('RPM')[perModelIndex] as HTMLInputElement
+    await userEvent.clear(rpm)
+    await userEvent.type(rpm, '12')
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
     const save = calls.find((call) => call.command === 'provider.save')
     expect((save?.payload as { modelRateLimits: Record<string, unknown> }).modelRateLimits['deepseek:free']).toEqual({
@@ -198,7 +212,11 @@ describe('provider form', () => {
       payload: JSON.stringify({ models: ['deepseek:free', 'qwen:free'] })
     }])
 
-    const model = await screen.findByLabelText('ID модели') as HTMLSelectElement
+    await waitFor(() => {
+      expect((screen.getAllByLabelText('ID модели') as HTMLSelectElement[]).map((field) => field.value))
+        .toEqual(['deepseek:free', '*'])
+    })
+    const model = screen.getAllByLabelText('ID модели')[0] as HTMLSelectElement
     expect(model.tagName).toBe('SELECT')
     expect(Array.from(model.options).map((option) => option.value)).toEqual(['deepseek:free', 'qwen:free'])
     expect(screen.queryByRole('textbox', { name: 'ID модели' })).toBeNull()
@@ -251,6 +269,9 @@ describe('provider form', () => {
     const save = screen.getByRole('button', { name: 'Сохранить ключ и применить' }) as HTMLButtonElement
     expect(save.disabled).toBe(false)
 
+    // Pacing is off by default, so its interval fields appear only after the
+    // user enables it for this provider.
+    await userEvent.click(screen.getByLabelText(/Выдерживать минимальную паузу/))
     const interval = screen.getByLabelText('Интервал для платных моделей, мс') as HTMLInputElement
     await userEvent.clear(interval)
     await userEvent.type(interval, '3600001')
@@ -618,7 +639,9 @@ describe('provider form', () => {
     await userEvent.selectOptions(provider, 'ollama')
     expect(screen.queryByLabelText('Ключ API')).toBeNull()
     expect(screen.queryByLabelText('Cloudflare Account ID')).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Лимиты запросов модели' })).toBeNull()
+    // Limits are provider-agnostic user settings, so they stay available for
+    // the local provider as well.
+    expect(screen.getByRole('group', { name: 'Лимиты запросов модели' })).toBeTruthy()
   })
 
   it('provider_form_saves_model_limits', async () => {
@@ -629,15 +652,16 @@ describe('provider form', () => {
       payload: JSON.stringify({ models: ['deepseek:free', 'qwen:free'] })
     }])
 
-    expect(await screen.findByLabelText('ID модели')).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getAllByLabelText('ID модели')).toHaveLength(2)
+    })
     await userEvent.type(screen.getByLabelText('Ключ API'), 'sk-multi-model-limits')
 
     await userEvent.click(screen.getByRole('button', { name: 'Добавить модель' }))
 
     const modelSelects = screen.getAllByLabelText('ID модели') as HTMLSelectElement[]
-    expect(modelSelects).toHaveLength(2)
-    expect(modelSelects[0].value).toBe('deepseek:free')
-    expect(modelSelects[1].value).toBe('qwen:free')
+    // The wildcard card sits between the pre-selected and the newly added model.
+    expect(modelSelects.map((select) => select.value)).toEqual(['deepseek:free', '*', 'qwen:free'])
 
     const checkboxes = screen.getAllByRole('checkbox', { name: /Включить лимиты для этой модели/i })
     const rpmInputs = screen.getAllByLabelText('RPM')
@@ -648,15 +672,16 @@ describe('provider form', () => {
     await userEvent.type(rpmInputs[0], '10')
 
     await userEvent.click(checkboxes[1])
-    await userEvent.clear(rpmInputs[1])
-    await userEvent.type(rpmInputs[1], '25')
-    await userEvent.clear(rpdInputs[1])
-    await userEvent.type(rpdInputs[1], '500')
+    await userEvent.clear(rpmInputs[2])
+    await userEvent.type(rpmInputs[2], '25')
+    await userEvent.clear(rpdInputs[2])
+    await userEvent.type(rpdInputs[2], '500')
 
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить ключ и применить' }))
 
     const save = calls.find((call) => call.command === 'provider.save')
     expect((save?.payload as { modelRateLimits: Record<string, unknown> }).modelRateLimits).toEqual({
+      '*': { enabled: false, rpm: 0, rph: 0, rpd: 0, dailyTokenQuota: null, quotaResetUtcMidnight: false },
       'deepseek:free': { enabled: true, rpm: 10, rph: 0, rpd: 0 },
       'qwen:free': { enabled: true, rpm: 25, rph: 0, rpd: 500 }
     })

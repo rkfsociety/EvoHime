@@ -99,12 +99,22 @@ impl OpenAIResponsesProvider {
                 .model_rate_limits
                 .get(model)
                 .filter(|limits| limits.enabled)
-                .or_else(|| self.model_rate_limits.get("*").filter(|limits| {
-                    limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-                }))
+                .or_else(|| {
+                    self.model_rate_limits.get("*").filter(|limits| {
+                        limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+                    })
+                })
             {
                 let now = Instant::now();
-                let key = if self.model_rate_limits.get(model).is_some_and(|limits| limits.enabled) { model } else { "*" };
+                let key = if self
+                    .model_rate_limits
+                    .get(model)
+                    .is_some_and(|limits| limits.enabled)
+                {
+                    model
+                } else {
+                    "*"
+                };
                 let timestamps = previous.model_requests.entry(key.to_owned()).or_default();
                 while timestamps.front().is_some_and(|started| {
                     now.duration_since(*started) >= Duration::from_secs(86_400)
@@ -147,14 +157,27 @@ impl OpenAIResponsesProvider {
                 .model_rate_limits
                 .get(model)
                 .filter(|limits| limits.enabled)
-                .or_else(|| self.model_rate_limits.get("*").filter(|limits| {
-                    limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
-                }))
+                .or_else(|| {
+                    self.model_rate_limits.get("*").filter(|limits| {
+                        limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
+                    })
+                })
                 .is_some()
             {
                 previous
                     .model_requests
-                    .entry(if self.model_rate_limits.get(model).is_some_and(|limits| limits.enabled) { model } else { "*" }.to_owned())
+                    .entry(
+                        if self
+                            .model_rate_limits
+                            .get(model)
+                            .is_some_and(|limits| limits.enabled)
+                        {
+                            model
+                        } else {
+                            "*"
+                        }
+                        .to_owned(),
+                    )
                     .or_default()
                     .push_back(now);
             }

@@ -393,11 +393,19 @@ impl LiteRouterProvider {
         self.model_rate_limits
             .get(model)
             .filter(|limits| limits.enabled)
-            .or_else(|| self.model_rate_limits.get("*").filter(|limits| limits.enabled))
+            .or_else(|| {
+                self.model_rate_limits
+                    .get("*")
+                    .filter(|limits| limits.enabled)
+            })
     }
 
     fn request_limit_key<'a>(&self, model: &'a str) -> &'a str {
-        if self.model_rate_limits.get(model).is_some_and(|limits| limits.enabled) {
+        if self
+            .model_rate_limits
+            .get(model)
+            .is_some_and(|limits| limits.enabled)
+        {
             model
         } else {
             "*"
@@ -422,7 +430,10 @@ impl LiteRouterProvider {
                 limits.enabled && (limits.rpm > 0 || limits.rph > 0 || limits.rpd > 0)
             }) {
                 let now = Instant::now();
-                let timestamps = gate.model_requests.entry(self.request_limit_key(model).to_owned()).or_default();
+                let timestamps = gate
+                    .model_requests
+                    .entry(self.request_limit_key(model).to_owned())
+                    .or_default();
                 while timestamps.front().is_some_and(|started| {
                     now.duration_since(*started) >= Duration::from_secs(86_400)
                 }) {
@@ -1360,23 +1371,23 @@ mod tests {
     }
 
     #[test]
-    fn paces_free_and_paid_models() {
-        let pacing = RequestPacingConfig { enabled: true, interval_ms: 8_000, free_interval_ms: 18_948 };
+    fn paces_free_and_paid_models_when_pacing_is_enabled() {
+        let pacing = RequestPacingConfig {
+            enabled: true,
+            interval_ms: 8_000,
+            free_interval_ms: 18_948,
+        };
         assert_eq!(
             pacing.interval_for_model("some-model:free"),
-            Some(Duration::from_millis(
-                18_948
-            ))
+            Some(Duration::from_millis(18_948))
         );
         assert_eq!(
             pacing.interval_for_model("gemini-3.1-flash-lite-thinking"),
-            Some(Duration::from_millis(
-                8_000
-            ))
+            Some(Duration::from_millis(8_000))
         );
         assert_eq!(
-            RequestPacingConfig::for_provider(ProviderKind::OpenAICompatible)
-                .interval_for_model("gpt-4o-mini"),
+            RequestPacingConfig::for_provider(ProviderKind::LiteRouter)
+                .interval_for_model("some-model:free"),
             None
         );
     }

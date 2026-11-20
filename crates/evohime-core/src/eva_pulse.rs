@@ -479,7 +479,9 @@ impl Inner {
                     report.failed_worker_contexts.clone()
                 };
                 let can_use_routmy = report.fallback_provider.is_some()
-                    && report.routmy_tokens_remaining.is_none_or(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
+                    && report
+                        .routmy_tokens_remaining
+                        .is_none_or(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
 
                 if report.literouter_all_models_exhausted {
                     if let (Some(fallback_provider), true) =
@@ -547,7 +549,9 @@ impl Inner {
                     }
                     Err(error) if is_all_models_exhausted_error(&error) => {
                         if let Some(fallback_provider) = report.fallback_provider {
-                            if report.routmy_tokens_remaining.is_none_or(|remaining| remaining >= ROUTMY_MIN_TOKENS_THRESHOLD)
+                            if report
+                                .routmy_tokens_remaining
+                                .is_none_or(|remaining| remaining >= ROUTMY_MIN_TOKENS_THRESHOLD)
                             {
                                 self.dispatch_recovery_via_fallback(
                                     &contexts,
@@ -823,7 +827,32 @@ pub(crate) fn next_utc_midnight(now_ms: i64) -> i64 {
 }
 
 fn quota_wake_at(now_ms: i64, reset_utc_midnight: bool) -> i64 {
-    if reset_utc_midnight { next_utc_midnight(now_ms) } else { now_ms.saturating_add(3_600_000) }
+    if reset_utc_midnight {
+        next_utc_midnight(now_ms)
+    } else {
+        now_ms.saturating_add(3_600_000)
+    }
+}
+
+/// Reports whether the configured token quota of one isolated Hive route is spent.
+///
+/// The dispatch gateway keeps the startup configuration, so Hive's durable
+/// quota is checked here against the same route scope the usage rows record.
+async fn hive_route_quota_exhausted(
+    journal: &EventJournal,
+    route: &str,
+    quota: u64,
+    reset_utc_midnight: bool,
+) -> bool {
+    if quota == 0 {
+        return false;
+    }
+    let now_ms = crate::task_memory::now_millis() as i64;
+    let start_ms = crate::hive_state::quota_window_start_ms(now_ms, reset_utc_midnight);
+    journal
+        .route_tokens_since(start_ms, route)
+        .await
+        .is_ok_and(|used| used >= quota)
 }
 
 fn next_wake_at(interval: Duration) -> Option<i64> {
@@ -1224,8 +1253,8 @@ impl PulseProbe for JournalPulseProbe {
                 .fallback_provider
                 .as_deref()
                 .map(|_| evohime_model_gateway::providers::ProviderKind::OpenAICompatible);
-            let configured_rout_quota = settings.hive_daily_token_quota > 0
-                || settings.hive_fallback_daily_token_quota > 0;
+            let configured_rout_quota =
+                settings.hive_daily_token_quota > 0 || settings.hive_fallback_daily_token_quota > 0;
             let quota_reset_utc_midnight = if observation.provider == "rout" {
                 settings.hive_quota_reset_utc_midnight
             } else {
@@ -1600,6 +1629,19 @@ impl CoordinatorPulseTaskSink {
         let journal = self.journal.clone();
         let gateway_config = self.gateway_config.clone();
         Box::pin(async move {
+            if let Some(journal) = journal.as_ref() {
+                let settings = journal.hive_settings().await.unwrap_or_default();
+                if hive_route_quota_exhausted(
+                    journal,
+                    "hive",
+                    settings.hive_daily_token_quota,
+                    settings.hive_quota_reset_utc_midnight,
+                )
+                .await
+                {
+                    return Err("hive_quota_exhausted".to_owned());
+                }
+            }
             let mut preferred_route_hint = explicit_hint;
             if preferred_route_hint.is_none() {
                 if let Some(mut config) = gateway_config {
@@ -1652,6 +1694,19 @@ impl CoordinatorPulseTaskSink {
         let journal = self.journal.clone();
         let gateway_config = self.gateway_config.clone();
         Box::pin(async move {
+            if let Some(journal) = journal.as_ref() {
+                let settings = journal.hive_settings().await.unwrap_or_default();
+                if hive_route_quota_exhausted(
+                    journal,
+                    "hive_fallback",
+                    settings.hive_fallback_daily_token_quota,
+                    settings.hive_fallback_quota_reset_utc_midnight,
+                )
+                .await
+                {
+                    return Err("hive_quota_exhausted".to_owned());
+                }
+            }
             let mut config =
                 gateway_config.ok_or_else(|| "fallback_route_unavailable".to_owned())?;
             let settings = if let Some(journal) = journal.as_ref() {

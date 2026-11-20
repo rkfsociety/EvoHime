@@ -388,8 +388,8 @@ impl<'a> ContextLedgerStore<'a> {
         self.connection.execute(
             "INSERT INTO context_ledger_usage (
                 ledger_id, actual_prompt_tokens, actual_completion_tokens,
-                cache_read_input_tokens, estimator_drift, recorded_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                cache_read_input_tokens, estimator_drift, recorded_at, route_scope
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
                 usage.ledger_id,
                 usage.actual_prompt_tokens,
@@ -397,6 +397,7 @@ impl<'a> ContextLedgerStore<'a> {
                 usage.cache_read_input_tokens,
                 usage.estimator_drift,
                 usage.recorded_at,
+                usage.route_scope,
             ],
         )?;
         Ok(())
@@ -459,6 +460,28 @@ impl<'a> ContextLedgerStore<'a> {
                AND ledger.created_at >= ?2
                AND usage.recorded_at >= ?2",
             rusqlite::params![provider, start_ms],
+            |row| row.get(0),
+        )?;
+        Ok(u64::try_from(total.max(0)).unwrap_or(0))
+    }
+
+    /// Sums total prompt and completion tokens recorded for one route scope.
+    ///
+    /// Only rows explicitly attributed to `route_scope` are counted, so routes
+    /// that share one transport kind never share a quota. Usage is attributed
+    /// after the provider reports it, so concurrent in-flight requests are not
+    /// visible yet.
+    pub fn route_tokens_since(
+        &self,
+        start_ms: i64,
+        route_scope: &str,
+    ) -> Result<u64, StorageError> {
+        let total: i64 = self.connection.query_row(
+            "SELECT COALESCE(SUM(actual_prompt_tokens + actual_completion_tokens), 0)
+             FROM context_ledger_usage
+             WHERE route_scope = ?1
+               AND recorded_at >= ?2",
+            rusqlite::params![route_scope, start_ms],
             |row| row.get(0),
         )?;
         Ok(u64::try_from(total.max(0)).unwrap_or(0))

@@ -1752,6 +1752,7 @@ impl ToolAgent {
                     }),
                 })
                 .await;
+            let selected_route = provenance_result.result.selected_route.clone();
             let result = provenance_result.result.result;
             if let Some(usage) = result.usage.as_ref() {
                 // Фактический usage провайдера обновляет диагностику оценки и
@@ -1762,6 +1763,7 @@ impl ToolAgent {
                     usage.prompt_tokens,
                     usage.completion_tokens,
                     usage.cache_read_input_tokens,
+                    &selected_route,
                 )
                 .await;
             }

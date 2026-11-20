@@ -350,6 +350,19 @@ impl EventJournal {
         store.provider_tokens_since(start_ms, provider)
     }
 
+    /// Sums total prompt and completion tokens recorded for one route scope.
+    pub async fn route_tokens_since(
+        &self,
+        start_ms: i64,
+        route_scope: &str,
+    ) -> Result<u64, StorageError> {
+        let database = self.database.lock().await;
+        let store = evohime_local_storage::context_ledger_store::ContextLedgerStore::new(
+            database.connection(),
+        )?;
+        store.route_tokens_since(start_ms, route_scope)
+    }
+
     /// Bounded projection ledger задачи для UI (этап 01.5).
     pub async fn context_ledger_projection(
         &self,

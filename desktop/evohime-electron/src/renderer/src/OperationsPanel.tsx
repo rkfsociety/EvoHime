@@ -449,7 +449,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   // Core может отставать от UI. Известные версии проекции читаются с defaults
   // для отсутствующих секций; неизвестная версия отклоняется целиком.
   const version = root['schema_version']
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7) return null
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6) return null
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -610,7 +610,8 @@ function hivePercent(value: number, ceiling: number): number {
 }
 
 function HiveRequestLimitsEditor({
-  label,
+  title,
+  prefix,
   limits,
   quota,
   resetAtUtcMidnight,
@@ -619,7 +620,8 @@ function HiveRequestLimitsEditor({
   onQuotaChange,
   onResetChange
 }: {
-  readonly label: string
+  readonly title: string
+  readonly prefix: 'hive-primary' | 'hive-fallback'
   readonly limits: ProviderLimits
   readonly quota: string
   readonly resetAtUtcMidnight: boolean
@@ -628,17 +630,16 @@ function HiveRequestLimitsEditor({
   readonly onQuotaChange: (quota: string) => void
   readonly onResetChange: (reset: boolean) => void
 }): React.JSX.Element {
-  const prefix = label === 'Основной провайдер Улья' ? 'hive-primary' : 'hive-fallback'
   return (
-    <fieldset className="provider-form__tier" aria-label={translate(label)}>
-      <legend>{translate(label)}</legend>
+    <fieldset className="provider-form__tier" aria-label={translate(title)}>
+      <legend>{translate(title)}</legend>
       <div className="provider-form__grid">
         {(['rpm', 'rph', 'rpd'] as const).map((key) => (
           <label key={key} htmlFor={`${prefix}-${key}`}>
             {key.toUpperCase()}
             <input
               id={`${prefix}-${key}`}
-              aria-label={`${translate(label)} ${key.toUpperCase()}`}
+              aria-label={`${translate(title)} ${key.toUpperCase()}`}
               type="number"
               min={0}
               max={10_000}
@@ -2223,6 +2224,7 @@ export function HiveDashboard({
         setHiveLimitsBusy(false)
         return
       }
+      requestSnapshot()
     } catch {
       setHiveLimitsError('Не удалось сохранить лимиты Улья: Core не ответил.')
       setHiveLimitsBusy(false)
@@ -3458,7 +3460,8 @@ export function HiveDashboard({
                 <h3>{translate('Лимиты запросов и токенов Улья')}</h3>
                 <small className="hive-settings-hint">{translate('Настройки действуют только на изолированные основной и резервный маршруты Улья. Ноль означает без ограничения.')}</small>
                 <HiveRequestLimitsEditor
-                  label="Основной провайдер Улья"
+                  title="Лимиты основного маршрута Улья"
+                  prefix="hive-primary"
                   limits={hivePrimaryLimitsDraft}
                   quota={hivePrimaryQuotaDraft}
                   resetAtUtcMidnight={hivePrimaryQuotaResetDraft}
@@ -3468,7 +3471,8 @@ export function HiveDashboard({
                   onResetChange={setHivePrimaryQuotaResetDraft}
                 />
                 <HiveRequestLimitsEditor
-                  label="Резервный провайдер Улья"
+                  title="Лимиты резервного маршрута Улья"
+                  prefix="hive-fallback"
                   limits={hiveFallbackLimitsDraft}
                   quota={hiveFallbackQuotaDraft}
                   resetAtUtcMidnight={hiveFallbackQuotaResetDraft}

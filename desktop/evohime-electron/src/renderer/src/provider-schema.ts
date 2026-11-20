@@ -56,7 +56,6 @@ function buildOpenAICompatibleProfileSchema(profileId: ProviderProfileId): Provi
   const isCustom = profileId === 'custom'
   const isCloudflare = profileId === 'cloudflare_workers_ai'
   const isOpenRouter = profileId === 'openrouter'
-  const isRout = profileId === 'rout'
   const defaultTier: ModelTier = PAID_OPENAI_COMPATIBLE_PROFILES.has(profileId) ? 'paid' : 'free'
 
   return {

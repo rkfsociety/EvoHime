@@ -1198,6 +1198,16 @@ impl ModelGateway {
         let route = route.to_owned();
         let model = model.map(str::to_owned);
         Ok(Box::pin(stream! {
+            // Streaming dispatch is synchronous at the API boundary, so the
+            // quota check runs here, before the provider stream is polled and
+            // before any network request can start.
+            if let Err(error) = preflight
+                .check_for_request_async(route.as_str(), model.as_deref(), false, current_time_ms())
+                .await
+            {
+                yield Err(error);
+                return;
+            }
             let mut response = response;
             let mut has_content = false;
             let mut completed = true;

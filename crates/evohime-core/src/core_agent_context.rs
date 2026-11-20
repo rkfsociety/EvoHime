@@ -1257,6 +1257,7 @@ impl ToolAgent {
         actual_prompt_tokens: u32,
         actual_completion_tokens: u32,
         cache_read_input_tokens: Option<u32>,
+        route_scope: &str,
     ) {
         let Some(journal) = &self.journal else {
             return;
@@ -1273,6 +1274,7 @@ impl ToolAgent {
                 cache_read_input_tokens,
                 estimator_drift: drift.relative,
                 recorded_at: task_memory::now_millis() as i64,
+                route_scope: route_scope.to_owned(),
             })
             .await;
         let _ = journal

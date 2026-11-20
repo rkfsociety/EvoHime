@@ -25,7 +25,8 @@ export interface ModelSettingsBlockProps {
 }
 
 /**
- * Renders per-model rate limit cards (RPM/RPH/RPD) and allows adding multiple models.
+ * Renders the provider-wide `*` card (request limits plus daily token quota)
+ * together with per-model rate limit cards and allows adding multiple models.
  * Designed as a dedicated block so new per-model settings can be added per card.
  */
 export function ModelSettingsBlock({
@@ -85,7 +86,9 @@ export function ModelSettingsBlock({
                           {trimmedModel} ({translate('текущая, не найдена в каталоге')})
                         </option>
                       ) : null}
-                      <option value="*">{translate('Все модели провайдера')}</option>
+                      {trimmedModel === '*' ? (
+                        <option value="*">{translate('Все модели провайдера')}</option>
+                      ) : null}
                       {catalogModels.map((modelId) => (
                         <option key={modelId} value={modelId}>
                           {modelId}

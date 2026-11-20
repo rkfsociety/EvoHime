@@ -292,6 +292,12 @@ pub struct ContextLedgerUsage {
     pub estimator_drift: f64,
     /// unix ms.
     pub recorded_at: i64,
+    /// Route whose configured budget this usage counts against.
+    ///
+    /// An empty scope marks a legacy row recorded before route attribution
+    /// existed; such rows are never charged to a configured route quota.
+    #[serde(default)]
+    pub route_scope: String,
 }
 
 /// Политика ротации: запись хранится, пока выполняется хотя бы одно условие —

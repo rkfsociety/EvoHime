@@ -226,7 +226,7 @@ function normalizeModelRate(value: unknown): ModelRateLimitSettings | null {
   const dailyTokenQuota = value['dailyTokenQuota'] ?? value['daily_token_quota']
   if (dailyTokenQuota !== undefined && dailyTokenQuota !== null &&
     (typeof dailyTokenQuota !== 'number' || !Number.isSafeInteger(dailyTokenQuota) || dailyTokenQuota < 0 || dailyTokenQuota > 1_000_000_000_000)) return null
-  const quotaResetUtcMidnight = value['quotaResetUtcMidnight'] ?? value['quota_reset_utc_midnight'] ?? false
+  const quotaResetUtcMidnight = value['quotaResetUtcMidnight'] ?? value['quota_reset_utc_midnight']
   if (quotaResetUtcMidnight !== undefined && typeof quotaResetUtcMidnight !== 'boolean') return null
   return {
     ...result,

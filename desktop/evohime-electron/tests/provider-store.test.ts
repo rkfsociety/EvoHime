@@ -359,6 +359,27 @@ describe('provider store', () => {
     )
   })
 
+  it('persists provider-wide limits and the daily token quota of the wildcard entry', () => {
+    const store = new ProviderStore(storePath(), reversibleCipher())
+    store.save({
+      provider: 'literouter', apiKey: 'lr-key', model: 'model-a', baseUrl: '', tier: 'free',
+      modelRateLimits: {
+        '*': { enabled: true, rpm: 30, rph: 0, rpd: 0, dailyTokenQuota: 650_000, quotaResetUtcMidnight: true },
+        'model-a': { enabled: false, rpm: 0, rph: 0, rpd: 0 }
+      }
+    })
+
+    expect(store.summary().profiles.literouter.modelRateLimits).toEqual({
+      '*': { enabled: true, rpm: 30, rph: 0, rpd: 0, dailyTokenQuota: 650_000, quotaResetUtcMidnight: true },
+      'model-a': { enabled: false, rpm: 0, rph: 0, rpd: 0 }
+    })
+    store.select('literouter')
+    expect(JSON.parse(store.environment()['MODEL_PROVIDER_MODEL_RATE_LIMITS_JSON'] ?? '{}')).toEqual({
+      '*': { enabled: true, rpm: 30, rph: 0, rpd: 0, dailyTokenQuota: 650_000, quotaResetUtcMidnight: true },
+      'model-a': { enabled: false, rpm: 0, rph: 0, rpd: 0 }
+    })
+  })
+
   it('keeps request pacing when the key is removed', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
     store.save({
@@ -576,9 +597,9 @@ describe('provider store', () => {
     expect(binding).toMatch(/^credential:[0-9a-f-]{36}$/)
     expect(store.environment()['MODEL_PROVIDER_CREDENTIAL_BINDING']).toBe(binding)
     expect(store.summary().profiles.literouter.requestPacing).toEqual({
-      enabled: true,
-      intervalMs: 8_000,
-      freeIntervalMs: 18_948
+      enabled: false,
+      intervalMs: 0,
+      freeIntervalMs: 0
     })
     expect(readFileSync(path, 'utf8')).not.toContain('sk-legacy')
     expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 8 })
@@ -655,7 +676,7 @@ describe('provider profile endpoints', () => {
       configured: false,
       profileId: 'deepseek',
       freeAccessProbePolicy: 'disabled',
-      requestPacing: { enabled: false, intervalMs: 8_000, freeIntervalMs: 18_948 },
+      requestPacing: { enabled: false, intervalMs: 0, freeIntervalMs: 0 },
       modelRateLimits: {}
     })
     expect(defaultCompatibleProfileSummary('cloudflare_workers_ai')).toMatchObject({

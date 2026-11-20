@@ -11,8 +11,8 @@ use evohime_model_gateway::{ModelGatewayConfig, ProviderProfileId};
 use crate::child_workflow::ChildProjection;
 use crate::core_agent::SelectedModel;
 use crate::hive_state::{
-    custom_daily_cost_nano_usd, deepseek_daily_cost_nano_usd, HiveObservation, HIVE_DAY_WINDOW_MS,
-    HIVE_HOUR_WINDOW_MS, HIVE_MINUTE_WINDOW_MS,
+    custom_daily_cost_nano_usd, deepseek_daily_cost_nano_usd, quota_window_start_ms,
+    HiveObservation, HIVE_DAY_WINDOW_MS, HIVE_HOUR_WINDOW_MS, HIVE_MINUTE_WINDOW_MS,
 };
 use crate::EventJournal;
 
@@ -111,10 +111,10 @@ pub(crate) async fn build_hive_observation_for_hive(
         .map(str::trim)
         .filter(|value| !value.is_empty());
     let route_name = hive_route_name(Some(config), hive_profile);
-    let Some(route) = route_name
-        .as_deref()
-        .and_then(|name| config.routes.get(name))
-    else {
+    let Some(route_name) = route_name else {
+        return observation;
+    };
+    let Some(route) = config.routes.get(&route_name) else {
         return observation;
     };
     // The ledger records the transport kind, so dispatch counters must be
@@ -164,9 +164,9 @@ pub(crate) async fn build_hive_observation_for_hive(
         observation.daily_token_quota = Some(quota);
         observation.quota_reset_utc_midnight = route.quota_reset_utc_midnight;
         if let Ok(used) = journal
-            .provider_tokens_since(
+            .route_tokens_since(
                 quota_window_start_ms(observation.now_ms, route.quota_reset_utc_midnight),
-                transport,
+                &route_name,
             )
             .await
         {
@@ -217,11 +217,15 @@ pub(crate) async fn build_hive_observation_for_hive(
             }
             if let Some(quota) = fallback_route.daily_token_quota {
                 observation.fallback_daily_token_quota = Some(quota);
-                observation.fallback_quota_reset_utc_midnight = fallback_route.quota_reset_utc_midnight;
+                observation.fallback_quota_reset_utc_midnight =
+                    fallback_route.quota_reset_utc_midnight;
                 let used = journal
-                    .provider_tokens_since(
-                        quota_window_start_ms(observation.now_ms, fallback_route.quota_reset_utc_midnight),
-                        fallback_transport,
+                    .route_tokens_since(
+                        quota_window_start_ms(
+                            observation.now_ms,
+                            fallback_route.quota_reset_utc_midnight,
+                        ),
+                        "hive_fallback",
                     )
                     .await
                     .unwrap_or(0);
@@ -231,14 +235,6 @@ pub(crate) async fn build_hive_observation_for_hive(
     }
 
     observation
-}
-
-fn quota_window_start_ms(now_ms: i64, reset_utc_midnight: bool) -> i64 {
-    if reset_utc_midnight {
-        now_ms.div_euclid(HIVE_DAY_WINDOW_MS) * HIVE_DAY_WINDOW_MS
-    } else {
-        now_ms.saturating_sub(HIVE_DAY_WINDOW_MS)
-    }
 }
 
 async fn task_metrics(journal: &EventJournal, now_ms: i64) -> (u32, u64) {

@@ -82,6 +82,65 @@ fn route_preflight_rejects_known_stale_catalog_before_provider_dispatch() {
     assert!(matches!(error, ProviderError::Config(code) if code == "provider_catalog_expired"));
 }
 
+#[tokio::test]
+async fn token_quota_blocks_only_the_route_that_spent_it() {
+    let directory = tempfile::tempdir().expect("temp dir");
+    let journal = crate::EventJournal::open(directory.path().join("events.db")).expect("journal");
+    let route =
+        ModelRouteConfig::openai_compatible("test-key", "https://provider.example/v1", "model-a")
+            .with_route_wide_limits(
+                evohime_model_gateway::ProviderLimits::default(),
+                Some(100),
+                true,
+            );
+    let config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: "default".into(),
+        routes: std::collections::HashMap::from([("default".into(), route)]),
+    };
+    let preflight = ProviderCatalogRoutePreflight::new(config, new_provider_catalog_cache())
+        .with_quota_journal(journal.clone());
+
+    record_route_usage(&journal, "default", 30, 10, 1_000).await;
+    preflight
+        .check_for_request_async("default", Some("model-a"), false, 2_000)
+        .await
+        .expect("usage under the quota is allowed");
+
+    record_route_usage(&journal, "hive", 5_000, 5_000, 1_000).await;
+    preflight
+        .check_for_request_async("default", Some("model-a"), false, 2_000)
+        .await
+        .expect("another route never spends this route's quota");
+
+    record_route_usage(&journal, "default", 50, 10, 1_500).await;
+    let error = preflight
+        .check_for_request_async("default", Some("model-a"), false, 2_000)
+        .await
+        .expect_err("reached quota must fail closed");
+    assert!(matches!(error, ProviderError::Config(code) if code == "provider_quota_exhausted"));
+}
+
+async fn record_route_usage(
+    journal: &crate::EventJournal,
+    scope: &str,
+    prompt: u32,
+    completion: u32,
+    recorded_at: i64,
+) {
+    journal
+        .record_context_usage(&evohime_context_budget::ledger::ContextLedgerUsage {
+            ledger_id: format!("ledger-{scope}-{recorded_at}-{prompt}"),
+            actual_prompt_tokens: prompt,
+            actual_completion_tokens: completion,
+            cache_read_input_tokens: None,
+            estimator_drift: 0.0,
+            recorded_at,
+            route_scope: scope.to_owned(),
+        })
+        .await
+        .expect("usage recorded");
+}
+
 #[test]
 fn free_only_requires_current_profile_bound_evidence_and_prefer_free_needs_fallback_opt_in() {
     let binding = "credential:01234567-89ab-4cde-8fab-0123456789ab";
