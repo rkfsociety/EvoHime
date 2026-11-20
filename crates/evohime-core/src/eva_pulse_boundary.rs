@@ -5,6 +5,8 @@
 //! contains metadata only; the Hive decides whether a signal becomes work.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use crate::{CoreCommand, TaskCoordinator};
 
@@ -16,6 +18,8 @@ pub const MAX_PAYLOAD_BYTES: usize = 16 * 1024;
 pub const MAX_TTL_MS: i64 = 24 * 60 * 60 * 1_000;
 /// Maximum length of an envelope identity field.
 pub const MAX_ID_BYTES: usize = 128;
+/// Maximum number of idempotency keys retained by one live receiver.
+pub const MAX_SEEN_IDEMPOTENCY_KEYS: usize = 512;
 
 /// Provenance of a Hive task. This is metadata, not an authorization grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,12 +183,16 @@ pub fn validate_result(result: &HiveSignalResult) -> Result<(), BoundaryError> {
 #[derive(Clone)]
 pub(crate) struct HiveSignalReceiver {
     coordinator: TaskCoordinator,
+    seen: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl HiveSignalReceiver {
     /// Creates a receiver backed by the existing Core coordinator.
     pub(crate) fn new(coordinator: TaskCoordinator) -> Self {
-        Self { coordinator }
+        Self {
+            coordinator,
+            seen: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     /// Accepts a signal and creates one Hive-owned task after validation.
@@ -205,8 +213,25 @@ impl HiveSignalReceiver {
             reason: "accepted".to_owned(),
         };
         validate_result(&result).map_err(|error| format!("hive_result_rejected:{error}"))?;
+        let idempotency_key = signal.idempotency_key.clone();
         let task_id = uuid::Uuid::new_v4().to_string();
-        self.coordinator
+        {
+            let mut seen = self
+                .seen
+                .lock()
+                .map_err(|_| "hive_signal_dedup_lock_poisoned".to_owned())?;
+            if let Some(existing_task_id) = seen.get(&idempotency_key) {
+                return Ok(existing_task_id.clone());
+            }
+            if seen.len() >= MAX_SEEN_IDEMPOTENCY_KEYS {
+                if let Some(evicted_key) = seen.keys().next().cloned() {
+                    seen.remove(&evicted_key);
+                }
+            }
+            seen.insert(idempotency_key.clone(), task_id.clone());
+        }
+        let dispatch_result = self
+            .coordinator
             .dispatch(CoreCommand::StartTask {
                 task_id: task_id.clone(),
                 prompt,
@@ -217,8 +242,13 @@ impl HiveSignalReceiver {
                 session_binding: None,
             })
             .await
-            .map_err(|error| error.to_string())?;
-        Ok(task_id)
+            .map_err(|error| error.to_string());
+        if dispatch_result.is_err() {
+            if let Ok(mut seen) = self.seen.lock() {
+                seen.remove(&idempotency_key);
+            }
+        }
+        dispatch_result.map(|_| task_id)
     }
 }
 
