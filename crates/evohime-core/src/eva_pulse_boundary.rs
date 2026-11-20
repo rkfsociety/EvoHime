@@ -360,7 +360,7 @@ impl HiveSignalReceiver {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct DurableAcceptance {
     idempotency_key: String,
     task_id: String,

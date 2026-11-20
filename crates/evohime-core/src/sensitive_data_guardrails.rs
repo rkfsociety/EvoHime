@@ -449,10 +449,9 @@ pub fn evaluate_egress(
     payload: &str,
 ) -> Result<(EgressDecision, Option<String>), GuardrailError> {
     let summary = classify_text(payload)?;
-    let payload_hash = summary.payload_hash.clone();
     let result = match redact_text(snapshot, payload) {
         Ok(result) => result,
-        Err(GuardrailError::Blocked(metadata)) => {
+        Err(GuardrailError::Blocked(_metadata)) => {
             return Ok((
                 decision(
                     &summary,
@@ -529,13 +528,58 @@ fn digits(value: &str) -> String {
 fn has_phone(input: &str) -> bool {
     let lower = input.to_ascii_lowercase();
     let labelled = lower.contains("phone") || lower.contains("телефон") || lower.contains("mobile");
-    let number = digits(input);
-    (number.len() >= 10 && number.len() <= 15) && (labelled || input.trim_start().starts_with('+'))
+    for (start, character) in input.char_indices() {
+        if character != '+' && !character.is_ascii_digit() {
+            continue;
+        }
+        let tail = &input[start..];
+        let candidate: String = tail
+            .chars()
+            .take_while(|value| {
+                value.is_ascii_digit() || matches!(value, '+' | '-' | '(' | ')' | '.' | ' ' | '\t')
+            })
+            .collect();
+        let number = digits(&candidate);
+        if (10..=15).contains(&number.len())
+            && (candidate.starts_with('+')
+                || (labelled
+                    && lower[..start]
+                        .chars()
+                        .rev()
+                        .take(32)
+                        .collect::<String>()
+                        .contains("enohp"))
+                || (labelled
+                    && lower[..start]
+                        .chars()
+                        .rev()
+                        .take(64)
+                        .collect::<String>()
+                        .contains("нофелет")))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn has_payment_card(input: &str) -> bool {
-    let number = digits(input);
-    (13..=19).contains(&number.len()) && luhn_valid(&number)
+    for (start, character) in input.char_indices() {
+        if !character.is_ascii_digit() {
+            continue;
+        }
+        let candidate: String = input[start..]
+            .chars()
+            .take_while(|value| {
+                value.is_ascii_digit() || matches!(value, '-' | ' ' | '\t' | '(' | ')')
+            })
+            .collect();
+        let number = digits(&candidate);
+        if (13..=19).contains(&number.len()) && luhn_valid(&number) {
+            return true;
+        }
+    }
+    false
 }
 
 fn luhn_valid(value: &str) -> bool {

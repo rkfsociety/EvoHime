@@ -1815,8 +1815,8 @@ impl ToolAgent {
                     estimated_input_tokens: assembled.ledger().estimated_prompt_tokens as usize,
                     input_tokens: usage.map(|value| value.prompt_tokens as u64),
                     output_tokens: usage.map(|value| value.completion_tokens as u64),
-                    request_id: Some(provenance_result.request_id.clone()),
-                    response_id: Some(provenance_result.response_id.clone()),
+                    request_id: provenance_result.request_id.clone(),
+                    response_id: provenance_result.response_id.clone(),
                     content_bytes: Some(result.content.len()),
                     latency_ms: Some(model_call_started_at.elapsed().as_millis() as u64),
                     content_sha256: Some(hex::encode(sha2::Sha256::digest(
