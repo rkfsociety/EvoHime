@@ -8,6 +8,11 @@ control/status owner, а не полный daemon с probe/task sink. Остан
 Hive-задачи. Полное разделение bootstrap, независимый recovery и typed signal
 receiver остаются в scope этапа.
 
+Добавлен versioned `EvaPulseSnapshot` с явным owner `eva_pulse`; он может быть
+передан отдельным IPC projection без включения Pulse lifecycle в Hive-owned
+snapshot. Текущий legacy `hive_state.snapshot` и `togglePulse` пока сохранены
+для обратной совместимости.
+
 ## Контракт runtime
 
 - EvaPulse владеет только собственным scheduler, status, cancellation,

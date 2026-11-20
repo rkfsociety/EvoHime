@@ -230,6 +230,21 @@ pub struct PulseStatus {
     pub enabled: bool,
 }
 
+/// Versioned, Pulse-owned lifecycle projection independent from Hive state.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EvaPulseSnapshot {
+    /// Projection contract version.
+    pub schema_version: u32,
+    /// Stable owner name for consumers that combine multiple runtime states.
+    pub owner: String,
+    /// `active`, `disabled`, or `sleeping`.
+    pub status: String,
+    /// Whether the user left EvaPulse enabled.
+    pub enabled: bool,
+    /// Unix milliseconds at which the next cycle is expected.
+    pub next_wake_at_ms: Option<i64>,
+}
+
 /// Test seam for the loop interval.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EvaPulseOptions {
@@ -288,6 +303,18 @@ impl EvaPulseController {
     /// Returns the independent EvaPulse lifecycle projection.
     pub fn status(&self) -> PulseStatus {
         self.daemon.status()
+    }
+
+    /// Returns a versioned projection owned exclusively by EvaPulse.
+    pub fn snapshot(&self) -> EvaPulseSnapshot {
+        let status = self.status();
+        EvaPulseSnapshot {
+            schema_version: 1,
+            owner: "eva_pulse".to_owned(),
+            status: status.status,
+            enabled: status.enabled,
+            next_wake_at_ms: status.next_wake_at_ms,
+        }
     }
 
     /// Stops EvaPulse without cancelling already accepted Hive tasks.
