@@ -2079,6 +2079,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn controller_exposes_a_pulse_owned_snapshot() {
+        let daemon = EvaPulseDaemon::spawn(
+            Arc::new(FakeProbe::new(healthy_report())),
+            Arc::new(CountingSink::default()),
+            options(),
+            None,
+        );
+        let controller = EvaPulseController::new(daemon.clone());
+        assert_eq!(
+            controller.snapshot(),
+            EvaPulseSnapshot {
+                schema_version: 1,
+                owner: "eva_pulse".to_owned(),
+                status: HIVE_PULSE_ACTIVE.to_owned(),
+                enabled: true,
+                next_wake_at_ms: None,
+            }
+        );
+        daemon.shutdown();
+    }
+
     #[tokio::test]
     async fn pulse_respects_budget_exhaustion() {
         let mut report = healthy_report();
