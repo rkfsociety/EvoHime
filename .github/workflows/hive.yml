@@ -1,0 +1,26 @@
+name: hive module
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/evohime-hive/'
+      - 'crates/evohime-hive-contract/'
+      - 'release-versions/hive.txt'
+      - '.github/workflows/hive.yml'
+      - '.github/workflows/module-native.yml'
+
+concurrency:
+  group: evohime-module-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  module:
+    uses: ./.github/workflows/module-native.yml
+    permissions: { contents: write }
+    with:
+      module: hive
+      package: evohime-hive
+      artifact: evohime-hive-daemon.exe
+      version_file: release-versions/hive.txt
