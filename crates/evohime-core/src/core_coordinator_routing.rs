@@ -124,7 +124,9 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
             }
             let hive_worktree_lease = if hive_route && !worktree_bound {
                 let lease = crate::hive_worktree::prepare_for_task(
-                    journal.as_ref(),
+                    journal
+                        .as_ref()
+                        .map(|j| j as &dyn evohime_hive_contract::HiveJournalProvider),
                     &task_id,
                     &workspace_root,
                 )
@@ -951,7 +953,14 @@ pub(super) async fn handle(state: Arc<Mutex<CoordinatorState>>, command: CoreCom
                     kernel_host.stop_sessions_for_task(&task_id).await;
                 }
                 if let Some(lease) = hive_worktree_lease.as_ref() {
-                    crate::hive_worktree::cleanup_if_clean(journal.as_ref(), lease, &task_id).await;
+                    crate::hive_worktree::cleanup_if_clean(
+                        journal
+                            .as_ref()
+                            .map(|j| j as &dyn evohime_hive_contract::HiveJournalProvider),
+                        lease,
+                        &task_id,
+                    )
+                    .await;
                 }
                 if let Some(lease) = chat_worktree_lease.as_ref() {
                     let _ =

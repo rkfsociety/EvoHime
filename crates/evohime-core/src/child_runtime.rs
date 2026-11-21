@@ -374,6 +374,7 @@ impl ChildTaskRequest {
             let Some(context) = crate::child_execution_context::current() else {
                 return Err(ChildRuntimeError::ChildContextRequired);
             };
+            // TODO: заменить на чтение из HiveSettings::max_delegation_depth
             if context.depth() > MAX_CHILD_DEPTH {
                 return Err(ChildRuntimeError::ChildDepthExceeded);
             }

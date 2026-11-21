@@ -18,6 +18,8 @@ path = "tests/bin/kill9_worker.rs"
 [dependencies]
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 evohime-cli-contract = { path = "../evohime-cli-contract" }
+evohime-hive-contract = { path = "../evohime-hive-contract" }
+evohime-hive = { path = "../evohime-hive" }
 evohime-context-budget = { path = "../context-budget" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-tool-runtime = { path = "../tool-runtime" }

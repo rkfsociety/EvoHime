@@ -19,8 +19,6 @@
 use evohime_model_gateway::ProviderLimits;
 use serde::{Deserialize, Serialize};
 
-use crate::child_contracts::MAX_CHILD_DEPTH;
-
 /// Version of the persisted [`HiveSettings`] contract.
 pub const HIVE_SETTINGS_SCHEMA_VERSION: u32 = 2;
 /// Default per-worker sub-agent ceiling.
@@ -29,6 +27,10 @@ pub const DEFAULT_MAX_SUBAGENTS_PER_WORKER: u32 = 16;
 pub const DEFAULT_MAX_PARALLEL_SUBAGENTS: u32 = 4;
 /// Default workflow-wide sub-agent guard.
 pub const DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW: u32 = 64;
+/// Default maximum child delegation depth.
+pub const DEFAULT_MAX_DELEGATION_DEPTH: u8 = 2;
+/// Hard upper bound accepted for `max_delegation_depth`.
+pub const MAX_DELEGATION_DEPTH_HARD_LIMIT: u8 = 8;
 /// Hard upper bound accepted for any persisted sub-agent ceiling.
 ///
 /// The value is an implementation guard against corrupt or hostile settings,
@@ -37,7 +39,7 @@ pub const DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW: u32 = 64;
 pub const MAX_SUBAGENT_HARD_LIMIT: u32 = 256;
 /// Hard upper bound accepted for the parallel sub-agent ceiling.
 pub const MAX_PARALLEL_HARD_LIMIT: u32 = 32;
-/// Storage scope used by [`crate::EventJournal::hive_settings`].
+/// Storage scope used when persisting `HiveSettings` in the journal store.
 pub const HIVE_SETTINGS_SCOPE: &str = "hive";
 /// Default interval between EvaPulse background cycles, in seconds.
 pub const DEFAULT_PULSE_INTERVAL_SECS: u64 = 1_800;
@@ -82,6 +84,9 @@ pub struct HiveSettings {
     pub max_parallel_subagents: u32,
     /// Hard workflow-wide guard. Must be positive.
     pub max_total_subagents_per_workflow: u32,
+    /// Maximum child delegation depth allowed for Hive workers.
+    #[serde(default = "default_max_delegation_depth")]
+    pub max_delegation_depth: u8,
     /// Interval between EvaPulse background cycles, in seconds.
     #[serde(default = "default_pulse_interval_secs")]
     pub pulse_interval_secs: u64,
@@ -141,6 +146,10 @@ fn default_schema_version() -> u32 {
     HIVE_SETTINGS_SCHEMA_VERSION
 }
 
+fn default_max_delegation_depth() -> u8 {
+    DEFAULT_MAX_DELEGATION_DEPTH
+}
+
 fn default_pulse_interval_secs() -> u64 {
     DEFAULT_PULSE_INTERVAL_SECS
 }
@@ -156,6 +165,7 @@ impl Default for HiveSettings {
             max_subagents_per_worker: DEFAULT_MAX_SUBAGENTS_PER_WORKER,
             max_parallel_subagents: DEFAULT_MAX_PARALLEL_SUBAGENTS,
             max_total_subagents_per_workflow: DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW,
+            max_delegation_depth: DEFAULT_MAX_DELEGATION_DEPTH,
             pulse_interval_secs: DEFAULT_PULSE_INTERVAL_SECS,
             daily_budget_usd: DEFAULT_DAILY_BUDGET_USD,
             eva_workspace_path: None,
@@ -202,6 +212,15 @@ impl HiveSettings {
             return Err(HiveSettingsError::TotalAboveHardLimit {
                 value: self.max_total_subagents_per_workflow,
                 limit: MAX_SUBAGENT_HARD_LIMIT,
+            });
+        }
+        if self.max_delegation_depth == 0
+            || self.max_delegation_depth > MAX_DELEGATION_DEPTH_HARD_LIMIT
+        {
+            return Err(HiveSettingsError::InvalidDelegationDepth {
+                value: self.max_delegation_depth,
+                min: 1,
+                max: MAX_DELEGATION_DEPTH_HARD_LIMIT,
             });
         }
         if !(MIN_PULSE_INTERVAL_SECS..=MAX_PULSE_INTERVAL_SECS).contains(&self.pulse_interval_secs)
@@ -448,6 +467,7 @@ impl HiveSettings {
                 {"name": "max_subagents_per_worker", "type": "u32", "zero": "unbounded_up_to_total"},
                 {"name": "max_parallel_subagents", "type": "u32", "zero": "unbounded_up_to_worker_ceiling"},
                 {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"},
+                {"name": "max_delegation_depth", "type": "u8", "default": DEFAULT_MAX_DELEGATION_DEPTH, "zero": "invalid"},
                 {"name": "pulse_interval_secs", "type": "u64", "zero": "invalid"},
                 {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"},
                 {"name": "eva_workspace_path", "type": "optional_existing_git_directory", "default": null},
@@ -467,7 +487,7 @@ impl HiveSettings {
                 {"name": "proactive_evolution_enabled", "type": "bool", "default": false}
             ],
             "note": "ceilings are safety guards, not a spawn plan",
-            "max_child_depth": MAX_CHILD_DEPTH
+            "max_child_depth": DEFAULT_MAX_DELEGATION_DEPTH
         })
         .to_string()
         .into_bytes()
@@ -542,6 +562,15 @@ pub enum HiveSettingsError {
         /// Hard implementation limit.
         limit: u32,
     },
+    /// The delegation depth is zero or exceeds the hard limit.
+    InvalidDelegationDepth {
+        /// Submitted depth.
+        value: u8,
+        /// Minimum accepted depth.
+        min: u8,
+        /// Maximum accepted depth.
+        max: u8,
+    },
     /// A queen-authored ceiling exceeds the effective safety ceiling.
     WorkerCeilingAboveLimit {
         /// Requested ceiling.
@@ -607,6 +636,9 @@ impl std::fmt::Display for HiveSettingsError {
                     "max_total_subagents_per_workflow {value} exceeds {limit}"
                 )
             }
+            Self::InvalidDelegationDepth { value, min, max } => {
+                write!(f, "max_delegation_depth {value} is outside {min}..={max}")
+            }
             Self::WorkerCeilingAboveLimit { requested, limit } => {
                 write!(
                     f,
@@ -644,22 +676,6 @@ impl std::fmt::Display for HiveSettingsError {
 
 impl std::error::Error for HiveSettingsError {}
 
-impl From<HiveSettingsError> for crate::child_contracts::ContractError {
-    fn from(error: HiveSettingsError) -> Self {
-        use crate::child_contracts::ContractError;
-        match error {
-            HiveSettingsError::WorkerCeilingAboveLimit { requested, limit } => {
-                ContractError::DelegationCeilingAboveHiveLimit { requested, limit }
-            }
-            HiveSettingsError::WorkflowGuarded { .. }
-            | HiveSettingsError::WorkflowCeilingAboveRemaining { .. } => {
-                ContractError::DelegationWorkflowGuardExceeded
-            }
-            other => ContractError::HiveSettingsRejected(other.to_string()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -670,6 +686,7 @@ mod tests {
         assert_eq!(settings.max_subagents_per_worker, 16);
         assert_eq!(settings.max_parallel_subagents, 4);
         assert_eq!(settings.max_total_subagents_per_workflow, 64);
+        assert_eq!(settings.max_delegation_depth, DEFAULT_MAX_DELEGATION_DEPTH);
         assert!(settings.validate().is_ok());
         assert_eq!(settings.effective_worker_ceiling(), 16);
         assert_eq!(settings.effective_parallel_limit(), 4);
@@ -710,6 +727,22 @@ mod tests {
             ..HiveSettings::default()
         };
         assert!(settings.validate().is_err());
+        let zero_depth = HiveSettings {
+            max_delegation_depth: 0,
+            ..HiveSettings::default()
+        };
+        assert!(matches!(
+            zero_depth.validate(),
+            Err(HiveSettingsError::InvalidDelegationDepth { .. })
+        ));
+        let over_depth = HiveSettings {
+            max_delegation_depth: MAX_DELEGATION_DEPTH_HARD_LIMIT + 1,
+            ..HiveSettings::default()
+        };
+        assert!(matches!(
+            over_depth.validate(),
+            Err(HiveSettingsError::InvalidDelegationDepth { .. })
+        ));
     }
 
     #[test]
@@ -751,6 +784,7 @@ mod tests {
         let loaded = HiveSettings::from_json(legacy).expect("legacy settings load");
         assert_eq!(loaded.pulse_interval_secs, DEFAULT_PULSE_INTERVAL_SECS);
         assert_eq!(loaded.daily_budget_usd, DEFAULT_DAILY_BUDGET_USD);
+        assert_eq!(loaded.max_delegation_depth, DEFAULT_MAX_DELEGATION_DEPTH);
 
         let zero_budget = HiveSettings {
             daily_budget_usd: 0.0,

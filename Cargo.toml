@@ -5,6 +5,8 @@ members = [
   "crates/tool-runtime",
   "crates/model-gateway",
   "crates/evohime-core",
+  "crates/evohime-hive-contract",
+  "crates/evohime-hive",
   "crates/evohime-local-storage",
   "crates/evohime-listener-contract",
   "crates/evohime-listener-audio",

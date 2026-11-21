@@ -7,16 +7,19 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use tokio::process::Command;
 
-use crate::EventJournal;
+use evohime_hive_contract::{HiveJournalProvider, HiveWorktreeLeaseRequest};
+use tokio::process::Command;
 
 /// Active detached worktree allocated for a single Hive task.
 #[derive(Debug, Clone)]
-pub(crate) struct HiveWorktreeLease {
-    pub(crate) base_root: PathBuf,
-    pub(crate) worktree_root: PathBuf,
-    pub(crate) worktree_id: String,
+pub struct HiveWorktreeLease {
+    /// Base Git repository root directory.
+    pub base_root: PathBuf,
+    /// Isolated detached worktree root directory.
+    pub worktree_root: PathBuf,
+    /// Stable identifier of the worktree lease.
+    pub worktree_id: String,
 }
 
 fn sanitize_worktree_id(task_id: &str) -> String {
@@ -52,8 +55,8 @@ async fn run_git(root: &Path, args: &[&str]) -> Option<std::process::Output> {
 /// Returns `None` when `base_root` is not a Git repository (for example, in
 /// plain directory tests) or when worktree creation fails, allowing the caller
 /// to fall back cleanly without breaking non-Git workspaces.
-pub(crate) async fn prepare_for_task(
-    journal: Option<&EventJournal>,
+pub async fn prepare_for_task(
+    journal: Option<&dyn HiveJournalProvider>,
     task_id: &str,
     base_root: &Path,
 ) -> Option<HiveWorktreeLease> {
@@ -97,20 +100,16 @@ pub(crate) async fn prepare_for_task(
     }
 
     if let Some(journal) = journal {
-        let database = journal.database().lock().await;
-        let record = evohime_local_storage::domains::workflow::TaskWorktreeRecord {
-            worktree_id: worktree_id.clone(),
-            task_id: task_id.to_owned(),
-            repository_scope: crate::task_memory::workspace_scope_id(base_root),
-            branch: "detached".into(),
-            root_ref: format!(".evohime/worktrees/{worktree_id}"),
-            base_commit,
-            state: "ready".into(),
-            version: 1,
-            idempotency_key: format!("hive-worktree:{task_id}"),
-            updated_at_ms: crate::task_memory::now_millis() as i64,
-        };
-        let _ = evohime_local_storage::domains::workflow::create(database.connection(), &record);
+        journal
+            .register_worktree_lease(HiveWorktreeLeaseRequest {
+                worktree_id: worktree_id.clone(),
+                task_id: task_id.to_owned(),
+                base_root: base_root.to_string_lossy().into_owned(),
+                branch: "detached".into(),
+                root_ref: format!(".evohime/worktrees/{worktree_id}"),
+                base_commit,
+            })
+            .await;
     }
 
     Some(HiveWorktreeLease {
@@ -128,8 +127,8 @@ pub(crate) async fn prepare_for_task(
 /// after the agent has answered. Removing the directory then would break the
 /// child agents' reads, so cleanup waits until every workflow run owned by the
 /// task reaches a terminal state.
-pub(crate) async fn cleanup_if_clean(
-    journal: Option<&EventJournal>,
+pub async fn cleanup_if_clean(
+    journal: Option<&dyn HiveJournalProvider>,
     lease: &HiveWorktreeLease,
     task_id: &str,
 ) {
@@ -137,11 +136,7 @@ pub(crate) async fn cleanup_if_clean(
         return;
     }
     if let Some(journal) = journal {
-        if journal
-            .has_active_workflow_run(task_id)
-            .await
-            .unwrap_or(true)
-        {
+        if journal.has_active_workflow_run(task_id).await {
             return;
         }
     }
@@ -168,18 +163,9 @@ pub(crate) async fn cleanup_if_clean(
     }
 
     if let Some(journal) = journal {
-        let database = journal.database().lock().await;
-        if let Ok(Some(current)) =
-            evohime_local_storage::domains::workflow::get(database.connection(), &lease.worktree_id)
-        {
-            let _ = evohime_local_storage::domains::workflow::transition(
-                database.connection(),
-                &lease.worktree_id,
-                current.version,
-                "cleanup_pending",
-                crate::task_memory::now_millis() as i64,
-            );
-        }
+        journal
+            .mark_worktree_cleanup_pending(&lease.worktree_id)
+            .await;
     }
 }
 

@@ -319,3 +319,164 @@ impl EventJournal {
         Ok(next)
     }
 }
+
+impl evohime_hive_contract::HiveJournalProvider for EventJournal {
+    fn latest_sequence(&self) -> evohime_hive_contract::BoxFuture<'_, i64> {
+        Box::pin(async move { self.latest_sequence().await })
+    }
+
+    fn replay_events(
+        &self,
+        after_sequence: i64,
+        limit: usize,
+    ) -> evohime_hive_contract::BoxFuture<
+        '_,
+        Result<Vec<evohime_hive_contract::HiveEventRecord>, evohime_hive_contract::HiveContractError>,
+    > {
+        Box::pin(async move {
+            let records = self
+                .replay(after_sequence, limit)
+                .await
+                .map_err(|error| evohime_hive_contract::HiveContractError::Storage(error.to_string()))?;
+            Ok(records
+                .into_iter()
+                .map(|record| evohime_hive_contract::HiveEventRecord {
+                    sequence_id: record.sequence_id,
+                    task_id: record.task_id,
+                    event_type: record.event_type,
+                    payload: record.payload,
+                    created_at_ms: record.created_at_ms,
+                })
+                .collect())
+        })
+    }
+
+    fn record_audit<'a>(
+        &'a self,
+        task_id: &'a str,
+        event_type: &'a str,
+        payload: &'a [u8],
+    ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>> {
+        Box::pin(async move {
+            self.record_audit(task_id, event_type, payload)
+                .await
+                .map_err(|error| evohime_hive_contract::HiveContractError::Storage(error.to_string()))
+        })
+    }
+
+    fn prune_signal_records<'a>(
+        &'a self,
+        event_types: &'a [&'a str],
+        keep_limit: usize,
+    ) -> evohime_hive_contract::BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let Ok(database) = self.database.try_lock() else {
+                return;
+            };
+            let limit = keep_limit as i64;
+            for event_type in event_types {
+                let _ = database.connection().execute(
+                    "DELETE FROM events
+                     WHERE event_type = ?1
+                       AND sequence_id NOT IN (
+                           SELECT sequence_id FROM events
+                           WHERE event_type = ?1
+                           ORDER BY sequence_id DESC LIMIT ?2
+                       )",
+                    rusqlite::params![event_type, limit],
+                );
+            }
+        })
+    }
+
+    fn load_hive_settings_json(
+        &self,
+    ) -> evohime_hive_contract::BoxFuture<
+        '_,
+        Result<Option<serde_json::Value>, evohime_hive_contract::HiveContractError>,
+    > {
+        Box::pin(async move {
+            let settings = self
+                .hive_settings()
+                .await
+                .map_err(evohime_hive_contract::HiveContractError::Storage)?;
+            let value = serde_json::to_value(settings).map_err(|error| {
+                evohime_hive_contract::HiveContractError::Serialization(error.to_string())
+            })?;
+            Ok(Some(value))
+        })
+    }
+
+    fn save_hive_settings_json<'a>(
+        &'a self,
+        settings: &'a serde_json::Value,
+    ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>> {
+        Box::pin(async move {
+            let parsed: crate::hive_settings::HiveSettings =
+                serde_json::from_value(settings.clone()).map_err(|error| {
+                    evohime_hive_contract::HiveContractError::Serialization(error.to_string())
+                })?;
+            self.save_hive_settings(&parsed)
+                .await
+                .map(|_| ())
+                .map_err(evohime_hive_contract::HiveContractError::Storage)
+        })
+    }
+
+    fn persistent_agent_roles(
+        &self,
+    ) -> evohime_hive_contract::BoxFuture<'_, std::collections::HashMap<String, String>> {
+        Box::pin(async move { crate::hive_observation::persistent_agent_roles(self).await })
+    }
+
+    fn register_worktree_lease(
+        &self,
+        request: evohime_hive_contract::HiveWorktreeLeaseRequest,
+    ) -> evohime_hive_contract::BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let database = self.database().lock().await;
+            let record = evohime_local_storage::domains::workflow::TaskWorktreeRecord {
+                worktree_id: request.worktree_id,
+                task_id: request.task_id,
+                repository_scope: crate::task_memory::workspace_scope_id(std::path::Path::new(
+                    &request.base_root,
+                )),
+                branch: request.branch,
+                root_ref: request.root_ref,
+                base_commit: request.base_commit,
+                state: "ready".into(),
+                version: 1,
+                idempotency_key: format!("hive-worktree:{}", request.task_id),
+                updated_at_ms: crate::task_memory::now_millis() as i64,
+            };
+            let _ = evohime_local_storage::domains::workflow::create(database.connection(), &record);
+        })
+    }
+
+    fn has_active_workflow_run<'a>(
+        &'a self,
+        task_id: &'a str,
+    ) -> evohime_hive_contract::BoxFuture<'a, bool> {
+        Box::pin(async move { self.has_active_workflow_run(task_id).await.unwrap_or(true) })
+    }
+
+    fn mark_worktree_cleanup_pending<'a>(
+        &'a self,
+        worktree_id: &'a str,
+    ) -> evohime_hive_contract::BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let database = self.database().lock().await;
+            if let Ok(Some(current)) =
+                evohime_local_storage::domains::workflow::get(database.connection(), worktree_id)
+            {
+                let _ = evohime_local_storage::domains::workflow::transition(
+                    database.connection(),
+                    worktree_id,
+                    current.version,
+                    "cleanup_pending",
+                    crate::task_memory::now_millis() as i64,
+                );
+            }
+        })
+    }
+}

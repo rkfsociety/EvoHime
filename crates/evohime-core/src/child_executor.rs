@@ -1334,6 +1334,7 @@ impl ChildExecutor for RegisteredChildExecutor {
                     context.depth().saturating_add(1)
                 }
             };
+            // TODO: заменить на чтение из HiveSettings::max_delegation_depth
             if depth > crate::child_contracts::MAX_CHILD_DEPTH {
                 return Err(contract_error(ContractError::ChildDepthExceeded));
             }
@@ -1346,6 +1347,7 @@ impl ChildExecutor for RegisteredChildExecutor {
                 request.child_task_id.clone(),
                 request.parent_task_id.clone(),
                 depth,
+                // TODO: заменить на чтение из HiveSettings::max_delegation_depth
                 request.has_delegation_grant() && depth < crate::child_contracts::MAX_CHILD_DEPTH,
             );
             crate::child_execution_context::scope(context, self.execute(request)).await
@@ -1500,6 +1502,7 @@ fn merge_delegated_output(run: &mut RoleRunOutput, report: &TypedChildReport) {
     .chars()
     .take(crate::child_contracts::MAX_REPORT_CHARS)
     .collect();
+    // TODO: заменить на чтение из HiveSettings::max_delegation_depth
     if run.delegated.len() < crate::hive_settings::MAX_SUBAGENT_HARD_LIMIT as usize {
         run.delegated.push(DelegatedSummary {
             child_task_id: report.child_task_id.clone(),

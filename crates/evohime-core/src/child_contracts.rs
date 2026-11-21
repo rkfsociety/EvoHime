@@ -909,6 +909,7 @@ impl TypedChildTaskRequest {
             let Some(context) = crate::child_execution_context::current() else {
                 return Err(ContractError::ChildContextRequired);
             };
+            // TODO: заменить на чтение из HiveSettings::max_delegation_depth
             if context.depth() > MAX_CHILD_DEPTH {
                 return Err(ContractError::ChildDepthExceeded);
             }
@@ -1697,6 +1698,22 @@ pub enum ContractError {
     // Serialization
     /// A contract value could not be serialized.
     SerializationError,
+}
+
+impl From<crate::hive_settings::HiveSettingsError> for ContractError {
+    fn from(error: crate::hive_settings::HiveSettingsError) -> Self {
+        use crate::hive_settings::HiveSettingsError;
+        match error {
+            HiveSettingsError::WorkerCeilingAboveLimit { requested, limit } => {
+                Self::DelegationCeilingAboveHiveLimit { requested, limit }
+            }
+            HiveSettingsError::WorkflowGuarded { .. }
+            | HiveSettingsError::WorkflowCeilingAboveRemaining { .. } => {
+                Self::DelegationWorkflowGuardExceeded
+            }
+            other => Self::HiveSettingsRejected(other.to_string()),
+        }
+    }
 }
 
 impl fmt::Display for ContractError {

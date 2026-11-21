@@ -8,11 +8,11 @@
 use evohime_permissions::{Permission, PermissionMode};
 
 /// Fixed identifier of the Hive permission session.
-pub(crate) const SESSION_ID: u128 = 0x4556_4f48_494d_4500_4849_5645_0000_0001;
+pub const SESSION_ID: u128 = 0x4556_4f48_494d_4500_4849_5645_0000_0001;
 
 /// Hive policy: reading is free; anything that mutates state or leaves the
 /// workspace requires an explicit approval.
-pub(crate) fn modes() -> [(Permission, PermissionMode); 8] {
+pub fn modes() -> [(Permission, PermissionMode); 8] {
     [
         (Permission::FilesystemRead, PermissionMode::Allow),
         (Permission::GitRead, PermissionMode::Allow),
