@@ -33,6 +33,7 @@ jobs:
       transaction: ${{ steps.select.outputs.transaction }}
       verifier: ${{ steps.select.outputs.verifier }}
       updater: ${{ steps.select.outputs.updater }}
+      hive: ${{ steps.select.outputs.hive }}
       installer: ${{ steps.select.outputs.installer }}
     steps:
       - uses: actions/checkout@v7
@@ -46,7 +47,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           MANUAL_MODULES: ${{ inputs.modules }}
         run: |
-          $modules = @('shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'verifier', 'updater')
+          $modules = @('shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker', 'listener', 'listener-runtime', 'transaction', 'verifier', 'updater', 'hive')
           $manual = @($env:MANUAL_MODULES -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
           $manualSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
           foreach ($module in $manual) {
@@ -156,10 +157,11 @@ jobs:
             'transaction' = '${{ needs.changes.outputs.transaction }}'
             'verifier' = '${{ needs.changes.outputs.verifier }}'
             'updater' = '${{ needs.changes.outputs.updater }}'
+            'hive' = '${{ needs.changes.outputs.hive }}'
             'installer' = '${{ needs.changes.outputs.installer }}'
           }
           $workflowFiles = @{
-            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'installer' = 'installer.yml'
+            'shell-host' = 'shell-host.yml'; 'ui-bundle' = 'ui-bundle.yml'; 'core' = 'core.yml'; 'supervisor' = 'supervisor.yml'; 'cli' = 'cli.yml'; 'analysis-worker' = 'analysis-worker.yml'; 'listener' = 'listener-module.yml'; 'listener-runtime' = 'listener.yml'; 'transaction' = 'transaction.yml'; 'verifier' = 'verifier.yml'; 'updater' = 'update-agent.yml'; 'hive' = 'hive.yml'; 'installer' = 'installer.yml'
           }
           $dispatchStarted = [DateTime]::UtcNow
           $dispatched = [System.Collections.Generic.List[object]]::new()

@@ -7,7 +7,7 @@ if (-not $env:GITHUB_REPOSITORY) { throw 'GITHUB_REPOSITORY is required.' }
 
 $moduleIds = @(
     'shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker',
-    'listener', 'listener-runtime', 'transaction', 'verifier', 'updater'
+    'listener', 'listener-runtime', 'transaction', 'verifier', 'updater', 'hive'
 )
 $releasePages = @(gh api --paginate --slurp "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json)
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось получить список модульных релизов.' }
