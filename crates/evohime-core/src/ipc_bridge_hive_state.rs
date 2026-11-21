@@ -716,28 +716,26 @@ impl IpcBridge {
                     .map_err(|serialization_error| serialization_error.to_string()),
                 }
             }
-            "route_tokens" => {
-                match evohime_hive_contract::HiveJournalProvider::route_tokens_since(
-                    &self.journal,
-                    request.start_ms,
-                    &request.route_scope,
-                )
-                .await
-                {
-                    Ok(tokens) => serde_json::to_vec(&serde_json::json!({
-                        "ok": true,
-                        "tokens": tokens,
-                        "rate_limits": rate_limits,
-                    }))
-                    .map_err(|error| error.to_string()),
-                    Err(error) => serde_json::to_vec(&serde_json::json!({
-                        "ok": false,
-                        "error_code": error.to_string(),
-                        "rate_limits": rate_limits,
-                    }))
-                    .map_err(|serialization_error| serialization_error.to_string()),
-                }
-            }
+            "route_tokens" => match evohime_hive_contract::HiveJournalProvider::route_tokens_since(
+                &self.journal,
+                request.start_ms,
+                &request.route_scope,
+            )
+            .await
+            {
+                Ok(tokens) => serde_json::to_vec(&serde_json::json!({
+                    "ok": true,
+                    "tokens": tokens,
+                    "rate_limits": rate_limits,
+                }))
+                .map_err(|error| error.to_string()),
+                Err(error) => serde_json::to_vec(&serde_json::json!({
+                    "ok": false,
+                    "error_code": error.to_string(),
+                    "rate_limits": rate_limits,
+                }))
+                .map_err(|serialization_error| serialization_error.to_string()),
+            },
             other => serde_json::to_vec(&serde_json::json!({
                 "ok": false,
                 "error_code": format!("unsupported get_hive_model_usage operation: {other}"),
@@ -780,12 +778,11 @@ impl IpcBridge {
                 .map_err(|error| error.to_string())
             }
             "has_active_run" => {
-                let active =
-                    evohime_hive_contract::HiveJournalProvider::has_active_workflow_run(
-                        &self.journal,
-                        &request.task_id,
-                    )
-                    .await;
+                let active = evohime_hive_contract::HiveJournalProvider::has_active_workflow_run(
+                    &self.journal,
+                    &request.task_id,
+                )
+                .await;
                 serde_json::to_vec(&serde_json::json!({
                     "accepted": true,
                     "active": active,
