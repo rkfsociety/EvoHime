@@ -541,9 +541,19 @@ impl IpcBridge {
         )
         .await;
         if let Some(pulse) = self.pulse.as_ref() {
-            let status = pulse.status();
-            observation.pulse_status = status.status;
-            observation.pulse_next_wake_at_ms = status.next_wake_at_ms;
+            match pulse {
+                HivePulseHandle::Local(controller) => {
+                    let status = controller.status();
+                    observation.pulse_status = status.status;
+                    observation.pulse_next_wake_at_ms = status.next_wake_at_ms;
+                }
+                HivePulseHandle::External(proxy) => {
+                    if let Ok(snapshot) = proxy.snapshot().await {
+                        observation.pulse_status = snapshot.status;
+                        observation.pulse_next_wake_at_ms = snapshot.next_wake_at_ms;
+                    }
+                }
+            }
         }
         crate::hive_state::HiveStateSnapshot::from_observation(
             &settings,
@@ -556,30 +566,71 @@ impl IpcBridge {
     /// Applies the UI's EvaPulse toggle and returns the new daemon projection.
     ///
     /// The toggle is not an authorization decision: it only enables or parks
-    /// the Core-owned background loop. Budget and provider caps are still
+    /// the background loop. Budget and provider caps are still
     /// enforced by the daemon itself on every cycle.
-    pub(super) fn toggle_pulse(&self, enabled: bool) -> Result<Vec<u8>, String> {
+    pub(super) async fn toggle_pulse(&self, enabled: bool) -> Result<Vec<u8>, String> {
         let Some(pulse) = self.pulse.as_ref() else {
-            return serde_json::to_vec(&serde_json::json!({
-                "schema_version": 1,
-                "accepted": false,
-                "enabled": false,
-                "status": crate::hive_state::HIVE_PULSE_DISABLED,
-                "next_wake_at_ms": serde_json::Value::Null,
-                "error_code": "pulse_unavailable",
-            }))
-            .map_err(|error| error.to_string());
+            return pulse_unavailable_toggle_payload();
         };
-        pulse.set_enabled(enabled);
-        let status = pulse.status();
-        serde_json::to_vec(&serde_json::json!({
-            "schema_version": 1,
-            "accepted": true,
-            "enabled": enabled,
-            "status": status.status,
-            "next_wake_at_ms": status.next_wake_at_ms,
-            "error_code": "",
-        }))
-        .map_err(|error| error.to_string())
+        match pulse {
+            HivePulseHandle::Local(controller) => {
+                controller.set_enabled(enabled);
+                let status = controller.status();
+                serde_json::to_vec(&serde_json::json!({
+                    "schema_version": 1,
+                    "accepted": true,
+                    "enabled": enabled,
+                    "status": status.status,
+                    "next_wake_at_ms": status.next_wake_at_ms,
+                    "error_code": "",
+                }))
+                .map_err(|error| error.to_string())
+            }
+            HivePulseHandle::External(proxy) => match proxy.set_enabled(enabled).await {
+                Ok(snapshot) => serde_json::to_vec(&serde_json::json!({
+                    "schema_version": 1,
+                    "accepted": true,
+                    "enabled": snapshot.enabled,
+                    "status": snapshot.status,
+                    "next_wake_at_ms": snapshot.next_wake_at_ms,
+                    "error_code": "",
+                }))
+                .map_err(|error| error.to_string()),
+                Err(_) => pulse_unavailable_toggle_payload(),
+            },
+        }
     }
+
+    pub(super) async fn eva_pulse_status_payload(&self) -> Result<Vec<u8>, serde_json::Error> {
+        match self.pulse.as_ref() {
+            Some(HivePulseHandle::Local(controller)) => serde_json::to_vec(&controller.snapshot()),
+            Some(HivePulseHandle::External(proxy)) => match proxy.snapshot().await {
+                Ok(snapshot) => serde_json::to_vec(&snapshot),
+                Err(_) => unavailable_pulse_status_payload(),
+            },
+            None => unavailable_pulse_status_payload(),
+        }
+    }
+}
+
+fn pulse_unavailable_toggle_payload() -> Result<Vec<u8>, String> {
+    serde_json::to_vec(&serde_json::json!({
+        "schema_version": 1,
+        "accepted": false,
+        "enabled": false,
+        "status": crate::hive_state::HIVE_PULSE_DISABLED,
+        "next_wake_at_ms": serde_json::Value::Null,
+        "error_code": "pulse_unavailable",
+    }))
+    .map_err(|error| error.to_string())
+}
+
+fn unavailable_pulse_status_payload() -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(&serde_json::json!({
+        "schema_version": 1,
+        "owner": "eva_pulse",
+        "status": "unavailable",
+        "enabled": false,
+        "next_wake_at_ms": null,
+    }))
 }

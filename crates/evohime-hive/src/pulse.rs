@@ -245,6 +245,28 @@ pub struct EvaPulseSnapshot {
     pub next_wake_at_ms: Option<i64>,
 }
 
+/// Default Windows named pipe path used for Core-to-daemon pulse control.
+pub const DEFAULT_HIVE_PULSE_CONTROL_PIPE: &str = r"\\.\pipe\evohime-hive-pulse";
+
+/// Environment variable overriding the Windows named pipe path for pulse control.
+pub const HIVE_PULSE_CONTROL_PIPE_ENV: &str = "EVOHIME_HIVE_CONTROL_PIPE";
+
+/// Environment variable overriding the Unix socket path for pulse control.
+pub const HIVE_PULSE_CONTROL_SOCKET_ENV: &str = "EVOHIME_HIVE_CONTROL_SOCKET";
+
+/// Control command sent from Core to the external `evohime-hive-daemon`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "command", rename_all = "snake_case")]
+pub enum HivePulseControlRequest {
+    /// Enables or pauses the external EvaPulse loop.
+    TogglePulse {
+        /// Desired enabled state.
+        enabled: bool,
+    },
+    /// Requests the current EvaPulse snapshot.
+    GetPulseStatus,
+}
+
 /// Test seam for the loop interval.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct EvaPulseOptions {

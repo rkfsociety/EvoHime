@@ -334,8 +334,8 @@ impl IpcBridge {
     /// The daemon is spawned once by the Core bootstrap; every IPC connection
     /// shares the same handle so a toggle from one shell is seen by all.
     pub fn with_pulse_daemon(mut self, pulse: Arc<crate::eva_pulse::EvaPulseDaemon>) -> Self {
-        self.pulse = Some(Arc::new(crate::eva_pulse::EvaPulseController::new(
-            (*pulse).clone(),
+        self.pulse = Some(HivePulseHandle::Local(Arc::new(
+            crate::eva_pulse::EvaPulseController::new((*pulse).clone()),
         )));
         self
     }
@@ -345,7 +345,17 @@ impl IpcBridge {
         mut self,
         pulse: Arc<crate::eva_pulse::EvaPulseController>,
     ) -> Self {
-        self.pulse = Some(pulse);
+        self.pulse = Some(HivePulseHandle::Local(pulse));
+        self
+    }
+
+    /// Attaches an IPC proxy that routes EvaPulse control commands to the
+    /// standalone `evohime-hive-daemon` process.
+    pub fn with_external_pulse_proxy(
+        mut self,
+        proxy: Arc<crate::external_pulse::ExternalHivePulseProxy>,
+    ) -> Self {
+        self.pulse = Some(HivePulseHandle::External(proxy));
         self
     }
 

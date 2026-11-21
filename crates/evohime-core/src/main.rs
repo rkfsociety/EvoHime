@@ -430,21 +430,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => return Err(format!("logging failed: {error}").into()),
     };
-    let workspace_provider =
-        std::sync::Arc::new(evohime_core::hive_context::CoreWorkspaceProvider::new(
-            journal.clone(),
-            selected_model.clone(),
-        ));
-    let pulse = evohime_hive::pulse::EvaPulseDaemon::start(
-        std::sync::Arc::new(journal.clone()),
-        gateway_config.clone(),
-        workspace_provider,
-        std::sync::Arc::new(coordinator.clone()),
-        Some(std::sync::Arc::clone(&logger)
-            as std::sync::Arc<
-                dyn evohime_hive_contract::HiveTelemetrySink,
-            >),
-    );
+    let pulse_proxy =
+        std::sync::Arc::new(evohime_core::external_pulse::ExternalHivePulseProxy::new());
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
         coordinator,
@@ -455,9 +442,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     )
     .with_selected_model(selected_model)
     .with_analysis_kernels(analysis_kernels)
-    .with_pulse_controller(std::sync::Arc::new(
-        evohime_hive::pulse::EvaPulseController::new(pulse.clone()),
-    ))
+    .with_external_pulse_proxy(pulse_proxy)
     .with_proactivity(proactivity)
     .with_workflow_runtime_state(workflow_state)
     .with_provider_catalog_cache(provider_catalog_cache)
@@ -620,7 +605,6 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     event_trigger_cancellation.cancel();
     let _ = event_trigger_source_task.await;
     free_access_probe_cancellation.cancel();
-    pulse.shutdown();
     result.map_err(|error| format!("core failed: {error}"))?;
     heartbeat_task.abort();
     automation_scheduler_task.abort();

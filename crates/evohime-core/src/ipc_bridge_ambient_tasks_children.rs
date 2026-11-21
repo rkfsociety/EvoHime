@@ -511,23 +511,14 @@ impl IpcBridge {
                 .await?;
             }
             Some(generated::command_envelope::Command::TogglePulse(request)) => {
-                let payload = match self.toggle_pulse(request.enabled) {
+                let payload = match self.toggle_pulse(request.enabled).await {
                     Ok(payload) => payload,
                     Err(error) => error_response_payload(error),
                 };
                 self.write_response(writer, "pulse.status", payload).await?;
             }
             Some(generated::command_envelope::Command::EvaPulseStatus(_)) => {
-                let payload = match self.pulse.as_ref() {
-                    Some(pulse) => serde_json::to_vec(&pulse.snapshot())?,
-                    None => serde_json::to_vec(&serde_json::json!({
-                        "schema_version": 1,
-                        "owner": "eva_pulse",
-                        "status": "unavailable",
-                        "enabled": false,
-                        "next_wake_at_ms": null,
-                    }))?,
-                };
+                let payload = self.eva_pulse_status_payload().await?;
                 self.write_response(writer, "eva_pulse.status", payload)
                     .await?;
             }

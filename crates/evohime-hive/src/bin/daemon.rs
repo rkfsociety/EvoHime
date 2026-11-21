@@ -11,7 +11,10 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use evohime_desktop_ipc::{generated, session, transport};
-use evohime_hive::pulse::EvaPulseDaemon;
+use evohime_hive::pulse::{
+    EvaPulseController, EvaPulseDaemon, HivePulseControlRequest, DEFAULT_HIVE_PULSE_CONTROL_PIPE,
+    HIVE_PULSE_CONTROL_PIPE_ENV, HIVE_PULSE_CONTROL_SOCKET_ENV,
+};
 use evohime_hive::settings::HiveSettings;
 use evohime_hive::state::HiveStateSnapshot;
 use evohime_hive_contract::{
@@ -596,6 +599,12 @@ async fn main() -> ExitCode {
         coordinator,
         None,
     );
+    let control_daemon = daemon.clone();
+    let control_task = tokio::spawn(async move {
+        if let Err(error) = run_pulse_control_server(control_daemon).await {
+            tracing::error!(error = %error, "pulse control IPC server stopped");
+        }
+    });
     let status = daemon.status();
     tracing::info!(
         status = %status.status,
@@ -607,6 +616,103 @@ async fn main() -> ExitCode {
         tracing::warn!(error = %error, "failed to listen for ctrl-c signal");
     }
 
+    control_task.abort();
     daemon.shutdown();
     ExitCode::SUCCESS
+}
+
+async fn handle_pulse_control_connection<S>(mut stream: S, daemon: EvaPulseDaemon)
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let payload = match transport::read_frame(&mut stream).await {
+        Ok(payload) => payload,
+        Err(error) => {
+            tracing::debug!(error = %error, "pulse control IPC read failed");
+            return;
+        }
+    };
+    let request = match serde_json::from_slice::<HivePulseControlRequest>(&payload) {
+        Ok(request) => request,
+        Err(error) => {
+            let error_payload = match serde_json::to_vec(&serde_json::json!({
+                "error": format!("invalid_request: {error}"),
+            })) {
+                Ok(bytes) => bytes,
+                Err(_) => return,
+            };
+            let _ = transport::write_frame(&mut stream, &error_payload).await;
+            return;
+        }
+    };
+    let controller = EvaPulseController::new(daemon);
+    let snapshot = match request {
+        HivePulseControlRequest::TogglePulse { enabled } => {
+            controller.set_enabled(enabled);
+            controller.snapshot()
+        }
+        HivePulseControlRequest::GetPulseStatus => controller.snapshot(),
+    };
+    let response_bytes = match serde_json::to_vec(&snapshot) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::error!(error = %error, "failed to serialize EvaPulseSnapshot");
+            return;
+        }
+    };
+    if let Err(error) = transport::write_frame(&mut stream, &response_bytes).await {
+        tracing::debug!(error = %error, "pulse control IPC write failed");
+    }
+}
+
+#[cfg(windows)]
+async fn run_pulse_control_server(
+    daemon: EvaPulseDaemon,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use tokio::net::windows::named_pipe::ServerOptions;
+
+    let pipe_name = std::env::var(HIVE_PULSE_CONTROL_PIPE_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_HIVE_PULSE_CONTROL_PIPE.to_owned());
+    let sid = evohime_desktop_ipc::windows_security::current_user_sid()?;
+    tracing::info!(pipe = %pipe_name, "pulse control IPC server listening");
+
+    loop {
+        let mut security = evohime_desktop_ipc::windows_security::PipeSecurity::owner_only(&sid)?;
+        let server = unsafe {
+            ServerOptions::new().create_with_security_attributes_raw(&pipe_name, security.as_raw())
+        }?;
+        server.connect().await?;
+        let daemon = daemon.clone();
+        tokio::spawn(async move {
+            handle_pulse_control_connection(server, daemon).await;
+        });
+    }
+}
+
+#[cfg(unix)]
+async fn run_pulse_control_server(
+    daemon: EvaPulseDaemon,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let socket_path = match std::env::var_os(HIVE_PULSE_CONTROL_SOCKET_ENV) {
+        Some(value) if !value.is_empty() => PathBuf::from(value),
+        _ => {
+            let paths = evohime_desktop_ipc::unix_runtime::UnixRuntimePaths::current()?;
+            paths.directory.join("hive-pulse.sock")
+        }
+    };
+    if socket_path.exists() {
+        let _ = std::fs::remove_file(&socket_path);
+    }
+    let listener = tokio::net::UnixListener::bind(&socket_path)?;
+    tracing::info!(socket = %socket_path.display(), "pulse control IPC server listening");
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let daemon = daemon.clone();
+        tokio::spawn(async move {
+            handle_pulse_control_connection(stream, daemon).await;
+        });
+    }
 }
