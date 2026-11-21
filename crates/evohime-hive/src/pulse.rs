@@ -19,18 +19,20 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use evohime_hive_contract::{
+    HiveCoordinator, HiveEventRecord, HiveJournalProvider, HiveTelemetrySink, WorkspaceProvider,
+};
 use evohime_model_gateway::ModelGatewayConfig;
 
-use crate::child_workflow::CoordinatorState;
-use crate::core_agent::SelectedModel;
-use crate::eva_pulse_boundary::{self, EvaPulseSignal, EvaPulseSignalKind, HiveSignalReceiver};
-use crate::hive_settings::HiveSettings;
-use crate::hive_state::{
-    HiveStateSnapshot, HIVE_DAY_WINDOW_MS, HIVE_PULSE_ACTIVE, HIVE_PULSE_DISABLED,
-    HIVE_PULSE_SLEEPING,
+use crate::observation::{
+    self, HiveChildState, MinimalChildWorkflowPayload, HIVE_REPLAY_WINDOW,
 };
-use crate::logging::StructuredLogger;
-use crate::{CoreCommand, EventJournal, TaskCoordinator};
+use crate::pulse_boundary::{self, EvaPulseSignal, EvaPulseSignalKind, HiveSignalReceiver};
+use crate::settings::HiveSettings;
+use crate::state::{
+    quota_window_start_ms, HiveStateSnapshot, HIVE_DAY_WINDOW_MS, HIVE_PULSE_ACTIVE,
+    HIVE_PULSE_DISABLED, HIVE_PULSE_SLEEPING,
+};
 
 /// Maximum number of failed workers named in one recovery task.
 const MAX_REPORTED_FAILURES: usize = 8;
@@ -44,11 +46,11 @@ const FALLBACK_INTERVAL: Duration = Duration::from_secs(1_800);
 const ROUTMY_MIN_TOKENS_THRESHOLD: u64 = 1_000;
 
 /// Boxed future used by the probe/sink seams.
-pub(crate) type PulseFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub type PulseFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Bounded diagnostic context extracted for one failed child worker.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FailedWorkerContext {
+pub struct FailedWorkerContext {
     /// Identifier of the failed child task.
     pub child_task_id: String,
     /// Role assigned to the child worker.
@@ -63,7 +65,7 @@ pub(crate) struct FailedWorkerContext {
 
 impl FailedWorkerContext {
     /// Builds a minimal context carrying only the child task identifier.
-    pub(crate) fn from_id(id: impl Into<String>) -> Self {
+    pub fn from_id(id: impl Into<String>) -> Self {
         Self {
             child_task_id: id.into(),
             role: String::new(),
@@ -99,7 +101,7 @@ impl FailedWorkerContext {
 
 /// Observable result of one background cycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PulseCycleReport {
+pub struct PulseCycleReport {
     /// Interval requested by the persisted settings.
     pub interval_secs: u64,
     /// Estimated spend for the current UTC day, when the tariff is known.
@@ -140,7 +142,7 @@ pub(crate) struct PulseCycleReport {
 
 /// Discovered uncompleted roadmap item and its workspace-relative file path.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RoadmapItem {
+pub struct RoadmapItem {
     /// Relative path to the roadmap/TODO file inside `eva_workspace_path`.
     pub file_path: String,
     /// 1-based line number of the item inside `file_path`.
@@ -174,7 +176,7 @@ pub(crate) enum PulseDecision {
 }
 
 /// Source of one bounded background observation.
-pub(crate) trait PulseProbe: Send + Sync {
+pub trait PulseProbe: Send + Sync {
     /// Reads committed state; a failure parks the loop instead of inventing work.
     fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>>;
 
@@ -192,7 +194,7 @@ pub(crate) trait PulseProbe: Send + Sync {
 }
 
 /// Sink that asks Core to investigate failed workers or evolve proactively.
-pub(crate) trait PulseTaskSink: Send + Sync {
+pub trait PulseTaskSink: Send + Sync {
     /// Dispatches one bounded recovery task and returns its task id.
     fn dispatch_recovery(
         &self,
@@ -264,7 +266,7 @@ struct Inner {
     probe: Arc<dyn PulseProbe>,
     tasks: Arc<dyn PulseTaskSink>,
     options: EvaPulseOptions,
-    logger: Option<Arc<StructuredLogger>>,
+    telemetry: Option<Arc<dyn HiveTelemetrySink>>,
     state: std::sync::Mutex<DaemonState>,
     dispatched_evolutions: std::sync::Mutex<HashSet<String>>,
     notify: tokio::sync::Notify,
@@ -329,41 +331,42 @@ impl EvaPulseDaemon {
     /// The daemon reads `HiveSettings` before every cycle, so a changed interval
     /// or budget takes effect without restarting Core.
     pub fn start(
-        journal: EventJournal,
+        journal: Arc<dyn HiveJournalProvider>,
         gateway_config: Option<ModelGatewayConfig>,
-        selected_model: SelectedModel,
-        receiver: HiveSignalReceiver,
-        logger: Option<Arc<StructuredLogger>>,
+        workspace_provider: Arc<dyn WorkspaceProvider>,
+        coordinator: Arc<dyn HiveCoordinator>,
+        telemetry: Option<Arc<dyn HiveTelemetrySink>>,
     ) -> Self {
+        let receiver = HiveSignalReceiver::new(coordinator).with_journal(Arc::clone(&journal));
         let probe = Arc::new(JournalPulseProbe::new(
-            journal.clone(),
+            Arc::clone(&journal),
             gateway_config.clone(),
-            selected_model,
+            workspace_provider,
         ));
         let sink = Arc::new(
             CoordinatorPulseTaskSink::new_with_receiver(
                 receiver,
-                crate::hive_observation::isolated_hive_route_name(gateway_config.as_ref()),
+                observation::isolated_hive_route_name(gateway_config.as_ref()),
             )
             .with_hive_settings_source(journal, gateway_config),
         );
-        let daemon = Self::spawn(probe, sink, EvaPulseOptions::default(), logger);
+        let daemon = Self::spawn(probe, sink, EvaPulseOptions::default(), telemetry);
         daemon.run();
         daemon
     }
 
     /// Builds a daemon from explicit probe and sink seams.
-    pub(crate) fn spawn(
+    pub fn spawn(
         probe: Arc<dyn PulseProbe>,
         tasks: Arc<dyn PulseTaskSink>,
         options: EvaPulseOptions,
-        logger: Option<Arc<StructuredLogger>>,
+        telemetry: Option<Arc<dyn HiveTelemetrySink>>,
     ) -> Self {
         let inner = Arc::new(Inner {
             probe,
             tasks,
             options,
-            logger,
+            telemetry,
             state: std::sync::Mutex::new(DaemonState {
                 enabled: true,
                 status: HIVE_PULSE_ACTIVE,
@@ -504,7 +507,7 @@ impl Inner {
             self.publish(HIVE_PULSE_DISABLED, None, "user_disabled");
             return Duration::ZERO;
         }
-        let now = crate::task_memory::now_millis() as i64;
+        let now = now_millis();
         let interval = self.interval(Some(report.interval_secs));
         let decision = decide(&report, now);
         self.cycle_counter.fetch_add(1, Ordering::SeqCst);
@@ -761,8 +764,8 @@ impl Inner {
     }
 
     fn log(&self, level: &str, event: &str, fields: serde_json::Value) {
-        if let Some(logger) = self.logger.as_ref() {
-            let _ = logger.write(level, event, fields);
+        if let Some(telemetry) = self.telemetry.as_ref() {
+            telemetry.log_event(level, event, fields);
         }
     }
 
@@ -894,12 +897,29 @@ fn quota_wake_at(now_ms: i64, reset_utc_midnight: bool) -> i64 {
     }
 }
 
+fn now_millis() -> i64 {
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    )
+    .unwrap_or(i64::MAX)
+}
+
+async fn load_hive_settings(journal: &dyn HiveJournalProvider) -> HiveSettings {
+    match journal.load_hive_settings_json().await {
+        Ok(Some(value)) => serde_json::from_value(value).unwrap_or_default(),
+        _ => HiveSettings::default(),
+    }
+}
+
 /// Reports whether the configured token quota of one isolated Hive route is spent.
 ///
 /// The dispatch gateway keeps the startup configuration, so Hive's durable
 /// quota is checked here against the same route scope the usage rows record.
 async fn hive_route_quota_exhausted(
-    journal: &EventJournal,
+    journal: &dyn HiveJournalProvider,
     route: &str,
     quota: u64,
     reset_utc_midnight: bool,
@@ -907,8 +927,8 @@ async fn hive_route_quota_exhausted(
     if quota == 0 {
         return false;
     }
-    let now_ms = crate::task_memory::now_millis() as i64;
-    let start_ms = crate::hive_state::quota_window_start_ms(now_ms, reset_utc_midnight);
+    let now_ms = now_millis();
+    let start_ms = quota_window_start_ms(now_ms, reset_utc_midnight);
     journal
         .route_tokens_since(start_ms, route)
         .await
@@ -916,7 +936,7 @@ async fn hive_route_quota_exhausted(
 }
 
 fn next_wake_at(interval: Duration) -> Option<i64> {
-    let now = crate::task_memory::now_millis() as i64;
+    let now = now_millis();
     Some(now.saturating_add(i64::try_from(interval.as_millis()).unwrap_or(i64::MAX)))
 }
 
@@ -963,11 +983,29 @@ enum EvolutionOutcome {
     Failed(String),
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PulseChildProjection {
+    child_task_id: String,
+    parent_task_id: String,
+    role: String,
+    state: HiveChildState,
+    #[serde(default)]
+    reason_code: Option<String>,
+    #[serde(default)]
+    dead_letter: bool,
+    #[serde(default)]
+    depth: u8,
+    #[serde(default)]
+    spawned_subagents: u32,
+    #[serde(default)]
+    planned_ceiling: u32,
+}
+
 /// Production probe backed by the journal and the active route configuration.
 pub(crate) struct JournalPulseProbe {
-    journal: EventJournal,
+    journal: Arc<dyn HiveJournalProvider>,
     gateway_config: Option<ModelGatewayConfig>,
-    selected_model: SelectedModel,
+    workspace_provider: Arc<dyn WorkspaceProvider>,
     seen_failures: std::sync::Mutex<HashSet<String>>,
     pending_recoveries: std::sync::Mutex<Vec<PendingRecovery>>,
     pending_evolutions: std::sync::Mutex<Vec<PendingEvolution>>,
@@ -978,14 +1016,14 @@ pub(crate) struct JournalPulseProbe {
 impl JournalPulseProbe {
     /// Creates a probe over the shared journal and route configuration.
     pub(crate) fn new(
-        journal: EventJournal,
+        journal: Arc<dyn HiveJournalProvider>,
         gateway_config: Option<ModelGatewayConfig>,
-        selected_model: SelectedModel,
+        workspace_provider: Arc<dyn WorkspaceProvider>,
     ) -> Self {
         Self {
             journal,
             gateway_config,
-            selected_model,
+            workspace_provider,
             seen_failures: std::sync::Mutex::new(HashSet::new()),
             pending_recoveries: std::sync::Mutex::new(Vec::new()),
             pending_evolutions: std::sync::Mutex::new(Vec::new()),
@@ -1005,7 +1043,7 @@ impl JournalPulseProbe {
         handled.insert(item_key.to_owned());
     }
 
-    fn reconcile_pending_evolutions(&self, records: &[evohime_local_storage::EventRecord]) {
+    fn reconcile_pending_evolutions(&self, records: &[HiveEventRecord]) {
         let mut pending = self
             .pending_evolutions
             .lock()
@@ -1116,10 +1154,7 @@ impl JournalPulseProbe {
         items
     }
 
-    fn reconcile_pending_recoveries(
-        &self,
-        records: &[evohime_local_storage::EventRecord],
-    ) -> HashSet<String> {
+    fn reconcile_pending_recoveries(&self, records: &[HiveEventRecord]) -> HashSet<String> {
         let mut pending = self
             .pending_recoveries
             .lock()
@@ -1161,7 +1196,7 @@ impl JournalPulseProbe {
 
     fn new_failures(
         &self,
-        projections: &[crate::child_workflow::ChildProjection],
+        projections: &[PulseChildProjection],
         in_flight: &HashSet<String>,
     ) -> Vec<String> {
         let first_scan = self.first_scan.swap(false, Ordering::SeqCst);
@@ -1238,9 +1273,9 @@ impl PulseProbe for JournalPulseProbe {
 
     fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>> {
         Box::pin(async move {
-            let settings = self.journal.hive_settings().await.unwrap_or_default();
-            let now_ms = crate::task_memory::now_millis() as i64;
-            let _selected_model = self.selected_model.get().map(|value| value.to_string());
+            let settings = load_hive_settings(&*self.journal).await;
+            let now_ms = now_millis();
+            let _selected_model = self.workspace_provider.selected_model_name();
             let mut adjusted_config = self.gateway_config.clone();
             if let Some(config) = adjusted_config.as_mut() {
                 config.apply_hive_route_overrides(
@@ -1264,76 +1299,37 @@ impl PulseProbe for JournalPulseProbe {
                     settings.hive_fallback_quota_reset_utc_midnight,
                 );
             }
-            let observation = crate::hive_observation::build_hive_observation_for_hive(
-                &self.journal,
+            let observation = observation::build_hive_observation_for_hive(
+                &*self.journal,
                 adjusted_config.as_ref(),
-                None,
+                Some(&*self.workspace_provider),
                 settings.hive_provider_profile.as_deref(),
                 settings.hive_model.as_deref(),
                 now_ms,
             )
             .await;
             let latest = self.journal.latest_sequence().await;
-            let after =
-                latest.saturating_sub(i64::from(crate::hive_observation::HIVE_REPLAY_WINDOW) - 1);
+            let after = latest.saturating_sub(i64::from(HIVE_REPLAY_WINDOW) - 1);
             let records = self
                 .journal
-                .replay(after, crate::hive_observation::HIVE_REPLAY_WINDOW as usize)
+                .replay_events(after, HIVE_REPLAY_WINDOW as usize)
                 .await
                 .unwrap_or_default();
             let projections = replay_projections_from_records(&records);
-            let minimal_projections: Vec<crate::hive_observation::MinimalChildWorkflowPayload> =
-                projections
-                    .iter()
-                    .map(|p| crate::hive_observation::MinimalChildWorkflowPayload {
-                        child_task_id: p.child_task_id.clone(),
-                        parent_task_id: p.parent_task_id.clone(),
-                        role: p.role.clone(),
-                        state: match p.state {
-                            CoordinatorState::Created => {
-                                crate::hive_observation::HiveChildState::Created
-                            }
-                            CoordinatorState::Queued => {
-                                crate::hive_observation::HiveChildState::Queued
-                            }
-                            CoordinatorState::Running => {
-                                crate::hive_observation::HiveChildState::Running
-                            }
-                            CoordinatorState::Validating => {
-                                crate::hive_observation::HiveChildState::Validating
-                            }
-                            CoordinatorState::WaitingParentAcceptance => {
-                                crate::hive_observation::HiveChildState::WaitingParentAcceptance
-                            }
-                            CoordinatorState::Accepted => {
-                                crate::hive_observation::HiveChildState::Accepted
-                            }
-                            CoordinatorState::Rejected => {
-                                crate::hive_observation::HiveChildState::Rejected
-                            }
-                            CoordinatorState::Failed => {
-                                crate::hive_observation::HiveChildState::Failed
-                            }
-                            CoordinatorState::Cancelled => {
-                                crate::hive_observation::HiveChildState::Cancelled
-                            }
-                            CoordinatorState::TimedOut => {
-                                crate::hive_observation::HiveChildState::TimedOut
-                            }
-                            CoordinatorState::Aborted => {
-                                crate::hive_observation::HiveChildState::Aborted
-                            }
-                            CoordinatorState::RevisePlan => {
-                                crate::hive_observation::HiveChildState::RevisePlan
-                            }
-                        },
-                        dead_letter: p.dead_letter,
-                        depth: p.depth,
-                        spawned_subagents: p.spawned_subagents,
-                        planned_ceiling: p.planned_ceiling,
-                    })
-                    .collect();
-            let roles = crate::hive_observation::persistent_agent_roles(&self.journal).await;
+            let minimal_projections: Vec<MinimalChildWorkflowPayload> = projections
+                .iter()
+                .map(|p| MinimalChildWorkflowPayload {
+                    child_task_id: p.child_task_id.clone(),
+                    parent_task_id: p.parent_task_id.clone(),
+                    role: p.role.clone(),
+                    state: p.state,
+                    dead_letter: p.dead_letter,
+                    depth: p.depth,
+                    spawned_subagents: p.spawned_subagents,
+                    planned_ceiling: p.planned_ceiling,
+                })
+                .collect();
+            let roles = observation::persistent_agent_roles(&*self.journal).await;
             let snapshot = HiveStateSnapshot::from_observation(
                 &settings,
                 &minimal_projections,
@@ -1382,7 +1378,7 @@ impl PulseProbe for JournalPulseProbe {
             } else {
                 snapshot.budget.fallback_tokens_remaining
             };
-            let route_is_primary = crate::hive_observation::hive_route_name(
+            let route_is_primary = observation::hive_route_name(
                 adjusted_config.as_ref(),
                 settings.hive_provider_profile.as_deref(),
             )
@@ -1412,27 +1408,20 @@ impl PulseProbe for JournalPulseProbe {
     }
 }
 
-fn replay_projections_from_records(
-    records: &[evohime_local_storage::EventRecord],
-) -> Vec<crate::child_workflow::ChildProjection> {
+fn replay_projections_from_records(records: &[HiveEventRecord]) -> Vec<PulseChildProjection> {
     let mut by_child = std::collections::BTreeMap::new();
     for record in records {
         if record.event_type != "child.workflow" {
             continue;
         }
-        if let Ok(projection) =
-            serde_json::from_slice::<crate::child_workflow::ChildProjection>(&record.payload)
-        {
+        if let Ok(projection) = serde_json::from_slice::<PulseChildProjection>(&record.payload) {
             by_child.insert(projection.child_task_id.clone(), projection);
         }
     }
     by_child.into_values().collect()
 }
 
-fn task_terminal_outcome(
-    records: &[evohime_local_storage::EventRecord],
-    target_task_id: &str,
-) -> Option<bool> {
+fn task_terminal_outcome(records: &[HiveEventRecord], target_task_id: &str) -> Option<bool> {
     let mut outcome = None;
     for record in records {
         match record.event_type.as_str() {
@@ -1453,7 +1442,7 @@ fn task_terminal_outcome(
 }
 
 fn evolution_task_outcome(
-    records: &[evohime_local_storage::EventRecord],
+    records: &[HiveEventRecord],
     target_task_id: &str,
 ) -> Option<EvolutionOutcome> {
     let mut outcome = None;
@@ -1524,8 +1513,8 @@ fn extract_event_task_id(payload: &[u8]) -> Option<String> {
 
 fn build_failed_worker_contexts(
     failed_workers: &[String],
-    projections: &[crate::child_workflow::ChildProjection],
-    records: &[evohime_local_storage::EventRecord],
+    projections: &[PulseChildProjection],
+    records: &[HiveEventRecord],
 ) -> Vec<FailedWorkerContext> {
     failed_workers
         .iter()
@@ -1550,10 +1539,7 @@ fn build_failed_worker_contexts(
         .collect()
 }
 
-fn find_task_failure_reason(
-    records: &[evohime_local_storage::EventRecord],
-    target_task_id: &str,
-) -> Option<String> {
+fn find_task_failure_reason(records: &[HiveEventRecord], target_task_id: &str) -> Option<String> {
     let mut found = None;
     for record in records {
         if record.event_type != "task.failed" {
@@ -1577,7 +1563,7 @@ fn find_task_failure_reason(
 }
 
 fn find_last_tool_and_path(
-    records: &[evohime_local_storage::EventRecord],
+    records: &[HiveEventRecord],
     target_task_id: &str,
 ) -> (Option<String>, Option<String>) {
     let mut last_tool = None;
@@ -1637,14 +1623,14 @@ fn find_last_tool_and_path(
     (last_tool, file_path)
 }
 
-fn is_terminal_failure(projection: &crate::child_workflow::ChildProjection) -> bool {
+fn is_terminal_failure(projection: &PulseChildProjection) -> bool {
     projection.dead_letter
         || matches!(
             projection.state,
-            CoordinatorState::Failed
-                | CoordinatorState::Rejected
-                | CoordinatorState::TimedOut
-                | CoordinatorState::Aborted
+            HiveChildState::Failed
+                | HiveChildState::Rejected
+                | HiveChildState::TimedOut
+                | HiveChildState::Aborted
         )
 }
 
@@ -1653,14 +1639,14 @@ pub(crate) struct CoordinatorPulseTaskSink {
     receiver: HiveSignalReceiver,
     primary_route: Option<String>,
     preferred_route_hint: Option<String>,
-    journal: Option<EventJournal>,
+    journal: Option<Arc<dyn HiveJournalProvider>>,
     gateway_config: Option<ModelGatewayConfig>,
 }
 
 impl CoordinatorPulseTaskSink {
     /// Creates a sink bound to the coordinator and the allowed route name.
-    pub(crate) fn new(coordinator: TaskCoordinator, primary_route: Option<String>) -> Self {
-        Self::new_with_receiver(HiveSignalReceiver::new(Arc::new(coordinator)), primary_route)
+    pub(crate) fn new(coordinator: Arc<dyn HiveCoordinator>, primary_route: Option<String>) -> Self {
+        Self::new_with_receiver(HiveSignalReceiver::new(coordinator), primary_route)
     }
 
     /// Creates a sink using the Core-owned Hive boundary receiver.
@@ -1690,16 +1676,11 @@ impl CoordinatorPulseTaskSink {
     /// `hive_provider_profile` dynamically without restarting Core.
     pub(crate) fn with_hive_settings_source(
         mut self,
-        journal: EventJournal,
+        journal: Arc<dyn HiveJournalProvider>,
         gateway_config: Option<ModelGatewayConfig>,
     ) -> Self {
+        self.receiver = self.receiver.clone().with_journal(Arc::clone(&journal));
         self.journal = Some(journal);
-        if let Some(journal) = self.journal.as_ref() {
-            self.receiver = self
-                .receiver
-                .clone()
-                .with_journal(Arc::new(journal.clone()));
-        }
         self.gateway_config = gateway_config;
         self
     }
@@ -1734,7 +1715,7 @@ fn build_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<EvaPulseSignal, 
         .try_into()
         .map_err(|_| "pulse_clock_out_of_range".to_owned())?;
     let signal = EvaPulseSignal {
-        schema_version: eva_pulse_boundary::CONTRACT_VERSION,
+        schema_version: pulse_boundary::CONTRACT_VERSION,
         message_id: uuid::Uuid::new_v4().to_string(),
         correlation_id: uuid::Uuid::new_v4().to_string(),
         source: "eva-pulse".to_owned(),
@@ -1744,7 +1725,7 @@ fn build_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<EvaPulseSignal, 
         expires_at_ms: now_ms + 30 * 60 * 1_000,
         payload: Vec::new(),
     };
-    eva_pulse_boundary::validate_signal(&signal, now_ms)
+    pulse_boundary::validate_signal(&signal, now_ms)
         .map_err(|error| format!("hive_signal_rejected:{error}"))?;
     Ok(signal)
 }
@@ -1793,9 +1774,9 @@ impl CoordinatorPulseTaskSink {
         Box::pin(async move {
             let signal = build_hive_signal(signal_kind)?;
             if let Some(journal) = journal.as_ref() {
-                let settings = journal.hive_settings().await.unwrap_or_default();
+                let settings = load_hive_settings(journal.as_ref()).await;
                 if hive_route_quota_exhausted(
-                    journal,
+                    journal.as_ref(),
                     "hive",
                     settings.hive_daily_token_quota,
                     settings.hive_quota_reset_utc_midnight,
@@ -1809,7 +1790,7 @@ impl CoordinatorPulseTaskSink {
             if preferred_route_hint.is_none() {
                 if let Some(mut config) = gateway_config {
                     let settings = if let Some(journal) = journal.as_ref() {
-                        journal.hive_settings().await.ok()
+                        Some(load_hive_settings(journal.as_ref()).await)
                     } else {
                         None
                     };
@@ -1829,7 +1810,7 @@ impl CoordinatorPulseTaskSink {
                         );
                     }
                     preferred_route_hint =
-                        crate::hive_observation::hive_route_name(Some(&config), hive_profile);
+                        observation::hive_route_name(Some(&config), hive_profile);
                 } else {
                     preferred_route_hint = primary_route;
                 }
@@ -1851,9 +1832,9 @@ impl CoordinatorPulseTaskSink {
         Box::pin(async move {
             let signal = build_hive_signal(signal_kind)?;
             if let Some(journal) = journal.as_ref() {
-                let settings = journal.hive_settings().await.unwrap_or_default();
+                let settings = load_hive_settings(journal.as_ref()).await;
                 if hive_route_quota_exhausted(
-                    journal,
+                    journal.as_ref(),
                     "hive_fallback",
                     settings.hive_fallback_daily_token_quota,
                     settings.hive_fallback_quota_reset_utc_midnight,
@@ -1866,7 +1847,7 @@ impl CoordinatorPulseTaskSink {
             let mut config =
                 gateway_config.ok_or_else(|| "fallback_route_unavailable".to_owned())?;
             let settings = if let Some(journal) = journal.as_ref() {
-                journal.hive_settings().await.ok()
+                Some(load_hive_settings(journal.as_ref()).await)
             } else {
                 None
             };
@@ -1888,7 +1869,7 @@ impl CoordinatorPulseTaskSink {
                 );
             }
             let route_name =
-                crate::hive_observation::hive_fallback_route_name(Some(&config), fallback_profile)
+                observation::hive_fallback_route_name(Some(&config), fallback_profile)
                     .ok_or_else(|| "fallback_route_unavailable".to_owned())?;
             receiver.accept(signal, prompt, route_name).await
         })
@@ -2145,6 +2126,263 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct MockJournal {
+        events: std::sync::Mutex<Vec<HiveEventRecord>>,
+        settings: std::sync::Mutex<Option<serde_json::Value>>,
+    }
+
+    impl MockJournal {
+        fn record_event(&self, event_type: &str, task_id: &str, payload: serde_json::Value) {
+            let mut events = self
+                .events
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let seq = (events.len() + 1) as i64;
+            events.push(HiveEventRecord {
+                sequence_id: seq,
+                task_id: task_id.to_owned(),
+                event_type: event_type.to_owned(),
+                payload: serde_json::to_vec(&payload).unwrap_or_default(),
+                created_at_ms: now_millis(),
+            });
+        }
+
+        fn save_settings(&self, settings: &HiveSettings) {
+            let mut guard = self
+                .settings
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *guard = Some(serde_json::to_value(settings).expect("serialize settings"));
+        }
+    }
+
+    impl HiveJournalProvider for MockJournal {
+        fn latest_sequence(&self) -> evohime_hive_contract::BoxFuture<'_, i64> {
+            Box::pin(async move {
+                self.events
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .last()
+                    .map_or(0, |e| e.sequence_id)
+            })
+        }
+
+        fn replay_events(
+            &self,
+            after_sequence: i64,
+            limit: usize,
+        ) -> evohime_hive_contract::BoxFuture<
+            '_,
+            Result<Vec<HiveEventRecord>, evohime_hive_contract::HiveContractError>,
+        > {
+            Box::pin(async move {
+                let events = self
+                    .events
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                Ok(events
+                    .iter()
+                    .filter(|e| e.sequence_id >= after_sequence)
+                    .take(limit)
+                    .cloned()
+                    .collect())
+            })
+        }
+
+        fn record_audit<'a>(
+            &'a self,
+            task_id: &'a str,
+            event_type: &'a str,
+            payload: &'a [u8],
+        ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>>
+        {
+            Box::pin(async move {
+                let mut events = self
+                    .events
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                let seq = (events.len() + 1) as i64;
+                events.push(HiveEventRecord {
+                    sequence_id: seq,
+                    task_id: task_id.to_owned(),
+                    event_type: event_type.to_owned(),
+                    payload: payload.to_vec(),
+                    created_at_ms: now_millis(),
+                });
+                Ok(())
+            })
+        }
+
+        fn prune_signal_records<'a>(
+            &'a self,
+            _event_types: &'a [&'a str],
+            _keep_limit: usize,
+        ) -> evohime_hive_contract::BoxFuture<'a, ()> {
+            Box::pin(async {})
+        }
+
+        fn load_hive_settings_json(
+            &self,
+        ) -> evohime_hive_contract::BoxFuture<
+            '_,
+            Result<Option<serde_json::Value>, evohime_hive_contract::HiveContractError>,
+        > {
+            Box::pin(async move {
+                Ok(self
+                    .settings
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .clone())
+            })
+        }
+
+        fn save_hive_settings_json<'a>(
+            &'a self,
+            settings: &'a serde_json::Value,
+        ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>>
+        {
+            Box::pin(async move {
+                *self
+                    .settings
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(settings.clone());
+                Ok(())
+            })
+        }
+
+        fn persistent_agent_roles(&self) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
+            Box::pin(async { Vec::new() })
+        }
+
+        fn task_metrics(&self, _now_ms: i64) -> evohime_hive_contract::BoxFuture<'_, (u32, u64)> {
+            Box::pin(async { (0, 0) })
+        }
+
+        fn filter_hive_root_tasks(
+            &self,
+            roots: Vec<String>,
+        ) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
+            Box::pin(async move { roots })
+        }
+
+        fn model_dispatch_windows<'a>(
+            &'a self,
+            _provider: &'a str,
+            _model: &'a str,
+            _now_ms: i64,
+            _minute_window_ms: i64,
+            _hour_window_ms: i64,
+            _day_window_ms: i64,
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<
+                evohime_hive_contract::HiveDispatchWindows,
+                evohime_hive_contract::HiveContractError,
+            >,
+        > {
+            Box::pin(async { Ok(evohime_hive_contract::HiveDispatchWindows::default()) })
+        }
+
+        fn model_usage_since<'a>(
+            &'a self,
+            _start_ms: i64,
+            _provider: &'a str,
+            _model: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<
+                Vec<evohime_hive_contract::HiveModelUsage>,
+                evohime_hive_contract::HiveContractError,
+            >,
+        > {
+            Box::pin(async { Ok(Vec::new()) })
+        }
+
+        fn route_tokens_since<'a>(
+            &'a self,
+            _start_ms: i64,
+            _route_scope: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<u64, evohime_hive_contract::HiveContractError>,
+        > {
+            Box::pin(async { Ok(0) })
+        }
+
+        fn register_worktree_lease(
+            &self,
+            _request: evohime_hive_contract::HiveWorktreeLeaseRequest,
+        ) -> evohime_hive_contract::BoxFuture<'_, ()> {
+            Box::pin(async {})
+        }
+
+        fn has_active_workflow_run<'a>(
+            &'a self,
+            _task_id: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<'a, bool> {
+            Box::pin(async { false })
+        }
+
+        fn mark_worktree_cleanup_pending<'a>(
+            &'a self,
+            _worktree_id: &'a str,
+        ) -> evohime_hive_contract::BoxFuture<'a, ()> {
+            Box::pin(async {})
+        }
+    }
+
+    struct MockCoordinator {
+        tx: tokio::sync::mpsc::UnboundedSender<evohime_hive_contract::HiveTaskDispatchRequest>,
+    }
+
+    impl MockCoordinator {
+        fn new() -> (
+            Self,
+            tokio::sync::mpsc::UnboundedReceiver<evohime_hive_contract::HiveTaskDispatchRequest>,
+        ) {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            (Self { tx }, rx)
+        }
+    }
+
+    impl HiveCoordinator for MockCoordinator {
+        fn dispatch_task(
+            &self,
+            request: evohime_hive_contract::HiveTaskDispatchRequest,
+        ) -> evohime_hive_contract::BoxFuture<'_, Result<(), evohime_hive_contract::HiveContractError>>
+        {
+            let _ = self.tx.send(request);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[derive(Default)]
+    struct MockWorkspaceProvider {
+        model: Option<String>,
+        workspace: Option<String>,
+    }
+
+    impl MockWorkspaceProvider {
+        fn with_model(model: impl Into<String>) -> Arc<Self> {
+            Arc::new(Self {
+                model: Some(model.into()),
+                workspace: None,
+            })
+        }
+    }
+
+    impl WorkspaceProvider for MockWorkspaceProvider {
+        fn eva_workspace_path(&self) -> evohime_hive_contract::BoxFuture<'_, Option<String>> {
+            let workspace = self.workspace.clone();
+            Box::pin(async move { workspace })
+        }
+
+        fn selected_model_name(&self) -> Option<String> {
+            self.model.clone()
+        }
+    }
+
     #[test]
     fn controller_exposes_a_pulse_owned_snapshot() {
         let daemon = EvaPulseDaemon::spawn(
@@ -2208,7 +2446,7 @@ mod tests {
     async fn background_task_does_not_use_fallback_provider() {
         let mut report = healthy_report();
         report.failed_workers = vec!["child-failed".into()];
-        report.rate_limited_until_ms = Some(crate::task_memory::now_millis() as i64 + 60_000);
+        report.rate_limited_until_ms = Some(now_millis() + 60_000);
         let sink = Arc::new(CountingSink::default());
         let daemon = EvaPulseDaemon::spawn(
             Arc::new(FakeProbe::new(report)),
@@ -2272,8 +2510,8 @@ mod tests {
 
     #[tokio::test]
     async fn recovery_sink_starts_task_with_self_development_instruction() {
-        let (coordinator, mut events) = TaskCoordinator::new(8);
-        let sink = CoordinatorPulseTaskSink::new(coordinator, Some("primary".into()));
+        let (coordinator, mut requests) = MockCoordinator::new();
+        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), Some("primary".into()));
         let task_id = sink
             .dispatch_recovery(
                 &[FailedWorkerContext::from_id("failed-worker")],
@@ -2281,14 +2519,11 @@ mod tests {
             )
             .await
             .expect("recovery dispatches");
-        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        let req = tokio::time::timeout(Duration::from_secs(1), requests.recv())
             .await
             .expect("task start arrives")
-            .expect("event received");
-        assert!(matches!(
-            &event,
-            crate::CoreEvent::TaskStarted { task_id: started, .. } if started == &task_id
-        ));
+            .expect("request received");
+        assert_eq!(req.task_id, task_id);
         let prompt = recovery_task_prompt("failed-worker", Some("D:/eva"));
         assert!(prompt.contains("eva_workspace_*"));
         assert!(prompt.contains("D:/eva"));
@@ -2345,15 +2580,6 @@ mod tests {
         assert!(prompt.contains("запустить тесты и сделать коммит"));
         assert!(prompt.contains("платная модель (DeepSeek)"));
         assert_eq!(
-            crate::core_prelude::SELF_DEVELOPMENT_TOOL_IDS,
-            [
-                evohime_tool_runtime::self_development::TOOL_READ_FILE,
-                evohime_tool_runtime::self_development::TOOL_WRITE_FILE,
-                evohime_tool_runtime::self_development::TOOL_RUN_COMMAND,
-                evohime_tool_runtime::self_development::TOOL_GIT,
-            ]
-        );
-        assert_eq!(
             evohime_tool_runtime::self_development::SELF_DEVELOPMENT_CAPABILITY,
             "eva_self_development"
         );
@@ -2367,61 +2593,49 @@ mod tests {
         assert!(!prompt.contains("D:/eva"));
     }
 
-    fn failed_projection(
+    fn failed_projection_json(
         child_task_id: &str,
         role: &str,
         reason_code: Option<&str>,
-    ) -> crate::child_workflow::ChildProjection {
-        crate::child_workflow::ChildProjection {
-            event_id: format!("evt-{child_task_id}"),
-            parent_task_id: "queen-1".into(),
-            child_task_id: child_task_id.into(),
-            role: role.into(),
-            revision: 1,
-            state: CoordinatorState::Failed,
-            reason_code: reason_code.map(str::to_owned),
-            parent_sequence: 1,
-            budget: None,
-            lease_live: false,
-            dead_letter: false,
-            depth: 1,
-            report_status: None,
-            report_summary: None,
-            spawned_subagents: 0,
-            planned_ceiling: 0,
-            extensions_granted: 0,
-            lazy_waiting: 0,
-            in_flight_subagents: 0,
-            extension_requested: false,
-        }
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "parent_task_id": "queen-1",
+            "child_task_id": child_task_id,
+            "role": role,
+            "state": "failed",
+            "reason_code": reason_code,
+            "dead_letter": false,
+            "depth": 1,
+            "spawned_subagents": 0,
+            "planned_ceiling": 0,
+        })
     }
 
     #[tokio::test]
     async fn eva_pulse_passes_error_context_to_recovery_task() {
-        let directory = tempfile::tempdir().expect("temp dir");
-        let journal =
-            EventJournal::open(directory.path().join("pulse-context.db")).expect("journal opens");
-        let selected = SelectedModel::default();
-        selected.set("primary");
-        let probe = JournalPulseProbe::new(journal.clone(), None, selected);
+        let journal = Arc::new(MockJournal::default());
+        let probe = JournalPulseProbe::new(
+            journal.clone(),
+            None,
+            MockWorkspaceProvider::with_model("primary"),
+        );
         // Initial baseline scan before the worker failure arrives.
         let _ = probe.observe().await.expect("initial observe");
 
-        journal
-            .record(&crate::CoreEvent::ToolStarted {
-                task_id: "worker-ctx-1".into(),
-                tool_name: "eva_workspace_write_file".into(),
-                arguments: r#"{"path":"crates/evohime-core/src/eva_pulse.rs"}"#.into(),
-            })
-            .await
-            .expect("tool event recorded");
-        journal
-            .record(&crate::CoreEvent::ChildWorkflowProjection {
-                task_id: "queen-1".into(),
-                projection: failed_projection("worker-ctx-1", "coder", Some("compile_error")),
-            })
-            .await
-            .expect("projection recorded");
+        journal.record_event(
+            "tool.started",
+            "worker-ctx-1",
+            serde_json::json!({
+                "task_id": "worker-ctx-1",
+                "tool_name": "eva_workspace_write_file",
+                "arguments": r#"{"path":"crates/evohime-hive/src/pulse.rs"}"#,
+            }),
+        );
+        journal.record_event(
+            "child.workflow",
+            "queen-1",
+            failed_projection_json("worker-ctx-1", "coder", Some("compile_error")),
+        );
 
         let report = probe.observe().await.expect("observe after failure");
         assert_eq!(report.failed_workers, vec!["worker-ctx-1".to_owned()]);
@@ -2436,44 +2650,37 @@ mod tests {
         );
         assert_eq!(
             report.failed_worker_contexts[0].file_path.as_deref(),
-            Some("crates/evohime-core/src/eva_pulse.rs")
+            Some("crates/evohime-hive/src/pulse.rs")
         );
 
-        let (coordinator, mut events) = TaskCoordinator::new(8);
-        let sink = CoordinatorPulseTaskSink::new(coordinator, Some("primary".into()));
+        let (coordinator, mut requests) = MockCoordinator::new();
+        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), Some("primary".into()));
         let task_id = sink
             .dispatch_recovery(&report.failed_worker_contexts, Some("D:/eva"))
             .await
             .expect("recovery dispatches");
         assert!(
-            task_id.starts_with(crate::eva_pulse_boundary::EVA_PULSE_TASK_PREFIX),
+            task_id.starts_with(pulse_boundary::EVA_PULSE_TASK_PREFIX),
             "an accepted signal must create a Hive-marked task, not a bare id"
         );
-        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        let req = tokio::time::timeout(Duration::from_secs(1), requests.recv())
             .await
             .expect("task start arrives")
-            .expect("event received");
-        assert!(matches!(
-            &event,
-            crate::CoreEvent::TaskStarted { task_id: started, .. } if started == &task_id
-        ));
+            .expect("request received");
+        assert_eq!(req.task_id, task_id);
         let prompt = build_recovery_prompt(&report.failed_worker_contexts, Some("D:/eva"));
         assert!(prompt.contains("worker-ctx-1"));
         assert!(prompt.contains("compile_error"));
         assert!(prompt.contains("eva_workspace_write_file"));
-        assert!(prompt.contains("crates/evohime-core/src/eva_pulse.rs"));
+        assert!(prompt.contains("crates/evohime-hive/src/pulse.rs"));
         assert!(prompt.contains("D:/eva"));
     }
 
     #[tokio::test]
     async fn eva_pulse_retries_incident_after_recovery_429_cooldown() {
-        let directory = tempfile::tempdir().expect("temp dir");
-        let journal =
-            EventJournal::open(directory.path().join("pulse-429.db")).expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let model = "pulse-429-test-model";
         evohime_model_gateway::clear_rate_limit(model);
-        let selected = SelectedModel::default();
-        selected.set(model);
         let gateway_config = Some(ModelGatewayConfig {
             default_route: "primary".into(),
             routes: std::collections::HashMap::from([(
@@ -2485,16 +2692,18 @@ mod tests {
                 ),
             )]),
         });
-        let probe = JournalPulseProbe::new(journal.clone(), gateway_config, selected);
+        let probe = JournalPulseProbe::new(
+            journal.clone(),
+            gateway_config,
+            MockWorkspaceProvider::with_model(model),
+        );
         let _ = probe.observe().await.expect("initial observe");
 
-        journal
-            .record(&crate::CoreEvent::ChildWorkflowProjection {
-                task_id: "queen-1".into(),
-                projection: failed_projection("worker-429-1", "coder", Some("worker_failed")),
-            })
-            .await
-            .expect("projection recorded");
+        journal.record_event(
+            "child.workflow",
+            "queen-1",
+            failed_projection_json("worker-429-1", "coder", Some("worker_failed")),
+        );
 
         // Cycle 1: incident detected and recovery-1 is dispatched.
         let report_1 = probe.observe().await.expect("observe 1");
@@ -2502,21 +2711,22 @@ mod tests {
         probe.mark_recovery_dispatched("recovery-1", &report_1.failed_workers);
 
         // Background recovery-1 hits 429 and fails, recording rate-limit cooldown.
-        let wake_at = crate::task_memory::now_millis() as i64 + 60_000;
+        let wake_at = now_millis() + 60_000;
         evohime_model_gateway::record_rate_limit(model, wake_at);
-        journal
-            .record(&crate::CoreEvent::TaskFailed {
-                task_id: "recovery-1".into(),
-                error: "429 Too Many Requests: provider_rate_limited".into(),
-            })
-            .await
-            .expect("task failure recorded");
+        journal.record_event(
+            "task.failed",
+            "recovery-1",
+            serde_json::json!({
+                "task_id": "recovery-1",
+                "error": "429 Too Many Requests: provider_rate_limited",
+            }),
+        );
 
         // Cycle 2 (during cooldown): incident is NOT lost; daemon sleeps until wake_at_ms.
         let report_2 = probe.observe().await.expect("observe 2");
         assert_eq!(report_2.failed_workers, vec!["worker-429-1".to_owned()]);
         assert!(report_2.rate_limited_until_ms.is_some());
-        let decision_2 = decide(&report_2, crate::task_memory::now_millis() as i64);
+        let decision_2 = decide(&report_2, now_millis());
         assert!(matches!(
             decision_2,
             PulseDecision::Sleep {
@@ -2529,7 +2739,7 @@ mod tests {
         evohime_model_gateway::clear_rate_limit(model);
         let report_3 = probe.observe().await.expect("observe 3");
         assert_eq!(
-            decide(&report_3, crate::task_memory::now_millis() as i64),
+            decide(&report_3, now_millis()),
             PulseDecision::Recover {
                 failed_workers: vec!["worker-429-1".to_owned()]
             }
@@ -2537,16 +2747,17 @@ mod tests {
 
         // Once recovery-2 completes, the incident is retired and not repeated.
         probe.mark_recovery_dispatched("recovery-2", &report_3.failed_workers);
-        journal
-            .record(&crate::CoreEvent::TaskCompleted {
-                task_id: "recovery-2".into(),
-                final_message: "fixed".into(),
-            })
-            .await
-            .expect("task completed recorded");
+        journal.record_event(
+            "task.completed",
+            "recovery-2",
+            serde_json::json!({
+                "task_id": "recovery-2",
+                "final_message": "fixed",
+            }),
+        );
         let report_4 = probe.observe().await.expect("observe 4");
         assert_eq!(
-            decide(&report_4, crate::task_memory::now_millis() as i64),
+            decide(&report_4, now_millis()),
             PulseDecision::AllGood
         );
     }
@@ -2572,20 +2783,14 @@ mod tests {
         )
         .expect("write roadmap");
 
-        let journal =
-            EventJournal::open(directory.path().join("pulse-evolve.db")).expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
-        let selected = SelectedModel::default();
-        selected.set("primary");
         let gateway_config = Some(ModelGatewayConfig {
             default_route: "primary".into(),
             routes: std::collections::HashMap::from([(
@@ -2600,17 +2805,17 @@ mod tests {
         let probe = Arc::new(JournalPulseProbe::new(
             journal.clone(),
             gateway_config,
-            selected,
+            MockWorkspaceProvider::with_model("primary"),
         ));
-        let (coordinator, mut events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let (coordinator, mut requests) = MockCoordinator::new();
         let sink = Arc::new(CoordinatorPulseTaskSink::new(
-            coordinator,
+            Arc::new(coordinator),
             Some("hive".into()),
         ));
 
         let report_1 = probe.observe().await.expect("observe 1");
         assert_eq!(
-            decide(&report_1, crate::task_memory::now_millis() as i64),
+            decide(&report_1, now_millis()),
             PulseDecision::Evolve {
                 items: vec![RoadmapItem {
                     file_path: "docs/development-plan.md".into(),
@@ -2628,29 +2833,27 @@ mod tests {
         );
         daemon.run();
 
-        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        let req = tokio::time::timeout(Duration::from_secs(1), requests.recv())
             .await
             .expect("evolution task starts")
-            .expect("event received");
-        let dispatched_task_id = match &event {
-            crate::CoreEvent::TaskStarted { task_id, .. } => task_id.clone(),
-            other => panic!("unexpected event: {other:?}"),
-        };
+            .expect("request received");
+        let dispatched_task_id = req.task_id;
 
         // Allow a couple more cycles to run while the task is in-flight and after failure.
         tokio::time::sleep(Duration::from_millis(30)).await;
-        journal
-            .record(&crate::CoreEvent::TaskFailed {
-                task_id: dispatched_task_id,
-                error: "simulated failure".into(),
-            })
-            .await
-            .expect("record failure");
+        journal.record_event(
+            "task.failed",
+            &dispatched_task_id,
+            serde_json::json!({
+                "task_id": dispatched_task_id,
+                "error": "simulated failure",
+            }),
+        );
         tokio::time::sleep(Duration::from_millis(30)).await;
         daemon.shutdown();
 
         // Anti-loop protection: the same item must not be re-dispatched after failure.
-        assert!(events.try_recv().is_err());
+        assert!(requests.try_recv().is_err());
 
         let prompt = proactive_evolution_prompt(&[RoadmapItem {
             file_path: "docs/development-plan.md".into(),
@@ -2675,26 +2878,20 @@ mod tests {
         )
         .expect("write roadmap");
 
-        let journal =
-            EventJournal::open(directory.path().join("pulse-disabled.db")).expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: false,
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
-        let probe = JournalPulseProbe::new(journal, None, SelectedModel::default());
+        let probe =
+            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
         assert!(!report.proactive_evolution_enabled);
         assert!(report.roadmap_items.is_empty());
-        assert_eq!(
-            decide(&report, crate::task_memory::now_millis() as i64),
-            PulseDecision::AllGood
-        );
+        assert_eq!(decide(&report, now_millis()), PulseDecision::AllGood);
 
         let mut forced_report = healthy_report();
         forced_report.proactive_evolution_enabled = false;
@@ -2719,20 +2916,14 @@ mod tests {
         assert_eq!(discovered.len(), 1);
         assert!(discovered[0].ends_with("TODO.md"));
 
-        let journal =
-            EventJournal::open(directory.path().join("pulse-auto.db")).expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
-        let selected = SelectedModel::default();
-        selected.set("primary");
         let gateway_config = Some(ModelGatewayConfig {
             default_route: "primary".into(),
             routes: std::collections::HashMap::from([(
@@ -2745,19 +2936,19 @@ mod tests {
             )]),
         });
         let probe = Arc::new(JournalPulseProbe::new(
-            journal.clone(),
+            journal,
             gateway_config,
-            selected,
+            MockWorkspaceProvider::with_model("primary"),
         ));
-        let (coordinator, mut events) = TaskCoordinator::new_with_journal(8, None, journal);
+        let (coordinator, mut requests) = MockCoordinator::new();
         let sink = Arc::new(CoordinatorPulseTaskSink::new(
-            coordinator,
+            Arc::new(coordinator),
             Some("hive".into()),
         ));
 
         let report = probe.observe().await.expect("observe");
         assert_eq!(
-            decide(&report, crate::task_memory::now_millis() as i64),
+            decide(&report, now_millis()),
             PulseDecision::Evolve {
                 items: vec![RoadmapItem {
                     file_path: "TODO.md".into(),
@@ -2775,11 +2966,10 @@ mod tests {
         );
         daemon.run();
 
-        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+        let _req = tokio::time::timeout(Duration::from_secs(1), requests.recv())
             .await
             .expect("evolution task starts")
-            .expect("event received");
-        assert!(matches!(event, crate::CoreEvent::TaskStarted { .. }));
+            .expect("request received");
         daemon.shutdown();
     }
 
@@ -2796,25 +2986,19 @@ mod tests {
         )
         .expect("write plan");
 
-        let journal =
-            EventJournal::open(directory.path().join("pulse-empty.db")).expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
-        let probe = JournalPulseProbe::new(journal, None, SelectedModel::default());
+        let probe =
+            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
         assert!(report.roadmap_items.is_empty());
-        assert_eq!(
-            decide(&report, crate::task_memory::now_millis() as i64),
-            PulseDecision::AllGood
-        );
+        assert_eq!(decide(&report, now_millis()), PulseDecision::AllGood);
     }
 
     #[test]
@@ -2859,19 +3043,16 @@ mod tests {
         }
         std::fs::write(repo_dir.join("TODO.md"), todo_lines).expect("write TODO");
 
-        let journal =
-            EventJournal::open(directory.path().join("pulse-collect.db")).expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
-        let probe = JournalPulseProbe::new(journal, None, SelectedModel::default());
+        let probe =
+            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
 
         assert_eq!(report.roadmap_items.len(), MAX_ROADMAP_ITEMS);
@@ -2946,19 +3127,19 @@ mod tests {
         )
         .expect("write TODO");
 
-        let journal = EventJournal::open(directory.path().join("pulse-loop-guard.db"))
-            .expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             watched_repositories: vec![repo_dir.to_string_lossy().into_owned()],
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
-        let probe = JournalPulseProbe::new(journal.clone(), None, SelectedModel::default());
+        let probe = JournalPulseProbe::new(
+            journal.clone(),
+            None,
+            Arc::new(MockWorkspaceProvider::default()),
+        );
         let report_1 = probe.observe().await.expect("observe 1");
         assert_eq!(report_1.roadmap_items.len(), 2);
 
@@ -2972,13 +3153,14 @@ mod tests {
         assert!(report_inflight.roadmap_items.is_empty());
 
         // Queen reports failure on "Hard task": only "Hard task" is blocked, "Easy task" stays eligible.
-        journal
-            .record(&crate::CoreEvent::TaskCompleted {
-                task_id: "evo-1".into(),
-                final_message: "FAILED: Hard task requires unavailable credentials".into(),
-            })
-            .await
-            .expect("record failed message");
+        journal.record_event(
+            "task.completed",
+            "evo-1",
+            serde_json::json!({
+                "task_id": "evo-1",
+                "final_message": "FAILED: Hard task requires unavailable credentials",
+            }),
+        );
 
         let report_2 = probe.observe().await.expect("observe 2");
         assert_eq!(report_2.roadmap_items.len(), 1);
@@ -2990,13 +3172,14 @@ mod tests {
             settings.primary_workspace_path(),
             &report_2.roadmap_items,
         );
-        journal
-            .record(&crate::CoreEvent::TaskCompleted {
-                task_id: "evo-2".into(),
-                final_message: "SKIP".into(),
-            })
-            .await
-            .expect("record skip message");
+        journal.record_event(
+            "task.completed",
+            "evo-2",
+            serde_json::json!({
+                "task_id": "evo-2",
+                "final_message": "SKIP",
+            }),
+        );
 
         let report_3 = probe.observe().await.expect("observe 3");
         assert!(report_3.roadmap_items.is_empty());
@@ -3199,8 +3382,7 @@ mod tests {
         std::fs::write(repo_two.join("TODO.md"), "- [ ] Task from repo two\n")
             .expect("write repo two TODO");
 
-        let journal = EventJournal::open(directory.path().join("pulse-multi-repo.db"))
-            .expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             watched_repositories: vec![
                 repo_one.to_string_lossy().into_owned(),
@@ -3209,12 +3391,10 @@ mod tests {
             proactive_evolution_enabled: true,
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
-        let probe = JournalPulseProbe::new(journal, None, SelectedModel::default());
+        let probe =
+            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
         let texts: Vec<&str> = report
             .roadmap_items
@@ -3226,18 +3406,13 @@ mod tests {
 
     #[tokio::test]
     async fn hive_never_uses_global_providers_when_unconfigured() {
-        let directory = tempfile::tempdir().expect("temp dir");
-        let journal = EventJournal::open(directory.path().join("pulse-unconfigured-hive.db"))
-            .expect("journal opens");
+        let journal = Arc::new(MockJournal::default());
         let settings = HiveSettings {
             hive_provider_profile: Some("literouter".into()),
             hive_model: Some("hive-special-model".into()),
             ..HiveSettings::default()
         };
-        journal
-            .save_hive_settings(&settings)
-            .await
-            .expect("save settings");
+        journal.save_settings(&settings);
 
         let literouter_route = evohime_model_gateway::ModelRouteConfig::literouter(
             "global-free-key",
@@ -3259,32 +3434,30 @@ mod tests {
             ]),
         };
 
-        let selected = SelectedModel::default();
-        selected.set("free-default");
-        let probe = JournalPulseProbe::new(journal.clone(), Some(gateway_config.clone()), selected);
+        let probe = JournalPulseProbe::new(
+            journal.clone(),
+            Some(gateway_config.clone()),
+            MockWorkspaceProvider::with_model("free-default"),
+        );
         let report = probe.observe().await.expect("observe");
         assert!(!report.route_is_primary);
         assert!(report.selected_provider.is_none());
         assert!(report.fallback_provider.is_none());
 
-        let (mut coordinator, _events) = TaskCoordinator::new(8);
-        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
-        coordinator.set_command_sender_for_test(tx);
-        let sink = CoordinatorPulseTaskSink::new(coordinator, None)
+        let (coordinator, mut requests) = MockCoordinator::new();
+        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), None)
             .with_hive_settings_source(journal, Some(gateway_config));
         let err = sink
             .dispatch_recovery(&[], None)
             .await
             .expect_err("unconfigured hive must not dispatch on global providers");
         assert_eq!(err, "primary_route_unavailable");
-        assert!(rx.try_recv().is_err());
+        assert!(requests.try_recv().is_err());
     }
 
     #[tokio::test]
     async fn coordinator_pulse_sink_prefers_isolated_hive_route() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let journal =
-            crate::EventJournal::open(dir.path().join("pulse-isolated-hive.db")).expect("journal");
+        let journal = Arc::new(MockJournal::default());
 
         let deepseek_route = evohime_model_gateway::ModelRouteConfig::openai_compatible(
             "sk-paid",
@@ -3306,25 +3479,15 @@ mod tests {
             ]),
         };
 
-        let (mut coordinator, _events) = TaskCoordinator::new(8);
-        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
-        coordinator.set_command_sender_for_test(tx);
-        let sink = CoordinatorPulseTaskSink::new(coordinator, None)
+        let (coordinator, mut requests) = MockCoordinator::new();
+        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), None)
             .with_hive_settings_source(journal, Some(gateway_config));
         let task_id = sink
             .dispatch_recovery(&[], None)
             .await
             .expect("dispatches with isolated hive route");
         assert!(!task_id.is_empty());
-        let command = rx.recv().await.expect("command sent");
-        match command {
-            CoreCommand::StartTask {
-                preferred_route_hint,
-                ..
-            } => {
-                assert_eq!(preferred_route_hint.as_deref(), Some("hive"));
-            }
-            _ => panic!("unexpected command sent to coordinator"),
-        }
+        let req = requests.recv().await.expect("command sent");
+        assert_eq!(req.preferred_route_hint.as_deref(), Some("hive"));
     }
 }

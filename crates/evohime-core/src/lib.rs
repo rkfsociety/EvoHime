@@ -210,7 +210,7 @@ pub(crate) mod conversational_workflow_composer;
 pub mod design_intent_review_lane;
 pub(crate) mod doctor;
 /// Core-owned EvaPulse background daemon for the hive.
-pub mod eva_pulse;
+pub use evohime_hive::pulse as eva_pulse;
 /// Defines the bounded typed boundary between EvaPulse and the Hive.
 pub use evohime_hive::pulse_boundary as eva_pulse_boundary;
 pub mod evals;
@@ -229,6 +229,7 @@ pub(crate) mod github_public_repository;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
+pub mod hive_context;
 pub(crate) use evohime_hive::observation as hive_observation;
 pub use evohime_hive::settings as hive_settings;
 /// Read-only aggregated hive visualization snapshot for the operations panel.

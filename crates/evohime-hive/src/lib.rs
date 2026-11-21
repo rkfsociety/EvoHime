@@ -9,6 +9,7 @@
 
 pub mod observation;
 pub mod permission_session;
+pub mod pulse;
 pub mod pulse_boundary;
 pub mod settings;
 pub mod state;

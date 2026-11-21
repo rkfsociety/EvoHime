@@ -430,15 +430,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => return Err(format!("logging failed: {error}").into()),
     };
-    let pulse = evohime_core::eva_pulse::EvaPulseDaemon::start(
-        journal.clone(),
+    let workspace_provider = std::sync::Arc::new(
+        evohime_core::hive_context::CoreWorkspaceProvider::new(
+            journal.clone(),
+            selected_model.clone(),
+        ),
+    );
+    let pulse = evohime_hive::pulse::EvaPulseDaemon::start(
+        std::sync::Arc::new(journal.clone()),
         gateway_config.clone(),
-        selected_model.clone(),
-        evohime_core::eva_pulse_boundary::HiveSignalReceiver::new(std::sync::Arc::new(
-            coordinator.clone(),
-        ))
-        .with_journal(std::sync::Arc::new(journal.clone())),
-        Some(std::sync::Arc::clone(&logger)),
+        workspace_provider,
+        std::sync::Arc::new(coordinator.clone()),
+        Some(std::sync::Arc::clone(&logger) as std::sync::Arc<dyn evohime_hive_contract::HiveTelemetrySink>),
     );
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
         journal,
@@ -451,7 +454,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     .with_selected_model(selected_model)
     .with_analysis_kernels(analysis_kernels)
     .with_pulse_controller(std::sync::Arc::new(
-        evohime_core::eva_pulse::EvaPulseController::new(pulse.clone()),
+        evohime_hive::pulse::EvaPulseController::new(pulse.clone()),
     ))
     .with_proactivity(proactivity)
     .with_workflow_runtime_state(workflow_state)
