@@ -1996,6 +1996,11 @@ message CommandEnvelope {
     SetHiveSettingCommand set_hive_setting = 290;
     ListAnalysisKernels list_analysis_kernels = 291;
     EvaPulseStatusCommand eva_pulse_status = 292;
+    SubmitHiveAuditCommand submit_hive_audit = 293;
+    PruneHiveSignalRecordsCommand prune_hive_signal_records = 294;
+    GetHiveModelUsageCommand get_hive_model_usage = 295;
+    ManageWorktreeLeaseCommand manage_worktree_lease = 296;
+    FilterHiveRootTasksCommand filter_hive_root_tasks = 297;
   }
 }
 
@@ -2046,6 +2051,59 @@ message SetHiveSettingCommand {
   string request_id = 2;
   string key = 3;
   string value = 4;
+}
+
+// Records a durable Hive audit event via Core's EventJournal.
+message SubmitHiveAuditCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string task_id = 3;
+  string event_type = 4;
+  bytes payload = 5;
+}
+
+// Prunes old Hive signal audit records, keeping at most keep_limit per type.
+message PruneHiveSignalRecordsCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  repeated string event_types = 3;
+  uint32 keep_limit = 4;
+}
+
+// Queries model dispatch windows, usage rows, or route token totals from Core,
+// and returns active provider 429 cooldown deadlines.
+message GetHiveModelUsageCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string provider = 4;
+  string model = 5;
+  string route_scope = 6;
+  int64 start_ms = 7;
+  int64 now_ms = 8;
+  int64 minute_window_ms = 9;
+  int64 hour_window_ms = 10;
+  int64 day_window_ms = 11;
+}
+
+// Proxies Hive worktree lease lifecycle and active workflow run checks to Core.
+message ManageWorktreeLeaseCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string operation = 3;
+  string worktree_id = 4;
+  string task_id = 5;
+  string base_root = 6;
+  string branch = 7;
+  string root_ref = 8;
+  string base_commit = 9;
+}
+
+// Filters candidate root task IDs down to tasks owned by the Hive world.
+message FilterHiveRootTasksCommand {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  repeated string roots = 3;
 }
 
 // Plan 135: bounded Core-owned review target/findings projection.

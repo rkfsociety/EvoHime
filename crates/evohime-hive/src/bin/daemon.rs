@@ -5,6 +5,7 @@
     deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)
 )]
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, RwLock};
@@ -400,6 +401,191 @@ impl CoreIpcClient {
             "timed out waiting for IPC response 'replay.end'".into(),
         ))
     }
+
+    async fn submit_hive_audit(
+        &self,
+        task_id: &str,
+        event_type: &str,
+        payload: &[u8],
+    ) -> Result<(), HiveContractError> {
+        let mut session = self.session.lock().await;
+        let command =
+            session.command_envelope(generated::command_envelope::Command::SubmitHiveAudit(
+                generated::SubmitHiveAuditCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    task_id: task_id.to_owned(),
+                    event_type: event_type.to_owned(),
+                    payload: payload.to_vec(),
+                },
+            ));
+        session.write_command(command).await?;
+        let event = session.wait_for_event_type("hive_audit.submitted").await?;
+        let response: serde_json::Value =
+            serde_json::from_slice(&event.payload).map_err(|error| {
+                HiveContractError::Serialization(format!(
+                    "failed to decode hive_audit.submitted: {error}"
+                ))
+            })?;
+        if response
+            .get("accepted")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        {
+            Ok(())
+        } else {
+            let reason = response
+                .get("error_code")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown");
+            Err(HiveContractError::Storage(format!(
+                "submit_hive_audit rejected: {reason}"
+            )))
+        }
+    }
+
+    async fn prune_signal_records(
+        &self,
+        event_types: &[&str],
+        keep_limit: usize,
+    ) -> Result<(), HiveContractError> {
+        let mut session = self.session.lock().await;
+        let command = session.command_envelope(
+            generated::command_envelope::Command::PruneHiveSignalRecords(
+                generated::PruneHiveSignalRecordsCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    event_types: event_types.iter().map(|s| (*s).to_owned()).collect(),
+                    keep_limit: u32::try_from(keep_limit).unwrap_or(u32::MAX),
+                },
+            ),
+        );
+        session.write_command(command).await?;
+        let _ = session.wait_for_event_type("hive_signals.pruned").await?;
+        Ok(())
+    }
+
+    async fn get_hive_model_usage(
+        &self,
+        request: generated::GetHiveModelUsageCommand,
+    ) -> Result<serde_json::Value, HiveContractError> {
+        let mut session = self.session.lock().await;
+        let command = session.command_envelope(
+            generated::command_envelope::Command::GetHiveModelUsage(request),
+        );
+        session.write_command(command).await?;
+        let event = session
+            .wait_for_event_type("hive_model_usage.snapshot")
+            .await?;
+        let response: serde_json::Value =
+            serde_json::from_slice(&event.payload).map_err(|error| {
+                HiveContractError::Serialization(format!(
+                    "failed to decode hive_model_usage.snapshot: {error}"
+                ))
+            })?;
+        sync_rate_limits_from_payload(&response);
+        if response.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
+            let reason = response
+                .get("error_code")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unavailable");
+            return Err(HiveContractError::Unavailable(format!(
+                "get_hive_model_usage failed: {reason}"
+            )));
+        }
+        Ok(response)
+    }
+
+    async fn manage_worktree_lease(
+        &self,
+        request: generated::ManageWorktreeLeaseCommand,
+    ) -> Result<serde_json::Value, HiveContractError> {
+        let mut session = self.session.lock().await;
+        let command = session.command_envelope(
+            generated::command_envelope::Command::ManageWorktreeLease(request),
+        );
+        session.write_command(command).await?;
+        let event = session.wait_for_event_type("hive_worktree.managed").await?;
+        serde_json::from_slice(&event.payload).map_err(|error| {
+            HiveContractError::Serialization(format!(
+                "failed to decode hive_worktree.managed: {error}"
+            ))
+        })
+    }
+
+    async fn filter_hive_root_tasks(
+        &self,
+        roots: Vec<String>,
+    ) -> Result<Vec<String>, HiveContractError> {
+        let mut session = self.session.lock().await;
+        let command =
+            session.command_envelope(generated::command_envelope::Command::FilterHiveRootTasks(
+                generated::FilterHiveRootTasksCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    roots,
+                },
+            ));
+        session.write_command(command).await?;
+        let event = session
+            .wait_for_event_type("hive_root_tasks.filtered")
+            .await?;
+        let response: serde_json::Value =
+            serde_json::from_slice(&event.payload).map_err(|error| {
+                HiveContractError::Serialization(format!(
+                    "failed to decode hive_root_tasks.filtered: {error}"
+                ))
+            })?;
+        let items = response
+            .get("roots")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| {
+                HiveContractError::Serialization("hive_root_tasks.filtered missing roots".into())
+            })?;
+        Ok(items
+            .iter()
+            .filter_map(|item| item.as_str().map(str::to_owned))
+            .collect())
+    }
+
+    async fn sync_rate_limits_from_pulse_status(&self) {
+        let mut session = self.session.lock().await;
+        let command =
+            session.command_envelope(generated::command_envelope::Command::EvaPulseStatus(
+                generated::EvaPulseStatusCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                },
+            ));
+        if session.write_command(command).await.is_err() {
+            return;
+        }
+        if let Ok(event) = session.wait_for_event_type("eva_pulse.status").await {
+            if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&event.payload) {
+                sync_rate_limits_from_payload(&payload);
+            }
+        }
+    }
+}
+
+fn sync_rate_limits_from_payload(payload: &serde_json::Value) {
+    let Some(rate_limits) = payload
+        .get("rate_limits")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return;
+    };
+    let active = evohime_model_gateway::rate_limit_signal::active_rate_limits();
+    for model in active.keys() {
+        if !rate_limits.contains_key(model) {
+            evohime_model_gateway::clear_rate_limit(model);
+        }
+    }
+    for (model, until) in rate_limits {
+        if let Some(until_ms) = until.as_i64() {
+            evohime_model_gateway::record_rate_limit(model, until_ms);
+        }
+    }
 }
 
 fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
@@ -428,8 +614,55 @@ fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
     }
 }
 
+const MAX_FALLBACK_AUDIT_CACHE: usize = 512;
+
 struct RealIpcJournalProvider {
     client: Arc<CoreIpcClient>,
+    fallback_audit_cache: std::sync::Mutex<VecDeque<(String, String, Vec<u8>)>>,
+}
+
+impl RealIpcJournalProvider {
+    fn new(client: Arc<CoreIpcClient>) -> Self {
+        Self {
+            client,
+            fallback_audit_cache: std::sync::Mutex::new(VecDeque::new()),
+        }
+    }
+
+    fn push_fallback_audit(&self, task_id: &str, event_type: &str, payload: &[u8]) {
+        let Ok(mut cache) = self.fallback_audit_cache.lock() else {
+            return;
+        };
+        if cache.len() >= MAX_FALLBACK_AUDIT_CACHE {
+            cache.pop_front();
+        }
+        cache.push_back((task_id.to_owned(), event_type.to_owned(), payload.to_vec()));
+    }
+
+    async fn flush_fallback_audit(&self) {
+        let pending: Vec<(String, String, Vec<u8>)> = {
+            let Ok(mut cache) = self.fallback_audit_cache.lock() else {
+                return;
+            };
+            cache.drain(..).collect()
+        };
+        for (idx, (task_id, event_type, payload)) in pending.iter().enumerate() {
+            if let Err(error) = self
+                .client
+                .submit_hive_audit(task_id, event_type, payload)
+                .await
+            {
+                tracing::warn!(
+                    error = %error,
+                    "failed to flush buffered fallback audit record to Core IPC"
+                );
+                for (rem_task, rem_type, rem_payload) in pending.into_iter().skip(idx) {
+                    self.push_fallback_audit(&rem_task, &rem_type, &rem_payload);
+                }
+                break;
+            }
+        }
+    }
 }
 
 impl HiveJournalProvider for RealIpcJournalProvider {
@@ -455,25 +688,50 @@ impl HiveJournalProvider for RealIpcJournalProvider {
 
     fn record_audit<'a>(
         &'a self,
-        _task_id: &'a str,
-        _event_type: &'a str,
-        _payload: &'a [u8],
+        task_id: &'a str,
+        event_type: &'a str,
+        payload: &'a [u8],
     ) -> BoxFuture<'a, Result<(), HiveContractError>> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: record_audit");
-            Err(HiveContractError::Unavailable(
-                "IPC method not implemented yet: record_audit".into(),
-            ))
+        Box::pin(async move {
+            match self
+                .client
+                .submit_hive_audit(task_id, event_type, payload)
+                .await
+            {
+                Ok(()) => {
+                    self.flush_fallback_audit().await;
+                    Ok(())
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        task_id,
+                        event_type,
+                        error = %error,
+                        "Core IPC record_audit unavailable; buffering in local session fallback cache"
+                    );
+                    self.push_fallback_audit(task_id, event_type, payload);
+                    Ok(())
+                }
+            }
         })
     }
 
     fn prune_signal_records<'a>(
         &'a self,
-        _event_types: &'a [&'a str],
-        _keep_limit: usize,
+        event_types: &'a [&'a str],
+        keep_limit: usize,
     ) -> BoxFuture<'a, ()> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: prune_signal_records");
+        Box::pin(async move {
+            if let Err(error) = self
+                .client
+                .prune_signal_records(event_types, keep_limit)
+                .await
+            {
+                tracing::warn!(
+                    error = %error,
+                    "Core IPC prune_signal_records failed; skipping prune this cycle"
+                );
+            }
         })
     }
 
@@ -481,6 +739,7 @@ impl HiveJournalProvider for RealIpcJournalProvider {
         &self,
     ) -> BoxFuture<'_, Result<Option<serde_json::Value>, HiveContractError>> {
         Box::pin(async move {
+            self.client.sync_rate_limits_from_pulse_status().await;
             let snapshot = self.client.fetch_hive_state().await?;
             let settings = snapshot_to_settings(&snapshot);
             let value = serde_json::to_value(&settings).map_err(|error| {
@@ -535,71 +794,204 @@ impl HiveJournalProvider for RealIpcJournalProvider {
 
     fn filter_hive_root_tasks(&self, roots: Vec<String>) -> BoxFuture<'_, Vec<String>> {
         Box::pin(async move {
-            tracing::warn!("IPC method not implemented yet: filter_hive_root_tasks");
-            roots
+            match self.client.filter_hive_root_tasks(roots.clone()).await {
+                Ok(filtered) => filtered,
+                Err(error) => {
+                    tracing::warn!(
+                        error = %error,
+                        "Core IPC filter_hive_root_tasks failed; keeping unfiltered roots"
+                    );
+                    roots
+                }
+            }
         })
     }
 
     fn model_dispatch_windows<'a>(
         &'a self,
-        _provider: &'a str,
-        _model: &'a str,
-        _now_ms: i64,
-        _minute_window_ms: i64,
-        _hour_window_ms: i64,
-        _day_window_ms: i64,
+        provider: &'a str,
+        model: &'a str,
+        now_ms: i64,
+        minute_window_ms: i64,
+        hour_window_ms: i64,
+        day_window_ms: i64,
     ) -> BoxFuture<'a, Result<HiveDispatchWindows, HiveContractError>> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: model_dispatch_windows");
-            Err(HiveContractError::Unavailable(
-                "IPC method not implemented yet: model_dispatch_windows".into(),
-            ))
+        Box::pin(async move {
+            let response = self
+                .client
+                .get_hive_model_usage(generated::GetHiveModelUsageCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    operation: "dispatch_windows".into(),
+                    provider: provider.to_owned(),
+                    model: model.to_owned(),
+                    route_scope: String::new(),
+                    start_ms: 0,
+                    now_ms,
+                    minute_window_ms,
+                    hour_window_ms,
+                    day_window_ms,
+                })
+                .await?;
+            let windows_val = response.get("windows").cloned().ok_or_else(|| {
+                HiveContractError::Serialization("hive_model_usage.snapshot missing windows".into())
+            })?;
+            serde_json::from_value::<HiveDispatchWindows>(windows_val).map_err(|error| {
+                HiveContractError::Serialization(format!(
+                    "failed to decode HiveDispatchWindows: {error}"
+                ))
+            })
         })
     }
 
     fn model_usage_since<'a>(
         &'a self,
-        _start_ms: i64,
-        _provider: &'a str,
-        _model: &'a str,
+        start_ms: i64,
+        provider: &'a str,
+        model: &'a str,
     ) -> BoxFuture<'a, Result<Vec<HiveModelUsage>, HiveContractError>> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: model_usage_since");
-            Err(HiveContractError::Unavailable(
-                "IPC method not implemented yet: model_usage_since".into(),
-            ))
+        Box::pin(async move {
+            let response = self
+                .client
+                .get_hive_model_usage(generated::GetHiveModelUsageCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    operation: "model_usage".into(),
+                    provider: provider.to_owned(),
+                    model: model.to_owned(),
+                    route_scope: String::new(),
+                    start_ms,
+                    now_ms: 0,
+                    minute_window_ms: 0,
+                    hour_window_ms: 0,
+                    day_window_ms: 0,
+                })
+                .await?;
+            let usage_val = response.get("usage").cloned().ok_or_else(|| {
+                HiveContractError::Serialization("hive_model_usage.snapshot missing usage".into())
+            })?;
+            serde_json::from_value::<Vec<HiveModelUsage>>(usage_val).map_err(|error| {
+                HiveContractError::Serialization(format!(
+                    "failed to decode HiveModelUsage list: {error}"
+                ))
+            })
         })
     }
 
     fn route_tokens_since<'a>(
         &'a self,
-        _start_ms: i64,
-        _route_scope: &'a str,
+        start_ms: i64,
+        route_scope: &'a str,
     ) -> BoxFuture<'a, Result<u64, HiveContractError>> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: route_tokens_since");
-            Err(HiveContractError::Unavailable(
-                "IPC method not implemented yet: route_tokens_since".into(),
-            ))
+        Box::pin(async move {
+            let response = self
+                .client
+                .get_hive_model_usage(generated::GetHiveModelUsageCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    operation: "route_tokens".into(),
+                    provider: String::new(),
+                    model: String::new(),
+                    route_scope: route_scope.to_owned(),
+                    start_ms,
+                    now_ms: 0,
+                    minute_window_ms: 0,
+                    hour_window_ms: 0,
+                    day_window_ms: 0,
+                })
+                .await?;
+            response
+                .get("tokens")
+                .and_then(serde_json::Value::as_u64)
+                .ok_or_else(|| {
+                    HiveContractError::Serialization(
+                        "hive_model_usage.snapshot missing tokens".into(),
+                    )
+                })
         })
     }
 
-    fn register_worktree_lease(&self, _request: HiveWorktreeLeaseRequest) -> BoxFuture<'_, ()> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: register_worktree_lease");
+    fn register_worktree_lease(&self, request: HiveWorktreeLeaseRequest) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            if let Err(error) = self
+                .client
+                .manage_worktree_lease(generated::ManageWorktreeLeaseCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    operation: "register".into(),
+                    worktree_id: request.worktree_id,
+                    task_id: request.task_id,
+                    base_root: request.base_root,
+                    branch: request.branch,
+                    root_ref: request.root_ref,
+                    base_commit: request.base_commit,
+                })
+                .await
+            {
+                tracing::warn!(
+                    error = %error,
+                    "Core IPC register_worktree_lease failed; continuing without durable lease"
+                );
+            }
         })
     }
 
-    fn has_active_workflow_run<'a>(&'a self, _task_id: &'a str) -> BoxFuture<'a, bool> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: has_active_workflow_run");
-            true
+    fn has_active_workflow_run<'a>(&'a self, task_id: &'a str) -> BoxFuture<'a, bool> {
+        Box::pin(async move {
+            match self
+                .client
+                .manage_worktree_lease(generated::ManageWorktreeLeaseCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    operation: "has_active_run".into(),
+                    worktree_id: String::new(),
+                    task_id: task_id.to_owned(),
+                    base_root: String::new(),
+                    branch: String::new(),
+                    root_ref: String::new(),
+                    base_commit: String::new(),
+                })
+                .await
+            {
+                Ok(response) => response
+                    .get("active")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(true),
+                Err(error) => {
+                    tracing::warn!(
+                        task_id,
+                        error = %error,
+                        "Core IPC has_active_workflow_run failed; assuming active"
+                    );
+                    true
+                }
+            }
         })
     }
 
-    fn mark_worktree_cleanup_pending<'a>(&'a self, _worktree_id: &'a str) -> BoxFuture<'a, ()> {
-        Box::pin(async {
-            tracing::warn!("IPC method not implemented yet: mark_worktree_cleanup_pending");
+    fn mark_worktree_cleanup_pending<'a>(&'a self, worktree_id: &'a str) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            if let Err(error) = self
+                .client
+                .manage_worktree_lease(generated::ManageWorktreeLeaseCommand {
+                    schema_version: 1,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    operation: "cleanup_pending".into(),
+                    worktree_id: worktree_id.to_owned(),
+                    task_id: String::new(),
+                    base_root: String::new(),
+                    branch: String::new(),
+                    root_ref: String::new(),
+                    base_commit: String::new(),
+                })
+                .await
+            {
+                tracing::warn!(
+                    worktree_id,
+                    error = %error,
+                    "Core IPC mark_worktree_cleanup_pending failed; skipping"
+                );
+            }
         })
     }
 }
@@ -699,9 +1091,8 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let journal: Arc<dyn HiveJournalProvider> = Arc::new(RealIpcJournalProvider {
-        client: Arc::clone(&client),
-    });
+    let journal: Arc<dyn HiveJournalProvider> =
+        Arc::new(RealIpcJournalProvider::new(Arc::clone(&client)));
     let coordinator: Arc<dyn HiveCoordinator> = Arc::new(IpcCoordinator {
         client: Arc::clone(&client),
     });
@@ -858,5 +1249,36 @@ async fn run_pulse_control_server(
         tokio::spawn(async move {
             handle_pulse_control_connection(stream, daemon).await;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_rate_limits_from_payload_records_and_clears() {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+            .unwrap_or_default();
+        let future_ms = now_ms + 60_000;
+        let model = "test-ipc-rate-limit-sync-model";
+
+        evohime_model_gateway::clear_rate_limit(model);
+        sync_rate_limits_from_payload(&serde_json::json!({
+            "rate_limits": {
+                "test-ipc-rate-limit-sync-model": future_ms
+            }
+        }));
+        assert_eq!(
+            evohime_model_gateway::rate_limited_until(model),
+            Some(future_ms)
+        );
+
+        sync_rate_limits_from_payload(&serde_json::json!({
+            "rate_limits": {}
+        }));
+        assert_eq!(evohime_model_gateway::rate_limited_until(model), None);
     }
 }

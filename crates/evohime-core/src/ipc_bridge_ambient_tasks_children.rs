@@ -545,6 +545,46 @@ impl IpcBridge {
                 self.write_response(writer, "hive_settings.saved", payload)
                     .await?;
             }
+            Some(generated::command_envelope::Command::SubmitHiveAudit(request)) => {
+                let payload = self
+                    .submit_hive_audit(&request.task_id, &request.event_type, &request.payload)
+                    .await
+                    .unwrap_or_else(error_response_payload);
+                self.write_response(writer, "hive_audit.submitted", payload)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::PruneHiveSignalRecords(request)) => {
+                let payload = self
+                    .prune_hive_signal_records(&request.event_types, request.keep_limit as usize)
+                    .await
+                    .unwrap_or_else(error_response_payload);
+                self.write_response(writer, "hive_signals.pruned", payload)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetHiveModelUsage(request)) => {
+                let payload = self
+                    .get_hive_model_usage(&request)
+                    .await
+                    .unwrap_or_else(error_response_payload);
+                self.write_response(writer, "hive_model_usage.snapshot", payload)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ManageWorktreeLease(request)) => {
+                let payload = self
+                    .manage_worktree_lease(&request)
+                    .await
+                    .unwrap_or_else(error_response_payload);
+                self.write_response(writer, "hive_worktree.managed", payload)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::FilterHiveRootTasks(request)) => {
+                let payload = self
+                    .filter_hive_root_tasks(request.roots)
+                    .await
+                    .unwrap_or_else(error_response_payload);
+                self.write_response(writer, "hive_root_tasks.filtered", payload)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::GetRetainedChild(request)) => {
                 let (reply, response) = oneshot::channel();
                 let coordinator = self

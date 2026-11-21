@@ -602,14 +602,207 @@ impl IpcBridge {
     }
 
     pub(super) async fn eva_pulse_status_payload(&self) -> Result<Vec<u8>, serde_json::Error> {
-        match self.pulse.as_ref() {
-            Some(HivePulseHandle::Local(controller)) => serde_json::to_vec(&controller.snapshot()),
+        let mut value = match self.pulse.as_ref() {
+            Some(HivePulseHandle::Local(controller)) => {
+                serde_json::to_value(controller.snapshot())?
+            }
             Some(HivePulseHandle::External(proxy)) => match proxy.snapshot().await {
-                Ok(snapshot) => serde_json::to_vec(&snapshot),
-                Err(_) => unavailable_pulse_status_payload(),
+                Ok(snapshot) => serde_json::to_value(snapshot)?,
+                Err(_) => return unavailable_pulse_status_payload(),
             },
-            None => unavailable_pulse_status_payload(),
+            None => return unavailable_pulse_status_payload(),
+        };
+        if let Some(obj) = value.as_object_mut() {
+            let rate_limits = evohime_model_gateway::active_rate_limits();
+            obj.insert("rate_limits".into(), serde_json::to_value(rate_limits)?);
         }
+        serde_json::to_vec(&value)
+    }
+
+    pub(super) async fn submit_hive_audit(
+        &self,
+        task_id: &str,
+        event_type: &str,
+        payload: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        use evohime_hive_contract::HiveJournalProvider as _;
+
+        match self
+            .journal
+            .record_audit(task_id, event_type, payload)
+            .await
+        {
+            Ok(()) => serde_json::to_vec(&serde_json::json!({
+                "accepted": true,
+                "error_code": "",
+            }))
+            .map_err(|error| error.to_string()),
+            Err(error) => serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "error_code": error.to_string(),
+            }))
+            .map_err(|serialization_error| serialization_error.to_string()),
+        }
+    }
+
+    pub(super) async fn prune_hive_signal_records(
+        &self,
+        event_types: &[String],
+        keep_limit: usize,
+    ) -> Result<Vec<u8>, String> {
+        use evohime_hive_contract::HiveJournalProvider as _;
+
+        let refs: Vec<&str> = event_types.iter().map(String::as_str).collect();
+        self.journal.prune_signal_records(&refs, keep_limit).await;
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+        }))
+        .map_err(|error| error.to_string())
+    }
+
+    pub(super) async fn get_hive_model_usage(
+        &self,
+        request: &generated::GetHiveModelUsageCommand,
+    ) -> Result<Vec<u8>, String> {
+        use evohime_hive_contract::HiveJournalProvider as _;
+
+        let rate_limits = evohime_model_gateway::active_rate_limits();
+        match request.operation.as_str() {
+            "dispatch_windows" => {
+                match self
+                    .journal
+                    .model_dispatch_windows(
+                        &request.provider,
+                        &request.model,
+                        request.now_ms,
+                        request.minute_window_ms,
+                        request.hour_window_ms,
+                        request.day_window_ms,
+                    )
+                    .await
+                {
+                    Ok(windows) => serde_json::to_vec(&serde_json::json!({
+                        "ok": true,
+                        "windows": windows,
+                        "rate_limits": rate_limits,
+                    }))
+                    .map_err(|error| error.to_string()),
+                    Err(error) => serde_json::to_vec(&serde_json::json!({
+                        "ok": false,
+                        "error_code": error.to_string(),
+                        "rate_limits": rate_limits,
+                    }))
+                    .map_err(|serialization_error| serialization_error.to_string()),
+                }
+            }
+            "model_usage" => {
+                match self
+                    .journal
+                    .model_usage_since(request.start_ms, &request.provider, &request.model)
+                    .await
+                {
+                    Ok(usage) => serde_json::to_vec(&serde_json::json!({
+                        "ok": true,
+                        "usage": usage,
+                        "rate_limits": rate_limits,
+                    }))
+                    .map_err(|error| error.to_string()),
+                    Err(error) => serde_json::to_vec(&serde_json::json!({
+                        "ok": false,
+                        "error_code": error.to_string(),
+                        "rate_limits": rate_limits,
+                    }))
+                    .map_err(|serialization_error| serialization_error.to_string()),
+                }
+            }
+            "route_tokens" => {
+                match self
+                    .journal
+                    .route_tokens_since(request.start_ms, &request.route_scope)
+                    .await
+                {
+                    Ok(tokens) => serde_json::to_vec(&serde_json::json!({
+                        "ok": true,
+                        "tokens": tokens,
+                        "rate_limits": rate_limits,
+                    }))
+                    .map_err(|error| error.to_string()),
+                    Err(error) => serde_json::to_vec(&serde_json::json!({
+                        "ok": false,
+                        "error_code": error.to_string(),
+                        "rate_limits": rate_limits,
+                    }))
+                    .map_err(|serialization_error| serialization_error.to_string()),
+                }
+            }
+            other => serde_json::to_vec(&serde_json::json!({
+                "ok": false,
+                "error_code": format!("unsupported get_hive_model_usage operation: {other}"),
+                "rate_limits": rate_limits,
+            }))
+            .map_err(|error| error.to_string()),
+        }
+    }
+
+    pub(super) async fn manage_worktree_lease(
+        &self,
+        request: &generated::ManageWorktreeLeaseCommand,
+    ) -> Result<Vec<u8>, String> {
+        use evohime_hive_contract::HiveJournalProvider as _;
+
+        match request.operation.as_str() {
+            "register" => {
+                self.journal
+                    .register_worktree_lease(evohime_hive_contract::HiveWorktreeLeaseRequest {
+                        worktree_id: request.worktree_id.clone(),
+                        task_id: request.task_id.clone(),
+                        base_root: request.base_root.clone(),
+                        branch: request.branch.clone(),
+                        root_ref: request.root_ref.clone(),
+                        base_commit: request.base_commit.clone(),
+                    })
+                    .await;
+                serde_json::to_vec(&serde_json::json!({
+                    "accepted": true,
+                }))
+                .map_err(|error| error.to_string())
+            }
+            "cleanup_pending" => {
+                self.journal
+                    .mark_worktree_cleanup_pending(&request.worktree_id)
+                    .await;
+                serde_json::to_vec(&serde_json::json!({
+                    "accepted": true,
+                }))
+                .map_err(|error| error.to_string())
+            }
+            "has_active_run" => {
+                let active = self.journal.has_active_workflow_run(&request.task_id).await;
+                serde_json::to_vec(&serde_json::json!({
+                    "accepted": true,
+                    "active": active,
+                }))
+                .map_err(|error| error.to_string())
+            }
+            other => serde_json::to_vec(&serde_json::json!({
+                "accepted": false,
+                "error_code": format!("unsupported manage_worktree_lease operation: {other}"),
+            }))
+            .map_err(|error| error.to_string()),
+        }
+    }
+
+    pub(super) async fn filter_hive_root_tasks(
+        &self,
+        roots: Vec<String>,
+    ) -> Result<Vec<u8>, String> {
+        use evohime_hive_contract::HiveJournalProvider as _;
+
+        let filtered = self.journal.filter_hive_root_tasks(roots).await;
+        serde_json::to_vec(&serde_json::json!({
+            "roots": filtered,
+        }))
+        .map_err(|error| error.to_string())
     }
 }
 
@@ -632,5 +825,6 @@ fn unavailable_pulse_status_payload() -> Result<Vec<u8>, serde_json::Error> {
         "status": "unavailable",
         "enabled": false,
         "next_wake_at_ms": null,
+        "rate_limits": evohime_model_gateway::active_rate_limits(),
     }))
 }
