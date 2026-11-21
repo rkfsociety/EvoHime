@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EvoHime — Hive UI preview</title>
+  <link rel="stylesheet" href="../src/renderer/src/styles.css">
+  <style>
+    /* Обвязка нужна только preview-файлу, приложение её не использует. */
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: var(--bg); color: var(--fg); }
+    .preview-shell { display: flex; width: 100%; height: 100%; min-width: 0; }
+    .preview-rail { display: flex; flex: 0 0 68px; flex-direction: column; align-items: center; gap: 12px; padding: 14px 10px; border-right: 1px solid var(--border); background: var(--bg-sunken); }
+    .preview-rail__logo { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--accent); border-radius: 12px; color: var(--accent); font-size: 18px; }
+    .preview-rail__item { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid transparent; border-radius: 10px; color: var(--fg-muted); font-size: 17px; }
+    .preview-rail__item--active { border-color: var(--accent); background: var(--accent-soft); color: var(--fg); }
+    .preview-main { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+    .preview-topbar { display: flex; align-items: center; gap: 16px; height: 48px; padding: 0 18px; border-bottom: 1px solid var(--border); color: var(--fg-muted); }
+    .preview-topbar strong { color: var(--fg); }
+    .preview-topbar__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+    .preview-topbar__hint { margin-left: auto; font-size: 12px; }
+    .preview-main > .main__scroll { width: 100%; height: 100%; min-width: 0; padding: 12px 18px 14px; overflow: auto; }
+    .preview-note { position: fixed; right: 18px; bottom: 14px; z-index: 5; padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; background: color-mix(in srgb, var(--bg-raised) 92%, transparent); color: var(--fg-muted); font-size: 11px; pointer-events: none; }
+    .preview-queen-art { display: grid; place-items: center; height: 100%; min-height: 310px; }
+    .preview-queen-art svg { width: min(72%, 330px); height: min(72%, 330px); overflow: visible; }
+    .preview-queen-art circle, .preview-queen-art path { vector-effect: non-scaling-stroke; }
+    .preview-queen-art__orbit { fill: none; stroke: color-mix(in srgb, var(--hive-blue) 35%, transparent); stroke-dasharray: 5 8; }
+    .preview-queen-art__line { stroke: color-mix(in srgb, var(--hive-violet) 50%, transparent); }
+    .preview-queen-art__node { fill: var(--bg-sunken); stroke: var(--hive-green); stroke-width: 2; }
+    .preview-queen-art__core { fill: color-mix(in srgb, var(--hive-violet) 28%, var(--bg-sunken)); stroke: var(--hive-violet); stroke-width: 3; }
+    @media (max-width: 700px) { .preview-rail { flex-basis: 48px; padding-inline: 5px; } .preview-topbar { padding-inline: 10px; } .preview-topbar__hint { display: none; } .preview-main > .main__scroll { padding-inline: 10px; } .preview-note { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="preview-shell">
+    <aside class="preview-rail" aria-label="Предпросмотр навигации">
+      <div class="preview-rail__logo">✦</div>
+      <div class="preview-rail__item">⌂</div>
+      <div class="preview-rail__item">◷</div>
+      <div class="preview-rail__item preview-rail__item--active">⌘</div>
+      <div class="preview-rail__item">♧</div>
+    </aside>
+    <main class="preview-main">
+      <header class="preview-topbar">
+        <strong>EvoHime</strong>
+        <span>Улей</span>
+        <span class="preview-topbar__path">D:\github\EvoHime</span>
+        <span class="preview-topbar__hint">UI preview · меняйте размер окна</span>
+      </header>
+      <div class="main__scroll">
+        <section class="hive-console" aria-label="Улей (Hive)">
+          <header class="hive-console__header">
+            <div class="hive-console__title">
+              <p class="hive-console__eyebrow">Hive / Eva</p>
+              <h1>Улей (Hive)</h1>
+              <p>Единый центр управления Ульем и Королевой Евой</p>
+            </div>
+            <div class="hive-console__controls">
+              <span class="status-pill status-pill--connected">connected</span>
+              <div class="hive-switch"><span class="hive-switch__label">Автономность Королевы</span><small class="hive-switch__status">Управляется Core</small></div>
+              <button class="hive-settings-trigger" aria-label="Настройки">⚙</button>
+              <label class="hive-interval"><span>Обновление</span><select><option>2с</option></select></label>
+              <button class="hive-console__refresh">Обновить сейчас</button>
+            </div>
+          </header>
+
+          <div class="hive-console__workspace">
+            <div class="hive-console__grid">
+              <section class="hive-panel hive-panel--departments">
+                <div class="hive-panel__head"><h2>Департаменты улья</h2><span>Активно: 0 / 16</span></div>
+                <div class="hive-departments">
+                  <article class="hive-department" data-dept="analytics"><span class="hive-department__icon">⌁</span><div class="hive-department__body"><div class="hive-department__head"><strong>Аналитика</strong></div><div class="hive-department__count"><span>0 / 7</span><em>0%</em></div><div class="hive-progress"><span style="width:0%"></span></div></div></article>
+                  <article class="hive-department" data-dept="planning"><span class="hive-department__icon">▣</span><div class="hive-department__body"><div class="hive-department__head"><strong>Планирование</strong></div><div class="hive-department__count"><span>0 / 7</span><em>0%</em></div><div class="hive-progress"><span style="width:0%"></span></div></div></article>
+                  <article class="hive-department" data-dept="testing"><span class="hive-department__icon">✓</span><div class="hive-department__body"><div class="hive-department__head"><strong>Тестирование</strong></div><div class="hive-department__count"><span>0 / 7</span><em>0%</em></div><div class="hive-progress"><span style="width:0%"></span></div></div></article>
+                  <article class="hive-department" data-dept="research"><span class="hive-department__icon">◉</span><div class="hive-department__body"><div class="hive-department__head"><strong>Исследования</strong></div><div class="hive-department__count"><span>0 / 7</span><em>0%</em></div><div class="hive-progress"><span style="width:0%"></span></div></div></article>
+                  <article class="hive-department" data-dept="documentation"><span class="hive-department__icon">□</span><div class="hive-department__body"><div class="hive-department__head"><strong>Документация</strong></div><div class="hive-department__count"><span>0 / 7</span><em>0%</em></div><div class="hive-progress"><span style="width:0%"></span></div></div></article>
+                  <article class="hive-department" data-dept="support"><span class="hive-department__icon">◌</span><div class="hive-department__body"><div class="hive-department__head"><strong>Поддержка</strong></div><div class="hive-department__count"><span>0 / 7</span><em>0%</em></div><div class="hive-progress"><span style="width:0%"></span></div></div></article>
+                </div>
+                <section class="hive-departments__agents"><div class="hive-panel__head"><h3>Активные агенты (0)</h3><span>глубина и подагенты</span></div><p class="hive-empty">Активных агентов нет.</p></section>
+              </section>
+
+              <section class="hive-queen hive-queen--sleeping">
+                <div class="hive-queen__stage">
+                  <div class="preview-queen-art"><svg viewBox="0 0 320 320" aria-hidden="true"><circle class="preview-queen-art__orbit" cx="160" cy="160" r="120"/><circle class="preview-queen-art__orbit" cx="160" cy="160" r="82"/><path class="preview-queen-art__line" d="M160 160 65 92M160 160 255 92M160 160 70 235M160 160 250 235"/><circle class="preview-queen-art__node" cx="65" cy="92" r="17"/><circle class="preview-queen-art__node" cx="255" cy="92" r="17"/><circle class="preview-queen-art__node" cx="70" cy="235" r="17"/><circle class="preview-queen-art__node" cx="250" cy="235" r="17"/><circle class="preview-queen-art__core" cx="160" cy="160" r="31"/></svg></div>
+                  <div class="hive-queen__body hive-queen__body--overlay"><div class="hive-queen__header-row"><div><p class="hive-queen__eyebrow">Eva core · EvoHime</p><h2>Королева Ева</h2><p class="hive-queen__role">Главный оркестратор улья</p></div><p class="hive-queen__status hive-queen__status--sleeping"><span class="hive-dot"></span> Спит</p></div><p class="hive-queen__note">Координирует агентов и выполняет задачи</p></div>
+                </div>
+                <dl class="hive-queen__footer"><div><dt>Воркеры</dt><dd>0 / 16</dd></div><div><dt>Следующий сон</dt><dd>—</dd></div><div><dt>EvaPulse</dt><dd>нет данных Core</dd></div></dl>
+              </section>
+
+              <aside class="hive-panel hive-panel--metrics"><div class="hive-panel__head"><h2>Метрики улья</h2></div><div class="hive-metrics-summary"><div class="hive-metrics"><svg class="hive-ring" viewBox="0 0 88 88"><circle class="hive-ring__track" cx="44" cy="44" r="34"/><circle class="hive-ring__value" cx="44" cy="44" r="34" stroke="url(#preview-ring)" stroke-dasharray="213.6" stroke-dashoffset="213.6"/><defs><linearGradient id="preview-ring"><stop stop-color="var(--hive-blue)"/><stop offset="1" stop-color="var(--hive-violet)"/></linearGradient></defs><text class="hive-ring__label" x="44" y="45" text-anchor="middle">0%</text><text class="hive-ring__sublabel" x="44" y="58" text-anchor="middle">эффективность</text></svg></div><ul class="hive-stat-list"><li><span>Агентов онлайн</span><strong>0</strong></li><li><span>Задач в работе</span><strong>0</strong></li><li><span>Задач сегодня</span><strong>0</strong></li><li><span>Среднее время</span><strong>—</strong></li></ul></div><div class="hive-budget-card"><div class="hive-budget-card__head"><h3>Провайдер и лимиты</h3><span class="hive-budget-card__provider-tag">LiteRouter</span></div><p class="hive-budget-card__requests">Лимит запросов провайдера: 0 / 720</p><small>Текущая модель: deepseek-v4.1-free-1017:free</small></div></aside>
+            </div>
+
+            <aside class="hive-panel hive-chat"><div class="hive-panel__head"><h2>Диалог с Королевой Евой</h2><div class="hive-panel__actions"><button class="hive-link-button">Открыть чат Улья</button><span class="hive-badge">на связи</span></div></div><section class="hive-chat__logs"><div class="hive-panel__head"><h3>Логи улья</h3><div class="hive-panel__actions"><span class="hive-badge">нет событий</span><button class="hive-link-button">Все логи</button></div></div><p class="hive-empty">Событий пока нет.</p></section><div class="hive-chat__messages"><p class="hive-empty">Напиши Королеве Еве — здесь отобразятся последние сообщения диалога.</p></div><form class="hive-chat__composer"><input class="hive-chat__input" placeholder="Напиши задачу или вопрос Королеве Еве..."><button class="hive-chat__send">Отправить</button></form></aside>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div class="preview-note">Статический preview · измените размер окна</div>
+</body>
+</html>
