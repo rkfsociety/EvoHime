@@ -19,6 +19,7 @@ use evohime_hive_contract::{
     HiveJournalProvider, HiveModelUsage, HiveTaskDispatchRequest, HiveWorktreeLeaseRequest,
     WorkspaceProvider,
 };
+use evohime_model_gateway::ModelGatewayConfig;
 use prost::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::Mutex;
@@ -580,7 +581,21 @@ async fn main() -> ExitCode {
         "connected to Core IPC and loaded HiveSettings"
     );
 
-    let daemon = EvaPulseDaemon::start(journal, None, workspace_provider, coordinator, None);
+    let gateway_config = match ModelGatewayConfig::from_env() {
+        Ok(config) => Some(config),
+        Err(error) => {
+            tracing::warn!(error = %error, "failed to load ModelGatewayConfig from env; starting without gateway config");
+            None
+        }
+    };
+
+    let daemon = EvaPulseDaemon::start(
+        journal,
+        gateway_config,
+        workspace_provider,
+        coordinator,
+        None,
+    );
     let status = daemon.status();
     tracing::info!(
         status = %status.status,
