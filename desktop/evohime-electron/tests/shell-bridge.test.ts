@@ -110,6 +110,8 @@ let providerSummary: ProviderSummary = {
   baseUrl: '',
   tier: 'free',
   configured: false,
+  hiveApiKeyConfigured: false,
+  hiveFallbackApiKeyConfigured: false,
   profiles: emptyProviderProfiles()
 }
 
@@ -135,6 +137,8 @@ const providers = {
       baseUrl: update.baseUrl,
       tier: update.tier,
       configured: update.apiKey.length > 0 || providerSummary.configured,
+      hiveApiKeyConfigured: providerSummary.hiveApiKeyConfigured,
+      hiveFallbackApiKeyConfigured: providerSummary.hiveFallbackApiKeyConfigured,
       profiles: { ...providerSummary.profiles, [update.provider]: { model: update.model, baseUrl: update.baseUrl, tier: update.tier, configured: update.apiKey.length > 0 || providerSummary.profiles[update.provider]?.configured === true } }
     }
     return providerSummary
@@ -269,7 +273,16 @@ beforeEach(() => {
   openedUrls.length = 0
   enqueueResult = 'queued'
   workspacePermissionMode = 'ask'
-  providerSummary = { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: false, profiles: emptyProviderProfiles() }
+  providerSummary = {
+    provider: 'literouter',
+    model: '',
+    baseUrl: '',
+    tier: 'free',
+    configured: false,
+    hiveApiKeyConfigured: false,
+    hiveFallbackApiKeyConfigured: false,
+    profiles: emptyProviderProfiles()
+  }
   providerWrites.length = 0
   restarts.length = 0
   registerShellBridge({
