@@ -92,7 +92,11 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../src/main/security', () => ({
   hardenWebContents: (): void => undefined,
-  isProduction: (): boolean => false
+  isProduction: (): boolean => false,
+  isAllowedExternalUrl: (): boolean => true
+}))
+vi.mock('../src/main/context-menu', () => ({
+  attachContextMenu: (): void => undefined
 }))
 vi.mock('../src/main/paths', () => ({ resourcePath: (name: string): string => name }))
 vi.mock('../src/main/ui-bundle', () => ({ resolveUiEntry: (): string => 'index.html' }))

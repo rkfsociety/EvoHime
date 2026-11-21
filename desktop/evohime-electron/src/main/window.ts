@@ -2,7 +2,8 @@ import { join } from 'node:path'
 
 import { BrowserWindow, nativeTheme, type TitleBarOverlay } from 'electron'
 
-import type { AppTheme } from '../shared/api'
+import type { AppLocale, AppTheme } from '../shared/api'
+import { attachContextMenu } from './context-menu'
 import { hardenWebContents, isProduction, type HardeningOptions } from './security'
 import { resourcePath } from './paths'
 import { resolveUiEntry } from './ui-bundle'
@@ -16,6 +17,7 @@ import { resolveUiEntry } from './ui-bundle'
 
 export interface WindowOptions extends HardeningOptions {
   readonly onRendererFailure: (reason: string) => void
+  readonly getLocale?: () => AppLocale
 }
 
 const TITLEBAR_HEIGHT = 56
@@ -70,6 +72,7 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   })
 
   hardenWebContents(window.webContents, options)
+  attachContextMenu(window, { getLocale: options.getLocale })
 
   const syncTheme = (): void => {
     if (window.isDestroyed()) return

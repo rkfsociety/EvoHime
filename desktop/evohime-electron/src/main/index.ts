@@ -216,6 +216,7 @@ if (process.argv.includes('--evohime-browser-backend')) {
     mainWindow = createMainWindow({
       ...hardening,
       onRendererFailure: handleRendererFailure,
+      getLocale: () => shellLocale,
     })
     tray = createTray({
       window: mainWindow,
