@@ -813,6 +813,8 @@ dependencies = [
  "evohime-cli-contract",
  "evohime-context-budget",
  "evohime-desktop-ipc",
+ "evohime-hive",
+ "evohime-hive-contract",
  "evohime-listener-contract",
  "evohime-listener-ipc",
  "evohime-local-storage",
@@ -872,6 +874,34 @@ dependencies = [
  "sha2",
  "thiserror 2.0.21",
  "walkdir",
+]
+
+[[package]]
+name = "evohime-hive"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "evohime-hive-contract",
+ "evohime-model-gateway",
+ "evohime-permissions",
+ "evohime-tool-runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "evohime-hive-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

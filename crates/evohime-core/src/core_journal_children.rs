@@ -331,13 +331,15 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         limit: usize,
     ) -> evohime_hive_contract::BoxFuture<
         '_,
-        Result<Vec<evohime_hive_contract::HiveEventRecord>, evohime_hive_contract::HiveContractError>,
+        Result<
+            Vec<evohime_hive_contract::HiveEventRecord>,
+            evohime_hive_contract::HiveContractError,
+        >,
     > {
         Box::pin(async move {
-            let records = self
-                .replay(after_sequence, limit)
-                .await
-                .map_err(|error| evohime_hive_contract::HiveContractError::Storage(error.to_string()))?;
+            let records = self.replay(after_sequence, limit).await.map_err(|error| {
+                evohime_hive_contract::HiveContractError::Storage(error.to_string())
+            })?;
             Ok(records
                 .into_iter()
                 .map(|record| evohime_hive_contract::HiveEventRecord {
@@ -356,11 +358,14 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         task_id: &'a str,
         event_type: &'a str,
         payload: &'a [u8],
-    ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>> {
+    ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>>
+    {
         Box::pin(async move {
             self.record_audit(task_id, event_type, payload)
                 .await
-                .map_err(|error| evohime_hive_contract::HiveContractError::Storage(error.to_string()))
+                .map_err(|error| {
+                    evohime_hive_contract::HiveContractError::Storage(error.to_string())
+                })
         })
     }
 
@@ -410,7 +415,8 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
     fn save_hive_settings_json<'a>(
         &'a self,
         settings: &'a serde_json::Value,
-    ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>> {
+    ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>>
+    {
         Box::pin(async move {
             let parsed: crate::hive_settings::HiveSettings =
                 serde_json::from_value(settings.clone()).map_err(|error| {
@@ -450,9 +456,8 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
 
     fn task_metrics(&self, now_ms: i64) -> evohime_hive_contract::BoxFuture<'_, (u32, u64)> {
         Box::pin(async move {
-            let day_start_ms =
-                now_ms.div_euclid(crate::hive_state::HIVE_DAY_WINDOW_MS)
-                    * crate::hive_state::HIVE_DAY_WINDOW_MS;
+            let day_start_ms = now_ms.div_euclid(crate::hive_state::HIVE_DAY_WINDOW_MS)
+                * crate::hive_state::HIVE_DAY_WINDOW_MS;
             let Some(day_start) =
                 chrono::DateTime::<chrono::Utc>::from_timestamp_millis(day_start_ms)
                     .map(|ts| ts.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
@@ -496,7 +501,10 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         })
     }
 
-    fn filter_hive_root_tasks(&self, roots: Vec<String>) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
+    fn filter_hive_root_tasks(
+        &self,
+        roots: Vec<String>,
+    ) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
         Box::pin(async move {
             let mut result = Vec::new();
             let database = self.database().lock().await;
@@ -506,7 +514,10 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
                     continue;
                 }
                 if let Ok(Some((conversation_id, _, _))) =
-                    evohime_local_storage::domains::audit::task_binding(database.connection(), &root)
+                    evohime_local_storage::domains::audit::task_binding(
+                        database.connection(),
+                        &root,
+                    )
                 {
                     if conversation_id == crate::conversation_event_log::HIVE_SYSTEM_CHAT_ID {
                         result.push(root);
@@ -527,7 +538,10 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         day_window_ms: i64,
     ) -> evohime_hive_contract::BoxFuture<
         'a,
-        Result<evohime_hive_contract::HiveDispatchWindows, evohime_hive_contract::HiveContractError>,
+        Result<
+            evohime_hive_contract::HiveDispatchWindows,
+            evohime_hive_contract::HiveContractError,
+        >,
     > {
         Box::pin(async move {
             let windows = self
@@ -561,7 +575,10 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         model: &'a str,
     ) -> evohime_hive_contract::BoxFuture<
         'a,
-        Result<Vec<evohime_hive_contract::HiveModelUsage>, evohime_hive_contract::HiveContractError>,
+        Result<
+            Vec<evohime_hive_contract::HiveModelUsage>,
+            evohime_hive_contract::HiveContractError,
+        >,
     > {
         Box::pin(async move {
             let rows = self
@@ -617,7 +634,8 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
                 idempotency_key: format!("hive-worktree:{}", request.task_id),
                 updated_at_ms: crate::task_memory::now_millis() as i64,
             };
-            let _ = evohime_local_storage::domains::workflow::create(database.connection(), &record);
+            let _ =
+                evohime_local_storage::domains::workflow::create(database.connection(), &record);
         })
     }
 

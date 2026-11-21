@@ -63,7 +63,10 @@ mod tests {
         selected.set("test-model");
 
         let provider = CoreWorkspaceProvider::new(journal.clone(), selected);
-        assert_eq!(provider.selected_model_name().as_deref(), Some("test-model"));
+        assert_eq!(
+            provider.selected_model_name().as_deref(),
+            Some("test-model")
+        );
         assert_eq!(provider.eva_workspace_path().await, None);
 
         let repo_dir = dir.path().join("workspace");

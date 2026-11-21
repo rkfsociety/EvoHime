@@ -164,7 +164,8 @@ pub async fn build_hive_observation_for_hive(
         now_ms,
         ..HiveObservation::default()
     };
-    let _shell_selected_model = workspace_provider.and_then(|provider| provider.selected_model_name());
+    let _shell_selected_model =
+        workspace_provider.and_then(|provider| provider.selected_model_name());
     let (tasks_today, average_task_time_sec) = journal.task_metrics(now_ms).await;
     observation.tasks_today = tasks_today;
     observation.average_task_time_sec = average_task_time_sec;
@@ -314,7 +315,8 @@ pub async fn replay_hive_projections(
         if record.event_type != "child.workflow" {
             continue;
         }
-        if let Ok(projection) = serde_json::from_slice::<MinimalChildWorkflowPayload>(&record.payload)
+        if let Ok(projection) =
+            serde_json::from_slice::<MinimalChildWorkflowPayload>(&record.payload)
         {
             by_child.insert(projection.child_task_id.clone(), projection);
         }
@@ -368,11 +370,11 @@ pub async fn persistent_agent_roles(journal: &dyn HiveJournalProvider) -> Vec<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use evohime_hive_contract::{
         BoxFuture, HiveContractError, HiveDispatchWindows, HiveEventRecord, HiveModelUsage,
         HiveWorktreeLeaseRequest,
     };
+    use std::collections::HashMap;
 
     struct MockJournal {
         events: Vec<HiveEventRecord>,

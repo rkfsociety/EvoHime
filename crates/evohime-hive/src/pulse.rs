@@ -24,9 +24,7 @@ use evohime_hive_contract::{
 };
 use evohime_model_gateway::ModelGatewayConfig;
 
-use crate::observation::{
-    self, HiveChildState, MinimalChildWorkflowPayload, HIVE_REPLAY_WINDOW,
-};
+use crate::observation::{self, HiveChildState, MinimalChildWorkflowPayload, HIVE_REPLAY_WINDOW};
 use crate::pulse_boundary::{self, EvaPulseSignal, EvaPulseSignalKind, HiveSignalReceiver};
 use crate::settings::HiveSettings;
 use crate::state::{
@@ -1645,7 +1643,10 @@ pub(crate) struct CoordinatorPulseTaskSink {
 
 impl CoordinatorPulseTaskSink {
     /// Creates a sink bound to the coordinator and the allowed route name.
-    pub(crate) fn new(coordinator: Arc<dyn HiveCoordinator>, primary_route: Option<String>) -> Self {
+    pub(crate) fn new(
+        coordinator: Arc<dyn HiveCoordinator>,
+        primary_route: Option<String>,
+    ) -> Self {
         Self::new_with_receiver(HiveSignalReceiver::new(coordinator), primary_route)
     }
 
@@ -1868,9 +1869,8 @@ impl CoordinatorPulseTaskSink {
                     settings.hive_fallback_quota_reset_utc_midnight,
                 );
             }
-            let route_name =
-                observation::hive_fallback_route_name(Some(&config), fallback_profile)
-                    .ok_or_else(|| "fallback_route_unavailable".to_owned())?;
+            let route_name = observation::hive_fallback_route_name(Some(&config), fallback_profile)
+                .ok_or_else(|| "fallback_route_unavailable".to_owned())?;
             receiver.accept(signal, prompt, route_name).await
         })
     }
@@ -2195,8 +2195,10 @@ mod tests {
             task_id: &'a str,
             event_type: &'a str,
             payload: &'a [u8],
-        ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>>
-        {
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<(), evohime_hive_contract::HiveContractError>,
+        > {
             Box::pin(async move {
                 let mut events = self
                     .events
@@ -2240,8 +2242,10 @@ mod tests {
         fn save_hive_settings_json<'a>(
             &'a self,
             settings: &'a serde_json::Value,
-        ) -> evohime_hive_contract::BoxFuture<'a, Result<(), evohime_hive_contract::HiveContractError>>
-        {
+        ) -> evohime_hive_contract::BoxFuture<
+            'a,
+            Result<(), evohime_hive_contract::HiveContractError>,
+        > {
             Box::pin(async move {
                 *self
                     .settings
@@ -2350,8 +2354,10 @@ mod tests {
         fn dispatch_task(
             &self,
             request: evohime_hive_contract::HiveTaskDispatchRequest,
-        ) -> evohime_hive_contract::BoxFuture<'_, Result<(), evohime_hive_contract::HiveContractError>>
-        {
+        ) -> evohime_hive_contract::BoxFuture<
+            '_,
+            Result<(), evohime_hive_contract::HiveContractError>,
+        > {
             let _ = self.tx.send(request);
             Box::pin(async { Ok(()) })
         }
@@ -2756,10 +2762,7 @@ mod tests {
             }),
         );
         let report_4 = probe.observe().await.expect("observe 4");
-        assert_eq!(
-            decide(&report_4, now_millis()),
-            PulseDecision::AllGood
-        );
+        assert_eq!(decide(&report_4, now_millis()), PulseDecision::AllGood);
     }
 
     fn init_git_repo(dir: &std::path::Path) {

@@ -15,8 +15,8 @@ pub use evohime_model_gateway::ProviderLimits;
 use serde::{Deserialize, Serialize};
 
 use crate::observation::{HiveChildState, MinimalChildWorkflowPayload};
-use evohime_hive_contract::HiveModelUsage;
 use crate::settings::HiveSettings;
+use evohime_hive_contract::HiveModelUsage;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
 pub const HIVE_STATE_SCHEMA_VERSION: u32 = 8;
@@ -699,10 +699,7 @@ pub fn custom_daily_cost_nano_usd(
 /// zero for a priced model and `None` for an unsupported one. Each row is
 /// priced at the moment its request was dispatched, not when the response
 /// arrived.
-pub fn deepseek_daily_cost_nano_usd(
-    model: &str,
-    usage: &[HiveModelUsage],
-) -> Option<u64> {
+pub fn deepseek_daily_cost_nano_usd(model: &str, usage: &[HiveModelUsage]) -> Option<u64> {
     let tariff = deepseek_tariff(model)?;
     usage.iter().try_fold(0_u64, |total, row| {
         let peak = deepseek_peak_period(row.request_at)?;
@@ -935,16 +932,14 @@ mod tests {
 
     #[test]
     fn deepseek_flash_cost_uses_cached_input_and_utc_peak_rate() {
-        let usage = [
-            HiveModelUsage {
-                prompt_tokens: 100,
-                completion_tokens: 20,
-                cache_read_input_tokens: Some(50),
-                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
-            },
-        ];
+        let usage = [HiveModelUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            cache_read_input_tokens: Some(50),
+            request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                .expect("valid timestamp")
+                .timestamp_millis(),
+        }];
         assert_eq!(
             deepseek_daily_cost_nano_usd("deepseek-flash", &usage),
             Some(39_300)
@@ -953,16 +948,14 @@ mod tests {
 
     #[test]
     fn deepseek_cost_is_calculated_at_request_time_not_later_response_time() {
-        let usage = [
-            HiveModelUsage {
-                prompt_tokens: 100,
-                completion_tokens: 20,
-                cache_read_input_tokens: Some(50),
-                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
-            },
-        ];
+        let usage = [HiveModelUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            cache_read_input_tokens: Some(50),
+            request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                .expect("valid timestamp")
+                .timestamp_millis(),
+        }];
         assert_eq!(
             deepseek_daily_cost_nano_usd("deepseek-flash", &usage),
             Some(39_300)
@@ -971,16 +964,14 @@ mod tests {
 
     #[test]
     fn deepseek_v4_pro_cost_uses_off_peak_rates_on_weekends() {
-        let usage = [
-            HiveModelUsage {
-                prompt_tokens: 100,
-                completion_tokens: 20,
-                cache_read_input_tokens: Some(50),
-                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-15T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
-            },
-        ];
+        let usage = [HiveModelUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            cache_read_input_tokens: Some(50),
+            request_at: chrono::DateTime::parse_from_rfc3339("2026-11-15T02:00:00Z")
+                .expect("valid timestamp")
+                .timestamp_millis(),
+        }];
         assert_eq!(
             deepseek_daily_cost_nano_usd("deepseek-v4-pro", &usage),
             Some(73_700)
@@ -999,16 +990,14 @@ mod tests {
 
     #[test]
     fn retired_flash_spellings_are_billed_at_the_flash_rate() {
-        let usage = [
-            HiveModelUsage {
-                prompt_tokens: 100,
-                completion_tokens: 20,
-                cache_read_input_tokens: Some(50),
-                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
-            },
-        ];
+        let usage = [HiveModelUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            cache_read_input_tokens: Some(50),
+            request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                .expect("valid timestamp")
+                .timestamp_millis(),
+        }];
         assert_eq!(
             deepseek_daily_cost_nano_usd("deepseek-v4-flash", &usage),
             Some(39_300)
@@ -1021,16 +1010,14 @@ mod tests {
 
     #[test]
     fn deepseek_cache_hits_cannot_exceed_reported_prompt_tokens() {
-        let usage = [
-            HiveModelUsage {
-                prompt_tokens: 10,
-                completion_tokens: 0,
-                cache_read_input_tokens: Some(50),
-                request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
-            },
-        ];
+        let usage = [HiveModelUsage {
+            prompt_tokens: 10,
+            completion_tokens: 0,
+            cache_read_input_tokens: Some(50),
+            request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
+                .expect("valid timestamp")
+                .timestamp_millis(),
+        }];
         assert_eq!(
             deepseek_daily_cost_nano_usd("deepseek-flash", &usage),
             Some(60)
@@ -1074,14 +1061,12 @@ mod tests {
             cached_input_usd_per_1m: 0.15,
             output_usd_per_1m: 6.00,
         };
-        let usage = [
-            HiveModelUsage {
-                prompt_tokens: 1_000,
-                completion_tokens: 500,
-                cache_read_input_tokens: Some(400),
-                request_at: 1000,
-            },
-        ];
+        let usage = [HiveModelUsage {
+            prompt_tokens: 1_000,
+            completion_tokens: 500,
+            cache_read_input_tokens: Some(400),
+            request_at: 1000,
+        }];
         // 400 * 0.15 * 1000 = 60_000; 600 * 1.50 * 1000 = 900_000; 500 * 6.00 * 1000 = 3_000_000
         assert_eq!(
             custom_daily_cost_nano_usd(&pricing, &usage),
