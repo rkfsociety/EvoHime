@@ -18,7 +18,7 @@ use crate::child_workflow::{ChildProjection, CoordinatorState};
 use crate::hive_settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
-pub const HIVE_STATE_SCHEMA_VERSION: u32 = 7;
+pub const HIVE_STATE_SCHEMA_VERSION: u32 = 8;
 /// Name shown for the single queen in the local hive.
 pub const DEFAULT_QUEEN_NAME: &str = "EvoHime";
 /// Maximum number of departments rendered at once.
@@ -320,6 +320,20 @@ impl Default for HiveObservation {
     }
 }
 
+/// One repository currently watched by Eva and the Hive.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WatchedRepoProject {
+    /// Absolute repository path configured in [`HiveSettings`].
+    pub path: String,
+    /// Current repository activity: `idle`, `scanning`, `working`, or `error`.
+    pub status: String,
+    /// Last successful scan time, when Core has one.
+    pub last_scanned_at_ms: Option<i64>,
+    /// Bounded description of the task currently working on this repository.
+    pub current_task: Option<String>,
+}
+
 /// Aggregated, serializable hive state for the operations panel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -346,7 +360,7 @@ pub struct HiveStateSnapshot {
     pub eva_workspace_path: Option<String>,
     /// Validated list of Git repositories watched by the hive.
     #[serde(default)]
-    pub watched_repositories: Vec<String>,
+    pub watched_repositories: Vec<WatchedRepoProject>,
     /// Isolated provider profile configured for the hive, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hive_provider_profile: Option<String>,
@@ -511,7 +525,19 @@ impl HiveStateSnapshot {
             budget,
             daily_budget_usd: settings.daily_budget_usd,
             eva_workspace_path: settings.eva_workspace_path().map(str::to_owned),
-            watched_repositories: settings.external_watched_repositories(),
+            watched_repositories: settings
+                .all_workspace_paths()
+                .into_iter()
+                .map(|path| WatchedRepoProject {
+                    path: path.to_owned(),
+                    // EvaPulse currently reports lifecycle state globally; a
+                    // repository-specific scan marker will be filled here as
+                    // soon as the scanner publishes its target path.
+                    status: "idle".to_owned(),
+                    last_scanned_at_ms: None,
+                    current_task: None,
+                })
+                .collect(),
             hive_provider_profile: settings.hive_provider_profile.clone(),
             hive_model: settings.hive_model.clone(),
             hive_fallback_provider_profile: settings.hive_fallback_provider_profile.clone(),

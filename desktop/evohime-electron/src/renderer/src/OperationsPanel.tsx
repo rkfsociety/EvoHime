@@ -324,7 +324,12 @@ interface HiveStateView {
   }
   readonly dailyBudgetUsd: number
   readonly evaWorkspacePath: string | null
-  readonly watchedRepositories: readonly string[]
+  readonly watchedRepositories: readonly {
+    readonly path: string
+    readonly status: 'idle' | 'scanning' | 'working' | 'error'
+    readonly lastScannedAtMs: number | null
+    readonly currentTask: string | null
+  }[]
   readonly hiveProviderProfile: string | null
   readonly hiveModel: string | null
   readonly hiveFallbackProviderProfile: string | null
@@ -456,7 +461,7 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
   // Core может отставать от UI. Известные версии проекции читаются с defaults
   // для отсутствующих секций; неизвестная версия отклоняется целиком.
   const version = root['schema_version']
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7) return null
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8) return null
   const record = (value: unknown): Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
@@ -555,15 +560,27 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
       ? Math.min(root['daily_budget_usd'], 10_000)
       : 0,
     evaWorkspacePath: typeof root['eva_workspace_path'] === 'string' ? root['eva_workspace_path'].slice(0, 4_096) : null,
-    watchedRepositories: Array.isArray(root['watched_repositories'])
-      ? root['watched_repositories']
-          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-          .map((item) => item.slice(0, 4_096))
-          .filter((item) => {
-            const eva = typeof root['eva_workspace_path'] === 'string' ? root['eva_workspace_path'] : ''
-            return !sameRepositoryPath(item, eva)
-          })
-      : [],
+     watchedRepositories: Array.isArray(root['watched_repositories'])
+       ? root['watched_repositories'].flatMap((raw) => {
+           if (typeof raw === 'string') {
+             return raw.trim().length > 0 ? [{ path: raw.slice(0, 4_096), status: 'idle' as const, lastScannedAtMs: null, currentTask: null }] : []
+           }
+           if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return []
+           const item = raw as Record<string, unknown>
+           const path = typeof item['path'] === 'string' ? item['path'].trim().slice(0, 4_096) : ''
+           if (!path) return []
+           const status: HiveStateView['watchedRepositories'][number]['status'] = item['status'] === 'scanning' || item['status'] === 'working' || item['status'] === 'error' ? item['status'] : 'idle'
+           return [{
+             path,
+             status,
+             lastScannedAtMs: typeof item['last_scanned_at_ms'] === 'number' && Number.isSafeInteger(item['last_scanned_at_ms']) ? item['last_scanned_at_ms'] : null,
+             currentTask: typeof item['current_task'] === 'string' && item['current_task'].trim().length > 0 ? item['current_task'].slice(0, 180) : null
+           }]
+         }).filter((item) => {
+           const eva = typeof root['eva_workspace_path'] === 'string' ? root['eva_workspace_path'] : ''
+           return !sameRepositoryPath(item.path, eva)
+         })
+       : [],
     hiveProviderProfile: typeof root['hive_provider_profile'] === 'string' && root['hive_provider_profile'].trim().length > 0
       ? root['hive_provider_profile'].slice(0, 128)
       : null,
@@ -628,6 +645,11 @@ function sameRepositoryPath(left: string, right: string): boolean {
   const a = normalizeRepositoryPath(left)
   const b = normalizeRepositoryPath(right)
   return a.length > 0 && a === b
+}
+
+function shortRepositoryPath(path: string): string {
+  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean)
+  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : path
 }
 
 /** Percentage of a hive counter against its ceiling, clamped to 0–100. */
@@ -1616,7 +1638,7 @@ export function HiveDashboard({
       && item.taskId === event.taskId && item.kind === kind)?.eventId
     return conversationEventId ? hiveConversationObservedAt.get(conversationEventId) ?? '—' : '—'
   }, [hiveConversationLogEvents, hiveConversationObservedAt, observedAt])
-  const watchedReposKey = hive ? hive.watchedRepositories.join('\n') : ''
+  const watchedReposKey = hive ? hive.watchedRepositories.map((repository) => repository.path).join('\n') : ''
   useEffect(() => {
     if (!hive) return
     const configured = hive.evaWorkspacePath ?? ''
@@ -1625,7 +1647,7 @@ export function HiveDashboard({
   }, [hive?.evaWorkspacePath])
   useEffect(() => {
     if (!hive) return
-    setWatchedRepositories(hive.watchedRepositories)
+    setWatchedRepositories(hive.watchedRepositories.map((repository) => repository.path))
   }, [watchedReposKey])
   useEffect(() => {
     if (!hive) return
@@ -2834,6 +2856,27 @@ export function HiveDashboard({
       <div className="hive-console__workspace">
         <div className="hive-console__grid">
         <section className="hive-panel hive-panel--departments" aria-label={translate('Департаменты улья')}>
+          <section className="hive-watched" aria-label={translate('Проекты под наблюдением')}>
+            <div className="hive-panel__head">
+              <h2>{translate('Проекты под наблюдением')}</h2>
+              <span>{hive?.watchedRepositories.length ?? 0}</span>
+            </div>
+            {hive && hive.watchedRepositories.length > 0 ? (
+              <ul className="hive-watched__list">
+                {hive.watchedRepositories.map((repository) => (
+                  <li key={repository.path} className="hive-watched__item">
+                    <div className="hive-watched__body">
+                      <strong title={repository.path}>{shortRepositoryPath(repository.path)}</strong>
+                      {repository.currentTask ? <small>{translate(repository.currentTask)}</small> : null}
+                    </div>
+                    <span className={`hive-watched__status hive-watched__status--${repository.status}`}>{translate(repository.status)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hive-empty">{translate('Нет отслеживаемых проектов')}</p>
+            )}
+          </section>
           <div className="hive-panel__head">
             <h2>{translate('Департаменты улья')}</h2>
             <span>{showingConnectedIdleState ? translate('Нет активных агентов') : `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`}</span>

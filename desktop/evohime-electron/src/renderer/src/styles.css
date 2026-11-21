@@ -7328,6 +7328,7 @@ body {
   --hive-violet: #8d82e8;
   --hive-blue: #5ea8ff;
   --hive-green: #4ec9a4;
+  --hive-red: #ed6a7a;
   --hive-amber: #e0b341;
   --hive-line: color-mix(in srgb, var(--hive-violet) 24%, var(--border));
   --hive-panel-bg: color-mix(in srgb, var(--bg-raised) 92%, transparent);
@@ -7533,6 +7534,83 @@ body {
   min-height: 0;
   height: 100%;
   gap: 10px;
+}
+
+.hive-watched {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border);
+}
+
+.hive-watched__list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hive-watched__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+
+.hive-watched__body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.hive-watched__body strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hive-watched__body small {
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hive-watched__status {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font: 9px var(--mono);
+  text-transform: uppercase;
+}
+
+.hive-watched__status--idle {
+  color: var(--hive-green);
+  background: color-mix(in srgb, var(--hive-green) 14%, transparent);
+}
+
+.hive-watched__status--scanning {
+  color: var(--hive-blue);
+  background: color-mix(in srgb, var(--hive-blue) 14%, transparent);
+}
+
+.hive-watched__status--working {
+  color: var(--hive-violet);
+  background: color-mix(in srgb, var(--hive-violet) 14%, transparent);
+}
+
+.hive-watched__status--error {
+  color: var(--hive-red);
+  background: color-mix(in srgb, var(--hive-red) 14%, transparent);
 }
 
 .hive-departments__agents {

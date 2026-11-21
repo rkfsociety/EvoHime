@@ -210,6 +210,41 @@ afterEach(() => {
 })
 
 describe('hive dashboard', () => {
+  it('ui_displays_watched_repositories', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({
+          watched_repositories: [
+            { path: 'D:/work/projects/EvoHime', status: 'idle', last_scanned_at_ms: null, current_task: null },
+            { path: 'D:/work/projects/OtherRepo', status: 'scanning', last_scanned_at_ms: null, current_task: null }
+          ]
+        }))]}
+      />
+    )
+
+    const panel = await screen.findByRole('region', { name: 'Проекты под наблюдением' })
+    expect(within(panel).getByText('…/projects/EvoHime')).toBeTruthy()
+    expect(within(panel).getByText('…/projects/OtherRepo')).toBeTruthy()
+    expect(within(panel).getByText('idle')).toBeTruthy()
+    expect(within(panel).getByText('scanning')).toBeTruthy()
+  })
+
+  it('ui_shows_current_task_for_watched_repo', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({
+          watched_repositories: [{ path: 'D:/work/EvoHime', status: 'working', last_scanned_at_ms: null, current_task: 'Обновить документацию' }]
+        }))]}
+      />
+    )
+
+    const panel = await screen.findByRole('region', { name: 'Проекты под наблюдением' })
+    expect(within(panel).getByText('Обновить документацию')).toBeTruthy()
+    expect(within(panel).getByText('working')).toBeTruthy()
+  })
+
   it('hive_dashboard_renders_all_sections', async () => {
     render(
       <HiveDashboard
