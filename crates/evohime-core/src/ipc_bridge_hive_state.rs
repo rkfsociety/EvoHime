@@ -346,34 +346,6 @@ impl IpcBridge {
         .map_err(|error| error.to_string())
     }
 
-    /// Validates and persists the EvaPulse autonomous loop toggle without
-    /// directly driving the daemon lifecycle from Core.
-    pub(crate) async fn save_pulse_enabled(&self, value: &str) -> Result<Vec<u8>, String> {
-        let mut settings = self.journal.hive_settings().await?;
-        let enabled = match value.trim().to_ascii_lowercase().as_str() {
-            "true" | "1" | "yes" | "on" => true,
-            "false" | "0" | "no" | "off" => false,
-            _ => {
-                return serde_json::to_vec(&serde_json::json!({
-                    "accepted": false,
-                    "setting_key": "pulse_enabled",
-                    "pulse_enabled": settings.pulse_enabled,
-                    "error_code": "pulse_enabled must be true or false",
-                }))
-                .map_err(|error| error.to_string());
-            }
-        };
-        settings.pulse_enabled = enabled;
-        self.journal.save_hive_settings(&settings).await?;
-        serde_json::to_vec(&serde_json::json!({
-            "accepted": true,
-            "setting_key": "pulse_enabled",
-            "pulse_enabled": settings.pulse_enabled,
-            "error_code": "",
-        }))
-        .map_err(|error| error.to_string())
-    }
-
     async fn save_hive_request_limits_batch(&self, value: &str) -> Result<Vec<u8>, String> {
         let key = "hive_request_limits";
         let Ok(update) = serde_json::from_str::<HiveRequestLimitsUpdate>(value) else {
@@ -515,7 +487,6 @@ impl IpcBridge {
                 self.save_hive_quota_reset(key, value).await
             }
             "proactive_evolution_enabled" => self.save_proactive_evolution_enabled(value).await,
-            "pulse_enabled" => self.save_pulse_enabled(value).await,
             other => serde_json::to_vec(&serde_json::json!({
                 "accepted": false,
                 "eva_workspace_path": serde_json::Value::Null,

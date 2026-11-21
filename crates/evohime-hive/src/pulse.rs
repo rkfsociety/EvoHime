@@ -283,6 +283,7 @@ struct DaemonState {
     reason: &'static str,
     last_logged_state: Option<(bool, &'static str)>,
     last_heartbeat_at: Option<std::time::Instant>,
+    last_proactive_enabled: Option<bool>,
 }
 
 struct Inner {
@@ -398,6 +399,7 @@ impl EvaPulseDaemon {
                 reason: "",
                 last_logged_state: None,
                 last_heartbeat_at: None,
+                last_proactive_enabled: None,
             }),
             dispatched_evolutions: std::sync::Mutex::new(HashSet::new()),
             notify: tokio::sync::Notify::new(),
@@ -526,6 +528,21 @@ impl Inner {
                 return interval;
             }
         };
+        {
+            let mut state = self.state();
+            let proactive_enabled = report.proactive_evolution_enabled;
+            if let Some(prev) = state.last_proactive_enabled {
+                if prev != proactive_enabled {
+                    if proactive_enabled {
+                        state.next_wake_at_ms = None;
+                        self.notify.notify_one();
+                    } else {
+                        state.enabled = false;
+                    }
+                }
+            }
+            state.last_proactive_enabled = Some(proactive_enabled);
+        }
         // A toggle that arrived while the probe was reading wins over the
         // decision: the daemon must not dispatch work after the user stopped it.
         if !self.state().enabled {

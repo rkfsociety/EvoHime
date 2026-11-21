@@ -401,19 +401,12 @@ pub struct HiveStateSnapshot {
     /// Whether proactive evolution via EvaPulse is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
-    /// Whether the EvaPulse autonomous loop is enabled in settings.
-    #[serde(default = "default_pulse_enabled_snapshot")]
-    pub pulse_enabled: bool,
     /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
     #[serde(default, skip_serializing)]
     pub pulse_status: String,
     /// Unix milliseconds at which the daemon plans its next cycle.
     #[serde(default, skip_serializing)]
     pub next_wake_at_ms: Option<i64>,
-}
-
-fn default_pulse_enabled_snapshot() -> bool {
-    true
 }
 
 impl Default for HiveStateSnapshot {
@@ -559,7 +552,6 @@ impl HiveStateSnapshot {
             hive_quota_reset_utc_midnight: settings.hive_quota_reset_utc_midnight,
             hive_fallback_quota_reset_utc_midnight: settings.hive_fallback_quota_reset_utc_midnight,
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
-            pulse_enabled: settings.pulse_enabled,
             pulse_status: pulse_status_from(observation),
             next_wake_at_ms: observation.pulse_next_wake_at_ms,
         }

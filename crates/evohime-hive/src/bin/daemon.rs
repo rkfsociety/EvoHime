@@ -625,7 +625,6 @@ fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
         hive_quota_reset_utc_midnight: snapshot.hive_quota_reset_utc_midnight,
         hive_fallback_quota_reset_utc_midnight: snapshot.hive_fallback_quota_reset_utc_midnight,
         proactive_evolution_enabled: snapshot.proactive_evolution_enabled,
-        pulse_enabled: snapshot.pulse_enabled,
         ..HiveSettings::default()
     }
 }
@@ -1150,15 +1149,6 @@ async fn main() -> ExitCode {
         coordinator,
         None,
     );
-    if !settings.pulse_enabled {
-        daemon.set_enabled(false);
-    }
-    let watcher_client = Arc::clone(&client);
-    let watcher_daemon = daemon.clone();
-    let watcher_task = tokio::spawn(async move {
-        watch_hive_settings_pulse_enabled(watcher_client, watcher_daemon, settings.pulse_enabled)
-            .await;
-    });
     let control_daemon = daemon.clone();
     let control_task = tokio::spawn(async move {
         if let Err(error) = run_pulse_control_server(control_daemon).await {
@@ -1176,39 +1166,9 @@ async fn main() -> ExitCode {
         tracing::warn!(error = %error, "failed to listen for ctrl-c signal");
     }
 
-    watcher_task.abort();
     control_task.abort();
     daemon.shutdown();
     ExitCode::SUCCESS
-}
-
-async fn watch_hive_settings_pulse_enabled(
-    client: Arc<CoreIpcClient>,
-    daemon: EvaPulseDaemon,
-    initial_enabled: bool,
-) {
-    const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
-    let mut last_enabled = initial_enabled;
-    let mut ticker = tokio::time::interval(POLL_INTERVAL);
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    ticker.tick().await;
-    loop {
-        ticker.tick().await;
-        let Ok(snapshot) = client.fetch_hive_state().await else {
-            continue;
-        };
-        if snapshot.pulse_enabled == last_enabled {
-            continue;
-        }
-        last_enabled = snapshot.pulse_enabled;
-        if snapshot.pulse_enabled {
-            tracing::info!("hive_settings.pulse_enabled changed to true; force-waking EvaPulse");
-            daemon.set_enabled(true);
-        } else {
-            tracing::info!("hive_settings.pulse_enabled changed to false; stopping cycle to idle");
-            daemon.set_enabled(false);
-        }
-    }
 }
 
 async fn handle_pulse_control_connection<S>(mut stream: S, daemon: EvaPulseDaemon)

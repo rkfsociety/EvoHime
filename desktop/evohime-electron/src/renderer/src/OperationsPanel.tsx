@@ -343,7 +343,6 @@ interface HiveStateView {
   readonly hiveQuotaResetUtcMidnight: boolean
   readonly hiveFallbackQuotaResetUtcMidnight: boolean
   readonly proactiveEvolutionEnabled: boolean
-  readonly pulseEnabled: boolean
   readonly pulseStatus: string
   readonly nextWakeAtMs: number | null
 }
@@ -611,7 +610,6 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
     hiveQuotaResetUtcMidnight: root['hive_quota_reset_utc_midnight'] === true,
     hiveFallbackQuotaResetUtcMidnight: root['hive_fallback_quota_reset_utc_midnight'] === true,
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
-    pulseEnabled: root['pulse_enabled'] !== false,
     pulseStatus: text(root['pulse_status'], 16),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
       ? root['next_wake_at_ms']
@@ -1597,9 +1595,6 @@ export function HiveDashboard({
   const [proactiveEvolutionEnabled, setProactiveEvolutionEnabled] = useState(false)
   const [proactiveEvolutionBusy, setProactiveEvolutionBusy] = useState(false)
   const [proactiveEvolutionError, setProactiveEvolutionError] = useState<string | null>(null)
-  const [pulseEnabled, setPulseEnabled] = useState(true)
-  const [pulseToggleBusy, setPulseToggleBusy] = useState(false)
-  const [pulseToggleError, setPulseToggleError] = useState<string | null>(null)
   const [hiveSettingsOpen, setHiveSettingsOpen] = useState(false)
   const [evaWorkspaceValidation, setEvaWorkspaceValidation] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
   const [evaWorkspaceValidationMessage, setEvaWorkspaceValidationMessage] = useState<string | null>(null)
@@ -1808,10 +1803,6 @@ export function HiveDashboard({
     if (!hive) return
     setProactiveEvolutionEnabled(hive.proactiveEvolutionEnabled)
   }, [hive?.proactiveEvolutionEnabled])
-  useEffect(() => {
-    if (!hive) return
-    setPulseEnabled(hive.pulseEnabled)
-  }, [hive?.pulseEnabled])
   const hiveSettingsResult = latest(events, 'hive_settings.saved')
   useEffect(() => {
     if (!hiveSettingsResult) return
@@ -1827,7 +1818,6 @@ export function HiveDashboard({
         hive_fallback_model?: string | null
         daily_budget_usd?: number | null
         proactive_evolution_enabled?: boolean
-        pulse_enabled?: boolean
         error_code?: string
       }
       if (result.setting_key === 'hive_request_limits') {
@@ -1884,13 +1874,6 @@ export function HiveDashboard({
           setProactiveEvolutionEnabled(result.proactive_evolution_enabled)
         }
         setProactiveEvolutionError(result.accepted ? null : (result.error_code || 'Не удалось сохранить настройку.'))
-        return
-      }
-      if (result.setting_key === 'pulse_enabled') {
-        if (typeof result.pulse_enabled === 'boolean') {
-          setPulseEnabled(result.pulse_enabled)
-        }
-        setPulseToggleError(result.accepted ? null : (result.error_code || 'Не удалось сохранить настройку.'))
         return
       }
       if (typeof result.daily_budget_usd === 'number' && Number.isFinite(result.daily_budget_usd)) {
@@ -2378,30 +2361,6 @@ export function HiveDashboard({
     }
   }, [api, requestSnapshot])
 
-  const toggleQueenAutonomy = useCallback(async (nextEnabled: boolean): Promise<void> => {
-    if (!api) return
-    setPulseToggleBusy(true)
-    setPulseToggleError(null)
-    setPulseEnabled(nextEnabled)
-    try {
-      const outcome = await api.invoke('core.setHiveSetting', {
-        key: 'pulse_enabled',
-        value: nextEnabled ? 'true' : 'false'
-      })
-      if (!outcome.ok) {
-        setPulseEnabled(!nextEnabled)
-        setPulseToggleError(outcome.message)
-        return
-      }
-      requestSnapshot()
-    } catch {
-      setPulseEnabled(!nextEnabled)
-      setPulseToggleError('Не удалось сохранить настройку: Core не ответил.')
-    } finally {
-      setPulseToggleBusy(false)
-    }
-  }, [api, requestSnapshot])
-
   const addWatchedRepository = useCallback(async (): Promise<void> => {
     if (!api) return
     const trimmed = newRepoDraft.trim()
@@ -2884,7 +2843,7 @@ export function HiveDashboard({
           <span className={`status-pill status-pill--${connection}`}>{translate(connection)}</span>
           <div className="hive-switch" aria-live="polite">
             <span className="hive-switch__label">{translate('Автономность Королевы')}</span>
-            <small className="hive-switch__status">{translate(pulseEnabled ? 'Включена' : 'Отключена')}</small>
+            <small className="hive-switch__status">{translate(proactiveEvolutionEnabled ? 'Включена' : 'Отключена')}</small>
           </div>
           <button
             type="button"
@@ -3048,13 +3007,13 @@ export function HiveDashboard({
                   type="checkbox"
                   role="switch"
                   aria-label={translate('Автономность Королевы')}
-                  checked={pulseEnabled}
-                  disabled={!connected || pulseToggleBusy}
-                  onChange={(changeEvent) => void toggleQueenAutonomy(changeEvent.target.checked)}
+                  checked={proactiveEvolutionEnabled}
+                  disabled={!connected || proactiveEvolutionBusy}
+                  onChange={(changeEvent) => void toggleProactiveEvolution(changeEvent.target.checked)}
                 />
               </label>
-              {pulseToggleError ? (
-                <p role="alert" className="hive-console__error">{translate(pulseToggleError)}</p>
+              {proactiveEvolutionError ? (
+                <p role="alert" className="hive-console__error">{translate(proactiveEvolutionError)}</p>
               ) : null}
               <p className="hive-queen__note">
                 {paused

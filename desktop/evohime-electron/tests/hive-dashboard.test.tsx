@@ -533,12 +533,12 @@ describe('hive dashboard', () => {
     expect((screen.getByRole('switch', { name: 'Проактивное саморазвитие' }) as HTMLInputElement).checked).toBe(true)
   })
 
-  it('toggles queen autonomy via core.setHiveSetting pulse_enabled on the main queen panel without core.togglePulse', async () => {
+  it('toggles queen autonomy via core.setHiveSetting proactive_evolution_enabled on the main queen panel without core.togglePulse', async () => {
     render(
       <HiveDashboard
         connection="connected"
         events={[
-          event('hive_state.snapshot', snapshot({ pulse_enabled: true })),
+          event('hive_state.snapshot', snapshot({ proactive_evolution_enabled: true })),
           event('eva_pulse.status', { schema_version: 1, owner: 'eva_pulse', status: 'sleeping', enabled: true, next_wake_at_ms: null })
         ]}
       />
@@ -549,8 +549,8 @@ describe('hive dashboard', () => {
     await userEvent.click(toggle)
 
     await waitFor(() => {
-      expect(calls.find((call) => call.command === 'core.setHiveSetting' && (call.payload as { key?: string })?.key === 'pulse_enabled')?.payload).toEqual({
-        key: 'pulse_enabled',
+      expect(calls.find((call) => call.command === 'core.setHiveSetting' && (call.payload as { key?: string })?.key === 'proactive_evolution_enabled')?.payload).toEqual({
+        key: 'proactive_evolution_enabled',
         value: 'false'
       })
     })
