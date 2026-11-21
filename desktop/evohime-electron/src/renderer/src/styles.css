@@ -7847,6 +7847,36 @@ body {
   flex-shrink: 0;
 }
 
+/* Изометрическая 3D-сцена Улья (HiveCityScene). */
+
+.hive-city-scene {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 56%;
+  min-height: 260px;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: transparent;
+}
+
+.hive-city-scene__canvas {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hive-city-scene__fallback {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 45%, rgba(168, 85, 247, 0.14), rgba(15, 23, 42, 0.92) 70%);
+  pointer-events: none;
+}
+
 /* Интерактивный граф улья (HiveGraph). */
 
 .hive-graph {

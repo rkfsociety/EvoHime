@@ -11,7 +11,7 @@ import { ImageGenerationPanel } from './ImageGenerationPanel'
 import { AnalysisKernelPanel } from './AnalysisKernelPanel'
 import { UiIcon } from './UiIcon'
 import type { UiIconName } from './UiIcon'
-import { HiveGraph } from './components/HiveGraph'
+import { HiveCityScene } from './components/3d'
 import { catalogErrorMessage, safeCatalogErrorCode } from './catalog-error'
 import {
   applyConversationEvents,
@@ -2983,11 +2983,7 @@ export function HiveDashboard({
 
         <section className="hive-queen" aria-label={translate('Королева Ева')}>
           <div className="hive-queen__stage">
-            <HiveGraph
-              queenName={hive?.queen.name || 'EvoHime'}
-              queenActive={queenActive}
-              activeAgents={hive?.activeAgents ?? []}
-            />
+            <HiveCityScene status={observationStatus} />
             <div className="hive-queen__body hive-queen__body--overlay">
               <div className="hive-queen__header-row">
                 <div>

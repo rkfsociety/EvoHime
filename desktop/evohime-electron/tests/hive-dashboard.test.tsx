@@ -597,7 +597,7 @@ describe('hive dashboard', () => {
       />
     )
 
-    expect(await screen.findByText('Спит')).toBeTruthy()
+    expect(await screen.findByText('Ожидает (лимиты)')).toBeTruthy()
     expect(screen.getByText(/лимит запросов за минуту достигнут · сброс в/)).toBeTruthy()
     expect(screen.getByText('Активных агентов нет.')).toBeTruthy()
   })
@@ -687,15 +687,20 @@ describe('hive dashboard', () => {
     expect(screen.queryByText('0%')).toBeNull()
   })
 
-  it('ui_shows_hive_graph', async () => {
-    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot({ active_agents: [] }))]} />)
+  it('ui_shows_hive_city_scene', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ active_agents: [], observation_status: 'observing' }))]}
+      />
+    )
 
-    const graph = await screen.findByTestId('hive-graph')
-    expect(graph.querySelector('svg')).toBeTruthy()
-    expect(screen.getByTestId('hive-graph-queen')).toBeTruthy()
+    const scene = await screen.findByTestId('hive-city-scene')
+    expect(scene.getAttribute('data-status')).toBe('observing')
+    expect(screen.getByRole('heading', { name: 'Королева Ева' })).toBeTruthy()
   })
 
-  it('hive_graph_renders_queen_and_active_agents', async () => {
+  it('hive_city_scene_reflects_observation_status', async () => {
     const { rerender } = render(
       <HiveDashboard
         connection="connected"
@@ -703,9 +708,9 @@ describe('hive dashboard', () => {
           event(
             'hive_state.snapshot',
             snapshot({
+              observation_status: 'active',
               active_agents: [
-                { id: 'worker-run-1', role: 'developer', current_action: 'executing', depth: 1, spawned_subagents: 0, ceiling: 4 },
-                { id: 'worker-idle-2', role: 'researcher', current_action: 'idle', depth: 1, spawned_subagents: 0, ceiling: 2 }
+                { id: 'worker-run-1', role: 'developer', current_action: 'executing', depth: 1, spawned_subagents: 0, ceiling: 4 }
               ]
             })
           )
@@ -713,36 +718,20 @@ describe('hive dashboard', () => {
       />
     )
 
-    const graph = await screen.findByTestId('hive-graph')
-    expect(graph.getAttribute('data-queen-state')).toBe('active')
-
-    const queenNode = screen.getByTestId('hive-graph-queen')
-    expect(queenNode.getAttribute('data-queen-state')).toBe('active')
-
-    const agentNodes = screen.getAllByTestId('hive-graph-agent')
-    expect(agentNodes).toHaveLength(2)
-    expect(agentNodes.map((node) => node.getAttribute('data-agent-id'))).toEqual(['worker-run-1', 'worker-idle-2'])
-    expect(agentNodes.map((node) => node.getAttribute('data-agent-state'))).toEqual(['running', 'idle'])
-
-    const edges = screen.getAllByTestId('hive-graph-edge')
-    expect(edges).toHaveLength(2)
-    expect(edges.map((edge) => edge.getAttribute('data-edge-state'))).toEqual(['running', 'idle'])
-
-    // Плашка с именем и статусом остаётся поверх графа.
+    const scene = await screen.findByTestId('hive-city-scene')
+    expect(scene.getAttribute('data-status')).toBe('active')
     expect(screen.getByRole('heading', { name: 'Королева Ева' })).toBeTruthy()
 
-    // При пустом active_agents граф показывает спящую Королеву.
     rerender(
       <HiveDashboard
         connection="connected"
-        events={[event('hive_state.snapshot', snapshot({ active_agents: [] }))]}
+        events={[event('hive_state.snapshot', snapshot({ observation_status: 'waiting_for_tasks', active_agents: [] }))]}
       />
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('hive-graph').getAttribute('data-queen-state')).toBe('sleeping')
+      expect(screen.getByTestId('hive-city-scene').getAttribute('data-status')).toBe('waiting_for_tasks')
     })
-    expect(screen.queryAllByTestId('hive-graph-agent')).toHaveLength(0)
   })
 
   it('ui_can_send_message_from_hive_dashboard', async () => {
@@ -1868,9 +1857,7 @@ describe('hive dashboard', () => {
     )
 
     expect(await screen.findByText('Наблюдение активно')).toBeTruthy()
-    const queenNode = screen.getByTestId('hive-graph-queen')
-    expect(queenNode.querySelector('.hive-graph__queen-core')?.getAttribute('r')).toBe('58')
-    expect(queenNode.querySelector('g[transform*="scale(2.5)"]')).toBeTruthy()
+    expect(screen.getByTestId('hive-city-scene').getAttribute('data-status')).toBe('observing')
   })
 
   it('ui_hides_api_key_input_while_provider_get_is_loading', async () => {
