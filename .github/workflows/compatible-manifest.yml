@@ -32,8 +32,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Generate compatible manifest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-compatible-manifest.ps1 -GenerateOnly
+      - name: Validate manifest integrity
+        shell: pwsh
+        run: ./scripts/validate-manifest-integrity.ps1 -ManifestPath "$env:RUNNER_TEMP/evohime.compatible.json"
       - name: Publish fixed compatible manifest
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./scripts/publish-compatible-manifest.ps1
+        run: ./scripts/publish-compatible-manifest.ps1 -PublishOnly

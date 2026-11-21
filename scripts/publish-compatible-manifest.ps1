@@ -1,10 +1,19 @@
-[CmdletBinding()]
-param()
+﻿[CmdletBinding()]
+param(
+    [switch]$GenerateOnly,
+    [switch]$PublishOnly
+)
 
 $ErrorActionPreference = 'Stop'
+if ($GenerateOnly -and $PublishOnly) {
+    throw 'Параметры -GenerateOnly и -PublishOnly нельзя использовать одновременно.'
+}
 if (-not $env:GH_TOKEN) { throw 'GH_TOKEN is required.' }
 if (-not $env:GITHUB_REPOSITORY) { throw 'GITHUB_REPOSITORY is required.' }
 
+$output = Join-Path $env:RUNNER_TEMP 'evohime.compatible.json'
+
+if (-not $PublishOnly) {
 $moduleIds = @(
     'shell-host', 'ui-bundle', 'core', 'supervisor', 'cli', 'analysis-worker',
     'listener', 'listener-runtime', 'transaction', 'verifier', 'updater', 'hive'
@@ -140,8 +149,14 @@ foreach ($component in @($manifest.components)) {
         }
     }
 }
-$output = Join-Path $env:RUNNER_TEMP 'evohime.compatible.json'
 $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $output -Encoding utf8NoBOM
+Write-Host "Сформирован совместимый комплект: $output"
+}
+
+if (-not $GenerateOnly) {
+if (-not (Test-Path -LiteralPath $output -PathType Leaf)) {
+    throw "Не найден сформированный manifest для публикации: $output"
+}
 
 $tag = 'compatibility'
 $notes = Join-Path $env:RUNNER_TEMP 'compatible-manifest-notes.md'
@@ -163,3 +178,4 @@ gh release upload $tag --repo $env:GITHUB_REPOSITORY $output --clobber
 if ($LASTEXITCODE -ne 0) { throw 'Не удалось опубликовать манифест совместимого комплекта.' }
 ./scripts/mark-installer-release-latest.ps1 -Repository $env:GITHUB_REPOSITORY
 Write-Host "Опубликован совместимый комплект: $tag"
+}
