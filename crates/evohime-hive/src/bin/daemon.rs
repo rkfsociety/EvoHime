@@ -324,6 +324,82 @@ impl CoreIpcClient {
             HiveContractError::Dispatch(format!("failed to dispatch task over IPC: {error}"))
         })
     }
+
+    async fn latest_sequence(&self) -> Result<i64, HiveContractError> {
+        let mut session = self.session.lock().await;
+        let command = session.command_envelope(
+            generated::command_envelope::Command::ResyncRequest(generated::ResyncRequest {
+                after_sequence: i64::MAX as u64,
+                max_events: 1,
+                include_full_snapshot: false,
+            }),
+        );
+        session.write_command(command).await?;
+        let event = session.wait_for_event_type("resync.end").await?;
+        let payload: serde_json::Value =
+            serde_json::from_slice(&event.payload).map_err(|error| {
+                HiveContractError::Serialization(format!("failed to decode resync.end: {error}"))
+            })?;
+        let latest = payload
+            .get("latest_sequence")
+            .and_then(serde_json::Value::as_u64)
+            .ok_or_else(|| {
+                HiveContractError::Serialization("resync.end missing latest_sequence".into())
+            })?;
+        i64::try_from(latest).map_err(|_| {
+            HiveContractError::Serialization(format!("latest_sequence overflows i64: {latest}"))
+        })
+    }
+
+    async fn replay_events(
+        &self,
+        after_sequence: i64,
+        limit: usize,
+    ) -> Result<Vec<HiveEventRecord>, HiveContractError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let mut session = self.session.lock().await;
+        let after = u64::try_from(after_sequence.max(0)).unwrap_or(0);
+        let command = session.command_envelope(generated::command_envelope::Command::ReplayEvents(
+            generated::ReplayEvents {
+                after_sequence: after,
+            },
+        ));
+        session.write_command(command).await?;
+        let mut records = Vec::new();
+        for _ in 0..=(1_000 + MAX_INTERLEAVED_EVENTS) {
+            let event = session.read_event().await?;
+            if event.event_type == "replay.end" {
+                return Ok(records);
+            }
+            if matches!(
+                event.event,
+                Some(generated::event_envelope::Event::ReplayGap(_))
+            ) || event.event_type == "replay.gap"
+            {
+                tracing::debug!(
+                    after_sequence = after,
+                    "received replay_gap during Core IPC replay_events"
+                );
+                continue;
+            }
+            if event.sequence_id > 0 && records.len() < limit {
+                if let Ok(sequence_id) = i64::try_from(event.sequence_id) {
+                    records.push(HiveEventRecord {
+                        sequence_id,
+                        task_id: event.task_id,
+                        event_type: event.event_type,
+                        payload: event.payload,
+                        created_at_ms: 0,
+                    });
+                }
+            }
+        }
+        Err(HiveContractError::Unavailable(
+            "timed out waiting for IPC response 'replay.end'".into(),
+        ))
+    }
 }
 
 fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
@@ -352,21 +428,29 @@ fn snapshot_to_settings(snapshot: &HiveStateSnapshot) -> HiveSettings {
     }
 }
 
-struct IpcJournalProvider {
+struct RealIpcJournalProvider {
     client: Arc<CoreIpcClient>,
 }
 
-impl HiveJournalProvider for IpcJournalProvider {
+impl HiveJournalProvider for RealIpcJournalProvider {
     fn latest_sequence(&self) -> BoxFuture<'_, i64> {
-        Box::pin(async { 0 })
+        Box::pin(async move {
+            match self.client.latest_sequence().await {
+                Ok(sequence) => sequence,
+                Err(error) => {
+                    tracing::warn!(error = %error, "failed to fetch latest_sequence from Core IPC");
+                    0
+                }
+            }
+        })
     }
 
     fn replay_events(
         &self,
-        _after_sequence: i64,
-        _limit: usize,
+        after_sequence: i64,
+        limit: usize,
     ) -> BoxFuture<'_, Result<Vec<HiveEventRecord>, HiveContractError>> {
-        Box::pin(async { Ok(Vec::new()) })
+        Box::pin(async move { self.client.replay_events(after_sequence, limit).await })
     }
 
     fn record_audit<'a>(
@@ -375,7 +459,12 @@ impl HiveJournalProvider for IpcJournalProvider {
         _event_type: &'a str,
         _payload: &'a [u8],
     ) -> BoxFuture<'a, Result<(), HiveContractError>> {
-        Box::pin(async { Ok(()) })
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: record_audit");
+            Err(HiveContractError::Unavailable(
+                "IPC method not implemented yet: record_audit".into(),
+            ))
+        })
     }
 
     fn prune_signal_records<'a>(
@@ -383,7 +472,9 @@ impl HiveJournalProvider for IpcJournalProvider {
         _event_types: &'a [&'a str],
         _keep_limit: usize,
     ) -> BoxFuture<'a, ()> {
-        Box::pin(async {})
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: prune_signal_records");
+        })
     }
 
     fn load_hive_settings_json(
@@ -442,8 +533,11 @@ impl HiveJournalProvider for IpcJournalProvider {
         })
     }
 
-    fn filter_hive_root_tasks(&self, _roots: Vec<String>) -> BoxFuture<'_, Vec<String>> {
-        Box::pin(async { Vec::new() })
+    fn filter_hive_root_tasks(&self, roots: Vec<String>) -> BoxFuture<'_, Vec<String>> {
+        Box::pin(async move {
+            tracing::warn!("IPC method not implemented yet: filter_hive_root_tasks");
+            roots
+        })
     }
 
     fn model_dispatch_windows<'a>(
@@ -455,7 +549,12 @@ impl HiveJournalProvider for IpcJournalProvider {
         _hour_window_ms: i64,
         _day_window_ms: i64,
     ) -> BoxFuture<'a, Result<HiveDispatchWindows, HiveContractError>> {
-        Box::pin(async { Ok(HiveDispatchWindows::default()) })
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: model_dispatch_windows");
+            Err(HiveContractError::Unavailable(
+                "IPC method not implemented yet: model_dispatch_windows".into(),
+            ))
+        })
     }
 
     fn model_usage_since<'a>(
@@ -464,7 +563,12 @@ impl HiveJournalProvider for IpcJournalProvider {
         _provider: &'a str,
         _model: &'a str,
     ) -> BoxFuture<'a, Result<Vec<HiveModelUsage>, HiveContractError>> {
-        Box::pin(async { Ok(Vec::new()) })
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: model_usage_since");
+            Err(HiveContractError::Unavailable(
+                "IPC method not implemented yet: model_usage_since".into(),
+            ))
+        })
     }
 
     fn route_tokens_since<'a>(
@@ -472,19 +576,31 @@ impl HiveJournalProvider for IpcJournalProvider {
         _start_ms: i64,
         _route_scope: &'a str,
     ) -> BoxFuture<'a, Result<u64, HiveContractError>> {
-        Box::pin(async { Ok(0) })
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: route_tokens_since");
+            Err(HiveContractError::Unavailable(
+                "IPC method not implemented yet: route_tokens_since".into(),
+            ))
+        })
     }
 
     fn register_worktree_lease(&self, _request: HiveWorktreeLeaseRequest) -> BoxFuture<'_, ()> {
-        Box::pin(async {})
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: register_worktree_lease");
+        })
     }
 
     fn has_active_workflow_run<'a>(&'a self, _task_id: &'a str) -> BoxFuture<'a, bool> {
-        Box::pin(async { false })
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: has_active_workflow_run");
+            true
+        })
     }
 
     fn mark_worktree_cleanup_pending<'a>(&'a self, _worktree_id: &'a str) -> BoxFuture<'a, ()> {
-        Box::pin(async {})
+        Box::pin(async {
+            tracing::warn!("IPC method not implemented yet: mark_worktree_cleanup_pending");
+        })
     }
 }
 
@@ -583,7 +699,7 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let journal: Arc<dyn HiveJournalProvider> = Arc::new(IpcJournalProvider {
+    let journal: Arc<dyn HiveJournalProvider> = Arc::new(RealIpcJournalProvider {
         client: Arc::clone(&client),
     });
     let coordinator: Arc<dyn HiveCoordinator> = Arc::new(IpcCoordinator {
