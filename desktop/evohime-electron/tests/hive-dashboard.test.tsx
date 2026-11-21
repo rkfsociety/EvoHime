@@ -533,6 +533,31 @@ describe('hive dashboard', () => {
     expect((screen.getByRole('switch', { name: 'Проактивное саморазвитие' }) as HTMLInputElement).checked).toBe(true)
   })
 
+  it('toggles queen autonomy via core.setHiveSetting pulse_enabled on the main queen panel without core.togglePulse', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ pulse_enabled: true })),
+          event('eva_pulse.status', { schema_version: 1, owner: 'eva_pulse', status: 'sleeping', enabled: true, next_wake_at_ms: null })
+        ]}
+      />
+    )
+
+    const toggle = await screen.findByRole('switch', { name: 'Автономность Королевы' })
+    expect((toggle as HTMLInputElement).checked).toBe(true)
+    await userEvent.click(toggle)
+
+    await waitFor(() => {
+      expect(calls.find((call) => call.command === 'core.setHiveSetting' && (call.payload as { key?: string })?.key === 'pulse_enabled')?.payload).toEqual({
+        key: 'pulse_enabled',
+        value: 'false'
+      })
+    })
+    expect(calls.some((call) => call.command === 'core.togglePulse')).toBe(false)
+    expect(screen.queryByText(/eva_pulse\.status/)).toBeNull()
+  })
+
   it('shows zero task metrics when snapshot has no completed-task history', async () => {
     render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
     expect(await screen.findByText('Задач сегодня')).toBeTruthy()

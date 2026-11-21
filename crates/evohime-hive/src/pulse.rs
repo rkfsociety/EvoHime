@@ -281,6 +281,8 @@ struct DaemonState {
     #[allow(dead_code)]
     cycles: u64,
     reason: &'static str,
+    last_logged_state: Option<(bool, &'static str)>,
+    last_heartbeat_at: Option<std::time::Instant>,
 }
 
 struct Inner {
@@ -394,6 +396,8 @@ impl EvaPulseDaemon {
                 next_wake_at_ms: None,
                 cycles: 0,
                 reason: "",
+                last_logged_state: None,
+                last_heartbeat_at: None,
             }),
             dispatched_evolutions: std::sync::Mutex::new(HashSet::new()),
             notify: tokio::sync::Notify::new(),
@@ -756,9 +760,9 @@ impl Inner {
                 interval
             }
             PulseDecision::AllGood => {
-                tracing::info!("EvaPulse: all good");
+                tracing::debug!("EvaPulse: all good");
                 self.log(
-                    "info",
+                    "debug",
                     "eva_pulse.all_good",
                     serde_json::json!({ "cycles": self.cycle_counter.load(Ordering::SeqCst) }),
                 );
@@ -778,10 +782,45 @@ impl Inner {
     }
 
     fn publish(&self, status: &'static str, next_wake_at_ms: Option<i64>, reason: &'static str) {
-        let mut state = self.state();
-        state.status = status;
-        state.next_wake_at_ms = next_wake_at_ms;
-        state.reason = reason;
+        const STATUS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(300);
+        let (should_log, enabled) = {
+            let mut state = self.state();
+            state.status = status;
+            state.next_wake_at_ms = next_wake_at_ms;
+            state.reason = reason;
+            let current = (state.enabled, status);
+            let changed = state.last_logged_state != Some(current);
+            let heartbeat_due = state
+                .last_heartbeat_at
+                .is_none_or(|last| last.elapsed() >= STATUS_HEARTBEAT_INTERVAL);
+            if changed || heartbeat_due {
+                state.last_logged_state = Some(current);
+                state.last_heartbeat_at = Some(std::time::Instant::now());
+                (true, state.enabled)
+            } else {
+                (false, state.enabled)
+            }
+        };
+        if should_log {
+            tracing::info!(
+                event = "eva_pulse.status",
+                status = %status,
+                enabled = enabled,
+                next_wake_at_ms = ?next_wake_at_ms,
+                reason = %reason,
+                "eva_pulse.status"
+            );
+            self.log(
+                "info",
+                "eva_pulse.status",
+                serde_json::json!({
+                    "status": status,
+                    "enabled": enabled,
+                    "next_wake_at_ms": next_wake_at_ms,
+                    "reason": reason,
+                }),
+            );
+        }
     }
 
     fn log(&self, level: &str, event: &str, fields: serde_json::Value) {
@@ -3516,5 +3555,60 @@ mod tests {
         assert!(!task_id.is_empty());
         let req = requests.recv().await.expect("command sent");
         assert_eq!(req.preferred_route_hint.as_deref(), Some("hive"));
+    }
+
+    #[tokio::test]
+    async fn publish_deduplicates_unchanged_status_until_change_or_heartbeat() {
+        #[derive(Default)]
+        struct RecordingTelemetry {
+            events: std::sync::Mutex<Vec<(String, String, serde_json::Value)>>,
+        }
+        impl HiveTelemetrySink for RecordingTelemetry {
+            fn log_event(&self, level: &str, event: &str, fields: serde_json::Value) {
+                self.events.lock().expect("lock").push((
+                    level.to_owned(),
+                    event.to_owned(),
+                    fields,
+                ));
+            }
+        }
+
+        let telemetry = Arc::new(RecordingTelemetry::default());
+        let daemon = EvaPulseDaemon::spawn(
+            Arc::new(FakeProbe::new(healthy_report())),
+            Arc::new(CountingSink::default()),
+            EvaPulseOptions::default(),
+            Some(telemetry.clone()),
+        );
+
+        daemon.inner.publish(HIVE_PULSE_ACTIVE, None, "");
+        daemon.inner.publish(HIVE_PULSE_ACTIVE, Some(1234), "");
+        daemon
+            .inner
+            .publish(HIVE_PULSE_SLEEPING, Some(5678), "idle");
+        daemon
+            .inner
+            .publish(HIVE_PULSE_SLEEPING, Some(9999), "idle");
+
+        {
+            let mut state = daemon.inner.state();
+            state.last_heartbeat_at = Some(std::time::Instant::now() - Duration::from_secs(301));
+        }
+        daemon
+            .inner
+            .publish(HIVE_PULSE_SLEEPING, Some(10000), "idle");
+
+        let logged: Vec<_> = telemetry
+            .events
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|(_, event, _)| event == "eva_pulse.status")
+            .cloned()
+            .collect();
+        assert_eq!(logged.len(), 3);
+        assert_eq!(logged[0].2["status"], HIVE_PULSE_ACTIVE);
+        assert_eq!(logged[1].2["status"], HIVE_PULSE_SLEEPING);
+        assert_eq!(logged[2].2["status"], HIVE_PULSE_SLEEPING);
     }
 }

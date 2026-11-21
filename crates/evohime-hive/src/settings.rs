@@ -140,6 +140,9 @@ pub struct HiveSettings {
     /// Whether EvaPulse may proactively pick uncompleted roadmap items when idle.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
+    /// Whether the EvaPulse autonomous loop is enabled.
+    #[serde(default = "default_pulse_enabled")]
+    pub pulse_enabled: bool,
 }
 
 fn default_schema_version() -> u32 {
@@ -156,6 +159,10 @@ fn default_pulse_interval_secs() -> u64 {
 
 fn default_daily_budget_usd() -> f64 {
     DEFAULT_DAILY_BUDGET_USD
+}
+
+fn default_pulse_enabled() -> bool {
+    true
 }
 
 impl Default for HiveSettings {
@@ -183,6 +190,7 @@ impl Default for HiveSettings {
             hive_token_quota_configured: false,
             hive_fallback_token_quota_configured: false,
             proactive_evolution_enabled: false,
+            pulse_enabled: true,
         }
     }
 }
@@ -484,7 +492,8 @@ impl HiveSettings {
                 {"name": "hive_fallback_quota_reset_utc_midnight", "type": "bool", "default": false},
                 {"name": "hive_token_quota_configured", "type": "bool", "default": false},
                 {"name": "hive_fallback_token_quota_configured", "type": "bool", "default": false},
-                {"name": "proactive_evolution_enabled", "type": "bool", "default": false}
+                {"name": "proactive_evolution_enabled", "type": "bool", "default": false},
+                {"name": "pulse_enabled", "type": "bool", "default": true}
             ],
             "note": "ceilings are safety guards, not a spawn plan",
             "max_child_depth": DEFAULT_MAX_DELEGATION_DEPTH
@@ -958,5 +967,25 @@ mod tests {
                 limit: 8
             })
         );
+    }
+
+    #[test]
+    fn pulse_enabled_defaults_to_true_and_persists_false() {
+        let mut legacy_json =
+            serde_json::to_value(HiveSettings::default()).expect("serialize default");
+        legacy_json
+            .as_object_mut()
+            .expect("json object")
+            .remove("pulse_enabled");
+        let from_legacy: HiveSettings =
+            serde_json::from_value(legacy_json).expect("deserialize legacy json");
+        assert!(from_legacy.pulse_enabled);
+
+        let mut disabled_json =
+            serde_json::to_value(HiveSettings::default()).expect("serialize default");
+        disabled_json["pulse_enabled"] = serde_json::json!(false);
+        let disabled: HiveSettings =
+            serde_json::from_value(disabled_json).expect("deserialize disabled json");
+        assert!(!disabled.pulse_enabled);
     }
 }
