@@ -349,27 +349,27 @@ describe('hive dashboard', () => {
     })
   })
 
-  it('показывает статус EvaPulse из снимка Core', async () => {
+  it('показывает статус наблюдения Улья из снимка Core', async () => {
     render(
       <HiveDashboard
         connection="connected"
-        events={[event('hive_state.snapshot', snapshot({ pulse_status: 'sleeping', next_wake_at_ms: Date.now() + 60_000 }))]}
+        events={[event('hive_state.snapshot', snapshot({ observation_status: 'waiting_for_limits', next_wake_at_ms: Date.now() + 60_000 }))]}
       />
     )
 
-    expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Улей ожидает (лимиты)')).length).toBeGreaterThan(0)
   })
 
-  it('предпочитает отдельную EvaPulse projection снимку Улья', async () => {
+  it('предпочитает отдельную hive.observation_status projection снимку Улья', async () => {
     render(
       <HiveDashboard
         connection="connected"
         events={[
-          event('hive_state.snapshot', snapshot({ pulse_status: 'active', next_wake_at_ms: null })),
-          event('eva_pulse.status', {
+          event('hive_state.snapshot', snapshot({ observation_status: 'observing', next_wake_at_ms: null })),
+          event('hive.observation_status', {
             schema_version: 1,
-            owner: 'eva_pulse',
-            status: 'sleeping',
+            owner: 'hive_observation',
+            status: 'waiting_for_limits',
             enabled: true,
             next_wake_at_ms: Date.now() + 60_000
           })
@@ -377,9 +377,9 @@ describe('hive dashboard', () => {
       />
     )
 
-    expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Улей ожидает (лимиты)')).length).toBeGreaterThan(0)
     await waitFor(() => {
-      expect(calls.some((call) => call.command === 'core.getEvaPulseStatus')).toBe(true)
+      expect(calls.some((call) => call.command === 'core.getHiveObservationStatus')).toBe(true)
     })
   })
 
@@ -533,13 +533,13 @@ describe('hive dashboard', () => {
     expect((screen.getByRole('switch', { name: 'Проактивное саморазвитие' }) as HTMLInputElement).checked).toBe(true)
   })
 
-  it('toggles queen autonomy via core.setHiveSetting proactive_evolution_enabled on the main queen panel without core.togglePulse', async () => {
+  it('toggles queen autonomy via core.setHiveSetting proactive_evolution_enabled on the main queen panel', async () => {
     render(
       <HiveDashboard
         connection="connected"
         events={[
           event('hive_state.snapshot', snapshot({ proactive_evolution_enabled: true })),
-          event('eva_pulse.status', { schema_version: 1, owner: 'eva_pulse', status: 'sleeping', enabled: true, next_wake_at_ms: null })
+          event('hive.observation_status', { schema_version: 1, owner: 'hive_observation', status: 'waiting_for_limits', enabled: true, next_wake_at_ms: null })
         ]}
       />
     )
@@ -554,8 +554,7 @@ describe('hive dashboard', () => {
         value: 'false'
       })
     })
-    expect(calls.some((call) => call.command === 'core.togglePulse')).toBe(false)
-    expect(screen.queryByText(/eva_pulse\.status/)).toBeNull()
+    expect(screen.queryByText(/hive\.observation_status/)).toBeNull()
   })
 
   it('shows zero task metrics when snapshot has no completed-task history', async () => {
@@ -1267,16 +1266,16 @@ describe('hive dashboard', () => {
     expect(indicator.textContent).toContain('Королева печатает')
 
     // Pulse lifecycle и typing Королевы — независимые проекции: засыпание
-    // EvaPulse не обрывает индикатор незавершённой задачи Улья.
+    // Обновление статуса наблюдения не обрывает индикатор незавершённой задачи Улья.
     rerender(
       <HiveDashboard
         connection="connected"
         events={[
-          event('hive_state.snapshot', snapshot({ pulse_status: 'sleeping' })),
-          event('eva_pulse.status', {
+          event('hive_state.snapshot', snapshot({ observation_status: 'waiting_for_limits' })),
+          event('hive.observation_status', {
             schema_version: 1,
-            owner: 'eva_pulse',
-            status: 'sleeping',
+            owner: 'hive_observation',
+            status: 'waiting_for_limits',
             enabled: true,
             next_wake_at_ms: Date.now() + 60_000
           }),
@@ -1286,7 +1285,7 @@ describe('hive dashboard', () => {
     )
 
     expect(await screen.findByTestId('queen-typing-indicator')).toBeTruthy()
-    expect((await screen.findAllByText('EvaPulse спит')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('Улей ожидает (лимиты)')).length).toBeGreaterThan(0)
   })
 
   it('hive_uses_dedicated_chat', async () => {
@@ -1838,29 +1837,29 @@ describe('hive dashboard', () => {
     expect(screen.queryByText(/null токенов/)).toBeNull()
   })
 
-  it('показывает нейтральное Ожидание и скрывает пустой прочерк сна без данных EvaPulse', async () => {
+  it('показывает нейтральное Ожидание и скрывает пустую проверку окружения без данных наблюдения', async () => {
     render(
       <HiveDashboard
         connection="connected"
-        events={[event('hive_state.snapshot', snapshot({ active_agents: [], pulse_status: '', next_wake_at_ms: null }))]}
+        events={[event('hive_state.snapshot', snapshot({ active_agents: [], observation_status: '', next_wake_at_ms: null }))]}
       />
     )
 
     expect(await screen.findByText('Ожидание...')).toBeTruthy()
     expect(screen.queryByText(/нет данных Core/)).toBeNull()
-    expect(screen.queryByText('Следующий сон')).toBeNull()
+    expect(screen.queryByText('Следующая проверка окружения')).toBeNull()
   })
 
-  it('показывает Сон: ожидание при активном EvaPulse без next_wake_at_ms и масштабирует корону в спящем режиме', async () => {
+  it('показывает Наблюдение активно при активном цикле без next_wake_at_ms', async () => {
     render(
       <HiveDashboard
         connection="connected"
         events={[
           event('hive_state.snapshot', snapshot({ active_agents: [], next_wake_at_ms: null })),
-          event('eva_pulse.status', {
+          event('hive.observation_status', {
             schema_version: 1,
-            owner: 'eva_pulse',
-            status: 'active',
+            owner: 'hive_observation',
+            status: 'observing',
             enabled: true,
             next_wake_at_ms: null
           })
@@ -1868,7 +1867,7 @@ describe('hive dashboard', () => {
       />
     )
 
-    expect(await screen.findByText('Сон: ожидание')).toBeTruthy()
+    expect(await screen.findByText('Наблюдение активно')).toBeTruthy()
     const queenNode = screen.getByTestId('hive-graph-queen')
     expect(queenNode.querySelector('.hive-graph__queen-core')?.getAttribute('r')).toBe('58')
     expect(queenNode.querySelector('g[transform*="scale(2.5)"]')).toBeTruthy()

@@ -329,33 +329,32 @@ impl IpcBridge {
         self
     }
 
-    /// Attaches the process-wide EvaPulse daemon.
-    ///
-    /// The daemon is spawned once by the Core bootstrap; every IPC connection
-    /// shares the same handle so a toggle from one shell is seen by all.
-    pub fn with_pulse_daemon(mut self, pulse: Arc<crate::eva_pulse::EvaPulseDaemon>) -> Self {
-        self.pulse = Some(HivePulseHandle::Local(Arc::new(
-            crate::eva_pulse::EvaPulseController::new((*pulse).clone()),
+    /// Attaches the process-wide Hive observation daemon.
+    pub fn with_observation_daemon(
+        mut self,
+        daemon: Arc<crate::eva_pulse::HiveObservationDaemon>,
+    ) -> Self {
+        self.pulse = Some(HiveObservationHandle::Local(Arc::new(
+            crate::eva_pulse::HiveObservationController::new((*daemon).clone()),
         )));
         self
     }
 
-    /// Attaches only the EvaPulse lifecycle owner to the IPC bridge.
-    pub fn with_pulse_controller(
+    /// Attaches only the Hive observation lifecycle owner to the IPC bridge.
+    pub fn with_observation_controller(
         mut self,
-        pulse: Arc<crate::eva_pulse::EvaPulseController>,
+        controller: Arc<crate::eva_pulse::HiveObservationController>,
     ) -> Self {
-        self.pulse = Some(HivePulseHandle::Local(pulse));
+        self.pulse = Some(HiveObservationHandle::Local(controller));
         self
     }
 
-    /// Attaches an IPC proxy that routes EvaPulse control commands to the
-    /// standalone `evohime-hive-daemon` process.
-    pub fn with_external_pulse_proxy(
+    /// Attaches an IPC proxy that queries the standalone `evohime-hive-daemon` process.
+    pub fn with_external_observation_proxy(
         mut self,
-        proxy: Arc<crate::external_pulse::ExternalHivePulseProxy>,
+        proxy: Arc<crate::external_pulse::ExternalHiveObservationProxy>,
     ) -> Self {
-        self.pulse = Some(HivePulseHandle::External(proxy));
+        self.pulse = Some(HiveObservationHandle::External(proxy));
         self
     }
 

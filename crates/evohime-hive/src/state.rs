@@ -51,12 +51,16 @@ pub const HIVE_QUEEN_ACTIVE: &str = "active";
 pub const HIVE_QUEEN_IDLE: &str = "idle";
 /// Queen status: the configured rolling request cap for the model is reached.
 pub const HIVE_QUEEN_BUDGET_EXHAUSTED: &str = "budget_exhausted";
-/// EvaPulse status: the daemon is enabled and running its periodic cycle.
-pub const HIVE_PULSE_ACTIVE: &str = "active";
-/// EvaPulse status: the user switched the daemon off.
-pub const HIVE_PULSE_DISABLED: &str = "disabled";
-/// EvaPulse status: the daemon is waiting for a budget or provider window.
-pub const HIVE_PULSE_SLEEPING: &str = "sleeping";
+/// Autonomous observation cycle status: Level 1 observation is active.
+pub const HIVE_OBSERVATION_OBSERVING: &str = "observing";
+/// Autonomous observation cycle status: Level 2 LLM dispatch is waiting for limits/budget.
+pub const HIVE_OBSERVATION_WAITING_FOR_LIMITS: &str = "waiting_for_limits";
+/// Autonomous observation cycle status: Level 1 active, waiting for tasks or proactive evolution.
+pub const HIVE_OBSERVATION_WAITING_FOR_TASKS: &str = "waiting_for_tasks";
+/// Autonomous observation cycle status: observation loop is disabled.
+pub const HIVE_OBSERVATION_DISABLED: &str = "disabled";
+/// Autonomous observation cycle status: sleeping ONLY on `observation_failed` errors.
+pub const HIVE_OBSERVATION_SLEEPING: &str = "sleeping";
 
 /// Queen status line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,12 +261,12 @@ pub struct HiveObservation {
     pub daily_cost_available: bool,
     /// Estimated DeepSeek API cost for the current UTC day, in nano-USD.
     pub daily_cost_nano_usd: Option<u64>,
-    /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
-    pub pulse_status: String,
-    /// Unix milliseconds at which the daemon plans its next cycle.
+    /// Autonomous observation cycle status (`observing`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, or `sleeping` on `observation_failed`).
+    pub observation_status: String,
+    /// Unix milliseconds at which the daemon plans its next observation cycle.
     ///
-    /// `None` means the daemon is disabled or cannot promise a wake moment.
-    pub pulse_next_wake_at_ms: Option<i64>,
+    /// `None` means the daemon is disabled or cannot promise an observation moment.
+    pub next_observation_at_ms: Option<i64>,
     /// Tasks started during the current UTC day according to durable Core events.
     pub tasks_today: u32,
     /// Mean duration of today's completed tasks, in seconds.
@@ -305,8 +309,8 @@ impl Default for HiveObservation {
             daily_cost_nano_usd: None,
             // A bridge without a daemon must report the honest disabled state
             // instead of pretending the background loop is running.
-            pulse_status: HIVE_PULSE_DISABLED.into(),
-            pulse_next_wake_at_ms: None,
+            observation_status: HIVE_OBSERVATION_DISABLED.into(),
+            next_observation_at_ms: None,
             tasks_today: 0,
             average_task_time_sec: 0,
             daily_token_quota: None,
@@ -398,13 +402,13 @@ pub struct HiveStateSnapshot {
     /// Whether the fallback route token quota resets at UTC midnight.
     #[serde(default)]
     pub hive_fallback_quota_reset_utc_midnight: bool,
-    /// Whether proactive evolution via EvaPulse is enabled.
+    /// Whether proactive evolution via the autonomous observation cycle is enabled.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
-    /// EvaPulse daemon status: `active`, `disabled`, or `sleeping`.
+    /// Autonomous observation cycle status (`observing`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, or `sleeping` on `observation_failed`).
     #[serde(default, skip_serializing)]
-    pub pulse_status: String,
-    /// Unix milliseconds at which the daemon plans its next cycle.
+    pub observation_status: String,
+    /// Unix milliseconds at which the daemon plans its next observation cycle.
     #[serde(default, skip_serializing)]
     pub next_wake_at_ms: Option<i64>,
 }
@@ -552,8 +556,8 @@ impl HiveStateSnapshot {
             hive_quota_reset_utc_midnight: settings.hive_quota_reset_utc_midnight,
             hive_fallback_quota_reset_utc_midnight: settings.hive_fallback_quota_reset_utc_midnight,
             proactive_evolution_enabled: settings.proactive_evolution_enabled,
-            pulse_status: pulse_status_from(observation),
-            next_wake_at_ms: observation.pulse_next_wake_at_ms,
+            observation_status: observation_status_from(observation),
+            next_wake_at_ms: observation.next_observation_at_ms,
         }
     }
 }
@@ -602,15 +606,17 @@ fn budget_from(observation: &HiveObservation) -> HiveBudget {
     }
 }
 
-/// Keeps the pulse status inside the published enum.
+/// Keeps the observation status inside the published enum.
 ///
 /// An unknown producer value degrades to `disabled` instead of leaking an
 /// unbounded string into the UI.
-fn pulse_status_from(observation: &HiveObservation) -> String {
-    match observation.pulse_status.as_str() {
-        HIVE_PULSE_ACTIVE => HIVE_PULSE_ACTIVE,
-        HIVE_PULSE_SLEEPING => HIVE_PULSE_SLEEPING,
-        _ => HIVE_PULSE_DISABLED,
+fn observation_status_from(observation: &HiveObservation) -> String {
+    match observation.observation_status.as_str() {
+        HIVE_OBSERVATION_OBSERVING => HIVE_OBSERVATION_OBSERVING,
+        HIVE_OBSERVATION_WAITING_FOR_LIMITS => HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+        HIVE_OBSERVATION_WAITING_FOR_TASKS => HIVE_OBSERVATION_WAITING_FOR_TASKS,
+        HIVE_OBSERVATION_SLEEPING => HIVE_OBSERVATION_SLEEPING,
+        _ => HIVE_OBSERVATION_DISABLED,
     }
     .to_owned()
 }
@@ -1284,24 +1290,27 @@ mod tests {
     }
 
     #[test]
-    fn hive_state_projects_the_daemon_pulse_status() {
+    fn hive_state_projects_the_daemon_observation_status() {
         let observation = HiveObservation {
-            pulse_status: HIVE_PULSE_SLEEPING.into(),
-            pulse_next_wake_at_ms: Some(42_000),
+            observation_status: HIVE_OBSERVATION_WAITING_FOR_LIMITS.into(),
+            next_observation_at_ms: Some(42_000),
             ..HiveObservation::default()
         };
         let snapshot =
             HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
-        assert_eq!(snapshot.pulse_status, HIVE_PULSE_SLEEPING);
+        assert_eq!(
+            snapshot.observation_status,
+            HIVE_OBSERVATION_WAITING_FOR_LIMITS
+        );
         assert_eq!(snapshot.next_wake_at_ms, Some(42_000));
 
         let observation = HiveObservation {
-            pulse_status: "unexpected".into(),
+            observation_status: "unexpected".into(),
             ..HiveObservation::default()
         };
         let snapshot =
             HiveStateSnapshot::from_observation(&HiveSettings::default(), &[], &[], &observation);
-        assert_eq!(snapshot.pulse_status, HIVE_PULSE_DISABLED);
+        assert_eq!(snapshot.observation_status, HIVE_OBSERVATION_DISABLED);
     }
 
     #[test]
@@ -1310,15 +1319,15 @@ mod tests {
         let encoded = serde_json::to_vec(&snapshot).expect("snapshot serializes");
         let decoded: HiveStateSnapshot =
             serde_json::from_slice(&encoded).expect("snapshot deserializes");
-        // Pulse status is intentionally an IPC projection detail and is not
+        // Observation status is intentionally an IPC projection detail and is not
         // serialized in this compatibility payload.
         let mut expected = snapshot.clone();
-        expected.pulse_status.clear();
+        expected.observation_status.clear();
         expected.next_wake_at_ms = None;
         assert_eq!(decoded, expected);
         let value: serde_json::Value = serde_json::from_slice(&encoded).expect("valid json");
         assert_eq!(value["schema_version"], HIVE_STATE_SCHEMA_VERSION);
-        assert!(value.get("pulse_status").is_none());
+        assert!(value.get("observation_status").is_none());
         assert!(value.get("next_wake_at_ms").is_none());
         assert!(value["budget"]["hour_cap"].is_number());
         assert_eq!(value["queen"]["reason"], "");

@@ -12,11 +12,11 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use evohime_desktop_ipc::{generated, session, transport};
-#[cfg(unix)]
-use evohime_hive::pulse::HIVE_PULSE_CONTROL_SOCKET_ENV;
-use evohime_hive::pulse::{EvaPulseController, EvaPulseDaemon, HivePulseControlRequest};
-#[cfg(windows)]
-use evohime_hive::pulse::{DEFAULT_HIVE_PULSE_CONTROL_PIPE, HIVE_PULSE_CONTROL_PIPE_ENV};
+use evohime_hive::pulse::{
+    HiveObservationControlRequest, HiveObservationController, HiveObservationDaemon,
+    DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE, HIVE_OBSERVATION_CONTROL_PIPE_ENV,
+    HIVE_OBSERVATION_CONTROL_SOCKET_ENV,
+};
 use evohime_hive::settings::HiveSettings;
 use evohime_hive::state::HiveStateSnapshot;
 use evohime_hive_contract::{
@@ -550,8 +550,8 @@ impl CoreIpcClient {
             .collect())
     }
 
-    async fn sync_rate_limits_from_pulse_status(&self) {
-        const SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);
+    async fn sync_rate_limits_from_core(&self) {
+        const SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
         {
             let Ok(mut guard) = self.last_rate_limit_sync.lock() else {
                 return;
@@ -566,8 +566,8 @@ impl CoreIpcClient {
         }
         let mut session = self.session.lock().await;
         let command =
-            session.command_envelope(generated::command_envelope::Command::EvaPulseStatus(
-                generated::EvaPulseStatusCommand {
+            session.command_envelope(generated::command_envelope::Command::HiveObservationStatus(
+                generated::HiveObservationStatusCommand {
                     schema_version: 1,
                     request_id: uuid::Uuid::new_v4().to_string(),
                 },
@@ -575,7 +575,7 @@ impl CoreIpcClient {
         if session.write_command(command).await.is_err() {
             return;
         }
-        if let Ok(event) = session.wait_for_event_type("eva_pulse.status").await {
+        if let Ok(event) = session.wait_for_event_type("hive.observation_status").await {
             if let Ok(payload) = serde_json::from_slice::<serde_json::Value>(&event.payload) {
                 sync_rate_limits_from_payload(&payload);
             }
@@ -754,7 +754,7 @@ impl HiveJournalProvider for RealIpcJournalProvider {
         &self,
     ) -> BoxFuture<'_, Result<Option<serde_json::Value>, HiveContractError>> {
         Box::pin(async move {
-            self.client.sync_rate_limits_from_pulse_status().await;
+            self.client.sync_rate_limits_from_core().await;
             let snapshot = self.client.fetch_hive_state().await?;
             let settings = snapshot_to_settings(&snapshot);
             let value = serde_json::to_value(&settings).map_err(|error| {
@@ -1142,7 +1142,7 @@ async fn main() -> ExitCode {
         }
     };
 
-    let daemon = EvaPulseDaemon::start(
+    let daemon = HiveObservationDaemon::start(
         journal,
         gateway_config,
         workspace_provider,
@@ -1151,8 +1151,8 @@ async fn main() -> ExitCode {
     );
     let control_daemon = daemon.clone();
     let control_task = tokio::spawn(async move {
-        if let Err(error) = run_pulse_control_server(control_daemon).await {
-            tracing::error!(error = %error, "pulse control IPC server stopped");
+        if let Err(error) = run_observation_control_server(control_daemon).await {
+            tracing::error!(error = %error, "observation control IPC server stopped");
         }
     });
     let status = daemon.status();
@@ -1171,18 +1171,18 @@ async fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-async fn handle_pulse_control_connection<S>(mut stream: S, daemon: EvaPulseDaemon)
+async fn handle_observation_control_connection<S>(mut stream: S, daemon: HiveObservationDaemon)
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let payload = match transport::read_frame(&mut stream).await {
         Ok(payload) => payload,
         Err(error) => {
-            tracing::debug!(error = %error, "pulse control IPC read failed");
+            tracing::debug!(error = %error, "observation control IPC read failed");
             return;
         }
     };
-    let request = match serde_json::from_slice::<HivePulseControlRequest>(&payload) {
+    let request = match serde_json::from_slice::<HiveObservationControlRequest>(&payload) {
         Ok(request) => request,
         Err(error) => {
             let error_payload = match serde_json::to_vec(&serde_json::json!({
@@ -1195,38 +1195,34 @@ where
             return;
         }
     };
-    let controller = EvaPulseController::new(daemon);
+    let controller = HiveObservationController::new(daemon);
     let snapshot = match request {
-        HivePulseControlRequest::TogglePulse { enabled } => {
-            controller.set_enabled(enabled);
-            controller.snapshot()
-        }
-        HivePulseControlRequest::GetPulseStatus => controller.snapshot(),
+        HiveObservationControlRequest::GetObservationStatus => controller.snapshot(),
     };
     let response_bytes = match serde_json::to_vec(&snapshot) {
         Ok(bytes) => bytes,
         Err(error) => {
-            tracing::error!(error = %error, "failed to serialize EvaPulseSnapshot");
+            tracing::error!(error = %error, "failed to serialize HiveObservationSnapshot");
             return;
         }
     };
     if let Err(error) = transport::write_frame(&mut stream, &response_bytes).await {
-        tracing::debug!(error = %error, "pulse control IPC write failed");
+        tracing::debug!(error = %error, "observation control IPC write failed");
     }
 }
 
 #[cfg(windows)]
-async fn run_pulse_control_server(
-    daemon: EvaPulseDaemon,
+async fn run_observation_control_server(
+    daemon: HiveObservationDaemon,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::net::windows::named_pipe::ServerOptions;
 
-    let pipe_name = std::env::var(HIVE_PULSE_CONTROL_PIPE_ENV)
+    let pipe_name = std::env::var(HIVE_OBSERVATION_CONTROL_PIPE_ENV)
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_HIVE_PULSE_CONTROL_PIPE.to_owned());
+        .unwrap_or_else(|| DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE.to_owned());
     let sid = evohime_desktop_ipc::windows_security::current_user_sid()?;
-    tracing::info!(pipe = %pipe_name, "pulse control IPC server listening");
+    tracing::info!(pipe = %pipe_name, "observation control IPC server listening");
 
     loop {
         let mut security = evohime_desktop_ipc::windows_security::PipeSecurity::owner_only(&sid)?;
@@ -1236,33 +1232,33 @@ async fn run_pulse_control_server(
         server.connect().await?;
         let daemon = daemon.clone();
         tokio::spawn(async move {
-            handle_pulse_control_connection(server, daemon).await;
+            handle_observation_control_connection(server, daemon).await;
         });
     }
 }
 
 #[cfg(unix)]
-async fn run_pulse_control_server(
-    daemon: EvaPulseDaemon,
+async fn run_observation_control_server(
+    daemon: HiveObservationDaemon,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let socket_path = match std::env::var_os(HIVE_PULSE_CONTROL_SOCKET_ENV) {
+    let socket_path = match std::env::var_os(HIVE_OBSERVATION_CONTROL_SOCKET_ENV) {
         Some(value) if !value.is_empty() => PathBuf::from(value),
         _ => {
             let paths = evohime_desktop_ipc::unix_runtime::UnixRuntimePaths::current()?;
-            paths.directory.join("hive-pulse.sock")
+            paths.directory.join("hive-observation.sock")
         }
     };
     if socket_path.exists() {
         let _ = std::fs::remove_file(&socket_path);
     }
     let listener = tokio::net::UnixListener::bind(&socket_path)?;
-    tracing::info!(socket = %socket_path.display(), "pulse control IPC server listening");
+    tracing::info!(socket = %socket_path.display(), "observation control IPC server listening");
 
     loop {
         let (stream, _) = listener.accept().await?;
         let daemon = daemon.clone();
         tokio::spawn(async move {
-            handle_pulse_control_connection(stream, daemon).await;
+            handle_observation_control_connection(stream, daemon).await;
         });
     }
 }

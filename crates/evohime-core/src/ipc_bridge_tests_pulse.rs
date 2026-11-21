@@ -7,23 +7,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::eva_pulse::{
-    EvaPulseDaemon, EvaPulseOptions, FailedWorkerContext, PulseCycleReport, PulseProbe,
-    PulseTaskSink,
+    FailedWorkerContext, HiveObservationDaemon, HiveObservationOptions, ObservationCycleReport,
+    ObservationProbe, ObservationTaskSink,
 };
-use crate::hive_state::{HIVE_PULSE_ACTIVE, HIVE_PULSE_DISABLED};
+use crate::hive_state::{HIVE_OBSERVATION_OBSERVING, HIVE_OBSERVATION_WAITING_FOR_TASKS};
 
 struct CalmProbe {
     cycles: AtomicUsize,
 }
 
-impl PulseProbe for CalmProbe {
+impl ObservationProbe for CalmProbe {
     fn observe(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<PulseCycleReport, String>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ObservationCycleReport, String>> + Send + '_>> {
         self.cycles.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
-            Ok(PulseCycleReport {
-                interval_secs: 1,
+            Ok(ObservationCycleReport {
+                local_observation_interval_secs: 1,
+                llm_dispatch_interval_secs: 300,
                 daily_cost_nano_usd: Some(0),
                 daily_budget_nano_usd: 500_000_000,
                 provider_window_exhausted: false,
@@ -48,7 +49,7 @@ impl PulseProbe for CalmProbe {
 
 struct NoopSink;
 
-impl PulseTaskSink for NoopSink {
+impl ObservationTaskSink for NoopSink {
     fn dispatch_recovery(
         &self,
         _failed_workers: &[FailedWorkerContext],
@@ -67,68 +68,61 @@ impl PulseTaskSink for NoopSink {
 }
 
 #[tokio::test]
-async fn pulse_daemon_starts_and_stops_via_ipc() {
+async fn observation_daemon_reports_status_and_wakes_on_settings_change_via_ipc() {
     let directory = tempfile::tempdir().expect("temp dir");
-    let journal = EventJournal::open(directory.path().join("pulse-ipc.db")).expect("journal opens");
+    let journal =
+        EventJournal::open(directory.path().join("observation-ipc.db")).expect("journal opens");
     let (coordinator, _events) = TaskCoordinator::new_with_journal(16, None, journal.clone());
     let probe = Arc::new(CalmProbe {
         cycles: AtomicUsize::new(0),
     });
-    let daemon = EvaPulseDaemon::spawn(
-        Arc::clone(&probe) as Arc<dyn PulseProbe>,
-        Arc::new(NoopSink) as Arc<dyn PulseTaskSink>,
-        EvaPulseOptions {
-            interval_override: Some(Duration::from_millis(10)),
+    let daemon = HiveObservationDaemon::spawn(
+        Arc::clone(&probe) as Arc<dyn ObservationProbe>,
+        Arc::new(NoopSink) as Arc<dyn ObservationTaskSink>,
+        HiveObservationOptions {
+            interval_override: Some(Duration::from_secs(60)),
+            llm_dispatch_interval_override: Some(Duration::from_secs(300)),
         },
         None,
     );
-    daemon.set_enabled(false);
     daemon.run();
     let bridge = IpcBridge::with_coordinator(journal, coordinator)
-        .with_pulse_daemon(Arc::new(daemon.clone()));
+        .with_observation_daemon(Arc::new(daemon.clone()));
+
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    let initial_cycles = probe.cycles.load(Ordering::SeqCst);
+    assert!(initial_cycles >= 1);
 
     let (event_type, payload) = super::ambient::ambient_call(
         &bridge,
-        generated::command_envelope::Command::TogglePulse(generated::TogglePulseCommand {
-            schema_version: 1,
-            request_id: "pulse-off".into(),
-            enabled: false,
-        }),
+        generated::command_envelope::Command::HiveObservationStatus(
+            generated::HiveObservationStatusCommand {
+                schema_version: 1,
+                request_id: "observation-status".into(),
+            },
+        ),
     )
     .await;
-    assert_eq!(event_type, "pulse.status");
-    assert_eq!(payload["status"], HIVE_PULSE_DISABLED);
-    assert_eq!(payload["enabled"], false);
-
-    let stopped_at = probe.cycles.load(Ordering::SeqCst);
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    assert_eq!(
-        probe.cycles.load(Ordering::SeqCst),
-        stopped_at,
-        "a disabled daemon must not run cycles"
-    );
-
-    let (event_type, payload) = super::ambient::ambient_call(
-        &bridge,
-        generated::command_envelope::Command::TogglePulse(generated::TogglePulseCommand {
-            schema_version: 1,
-            request_id: "pulse-on".into(),
-            enabled: true,
-        }),
-    )
-    .await;
-    assert_eq!(event_type, "pulse.status");
-    assert_eq!(payload["status"], HIVE_PULSE_ACTIVE);
+    assert_eq!(event_type, "hive.observation_status");
+    assert_eq!(payload["owner"], "hive_observation");
+    assert_eq!(payload["status"], HIVE_OBSERVATION_WAITING_FOR_TASKS);
     assert_eq!(payload["enabled"], true);
 
-    tokio::time::sleep(Duration::from_millis(60)).await;
+    bridge
+        .set_hive_setting("proactive_evolution_enabled", "true")
+        .await
+        .expect("setting saves");
+    tokio::time::sleep(Duration::from_millis(30)).await;
     assert!(
-        probe.cycles.load(Ordering::SeqCst) > stopped_at,
-        "an enabled daemon must run cycles"
+        probe.cycles.load(Ordering::SeqCst) > initial_cycles,
+        "internal notify must wake Level 1 observation on settings change"
     );
 
     let snapshot = bridge.hive_state_snapshot().await;
-    assert_eq!(snapshot.pulse_status, HIVE_PULSE_ACTIVE);
+    assert!(
+        snapshot.observation_status == HIVE_OBSERVATION_WAITING_FOR_TASKS
+            || snapshot.observation_status == HIVE_OBSERVATION_OBSERVING
+    );
     daemon.shutdown();
 }
 

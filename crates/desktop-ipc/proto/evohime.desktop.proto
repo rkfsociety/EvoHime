@@ -1990,12 +1990,12 @@ message CommandEnvelope {
     ForkCapabilityRecipeRun fork_capability_recipe_run = 284;
     ImageGenerationCommand image_generation = 285;
     HiveStateCommand hive_state = 286;
-    TogglePulseCommand toggle_pulse = 287;
+    // Field 287 was previously toggle_pulse (removed in favor of autonomous observation).
     SetEvaWorkspacePathCommand set_eva_workspace_path = 288;
     ValidateEvaWorkspacePathCommand validate_eva_workspace_path = 289;
     SetHiveSettingCommand set_hive_setting = 290;
     ListAnalysisKernels list_analysis_kernels = 291;
-    EvaPulseStatusCommand eva_pulse_status = 292;
+    HiveObservationStatusCommand hive_observation_status = 292;
     SubmitHiveAuditCommand submit_hive_audit = 293;
     PruneHiveSignalRecordsCommand prune_hive_signal_records = 294;
     GetHiveModelUsageCommand get_hive_model_usage = 295;
@@ -2012,19 +2012,9 @@ message HiveStateCommand {
   string request_id = 2;
 }
 
-// Enables or parks the Core-owned EvaPulse background loop. This is a runtime
-// switch, not an authorization decision: the daemon still enforces the daily
-// budget and provider caps on every cycle. A false value stops new cycles
-// immediately; true runs a cycle without waiting for the previous interval.
-message TogglePulseCommand {
-  uint32 schema_version = 1;
-  string request_id = 2;
-  bool enabled = 3;
-}
-
-// Reads the independent EvaPulse lifecycle projection. This does not return
-// Hive task state and does not change the daemon.
-message EvaPulseStatusCommand {
+// Reads the independent Hive observation lifecycle projection. This does not
+// return Hive task state and does not alter the autonomous observation loop.
+message HiveObservationStatusCommand {
   uint32 schema_version = 1;
   string request_id = 2;
 }

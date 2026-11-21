@@ -705,16 +705,16 @@ pub struct IpcBridge {
         Arc<tokio::sync::Mutex<HashMap<String, crate::browser_backend::BrowserBackendProcess>>>,
     /// Bounded owner for detached IPC workflows and long-running operations.
     background_tasks: Arc<crate::bounded_tasks::BoundedTaskGroup>,
-    /// Core-owned or external EvaPulse handle attached by the process bootstrap.
+    /// Core-owned or external Hive observation daemon handle attached by the process bootstrap.
     ///
-    /// `None` in tests and console workflows means the toggle reports
-    /// `pulse_unavailable` instead of pretending a daemon is running.
-    pulse: Option<HivePulseHandle>,
+    /// `None` in tests and console workflows means status queries report
+    /// `unavailable` instead of pretending a daemon is running.
+    pulse: Option<HiveObservationHandle>,
 }
 
-pub(crate) enum HivePulseHandle {
-    Local(Arc<crate::eva_pulse::EvaPulseController>),
-    External(Arc<crate::external_pulse::ExternalHivePulseProxy>),
+pub(crate) enum HiveObservationHandle {
+    Local(Arc<crate::eva_pulse::HiveObservationController>),
+    External(Arc<crate::external_pulse::ExternalHiveObservationProxy>),
 }
 
 /// Client identity confirmed by the connection handshake.

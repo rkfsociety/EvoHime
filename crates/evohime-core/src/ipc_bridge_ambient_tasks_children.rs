@@ -510,16 +510,9 @@ impl IpcBridge {
                 )
                 .await?;
             }
-            Some(generated::command_envelope::Command::TogglePulse(request)) => {
-                let payload = match self.toggle_pulse(request.enabled).await {
-                    Ok(payload) => payload,
-                    Err(error) => error_response_payload(error),
-                };
-                self.write_response(writer, "pulse.status", payload).await?;
-            }
-            Some(generated::command_envelope::Command::EvaPulseStatus(_)) => {
-                let payload = self.eva_pulse_status_payload().await?;
-                self.write_response(writer, "eva_pulse.status", payload)
+            Some(generated::command_envelope::Command::HiveObservationStatus(_)) => {
+                let payload = self.hive_observation_status_payload().await?;
+                self.write_response(writer, "hive.observation_status", payload)
                     .await?;
             }
             Some(generated::command_envelope::Command::SetEvaWorkspacePath(request)) => {

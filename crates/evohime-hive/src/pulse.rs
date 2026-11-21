@@ -1,16 +1,15 @@
-//! EvaPulse: the Core-owned background daemon of the hive.
+//! Hive Observation Cycle: the autonomous two-level observation and decision
+//! daemon of the hive.
 //!
-//! The daemon wakes on a bounded interval, reads the same committed projection
-//! as the operations panel, and either logs a healthy cycle or asks the
-//! coordinator to investigate failed workers. It never retries a rate-limited
-//! provider request and it never uses the paid DeepSeek fallback: the only
-//! route allowed for a recovery task is the primary LiteRouter route.
+//! Level 1 (`LOCAL_OBSERVATION`, always active on `local_observation_interval_secs`)
+//! checks watched repositories, synchronizes `HiveSettings`, refreshes rate limits
+//! from Core, and replays the durable journal without making any LLM calls.
 //!
-//! Budget protection is deliberately conservative. A zero daily budget, a
-//! reached daily estimate, or an exhausted provider window parks the loop until
-//! the exact reset moment Core can compute. When budget/usage history is
-//! unavailable the daemon does not invent a spend value; it also does not gain
-//! access to any paid fallback, so an unknown cost cannot turn into a charge.
+//! Level 2 (`LLM_DISPATCH`, conditional on `llm_dispatch_interval_secs`) runs only
+//! when Level 1 detects actionable work (failed workers or proactive roadmap items)
+//! and all budget/rate-limit/quota checks pass. When limits are active, Level 2 is
+//! skipped while Level 1 continues observing (`waiting_for_limits`); `sleeping` is
+//! reserved exclusively for `observation_failed` errors.
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -26,10 +25,13 @@ use evohime_model_gateway::ModelGatewayConfig;
 
 use crate::observation::{self, HiveChildState, MinimalChildWorkflowPayload, HIVE_REPLAY_WINDOW};
 use crate::pulse_boundary::{self, EvaPulseSignal, EvaPulseSignalKind, HiveSignalReceiver};
-use crate::settings::HiveSettings;
+use crate::settings::{
+    HiveSettings, DEFAULT_LLM_DISPATCH_INTERVAL_SECS, DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS,
+};
 use crate::state::{
-    quota_window_start_ms, HiveStateSnapshot, HIVE_DAY_WINDOW_MS, HIVE_PULSE_ACTIVE,
-    HIVE_PULSE_DISABLED, HIVE_PULSE_SLEEPING,
+    quota_window_start_ms, HiveStateSnapshot, HIVE_DAY_WINDOW_MS, HIVE_OBSERVATION_OBSERVING,
+    HIVE_OBSERVATION_SLEEPING, HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+    HIVE_OBSERVATION_WAITING_FOR_TASKS,
 };
 
 /// Maximum number of failed workers named in one recovery task.
@@ -38,13 +40,17 @@ const MAX_REPORTED_FAILURES: usize = 8;
 const MAX_SEEN_FAILURES: usize = 512;
 /// Maximum number of uncompleted roadmap items passed to the Queen in one cycle.
 const MAX_ROADMAP_ITEMS: usize = 30;
-/// Fallback interval used when settings cannot be read.
-const FALLBACK_INTERVAL: Duration = Duration::from_secs(1_800);
+/// Fallback Level 1 monitoring interval used when settings cannot be read.
+const FALLBACK_LOCAL_OBSERVATION_INTERVAL: Duration =
+    Duration::from_secs(DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS);
+/// Fallback Level 2 LLM dispatch interval used when settings cannot be read.
+const FALLBACK_LLM_DISPATCH_INTERVAL: Duration =
+    Duration::from_secs(DEFAULT_LLM_DISPATCH_INTERVAL_SECS);
 /// Keep a small response allowance so a quota-limited provider can complete a task.
 const ROUTMY_MIN_TOKENS_THRESHOLD: u64 = 1_000;
 
 /// Boxed future used by the probe/sink seams.
-pub type PulseFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub type ObservationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Bounded diagnostic context extracted for one failed child worker.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,11 +103,13 @@ impl FailedWorkerContext {
     }
 }
 
-/// Observable result of one background cycle.
+/// Observable result of one Level 1 local observation cycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PulseCycleReport {
-    /// Interval requested by the persisted settings.
-    pub interval_secs: u64,
+pub struct ObservationCycleReport {
+    /// Level 1 local observation monitoring interval requested by persisted settings.
+    pub local_observation_interval_secs: u64,
+    /// Level 2 conditional LLM dispatch interval requested by persisted settings.
+    pub llm_dispatch_interval_secs: u64,
     /// Estimated spend for the current UTC day, when the tariff is known.
     pub daily_cost_nano_usd: Option<u64>,
     /// Daily ceiling from [`HiveSettings`], in nano-USD; `0` blocks all work.
@@ -149,12 +157,12 @@ pub struct RoadmapItem {
     pub text: String,
 }
 
-/// Pure decision for one cycle.
+/// Pure decision for one observation cycle.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PulseDecision {
-    /// Park the loop until the limit resets.
-    Sleep {
-        /// Last blocking reset moment, when known.
+pub(crate) enum ObservationDecision {
+    /// Skip Level 2 LLM dispatch while limits/budget/quota are active; continue Level 1 observation.
+    WaitingForLimits {
+        /// Known limit reset moment, when available.
         wake_at_ms: Option<i64>,
         /// Stable reason code for logs and the snapshot.
         reason: &'static str,
@@ -173,10 +181,10 @@ pub(crate) enum PulseDecision {
     AllGood,
 }
 
-/// Source of one bounded background observation.
-pub trait PulseProbe: Send + Sync {
-    /// Reads committed state; a failure parks the loop instead of inventing work.
-    fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>>;
+/// Source of one bounded Level 1 local observation.
+pub trait ObservationProbe: Send + Sync {
+    /// Reads committed state; a failure switches to `sleeping` (`observation_failed`) for one monitoring interval.
+    fn observe(&self) -> ObservationFuture<'_, Result<ObservationCycleReport, String>>;
 
     /// Records that a recovery task was dispatched for the given failed workers.
     fn mark_recovery_dispatched(&self, _task_id: &str, _failed_workers: &[String]) {}
@@ -191,14 +199,14 @@ pub trait PulseProbe: Send + Sync {
     }
 }
 
-/// Sink that asks Core to investigate failed workers or evolve proactively.
-pub trait PulseTaskSink: Send + Sync {
+/// Sink that asks Core to investigate failed workers or evolve proactively (Level 2 LLM dispatch).
+pub trait ObservationTaskSink: Send + Sync {
     /// Dispatches one bounded recovery task and returns its task id.
     fn dispatch_recovery(
         &self,
         failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
-    ) -> PulseFuture<'_, Result<String, String>>;
+    ) -> ObservationFuture<'_, Result<String, String>>;
 
     /// Dispatches one bounded recovery task via the fallback free provider (e.g. `rout.my`).
     fn dispatch_recovery_fallback(
@@ -206,7 +214,7 @@ pub trait PulseTaskSink: Send + Sync {
         failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
         fallback_provider: evohime_model_gateway::providers::ProviderKind,
-    ) -> PulseFuture<'_, Result<String, String>> {
+    ) -> ObservationFuture<'_, Result<String, String>> {
         let _ = (failed_workers, eva_workspace_path, fallback_provider);
         Box::pin(async { Err("fallback_provider_unavailable".to_owned()) })
     }
@@ -216,62 +224,59 @@ pub trait PulseTaskSink: Send + Sync {
         &self,
         items: &[RoadmapItem],
         eva_workspace_path: Option<&str>,
-    ) -> PulseFuture<'_, Result<String, String>>;
+    ) -> ObservationFuture<'_, Result<String, String>>;
 }
 
-/// Process-wide status projection of the daemon.
+/// Process-wide status projection of the observation daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PulseStatus {
-    /// `active`, `disabled`, or `sleeping`.
+pub struct ObservationStatus {
+    /// `observing`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, or `sleeping` (`observation_failed`).
     pub status: String,
-    /// Unix milliseconds at which the daemon plans its next cycle.
+    /// Unix milliseconds at which the daemon plans its next observation cycle.
     pub next_wake_at_ms: Option<i64>,
-    /// Whether the user left the daemon enabled.
+    /// Whether the observation cycle is active.
     pub enabled: bool,
 }
 
-/// Versioned, Pulse-owned lifecycle projection independent from Hive state.
+/// Versioned, observation-owned lifecycle projection independent from Hive state.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct EvaPulseSnapshot {
+pub struct HiveObservationSnapshot {
     /// Projection contract version.
     pub schema_version: u32,
     /// Stable owner name for consumers that combine multiple runtime states.
     pub owner: String,
-    /// `active`, `disabled`, or `sleeping`.
+    /// `observing`, `waiting_for_limits`, `waiting_for_tasks`, `disabled`, or `sleeping` (`observation_failed`).
     pub status: String,
-    /// Whether the user left EvaPulse enabled.
+    /// Whether the observation cycle is active.
     pub enabled: bool,
-    /// Unix milliseconds at which the next cycle is expected.
+    /// Unix milliseconds at which the next observation cycle is expected.
     pub next_wake_at_ms: Option<i64>,
 }
 
-/// Default Windows named pipe path used for Core-to-daemon pulse control.
-pub const DEFAULT_HIVE_PULSE_CONTROL_PIPE: &str = r"\\.\pipe\evohime-hive-pulse";
+/// Default Windows named pipe path used for Core-to-daemon observation status queries.
+pub const DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE: &str = r"\\.\pipe\evohime-hive-observation";
 
-/// Environment variable overriding the Windows named pipe path for pulse control.
-pub const HIVE_PULSE_CONTROL_PIPE_ENV: &str = "EVOHIME_HIVE_CONTROL_PIPE";
+/// Environment variable overriding the Windows named pipe path for observation control.
+pub const HIVE_OBSERVATION_CONTROL_PIPE_ENV: &str = "EVOHIME_HIVE_CONTROL_PIPE";
 
-/// Environment variable overriding the Unix socket path for pulse control.
-pub const HIVE_PULSE_CONTROL_SOCKET_ENV: &str = "EVOHIME_HIVE_CONTROL_SOCKET";
+/// Environment variable overriding the Unix socket path for observation control.
+pub const HIVE_OBSERVATION_CONTROL_SOCKET_ENV: &str = "EVOHIME_HIVE_CONTROL_SOCKET";
 
-/// Control command sent from Core to the external `evohime-hive-daemon`.
+/// Read-only status query sent from Core to the external `evohime-hive-daemon`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
-pub enum HivePulseControlRequest {
-    /// Enables or pauses the external EvaPulse loop.
-    TogglePulse {
-        /// Desired enabled state.
-        enabled: bool,
-    },
-    /// Requests the current EvaPulse snapshot.
-    GetPulseStatus,
+pub enum HiveObservationControlRequest {
+    /// Requests the current `HiveObservationSnapshot`.
+    GetObservationStatus,
 }
 
-/// Test seam for the loop interval.
+/// Test seam for the observation and dispatch intervals.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct EvaPulseOptions {
-    /// Overrides the persisted interval; production leaves this unset.
+pub struct HiveObservationOptions {
+    /// Overrides the Level 1 local observation interval; production leaves this unset.
     pub interval_override: Option<Duration>,
+    /// Overrides the Level 2 LLM dispatch interval; production leaves this unset.
+    pub llm_dispatch_interval_override: Option<Duration>,
 }
 
 struct DaemonState {
@@ -282,16 +287,17 @@ struct DaemonState {
     cycles: u64,
     reason: &'static str,
     last_logged_state: Option<(bool, &'static str)>,
-    last_heartbeat_at: Option<std::time::Instant>,
+    last_status_emit_at: Option<std::time::Instant>,
     last_proactive_enabled: Option<bool>,
 }
 
 struct Inner {
-    probe: Arc<dyn PulseProbe>,
-    tasks: Arc<dyn PulseTaskSink>,
-    options: EvaPulseOptions,
+    probe: Arc<dyn ObservationProbe>,
+    tasks: Arc<dyn ObservationTaskSink>,
+    options: HiveObservationOptions,
     telemetry: Option<Arc<dyn HiveTelemetrySink>>,
     state: std::sync::Mutex<DaemonState>,
+    last_llm_dispatch_at: std::sync::Mutex<Option<std::time::Instant>>,
     dispatched_evolutions: std::sync::Mutex<HashSet<String>>,
     notify: tokio::sync::Notify,
     shutdown: tokio_util::sync::CancellationToken,
@@ -299,61 +305,61 @@ struct Inner {
     cycle_counter: AtomicU64,
 }
 
-/// Cloneable handle to the Core-owned background loop.
+/// Cloneable handle to the autonomous Hive observation daemon.
 #[derive(Clone)]
-pub struct EvaPulseDaemon {
+pub struct HiveObservationDaemon {
     inner: Arc<Inner>,
 }
 
 /// Narrow lifecycle owner exposed to IPC and diagnostics.
 ///
-/// The bridge can control and observe EvaPulse without receiving the daemon's
-/// probe, task sink, or internal loop state. Hive state remains a separate
-/// projection and is not owned by this controller.
+/// The bridge can notify settings changes and observe the daemon without receiving
+/// its probe, task sink, or internal decision loop state. Hive state remains a
+/// separate projection and is not owned by this controller.
 #[derive(Clone)]
-pub struct EvaPulseController {
-    daemon: EvaPulseDaemon,
+pub struct HiveObservationController {
+    daemon: HiveObservationDaemon,
 }
 
-impl EvaPulseController {
-    /// Creates a control handle for one Core-owned EvaPulse daemon.
-    pub fn new(daemon: EvaPulseDaemon) -> Self {
+impl HiveObservationController {
+    /// Creates a control handle for one Hive observation daemon.
+    pub fn new(daemon: HiveObservationDaemon) -> Self {
         Self { daemon }
     }
 
-    /// Enables or parks EvaPulse without changing Hive-owned task state.
-    pub fn set_enabled(&self, enabled: bool) {
-        self.daemon.set_enabled(enabled);
+    /// Wakes the autonomous observation loop immediately after a settings change.
+    pub fn notify_settings_changed(&self) {
+        self.daemon.notify_settings_changed();
     }
 
-    /// Returns the independent EvaPulse lifecycle projection.
-    pub fn status(&self) -> PulseStatus {
+    /// Returns the independent observation lifecycle projection.
+    pub fn status(&self) -> ObservationStatus {
         self.daemon.status()
     }
 
-    /// Returns a versioned projection owned exclusively by EvaPulse.
-    pub fn snapshot(&self) -> EvaPulseSnapshot {
+    /// Returns a versioned projection owned exclusively by the observation daemon.
+    pub fn snapshot(&self) -> HiveObservationSnapshot {
         let status = self.status();
-        EvaPulseSnapshot {
+        HiveObservationSnapshot {
             schema_version: 1,
-            owner: "eva_pulse".to_owned(),
+            owner: "hive_observation".to_owned(),
             status: status.status,
             enabled: status.enabled,
             next_wake_at_ms: status.next_wake_at_ms,
         }
     }
 
-    /// Stops EvaPulse without cancelling already accepted Hive tasks.
+    /// Stops the observation daemon without cancelling already accepted Hive tasks.
     pub fn shutdown(&self) {
         self.daemon.shutdown();
     }
 }
 
-impl EvaPulseDaemon {
+impl HiveObservationDaemon {
     /// Starts the production daemon backed by the durable journal.
     ///
-    /// The daemon reads `HiveSettings` before every cycle, so a changed interval
-    /// or budget takes effect without restarting Core.
+    /// The daemon reads `HiveSettings` on every Level 1 observation cycle, so a
+    /// changed interval or budget takes effect without restarting Core.
     pub fn start(
         journal: Arc<dyn HiveJournalProvider>,
         gateway_config: Option<ModelGatewayConfig>,
@@ -362,28 +368,28 @@ impl EvaPulseDaemon {
         telemetry: Option<Arc<dyn HiveTelemetrySink>>,
     ) -> Self {
         let receiver = HiveSignalReceiver::new(coordinator).with_journal(Arc::clone(&journal));
-        let probe = Arc::new(JournalPulseProbe::new(
+        let probe = Arc::new(JournalObservationProbe::new(
             Arc::clone(&journal),
             gateway_config.clone(),
             workspace_provider,
         ));
         let sink = Arc::new(
-            CoordinatorPulseTaskSink::new_with_receiver(
+            CoordinatorObservationTaskSink::new_with_receiver(
                 receiver,
                 observation::isolated_hive_route_name(gateway_config.as_ref()),
             )
             .with_hive_settings_source(journal, gateway_config),
         );
-        let daemon = Self::spawn(probe, sink, EvaPulseOptions::default(), telemetry);
+        let daemon = Self::spawn(probe, sink, HiveObservationOptions::default(), telemetry);
         daemon.run();
         daemon
     }
 
     /// Builds a daemon from explicit probe and sink seams.
     pub fn spawn(
-        probe: Arc<dyn PulseProbe>,
-        tasks: Arc<dyn PulseTaskSink>,
-        options: EvaPulseOptions,
+        probe: Arc<dyn ObservationProbe>,
+        tasks: Arc<dyn ObservationTaskSink>,
+        options: HiveObservationOptions,
         telemetry: Option<Arc<dyn HiveTelemetrySink>>,
     ) -> Self {
         let inner = Arc::new(Inner {
@@ -393,14 +399,15 @@ impl EvaPulseDaemon {
             telemetry,
             state: std::sync::Mutex::new(DaemonState {
                 enabled: true,
-                status: HIVE_PULSE_ACTIVE,
+                status: HIVE_OBSERVATION_OBSERVING,
                 next_wake_at_ms: None,
                 cycles: 0,
                 reason: "",
                 last_logged_state: None,
-                last_heartbeat_at: None,
+                last_status_emit_at: None,
                 last_proactive_enabled: None,
             }),
+            last_llm_dispatch_at: std::sync::Mutex::new(None),
             dispatched_evolutions: std::sync::Mutex::new(HashSet::new()),
             notify: tokio::sync::Notify::new(),
             shutdown: tokio_util::sync::CancellationToken::new(),
@@ -410,51 +417,41 @@ impl EvaPulseDaemon {
         Self { inner }
     }
 
-    /// Starts the loop once; repeated calls are no-ops.
+    /// Starts the autonomous observation loop once; repeated calls are no-ops.
     pub fn run(&self) {
         if self.inner.started.swap(true, Ordering::SeqCst) {
             return;
         }
         let inner = Arc::clone(&self.inner);
-        tokio::spawn(async move { inner.run_loop().await });
+        tokio::spawn(async move { inner.autonomous_observation_loop().await });
     }
 
-    /// Enables or parks the loop.
-    ///
-    /// Disabling wakes a sleeping loop immediately and changes the published
-    /// status to `disabled`; enabling runs a cycle without waiting for the
-    /// previous interval to elapse.
-    pub fn set_enabled(&self, enabled: bool) {
+    /// Wakes the autonomous observation loop immediately via internal notify when
+    /// settings change, without external commands.
+    pub fn notify_settings_changed(&self) {
         {
             let mut state = self.lock_state();
-            state.enabled = enabled;
             state.next_wake_at_ms = None;
-            state.status = if enabled {
-                HIVE_PULSE_ACTIVE
-            } else {
-                HIVE_PULSE_DISABLED
-            };
-            state.reason = if enabled { "" } else { "user_disabled" };
         }
         self.inner.notify.notify_one();
     }
 
     /// Returns the current published status.
-    pub fn status(&self) -> PulseStatus {
+    pub fn status(&self) -> ObservationStatus {
         let state = self.lock_state();
-        PulseStatus {
+        ObservationStatus {
             status: state.status.to_owned(),
             next_wake_at_ms: state.next_wake_at_ms,
             enabled: state.enabled,
         }
     }
 
-    /// Number of completed cycles; used by focused tests.
+    /// Number of completed observation cycles; used by focused tests.
     pub fn cycle_count(&self) -> u64 {
         self.inner.cycle_counter.load(Ordering::SeqCst)
     }
 
-    /// Stops the loop and releases its task.
+    /// Stops the observation loop and releases its task.
     pub fn shutdown(&self) {
         self.inner.shutdown.cancel();
         self.inner.notify.notify_one();
@@ -475,18 +472,11 @@ impl Inner {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    async fn run_loop(self: Arc<Self>) {
+    async fn autonomous_observation_loop(self: Arc<Self>) {
         let mut wait = Duration::ZERO;
         loop {
             if self.shutdown.is_cancelled() {
                 return;
-            }
-            if !self.state().enabled {
-                self.publish(HIVE_PULSE_DISABLED, None, "user_disabled");
-                tokio::select! {
-                    _ = self.shutdown.cancelled() => return,
-                    _ = self.notify.notified() => continue,
-                }
             }
             if !wait.is_zero() {
                 tokio::select! {
@@ -501,79 +491,95 @@ impl Inner {
             if self.shutdown.is_cancelled() {
                 return;
             }
-            if !self.state().enabled {
-                continue;
-            }
-            wait = self.run_cycle().await;
+            wait = self.run_observation_cycle().await;
         }
     }
 
-    async fn run_cycle(&self) -> Duration {
-        self.publish(HIVE_PULSE_ACTIVE, None, "");
+    fn llm_dispatch_due(&self, llm_interval: Duration) -> bool {
+        let guard = self
+            .last_llm_dispatch_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.is_none_or(|last| last.elapsed() >= llm_interval)
+    }
+
+    fn mark_llm_dispatched(&self) {
+        let mut guard = self
+            .last_llm_dispatch_at
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = Some(std::time::Instant::now());
+    }
+
+    async fn run_observation_cycle(&self) -> Duration {
+        // LEVEL 1: LOCAL_OBSERVATION (always active, no LLM calls).
+        self.publish(HIVE_OBSERVATION_OBSERVING, None, "");
         let report = match self.probe.observe().await {
             Ok(report) => report,
             Err(error) => {
                 self.log(
                     "warning",
-                    "eva_pulse.cycle_failed",
+                    "hive.observation_cycle_failed",
                     serde_json::json!({ "error": error }),
                 );
-                let interval = self.interval(None);
+                let local_interval = self.local_observation_interval(None);
                 self.publish(
-                    HIVE_PULSE_SLEEPING,
-                    next_wake_at(interval),
+                    HIVE_OBSERVATION_SLEEPING,
+                    next_wake_at(local_interval),
                     "observation_failed",
                 );
                 self.cycle_counter.fetch_add(1, Ordering::SeqCst);
-                return interval;
+                return local_interval;
             }
         };
         {
             let mut state = self.state();
             let proactive_enabled = report.proactive_evolution_enabled;
             if let Some(prev) = state.last_proactive_enabled {
-                if prev != proactive_enabled {
-                    if proactive_enabled {
-                        state.next_wake_at_ms = None;
-                        self.notify.notify_one();
-                    } else {
-                        state.enabled = false;
+                if prev != proactive_enabled && proactive_enabled {
+                    state.next_wake_at_ms = None;
+                    if let Ok(mut last_dispatch) = self.last_llm_dispatch_at.lock() {
+                        *last_dispatch = None;
                     }
+                    self.notify.notify_one();
                 }
             }
             state.last_proactive_enabled = Some(proactive_enabled);
         }
-        // A toggle that arrived while the probe was reading wins over the
-        // decision: the daemon must not dispatch work after the user stopped it.
-        if !self.state().enabled {
-            self.publish(HIVE_PULSE_DISABLED, None, "user_disabled");
-            return Duration::ZERO;
-        }
+
         let now = now_millis();
-        let interval = self.interval(Some(report.interval_secs));
+        let local_interval =
+            self.local_observation_interval(Some(report.local_observation_interval_secs));
+        let llm_interval = self.llm_dispatch_interval(Some(report.llm_dispatch_interval_secs));
         let decision = decide(&report, now);
         self.cycle_counter.fetch_add(1, Ordering::SeqCst);
+
         match decision {
-            PulseDecision::Sleep { wake_at_ms, reason } => {
-                let wait = wait_until(wake_at_ms, now, interval);
+            ObservationDecision::WaitingForLimits { wake_at_ms, reason } => {
+                // Limits active: skip LEVEL 2 LLM_DISPATCH, continue LEVEL 1 LOCAL_OBSERVATION.
                 self.publish(
-                    HIVE_PULSE_SLEEPING,
-                    wake_at_ms.or_else(|| next_wake_at(interval)),
+                    HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+                    next_wake_at(local_interval),
                     reason,
                 );
                 self.log(
                     "info",
-                    "eva_pulse.sleeping",
+                    "hive.observation_waiting_for_limits",
                     serde_json::json!({
                         "reason": reason,
-                        "next_wake_at_ms": wake_at_ms,
+                        "limit_wake_at_ms": wake_at_ms,
+                        "next_observation_at_ms": next_wake_at(local_interval),
                         "budget_nano_usd": report.daily_budget_nano_usd,
                         "spent_nano_usd": report.daily_cost_nano_usd,
                     }),
                 );
-                wait
+                local_interval
             }
-            PulseDecision::Recover { failed_workers } => {
+            ObservationDecision::Recover { failed_workers } => {
+                if !self.llm_dispatch_due(llm_interval) {
+                    self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
+                    return local_interval;
+                }
                 let contexts = if report.failed_worker_contexts.is_empty() {
                     failed_workers
                         .iter()
@@ -599,8 +605,9 @@ impl Inner {
                             fallback_provider,
                         )
                         .await;
-                        self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
-                        return interval;
+                        self.mark_llm_dispatched();
+                        self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
+                        return local_interval;
                     }
                 }
 
@@ -615,23 +622,24 @@ impl Inner {
                             fallback_provider,
                         )
                         .await;
-                        self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
-                        return interval;
+                        self.mark_llm_dispatched();
+                        self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
+                        return local_interval;
                     }
                     self.publish(
-                        HIVE_PULSE_SLEEPING,
-                        next_wake_at(interval),
+                        HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+                        next_wake_at(local_interval),
                         "primary_route_unavailable",
                     );
                     self.log(
                         "warning",
-                        "eva_pulse.recovery_skipped",
+                        "hive.recovery_skipped",
                         serde_json::json!({
                             "reason": "primary_route_unavailable",
                             "failed_workers": failed_workers,
                         }),
                     );
-                    return interval;
+                    return local_interval;
                 }
 
                 match self
@@ -640,11 +648,12 @@ impl Inner {
                     .await
                 {
                     Ok(task_id) => {
+                        self.mark_llm_dispatched();
                         self.probe
                             .mark_recovery_dispatched(&task_id, &failed_workers);
                         self.log(
                             "warning",
-                            "eva_pulse.recovery_dispatched",
+                            "hive.recovery_dispatched",
                             serde_json::json!({
                                 "task_id": task_id,
                                 "failed_workers": failed_workers,
@@ -665,19 +674,19 @@ impl Inner {
                                     fallback_provider,
                                 )
                                 .await;
+                                self.mark_llm_dispatched();
                             } else if !report.allow_paid_fallback {
-                                let wake_at = quota_wake_at(now, report.quota_reset_utc_midnight);
                                 self.publish(
-                                    HIVE_PULSE_SLEEPING,
-                                    Some(wake_at),
+                                    HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+                                    next_wake_at(local_interval),
                                     "routmy_quota_exhausted",
                                 );
-                                return wait_until(Some(wake_at), now, interval);
+                                return local_interval;
                             }
                         } else {
                             self.log(
                                 "warning",
-                                "eva_pulse.recovery_failed",
+                                "hive.recovery_failed",
                                 serde_json::json!({ "error": error }),
                             );
                         }
@@ -685,30 +694,34 @@ impl Inner {
                     Err(error) => {
                         self.log(
                             "warning",
-                            "eva_pulse.recovery_failed",
+                            "hive.recovery_failed",
                             serde_json::json!({ "error": error }),
                         );
                     }
                 }
-                self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
-                interval
+                self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
+                local_interval
             }
-            PulseDecision::Evolve { items } => {
+            ObservationDecision::Evolve { items } => {
+                if !self.llm_dispatch_due(llm_interval) {
+                    self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
+                    return local_interval;
+                }
                 if !report.route_is_primary {
                     self.publish(
-                        HIVE_PULSE_SLEEPING,
-                        next_wake_at(interval),
+                        HIVE_OBSERVATION_WAITING_FOR_LIMITS,
+                        next_wake_at(local_interval),
                         "primary_route_unavailable",
                     );
                     self.log(
                         "warning",
-                        "eva_pulse.evolution_skipped",
+                        "hive.evolution_skipped",
                         serde_json::json!({
                             "reason": "primary_route_unavailable",
                             "items_count": items.len(),
                         }),
                     );
-                    return interval;
+                    return local_interval;
                 }
                 let batch_key = items
                     .iter()
@@ -729,8 +742,12 @@ impl Inner {
                     guard.contains(&batch_key)
                 };
                 if already_dispatched {
-                    self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
-                    return interval;
+                    self.publish(
+                        HIVE_OBSERVATION_WAITING_FOR_TASKS,
+                        next_wake_at(local_interval),
+                        "no_pending_tasks",
+                    );
+                    return local_interval;
                 }
                 match self
                     .tasks
@@ -738,6 +755,7 @@ impl Inner {
                     .await
                 {
                     Ok(task_id) => {
+                        self.mark_llm_dispatched();
                         {
                             let mut guard = self
                                 .dispatched_evolutions
@@ -755,7 +773,7 @@ impl Inner {
                         );
                         self.log(
                             "info",
-                            "eva_pulse.evolution_dispatched",
+                            "hive.evolution_dispatched",
                             serde_json::json!({
                                 "task_id": task_id,
                                 "items_count": items.len(),
@@ -765,7 +783,7 @@ impl Inner {
                     Err(error) => {
                         self.log(
                             "warning",
-                            "eva_pulse.evolution_failed",
+                            "hive.evolution_failed",
                             serde_json::json!({
                                 "error": error,
                                 "items_count": items.len(),
@@ -773,33 +791,52 @@ impl Inner {
                         );
                     }
                 }
-                self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
-                interval
+                self.publish(HIVE_OBSERVATION_OBSERVING, next_wake_at(local_interval), "");
+                local_interval
             }
-            PulseDecision::AllGood => {
-                tracing::debug!("EvaPulse: all good");
+            ObservationDecision::AllGood => {
+                tracing::debug!("Hive observation cycle: all good");
                 self.log(
                     "debug",
-                    "eva_pulse.all_good",
+                    "hive.observation_all_good",
                     serde_json::json!({ "cycles": self.cycle_counter.load(Ordering::SeqCst) }),
                 );
-                self.publish(HIVE_PULSE_ACTIVE, next_wake_at(interval), "");
-                interval
+                let status = if report.proactive_evolution_enabled {
+                    HIVE_OBSERVATION_OBSERVING
+                } else {
+                    HIVE_OBSERVATION_WAITING_FOR_TASKS
+                };
+                let reason = if report.proactive_evolution_enabled {
+                    ""
+                } else {
+                    "waiting_for_tasks"
+                };
+                self.publish(status, next_wake_at(local_interval), reason);
+                local_interval
             }
         }
     }
 
-    fn interval(&self, settings_secs: Option<u64>) -> Duration {
+    fn local_observation_interval(&self, settings_secs: Option<u64>) -> Duration {
         if let Some(override_interval) = self.options.interval_override {
             return override_interval.max(Duration::from_millis(1));
         }
         settings_secs
             .map(|secs| Duration::from_secs(secs.max(1)))
-            .unwrap_or(FALLBACK_INTERVAL)
+            .unwrap_or(FALLBACK_LOCAL_OBSERVATION_INTERVAL)
+    }
+
+    fn llm_dispatch_interval(&self, settings_secs: Option<u64>) -> Duration {
+        if let Some(override_interval) = self.options.llm_dispatch_interval_override {
+            return override_interval.max(Duration::from_millis(1));
+        }
+        settings_secs
+            .map(|secs| Duration::from_secs(secs.max(1)))
+            .unwrap_or(FALLBACK_LLM_DISPATCH_INTERVAL)
     }
 
     fn publish(&self, status: &'static str, next_wake_at_ms: Option<i64>, reason: &'static str) {
-        const STATUS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(300);
+        const STATUS_EMIT_INTERVAL: Duration = Duration::from_secs(300);
         let (should_log, enabled) = {
             let mut state = self.state();
             state.status = status;
@@ -807,12 +844,12 @@ impl Inner {
             state.reason = reason;
             let current = (state.enabled, status);
             let changed = state.last_logged_state != Some(current);
-            let heartbeat_due = state
-                .last_heartbeat_at
-                .is_none_or(|last| last.elapsed() >= STATUS_HEARTBEAT_INTERVAL);
-            if changed || heartbeat_due {
+            let emit_due = state
+                .last_status_emit_at
+                .is_none_or(|last| last.elapsed() >= STATUS_EMIT_INTERVAL);
+            if changed || emit_due {
                 state.last_logged_state = Some(current);
-                state.last_heartbeat_at = Some(std::time::Instant::now());
+                state.last_status_emit_at = Some(std::time::Instant::now());
                 (true, state.enabled)
             } else {
                 (false, state.enabled)
@@ -820,16 +857,16 @@ impl Inner {
         };
         if should_log {
             tracing::info!(
-                event = "eva_pulse.status",
+                event = "hive.observation_status",
                 status = %status,
                 enabled = enabled,
                 next_wake_at_ms = ?next_wake_at_ms,
                 reason = %reason,
-                "eva_pulse.status"
+                "hive.observation_status"
             );
             self.log(
                 "info",
-                "eva_pulse.status",
+                "hive.observation_status",
                 serde_json::json!({
                     "status": status,
                     "enabled": enabled,
@@ -863,7 +900,7 @@ impl Inner {
                     .mark_recovery_dispatched(&task_id, failed_workers);
                 self.log(
                     "warning",
-                    "eva_pulse.recovery_dispatched",
+                    "hive.recovery_dispatched",
                     serde_json::json!({
                         "task_id": task_id,
                         "failed_workers": failed_workers,
@@ -875,7 +912,7 @@ impl Inner {
             Err(error) => {
                 self.log(
                     "warning",
-                    "eva_pulse.recovery_failed",
+                    "hive.recovery_failed",
                     serde_json::json!({
                         "error": error,
                         "used_fallback": true,
@@ -886,14 +923,14 @@ impl Inner {
     }
 }
 
-/// Decides what one cycle does.
+/// Decides what one observation cycle does.
 ///
 /// The order is the safety contract: an explicit 429 window wins, then the
 /// daily ceiling, then a configured provider window, and only then may a
-/// recovery task be created.
-pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
+/// Level 2 LLM dispatch task be created.
+pub(crate) fn decide(report: &ObservationCycleReport, now_ms: i64) -> ObservationDecision {
     if let Some(until) = report.rate_limited_until_ms {
-        return PulseDecision::Sleep {
+        return ObservationDecision::WaitingForLimits {
             wake_at_ms: Some(until),
             reason: "provider_rate_limited",
         };
@@ -902,7 +939,7 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
         report.daily_budget_nano_usd == 0 || spent >= report.daily_budget_nano_usd
     });
     if budget_exhausted {
-        return PulseDecision::Sleep {
+        return ObservationDecision::WaitingForLimits {
             wake_at_ms: Some(next_utc_midnight(now_ms)),
             reason: "daily_budget_exhausted",
         };
@@ -912,7 +949,7 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
         .routmy_tokens_remaining
         .is_some_and(|rem| rem < ROUTMY_MIN_TOKENS_THRESHOLD);
     if routmy_active && routmy_exhausted && !report.allow_paid_fallback {
-        return PulseDecision::Sleep {
+        return ObservationDecision::WaitingForLimits {
             wake_at_ms: Some(quota_wake_at(now_ms, report.quota_reset_utc_midnight)),
             reason: "routmy_quota_exhausted",
         };
@@ -923,26 +960,26 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
             .is_none_or(|rem| rem >= ROUTMY_MIN_TOKENS_THRESHOLD);
     if report.literouter_all_models_exhausted && !routmy_fallback_available {
         if report.fallback_provider.is_some() && routmy_exhausted && !report.allow_paid_fallback {
-            return PulseDecision::Sleep {
+            return ObservationDecision::WaitingForLimits {
                 wake_at_ms: Some(quota_wake_at(now_ms, report.quota_reset_utc_midnight)),
                 reason: "routmy_quota_exhausted",
             };
         }
         if !report.allow_paid_fallback {
-            return PulseDecision::Sleep {
+            return ObservationDecision::WaitingForLimits {
                 wake_at_ms: report.provider_window_wake_at_ms,
                 reason: "literouter_all_models_exhausted",
             };
         }
     }
     if report.provider_window_exhausted && !routmy_fallback_available {
-        return PulseDecision::Sleep {
+        return ObservationDecision::WaitingForLimits {
             wake_at_ms: report.provider_window_wake_at_ms,
             reason: "provider_window_exhausted",
         };
     }
     if !report.failed_workers.is_empty() {
-        return PulseDecision::Recover {
+        return ObservationDecision::Recover {
             failed_workers: report.failed_workers.clone(),
         };
     }
@@ -950,11 +987,11 @@ pub(crate) fn decide(report: &PulseCycleReport, now_ms: i64) -> PulseDecision {
         && report.eva_workspace_path.is_some()
         && !report.roadmap_items.is_empty()
     {
-        return PulseDecision::Evolve {
+        return ObservationDecision::Evolve {
             items: report.roadmap_items.clone(),
         };
     }
-    PulseDecision::AllGood
+    ObservationDecision::AllGood
 }
 
 fn is_all_models_exhausted_error(error: &str) -> bool {
@@ -1017,14 +1054,6 @@ fn next_wake_at(interval: Duration) -> Option<i64> {
     Some(now.saturating_add(i64::try_from(interval.as_millis()).unwrap_or(i64::MAX)))
 }
 
-fn wait_until(wake_at_ms: Option<i64>, now_ms: i64, interval: Duration) -> Duration {
-    let Some(wake_at_ms) = wake_at_ms else {
-        return interval;
-    };
-    let remaining = wake_at_ms.saturating_sub(now_ms).max(1);
-    Duration::from_millis(u64::try_from(remaining).unwrap_or(u64::MAX))
-}
-
 /// Converts the persisted USD budget to the nano-USD unit used by the ledger.
 pub fn usd_to_nano_usd(value: f64) -> u64 {
     if !value.is_finite() || value <= 0.0 {
@@ -1061,7 +1090,7 @@ enum EvolutionOutcome {
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-struct PulseChildProjection {
+struct ObservationChildProjection {
     child_task_id: String,
     parent_task_id: String,
     role: String,
@@ -1079,7 +1108,7 @@ struct PulseChildProjection {
 }
 
 /// Production probe backed by the journal and the active route configuration.
-pub(crate) struct JournalPulseProbe {
+pub(crate) struct JournalObservationProbe {
     journal: Arc<dyn HiveJournalProvider>,
     gateway_config: Option<ModelGatewayConfig>,
     workspace_provider: Arc<dyn WorkspaceProvider>,
@@ -1090,7 +1119,7 @@ pub(crate) struct JournalPulseProbe {
     first_scan: AtomicBool,
 }
 
-impl JournalPulseProbe {
+impl JournalObservationProbe {
     /// Creates a probe over the shared journal and route configuration.
     pub(crate) fn new(
         journal: Arc<dyn HiveJournalProvider>,
@@ -1273,7 +1302,7 @@ impl JournalPulseProbe {
 
     fn new_failures(
         &self,
-        projections: &[PulseChildProjection],
+        projections: &[ObservationChildProjection],
         in_flight: &HashSet<String>,
     ) -> Vec<String> {
         let first_scan = self.first_scan.swap(false, Ordering::SeqCst);
@@ -1306,7 +1335,7 @@ impl JournalPulseProbe {
     }
 }
 
-impl PulseProbe for JournalPulseProbe {
+impl ObservationProbe for JournalObservationProbe {
     fn mark_recovery_dispatched(&self, task_id: &str, failed_workers: &[String]) {
         let mut pending = self
             .pending_recoveries
@@ -1348,7 +1377,7 @@ impl PulseProbe for JournalPulseProbe {
         });
     }
 
-    fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>> {
+    fn observe(&self) -> ObservationFuture<'_, Result<ObservationCycleReport, String>> {
         Box::pin(async move {
             let settings = load_hive_settings(&*self.journal).await;
             let now_ms = now_millis();
@@ -1461,8 +1490,9 @@ impl PulseProbe for JournalPulseProbe {
             )
             .is_some();
             let eva_workspace_path = settings.primary_workspace_path().map(str::to_owned);
-            Ok(PulseCycleReport {
-                interval_secs: settings.pulse_interval_secs,
+            Ok(ObservationCycleReport {
+                local_observation_interval_secs: settings.local_observation_interval_secs,
+                llm_dispatch_interval_secs: settings.llm_dispatch_interval_secs,
                 daily_cost_nano_usd: observation.daily_cost_nano_usd,
                 daily_budget_nano_usd: usd_to_nano_usd(settings.daily_budget_usd),
                 provider_window_exhausted: snapshot.budget.exhausted(),
@@ -1485,13 +1515,15 @@ impl PulseProbe for JournalPulseProbe {
     }
 }
 
-fn replay_projections_from_records(records: &[HiveEventRecord]) -> Vec<PulseChildProjection> {
+fn replay_projections_from_records(records: &[HiveEventRecord]) -> Vec<ObservationChildProjection> {
     let mut by_child = std::collections::BTreeMap::new();
     for record in records {
         if record.event_type != "child.workflow" {
             continue;
         }
-        if let Ok(projection) = serde_json::from_slice::<PulseChildProjection>(&record.payload) {
+        if let Ok(projection) =
+            serde_json::from_slice::<ObservationChildProjection>(&record.payload)
+        {
             by_child.insert(projection.child_task_id.clone(), projection);
         }
     }
@@ -1590,7 +1622,7 @@ fn extract_event_task_id(payload: &[u8]) -> Option<String> {
 
 fn build_failed_worker_contexts(
     failed_workers: &[String],
-    projections: &[PulseChildProjection],
+    projections: &[ObservationChildProjection],
     records: &[HiveEventRecord],
 ) -> Vec<FailedWorkerContext> {
     failed_workers
@@ -1700,7 +1732,7 @@ fn find_last_tool_and_path(
     (last_tool, file_path)
 }
 
-fn is_terminal_failure(projection: &PulseChildProjection) -> bool {
+fn is_terminal_failure(projection: &ObservationChildProjection) -> bool {
     projection.dead_letter
         || matches!(
             projection.state,
@@ -1712,7 +1744,7 @@ fn is_terminal_failure(projection: &PulseChildProjection) -> bool {
 }
 
 /// Production sink: one bounded Core task, never a paid provider fallback.
-pub(crate) struct CoordinatorPulseTaskSink {
+pub(crate) struct CoordinatorObservationTaskSink {
     receiver: HiveSignalReceiver,
     primary_route: Option<String>,
     preferred_route_hint: Option<String>,
@@ -1720,7 +1752,7 @@ pub(crate) struct CoordinatorPulseTaskSink {
     gateway_config: Option<ModelGatewayConfig>,
 }
 
-impl CoordinatorPulseTaskSink {
+impl CoordinatorObservationTaskSink {
     /// Creates a sink bound to the coordinator and the allowed route name.
     #[allow(dead_code)]
     pub(crate) fn new(
@@ -1783,7 +1815,7 @@ fn build_recovery_prompt(
     recovery_task_prompt(&incident, workspace_path)
 }
 
-/// Applies the typed EvaPulse → Hive boundary before creating a Hive task.
+/// Applies the typed observation → Hive boundary before creating a Hive task.
 ///
 /// The model prompt is intentionally not placed in the signal envelope. The
 /// envelope carries only bounded routing metadata; the accepted signal is
@@ -1791,15 +1823,15 @@ fn build_recovery_prompt(
 fn build_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<EvaPulseSignal, String> {
     let now_ms: i64 = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| "pulse_clock_before_unix_epoch".to_owned())?
+        .map_err(|_| "observation_clock_before_unix_epoch".to_owned())?
         .as_millis()
         .try_into()
-        .map_err(|_| "pulse_clock_out_of_range".to_owned())?;
+        .map_err(|_| "observation_clock_out_of_range".to_owned())?;
     let signal = EvaPulseSignal {
         schema_version: pulse_boundary::CONTRACT_VERSION,
         message_id: uuid::Uuid::new_v4().to_string(),
         correlation_id: uuid::Uuid::new_v4().to_string(),
-        source: "eva-pulse".to_owned(),
+        source: "hive-observation".to_owned(),
         idempotency_key: uuid::Uuid::new_v4().to_string(),
         kind: signal_kind,
         created_at_ms: now_ms,
@@ -1811,12 +1843,12 @@ fn build_hive_signal(signal_kind: EvaPulseSignalKind) -> Result<EvaPulseSignal, 
     Ok(signal)
 }
 
-impl PulseTaskSink for CoordinatorPulseTaskSink {
+impl ObservationTaskSink for CoordinatorObservationTaskSink {
     fn dispatch_recovery(
         &self,
         failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
-    ) -> PulseFuture<'_, Result<String, String>> {
+    ) -> ObservationFuture<'_, Result<String, String>> {
         let prompt = build_recovery_prompt(failed_workers, eva_workspace_path);
         self.dispatch_primary_task(prompt, EvaPulseSignalKind::RecoveryReview)
     }
@@ -1826,7 +1858,7 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
         failed_workers: &[FailedWorkerContext],
         eva_workspace_path: Option<&str>,
         _fallback_provider: evohime_model_gateway::providers::ProviderKind,
-    ) -> PulseFuture<'_, Result<String, String>> {
+    ) -> ObservationFuture<'_, Result<String, String>> {
         let prompt = build_recovery_prompt(failed_workers, eva_workspace_path);
         self.dispatch_fallback_task(prompt, EvaPulseSignalKind::RecoveryReview)
     }
@@ -1835,18 +1867,18 @@ impl PulseTaskSink for CoordinatorPulseTaskSink {
         &self,
         items: &[RoadmapItem],
         _eva_workspace_path: Option<&str>,
-    ) -> PulseFuture<'_, Result<String, String>> {
+    ) -> ObservationFuture<'_, Result<String, String>> {
         let prompt = proactive_evolution_prompt(items);
         self.dispatch_primary_task(prompt, EvaPulseSignalKind::EvolutionReview)
     }
 }
 
-impl CoordinatorPulseTaskSink {
+impl CoordinatorObservationTaskSink {
     fn dispatch_primary_task(
         &self,
         prompt: String,
         signal_kind: EvaPulseSignalKind,
-    ) -> PulseFuture<'_, Result<String, String>> {
+    ) -> ObservationFuture<'_, Result<String, String>> {
         let primary_route = self.primary_route.clone();
         let explicit_hint = self.preferred_route_hint.clone();
         let journal = self.journal.clone();
@@ -1906,7 +1938,7 @@ impl CoordinatorPulseTaskSink {
         &self,
         prompt: String,
         signal_kind: EvaPulseSignalKind,
-    ) -> PulseFuture<'_, Result<String, String>> {
+    ) -> ObservationFuture<'_, Result<String, String>> {
         let journal = self.journal.clone();
         let gateway_config = self.gateway_config.clone();
         let receiver = self.receiver.clone();
@@ -2107,7 +2139,7 @@ fn recovery_task_prompt(incident: &str, workspace_path: Option<&str>) -> String 
              у пользователя."
         ),
         None => format!(
-            "EvaPulse: обнаружен сбой ({incident}). Изучи журнал child.workflow, определи причину \
+            "Наблюдение Улья: обнаружен сбой ({incident}). Изучи журнал child.workflow, определи причину \
              и предложи безопасное исправление. Не изменяй файлы без подтверждения."
         ),
     }
@@ -2119,12 +2151,12 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
 
     struct FakeProbe {
-        report: PulseCycleReport,
+        report: ObservationCycleReport,
         cycles: AtomicUsize,
     }
 
     impl FakeProbe {
-        fn new(report: PulseCycleReport) -> Self {
+        fn new(report: ObservationCycleReport) -> Self {
             Self {
                 report,
                 cycles: AtomicUsize::new(0),
@@ -2132,8 +2164,8 @@ mod tests {
         }
     }
 
-    impl PulseProbe for FakeProbe {
-        fn observe(&self) -> PulseFuture<'_, Result<PulseCycleReport, String>> {
+    impl ObservationProbe for FakeProbe {
+        fn observe(&self) -> ObservationFuture<'_, Result<ObservationCycleReport, String>> {
             self.cycles.fetch_add(1, Ordering::SeqCst);
             let report = self.report.clone();
             Box::pin(async move { Ok(report) })
@@ -2147,12 +2179,12 @@ mod tests {
         fallback_calls: AtomicUsize,
     }
 
-    impl PulseTaskSink for CountingSink {
+    impl ObservationTaskSink for CountingSink {
         fn dispatch_recovery(
             &self,
             _failed_workers: &[FailedWorkerContext],
             _eva_workspace_path: Option<&str>,
-        ) -> PulseFuture<'_, Result<String, String>> {
+        ) -> ObservationFuture<'_, Result<String, String>> {
             self.primary_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok("task-pulse".into()) })
         }
@@ -2162,7 +2194,7 @@ mod tests {
             _failed_workers: &[FailedWorkerContext],
             _eva_workspace_path: Option<&str>,
             _fallback_provider: evohime_model_gateway::providers::ProviderKind,
-        ) -> PulseFuture<'_, Result<String, String>> {
+        ) -> ObservationFuture<'_, Result<String, String>> {
             self.fallback_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok("task-pulse-routmy".into()) })
         }
@@ -2171,15 +2203,16 @@ mod tests {
             &self,
             _items: &[RoadmapItem],
             _eva_workspace_path: Option<&str>,
-        ) -> PulseFuture<'_, Result<String, String>> {
+        ) -> ObservationFuture<'_, Result<String, String>> {
             self.evolution_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok("task-evolution".into()) })
         }
     }
 
-    fn healthy_report() -> PulseCycleReport {
-        PulseCycleReport {
-            interval_secs: 1,
+    fn healthy_report() -> ObservationCycleReport {
+        ObservationCycleReport {
+            local_observation_interval_secs: 1,
+            llm_dispatch_interval_secs: 300,
             daily_cost_nano_usd: Some(1),
             daily_budget_nano_usd: 1_000_000,
             provider_window_exhausted: false,
@@ -2200,9 +2233,10 @@ mod tests {
         }
     }
 
-    fn options() -> EvaPulseOptions {
-        EvaPulseOptions {
+    fn options() -> HiveObservationOptions {
+        HiveObservationOptions {
             interval_override: Some(Duration::from_millis(5)),
+            llm_dispatch_interval_override: Some(Duration::from_millis(1)),
         }
     }
 
@@ -2471,19 +2505,19 @@ mod tests {
 
     #[test]
     fn controller_exposes_a_pulse_owned_snapshot() {
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(healthy_report())),
             Arc::new(CountingSink::default()),
             options(),
             None,
         );
-        let controller = EvaPulseController::new(daemon.clone());
+        let controller = HiveObservationController::new(daemon.clone());
         assert_eq!(
             controller.snapshot(),
-            EvaPulseSnapshot {
+            HiveObservationSnapshot {
                 schema_version: 1,
-                owner: "eva_pulse".to_owned(),
-                status: HIVE_PULSE_ACTIVE.to_owned(),
+                owner: "hive_observation".to_owned(),
+                status: HIVE_OBSERVATION_OBSERVING.to_owned(),
                 enabled: true,
                 next_wake_at_ms: None,
             }
@@ -2497,9 +2531,9 @@ mod tests {
         report.daily_budget_nano_usd = 0;
         report.failed_workers = vec!["child-failed".into()];
         let sink = Arc::new(CountingSink::default());
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(report)),
-            Arc::clone(&sink) as Arc<dyn PulseTaskSink>,
+            Arc::clone(&sink) as Arc<dyn ObservationTaskSink>,
             options(),
             None,
         );
@@ -2510,7 +2544,7 @@ mod tests {
         assert_eq!(sink.primary_calls.load(Ordering::SeqCst), 0);
         assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
         let status = daemon.status();
-        assert_eq!(status.status, HIVE_PULSE_SLEEPING);
+        assert_eq!(status.status, HIVE_OBSERVATION_WAITING_FOR_LIMITS);
         assert!(status.next_wake_at_ms.is_some());
     }
 
@@ -2523,7 +2557,7 @@ mod tests {
 
         let decision = decide(&report, 1_700_000_000_000);
         assert!(
-            matches!(decision, PulseDecision::Recover { .. }),
+            matches!(decision, ObservationDecision::Recover { .. }),
             "expected Recover for free/quota provider with 0 USD budget, got {decision:?}"
         );
     }
@@ -2534,9 +2568,9 @@ mod tests {
         report.failed_workers = vec!["child-failed".into()];
         report.rate_limited_until_ms = Some(now_millis() + 60_000);
         let sink = Arc::new(CountingSink::default());
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(report)),
-            Arc::clone(&sink) as Arc<dyn PulseTaskSink>,
+            Arc::clone(&sink) as Arc<dyn ObservationTaskSink>,
             options(),
             None,
         );
@@ -2549,29 +2583,32 @@ mod tests {
         // contacted again until the rate-limit window ends.
         assert_eq!(sink.primary_calls.load(Ordering::SeqCst), 0);
         assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
-        assert_eq!(status.status, HIVE_PULSE_SLEEPING);
+        assert_eq!(status.status, HIVE_OBSERVATION_WAITING_FOR_LIMITS);
         assert!(status.next_wake_at_ms.is_some());
     }
 
     #[tokio::test]
-    async fn disabled_daemon_runs_no_cycles_until_enabled() {
+    async fn level1_observation_stays_active_and_wakes_on_internal_notify() {
         let probe = Arc::new(FakeProbe::new(healthy_report()));
         let sink = Arc::new(CountingSink::default());
-        let daemon = EvaPulseDaemon::spawn(
-            Arc::clone(&probe) as Arc<dyn PulseProbe>,
-            Arc::clone(&sink) as Arc<dyn PulseTaskSink>,
-            options(),
+        let daemon = HiveObservationDaemon::spawn(
+            Arc::clone(&probe) as Arc<dyn ObservationProbe>,
+            Arc::clone(&sink) as Arc<dyn ObservationTaskSink>,
+            HiveObservationOptions {
+                interval_override: Some(Duration::from_secs(60)),
+                llm_dispatch_interval_override: Some(Duration::from_secs(300)),
+            },
             None,
         );
-        daemon.set_enabled(false);
         daemon.run();
-        tokio::time::sleep(Duration::from_millis(40)).await;
-        assert_eq!(probe.cycles.load(Ordering::SeqCst), 0);
-        assert_eq!(daemon.status().status, HIVE_PULSE_DISABLED);
-        daemon.set_enabled(true);
-        tokio::time::sleep(Duration::from_millis(40)).await;
-        assert!(daemon.status().enabled);
-        assert!(probe.cycles.load(Ordering::SeqCst) >= 1);
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let first_count = probe.cycles.load(Ordering::SeqCst);
+        assert!(first_count >= 1);
+        assert_eq!(daemon.status().status, HIVE_OBSERVATION_WAITING_FOR_TASKS);
+
+        daemon.notify_settings_changed();
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(probe.cycles.load(Ordering::SeqCst) > first_count);
         daemon.shutdown();
     }
 
@@ -2581,9 +2618,9 @@ mod tests {
         report.failed_workers = vec!["child-failed".into()];
         report.route_is_primary = false;
         let sink = Arc::new(CountingSink::default());
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(report)),
-            Arc::clone(&sink) as Arc<dyn PulseTaskSink>,
+            Arc::clone(&sink) as Arc<dyn ObservationTaskSink>,
             options(),
             None,
         );
@@ -2597,7 +2634,8 @@ mod tests {
     #[tokio::test]
     async fn recovery_sink_starts_task_with_self_development_instruction() {
         let (coordinator, mut requests) = MockCoordinator::new();
-        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), Some("primary".into()));
+        let sink =
+            CoordinatorObservationTaskSink::new(Arc::new(coordinator), Some("primary".into()));
         let task_id = sink
             .dispatch_recovery(
                 &[FailedWorkerContext::from_id("failed-worker")],
@@ -2623,7 +2661,7 @@ mod tests {
         report.daily_budget_nano_usd = 1_000_000;
         assert!(matches!(
             decide(&report, 1_000),
-            PulseDecision::Sleep {
+            ObservationDecision::WaitingForLimits {
                 reason: "daily_budget_exhausted",
                 ..
             }
@@ -2634,7 +2672,7 @@ mod tests {
         report.provider_window_wake_at_ms = Some(2_000);
         assert_eq!(
             decide(&report, 1_000),
-            PulseDecision::Sleep {
+            ObservationDecision::WaitingForLimits {
                 wake_at_ms: Some(2_000),
                 reason: "provider_window_exhausted"
             }
@@ -2643,7 +2681,7 @@ mod tests {
         report.provider_window_exhausted = false;
         assert_eq!(
             decide(&report, 1_000),
-            PulseDecision::Recover {
+            ObservationDecision::Recover {
                 failed_workers: vec!["child-1".into()]
             }
         );
@@ -2700,7 +2738,7 @@ mod tests {
     #[tokio::test]
     async fn eva_pulse_passes_error_context_to_recovery_task() {
         let journal = Arc::new(MockJournal::default());
-        let probe = JournalPulseProbe::new(
+        let probe = JournalObservationProbe::new(
             journal.clone(),
             None,
             MockWorkspaceProvider::with_model("primary"),
@@ -2740,7 +2778,8 @@ mod tests {
         );
 
         let (coordinator, mut requests) = MockCoordinator::new();
-        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), Some("primary".into()));
+        let sink =
+            CoordinatorObservationTaskSink::new(Arc::new(coordinator), Some("primary".into()));
         let task_id = sink
             .dispatch_recovery(&report.failed_worker_contexts, Some("D:/eva"))
             .await
@@ -2778,7 +2817,7 @@ mod tests {
                 ),
             )]),
         });
-        let probe = JournalPulseProbe::new(
+        let probe = JournalObservationProbe::new(
             journal.clone(),
             gateway_config,
             MockWorkspaceProvider::with_model(model),
@@ -2815,7 +2854,7 @@ mod tests {
         let decision_2 = decide(&report_2, now_millis());
         assert!(matches!(
             decision_2,
-            PulseDecision::Sleep {
+            ObservationDecision::WaitingForLimits {
                 wake_at_ms: Some(_),
                 reason: "provider_rate_limited"
             }
@@ -2826,7 +2865,7 @@ mod tests {
         let report_3 = probe.observe().await.expect("observe 3");
         assert_eq!(
             decide(&report_3, now_millis()),
-            PulseDecision::Recover {
+            ObservationDecision::Recover {
                 failed_workers: vec!["worker-429-1".to_owned()]
             }
         );
@@ -2842,7 +2881,10 @@ mod tests {
             }),
         );
         let report_4 = probe.observe().await.expect("observe 4");
-        assert_eq!(decide(&report_4, now_millis()), PulseDecision::AllGood);
+        assert_eq!(
+            decide(&report_4, now_millis()),
+            ObservationDecision::AllGood
+        );
     }
 
     fn init_git_repo(dir: &std::path::Path) {
@@ -2885,13 +2927,13 @@ mod tests {
                 ),
             )]),
         });
-        let probe = Arc::new(JournalPulseProbe::new(
+        let probe = Arc::new(JournalObservationProbe::new(
             journal.clone(),
             gateway_config,
             MockWorkspaceProvider::with_model("primary"),
         ));
         let (coordinator, mut requests) = MockCoordinator::new();
-        let sink = Arc::new(CoordinatorPulseTaskSink::new(
+        let sink = Arc::new(CoordinatorObservationTaskSink::new(
             Arc::new(coordinator),
             Some("hive".into()),
         ));
@@ -2899,7 +2941,7 @@ mod tests {
         let report_1 = probe.observe().await.expect("observe 1");
         assert_eq!(
             decide(&report_1, now_millis()),
-            PulseDecision::Evolve {
+            ObservationDecision::Evolve {
                 items: vec![RoadmapItem {
                     file_path: "docs/development-plan.md".into(),
                     line: 3,
@@ -2908,9 +2950,9 @@ mod tests {
             }
         );
 
-        let daemon = EvaPulseDaemon::spawn(
-            Arc::clone(&probe) as Arc<dyn PulseProbe>,
-            Arc::clone(&sink) as Arc<dyn PulseTaskSink>,
+        let daemon = HiveObservationDaemon::spawn(
+            Arc::clone(&probe) as Arc<dyn ObservationProbe>,
+            Arc::clone(&sink) as Arc<dyn ObservationTaskSink>,
             options(),
             None,
         );
@@ -2970,11 +3012,11 @@ mod tests {
         journal.save_settings(&settings);
 
         let probe =
-            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
+            JournalObservationProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
         assert!(!report.proactive_evolution_enabled);
         assert!(report.roadmap_items.is_empty());
-        assert_eq!(decide(&report, now_millis()), PulseDecision::AllGood);
+        assert_eq!(decide(&report, now_millis()), ObservationDecision::AllGood);
 
         let mut forced_report = healthy_report();
         forced_report.proactive_evolution_enabled = false;
@@ -2984,7 +3026,7 @@ mod tests {
             line: 1,
             text: "Uncompleted item".into(),
         }];
-        assert_eq!(decide(&forced_report, 1_000), PulseDecision::AllGood);
+        assert_eq!(decide(&forced_report, 1_000), ObservationDecision::AllGood);
     }
 
     #[tokio::test]
@@ -3018,13 +3060,13 @@ mod tests {
                 ),
             )]),
         });
-        let probe = Arc::new(JournalPulseProbe::new(
+        let probe = Arc::new(JournalObservationProbe::new(
             journal,
             gateway_config,
             MockWorkspaceProvider::with_model("primary"),
         ));
         let (coordinator, mut requests) = MockCoordinator::new();
-        let sink = Arc::new(CoordinatorPulseTaskSink::new(
+        let sink = Arc::new(CoordinatorObservationTaskSink::new(
             Arc::new(coordinator),
             Some("hive".into()),
         ));
@@ -3032,7 +3074,7 @@ mod tests {
         let report = probe.observe().await.expect("observe");
         assert_eq!(
             decide(&report, now_millis()),
-            PulseDecision::Evolve {
+            ObservationDecision::Evolve {
                 items: vec![RoadmapItem {
                     file_path: "TODO.md".into(),
                     line: 2,
@@ -3041,9 +3083,9 @@ mod tests {
             }
         );
 
-        let daemon = EvaPulseDaemon::spawn(
-            Arc::clone(&probe) as Arc<dyn PulseProbe>,
-            Arc::clone(&sink) as Arc<dyn PulseTaskSink>,
+        let daemon = HiveObservationDaemon::spawn(
+            Arc::clone(&probe) as Arc<dyn ObservationProbe>,
+            Arc::clone(&sink) as Arc<dyn ObservationTaskSink>,
             options(),
             None,
         );
@@ -3078,10 +3120,10 @@ mod tests {
         journal.save_settings(&settings);
 
         let probe =
-            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
+            JournalObservationProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
         assert!(report.roadmap_items.is_empty());
-        assert_eq!(decide(&report, now_millis()), PulseDecision::AllGood);
+        assert_eq!(decide(&report, now_millis()), ObservationDecision::AllGood);
     }
 
     #[test]
@@ -3135,7 +3177,7 @@ mod tests {
         journal.save_settings(&settings);
 
         let probe =
-            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
+            JournalObservationProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
 
         assert_eq!(report.roadmap_items.len(), MAX_ROADMAP_ITEMS);
@@ -3218,7 +3260,7 @@ mod tests {
         };
         journal.save_settings(&settings);
 
-        let probe = JournalPulseProbe::new(
+        let probe = JournalObservationProbe::new(
             journal.clone(),
             None,
             Arc::new(MockWorkspaceProvider::default()),
@@ -3282,12 +3324,12 @@ mod tests {
         }
     }
 
-    impl PulseTaskSink for ExhaustedLiteRouterSink {
+    impl ObservationTaskSink for ExhaustedLiteRouterSink {
         fn dispatch_recovery(
             &self,
             _failed_workers: &[FailedWorkerContext],
             _eva_workspace_path: Option<&str>,
-        ) -> PulseFuture<'_, Result<String, String>> {
+        ) -> ObservationFuture<'_, Result<String, String>> {
             self.primary_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Err("all_models_exhausted".to_owned()) })
         }
@@ -3297,7 +3339,7 @@ mod tests {
             _failed_workers: &[FailedWorkerContext],
             _eva_workspace_path: Option<&str>,
             _fallback_provider: evohime_model_gateway::providers::ProviderKind,
-        ) -> PulseFuture<'_, Result<String, String>> {
+        ) -> ObservationFuture<'_, Result<String, String>> {
             self.fallback_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok("task-routmy-fallback".to_owned()) })
         }
@@ -3306,7 +3348,7 @@ mod tests {
             &self,
             _items: &[RoadmapItem],
             _eva_workspace_path: Option<&str>,
-        ) -> PulseFuture<'_, Result<String, String>> {
+        ) -> ObservationFuture<'_, Result<String, String>> {
             Box::pin(async move { Ok("task-evo".to_owned()) })
         }
     }
@@ -3321,7 +3363,7 @@ mod tests {
         report.failed_workers = vec!["child-failed".into()];
 
         let sink = Arc::new(CountingSink::default());
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(report)),
             sink.clone(),
             options(),
@@ -3356,13 +3398,13 @@ mod tests {
         decide_report.literouter_all_models_exhausted = true;
         assert_eq!(
             decide(&decide_report, 10_000),
-            PulseDecision::Recover {
+            ObservationDecision::Recover {
                 failed_workers: vec!["child-failed".into()],
             }
         );
 
         let sink = Arc::new(ExhaustedLiteRouterSink::default());
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(report)),
             sink.clone(),
             options(),
@@ -3394,7 +3436,7 @@ mod tests {
 
         assert_eq!(
             decide(&report, now_ms),
-            PulseDecision::Sleep {
+            ObservationDecision::WaitingForLimits {
                 wake_at_ms: Some(quota_wake_at(now_ms, report.quota_reset_utc_midnight)),
                 reason: "routmy_quota_exhausted",
             }
@@ -3412,7 +3454,7 @@ mod tests {
 
         assert_eq!(
             decide(&fallback_exhausted, now_ms),
-            PulseDecision::Sleep {
+            ObservationDecision::WaitingForLimits {
                 wake_at_ms: Some(quota_wake_at(
                     now_ms,
                     fallback_exhausted.quota_reset_utc_midnight,
@@ -3422,7 +3464,7 @@ mod tests {
         );
 
         let sink = Arc::new(CountingSink::default());
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(report)),
             sink.clone(),
             options(),
@@ -3440,7 +3482,7 @@ mod tests {
         let status = daemon.status();
         daemon.shutdown();
 
-        assert_eq!(status.status, HIVE_PULSE_SLEEPING);
+        assert_eq!(status.status, HIVE_OBSERVATION_WAITING_FOR_LIMITS);
         assert_eq!(sink.primary_calls.load(Ordering::SeqCst), 0);
         assert_eq!(sink.fallback_calls.load(Ordering::SeqCst), 0);
     }
@@ -3477,7 +3519,7 @@ mod tests {
         journal.save_settings(&settings);
 
         let probe =
-            JournalPulseProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
+            JournalObservationProbe::new(journal, None, Arc::new(MockWorkspaceProvider::default()));
         let report = probe.observe().await.expect("observe");
         let texts: Vec<&str> = report
             .roadmap_items
@@ -3517,7 +3559,7 @@ mod tests {
             ]),
         };
 
-        let probe = JournalPulseProbe::new(
+        let probe = JournalObservationProbe::new(
             journal.clone(),
             Some(gateway_config.clone()),
             MockWorkspaceProvider::with_model("free-default"),
@@ -3528,7 +3570,7 @@ mod tests {
         assert!(report.fallback_provider.is_none());
 
         let (coordinator, mut requests) = MockCoordinator::new();
-        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), None)
+        let sink = CoordinatorObservationTaskSink::new(Arc::new(coordinator), None)
             .with_hive_settings_source(journal, Some(gateway_config));
         let err = sink
             .dispatch_recovery(&[], None)
@@ -3563,7 +3605,7 @@ mod tests {
         };
 
         let (coordinator, mut requests) = MockCoordinator::new();
-        let sink = CoordinatorPulseTaskSink::new(Arc::new(coordinator), None)
+        let sink = CoordinatorObservationTaskSink::new(Arc::new(coordinator), None)
             .with_hive_settings_source(journal, Some(gateway_config));
         let task_id = sink
             .dispatch_recovery(&[], None)
@@ -3591,41 +3633,43 @@ mod tests {
         }
 
         let telemetry = Arc::new(RecordingTelemetry::default());
-        let daemon = EvaPulseDaemon::spawn(
+        let daemon = HiveObservationDaemon::spawn(
             Arc::new(FakeProbe::new(healthy_report())),
             Arc::new(CountingSink::default()),
-            EvaPulseOptions::default(),
+            HiveObservationOptions::default(),
             Some(telemetry.clone()),
         );
 
-        daemon.inner.publish(HIVE_PULSE_ACTIVE, None, "");
-        daemon.inner.publish(HIVE_PULSE_ACTIVE, Some(1234), "");
+        daemon.inner.publish(HIVE_OBSERVATION_OBSERVING, None, "");
         daemon
             .inner
-            .publish(HIVE_PULSE_SLEEPING, Some(5678), "idle");
+            .publish(HIVE_OBSERVATION_OBSERVING, Some(1234), "");
         daemon
             .inner
-            .publish(HIVE_PULSE_SLEEPING, Some(9999), "idle");
+            .publish(HIVE_OBSERVATION_WAITING_FOR_LIMITS, Some(5678), "idle");
+        daemon
+            .inner
+            .publish(HIVE_OBSERVATION_WAITING_FOR_LIMITS, Some(9999), "idle");
 
         {
             let mut state = daemon.inner.state();
-            state.last_heartbeat_at = Some(std::time::Instant::now() - Duration::from_secs(301));
+            state.last_status_emit_at = Some(std::time::Instant::now() - Duration::from_secs(301));
         }
         daemon
             .inner
-            .publish(HIVE_PULSE_SLEEPING, Some(10000), "idle");
+            .publish(HIVE_OBSERVATION_WAITING_FOR_LIMITS, Some(10000), "idle");
 
         let logged: Vec<_> = telemetry
             .events
             .lock()
             .expect("lock")
             .iter()
-            .filter(|(_, event, _)| event == "eva_pulse.status")
+            .filter(|(_, event, _)| event == "hive.observation_status")
             .cloned()
             .collect();
         assert_eq!(logged.len(), 3);
-        assert_eq!(logged[0].2["status"], HIVE_PULSE_ACTIVE);
-        assert_eq!(logged[1].2["status"], HIVE_PULSE_SLEEPING);
-        assert_eq!(logged[2].2["status"], HIVE_PULSE_SLEEPING);
+        assert_eq!(logged[0].2["status"], HIVE_OBSERVATION_OBSERVING);
+        assert_eq!(logged[1].2["status"], HIVE_OBSERVATION_WAITING_FOR_LIMITS);
+        assert_eq!(logged[2].2["status"], HIVE_OBSERVATION_WAITING_FOR_LIMITS);
     }
 }

@@ -343,12 +343,12 @@ interface HiveStateView {
   readonly hiveQuotaResetUtcMidnight: boolean
   readonly hiveFallbackQuotaResetUtcMidnight: boolean
   readonly proactiveEvolutionEnabled: boolean
-  readonly pulseStatus: string
+  readonly observationStatus: string
   readonly nextWakeAtMs: number | null
 }
 
-/** Normalized view of the independent `eva_pulse.status` projection. */
-interface EvaPulseStateView {
+/** Normalized view of the independent `hive.observation_status` projection. */
+interface HiveObservationStateView {
   readonly status: string
   readonly enabled: boolean
   readonly nextWakeAtMs: number | null
@@ -610,18 +610,18 @@ function parseHiveState(event: CoreEvent | undefined): HiveStateView | null {
     hiveQuotaResetUtcMidnight: root['hive_quota_reset_utc_midnight'] === true,
     hiveFallbackQuotaResetUtcMidnight: root['hive_fallback_quota_reset_utc_midnight'] === true,
     proactiveEvolutionEnabled: root['proactive_evolution_enabled'] === true,
-    pulseStatus: text(root['pulse_status'], 16),
+    observationStatus: text(root['observation_status'] ?? root['pulse_status'], 32),
     nextWakeAtMs: typeof root['next_wake_at_ms'] === 'number' && Number.isSafeInteger(root['next_wake_at_ms'])
       ? root['next_wake_at_ms']
       : null
   }
 }
 
-function parseEvaPulseState(event: CoreEvent | undefined): EvaPulseStateView | null {
+function parseHiveObservationState(event: CoreEvent | undefined): HiveObservationStateView | null {
   if (!event) return null
   try {
     const parsed = JSON.parse(event.payload) as Record<string, unknown>
-    if (parsed['schema_version'] !== 1 || parsed['owner'] !== 'eva_pulse') return null
+    if (parsed['schema_version'] !== 1 || parsed['owner'] !== 'hive_observation') return null
     const status = parsed['status']
     if (typeof status !== 'string' || status.length > 32) return null
     const nextWakeAtMs = parsed['next_wake_at_ms']
@@ -924,9 +924,9 @@ const HIVE_LOG_LABELS: Record<string, string> = {
   'tool.started': 'Инструмент запущен',
   'tool.output': 'Инструмент вернул вывод',
   'child.workflow': 'Шаг дочерней задачи',
-  'runtime.schedule_completed': 'Pulse: расписание выполнено',
-  'runtime.schedule_failed': 'Pulse: ошибка расписания',
-  'runtime.schedule_dead_letter': 'Pulse: задание в dead-letter'
+  'runtime.schedule_completed': 'Autonomous Cycle: расписание выполнено',
+  'runtime.schedule_failed': 'Autonomous Cycle: ошибка расписания',
+  'runtime.schedule_dead_letter': 'Autonomous Cycle: задание в dead-letter'
 }
 
 function hiveLogLevel(eventType: string): HiveLogLevel {
@@ -1061,7 +1061,7 @@ function hiveLogEntries(
   observedAtFor: (event: CoreEvent) => string = (event) => observedAt.get(coreEventKey(event)) ?? '—'
 ): readonly HiveLogEntry[] {
   return events
-    .filter((event) => event.eventType !== 'hive_state.snapshot' && event.eventType !== 'eva_pulse.status')
+    .filter((event) => event.eventType !== 'hive_state.snapshot' && event.eventType !== 'hive.observation_status')
     .filter((event) => !event.taskId || chatTaskIds.has(event.taskId) || event.taskId.startsWith('eva-pulse-'))
     .filter((event) => includeNoise || !HIVE_LOG_NOISE_EVENTS.has(event.eventType))
     .sort((left, right) => right.sequenceId - left.sequenceId)
@@ -1099,7 +1099,7 @@ function formatHiveLogsForClipboard(
     ''
   ]
   const relevant = events
-    .filter((event) => event.eventType !== 'hive_state.snapshot' && event.eventType !== 'eva_pulse.status')
+    .filter((event) => event.eventType !== 'hive_state.snapshot' && event.eventType !== 'hive.observation_status')
     .filter((event) => !event.taskId || chatTaskIds.has(event.taskId) || event.taskId.startsWith('eva-pulse-'))
     .sort((left, right) => right.sequenceId - left.sequenceId)
     .slice(0, HIVE_LOGS_CLIPBOARD_LIMIT)
@@ -1615,7 +1615,7 @@ export function HiveDashboard({
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
   const hasHiveSnapshot = latest(events, 'hive_state.snapshot') !== undefined
-  const pulse = useMemo(() => parseEvaPulseState(latest(events, 'eva_pulse.status')), [events])
+  const observationState = useMemo(() => parseHiveObservationState(latest(events, 'hive.observation_status')), [events])
   const hiveChatTaskIds = useMemo(
     () => new Set([...hiveConversationLogEvents, ...localPrompts.map((prompt) => ({ taskId: prompt.taskId }))]
       .map((item) => item.taskId)
@@ -1958,11 +1958,11 @@ export function HiveDashboard({
   const requestSnapshot = useCallback((): void => {
     if (!api) return
     void api.invoke('core.getHiveState', {}).catch(() => undefined)
-    void api.invoke('core.getEvaPulseStatus', {}).catch(() => undefined)
+    void api.invoke('core.getHiveObservationStatus', {}).catch(() => undefined)
   }, [api])
 
-  // Snapshot polling is read-only and bounded by the chosen interval. EvaPulse
-  // here is the dashboard's live mode: it never starts or stops the hive.
+  // Snapshot polling is read-only and bounded by the chosen interval. The autonomous
+  // observation cycle runs independently inside Core/daemon.
   useEffect(() => {
     if (!api || !connected) return
     requestSnapshot()
@@ -2667,25 +2667,25 @@ export function HiveDashboard({
   const queenActive = hive?.queen.status === 'active'
   const waitingApproval = effectiveActiveApprovals.length > 0
   const queenStatusLabel = paused
-    ? 'Спит'
+    ? 'Ожидает (лимиты)'
     : waitingApproval
       ? 'Ждёт подтверждения'
       : queenActive
         ? 'Активна'
-        : 'Спит'
+        : 'Наблюдает'
   const wakeAtMs = hive?.queen.wakeAtMs ?? null
-  // Legacy Core versions put Pulse fields into hive_state.snapshot. Prefer the
-  // independent projection and fall back only when it has not arrived yet.
-  const pulseNextWakeAtMs = pulse?.nextWakeAtMs ?? hive?.nextWakeAtMs ?? null
-  const pulseStatus = pulse?.status ?? hive?.pulseStatus ?? ''
-  const nextSleepAtMs = pulseNextWakeAtMs ?? (paused ? wakeAtMs : null)
-  const pulseStatusLabel = pulseStatus === 'active'
-    ? 'EvaPulse активен'
-    : pulseStatus === 'sleeping'
-      ? 'EvaPulse спит'
-      : pulseStatus === 'disabled'
-        ? 'EvaPulse выключен'
-        : 'Ожидание...'
+  const observationNextWakeAtMs = observationState?.nextWakeAtMs ?? hive?.nextWakeAtMs ?? null
+  const observationStatus = observationState?.status ?? hive?.observationStatus ?? ''
+  const nextObservationAtMs = observationNextWakeAtMs ?? (paused ? wakeAtMs : null)
+  const observationStatusLabel = observationStatus === 'observing' || observationStatus === 'active'
+    ? 'Улей наблюдает'
+    : observationStatus === 'waiting_for_limits'
+      ? 'Улей ожидает (лимиты)'
+      : observationStatus === 'waiting_for_tasks' || observationStatus === 'disabled'
+        ? 'Улей ожидает (задачи)'
+        : observationStatus === 'sleeping'
+          ? 'Ошибка наблюдения'
+          : 'Ожидание...'
   const averageTaskTimeSec = hive?.metrics.averageTaskTimeSec ?? 0
   const averageTimeLabel = `${averageTaskTimeSec}с`
   const dailyBudgetUsd = hive?.dailyBudgetUsd ?? 0
@@ -2981,7 +2981,7 @@ export function HiveDashboard({
             </section>
           </section>
 
-        <section className={`hive-queen${queenActive ? '' : ' hive-queen--sleeping'}`} aria-label={translate('Королева Ева')}>
+        <section className="hive-queen" aria-label={translate('Королева Ева')}>
           <div className="hive-queen__stage">
             <HiveGraph
               queenName={hive?.queen.name || 'EvoHime'}
@@ -2995,7 +2995,7 @@ export function HiveDashboard({
                   <h2>{translate('Королева Ева')}</h2>
                   <p className="hive-queen__role">{translate('Главный оркестратор улья')}</p>
                 </div>
-                <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'sleeping'}`}>
+                <p className={`hive-queen__status hive-queen__status--${queenActive ? 'active' : 'observing'}`}>
                   <span className="hive-dot" aria-hidden="true" />
                   {translate(queenWorking ? 'Работает' : queenStatusLabel)}
                 </p>
@@ -3029,20 +3029,20 @@ export function HiveDashboard({
               <dt>{translate('Воркеры')}</dt>
               <dd>{workerSummaryLabel}</dd>
             </div>
-            {nextSleepAtMs !== null ? (
+            {nextObservationAtMs !== null ? (
               <div>
-                <dt>{translate('Следующий сон')}</dt>
-                <dd>{formatClock(nextSleepAtMs)}</dd>
+                <dt>{translate('Следующая проверка окружения')}</dt>
+                <dd>{formatClock(nextObservationAtMs)}</dd>
               </div>
-            ) : pulseStatus === 'active' ? (
+            ) : observationStatus === 'observing' || observationStatus === 'active' ? (
               <div>
-                <dt>{translate('Следующий сон')}</dt>
-                <dd>{translate('Сон: ожидание')}</dd>
+                <dt>{translate('Следующая проверка окружения')}</dt>
+                <dd>{translate('Наблюдение активно')}</dd>
               </div>
             ) : null}
             <div>
-              <dt>{translate('EvaPulse')}</dt>
-              <dd>{translate(pulseStatusLabel)}</dd>
+              <dt>{translate('Наблюдение Улья')}</dt>
+              <dd>{translate(observationStatusLabel)}</dd>
             </div>
           </dl>
         </section>
@@ -4166,15 +4166,15 @@ export function OperationsPanel({ connection, events, repair }: Props): React.JS
         </article>
         <article className={`operations-card ${!projectionReady || pulseFailed ? 'operations-card--warning' : ''}`}>
           <div className="operations-card__topline">
-            <span className="operations-card__eyebrow">Scheduler</span>
+            <span className="operations-card__eyebrow">Autonomous Cycle</span>
             <span className="operations-card__phase">{translate(!projectionReady ? 'syncing' : pulseFailed ? 'warning' : 'healthy')}</span>
           </div>
-          <h3>Pulse</h3>
+          <h3>{translate("Наблюдение Улья")}</h3>
           <div className="operations-card__metric">
             <strong>{translate(!projectionReady ? (CONNECTED_STATES.includes(connection) ? translate("Синхронизация") : translate("Недоступно")) : pulseFailed ? translate("Внимание") : 'OK')}</strong>
             <span>
               {translate(!projectionReady
-                ? translate("состояние Pulse не подтверждено")
+                ? translate("состояние цикла не подтверждено")
                 : pulseFailed
                   ? translate("есть ошибки расписаний")
                   : translate("ошибок не обнаружено"))}

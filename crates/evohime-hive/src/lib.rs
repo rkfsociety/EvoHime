@@ -4,7 +4,7 @@
 )]
 #![warn(missing_docs)]
 
-//! Hive domain: EvaPulse daemon, Hive settings, observation projections,
+//! Hive domain: autonomous Hive observation daemon, Hive settings, observation projections,
 //! worktree isolation, and dedicated Hive permission policy.
 
 pub mod observation;

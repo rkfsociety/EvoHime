@@ -337,6 +337,7 @@ impl IpcBridge {
         };
         settings.proactive_evolution_enabled = enabled;
         self.journal.save_hive_settings(&settings).await?;
+        self.notify_observation_settings_changed();
         serde_json::to_vec(&serde_json::json!({
             "accepted": true,
             "setting_key": "proactive_evolution_enabled",
@@ -464,9 +465,43 @@ impl IpcBridge {
         .map_err(|serialization_error| serialization_error.to_string())
     }
 
+    fn notify_observation_settings_changed(&self) {
+        if let Some(HiveObservationHandle::Local(controller)) = self.pulse.as_ref() {
+            controller.notify_settings_changed();
+        }
+    }
+
+    async fn save_observation_interval_secs(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<Vec<u8>, String> {
+        let mut settings = self.journal.hive_settings().await?;
+        let Ok(secs) = value.trim().parse::<u64>() else {
+            return self.hive_limit_rejected(key, "interval must be a positive integer");
+        };
+        if key == "local_observation_interval_secs" {
+            settings.local_observation_interval_secs = secs;
+        } else {
+            settings.llm_dispatch_interval_secs = secs;
+        }
+        if let Err(error) = settings.validate() {
+            return self.hive_limit_rejected(key, &error.to_string());
+        }
+        self.journal.save_hive_settings(&settings).await?;
+        self.notify_observation_settings_changed();
+        serde_json::to_vec(&serde_json::json!({
+            "accepted": true,
+            "setting_key": key,
+            key: secs,
+            "error_code": "",
+        }))
+        .map_err(|error| error.to_string())
+    }
+
     /// Updates a named HiveSettings entry in Core durable storage.
     pub(crate) async fn set_hive_setting(&self, key: &str, value: &str) -> Result<Vec<u8>, String> {
-        match key.trim() {
+        let response = match key.trim() {
             "eva_workspace_path" => self.save_eva_workspace_path(value).await,
             "watched_repositories" => self.save_watched_repositories(value).await,
             "hive_provider_profile" => self.save_hive_provider_profile(value).await,
@@ -476,6 +511,9 @@ impl IpcBridge {
             }
             "hive_fallback_model" => self.save_hive_fallback_model(value).await,
             "daily_budget_usd" => self.save_daily_budget_usd(value).await,
+            "local_observation_interval_secs" | "llm_dispatch_interval_secs" => {
+                self.save_observation_interval_secs(key.trim(), value).await
+            }
             "hive_request_limits" => self.save_hive_request_limits_batch(value).await,
             "hive_provider_limits" | "hive_fallback_provider_limits" => {
                 self.save_hive_request_limits(key, value).await
@@ -494,7 +532,9 @@ impl IpcBridge {
                 "error_code": format!("unknown hive setting: {other}"),
             }))
             .map_err(|error| error.to_string()),
-        }
+        }?;
+        self.notify_observation_settings_changed();
+        Ok(response)
     }
 
     /// Builds the read-only hive snapshot from the durable child projection
@@ -540,17 +580,17 @@ impl IpcBridge {
             crate::task_memory::now_millis() as i64,
         )
         .await;
-        if let Some(pulse) = self.pulse.as_ref() {
-            match pulse {
-                HivePulseHandle::Local(controller) => {
+        if let Some(observation_handle) = self.pulse.as_ref() {
+            match observation_handle {
+                HiveObservationHandle::Local(controller) => {
                     let status = controller.status();
-                    observation.pulse_status = status.status;
-                    observation.pulse_next_wake_at_ms = status.next_wake_at_ms;
+                    observation.observation_status = status.status;
+                    observation.next_observation_at_ms = status.next_wake_at_ms;
                 }
-                HivePulseHandle::External(proxy) => {
+                HiveObservationHandle::External(proxy) => {
                     if let Ok(snapshot) = proxy.snapshot().await {
-                        observation.pulse_status = snapshot.status;
-                        observation.pulse_next_wake_at_ms = snapshot.next_wake_at_ms;
+                        observation.observation_status = snapshot.status;
+                        observation.next_observation_at_ms = snapshot.next_wake_at_ms;
                     }
                 }
             }
@@ -563,54 +603,18 @@ impl IpcBridge {
         )
     }
 
-    /// Applies the UI's EvaPulse toggle and returns the new daemon projection.
-    ///
-    /// The toggle is not an authorization decision: it only enables or parks
-    /// the background loop. Budget and provider caps are still
-    /// enforced by the daemon itself on every cycle.
-    pub(super) async fn toggle_pulse(&self, enabled: bool) -> Result<Vec<u8>, String> {
-        let Some(pulse) = self.pulse.as_ref() else {
-            return pulse_unavailable_toggle_payload();
-        };
-        match pulse {
-            HivePulseHandle::Local(controller) => {
-                controller.set_enabled(enabled);
-                let status = controller.status();
-                serde_json::to_vec(&serde_json::json!({
-                    "schema_version": 1,
-                    "accepted": true,
-                    "enabled": enabled,
-                    "status": status.status,
-                    "next_wake_at_ms": status.next_wake_at_ms,
-                    "error_code": "",
-                }))
-                .map_err(|error| error.to_string())
-            }
-            HivePulseHandle::External(proxy) => match proxy.set_enabled(enabled).await {
-                Ok(snapshot) => serde_json::to_vec(&serde_json::json!({
-                    "schema_version": 1,
-                    "accepted": true,
-                    "enabled": snapshot.enabled,
-                    "status": snapshot.status,
-                    "next_wake_at_ms": snapshot.next_wake_at_ms,
-                    "error_code": "",
-                }))
-                .map_err(|error| error.to_string()),
-                Err(_) => pulse_unavailable_toggle_payload(),
-            },
-        }
-    }
-
-    pub(super) async fn eva_pulse_status_payload(&self) -> Result<Vec<u8>, serde_json::Error> {
+    pub(super) async fn hive_observation_status_payload(
+        &self,
+    ) -> Result<Vec<u8>, serde_json::Error> {
         let mut value = match self.pulse.as_ref() {
-            Some(HivePulseHandle::Local(controller)) => {
+            Some(HiveObservationHandle::Local(controller)) => {
                 serde_json::to_value(controller.snapshot())?
             }
-            Some(HivePulseHandle::External(proxy)) => match proxy.snapshot().await {
+            Some(HiveObservationHandle::External(proxy)) => match proxy.snapshot().await {
                 Ok(snapshot) => serde_json::to_value(snapshot)?,
-                Err(_) => return unavailable_pulse_status_payload(),
+                Err(_) => return unavailable_observation_status_payload(),
             },
-            None => return unavailable_pulse_status_payload(),
+            None => return unavailable_observation_status_payload(),
         };
         if let Some(obj) = value.as_object_mut() {
             let rate_limits = evohime_model_gateway::rate_limit_signal::active_rate_limits();
@@ -811,22 +815,10 @@ impl IpcBridge {
     }
 }
 
-fn pulse_unavailable_toggle_payload() -> Result<Vec<u8>, String> {
+fn unavailable_observation_status_payload() -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_vec(&serde_json::json!({
         "schema_version": 1,
-        "accepted": false,
-        "enabled": false,
-        "status": crate::hive_state::HIVE_PULSE_DISABLED,
-        "next_wake_at_ms": serde_json::Value::Null,
-        "error_code": "pulse_unavailable",
-    }))
-    .map_err(|error| error.to_string())
-}
-
-fn unavailable_pulse_status_payload() -> Result<Vec<u8>, serde_json::Error> {
-    serde_json::to_vec(&serde_json::json!({
-        "schema_version": 1,
-        "owner": "eva_pulse",
+        "owner": "hive_observation",
         "status": "unavailable",
         "enabled": false,
         "next_wake_at_ms": null,

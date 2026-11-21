@@ -41,12 +41,18 @@ pub const MAX_SUBAGENT_HARD_LIMIT: u32 = 256;
 pub const MAX_PARALLEL_HARD_LIMIT: u32 = 32;
 /// Storage scope used when persisting `HiveSettings` in the journal store.
 pub const HIVE_SETTINGS_SCOPE: &str = "hive";
-/// Default interval between EvaPulse background cycles, in seconds.
-pub const DEFAULT_PULSE_INTERVAL_SECS: u64 = 1_800;
-/// Lower bound accepted for the EvaPulse interval.
-pub const MIN_PULSE_INTERVAL_SECS: u64 = 30;
-/// Upper bound accepted for the EvaPulse interval.
-pub const MAX_PULSE_INTERVAL_SECS: u64 = 86_400;
+/// Default interval between Level 1 local observation cycles, in seconds.
+pub const DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS: u64 = 60;
+/// Lower bound accepted for the local observation interval, in seconds.
+pub const MIN_LOCAL_OBSERVATION_INTERVAL_SECS: u64 = 10;
+/// Upper bound accepted for the local observation interval, in seconds.
+pub const MAX_LOCAL_OBSERVATION_INTERVAL_SECS: u64 = 300;
+/// Default interval between Level 2 LLM dispatch cycles, in seconds.
+pub const DEFAULT_LLM_DISPATCH_INTERVAL_SECS: u64 = 1_800;
+/// Lower bound accepted for the LLM dispatch interval, in seconds.
+pub const MIN_LLM_DISPATCH_INTERVAL_SECS: u64 = 300;
+/// Upper bound accepted for the LLM dispatch interval, in seconds.
+pub const MAX_LLM_DISPATCH_INTERVAL_SECS: u64 = 86_400;
 /// Default daily spend ceiling shown and enforced by the hive, in USD.
 pub const DEFAULT_DAILY_BUDGET_USD: f64 = 0.50;
 /// Hard upper bound for the persisted daily budget, in USD.
@@ -87,9 +93,12 @@ pub struct HiveSettings {
     /// Maximum child delegation depth allowed for Hive workers.
     #[serde(default = "default_max_delegation_depth")]
     pub max_delegation_depth: u8,
-    /// Interval between EvaPulse background cycles, in seconds.
-    #[serde(default = "default_pulse_interval_secs")]
-    pub pulse_interval_secs: u64,
+    /// Interval between Level 1 local observation cycles, in seconds.
+    #[serde(default = "default_local_observation_interval_secs")]
+    pub local_observation_interval_secs: u64,
+    /// Interval between Level 2 LLM dispatch cycles, in seconds.
+    #[serde(default = "default_llm_dispatch_interval_secs")]
+    pub llm_dispatch_interval_secs: u64,
     /// Daily spend ceiling for background work, in USD.
     ///
     /// `0` means no budget at all: a background cycle must not start a task.
@@ -98,7 +107,7 @@ pub struct HiveSettings {
     /// Optional isolated Git checkout of EvoHime used for self-development.
     #[serde(default)]
     pub eva_workspace_path: Option<String>,
-    /// Optional external Git repositories watched by Queen / EvaPulse.
+    /// Optional external Git repositories watched by Queen observation cycle.
     #[serde(default)]
     pub watched_repositories: Vec<String>,
     /// Optional isolated provider profile for Hive (e.g. `"literouter"`, `"rout"`).
@@ -137,7 +146,7 @@ pub struct HiveSettings {
     /// Whether a fallback token quota was explicitly configured by the user.
     #[serde(default)]
     pub hive_fallback_token_quota_configured: bool,
-    /// Whether EvaPulse may proactively pick uncompleted roadmap items when idle.
+    /// Whether the autonomous observation cycle may proactively pick uncompleted roadmap items when idle.
     #[serde(default)]
     pub proactive_evolution_enabled: bool,
 }
@@ -150,8 +159,12 @@ fn default_max_delegation_depth() -> u8 {
     DEFAULT_MAX_DELEGATION_DEPTH
 }
 
-fn default_pulse_interval_secs() -> u64 {
-    DEFAULT_PULSE_INTERVAL_SECS
+fn default_local_observation_interval_secs() -> u64 {
+    DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS
+}
+
+fn default_llm_dispatch_interval_secs() -> u64 {
+    DEFAULT_LLM_DISPATCH_INTERVAL_SECS
 }
 
 fn default_daily_budget_usd() -> f64 {
@@ -166,7 +179,8 @@ impl Default for HiveSettings {
             max_parallel_subagents: DEFAULT_MAX_PARALLEL_SUBAGENTS,
             max_total_subagents_per_workflow: DEFAULT_MAX_TOTAL_SUBAGENTS_PER_WORKFLOW,
             max_delegation_depth: DEFAULT_MAX_DELEGATION_DEPTH,
-            pulse_interval_secs: DEFAULT_PULSE_INTERVAL_SECS,
+            local_observation_interval_secs: DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS,
+            llm_dispatch_interval_secs: DEFAULT_LLM_DISPATCH_INTERVAL_SECS,
             daily_budget_usd: DEFAULT_DAILY_BUDGET_USD,
             eva_workspace_path: None,
             watched_repositories: Vec::new(),
@@ -223,12 +237,24 @@ impl HiveSettings {
                 max: MAX_DELEGATION_DEPTH_HARD_LIMIT,
             });
         }
-        if !(MIN_PULSE_INTERVAL_SECS..=MAX_PULSE_INTERVAL_SECS).contains(&self.pulse_interval_secs)
+        if !(MIN_LOCAL_OBSERVATION_INTERVAL_SECS..=MAX_LOCAL_OBSERVATION_INTERVAL_SECS)
+            .contains(&self.local_observation_interval_secs)
         {
-            return Err(HiveSettingsError::InvalidPulseInterval {
-                value: self.pulse_interval_secs,
-                min: MIN_PULSE_INTERVAL_SECS,
-                max: MAX_PULSE_INTERVAL_SECS,
+            return Err(HiveSettingsError::InvalidObservationInterval {
+                field: "local_observation_interval_secs",
+                value: self.local_observation_interval_secs,
+                min: MIN_LOCAL_OBSERVATION_INTERVAL_SECS,
+                max: MAX_LOCAL_OBSERVATION_INTERVAL_SECS,
+            });
+        }
+        if !(MIN_LLM_DISPATCH_INTERVAL_SECS..=MAX_LLM_DISPATCH_INTERVAL_SECS)
+            .contains(&self.llm_dispatch_interval_secs)
+        {
+            return Err(HiveSettingsError::InvalidObservationInterval {
+                field: "llm_dispatch_interval_secs",
+                value: self.llm_dispatch_interval_secs,
+                min: MIN_LLM_DISPATCH_INTERVAL_SECS,
+                max: MAX_LLM_DISPATCH_INTERVAL_SECS,
             });
         }
         if !self.daily_budget_usd.is_finite()
@@ -287,7 +313,7 @@ impl HiveSettings {
             .collect()
     }
 
-    /// Returns all unique workspace paths scanned by EvaPulse (`eva_workspace_path`
+    /// Returns all unique workspace paths scanned by the observation cycle (`eva_workspace_path`
     /// first when configured, followed by external `watched_repositories`).
     pub fn all_workspace_paths(&self) -> Vec<&str> {
         let mut all = Vec::new();
@@ -437,6 +463,20 @@ impl HiveSettings {
             }
         }
         if let Some(map) = value.as_object_mut() {
+            if let Some(legacy_interval) = map.remove("pulse_interval_secs") {
+                if !map.contains_key("llm_dispatch_interval_secs") {
+                    if let Some(secs) = legacy_interval.as_u64() {
+                        let clamped = secs.clamp(
+                            MIN_LLM_DISPATCH_INTERVAL_SECS,
+                            MAX_LLM_DISPATCH_INTERVAL_SECS,
+                        );
+                        map.insert(
+                            "llm_dispatch_interval_secs".to_owned(),
+                            serde_json::json!(clamped),
+                        );
+                    }
+                }
+            }
             if map
                 .get("schema_version")
                 .and_then(serde_json::Value::as_u64)
@@ -468,7 +508,8 @@ impl HiveSettings {
                 {"name": "max_parallel_subagents", "type": "u32", "zero": "unbounded_up_to_worker_ceiling"},
                 {"name": "max_total_subagents_per_workflow", "type": "u32", "zero": "invalid"},
                 {"name": "max_delegation_depth", "type": "u8", "default": DEFAULT_MAX_DELEGATION_DEPTH, "zero": "invalid"},
-                {"name": "pulse_interval_secs", "type": "u64", "zero": "invalid"},
+                {"name": "local_observation_interval_secs", "type": "u64", "default": DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS, "min": MIN_LOCAL_OBSERVATION_INTERVAL_SECS, "max": MAX_LOCAL_OBSERVATION_INTERVAL_SECS},
+                {"name": "llm_dispatch_interval_secs", "type": "u64", "default": DEFAULT_LLM_DISPATCH_INTERVAL_SECS, "min": MIN_LLM_DISPATCH_INTERVAL_SECS, "max": MAX_LLM_DISPATCH_INTERVAL_SECS},
                 {"name": "daily_budget_usd", "type": "f64", "zero": "no_background_task"},
                 {"name": "eva_workspace_path", "type": "optional_existing_git_directory", "default": null},
                 {"name": "watched_repositories", "type": "list_of_existing_git_directories", "default": []},
@@ -592,8 +633,10 @@ pub enum HiveSettingsError {
         /// Remaining workflow capacity.
         remaining: u32,
     },
-    /// The pulse interval is outside the accepted range.
-    InvalidPulseInterval {
+    /// An observation or LLM dispatch interval is outside the accepted range.
+    InvalidObservationInterval {
+        /// Settings field name.
+        field: &'static str,
         /// Submitted interval in seconds.
         value: u64,
         /// Minimum accepted interval.
@@ -660,8 +703,13 @@ impl std::fmt::Display for HiveSettingsError {
                     "delegation ceiling {requested} exceeds remaining workflow capacity {remaining}"
                 )
             }
-            Self::InvalidPulseInterval { value, min, max } => {
-                write!(f, "pulse_interval_secs {value} is outside {min}..={max}")
+            Self::InvalidObservationInterval {
+                field,
+                value,
+                min,
+                max,
+            } => {
+                write!(f, "{field} {value} is outside {min}..={max}")
             }
             Self::InvalidDailyBudget { value, max } => {
                 write!(f, "daily_budget_usd {value} is outside 0..={max}")
@@ -775,14 +823,25 @@ mod tests {
     }
 
     #[test]
-    fn pulse_budget_and_interval_validate_and_keep_compatible_defaults() {
+    fn observation_budget_and_intervals_validate_and_keep_compatible_defaults() {
         let settings = HiveSettings::default();
-        assert_eq!(settings.pulse_interval_secs, DEFAULT_PULSE_INTERVAL_SECS);
+        assert_eq!(
+            settings.local_observation_interval_secs,
+            DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS
+        );
+        assert_eq!(
+            settings.llm_dispatch_interval_secs,
+            DEFAULT_LLM_DISPATCH_INTERVAL_SECS
+        );
         assert_eq!(settings.daily_budget_usd, DEFAULT_DAILY_BUDGET_USD);
 
-        let legacy = br#"{"schema_version":1,"max_subagents_per_worker":1,"max_parallel_subagents":1,"max_total_subagents_per_workflow":2}"#;
+        let legacy = br#"{"schema_version":1,"max_subagents_per_worker":1,"max_parallel_subagents":1,"max_total_subagents_per_workflow":2,"pulse_interval_secs":900}"#;
         let loaded = HiveSettings::from_json(legacy).expect("legacy settings load");
-        assert_eq!(loaded.pulse_interval_secs, DEFAULT_PULSE_INTERVAL_SECS);
+        assert_eq!(
+            loaded.local_observation_interval_secs,
+            DEFAULT_LOCAL_OBSERVATION_INTERVAL_SECS
+        );
+        assert_eq!(loaded.llm_dispatch_interval_secs, 900);
         assert_eq!(loaded.daily_budget_usd, DEFAULT_DAILY_BUDGET_USD);
         assert_eq!(loaded.max_delegation_depth, DEFAULT_MAX_DELEGATION_DEPTH);
 
@@ -792,13 +851,28 @@ mod tests {
         };
         assert!(zero_budget.validate().is_ok());
 
-        let too_fast = HiveSettings {
-            pulse_interval_secs: MIN_PULSE_INTERVAL_SECS - 1,
+        let too_fast_local = HiveSettings {
+            local_observation_interval_secs: MIN_LOCAL_OBSERVATION_INTERVAL_SECS - 1,
             ..HiveSettings::default()
         };
         assert!(matches!(
-            too_fast.validate(),
-            Err(HiveSettingsError::InvalidPulseInterval { .. })
+            too_fast_local.validate(),
+            Err(HiveSettingsError::InvalidObservationInterval {
+                field: "local_observation_interval_secs",
+                ..
+            })
+        ));
+
+        let too_fast_llm = HiveSettings {
+            llm_dispatch_interval_secs: MIN_LLM_DISPATCH_INTERVAL_SECS - 1,
+            ..HiveSettings::default()
+        };
+        assert!(matches!(
+            too_fast_llm.validate(),
+            Err(HiveSettingsError::InvalidObservationInterval {
+                field: "llm_dispatch_interval_secs",
+                ..
+            })
         ));
 
         let negative_budget = HiveSettings {
