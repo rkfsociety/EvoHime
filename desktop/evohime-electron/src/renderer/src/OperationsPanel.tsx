@@ -814,6 +814,7 @@ function departmentView(departments: HiveStateView['departments']): readonly Dep
 
 const HIVE_INTERVALS = [1000, 2000, 5000, 10000] as const
 const HIVE_PREFERENCE_KEY = 'evohime.hive.dashboard.v1'
+const QUEEN_TYPING_WATCHDOG_MS = 60_000
 
 interface HivePreference {
   readonly intervalMs: number
@@ -1442,7 +1443,8 @@ function isQueenThinking(
   events: readonly CoreEvent[],
   pendingTaskIds: ReadonlySet<string>,
   sendingMessage: boolean,
-  activeApprovalTaskIds: ReadonlySet<string>
+  activeApprovalTaskIds: ReadonlySet<string>,
+  watchdogExpiredTaskIds: ReadonlySet<string>
 ): boolean {
   if (sendingMessage) return true
   const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
@@ -1469,7 +1471,7 @@ function isQueenThinking(
   }
 
   for (const taskId of pendingTaskIds) {
-    if (activeApprovalTaskIds.has(taskId) || failedOrStoppedTaskIds.has(taskId)) continue
+    if (activeApprovalTaskIds.has(taskId) || failedOrStoppedTaskIds.has(taskId) || watchdogExpiredTaskIds.has(taskId)) continue
     const approvalSeq = approvalTaskSeq.get(taskId) ?? -1
     const activeSeq = activeTaskSeq.get(taskId) ?? -1
     if (approvalSeq >= 0 && approvalSeq >= activeSeq) continue
@@ -1478,7 +1480,7 @@ function isQueenThinking(
   }
 
   for (const [taskId, startedSeq] of activeTaskSeq.entries()) {
-    if (activeApprovalTaskIds.has(taskId) || failedOrStoppedTaskIds.has(taskId)) continue
+    if (activeApprovalTaskIds.has(taskId) || failedOrStoppedTaskIds.has(taskId) || watchdogExpiredTaskIds.has(taskId)) continue
     const approvalSeq = approvalTaskSeq.get(taskId) ?? -1
     if (approvalSeq >= startedSeq) continue
     const terminalSeq = terminalTaskSeq.get(taskId) ?? -1
@@ -1569,6 +1571,7 @@ export function HiveDashboard({
   const [chatDraft, setChatDraft] = useState('')
   const [sendingMessage, setSendingMessage] = useState(false)
   const [pendingTaskIds, setPendingTaskIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [typingWatchdogExpiredTaskIds, setTypingWatchdogExpiredTaskIds] = useState<ReadonlySet<string>>(() => new Set())
   const [localPrompts, setLocalPrompts] = useState<readonly HiveUserPrompt[]>([])
   const [historyPrompts, setHistoryPrompts] = useState<readonly HiveUserPrompt[]>([])
   const [hiveConversationLogEvents, setHiveConversationLogEvents] = useState<readonly ConversationEventProjection[]>([])
@@ -2604,6 +2607,8 @@ export function HiveDashboard({
     hive?.limits.maxSubagentsPerWorker ?? 0
   )
   const capacityLabel = hiveCapacity > 0 ? hiveCapacity : agentsOnline
+  const showingConnectedIdleState = connected && hive !== null && hive.activeAgents.length === 0
+  const workerSummaryLabel = showingConnectedIdleState ? '— / —' : `${agentsOnline} / ${capacityLabel}`
   const paused = hive?.queen.status === 'budget_exhausted' && budget.historyAvailable
   const queenActive = hive?.queen.status === 'active'
   const waitingApproval = effectiveActiveApprovals.length > 0
@@ -2722,9 +2727,48 @@ export function HiveDashboard({
     () => new Set(effectiveActiveApprovals.map((approval) => approval.taskId).filter(Boolean)),
     [effectiveActiveApprovals]
   )
+  const queenWatchdogEvents = useMemo(
+    () => hiveChatEvents.filter((event) =>
+      event.eventType === 'task.started'
+      || event.eventType === 'agent.message.delta'
+      || event.eventType === 'task.completed'
+      || event.eventType === 'task.failed'
+    ),
+    [hiveChatEvents]
+  )
+  useEffect(() => {
+    const heartbeatTypes = new Set(['task.started', 'agent.message.delta'])
+    const terminalTypes = new Set(['task.completed', 'task.failed'])
+    const activeTasks = new Set<string>()
+    const timers: ReturnType<typeof setTimeout>[] = []
+
+    for (const event of queenWatchdogEvents) {
+      if (!event.taskId) continue
+      if (heartbeatTypes.has(event.eventType)) activeTasks.add(event.taskId)
+      if (terminalTypes.has(event.eventType)) activeTasks.delete(event.taskId)
+    }
+
+    setTypingWatchdogExpiredTaskIds((current) => {
+      const next = new Set([...current].filter((taskId) => activeTasks.has(taskId)))
+      return next.size === current.size ? current : next
+    })
+
+    for (const taskId of activeTasks) {
+      timers.push(setTimeout(() => {
+        setTypingWatchdogExpiredTaskIds((current) => {
+          if (current.has(taskId)) return current
+          return new Set(current).add(taskId)
+        })
+      }, QUEEN_TYPING_WATCHDOG_MS))
+    }
+
+    return () => {
+      for (const timer of timers) clearTimeout(timer)
+    }
+  }, [queenWatchdogEvents])
   const queenTyping = useMemo(
-    () => isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds),
-    [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, sendingMessage]
+    () => isQueenThinking(hiveChatEvents, pendingTaskIds, sendingMessage, activeApprovalTaskIds, typingWatchdogExpiredTaskIds),
+    [activeApprovalTaskIds, hiveChatEvents, pendingTaskIds, sendingMessage, typingWatchdogExpiredTaskIds]
   )
   const queenWorking = queenTyping && !paused && !waitingApproval
   const queenActivity = useMemo(
@@ -2792,7 +2836,7 @@ export function HiveDashboard({
         <section className="hive-panel hive-panel--departments" aria-label={translate('Департаменты улья')}>
           <div className="hive-panel__head">
             <h2>{translate('Департаменты улья')}</h2>
-            <span>{translate('Активно:')} {agentsOnline} / {capacityLabel}</span>
+            <span>{showingConnectedIdleState ? translate('Нет активных агентов') : `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`}</span>
           </div>
           <div className="hive-departments">
             {departments.map((department) => {
@@ -2809,8 +2853,8 @@ export function HiveDashboard({
                       <strong>{translate(department.label)}</strong>
                     </div>
                     <div className="hive-department__count">
-                      <span>{department.activeCount} / {department.maxCapacity}</span>
-                      <em>{percent}%</em>
+                      <span>{showingConnectedIdleState ? translate('Нет активных агентов') : `${department.activeCount} / ${department.maxCapacity}`}</span>
+                      <em>{showingConnectedIdleState ? '—' : `${percent}%`}</em>
                     </div>
                     <div
                       className="hive-progress"
@@ -2889,7 +2933,7 @@ export function HiveDashboard({
           <dl className="hive-queen__footer">
             <div>
               <dt>{translate('Воркеры')}</dt>
-              <dd>{agentsOnline} / {capacityLabel}</dd>
+              <dd>{workerSummaryLabel}</dd>
             </div>
             <div>
               <dt>{translate('Следующий сон')}</dt>

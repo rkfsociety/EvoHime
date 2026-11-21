@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PROVIDER_PROFILE_IDS, type CommandOutcome, type ConversationEventProjection, type CoreEvent, type EvoHimeApiV1, type RendererCommand } from '../src/shared/api'
 import { HiveDashboard } from '../src/renderer/src/OperationsPanel'
@@ -204,7 +204,10 @@ beforeEach(() => {
   Object.defineProperty(window, 'evohime', { value: Object.freeze({ v1: api }), configurable: true })
 })
 
-afterEach(() => cleanup())
+afterEach(() => {
+  vi.useRealTimers()
+  cleanup()
+})
 
 describe('hive dashboard', () => {
   it('hive_dashboard_renders_all_sections', async () => {
@@ -601,6 +604,27 @@ describe('hive dashboard', () => {
     expect(screen.getByText('Активно: 0 / 0')).toBeTruthy()
   })
 
+  it('ui_shows_idle_state_for_empty_departments', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ active_agents: [] }))]}
+      />
+    )
+
+    expect(await screen.findAllByText('Нет активных агентов')).not.toHaveLength(0)
+    expect(screen.queryByText('0 / 0')).toBeNull()
+    expect(screen.queryByText('0%')).toBeNull()
+  })
+
+  it('ui_shows_hive_graph', async () => {
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot({ active_agents: [] }))]} />)
+
+    const graph = await screen.findByTestId('hive-graph')
+    expect(graph.querySelector('svg')).toBeTruthy()
+    expect(screen.getByTestId('hive-graph-queen')).toBeTruthy()
+  })
+
   it('hive_graph_renders_queen_and_active_agents', async () => {
     const { rerender } = render(
       <HiveDashboard
@@ -790,6 +814,31 @@ describe('hive dashboard', () => {
       expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
     })
     expect(screen.getByText(/Королева Ева: У меня нет прав на выполнение этого действия/)).toBeTruthy()
+  })
+
+  it('ui_typing_indicator_has_watchdog_timeout', async () => {
+    vi.useFakeTimers()
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          hiveConversationPage('history', [
+            { kind: 'task_started', taskId: 'task-watchdog-1', payload: { prompt: 'Проверь состояние улья' } }
+          ])
+        ]}
+      />
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId('queen-typing-indicator')).toBeTruthy()
+    await act(async () => {
+      vi.advanceTimersByTime(60_000)
+    })
+    expect(screen.queryByTestId('queen-typing-indicator')).toBeNull()
   })
 
   it('ui_stops_typing_indicator_when_core_rejects_the_message', async () => {
