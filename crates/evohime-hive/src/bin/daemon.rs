@@ -15,8 +15,9 @@ use evohime_desktop_ipc::{generated, session, transport};
 use evohime_hive::pulse::{
     HiveObservationControlRequest, HiveObservationController, HiveObservationDaemon,
     DEFAULT_HIVE_OBSERVATION_CONTROL_PIPE, HIVE_OBSERVATION_CONTROL_PIPE_ENV,
-    HIVE_OBSERVATION_CONTROL_SOCKET_ENV,
 };
+#[cfg(unix)]
+use evohime_hive::pulse::HIVE_OBSERVATION_CONTROL_SOCKET_ENV;
 use evohime_hive::settings::HiveSettings;
 use evohime_hive::state::HiveStateSnapshot;
 use evohime_hive_contract::{
