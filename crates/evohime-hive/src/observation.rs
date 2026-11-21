@@ -251,9 +251,9 @@ pub async fn build_hive_observation_for_hive(
         .await
     {
         observation.history_available = true;
-        observation.requests_last_minute = windows.last_minute;
-        observation.requests_last_hour = windows.last_hour;
-        observation.requests_last_day = windows.last_day;
+        observation.requests_last_minute = u64::from(windows.last_minute);
+        observation.requests_last_hour = u64::from(windows.last_hour);
+        observation.requests_last_day = u64::from(windows.last_day);
         observation.oldest_minute_dispatch_ms = windows.oldest_minute_ms;
         observation.oldest_hour_dispatch_ms = windows.oldest_hour_ms;
         observation.oldest_day_dispatch_ms = windows.oldest_day_ms;
