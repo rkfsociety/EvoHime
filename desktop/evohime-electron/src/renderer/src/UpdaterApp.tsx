@@ -17,6 +17,32 @@ const fallback: UpdaterUiStatus = {
   canApply: false
 }
 
+const SPINNER_RADIUS = 16
+const SPINNER_CIRCUMFERENCE = 2 * Math.PI * SPINNER_RADIUS
+
+function StatusSpinner({ percent }: { readonly percent: number | null }): React.JSX.Element {
+  const clamped = percent === null ? null : Math.max(0, Math.min(100, percent))
+  const dashOffset = clamped === null ? SPINNER_CIRCUMFERENCE * 0.72 : SPINNER_CIRCUMFERENCE * (1 - clamped / 100)
+
+  return (
+    <svg
+      className={`updater-status-spinner${clamped === null ? ' updater-status-spinner--indeterminate' : ''}`}
+      viewBox="0 0 40 40"
+      aria-hidden="true"
+    >
+      <circle className="updater-status-spinner__track" cx="20" cy="20" r={SPINNER_RADIUS} />
+      <circle
+        className="updater-status-spinner__arc"
+        cx="20"
+        cy="20"
+        r={SPINNER_RADIUS}
+        strokeDasharray={SPINNER_CIRCUMFERENCE}
+        strokeDashoffset={dashOffset}
+      />
+    </svg>
+  )
+}
+
 export function UpdaterApp(): React.JSX.Element {
   const [status, setStatus] = useState<UpdaterUiStatus>(fallback)
 
@@ -45,8 +71,9 @@ export function UpdaterApp(): React.JSX.Element {
   }, [status.percent, status.phase])
 
   const failed = status.phase === 'failed'
-  const progressPercent = status.phase === 'ready' ? 100 : status.percent
-  const icon = failed ? '!' : '✓'
+  const attention = failed || status.phase === 'manual-recovery'
+  const ready = status.phase === 'ready'
+  const progressPercent = ready ? 100 : status.percent
   const progressLabel = progressPercent === null ? 'Подготавливаю' : `${progressPercent}%`
 
   return (
@@ -92,9 +119,10 @@ export function UpdaterApp(): React.JSX.Element {
         </div>
 
         <div className="updater-status-orbit" aria-hidden="true">
-          <div className="updater-status-orbit__ring updater-status-orbit__ring--one" />
-          <div className="updater-status-orbit__ring updater-status-orbit__ring--two" />
-          <div className="updater-status-icon">{translate(icon)}</div>
+          <div className="updater-status-orbit__ring" />
+          <div className="updater-status-icon" data-status-phase={status.phase}>
+            {ready ? '✓' : attention ? '!' : <StatusSpinner percent={progressPercent} />}
+          </div>
         </div>
 
         <div className="updater-panel">

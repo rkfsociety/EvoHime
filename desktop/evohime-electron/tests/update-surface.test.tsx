@@ -156,5 +156,45 @@ describe('standalone updater window', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Обновление не завершено' })).toBeTruthy())
     expect(screen.getByText('Проверьте подключение и повторите попытку.')).toBeTruthy()
+    expect(document.querySelector('.updater-status-icon')?.textContent).toBe('!')
+  })
+
+  it('shows a spinner during checking and progress ring while applying, reserving ✓ for ready', async () => {
+    installUpdaterApi(updaterStatus({
+      phase: 'checking',
+      heading: 'Проверяю обновления',
+      badge: 'Проверка',
+      message: 'Сверяю версии…',
+      percent: null
+    }))
+    const { unmount } = render(<UpdaterApp />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Проверяю обновления' })).toBeTruthy())
+    expect(screen.queryByText('✓')).toBeNull()
+    expect(document.querySelector('.updater-status-spinner--indeterminate')).toBeTruthy()
+    unmount()
+
+    installUpdaterApi(updaterStatus({
+      phase: 'applying',
+      heading: 'Устанавливаю обновление',
+      badge: 'Установка',
+      message: 'Загрузка…',
+      percent: 28
+    }))
+    render(<UpdaterApp />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Устанавливаю обновление' })).toBeTruthy())
+    expect(screen.queryByText('✓')).toBeNull()
+    expect(document.querySelector('.updater-status-spinner')).toBeTruthy()
+    expect(document.querySelector('.updater-status-spinner--indeterminate')).toBeNull()
+  })
+
+  it('shows ✓ in the status badge when ready', async () => {
+    installUpdaterApi(updaterStatus({ phase: 'ready' }))
+    render(<UpdaterApp />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Обновление завершено' })).toBeTruthy())
+    expect(document.querySelector('.updater-status-icon')?.textContent).toBe('✓')
+    expect(document.querySelector('.updater-status-spinner')).toBeNull()
   })
 })
