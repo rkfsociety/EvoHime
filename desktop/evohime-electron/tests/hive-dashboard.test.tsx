@@ -1740,4 +1740,61 @@ describe('hive dashboard', () => {
     }
   })
 
+  it('не показывает null токенов в резерве Rout при отсутствии fallback_tokens_remaining', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({
+            budget: {
+              ...snapshot().budget,
+              provider: 'literouter',
+              fallback_provider: 'rout',
+              fallback_tokens_remaining: null
+            }
+          }))
+        ]}
+      />
+    )
+
+    expect(await screen.findByText(/Резерв: Rout \(0 токенов\)/)).toBeTruthy()
+    expect(screen.queryByText(/null токенов/)).toBeNull()
+  })
+
+  it('показывает нейтральное Ожидание и скрывает пустой прочерк сна без данных EvaPulse', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[event('hive_state.snapshot', snapshot({ active_agents: [], pulse_status: '', next_wake_at_ms: null }))]}
+      />
+    )
+
+    expect(await screen.findByText('Ожидание...')).toBeTruthy()
+    expect(screen.queryByText(/нет данных Core/)).toBeNull()
+    expect(screen.queryByText('Следующий сон')).toBeNull()
+  })
+
+  it('показывает Сон: ожидание при активном EvaPulse без next_wake_at_ms и масштабирует корону в спящем режиме', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ active_agents: [], next_wake_at_ms: null })),
+          event('eva_pulse.status', {
+            schema_version: 1,
+            owner: 'eva_pulse',
+            status: 'active',
+            enabled: true,
+            next_wake_at_ms: null
+          })
+        ]}
+      />
+    )
+
+    expect(await screen.findByText('Сон: ожидание')).toBeTruthy()
+    const queenNode = screen.getByTestId('hive-graph-queen')
+    expect(queenNode.querySelector('.hive-graph__queen-core')?.getAttribute('r')).toBe('58')
+    expect(queenNode.querySelector('g[transform*="scale(2.5)"]')).toBeTruthy()
+  })
+
 })

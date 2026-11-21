@@ -29,9 +29,9 @@ interface PositionedAgent {
 }
 
 const VIEWBOX_WIDTH = 380
-const VIEWBOX_HEIGHT = 290
+const VIEWBOX_HEIGHT = 300
 const CENTER_X = 190
-const CENTER_Y = 122
+const CENTER_Y = 132
 const IDLE_ACTIONS = new Set(['', 'idle', 'waiting', 'sleeping', 'paused'])
 
 /** Определяет, выполняет ли агент активную задачу (`running`) или простаивает (`idle`). */
@@ -62,7 +62,7 @@ function computeAgentPositions(agents: readonly HiveGraphAgent[]): PositionedAge
     const isOuter = useDualOrbit && index >= innerCount
     const ringIndex = isOuter ? index - innerCount : index
     const ringTotal = isOuter ? outerCount : innerCount
-    const radius = useDualOrbit ? (isOuter ? 102 : 66) : count <= 2 ? 78 : 86
+    const radius = useDualOrbit ? (isOuter ? 106 : 70) : count <= 2 ? 84 : 92
     const angleOffset = isOuter ? Math.PI / Math.max(ringTotal, 1) : 0
     const angle = -Math.PI / 2 + angleOffset + (2 * Math.PI * ringIndex) / Math.max(ringTotal, 1)
 
@@ -90,7 +90,11 @@ export function HiveGraph({ queenName, queenActive, activeAgents }: HiveGraphPro
   const positioned = useMemo(() => computeAgentPositions(activeAgents), [activeAgents])
   const isSleeping = !queenActive || activeAgents.length === 0
   const runningCount = positioned.filter((item) => item.running).length
-  const nodeRadius = positioned.length > 8 ? 13 : 16
+  const nodeRadius = positioned.length > 8 ? 16 : 19
+  const queenHaloRadius = isSleeping ? 105 : 64
+  const queenPulseRadius = isSleeping ? 72 : 42
+  const queenCoreRadius = isSleeping ? 58 : 34
+  const crownScale = isSleeping ? 2.5 : 1.45
 
   const activeDetailId = hoveredId ?? selectedId
   const inspectedAgent = activeDetailId
@@ -135,8 +139,8 @@ export function HiveGraph({ queenName, queenActive, activeAgents }: HiveGraphPro
         </defs>
 
         {/* Фоновая орбитальная сетка */}
-        <circle className="hive-graph__ring hive-graph__ring--outer" cx={CENTER_X} cy={CENTER_Y} r={104} />
-        <circle className="hive-graph__ring hive-graph__ring--inner" cx={CENTER_X} cy={CENTER_Y} r={68} />
+        <circle className="hive-graph__ring hive-graph__ring--outer" cx={CENTER_X} cy={CENTER_Y} r={112} />
+        <circle className="hive-graph__ring hive-graph__ring--inner" cx={CENTER_X} cy={CENTER_Y} r={74} />
 
         {/* Орбита воркеров и линий делегирования */}
         <g
@@ -214,24 +218,26 @@ export function HiveGraph({ queenName, queenActive, activeAgents }: HiveGraphPro
           data-queen-state={isSleeping ? 'sleeping' : 'active'}
         >
           <title>{`${translate('Королева Ева')} (${queenName || 'EvoHime'})`}</title>
-          <circle className="hive-graph__queen-halo" cx={CENTER_X} cy={CENTER_Y} r={46} fill={`url(#${queenGlowId})`} />
-          <circle className="hive-graph__queen-pulse" cx={CENTER_X} cy={CENTER_Y} r={30} />
-          <circle className="hive-graph__queen-core" cx={CENTER_X} cy={CENTER_Y} r={24} />
+          <circle className="hive-graph__queen-halo" cx={CENTER_X} cy={CENTER_Y} r={queenHaloRadius} fill={`url(#${queenGlowId})`} />
+          <circle className="hive-graph__queen-pulse" cx={CENTER_X} cy={CENTER_Y} r={queenPulseRadius} />
+          <circle className="hive-graph__queen-core" cx={CENTER_X} cy={CENTER_Y} r={queenCoreRadius} />
           {/* Иконка короны */}
-          <path
-            className="hive-graph__crown"
-            fill={`url(#${crownGradId})`}
-            d={`M ${CENTER_X - 11} ${CENTER_Y + 6} L ${CENTER_X - 13} ${CENTER_Y - 5} L ${CENTER_X - 6} ${CENTER_Y} L ${CENTER_X} ${CENTER_Y - 9} L ${CENTER_X + 6} ${CENTER_Y} L ${CENTER_X + 13} ${CENTER_Y - 5} L ${CENTER_X + 11} ${CENTER_Y + 6} Z`}
-          />
-          <rect
-            className="hive-graph__crown-base"
-            x={CENTER_X - 11}
-            y={CENTER_Y + 7.5}
-            width={22}
-            height={3}
-            rx={1.5}
-            fill={`url(#${crownGradId})`}
-          />
+          <g transform={`translate(${CENTER_X}, ${CENTER_Y}) scale(${crownScale})`}>
+            <path
+              className="hive-graph__crown"
+              fill={`url(#${crownGradId})`}
+              d="M -11 6 L -13 -5 L -6 0 L 0 -9 L 6 0 L 13 -5 L 11 6 Z"
+            />
+            <rect
+              className="hive-graph__crown-base"
+              x={-11}
+              y={7.5}
+              width={22}
+              height={3}
+              rx={1.5}
+              fill={`url(#${crownGradId})`}
+            />
+          </g>
         </g>
       </svg>
 

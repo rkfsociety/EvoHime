@@ -2661,13 +2661,14 @@ export function HiveDashboard({
   // independent projection and fall back only when it has not arrived yet.
   const pulseNextWakeAtMs = pulse?.nextWakeAtMs ?? hive?.nextWakeAtMs ?? null
   const pulseStatus = pulse?.status ?? hive?.pulseStatus ?? ''
+  const nextSleepAtMs = pulseNextWakeAtMs ?? (paused ? wakeAtMs : null)
   const pulseStatusLabel = pulseStatus === 'active'
     ? 'EvaPulse активен'
     : pulseStatus === 'sleeping'
       ? 'EvaPulse спит'
       : pulseStatus === 'disabled'
         ? 'EvaPulse выключен'
-        : 'EvaPulse: нет данных Core'
+        : 'Ожидание...'
   const averageTaskTimeSec = hive?.metrics.averageTaskTimeSec ?? 0
   const averageTimeLabel = `${averageTaskTimeSec}с`
   const dailyBudgetUsd = hive?.dailyBudgetUsd ?? 0
@@ -2700,9 +2701,9 @@ export function HiveDashboard({
       : budget.fallbackProvider
   const effectiveFallbackModel = budget.fallbackModel || hive?.hiveFallbackModel || null
   const routmyStatusText = budget.provider === 'rout'
-    ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
+    ? `${translate('Осталось токенов:')} ${budget.dailyTokensRemaining ?? budget.dailyTokenQuota ?? 0}${budget.quotaResetUtcMidnight ? ` ${translate('до 00:00 UTC')}` : ''}`
     : (budget.provider === 'literouter' || budget.provider === 'openrouter') && routmyConfigured
-      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining} ${translate('токенов')})${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
+      ? `${translate('Резерв: Rout')} (${budget.fallbackTokensRemaining ?? 0} ${translate('токенов')})${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
       : fallbackLabel
         ? `${translate('Резерв:')} ${fallbackLabel}${budget.fallbackTokensRemaining !== null ? ` (${budget.fallbackTokensRemaining} ${translate('токенов')})` : ''}${effectiveFallbackModel ? ` · ${translate('Модель резерва:')} ${effectiveFallbackModel}` : ''}`
         : null
@@ -2996,10 +2997,17 @@ export function HiveDashboard({
               <dt>{translate('Воркеры')}</dt>
               <dd>{workerSummaryLabel}</dd>
             </div>
-            <div>
-              <dt>{translate('Следующий сон')}</dt>
-              <dd>{pulseNextWakeAtMs !== null ? formatClock(pulseNextWakeAtMs) : paused && wakeAtMs !== null ? formatClock(wakeAtMs) : '—'}</dd>
-            </div>
+            {nextSleepAtMs !== null ? (
+              <div>
+                <dt>{translate('Следующий сон')}</dt>
+                <dd>{formatClock(nextSleepAtMs)}</dd>
+              </div>
+            ) : pulseStatus === 'active' ? (
+              <div>
+                <dt>{translate('Следующий сон')}</dt>
+                <dd>{translate('Сон: ожидание')}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>{translate('EvaPulse')}</dt>
               <dd>{translate(pulseStatusLabel)}</dd>
