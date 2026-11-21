@@ -1530,13 +1530,19 @@ export function HiveDashboard({
   onApprovalResolved
 }: HiveDashboardProps): React.JSX.Element {
   const api = useShellApi()
-  const { apply: applyProviderSummary } = useProviderState()
+  const {
+    summary: providerSummary,
+    loading: providerLoading,
+    error: providerError,
+    refresh: refreshProviderSummary,
+    apply: applyProviderSummary
+  } = useProviderState()
+  const hiveApiKeyConfigured = providerSummary?.hiveApiKeyConfigured === true
   const [resolvingApprovalIds, setResolvingApprovalIds] = useState<ReadonlySet<string>>(() => new Set())
   const [resolvedLocally, setResolvedLocally] = useState<readonly string[]>([])
   const [commandError, setCommandError] = useState<string | null>(null)
   const [preference, setPreference] = useState<HivePreference>(() => loadHivePreference())
   const [allLogs, setAllLogs] = useState(false)
-  const [provider, setProvider] = useState<ProviderSummary | null>(null)
   const [evaWorkspacePath, setEvaWorkspacePath] = useState('')
   const [evaWorkspaceDraft, setEvaWorkspaceDraft] = useState('')
   const [evaWorkspaceError, setEvaWorkspaceError] = useState<string | null>(null)
@@ -1965,16 +1971,6 @@ export function HiveDashboard({
   }, [api, connected, preference.intervalMs, requestSnapshot])
 
   useEffect(() => {
-    if (!api) return
-    void api.invoke('provider.get', {}).then((outcome) => {
-      if (outcome.ok) {
-        setProvider(outcome.value)
-        applyProviderSummary(outcome.value)
-      }
-    })
-  }, [api, applyProviderSummary])
-
-  useEffect(() => {
     if (!api) {
       setHistoryPrompts([])
       return
@@ -2217,7 +2213,7 @@ export function HiveDashboard({
     }
   }, [api, onApprovalResolved, resolvingApprovalIds])
 
-  const selectedProviderKey = currentProviderKey(provider)
+  const selectedProviderKey = currentProviderKey(providerSummary)
 
   const updatePreference = useCallback((next: HivePreference): void => {
     setPreference(next)
@@ -2463,13 +2459,14 @@ export function HiveDashboard({
 
   const saveHiveApiKey = useCallback(async (): Promise<void> => {
     if (!api) return
+    const trimmedKey = hiveApiKeyDraft.trim()
     setHiveApiKeyBusy(true)
     setHiveApiKeyError(null)
     setHiveApiKeySaved(false)
     try {
       const outcome = await api.invoke('core.setHiveSetting', {
         key: 'hive_api_key',
-        value: hiveApiKeyDraft.trim()
+        value: trimmedKey
       })
       if (!outcome.ok) {
         setHiveApiKeyError(outcome.message)
@@ -2478,14 +2475,18 @@ export function HiveDashboard({
       setHiveApiKeyDraft('')
       setIsEditingMainKey(false)
       setHiveApiKeySaved(true)
-      setProvider((current) => current ? { ...current, hiveApiKeyConfigured: hiveApiKeyDraft.trim().length > 0 } : current)
+      if (providerSummary) {
+        applyProviderSummary({ ...providerSummary, hiveApiKeyConfigured: trimmedKey.length > 0 })
+      } else {
+        void refreshProviderSummary()
+      }
       requestSnapshot()
     } catch {
       setHiveApiKeyError('Не удалось сохранить API-ключ Улья: Core не ответил.')
     } finally {
       setHiveApiKeyBusy(false)
     }
-  }, [api, hiveApiKeyDraft, requestSnapshot])
+  }, [api, applyProviderSummary, hiveApiKeyDraft, providerSummary, refreshProviderSummary, requestSnapshot])
 
   const saveHiveFallbackProviderSettings = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -2538,7 +2539,11 @@ export function HiveDashboard({
       setIsEditingFallbackKey(false)
       setHiveFallbackApiKeySaved(true)
       setHiveFallbackCatalogError(null)
-      setProvider((current) => current ? { ...current, hiveFallbackApiKeyConfigured: trimmedKey.length > 0 } : current)
+      if (providerSummary) {
+        applyProviderSummary({ ...providerSummary, hiveFallbackApiKeyConfigured: trimmedKey.length > 0 })
+      } else {
+        void refreshProviderSummary()
+      }
       requestSnapshot()
       if (trimmedKey.length > 0 && hiveFallbackProviderProfile.trim().length > 0) {
         void loadHiveFallbackCatalog()
@@ -2548,7 +2553,7 @@ export function HiveDashboard({
     } finally {
       setHiveFallbackApiKeyBusy(false)
     }
-  }, [api, hiveFallbackApiKeyDraft, hiveFallbackProviderProfile, loadHiveFallbackCatalog, requestSnapshot])
+  }, [api, applyProviderSummary, hiveFallbackApiKeyDraft, hiveFallbackProviderProfile, loadHiveFallbackCatalog, providerSummary, refreshProviderSummary, requestSnapshot])
 
   const openHiveChat = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -2705,7 +2710,7 @@ export function HiveDashboard({
   const isRoutProvider = normalizedBudgetProvider === 'rout'
     || (normalizedBudgetProvider.length === 0 && selectedProviderKey === 'openai_compatible:rout')
   const routmyConfigured = budget.fallbackProvider === 'rout'
-    || provider?.compatibleProfiles?.rout?.configured === true
+    || providerSummary?.compatibleProfiles?.rout?.configured === true
   const fallbackLabel = budget.fallbackProvider === 'rout'
     ? 'Rout'
     : budget.fallbackProvider === 'literouter'
@@ -3479,7 +3484,22 @@ export function HiveDashboard({
                 ) : hiveProviderSaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('Провайдер и модель Улья сохранены')}</small>
                 ) : null}
-                {provider?.hiveApiKeyConfigured && !isEditingMainKey ? (
+                {providerLoading || (!providerError && providerSummary === null) ? (
+                  <div className="hive-provider">
+                    <span>{translate('API-ключ Улья (обязателен для работы Улья)')}</span>
+                    <small role="status" className="hive-settings-hint">{translate('Загрузка настроек API-ключа…')}</small>
+                  </div>
+                ) : providerError ? (
+                  <div className="hive-provider">
+                    <span>{translate('API-ключ Улья (обязателен для работы Улья)')}</span>
+                    <div className="hive-settings-modal__row">
+                      <p role="alert" className="hive-console__error">{translate(providerError)}</p>
+                      <button type="button" disabled={!connected} onClick={() => void refreshProviderSummary()}>
+                        {translate('Повторить')}
+                      </button>
+                    </div>
+                  </div>
+                ) : hiveApiKeyConfigured && !isEditingMainKey ? (
                   <div className="hive-provider">
                     <span>{translate('API-ключ Улья (обязателен для работы Улья)')}</span>
                     <div className="hive-settings-modal__row">
@@ -3610,7 +3630,7 @@ export function HiveDashboard({
                 ) : hiveFallbackProviderSaved ? (
                   <small role="status" className="hive-settings-hint">✓ {translate('Резервный провайдер и модель Улья сохранены')}</small>
                 ) : null}
-                {provider?.hiveFallbackApiKeyConfigured && !isEditingFallbackKey ? (
+                {providerSummary?.hiveFallbackApiKeyConfigured && !isEditingFallbackKey ? (
                   <div className="hive-provider">
                     <span>{translate('Резервный API-ключ Улья')}</span>
                     <div className="hive-settings-modal__row">

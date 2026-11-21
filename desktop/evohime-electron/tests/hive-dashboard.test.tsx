@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PROVIDER_PROFILE_IDS, type CommandOutcome, type ConversationEventProjection, type CoreEvent, type EvoHimeApiV1, type RendererCommand } from '../src/shared/api'
 import { HiveDashboard } from '../src/renderer/src/OperationsPanel'
+import { ProviderStateProvider } from '../src/renderer/src/provider-state'
 import { PROVIDER_PROFILE_LABELS } from '../src/renderer/src/provider-labels'
 import { getProviderSchema } from '../src/renderer/src/provider-schema'
+
+function render(ui: React.ReactElement): ReturnType<typeof rtlRender> {
+  const result = rtlRender(<ProviderStateProvider>{ui}</ProviderStateProvider>)
+  return {
+    ...result,
+    rerender: (nextUi: React.ReactElement) => result.rerender(<ProviderStateProvider>{nextUi}</ProviderStateProvider>)
+  }
+}
 
 const calls: Array<{ command: string; payload: unknown }> = []
 let nextSequence = 1
@@ -1838,6 +1847,100 @@ describe('hive dashboard', () => {
     const queenNode = screen.getByTestId('hive-graph-queen')
     expect(queenNode.querySelector('.hive-graph__queen-core')?.getAttribute('r')).toBe('58')
     expect(queenNode.querySelector('g[transform*="scale(2.5)"]')).toBeTruthy()
+  })
+
+  it('ui_hides_api_key_input_while_provider_get_is_loading', async () => {
+    let resolveProviderGet!: (value: CommandOutcome<'provider.get'>) => void
+    const pendingProviderGet = new Promise<CommandOutcome<'provider.get'>>((resolve) => {
+      resolveProviderGet = resolve
+    })
+    const previousApi = window.evohime
+    Object.defineProperty(window, 'evohime', {
+      configurable: true,
+      value: Object.freeze({
+        v1: {
+          ...previousApi.v1,
+          invoke: (async (command: RendererCommand, payload: unknown) => {
+            calls.push({ command, payload })
+            if (command === 'provider.get') return pendingProviderGet
+            if (command === 'chat.open') return ok(null)
+            return ok({ accepted: true })
+          }) as EvoHimeApiV1['invoke']
+        }
+      })
+    })
+
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
+    expect(within(dialog).getByText('Загрузка настроек API-ключа…')).toBeTruthy()
+
+    await act(async () => {
+      resolveProviderGet(ok(providerSummary({ hiveApiKeyConfigured: true })) as CommandOutcome<'provider.get'>)
+    })
+
+    await waitFor(() => {
+      expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
+    })
+    expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
+  })
+
+  it('ui_shows_error_and_retry_when_provider_get_fails_and_recovers_on_retry', async () => {
+    let attempt = 0
+    const previousApi = window.evohime
+    Object.defineProperty(window, 'evohime', {
+      configurable: true,
+      value: Object.freeze({
+        v1: {
+          ...previousApi.v1,
+          invoke: (async (command: RendererCommand, payload: unknown) => {
+            calls.push({ command, payload })
+            if (command === 'provider.get') {
+              attempt += 1
+              if (attempt === 1) {
+                return { ok: false, code: 'core_unavailable', message: 'Ошибка загрузки настроек провайдера' }
+              }
+              return ok(providerSummary({ hiveApiKeyConfigured: true }))
+            }
+            if (command === 'chat.open') return ok(null)
+            return ok({ accepted: true })
+          }) as EvoHimeApiV1['invoke']
+        }
+      })
+    })
+
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    expect(await within(dialog).findByText('Ошибка загрузки настроек провайдера')).toBeTruthy()
+    expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Повторить' }))
+
+    await waitFor(() => {
+      expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
+    })
+  })
+
+  it('ui_resets_editing_state_on_cancel', async () => {
+    providerOverrides = { hiveApiKeyConfigured: true }
+    render(<HiveDashboard connection="connected" events={[event('hive_state.snapshot', snapshot())]} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Изменить' }))
+    const keyInput = within(dialog).getByLabelText('API-ключ Улья (обязателен для работы Улья)') as HTMLInputElement
+    await userEvent.type(keyInput, 'sk-temp')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Отмена' }))
+
+    expect(within(dialog).queryByLabelText('API-ключ Улья (обязателен для работы Улья)')).toBeNull()
+    expect(within(dialog).getByText('API-ключ сохранен ✓')).toBeTruthy()
   })
 
 })
