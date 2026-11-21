@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop architecture
 
-Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-11-18.
+Статус: текущая утверждённая архитектура продукта. Обновлено: 2026-11-21.
 Фактическое состояние реализации см. в [`current-state.md`](current-state.md).
 
 EvoHime — локальное Windows-приложение.
@@ -20,6 +20,12 @@ evohime-transaction.exe   transactional update worker
 ```
 
 Renderer не имеет node integration, не выполняет shell-команды и не открывает базу. Electron main ограничен окном, lifecycle, локальным состоянием оболочки и IPC adapter. Core владеет workspace, инструментами, моделью, секретами и локальным состоянием. Supervisor запускает core в Job Object и завершает дочернее дерево при остановке.
+
+Улей (Hive / EvaPulse) — Core-owned контур Королевы, child-агентов и фоновых
+наблюдений за репозиториями, изолированный от обычных чатов и их маршрутов.
+Краткий доменный контракт и актуальное состояние реализации описаны в
+[`hive-architecture.md`](hive-architecture.md); подробные границы делегирования
+и typed boundary находятся в [`architecture/hive.md`](architecture/hive.md).
 
 SQLite schema migration и idempotent installers выполняются на startup при
 открытии `EventJournal`. Workspace RAG index/search/vector workers и выбранные
@@ -342,6 +348,7 @@ fixed `compatibility` manifest. Поэтому обычное изменение
 | Файл | Домен |
 | --- | --- |
 | [`architecture/hive.md`](architecture/hive.md) | Улей (Hive), делегирование, роли, SOP и координация команд |
+| [`hive-architecture.md`](hive-architecture.md) | Аудитное описание Hive/EvaPulse: настройки, маршруты, proactive evolution и Electron UI |
 | [`architecture/workflow.md`](architecture/workflow.md) | Workflow/v1, оркестрация, триггеры, event bus и фоновое исполнение |
 | [`architecture/plan-review.md`](architecture/plan-review.md) | Ревью и правка планов, Plan Artifact и Architecture Drift Review |
 | [`architecture/model-routing.md`](architecture/model-routing.md) | Model Gateway, профили провайдеров, ключи, маршрутизация, каскады и стратегии промптов |

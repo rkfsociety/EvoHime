@@ -7,6 +7,19 @@ release-gates и результаты отдельных завершённых 
 [`release-evidence.md`](release-evidence.md); пошаговые незавершённые работы — в
 [`plans/README.md`](plans/README.md).
 
+## Улей (Hive / EvaPulse)
+
+Улей реализован как Core-owned контур Королевы, child-агентов и отдельного
+системного чата `hive-system-chat`; обычные чаты не попадают в Hive snapshot.
+EvaPulse — независимый фоновый daemon: он читает journal observations, соблюдает
+бюджет и изолированный каскад `hive` → `hive_fallback` → `Sleep`, а валидированные
+сигналы передаёт `HiveSignalReceiver`. API-ключи Улья хранятся shell/main в
+зашифрованном `provider.json` через Electron `safeStorage`/Windows DPAPI и
+передаются Core только через окружение supervisor. Подробное описание всех
+полей `HiveSettings`, proactive evolution, UI и известных ограничений находится
+в [`hive-architecture.md`](hive-architecture.md); канонические typed boundaries —
+в [`architecture/hive.md`](architecture/hive.md).
+
 ## Независимые EvaPulse и Hive (plan 198, закрыт 2026-11-21)
 
 EvaPulse и Hive разделены на уровне Core: `HiveSignalReceiver` принимает только
