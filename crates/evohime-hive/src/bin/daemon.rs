@@ -11,10 +11,11 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use evohime_desktop_ipc::{generated, session, transport};
-use evohime_hive::pulse::{
-    EvaPulseController, EvaPulseDaemon, HivePulseControlRequest, DEFAULT_HIVE_PULSE_CONTROL_PIPE,
-    HIVE_PULSE_CONTROL_PIPE_ENV, HIVE_PULSE_CONTROL_SOCKET_ENV,
-};
+#[cfg(unix)]
+use evohime_hive::pulse::HIVE_PULSE_CONTROL_SOCKET_ENV;
+#[cfg(windows)]
+use evohime_hive::pulse::{DEFAULT_HIVE_PULSE_CONTROL_PIPE, HIVE_PULSE_CONTROL_PIPE_ENV};
+use evohime_hive::pulse::{EvaPulseController, EvaPulseDaemon, HivePulseControlRequest};
 use evohime_hive::settings::HiveSettings;
 use evohime_hive::state::HiveStateSnapshot;
 use evohime_hive_contract::{
