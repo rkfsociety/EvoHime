@@ -1160,6 +1160,10 @@ function EfficiencyRing({ percent }: { readonly percent: number }): React.JSX.El
   )
 }
 
+function HiveSkeleton({ className = '' }: { readonly className?: string }): React.JSX.Element {
+  return <span className={`hive-skeleton ${className}`.trim()} aria-hidden="true" />
+}
+
 function parseApprovalRequest(event: CoreEvent): ApprovalRequestView | null {
   try {
     const parsed = eventBody(event)
@@ -1604,6 +1608,7 @@ export function HiveDashboard({
   const hiveSeenPagesRef = useRef(new Set<string>())
   const connected = CONNECTED_STATES.includes(connection)
   const hive = useMemo(() => parseHiveState(latest(events, 'hive_state.snapshot')), [events])
+  const hasHiveSnapshot = latest(events, 'hive_state.snapshot') !== undefined
   const pulse = useMemo(() => parseEvaPulseState(latest(events, 'eva_pulse.status')), [events])
   const hiveChatTaskIds = useMemo(
     () => new Set([...hiveConversationLogEvents, ...localPrompts.map((prompt) => ({ taskId: prompt.taskId }))]
@@ -2636,6 +2641,10 @@ export function HiveDashboard({
   )
   const capacityLabel = hiveCapacity > 0 ? hiveCapacity : agentsOnline
   const showingConnectedIdleState = connected && hive !== null && hive.activeAgents.length === 0
+  // An invalid legacy snapshot is intentionally rendered as an empty projection
+  // for compatibility. A missing projection, however, is a loading state: never
+  // present transport defaults as real metrics while Core is unavailable.
+  const hiveLoading = hive === null && (!connected || !hasHiveSnapshot)
   const workerSummaryLabel = showingConnectedIdleState ? '— / —' : `${agentsOnline} / ${capacityLabel}`
   const paused = hive?.queen.status === 'budget_exhausted' && budget.historyAvailable
   const queenActive = hive?.queen.status === 'active'
@@ -2885,7 +2894,7 @@ export function HiveDashboard({
           </section>
           <div className="hive-panel__head">
             <h2>{translate('Департаменты улья')}</h2>
-            <span>{showingConnectedIdleState ? translate('Нет активных агентов') : `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`}</span>
+              <span>{hiveLoading ? <HiveSkeleton className="hive-skeleton--text" /> : showingConnectedIdleState ? translate('Нет активных агентов') : `${translate('Активно:')} ${agentsOnline} / ${capacityLabel}`}</span>
           </div>
           <div className="hive-departments">
             {departments.map((department) => {
@@ -2902,8 +2911,7 @@ export function HiveDashboard({
                       <strong>{translate(department.label)}</strong>
                     </div>
                     <div className="hive-department__count">
-                      <span>{showingConnectedIdleState ? translate('Нет активных агентов') : `${department.activeCount} / ${department.maxCapacity}`}</span>
-                      <em>{showingConnectedIdleState ? '—' : `${percent}%`}</em>
+                      {hiveLoading ? <HiveSkeleton className="hive-skeleton--line" /> : <><span>{showingConnectedIdleState ? translate('Нет активных агентов') : `${department.activeCount} / ${department.maxCapacity}`}</span><em>{showingConnectedIdleState ? '—' : `${percent}%`}</em></>}
                     </div>
                     <div
                       className="hive-progress"
@@ -2913,7 +2921,7 @@ export function HiveDashboard({
                       aria-valuemax={Math.max(department.maxCapacity, 1)}
                       aria-valuenow={department.activeCount}
                     >
-                      <span style={{ width: `${percent}%` }} />
+                      {hiveLoading ? <HiveSkeleton className="hive-skeleton--bar" /> : <span style={{ width: `${percent}%` }} />}
                     </div>
                   </div>
                 </article>
@@ -2925,7 +2933,11 @@ export function HiveDashboard({
                 <h3>{translate('Активные агенты')} ({agentsOnline})</h3>
                 <span>{translate('глубина и подагенты')}</span>
               </div>
-              {hive && hive.activeAgents.length > 0 ? (
+              {hiveLoading ? (
+                <ul className="hive-agent-list hive-agent-list--loading" aria-label={translate('Загрузка агентов')}>
+                  {[1, 2, 3].map((item) => <li key={item}><HiveSkeleton className="hive-skeleton--avatar" /><HiveSkeleton className="hive-skeleton--agent" /></li>)}
+                </ul>
+              ) : hive && hive.activeAgents.length > 0 ? (
                 <ul className="hive-agent-list">
                   {hive.activeAgents.slice(0, 8).map((agent) => (
                     <li key={agent.id}>
@@ -3003,16 +3015,16 @@ export function HiveDashboard({
             <div className="hive-metrics">
               <EfficiencyRing percent={efficiency} />
             </div>
-            <ul className="hive-stat-list">
-              <li><span>{translate('Агентов онлайн')}</span><strong>{agentsOnline}</strong></li>
-              <li><span>{translate('Задач в работе')}</span><strong>{activeTasks}</strong></li>
-              <li>
-                <span>{translate('Задач сегодня')}</span>
-                <strong>{hive?.metrics.tasksToday ?? 0}</strong>
-              </li>
-              <li>
-                <span>{translate('Среднее время')}</span>
-                <strong>{averageTimeLabel}</strong>
+             <ul className="hive-stat-list">
+               <li><span>{translate('Агентов онлайн')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : agentsOnline}</strong></li>
+               <li><span>{translate('Задач в работе')}</span><strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : activeTasks}</strong></li>
+               <li>
+                 <span>{translate('Задач сегодня')}</span>
+                 <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : hive?.metrics.tasksToday ?? 0}</strong>
+               </li>
+               <li>
+                 <span>{translate('Среднее время')}</span>
+                 <strong>{hiveLoading ? <HiveSkeleton className="hive-skeleton--number" /> : averageTimeLabel}</strong>
               </li>
             </ul>
           </div>
@@ -3022,7 +3034,11 @@ export function HiveDashboard({
               <h3>{translate(budget.dailyCostAvailable ? 'Бюджет и провайдер' : 'Провайдер и лимиты')}</h3>
               <span className="hive-budget-card__provider-tag">{snapshotBudgetLabel}</span>
             </div>
-            {budget.dailyCostAvailable ? (
+             {hiveLoading ? (
+               <div className="hive-budget-skeleton" aria-label={translate('Загрузка бюджета')}>
+                 <HiveSkeleton className="hive-skeleton--line" /><HiveSkeleton className="hive-skeleton--bar" /><HiveSkeleton className="hive-skeleton--line hive-skeleton--wide" />
+               </div>
+             ) : budget.dailyCostAvailable ? (
               <>
                 <div className="hive-budget-card__spent">
                   <span>{translate('Потрачено сегодня')}</span>
@@ -3198,7 +3214,7 @@ export function HiveDashboard({
               className="hive-chat__send"
               disabled={!connected || sendingMessage || chatDraft.trim().length === 0}
             >
-              {translate('Отправить')}
+               <span className="hive-chat__send-icon" aria-hidden="true">➤</span>{translate('Отправить')}
             </button>
           </form>
         </aside>
