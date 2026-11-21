@@ -101,8 +101,8 @@ impl ExternalHivePulseProxy {
 
         let socket_path = if let Some(endpoint) = &self.endpoint_override {
             PathBuf::from(endpoint)
-        } else if let Some(env_path) = std::env::var_os(HIVE_PULSE_CONTROL_SOCKET_ENV)
-            .filter(|value| !value.is_empty())
+        } else if let Some(env_path) =
+            std::env::var_os(HIVE_PULSE_CONTROL_SOCKET_ENV).filter(|value| !value.is_empty())
         {
             PathBuf::from(env_path)
         } else {
@@ -136,9 +136,15 @@ mod tests {
     #[tokio::test]
     async fn returns_pulse_unavailable_when_daemon_is_absent() {
         let endpoint = if cfg!(windows) {
-            format!(r"\\.\pipe\evohime-hive-pulse-missing-{}", uuid::Uuid::new_v4())
+            format!(
+                r"\\.\pipe\evohime-hive-pulse-missing-{}",
+                uuid::Uuid::new_v4()
+            )
         } else {
-            format!("/tmp/evohime-hive-pulse-missing-{}.sock", uuid::Uuid::new_v4())
+            format!(
+                "/tmp/evohime-hive-pulse-missing-{}.sock",
+                uuid::Uuid::new_v4()
+            )
         };
         let proxy = ExternalHivePulseProxy::with_endpoint(endpoint);
 
