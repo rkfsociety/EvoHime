@@ -13,7 +13,7 @@ evohime-model-gateway = { path = "../model-gateway" }
 evohime-permissions = { path = "../permissions" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 
-tokio = { workspace = true, features = ["fs", "process", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "macros", "process", "rt-multi-thread", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,3 +24,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "evohime-hive-daemon"
+path = "src/bin/daemon.rs"
