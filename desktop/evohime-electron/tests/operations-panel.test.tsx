@@ -295,7 +295,7 @@ describe('operations panel', () => {
     expect(screen.queryByText('зафиксировано')).toBeNull()
   })
 
-  it('не объявляет Pulse исправным во время переподключения Core', () => {
+  it('не объявляет Наблюдение исправным во время переподключения Core', () => {
     render(
       <OperationsPanel
         connection="reconnecting"
@@ -303,7 +303,7 @@ describe('operations panel', () => {
       />
     )
 
-    expect(screen.getByText('состояние Pulse не подтверждено')).toBeTruthy()
+    expect(screen.getByText('состояние цикла не подтверждено')).toBeTruthy()
     expect(screen.getAllByText('Core недоступен — ожидается актуальная проекция').length).toBeGreaterThan(0)
     expect(screen.queryByText('ошибок не обнаружено')).toBeNull()
   })
