@@ -20,7 +20,8 @@ use crate::EventJournal;
 pub(crate) const HIVE_REPLAY_WINDOW: u32 = 512;
 
 /// Returns `"hive"` when an isolated Hive route is present and configured.
-pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {    let config = config?;
+pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
+    let config = config?;
     config
         .routes
         .get("hive")

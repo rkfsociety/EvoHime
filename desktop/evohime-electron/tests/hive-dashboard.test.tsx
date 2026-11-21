@@ -289,8 +289,9 @@ describe('hive dashboard', () => {
       />
     )
 
-    expect(await screen.findByText('Разрешить commit recovery-задачи?')).toBeTruthy()
-    await userEvent.click(within(screen.getByLabelText('Запрос подтверждения')).getByRole('button', { name: 'Разрешить' }))
+    const approval = screen.getByLabelText('Запрос подтверждения')
+    expect(await within(approval).findByText('Разрешить commit recovery-задачи?')).toBeTruthy()
+    await userEvent.click(within(approval).getByRole('button', { name: 'Разрешить' }))
     await waitFor(() => {
       expect(calls.find((call) => call.command === 'core.resolveApproval')?.payload).toMatchObject({
         approvalId: 'apr-pulse-1',
