@@ -914,6 +914,73 @@ async fn run_listener_supervision(
 // Windows to fail-fast the listener while it loaded an otherwise valid engine.
 const LISTENER_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
+/// Hive daemon is deliberately outside the Core generation Job Object. Its own
+/// job lets it survive a Core crash while still guaranteeing cleanup when this
+/// supervisor task ends.
+async fn run_hive_supervision(
+    hive_exe: PathBuf,
+    context_path: PathBuf,
+    logger: std::sync::Arc<SupervisorLogger>,
+) {
+    let max_restarts = std::env::var("EVOHIME_HIVE_MAX_RESTARTS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(3);
+    let mut restarts = 0;
+    loop {
+        let job = match JobObject::create() {
+            Ok(job) => job,
+            Err(error) => {
+                let _ = logger.write("hive.job_failed", json!({"error": error.to_string()}));
+                return;
+            }
+        };
+        let mut command = Command::new(&hive_exe);
+        command
+            .kill_on_drop(true)
+            .env("EVOHIME_LAUNCH_CONTEXT", &context_path);
+        for var in ["EVOHIME_DATA_DIR", "HIVE_API_KEY", "HIVE_FALLBACK_API_KEY"] {
+            if let Some(value) = std::env::var_os(var) {
+                command.env(var, value);
+            }
+        }
+        let mut child = match command.spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = logger.write("hive.spawn_failed", json!({"error": error.to_string()}));
+                return;
+            }
+        };
+        if let Err(error) = job.assign(&child) {
+            let _ = logger.write(
+                "hive.job_assign_failed",
+                json!({"error": error.to_string()}),
+            );
+            let _ = child.kill().await;
+            return;
+        }
+        let _ = logger.write("hive.spawned", json!({"restart": restarts}));
+        let status = child.wait().await;
+        drop(job);
+        let _ = logger.write(
+            "hive.exit",
+            json!({"status": status.ok().and_then(|s| s.code())}),
+        );
+        if restarts >= max_restarts {
+            let _ = logger.write(
+                "hive.restart_budget_exhausted",
+                json!({"max_restarts": max_restarts}),
+            );
+            return;
+        }
+        restarts += 1;
+        tokio::time::sleep(std::time::Duration::from_millis(
+            250u64.saturating_mul(2u64.saturating_pow(restarts.min(6))),
+        ))
+        .await;
+    }
+}
+
 #[derive(Clone)]
 struct SupervisorSessionContext {
     launch_context: LaunchContext,
@@ -1023,6 +1090,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 listener_logger,
             )
             .await;
+        });
+        let hive_exe = normalized_env_path("EVOHIME_HIVE_EXE")
+            .unwrap_or_else(|| PathBuf::from("evohime-hive-daemon.exe"));
+        let hive_context_path = session.context_path.clone();
+        let hive_logger = std::sync::Arc::clone(&logger);
+        tokio::spawn(async move {
+            run_hive_supervision(hive_exe, hive_context_path, hive_logger).await;
         });
     }
     let max_restarts = std::env::var("EVOHIME_CORE_MAX_RESTARTS")
