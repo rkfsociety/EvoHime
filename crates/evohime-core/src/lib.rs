@@ -229,10 +229,10 @@ pub(crate) mod github_public_repository;
 pub mod goal;
 pub mod guided_calibration_sessions;
 pub mod hardware_fit_evidence;
-pub(crate) mod hive_observation;
+pub(crate) use evohime_hive::observation as hive_observation;
 pub use evohime_hive::settings as hive_settings;
 /// Read-only aggregated hive visualization snapshot for the operations panel.
-pub mod hive_state;
+pub use evohime_hive::state as hive_state;
 pub mod host_resource_telemetry;
 pub mod human_work_items;
 pub(crate) mod incremental_change_protocol;

@@ -1240,7 +1240,7 @@ impl PulseProbe for JournalPulseProbe {
         Box::pin(async move {
             let settings = self.journal.hive_settings().await.unwrap_or_default();
             let now_ms = crate::task_memory::now_millis() as i64;
-            let selected_model = crate::hive_observation::selected_model_name(&self.selected_model);
+            let _selected_model = self.selected_model.get().map(|value| value.to_string());
             let mut adjusted_config = self.gateway_config.clone();
             if let Some(config) = adjusted_config.as_mut() {
                 config.apply_hive_route_overrides(
@@ -1267,7 +1267,7 @@ impl PulseProbe for JournalPulseProbe {
             let observation = crate::hive_observation::build_hive_observation_for_hive(
                 &self.journal,
                 adjusted_config.as_ref(),
-                selected_model.as_deref(),
+                None,
                 settings.hive_provider_profile.as_deref(),
                 settings.hive_model.as_deref(),
                 now_ms,
@@ -1282,9 +1282,64 @@ impl PulseProbe for JournalPulseProbe {
                 .await
                 .unwrap_or_default();
             let projections = replay_projections_from_records(&records);
+            let minimal_projections: Vec<crate::hive_observation::MinimalChildWorkflowPayload> =
+                projections
+                    .iter()
+                    .map(|p| crate::hive_observation::MinimalChildWorkflowPayload {
+                        child_task_id: p.child_task_id.clone(),
+                        parent_task_id: p.parent_task_id.clone(),
+                        role: p.role.clone(),
+                        state: match p.state {
+                            CoordinatorState::Created => {
+                                crate::hive_observation::HiveChildState::Created
+                            }
+                            CoordinatorState::Queued => {
+                                crate::hive_observation::HiveChildState::Queued
+                            }
+                            CoordinatorState::Running => {
+                                crate::hive_observation::HiveChildState::Running
+                            }
+                            CoordinatorState::Validating => {
+                                crate::hive_observation::HiveChildState::Validating
+                            }
+                            CoordinatorState::WaitingParentAcceptance => {
+                                crate::hive_observation::HiveChildState::WaitingParentAcceptance
+                            }
+                            CoordinatorState::Accepted => {
+                                crate::hive_observation::HiveChildState::Accepted
+                            }
+                            CoordinatorState::Rejected => {
+                                crate::hive_observation::HiveChildState::Rejected
+                            }
+                            CoordinatorState::Failed => {
+                                crate::hive_observation::HiveChildState::Failed
+                            }
+                            CoordinatorState::Cancelled => {
+                                crate::hive_observation::HiveChildState::Cancelled
+                            }
+                            CoordinatorState::TimedOut => {
+                                crate::hive_observation::HiveChildState::TimedOut
+                            }
+                            CoordinatorState::Aborted => {
+                                crate::hive_observation::HiveChildState::Aborted
+                            }
+                            CoordinatorState::RevisePlan => {
+                                crate::hive_observation::HiveChildState::RevisePlan
+                            }
+                        },
+                        dead_letter: p.dead_letter,
+                        depth: p.depth,
+                        spawned_subagents: p.spawned_subagents,
+                        planned_ceiling: p.planned_ceiling,
+                    })
+                    .collect();
             let roles = crate::hive_observation::persistent_agent_roles(&self.journal).await;
-            let snapshot =
-                HiveStateSnapshot::from_observation(&settings, &projections, &roles, &observation);
+            let snapshot = HiveStateSnapshot::from_observation(
+                &settings,
+                &minimal_projections,
+                &roles,
+                &observation,
+            );
             let in_flight = self.reconcile_pending_recoveries(&records);
             self.reconcile_pending_evolutions(&records);
             let failed_workers = self.new_failures(&projections, &in_flight);

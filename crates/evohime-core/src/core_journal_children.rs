@@ -423,10 +423,178 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         })
     }
 
-    fn persistent_agent_roles(
-        &self,
-    ) -> evohime_hive_contract::BoxFuture<'_, std::collections::HashMap<String, String>> {
-        Box::pin(async move { crate::hive_observation::persistent_agent_roles(self).await })
+    fn persistent_agent_roles(&self) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
+        Box::pin(async move {
+            let database = self.database().lock().await;
+            let Ok(agents) =
+                evohime_local_storage::domains::agents::load_agents(database.connection(), 256)
+            else {
+                return Vec::new();
+            };
+            let mut roles: Vec<String> = agents
+                .iter()
+                .filter_map(|bytes| {
+                    let agent: crate::persistent_agent_registry::PersistentAgent =
+                        serde_json::from_slice(bytes).ok()?;
+                    if agent.status != crate::persistent_agent_registry::LifecycleStatus::Active {
+                        return None;
+                    }
+                    Some(agent.role_profile_ref.id)
+                })
+                .collect();
+            roles.sort();
+            roles.dedup();
+            roles
+        })
+    }
+
+    fn task_metrics(&self, now_ms: i64) -> evohime_hive_contract::BoxFuture<'_, (u32, u64)> {
+        Box::pin(async move {
+            let day_start_ms =
+                now_ms.div_euclid(crate::hive_state::HIVE_DAY_WINDOW_MS)
+                    * crate::hive_state::HIVE_DAY_WINDOW_MS;
+            let Some(day_start) =
+                chrono::DateTime::<chrono::Utc>::from_timestamp_millis(day_start_ms)
+                    .map(|ts| ts.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            else {
+                return (0, 0);
+            };
+            let Ok(lease) = self.checkout_read_database() else {
+                return (0, 0);
+            };
+            let Some(database) = lease.database() else {
+                return (0, 0);
+            };
+            let result = database.connection().query_row(
+                "WITH today_tasks AS (
+                     SELECT task_id, MIN(sequence_id) AS start_sequence, MIN(created_at) AS started_at
+                     FROM events WHERE event_type = 'task.started' AND created_at >= ?1
+                     GROUP BY task_id
+                 ), completed AS (
+                     SELECT tasks.task_id, tasks.started_at, MIN(done.created_at) AS completed_at
+                     FROM today_tasks AS tasks
+                     JOIN events AS done ON done.task_id = tasks.task_id
+                         AND done.event_type = 'task.completed'
+                         AND done.sequence_id > tasks.start_sequence
+                     GROUP BY tasks.task_id, tasks.started_at
+                 )
+                 SELECT (SELECT COUNT(*) FROM today_tasks),
+                        (SELECT AVG((julianday(completed_at) - julianday(started_at)) * 86400.0)
+                         FROM completed)",
+                [day_start],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<f64>>(1)?)),
+            );
+            match result {
+                Ok((count, average)) => (
+                    u32::try_from(count.max(0)).unwrap_or(u32::MAX),
+                    average
+                        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+                        .map_or(0, |seconds| seconds.round().min(u64::MAX as f64) as u64),
+                ),
+                Err(_) => (0, 0),
+            }
+        })
+    }
+
+    fn filter_hive_root_tasks(&self, roots: Vec<String>) -> evohime_hive_contract::BoxFuture<'_, Vec<String>> {
+        Box::pin(async move {
+            let mut result = Vec::new();
+            let database = self.database().lock().await;
+            for root in roots {
+                if root.starts_with(crate::eva_pulse_boundary::EVA_PULSE_TASK_PREFIX) {
+                    result.push(root);
+                    continue;
+                }
+                if let Ok(Some((conversation_id, _, _))) =
+                    evohime_local_storage::domains::audit::task_binding(database.connection(), &root)
+                {
+                    if conversation_id == crate::conversation_event_log::HIVE_SYSTEM_CHAT_ID {
+                        result.push(root);
+                    }
+                }
+            }
+            result
+        })
+    }
+
+    fn model_dispatch_windows<'a>(
+        &'a self,
+        provider: &'a str,
+        model: &'a str,
+        now_ms: i64,
+        minute_window_ms: i64,
+        hour_window_ms: i64,
+        day_window_ms: i64,
+    ) -> evohime_hive_contract::BoxFuture<
+        'a,
+        Result<evohime_hive_contract::HiveDispatchWindows, evohime_hive_contract::HiveContractError>,
+    > {
+        Box::pin(async move {
+            let windows = self
+                .model_dispatch_windows(
+                    provider,
+                    model,
+                    now_ms,
+                    minute_window_ms,
+                    hour_window_ms,
+                    day_window_ms,
+                )
+                .await
+                .map_err(|error| {
+                    evohime_hive_contract::HiveContractError::Storage(error.to_string())
+                })?;
+            Ok(evohime_hive_contract::HiveDispatchWindows {
+                last_minute: windows.last_minute,
+                last_hour: windows.last_hour,
+                last_day: windows.last_day,
+                oldest_minute_ms: windows.oldest_minute_ms,
+                oldest_hour_ms: windows.oldest_hour_ms,
+                oldest_day_ms: windows.oldest_day_ms,
+            })
+        })
+    }
+
+    fn model_usage_since<'a>(
+        &'a self,
+        start_ms: i64,
+        provider: &'a str,
+        model: &'a str,
+    ) -> evohime_hive_contract::BoxFuture<
+        'a,
+        Result<Vec<evohime_hive_contract::HiveModelUsage>, evohime_hive_contract::HiveContractError>,
+    > {
+        Box::pin(async move {
+            let rows = self
+                .deepseek_usage_since(start_ms, provider, model)
+                .await
+                .map_err(|error| {
+                    evohime_hive_contract::HiveContractError::Storage(error.to_string())
+                })?;
+            Ok(rows
+                .into_iter()
+                .map(|row| evohime_hive_contract::HiveModelUsage {
+                    request_at: row.request_at,
+                    prompt_tokens: row.prompt_tokens,
+                    completion_tokens: row.completion_tokens,
+                    cache_read_input_tokens: row.cache_read_input_tokens,
+                })
+                .collect())
+        })
+    }
+
+    fn route_tokens_since<'a>(
+        &'a self,
+        start_ms: i64,
+        route_scope: &'a str,
+    ) -> evohime_hive_contract::BoxFuture<'a, Result<u64, evohime_hive_contract::HiveContractError>>
+    {
+        Box::pin(async move {
+            self.route_tokens_since(start_ms, route_scope)
+                .await
+                .map_err(|error| {
+                    evohime_hive_contract::HiveContractError::Storage(error.to_string())
+                })
+        })
     }
 
     fn register_worktree_lease(

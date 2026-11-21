@@ -507,7 +507,7 @@ impl IpcBridge {
         let settings = self.journal.hive_settings().await.unwrap_or_default();
         let projections = crate::hive_observation::replay_hive_projections(&self.journal).await;
         let roles = crate::hive_observation::persistent_agent_roles(&self.journal).await;
-        let selected_model = crate::hive_observation::selected_model_name(&self.selected_model);
+        let _selected_model = self.selected_model.get().map(|value| value.to_string());
         let mut adjusted_config = self.gateway_config.clone();
         if let Some(config) = adjusted_config.as_mut() {
             config.apply_hive_route_overrides(
@@ -534,7 +534,7 @@ impl IpcBridge {
         let mut observation = crate::hive_observation::build_hive_observation_for_hive(
             &self.journal,
             adjusted_config.as_ref(),
-            selected_model.as_deref(),
+            None,
             settings.hive_provider_profile.as_deref(),
             settings.hive_model.as_deref(),
             crate::task_memory::now_millis() as i64,

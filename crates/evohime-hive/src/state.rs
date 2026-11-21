@@ -14,8 +14,9 @@
 pub use evohime_model_gateway::ProviderLimits;
 use serde::{Deserialize, Serialize};
 
-use crate::child_workflow::{ChildProjection, CoordinatorState};
-use crate::hive_settings::HiveSettings;
+use crate::observation::{HiveChildState, MinimalChildWorkflowPayload};
+use evohime_hive_contract::HiveModelUsage;
+use crate::settings::HiveSettings;
 
 /// Version of the serialized [`HiveStateSnapshot`] contract.
 pub const HIVE_STATE_SCHEMA_VERSION: u32 = 8;
@@ -431,7 +432,7 @@ impl HiveStateSnapshot {
     /// "active hive" view and lets the caller pass every replay window.
     pub fn from_projection(
         settings: &HiveSettings,
-        projections: &[ChildProjection],
+        projections: &[MinimalChildWorkflowPayload],
         registry_roles: &[String],
     ) -> Self {
         Self::from_observation(
@@ -449,7 +450,7 @@ impl HiveStateSnapshot {
     /// Core to compute one.
     pub fn from_observation(
         settings: &HiveSettings,
-        projections: &[ChildProjection],
+        projections: &[MinimalChildWorkflowPayload],
         registry_roles: &[String],
         observation: &HiveObservation,
     ) -> Self {
@@ -658,7 +659,7 @@ fn deepseek_tariff(model: &str) -> Option<DeepSeekTariff> {
 /// Calculates the daily model charge in nano-USD from user-configured USD-per-1M-token rates.
 pub fn custom_daily_cost_nano_usd(
     pricing: &evohime_model_gateway::config::ModelPricingConfig,
-    usage: &[evohime_local_storage::context_ledger_store::DailyModelUsage],
+    usage: &[HiveModelUsage],
 ) -> Option<u64> {
     if ![
         pricing.input_usd_per_1m,
@@ -700,7 +701,7 @@ pub fn custom_daily_cost_nano_usd(
 /// arrived.
 pub fn deepseek_daily_cost_nano_usd(
     model: &str,
-    usage: &[evohime_local_storage::context_ledger_store::DailyModelUsage],
+    usage: &[HiveModelUsage],
 ) -> Option<u64> {
     let tariff = deepseek_tariff(model)?;
     usage.iter().try_fold(0_u64, |total, row| {
@@ -855,34 +856,34 @@ fn limits_for(settings: &HiveSettings) -> HiveLimits {
 }
 
 /// Returns true while the projection still represents working state.
-fn is_active(projection: &ChildProjection) -> bool {
+fn is_active(projection: &MinimalChildWorkflowPayload) -> bool {
     if projection.dead_letter {
         return false;
     }
     !matches!(
         projection.state,
-        CoordinatorState::Accepted
-            | CoordinatorState::Rejected
-            | CoordinatorState::Failed
-            | CoordinatorState::Cancelled
-            | CoordinatorState::TimedOut
-            | CoordinatorState::Aborted
+        HiveChildState::Accepted
+            | HiveChildState::Rejected
+            | HiveChildState::Failed
+            | HiveChildState::Cancelled
+            | HiveChildState::TimedOut
+            | HiveChildState::Aborted
     )
 }
 
-fn current_action(state: CoordinatorState) -> String {
+fn current_action(state: HiveChildState) -> String {
     match state {
-        CoordinatorState::Created | CoordinatorState::Queued => "queued",
-        CoordinatorState::Running => "executing",
-        CoordinatorState::Validating => "validating report",
-        CoordinatorState::WaitingParentAcceptance => "waiting for parent",
-        CoordinatorState::RevisePlan => "revising plan",
-        CoordinatorState::Accepted => "completed",
-        CoordinatorState::Rejected => "rejected",
-        CoordinatorState::Failed => "failed",
-        CoordinatorState::Cancelled => "cancelled",
-        CoordinatorState::TimedOut => "timed out",
-        CoordinatorState::Aborted => "aborted",
+        HiveChildState::Created | HiveChildState::Queued => "queued",
+        HiveChildState::Running => "executing",
+        HiveChildState::Validating => "validating report",
+        HiveChildState::WaitingParentAcceptance => "waiting for parent",
+        HiveChildState::RevisePlan => "revising plan",
+        HiveChildState::Accepted => "completed",
+        HiveChildState::Rejected => "rejected",
+        HiveChildState::Failed => "failed",
+        HiveChildState::Cancelled => "cancelled",
+        HiveChildState::TimedOut => "timed out",
+        HiveChildState::Aborted => "aborted",
     }
     .to_owned()
 }
@@ -919,48 +920,26 @@ fn bounded_u8(value: usize) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::child_contracts::ChildBudget;
-
-    fn projection(id: &str, role: &str, state: CoordinatorState) -> ChildProjection {
-        ChildProjection {
-            event_id: format!("{id}:event"),
+    fn projection(id: &str, role: &str, state: HiveChildState) -> MinimalChildWorkflowPayload {
+        MinimalChildWorkflowPayload {
             parent_task_id: "queen".into(),
             child_task_id: id.into(),
             role: role.into(),
-            revision: 0,
             state,
-            reason_code: None,
-            parent_sequence: 1,
-            budget: Some(ChildBudget {
-                max_tokens: Some(1_000),
-                max_time_seconds: Some(60),
-                max_tool_calls: Some(4),
-            }),
-            lease_live: state == CoordinatorState::Running,
             dead_letter: false,
             depth: 1,
-            report_status: None,
-            report_summary: None,
             spawned_subagents: 2,
             planned_ceiling: 4,
-            extensions_granted: 0,
-            lazy_waiting: 0,
-            in_flight_subagents: 1,
-            extension_requested: false,
         }
     }
 
     #[test]
     fn deepseek_flash_cost_uses_cached_input_and_utc_peak_rate() {
         let usage = [
-            evohime_local_storage::context_ledger_store::DailyModelUsage {
-                model: "deepseek-flash".into(),
+            HiveModelUsage {
                 prompt_tokens: 100,
                 completion_tokens: 20,
                 cache_read_input_tokens: Some(50),
-                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
                 request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
                     .expect("valid timestamp")
                     .timestamp_millis(),
@@ -975,14 +954,10 @@ mod tests {
     #[test]
     fn deepseek_cost_is_calculated_at_request_time_not_later_response_time() {
         let usage = [
-            evohime_local_storage::context_ledger_store::DailyModelUsage {
-                model: "deepseek-flash".into(),
+            HiveModelUsage {
                 prompt_tokens: 100,
                 completion_tokens: 20,
                 cache_read_input_tokens: Some(50),
-                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T10:15:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
                 request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
                     .expect("valid timestamp")
                     .timestamp_millis(),
@@ -997,14 +972,10 @@ mod tests {
     #[test]
     fn deepseek_v4_pro_cost_uses_off_peak_rates_on_weekends() {
         let usage = [
-            evohime_local_storage::context_ledger_store::DailyModelUsage {
-                model: "deepseek-v4-pro".into(),
+            HiveModelUsage {
                 prompt_tokens: 100,
                 completion_tokens: 20,
                 cache_read_input_tokens: Some(50),
-                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-15T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
                 request_at: chrono::DateTime::parse_from_rfc3339("2026-11-15T02:00:00Z")
                     .expect("valid timestamp")
                     .timestamp_millis(),
@@ -1029,14 +1000,10 @@ mod tests {
     #[test]
     fn retired_flash_spellings_are_billed_at_the_flash_rate() {
         let usage = [
-            evohime_local_storage::context_ledger_store::DailyModelUsage {
-                model: "deepseek-v4-flash".into(),
+            HiveModelUsage {
                 prompt_tokens: 100,
                 completion_tokens: 20,
                 cache_read_input_tokens: Some(50),
-                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
                 request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
                     .expect("valid timestamp")
                     .timestamp_millis(),
@@ -1055,14 +1022,10 @@ mod tests {
     #[test]
     fn deepseek_cache_hits_cannot_exceed_reported_prompt_tokens() {
         let usage = [
-            evohime_local_storage::context_ledger_store::DailyModelUsage {
-                model: "deepseek-flash".into(),
+            HiveModelUsage {
                 prompt_tokens: 10,
                 completion_tokens: 0,
                 cache_read_input_tokens: Some(50),
-                recorded_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
-                    .expect("valid timestamp")
-                    .timestamp_millis(),
                 request_at: chrono::DateTime::parse_from_rfc3339("2026-11-16T02:00:00Z")
                     .expect("valid timestamp")
                     .timestamp_millis(),
@@ -1112,12 +1075,10 @@ mod tests {
             output_usd_per_1m: 6.00,
         };
         let usage = [
-            evohime_local_storage::context_ledger_store::DailyModelUsage {
-                model: "gpt-4o-mini".into(),
+            HiveModelUsage {
                 prompt_tokens: 1_000,
                 completion_tokens: 500,
                 cache_read_input_tokens: Some(400),
-                recorded_at: 1000,
                 request_at: 1000,
             },
         ];
@@ -1132,10 +1093,10 @@ mod tests {
     fn hive_state_snapshot_aggregates_active_agents_by_role() {
         let settings = HiveSettings::default();
         let projections = vec![
-            projection("a", "researcher", CoordinatorState::Running),
-            projection("b", "researcher", CoordinatorState::Running),
-            projection("c", "reviewer", CoordinatorState::Validating),
-            projection("d", "researcher", CoordinatorState::Accepted),
+            projection("a", "researcher", HiveChildState::Running),
+            projection("b", "researcher", HiveChildState::Running),
+            projection("c", "reviewer", HiveChildState::Validating),
+            projection("d", "researcher", HiveChildState::Accepted),
         ];
         let snapshot = HiveStateSnapshot::from_projection(&settings, &projections, &[]);
         assert_eq!(snapshot.metrics.total_agents_online, 3);
@@ -1167,7 +1128,7 @@ mod tests {
             max_parallel_subagents: 3,
             ..HiveSettings::default()
         };
-        let projections = vec![projection("worker", "planner", CoordinatorState::Running)];
+        let projections = vec![projection("worker", "planner", HiveChildState::Running)];
         let snapshot = HiveStateSnapshot::from_projection(&settings, &projections, &[]);
         assert_eq!(snapshot.schema_version, HIVE_STATE_SCHEMA_VERSION);
         assert_eq!(snapshot.queen.name, DEFAULT_QUEEN_NAME);

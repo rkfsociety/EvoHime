@@ -11,7 +11,6 @@
 //! these traits to supply durable journal access, task dispatch, and workspace
 //! configuration without exposing Core internals to the Hive.
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -86,6 +85,36 @@ pub struct HiveWorktreeLeaseRequest {
     pub base_commit: String,
 }
 
+/// Rolling dispatch window counts and oldest request timestamps for a model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct HiveDispatchWindows {
+    /// Requests dispatched in the last 60 seconds.
+    pub last_minute: u32,
+    /// Requests dispatched in the last hour.
+    pub last_hour: u32,
+    /// Requests dispatched in the last 24 hours.
+    pub last_day: u32,
+    /// Oldest dispatch timestamp inside the minute window, if any.
+    pub oldest_minute_ms: Option<i64>,
+    /// Oldest dispatch timestamp inside the hour window, if any.
+    pub oldest_hour_ms: Option<i64>,
+    /// Oldest dispatch timestamp inside the day window, if any.
+    pub oldest_day_ms: Option<i64>,
+}
+
+/// Bounded per-request token usage record for daily cost estimation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HiveModelUsage {
+    /// Request dispatch timestamp in Unix milliseconds.
+    pub request_at: i64,
+    /// Prompt tokens consumed by the request.
+    pub prompt_tokens: u32,
+    /// Completion tokens produced by the response.
+    pub completion_tokens: u32,
+    /// Cached prompt tokens read, if reported by the provider.
+    pub cache_read_input_tokens: Option<u32>,
+}
+
 /// Durable journal and settings operations required by the Hive.
 pub trait HiveJournalProvider: Send + Sync {
     /// Returns the latest committed journal sequence number.
@@ -124,8 +153,40 @@ pub trait HiveJournalProvider: Send + Sync {
         settings: &'a serde_json::Value,
     ) -> BoxFuture<'a, Result<(), HiveContractError>>;
 
-    /// Returns persistent agent role mappings (`agent_id -> role`).
-    fn persistent_agent_roles(&self) -> BoxFuture<'_, HashMap<String, String>>;
+    /// Returns active persistent agent role identifiers.
+    fn persistent_agent_roles(&self) -> BoxFuture<'_, Vec<String>>;
+
+    /// Returns `(tasks_today, average_task_time_sec)` for the UTC day of `now_ms`.
+    fn task_metrics(&self, now_ms: i64) -> BoxFuture<'_, (u32, u64)>;
+
+    /// Filters `roots` down to task identifiers belonging to the Hive world.
+    fn filter_hive_root_tasks(&self, roots: Vec<String>) -> BoxFuture<'_, Vec<String>>;
+
+    /// Returns rolling dispatch window counters for `(provider, model)` at `now_ms`.
+    fn model_dispatch_windows<'a>(
+        &'a self,
+        provider: &'a str,
+        model: &'a str,
+        now_ms: i64,
+        minute_window_ms: i64,
+        hour_window_ms: i64,
+        day_window_ms: i64,
+    ) -> BoxFuture<'a, Result<HiveDispatchWindows, HiveContractError>>;
+
+    /// Loads bounded usage rows for `(provider, model)` since `start_ms`.
+    fn model_usage_since<'a>(
+        &'a self,
+        start_ms: i64,
+        provider: &'a str,
+        model: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<HiveModelUsage>, HiveContractError>>;
+
+    /// Sums total tokens recorded for `route_scope` since `start_ms`.
+    fn route_tokens_since<'a>(
+        &'a self,
+        start_ms: i64,
+        route_scope: &'a str,
+    ) -> BoxFuture<'a, Result<u64, HiveContractError>>;
 
     /// Records a newly created Hive task worktree lease in durable storage.
     fn register_worktree_lease(&self, request: HiveWorktreeLeaseRequest) -> BoxFuture<'_, ()>;
