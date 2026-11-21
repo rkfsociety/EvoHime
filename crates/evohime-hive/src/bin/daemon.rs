@@ -62,7 +62,7 @@ where
         };
         let challenge = session.read_event().await?;
         let nonce = challenge_nonce(&challenge)?;
-        let proof = context.secret.proof("cli", &client_id, &nonce);
+        let proof = context.secret.proof("shell", &client_id, &nonce);
         session
             .write_command(generated::CommandEnvelope {
                 protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
@@ -78,7 +78,7 @@ where
                         session_epoch: 0,
                         last_event_sequence: 0,
                         capabilities: vec!["hive-daemon".into()],
-                        client_role: "cli".into(),
+                        client_role: "shell".into(),
                         nonce,
                         proof,
                     },
@@ -310,7 +310,7 @@ impl CoreIpcClient {
                 workspace_path: request.workspace_root.unwrap_or_default(),
                 preferred_route_hint: request.preferred_route_hint.unwrap_or_default(),
                 execution_kind: "agent".into(),
-                conversation_id: String::new(),
+                conversation_id: "hive-system-chat".into(),
                 client_message_id: String::new(),
                 goal_id: String::new(),
                 provider: String::new(),
@@ -547,13 +547,40 @@ fn init_tracing() {
 #[tokio::main]
 async fn main() -> ExitCode {
     init_tracing();
+    tracing::info!("evohime-hive-daemon starting");
 
-    let client = match CoreIpcClient::connect().await {
-        Ok(client) => Arc::new(client),
-        Err(error) => {
-            tracing::error!(error = %error, "failed to connect to Core IPC; exiting");
-            return ExitCode::FAILURE;
+    let has_hive_key = std::env::var("HIVE_API_KEY")
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    let has_fallback_key = std::env::var("HIVE_FALLBACK_API_KEY")
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    if !has_hive_key {
+        tracing::error!("HIVE_API_KEY is missing or empty; exiting gracefully");
+        return ExitCode::SUCCESS;
+    }
+    if !has_fallback_key {
+        tracing::warn!("HIVE_FALLBACK_API_KEY is not set; continuing without fallback key");
+    }
+
+    let mut client_opt = None;
+    for attempt in 1..=10 {
+        match CoreIpcClient::connect().await {
+            Ok(client) => {
+                client_opt = Some(Arc::new(client));
+                break;
+            }
+            Err(error) => {
+                tracing::warn!(attempt, error = %error, "failed to connect to Core IPC; retrying");
+                if attempt < 10 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
         }
+    }
+    let Some(client) = client_opt else {
+        tracing::error!("failed to connect to Core IPC after retries; exiting");
+        return ExitCode::FAILURE;
     };
 
     let journal: Arc<dyn HiveJournalProvider> = Arc::new(IpcJournalProvider {
