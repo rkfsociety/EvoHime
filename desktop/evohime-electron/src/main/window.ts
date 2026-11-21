@@ -72,7 +72,7 @@ export function createMainWindow(options: WindowOptions): BrowserWindow {
   })
 
   hardenWebContents(window.webContents, options)
-  attachContextMenu(window, { getLocale: options.getLocale })
+  attachContextMenu(window, options.getLocale ? { getLocale: options.getLocale } : {})
 
   const syncTheme = (): void => {
     if (window.isDestroyed()) return
