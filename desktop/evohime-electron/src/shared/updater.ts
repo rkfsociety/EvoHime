@@ -60,13 +60,17 @@ export function updaterUiStatus(status: UpdateStatus): UpdaterUiStatus {
     summary: summaries[id] ?? (available.length > 0 ? 'Подготовлено к безопасному обновлению.' : 'Работает в установленной версии.')
   }))
 
+  const percent = phase === 'applying' ? parsePercent(status.message) : null
+  const rawMessage = status.error ?? status.message
+  const message = status.error || phase !== 'applying' ? rawMessage : stripPercentSuffix(rawMessage)
+
   return {
     phase,
     heading: phaseHeading(phase),
     badge: phaseBadge(phase),
-    message: status.error ?? status.message,
+    message,
     detail: status.detail,
-    percent: phase === 'applying' ? parsePercent(status.message) : null,
+    percent,
     modules,
     canApply: phase === 'available' && available.length > 0,
     ...(status.recovery ? { recovery: status.recovery } : {})
@@ -103,8 +107,14 @@ function phaseBadge(phase: UpdaterUiPhase): string {
   return 'Готово к запуску'
 }
 
+const PERCENT_SUFFIX = /\s*(?:—|-)\s*(\d{1,3})%\s*$/
+
 function parsePercent(message: string): number | null {
-  const match = message.match(/(?:—|-)\s*(\d{1,3})%\s*$/)
+  const match = message.match(PERCENT_SUFFIX)
   if (!match?.[1]) return null
   return Math.min(100, Number(match[1]))
+}
+
+function stripPercentSuffix(message: string): string {
+  return message.replace(PERCENT_SUFFIX, '').trimEnd()
 }

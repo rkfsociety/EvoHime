@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { disabledUpdateStatus, initialUpdateSteps, updateProgress, type UpdateStatus } from '@shared/update'
 import { UpdateIndicator } from '../src/renderer/src/UpdateIndicator'
 import { UpdaterApp } from '../src/renderer/src/UpdaterApp'
-import type { UpdaterUiStatus } from '../src/shared/updater'
+import { updaterUiStatus, type UpdaterUiStatus } from '../src/shared/updater'
 
 function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
   return { ...disabledUpdateStatus('main'), phase: 'idle', ...overrides }
@@ -196,5 +196,17 @@ describe('standalone updater window', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Обновление завершено' })).toBeTruthy())
     expect(document.querySelector('.updater-status-icon')?.textContent).toBe('✓')
     expect(document.querySelector('.updater-status-spinner')).toBeNull()
+  })
+
+  it('shows action/module without duplicating percent in the message', async () => {
+    installUpdaterApi(updaterUiStatus(status({
+      phase: 'applying',
+      message: 'Скачивание shell-host — 28%'
+    })))
+    render(<UpdaterApp />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Устанавливаю обновление' })).toBeTruthy())
+    expect(document.querySelector('.updater-message')?.textContent).toBe('Скачивание shell-host')
+    expect(document.querySelector('.updater-progress__label')?.textContent).toBe('28%')
   })
 })

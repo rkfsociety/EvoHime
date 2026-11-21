@@ -61,10 +61,18 @@ describe('updaterUiStatus', () => {
     })
   })
 
-  it('extracts bounded progress from the worker status', () => {
-    expect(updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 74%' })).percent).toBe(74)
-    expect(updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 144%' })).percent).toBe(100)
-    expect(updaterUiStatus(status({ phase: 'applying', message: 'Подготовка' })).percent).toBeNull()
+  it('extracts bounded progress from the worker status and strips the trailing percent from message', () => {
+    const first = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 74%' }))
+    expect(first.percent).toBe(74)
+    expect(first.message).toBe('Скачивание core')
+
+    const clamped = updaterUiStatus(status({ phase: 'applying', message: 'Скачивание core — 144%' }))
+    expect(clamped.percent).toBe(100)
+    expect(clamped.message).toBe('Скачивание core')
+
+    const preparing = updaterUiStatus(status({ phase: 'applying', message: 'Подготовка' }))
+    expect(preparing.percent).toBeNull()
+    expect(preparing.message).toBe('Подготовка')
   })
 
   it('never shows a ready state when the worker supplied an error', () => {
