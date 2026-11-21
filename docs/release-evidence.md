@@ -1,13 +1,13 @@
 # EvoHime — release evidence и rollback matrix
 
-Обновлено: 2026-11-20.
+Обновлено: 2026-11-21.
 
 Этот документ описывает evidence для поставки. Artifact bundle должен быть
 redacted: допускаются commit, contract/schema versions, test IDs, hashes,
 typed outcomes, bounded metrics и recovery state; credentials, raw provider
 output, transcripts, absolute paths и PII запрещены.
 
-## Plan 198 — Независимые EvaPulse и Hive (checkout 2026-11-20)
+## Plan 198 — Независимые EvaPulse и Hive (закрыт 2026-11-21)
 
 - На `e1e26fed` завершена реализация Core boundary, bounded acceptance/dead-letter
   retention, независимого EvaPulse status projection и UI-развязки Hive.
@@ -36,8 +36,21 @@ output, transcripts, absolute paths и PII запрещены.
   `cargo fmt --all -- --check`, Electron `check:protocol`, `typecheck` и
   focused `tests/hive-dashboard.test.tsx` (41/41) вместе с
   `tests/provider-form.test.tsx` (25/25).
-- Plan-файлы 198 пока сохраняются как implementation contract до подтверждения
-  полного CI/release gate; удаление из `docs/plans/` преждевременно.
+- Exact-SHA gate на `1246e503a477ed4f64563e04061365f5c07b4ff8` завершился
+  `success`: `module router` [44816613030](https://github.com/rkfsociety/EvoHime/actions/runs/44816613030),
+  `Rust documentation` [44816611301](https://github.com/rkfsociety/EvoHime/actions/runs/44816611301),
+  `core module` [44816699466](https://github.com/rkfsociety/EvoHime/actions/runs/44816699466),
+  `ui-bundle module` [44816694888](https://github.com/rkfsociety/EvoHime/actions/runs/44816694888)
+  и `compatible release manifest` [44818652954](https://github.com/rkfsociety/EvoHime/actions/runs/44818652954).
+  Core jobs `tests and lint`, `release build`, `Linux headless CLI runtime` и
+  `stable module release` — все `success`.
+- Модули опубликованы: `module-core-v0.0.000504` и
+  `module-ui-bundle-v0.0.0225`; compatible manifest
+  `generated_from=1246e503a477ed4f64563e04061365f5c07b4ff8` связывает их с
+  `shell-host 0.0.000134`, `supervisor 0.0.000048` и остальным комплектом.
+- Граница перенесена в `architecture/hive.md` (раздел «Граница владения
+  EvaPulse и Улья»), статус — в `current-state.md`; временные plan-файлы 198
+  удалены из `docs/plans/`.
 
 ## Plan 197 — Изолированные сессии чатов (закрыт 2026-11-20)
 

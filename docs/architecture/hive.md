@@ -1,6 +1,6 @@
 # EvoHime — доменный контракт: Hive, роли и координация агентов
 
-Канонический контракт домена улья (Hive), делегирования, ролей и координации команд. Обновлено: 2026-11-20.
+Канонический контракт домена улья (Hive), делегирования, ролей и координации команд. Обновлено: 2026-11-21.
 Остов архитектуры: [../architecture.md](../architecture.md).
 
 ## Self-Development Loop
@@ -182,8 +182,9 @@ committed-наблюдения, что и snapshot: dispatch-окна, днев�
 bounded-окно `child.workflow`. Порядок решений фиксирован: явное окно 429 →
 дневной бюджет → исчерпанный provider cap → новые упавшие воркеры → `all good`.
 В состоянии `all good` Core пишет `EvaPulse: all good` в `core.jsonl` и
-`tracing`; при падении воркера создаётся одна ограниченная задача через
-`TaskCoordinator` (не больше восьми id). При настроенном
+`tracing`; при падении воркера формируется один bounded `EvaPulseSignal`
+(не больше восьми id), и только `HiveSignalReceiver` создаёт по нему задачу
+Улья через `TaskCoordinator`. При настроенном
 `eva_workspace_path` prompt recovery-задачи направляет Королеву в checkout и
 `eva_workspace_*`; Core предлагает инструменты только этой задаче после
 валидации пути. Capability `eva_self_development` ограничена queen/coordinator
@@ -236,6 +237,70 @@ Live-подписка на typed log принадлежит конкретном
 его lifecycle с typing, approvals или жизненным циклом Королевы. Renderer только
 отображает отдельную `eva_pulse.status` projection и не вычисляет бюджет,
 recovery или окно сам.
+
+## Граница владения EvaPulse и Улья
+
+Улей и EvaPulse — независимые Core-owned подсистемы в одном процессе Core:
+отдельные состояние, отмена, recovery и health status. `EvaPulseDaemon` владеет
+только собственным расписанием, статусом, отменой и outbox; у него нет
+публичного доступа к `TaskCoordinator`, Hive snapshot и внутренним
+task/approval registries — координатор скрыт внутри `HiveSignalReceiver`, куда
+демон передаёт только валидированный сигнал. `HiveSettings` читается только
+read-only, как источник собственного интервала, бюджета, квоты и разрешённого
+маршрута. Улей не управляет
+включением, расписанием или recovery EvaPulse. Связь идёт через
+`eva_pulse_boundary` (`crates/evohime-core/src/eva_pulse_boundary.rs`).
+
+`EvaPulseSignal` — версионированный (`CONTRACT_VERSION = 1`) metadata-only
+envelope: `message_id`, `correlation_id`, `source`, `idempotency_key`, `kind`
+(`observation`, `recovery_review`, `evolution_review`), `created_at_ms`,
+`expires_at_ms` и `payload`. Prompt, raw model output и секреты в envelope не
+передаются. Границы: payload ≤ 16 KiB, identity-поля ≤ 128 ASCII-байт, TTL
+> 0 и ≤ 24 часов, `created_at_ms` не в будущем относительно момента приёма.
+Проверка срока действия выполняется при приёме сигнала, а не по времени
+создания, поэтому отложенная доставка не проходит как валидная.
+
+`HiveSignalReceiver` — единственный владелец перехода `accepted → Hive task`.
+Он валидирует сигнал, проверяет `HiveSignalResult` и создаёт обычную задачу
+через `TaskCoordinator::dispatch`, то есть тот же путь, что и любая задача
+Улья. Контракт исхода содержит `accepted`, `rejected`, `deferred` и `failed` с
+redacted `reason`; текущая реализация принимает валидный сигнал, а любой отказ
+валидации или dispatch превращается в dead-letter с детерминированным reason,
+так что `rejected`/`deferred` остаются зарезервированными типизированными
+исходами решения Королевы, а не молчаливым успехом.
+EvaPulse передаёт лишь валидированный сигнал, prompt и уже разрешённый
+`preferred_route_hint`; маршрут `"hive"`/`"hive_fallback"` остаётся
+Core-owned и на IPC-границе недоступен клиенту.
+
+`HiveTaskOrigin` (`hive_internal`, `eva_pulse`) — только provenance, а не
+capability и не расширение полномочий. `validate_result` отклоняет результат,
+в котором `accepted` пришёл без `origin = eva_pulse` либо не-`accepted`
+пришёл с task origin, поэтому подделанное происхождение не даёт задаче
+approval или grant. Approval принятой задачи возникает из её собственного
+выполнения и разрешается только через `core.resolveApproval`, поэтому он
+виден в панели Улья наравне с задачами `hive_internal`.
+
+Durability и recovery: принятие записывается redacted
+`eva_pulse.signal.accepted`, отказ — `eva_pulse.signal.dead_letter` с
+детерминированным reason code (raw payload и текст ошибки не сохраняются).
+Retention ограничен 512 последними записями каждого из этих двух kind;
+остальные события журнала не затрагиваются. Живой dedup держит bounded fence
+из 512 `idempotency_key`, а при подключённом `EventJournal` приём
+восстанавливает последние acceptance-записи после перезапуска и возвращает уже
+созданный `task_id` вместо второй задачи; при ошибке dispatch reservation
+освобождается, чтобы повтор оставался возможным. Перезапуск EvaPulse
+восстанавливает только свой outbox/status и не переигрывает задачи Улья;
+перезапуск Улья восстанавливает задачи и approvals из журнала и не запускает
+цикл EvaPulse.
+
+Lifecycle публикуется раздельно: Hive snapshot (`HIVE_STATE_SCHEMA_VERSION = 7`)
+больше не сериализует Pulse-поля и читает старые schema 1–6 через
+совместимый fallback, а статус EvaPulse отдаётся отдельной версионированной
+проекцией `EvaPulseSnapshot` (`owner = eva_pulse`) командой
+`core.getEvaPulseStatus` (proto command 292) как событие `eva_pulse.status`.
+Пустая projection (без daemon в этом процессе) возвращает `unavailable` с
+`enabled = false`, а не выдуманный `sleeping`. Ручное управление Pulse остаётся
+`core.togglePulse` (proto command 287) и не считается режимом Улья.
 
 Поле `parent_is_child` само по себе — утверждение вызывающей стороны, а не
 доказательство. Доверие к нему проверяется по runtime-маркеру

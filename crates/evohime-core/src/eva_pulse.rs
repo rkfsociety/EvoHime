@@ -2387,6 +2387,10 @@ mod tests {
             .dispatch_recovery(&report.failed_worker_contexts, Some("D:/eva"))
             .await
             .expect("recovery dispatches");
+        assert!(
+            task_id.starts_with(crate::eva_pulse_boundary::EVA_PULSE_TASK_PREFIX),
+            "an accepted signal must create a Hive-marked task, not a bare id"
+        );
         let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
             .await
             .expect("task start arrives")

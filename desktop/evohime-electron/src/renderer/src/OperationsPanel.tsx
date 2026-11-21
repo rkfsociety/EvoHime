@@ -2093,6 +2093,17 @@ export function HiveDashboard({
     ],
     [events, hiveConversationLogEvents]
   )
+  // A task accepted from an EvaPulse signal has no chat binding, so its
+  // approval and terminal state reach the Hive view only by the Hive-owned task
+  // prefix. The projection stays separate from `hiveEvents` so pane counters
+  // and logs keep counting Hive-owned work only.
+  const hiveApprovalEvents = useMemo(
+    () => [
+      ...hiveEvents,
+      ...events.filter((event) => event.taskId.startsWith('eva-pulse-'))
+    ],
+    [events, hiveEvents]
+  )
   const hiveChatEvents = useMemo(
     () => projectHiveChatEvents(hiveConversationLogEvents),
     [hiveConversationLogEvents]
@@ -2102,10 +2113,13 @@ export function HiveDashboard({
     const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])
     const resolved = new Set([...resolvedApprovalIds, ...resolvedLocally])
     const byId = new Map<string, { request: ApprovalRequestView; sequence: number }>()
-    const newestFirst = [...hiveEvents].sort((left, right) => right.sequenceId - left.sequenceId)
+    const newestFirst = [...hiveApprovalEvents].sort((left, right) => right.sequenceId - left.sequenceId)
+    const terminated = (event: CoreEvent): boolean =>
+      hiveApprovalEvents.some((candidate) => candidate.taskId === event.taskId
+        && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))
     for (const event of newestFirst) {
       if (event.eventType !== 'approval.required') continue
-      if (hiveEvents.some((candidate) => candidate.taskId === event.taskId && candidate.sequenceId > event.sequenceId && terminalTypes.has(candidate.eventType))) continue
+      if (terminated(event)) continue
       const request = parseApprovalRequest(event)
       if (!request || resolved.has(request.approvalId)) continue
       if (!byId.has(request.approvalId)) byId.set(request.approvalId, { request, sequence: event.sequenceId })
@@ -2113,7 +2127,7 @@ export function HiveDashboard({
     return [...byId.entries()]
       .filter(([approvalId]) => !resolved.has(approvalId))
       .map(([, item]) => item.request)
-  }, [hiveEvents, resolvedApprovalIds, resolvedLocally])
+  }, [hiveApprovalEvents, resolvedApprovalIds, resolvedLocally])
 
   const approvalsFromConversationLog = useMemo(() => {
     const terminalTypes = new Set(['task.completed', 'task.failed', 'task.stopped'])

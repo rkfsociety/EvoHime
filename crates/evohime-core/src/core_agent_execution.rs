@@ -822,7 +822,7 @@ impl ToolAgent {
         let hive_world = preferred_route.as_deref() == Some("hive");
         let task_id = task_id.into();
         let prompt = prompt.into();
-        let task_uuid = match uuid::Uuid::parse_str(&task_id) {
+        let task_uuid = match crate::eva_pulse_boundary::parse_hive_task_uuid(&task_id) {
             Ok(value) => value,
             Err(error) => {
                 tracing::warn!(%error, task_id = %task_id, "non-UUID task id; generated runtime id");

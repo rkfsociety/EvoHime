@@ -272,6 +272,33 @@ describe('hive dashboard', () => {
     })
   })
 
+  it('ui_shows_approval_from_an_eva_pulse_origin_task', async () => {
+    render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot()),
+          event('approval.required', {
+            approval_id: 'apr-pulse-1',
+            tool_name: 'eva_workspace_git',
+            permission: 'GitWrite',
+            scope: 'D:/eva',
+            preview: { summary: 'Разрешить commit recovery-задачи?' }
+          }, 'eva-pulse-7f1c')
+        ]}
+      />
+    )
+
+    expect(await screen.findByText('Разрешить commit recovery-задачи?')).toBeTruthy()
+    await userEvent.click(within(screen.getByLabelText('Запрос подтверждения')).getByRole('button', { name: 'Разрешить' }))
+    await waitFor(() => {
+      expect(calls.find((call) => call.command === 'core.resolveApproval')?.payload).toMatchObject({
+        approvalId: 'apr-pulse-1',
+        granted: true
+      })
+    })
+  })
+
   it('показывает статус EvaPulse из снимка Core', async () => {
     render(
       <HiveDashboard

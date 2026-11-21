@@ -1,13 +1,13 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-11-20.
+Обновлено: 2026-11-21.
 
 Этот файл описывает подтверждённое состояние текущего checkout. Исторические
 release-gates и результаты отдельных завершённых планов находятся в
 [`release-evidence.md`](release-evidence.md); пошаговые незавершённые работы — в
 [`plans/README.md`](plans/README.md).
 
-## Независимые EvaPulse и Hive (plan 198, реализация в checkout)
+## Независимые EvaPulse и Hive (plan 198, закрыт 2026-11-21)
 
 EvaPulse и Hive разделены на уровне Core: `HiveSignalReceiver` принимает только
 версионированный bounded signal, проверяет TTL/identity/idempotency и создаёт
@@ -17,11 +17,16 @@ Hive-owned task через обычный coordinator path. Acceptance и dead-l
 сообщения. Lifecycle Pulse отдаётся отдельной `eva_pulse.status` projection и не
 входит в сериализуемый Hive snapshot.
 
-Реализация завершена в checkout на `e1e26fed`; CI/release closure ещё не
-подтверждены. OperationsPanel больше не представляет EvaPulse как переключатель или режим
-Улья: состояние Pulse отображается диагностически, а typing Королевы и ручное
-обновление snapshot не зависят от Pulse lifecycle. `core.togglePulse` сохранён
-как authenticated compatibility/diagnostic command для старых клиентов.
+Реализация подтверждена CI на `1246e503a477ed4f64563e04061365f5c07b4ff8`:
+workflow `module router`, `core module`, `ui-bundle module`, `Rust
+documentation` и `compatible release manifest` завершились `success`, Core
+опубликован как `module-core-v0.0.000504`, UI bundle — как
+`module-ui-bundle-v0.0.0225`. OperationsPanel больше не представляет EvaPulse
+как переключатель или режим Улья: состояние Pulse отображается диагностически,
+а typing Королевы и ручное обновление snapshot не зависят от Pulse lifecycle.
+`core.togglePulse` сохранён как authenticated compatibility/diagnostic command
+для старых клиентов. Контракт границы перенесён в
+[`architecture/hive.md`](architecture/hive.md), временные plan-файлы удалены.
 
 Headless Linux CLI `eva` автоматически читает настройки провайдера из
 `$XDG_CONFIG_HOME/evohime/provider.env` (по умолчанию
@@ -599,7 +604,8 @@ peak/off-peak тариф по времени отправки запроса. К
 (`daily_budget_usd = 0` или оценка расхода достигла потолка), окне LiteRouter или
 исчерпанной дневной квоте токенов маршрута Улья
 он засыпает до точного `wake_at_ms`, не создавая задач. Новые упавшие воркеры
-приводят к одной ограниченной recovery-задаче через `TaskCoordinator`, но только
+приводят к одному bounded `EvaPulseSignal`, по которому `HiveSignalReceiver`
+создаёт одну ограниченную recovery-задачу Улья, но только
 на primary-маршруте LiteRouter: DeepSeek и другие маршруты для фоновой работы не
 используются, а 429 не повторяется и не уходит в платный fallback. При заданном
 `eva_workspace_path` recovery-задача получает инструкции автономного ремонта и
@@ -610,11 +616,12 @@ capability `eva_self_development` с каталогом `eva_workspace_*`; Core 
 очищает конфигурацию и отключает инструменты с ошибкой в UI. Gateway
 записывает полученный cooldown в process-local `rate_limit_signal`, и демон
 читает его перед следующим циклом. Здоровый цикл
-пишет `EvaPulse: all good` в `core.jsonl`. Тумблер «Авто-режим (EvaPulse)» в
-дашборде вызывает `core.togglePulse` (proto command 287); `false` переводит
-демон в `disabled`, `true` будит его и запускает цикл сразу. Статус
-`pulse_status` и `next_wake_at_ms` возвращаются в `hive_state.snapshot`
-`(schema version 6)` и только отображаются renderer-ом. Снимок также содержит
+пишет `EvaPulse: all good` в `core.jsonl`. Ручное управление остаётся
+`core.togglePulse` (proto command 287): `false` переводит демон в `disabled`,
+`true` будит его и запускает цикл сразу; панель Улья этот вызов не использует.
+Статус Pulse отдаётся отдельной проекцией `eva_pulse.status` (proto command
+292), а `hive_state.snapshot` schema v7 несёт только Hive-owned состояние и
+читает старые schema 1–6 через совместимый fallback. Снимок также содержит
 настроенные лимиты запросов и дневную квоту токенов (с окном сброса) для
 основного и резервного маршрутов Улья, фактический `daily_budget_usd`, число
 начатых задач за UTC-сутки и среднюю длительность завершённых задач из Core
@@ -632,7 +639,7 @@ capability `eva_self_development` и инструменты `eva_workspace_*` т
 чистым-worktree gates Self-Development Tools. Фоновый маршрут остаётся на
 primary LiteRouter; DeepSeek автоматически не вызывается и платный
 fallback не включается. Без пути остаётся обычная read-only задача исследования.
-Снимок Улья schema v5 отдаёт `daily_budget_usd`, число начатых задач за UTC-сутки
+Снимок Улья schema v7 отдаёт `daily_budget_usd`, число начатых задач за UTC-сутки
 и среднюю длительность завершённых задач из Core event journal; при ошибке
 чтения UI показывает ноль. Мок-метрики, лимит `$0.50` и демо-логи удалены.
 

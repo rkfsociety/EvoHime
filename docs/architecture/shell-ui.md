@@ -19,7 +19,7 @@ Renderer состоит из панели проектов и чатов, лен
 | `PlanReviewPanel` | коллективное read-only ревью Markdown-плана несколькими моделями и synthesis-моделью; итог копируется в буфер или экспортируется в Markdown, история очищается кнопкой |
 | `RecoveryBanner` + `recovery-state.ts` | состояние восстановления, выведенное только из подтверждённых Core событий |
 | `OperationsPanel` | self-repair, память и конфликты, child-задачи, Pulse, индекс workspace, refinement и ambient proposals |
-| `HiveDashboard` (вкладка «Улей») | единый дашборд по `HiveStateSnapshot`: департаменты, Королева Ева, метрики и бюджет, активные агенты, логи, подтверждения и настройка изолированного Eva self-development workspace; выбор провайдера идёт через `provider.select`, интервал опроса и режим EvaPulse принадлежат оболочке, неподтверждённые величины не подменяются mock-значениями |
+| `HiveDashboard` (вкладка «Улей») | единый дашборд по `HiveStateSnapshot`: департаменты, Королева Ева, метрики и бюджет, активные агенты, логи, подтверждения и настройка изолированного Eva self-development workspace; выбор провайдера идёт через `provider.select`, интервал опроса принадлежит оболочке, а статус Pulse читается отдельной проекцией `eva_pulse.status` и не является режимом Улья; неподтверждённые величины не подменяются mock-значениями |
 | `ScheduledPanel` | отдельный список automation schedules: owner, UTC-время, revision, последний слот и enabled/paused |
 | `OverviewPanel`, `TracePanel` | сводка событий запуска и фильтруемая трасса |
 

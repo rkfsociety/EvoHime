@@ -20,8 +20,7 @@ use crate::EventJournal;
 pub(crate) const HIVE_REPLAY_WINDOW: u32 = 512;
 
 /// Returns `"hive"` when an isolated Hive route is present and configured.
-pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {
-    let config = config?;
+pub(crate) fn isolated_hive_route_name(config: Option<&ModelGatewayConfig>) -> Option<String> {    let config = config?;
     config
         .routes
         .get("hive")
@@ -356,7 +355,7 @@ async fn hive_root_task_ids(
     let mut result = std::collections::BTreeSet::new();
     let database = journal.database().lock().await;
     for root in roots {
-        if root.starts_with("eva-pulse-") {
+        if root.starts_with(crate::eva_pulse_boundary::EVA_PULSE_TASK_PREFIX) {
             result.insert(root.clone());
             continue;
         }
