@@ -4,11 +4,11 @@
 //! capabilities or create a Hive task directly. The envelope deliberately
 //! contains metadata only; the Hive decides whether a signal becomes work.
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::{CoreCommand, EventJournal, TaskCoordinator};
+use evohime_hive_contract::{HiveCoordinator, HiveJournalProvider, HiveTaskDispatchRequest};
+use serde::{Deserialize, Serialize};
 
 /// Version of the EvaPulse-to-Hive envelope contract.
 pub const CONTRACT_VERSION: u32 = 1;
@@ -209,14 +209,14 @@ pub fn validate_result(result: &HiveSignalResult) -> Result<(), BoundaryError> {
 /// route. The receiver remains the owner of the decision-to-task transition.
 #[derive(Clone)]
 pub struct HiveSignalReceiver {
-    coordinator: TaskCoordinator,
+    coordinator: Arc<dyn HiveCoordinator>,
     seen: Arc<Mutex<HashMap<String, String>>>,
-    journal: Option<EventJournal>,
+    journal: Option<Arc<dyn HiveJournalProvider>>,
 }
 
 impl HiveSignalReceiver {
-    /// Creates a receiver backed by the existing Core coordinator.
-    pub fn new(coordinator: TaskCoordinator) -> Self {
+    /// Creates a receiver backed by a trait-based coordinator implementation.
+    pub fn new(coordinator: Arc<dyn HiveCoordinator>) -> Self {
         Self {
             coordinator,
             seen: Arc::new(Mutex::new(HashMap::new())),
@@ -224,14 +224,14 @@ impl HiveSignalReceiver {
         }
     }
 
-    /// Attaches the Core journal used to recover accepted signals after restart.
-    pub fn with_journal(mut self, journal: EventJournal) -> Self {
+    /// Attaches the journal provider used to recover accepted signals after restart.
+    pub fn with_journal(mut self, journal: Arc<dyn HiveJournalProvider>) -> Self {
         self.journal = Some(journal);
         self
     }
 
     /// Accepts a signal and creates one Hive-owned task after validation.
-    pub(crate) async fn accept(
+    pub async fn accept(
         &self,
         signal: EvaPulseSignal,
         prompt: String,
@@ -260,7 +260,7 @@ impl HiveSignalReceiver {
         if let Some(journal) = self.journal.as_ref() {
             let latest = journal.latest_sequence().await;
             let records = journal
-                .replay(
+                .replay_events(
                     latest.saturating_sub(MAX_SEEN_IDEMPOTENCY_KEYS as i64),
                     MAX_SEEN_IDEMPOTENCY_KEYS,
                 )
@@ -309,14 +309,11 @@ impl HiveSignalReceiver {
         }
         let dispatch_result = self
             .coordinator
-            .dispatch(CoreCommand::StartTask {
+            .dispatch_task(HiveTaskDispatchRequest {
                 task_id: task_id.clone(),
                 prompt,
                 workspace_root: None,
                 preferred_route_hint: Some(preferred_route_hint),
-                conversation: None,
-                goal_id: None,
-                session_binding: None,
             })
             .await
             .map_err(|error| error.to_string());
@@ -340,7 +337,7 @@ impl HiveSignalReceiver {
                 .record_audit(&task_id, "eva_pulse.signal.accepted", &payload)
                 .await
                 .map_err(|error| format!("hive_signal_persist_failed:{error}"))?;
-            self.retain_signal_records(journal).await;
+            self.retain_signal_records(journal.as_ref()).await;
         }
         Ok(task_id)
     }
@@ -364,24 +361,16 @@ impl HiveSignalReceiver {
                 &payload,
             )
             .await;
-        self.retain_signal_records(journal).await;
+        self.retain_signal_records(journal.as_ref()).await;
     }
 
-    async fn retain_signal_records(&self, journal: &EventJournal) {
-        let Ok(database) = journal.database.try_lock() else {
-            return;
-        };
-        let limit = MAX_DURABLE_SIGNAL_RECORDS as i64;
-        let _ = database.connection().execute(
-            "DELETE FROM events
-             WHERE event_type IN ('eva_pulse.signal.accepted', 'eva_pulse.signal.dead_letter')
-               AND sequence_id NOT IN (
-                   SELECT sequence_id FROM events
-                   WHERE event_type = events.event_type
-                   ORDER BY sequence_id DESC LIMIT ?1
-               )",
-            [limit],
-        );
+    async fn retain_signal_records(&self, journal: &dyn HiveJournalProvider) {
+        journal
+            .prune_signal_records(
+                &["eva_pulse.signal.accepted", "eva_pulse.signal.dead_letter"],
+                MAX_DURABLE_SIGNAL_RECORDS,
+            )
+            .await;
     }
 }
 

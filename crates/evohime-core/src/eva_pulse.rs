@@ -1605,7 +1605,7 @@ pub(crate) struct CoordinatorPulseTaskSink {
 impl CoordinatorPulseTaskSink {
     /// Creates a sink bound to the coordinator and the allowed route name.
     pub(crate) fn new(coordinator: TaskCoordinator, primary_route: Option<String>) -> Self {
-        Self::new_with_receiver(HiveSignalReceiver::new(coordinator), primary_route)
+        Self::new_with_receiver(HiveSignalReceiver::new(Arc::new(coordinator)), primary_route)
     }
 
     /// Creates a sink using the Core-owned Hive boundary receiver.
@@ -1640,7 +1640,10 @@ impl CoordinatorPulseTaskSink {
     ) -> Self {
         self.journal = Some(journal);
         if let Some(journal) = self.journal.as_ref() {
-            self.receiver = self.receiver.clone().with_journal(journal.clone());
+            self.receiver = self
+                .receiver
+                .clone()
+                .with_journal(Arc::new(journal.clone()));
         }
         self.gateway_config = gateway_config;
         self

@@ -212,7 +212,7 @@ pub(crate) mod doctor;
 /// Core-owned EvaPulse background daemon for the hive.
 pub mod eva_pulse;
 /// Defines the bounded typed boundary between EvaPulse and the Hive.
-pub mod eva_pulse_boundary;
+pub use evohime_hive::pulse_boundary as eva_pulse_boundary;
 pub mod evals;
 pub(crate) mod event_trigger_runtime;
 pub(crate) mod execution_backend_registry;

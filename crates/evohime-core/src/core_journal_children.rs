@@ -480,3 +480,25 @@ impl evohime_hive_contract::HiveJournalProvider for EventJournal {
         })
     }
 }
+
+impl evohime_hive_contract::HiveCoordinator for crate::TaskCoordinator {
+    fn dispatch_task(
+        &self,
+        request: evohime_hive_contract::HiveTaskDispatchRequest,
+    ) -> evohime_hive_contract::BoxFuture<'_, Result<(), evohime_hive_contract::HiveContractError>>
+    {
+        Box::pin(async move {
+            self.dispatch(crate::CoreCommand::StartTask {
+                task_id: request.task_id,
+                prompt: request.prompt,
+                workspace_root: request.workspace_root.map(std::path::PathBuf::from),
+                preferred_route_hint: request.preferred_route_hint,
+                conversation: None,
+                goal_id: None,
+                session_binding: None,
+            })
+            .await
+            .map_err(|error| evohime_hive_contract::HiveContractError::Dispatch(error.to_string()))
+        })
+    }
+}

@@ -434,8 +434,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         journal.clone(),
         gateway_config.clone(),
         selected_model.clone(),
-        evohime_core::eva_pulse_boundary::HiveSignalReceiver::new(coordinator.clone())
-            .with_journal(journal.clone()),
+        evohime_core::eva_pulse_boundary::HiveSignalReceiver::new(std::sync::Arc::new(
+            coordinator.clone(),
+        ))
+        .with_journal(std::sync::Arc::new(journal.clone())),
         Some(std::sync::Arc::clone(&logger)),
     );
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(

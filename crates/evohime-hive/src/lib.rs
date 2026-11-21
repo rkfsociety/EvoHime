@@ -8,5 +8,6 @@
 //! worktree isolation, and dedicated Hive permission policy.
 
 pub mod permission_session;
+pub mod pulse_boundary;
 pub mod settings;
 pub mod worktree;
