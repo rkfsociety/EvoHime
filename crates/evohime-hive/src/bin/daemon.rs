@@ -13,9 +13,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use evohime_desktop_ipc::{generated, session, transport};
 #[cfg(unix)]
 use evohime_hive::pulse::HIVE_PULSE_CONTROL_SOCKET_ENV;
+use evohime_hive::pulse::{EvaPulseController, EvaPulseDaemon, HivePulseControlRequest};
 #[cfg(windows)]
 use evohime_hive::pulse::{DEFAULT_HIVE_PULSE_CONTROL_PIPE, HIVE_PULSE_CONTROL_PIPE_ENV};
-use evohime_hive::pulse::{EvaPulseController, EvaPulseDaemon, HivePulseControlRequest};
 use evohime_hive::settings::HiveSettings;
 use evohime_hive::state::HiveStateSnapshot;
 use evohime_hive_contract::{
