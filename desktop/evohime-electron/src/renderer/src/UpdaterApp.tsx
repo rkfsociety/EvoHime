@@ -81,9 +81,26 @@ export function UpdaterApp(): React.JSX.Element {
       <header className="updater-titlebar">
         <div className="updater-titlebar__drag">
           <span className="updater-brand-mark" aria-hidden="true">
-            <span className="updater-brand-mark__petal updater-brand-mark__petal--one" />
-            <span className="updater-brand-mark__petal updater-brand-mark__petal--two" />
-            <span className="updater-brand-mark__petal updater-brand-mark__petal--three" />
+            <svg viewBox="0 0 24 24" fill="none">
+              <defs>
+                <linearGradient id="updater-brand-petal" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ffffff" />
+                  <stop offset="100%" stopColor="#d9ccff" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M12 13C10.2 10.6 7.4 8.2 6.8 5.2C6.4 3.5 8 2.6 9.5 3.6C11.1 4.7 11.9 8.2 12 13Z"
+                fill="url(#updater-brand-petal)"
+              />
+              <path
+                d="M12 13C13.8 10.6 16.6 8.2 17.2 5.2C17.6 3.5 16 2.6 14.5 3.6C12.9 4.7 12.1 8.2 12 13Z"
+                fill="url(#updater-brand-petal)"
+              />
+              <path
+                d="M12 13C10.1 15.1 9.4 18.4 10.8 20.3C11.4 21.1 12.6 21.1 13.2 20.3C14.6 18.4 13.9 15.1 12 13Z"
+                fill="url(#updater-brand-petal)"
+              />
+            </svg>
           </span>
           <span className="updater-brand-copy">
             <strong>EvoHime</strong>
@@ -101,21 +118,6 @@ export function UpdaterApp(): React.JSX.Element {
           <EvaIcon className="updater-hero-art" />
           <div className="updater-hero-glow updater-hero-glow--left" />
           <div className="updater-hero-glow updater-hero-glow--right" />
-          <div className="updater-hero-copy updater-hero-copy--left">
-            <span>{translate("ЛУЧШАЯ")}</span>
-            <span>{translate("ВЕРСИЯ")}</span>
-            <span>{translate("ТЕБЯ")}</span>
-            <i />
-            <span>{translate("ВМЕСТЕ")}</span>
-            <span>{translate("С EVOHIME")}</span>
-          </div>
-          <div className="updater-hero-copy updater-hero-copy--right">
-            <span>{translate("БОЛЬШЕ")}</span>
-            <span>{translate("ЧЕМ ИИ")}</span>
-            <span>{translate("ВМЕСТЕ С ТОБОЙ")}</span>
-            <i />
-          </div>
-          <div className="updater-hero-signature">EvoHime <span>♡</span></div>
         </div>
 
         <div className="updater-status-orbit" aria-hidden="true">
