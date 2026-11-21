@@ -20,6 +20,100 @@ const fallback: UpdaterUiStatus = {
 const SPINNER_RADIUS = 16
 const SPINNER_CIRCUMFERENCE = 2 * Math.PI * SPINNER_RADIUS
 
+type UpdaterStepId = 'check' | 'download' | 'install'
+type UpdaterStepState = 'done' | 'active' | 'pending' | 'error'
+
+interface UpdaterStep {
+  readonly id: UpdaterStepId
+  readonly label: string
+  readonly state: UpdaterStepState
+}
+
+function isInstallMessage(message: string): boolean {
+  return /установ|примен|распаков|обновля|перезапуск/i.test(message)
+}
+
+function isDownloadMessage(message: string): boolean {
+  return /скачив|загруз/i.test(message)
+}
+
+function resolveSteps(status: UpdaterUiStatus): readonly UpdaterStep[] {
+  const { phase, message, percent, modules } = status
+  const hasAvailableModules = modules.some((module) => module.available !== null)
+
+  let check: UpdaterStepState = 'pending'
+  let download: UpdaterStepState = 'pending'
+  let install: UpdaterStepState = 'pending'
+
+  if (phase === 'checking') {
+    check = 'active'
+  } else if (phase === 'available') {
+    check = 'done'
+    download = 'active'
+  } else if (phase === 'applying') {
+    check = 'done'
+    const installing = isInstallMessage(message) || (!isDownloadMessage(message) && percent !== null && percent >= 80)
+    if (installing) {
+      download = 'done'
+      install = 'active'
+    } else {
+      download = 'active'
+    }
+  } else if (phase === 'recovering') {
+    check = 'done'
+    download = 'done'
+    install = 'active'
+  } else if (phase === 'ready') {
+    check = 'done'
+    download = 'done'
+    install = 'done'
+  } else {
+    if (!hasAvailableModules && percent === null && !isDownloadMessage(message) && !isInstallMessage(message)) {
+      check = 'error'
+    } else if (isInstallMessage(message) || (percent !== null && percent >= 80)) {
+      check = 'done'
+      download = 'done'
+      install = 'error'
+    } else {
+      check = 'done'
+      download = 'error'
+    }
+  }
+
+  return [
+    { id: 'check', label: 'Проверка', state: check },
+    { id: 'download', label: 'Загрузка', state: download },
+    { id: 'install', label: 'Установка', state: install }
+  ]
+}
+
+function StepIcon({ id }: { readonly id: UpdaterStepId }): React.JSX.Element {
+  if (id === 'check') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="11" cy="11" r="6" />
+        <path d="m15.5 15.5 4 4" />
+      </svg>
+    )
+  }
+  if (id === 'download') {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 4v10" />
+        <path d="m8 10 4 4 4-4" />
+        <path d="M5 17v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3 8 4.5-8 4.5-8-4.5Z" />
+      <path d="m4 12 8 4.5 8-4.5" />
+      <path d="m4 16.5 8 4.5 8-4.5" />
+    </svg>
+  )
+}
+
 function StatusSpinner({ percent }: { readonly percent: number | null }): React.JSX.Element {
   const clamped = percent === null ? null : Math.max(0, Math.min(100, percent))
   const dashOffset = clamped === null ? SPINNER_CIRCUMFERENCE * 0.72 : SPINNER_CIRCUMFERENCE * (1 - clamped / 100)
@@ -75,6 +169,13 @@ export function UpdaterApp(): React.JSX.Element {
   const ready = status.phase === 'ready'
   const progressPercent = ready ? 100 : status.percent
   const progressLabel = progressPercent === null ? 'Подготавливаю' : `${progressPercent}%`
+  const steps = useMemo(() => resolveSteps(status), [status])
+  const updatableModules = useMemo(
+    () => status.modules.filter((module) => module.available !== null),
+    [status.modules]
+  )
+  const visibleModules = updatableModules.slice(0, 4)
+  const extraModulesCount = updatableModules.length - visibleModules.length
 
   return (
     <main className="updater-shell">
@@ -142,13 +243,38 @@ export function UpdaterApp(): React.JSX.Element {
 
           {failed && status.detail.length > 0 ? <p className="updater-detail" role="status">{translate(status.detail)}</p> : null}
 
-          <div className="updater-features" aria-hidden="true">
-            <div className="updater-feature"><span>♢</span><p>{translate("Безопасное")}<br />{translate("обновление")}</p></div>
-            <div className="updater-feature"><span>ϟ</span><p>{translate("Новые")}<br />{translate("возможности")}</p></div>
-            <div className="updater-feature"><span>♡</span><p>{translate("Спасибо,")}<br />{translate("что ты с нами")}</p></div>
-          </div>
+          {visibleModules.length > 0 ? (
+            <div className="updater-modules" aria-label={translate("Обновляемые модули")}>
+              {visibleModules.map((module) => (
+                <span
+                  key={module.id}
+                  className="updater-module-chip"
+                  title={`${module.label}: ${module.installed} → ${module.available}`}
+                >
+                  {translate(module.label)}
+                </span>
+              ))}
+              {extraModulesCount > 0 ? (
+                <span className="updater-module-chip updater-module-chip--more">+{extraModulesCount}</span>
+              ) : null}
+            </div>
+          ) : null}
 
-          <p className="updater-footer">EVOHIME <span>•</span> {translate("РАЗВИВАЕМСЯ ВМЕСТЕ")}<span>•</span> {translate("С КАЖДЫМ ОБНОВЛЕНИЕМ")}</p>
+          <ol className="updater-steps" aria-label={translate("Этапы обновления")}>
+            {steps.map((step) => (
+              <li
+                key={step.id}
+                className={`updater-step updater-step--${step.state}`}
+                data-step-id={step.id}
+                data-step-state={step.state}
+              >
+                <span className="updater-step__icon" aria-hidden="true">
+                  <StepIcon id={step.id} />
+                </span>
+                <span className="updater-step__label">{translate(step.label)}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
     </main>

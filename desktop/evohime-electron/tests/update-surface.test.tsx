@@ -209,4 +209,31 @@ describe('standalone updater window', () => {
     expect(document.querySelector('.updater-message')?.textContent).toBe('Скачивание shell-host')
     expect(document.querySelector('.updater-progress__label')?.textContent).toBe('28%')
   })
+
+  it('tracks live update steps and updatable module chips without decorative glyphs or footer', async () => {
+    installUpdaterApi(updaterStatus({
+      phase: 'applying',
+      heading: 'Устанавливаю обновление',
+      badge: 'Установка',
+      message: 'Установка компонентов…',
+      percent: 85,
+      modules: [
+        { id: 'core', label: 'EvoHime Core', installed: '1.0.0', available: '1.0.1', summary: 'Обновление' },
+        { id: 'shell-host', label: 'Оболочка Electron', installed: '1.0.0', available: '1.0.1', summary: 'Обновление' },
+        { id: 'supervisor', label: 'Supervisor', installed: '1.0.0', available: null, summary: 'Без изменений' }
+      ]
+    }))
+    render(<UpdaterApp />)
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Устанавливаю обновление' })).toBeTruthy())
+    expect(document.querySelector('[data-step-id="check"]')?.getAttribute('data-step-state')).toBe('done')
+    expect(document.querySelector('[data-step-id="download"]')?.getAttribute('data-step-state')).toBe('done')
+    expect(document.querySelector('[data-step-id="install"]')?.getAttribute('data-step-state')).toBe('active')
+
+    expect(screen.getByText('EvoHime Core')).toBeTruthy()
+    expect(screen.getByText('Оболочка Electron')).toBeTruthy()
+    expect(screen.queryByText('Supervisor')).toBeNull()
+    expect(screen.queryByText(/[♢ϟ♡]/)).toBeNull()
+    expect(screen.queryByText(/РАЗВИВАЕМСЯ ВМЕСТЕ/)).toBeNull()
+  })
 })
