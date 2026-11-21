@@ -1465,6 +1465,49 @@ describe('hive dashboard', () => {
     })
   })
 
+  it('ui_clears_fallback_catalog_error_on_save', async () => {
+    const { rerender } = render(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ hive_fallback_provider_profile: 'rout' }))
+        ]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки улья' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Настройки улья' })
+
+    rerender(
+      <HiveDashboard
+        connection="connected"
+        events={[
+          event('hive_state.snapshot', snapshot({ hive_fallback_provider_profile: 'rout' })),
+          event('hive.fallback_model.catalog', { profile: 'rout', models: [], error: 'provider_not_configured' })
+        ]}
+      />
+    )
+
+    expect(await within(dialog).findByText(/Провайдер не настроен для получения каталога моделей/)).toBeTruthy()
+
+    const catalogCallsBeforeSave = calls.filter(
+      (call) => call.command === 'core.listModelCatalog' && (call.payload as { mode?: string }).mode === 'hive_fallback_catalog'
+    ).length
+
+    const fallbackKeyInput = within(dialog).getByLabelText('Резервный API-ключ Улья') as HTMLInputElement
+    await userEvent.type(fallbackKeyInput, 'sk-hive-fallback-456')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Сохранить резервный ключ' }))
+
+    await waitFor(() => {
+      expect(within(dialog).getByText(/Резервный API-ключ Улья сохранён/)).toBeTruthy()
+      expect(within(dialog).queryByText(/Провайдер не настроен для получения каталога моделей/)).toBeNull()
+      const catalogCallsAfterSave = calls.filter(
+        (call) => call.command === 'core.listModelCatalog' && (call.payload as { mode?: string }).mode === 'hive_fallback_catalog'
+      ).length
+      expect(catalogCallsAfterSave).toBeGreaterThan(catalogCallsBeforeSave)
+    })
+  })
+
   it('ui_can_save_hive_request_limits_and_token_quota', async () => {
     render(
       <HiveDashboard

@@ -7476,13 +7476,16 @@ body {
 }
 
 .hive-console__error {
+  position: static;
   margin: 0;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  background-color: rgba(239, 68, 68, 0.1);
   color: var(--danger);
   font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 /* Сетка: основная область (департаменты, Королева, метрики, агенты) + вертикальный диалог справа. */
@@ -8874,8 +8877,7 @@ body {
 .hive-console__header,
 .hive-panel,
 .hive-queen,
-.hive-approval,
-.hive-console__error {
+.hive-approval {
   background-color: rgb(18 18 26 / 70%);
   border-color: rgb(255 255 255 / 10%);
   box-shadow: 0 18px 55px rgb(0 0 0 / 22%);

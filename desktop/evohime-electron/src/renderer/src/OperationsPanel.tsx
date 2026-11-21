@@ -1698,7 +1698,7 @@ export function HiveDashboard({
       setHiveCatalogError('Не удалось получить каталог моделей.')
     }).finally(() => setHiveCatalogLoading(false))
   }, [api, connected, hiveProviderProfile, hiveTier, hiveSettingsOpen])
-  useEffect(() => {
+  const loadHiveFallbackCatalog = useCallback(async (): Promise<void> => {
     if (!api || !connected || !hiveSettingsOpen) return
     const trimmedProfile = hiveFallbackProviderProfile.trim()
     if (!trimmedProfile) {
@@ -1713,15 +1713,21 @@ export function HiveDashboard({
     const profileArg = trimmedProfile === 'literouter'
       ? `literouter:${hiveFallbackTier}`
       : trimmedProfile
-    void api.invoke('core.listModelCatalog', {
-      mode: 'hive_fallback_catalog',
-      profile: profileArg
-    }).then((outcome) => {
+    try {
+      const outcome = await api.invoke('core.listModelCatalog', {
+        mode: 'hive_fallback_catalog',
+        profile: profileArg
+      })
       if (!outcome.ok) setHiveFallbackCatalogError('Не удалось получить каталог моделей.')
-    }).catch(() => {
+    } catch {
       setHiveFallbackCatalogError('Не удалось получить каталог моделей.')
-    }).finally(() => setHiveFallbackCatalogLoading(false))
+    } finally {
+      setHiveFallbackCatalogLoading(false)
+    }
   }, [api, connected, hiveFallbackProviderProfile, hiveFallbackTier, hiveSettingsOpen])
+  useEffect(() => {
+    void loadHiveFallbackCatalog()
+  }, [loadHiveFallbackCatalog])
   const hiveModelCatalogEvent = latest(events, 'hive.model.catalog')
   useEffect(() => {
     if (!hiveModelCatalogEvent) return
@@ -2514,13 +2520,15 @@ export function HiveDashboard({
 
   const saveHiveFallbackApiKey = useCallback(async (): Promise<void> => {
     if (!api) return
+    const trimmedKey = hiveFallbackApiKeyDraft.trim()
     setHiveFallbackApiKeyBusy(true)
     setHiveFallbackApiKeyError(null)
     setHiveFallbackApiKeySaved(false)
+    setHiveFallbackCatalogError(null)
     try {
       const outcome = await api.invoke('core.setHiveSetting', {
         key: 'hive_fallback_api_key',
-        value: hiveFallbackApiKeyDraft.trim()
+        value: trimmedKey
       })
       if (!outcome.ok) {
         setHiveFallbackApiKeyError(outcome.message)
@@ -2529,14 +2537,18 @@ export function HiveDashboard({
       setHiveFallbackApiKeyDraft('')
       setIsEditingFallbackKey(false)
       setHiveFallbackApiKeySaved(true)
-      setProvider((current) => current ? { ...current, hiveFallbackApiKeyConfigured: hiveFallbackApiKeyDraft.trim().length > 0 } : current)
+      setHiveFallbackCatalogError(null)
+      setProvider((current) => current ? { ...current, hiveFallbackApiKeyConfigured: trimmedKey.length > 0 } : current)
       requestSnapshot()
+      if (trimmedKey.length > 0 && hiveFallbackProviderProfile.trim().length > 0) {
+        void loadHiveFallbackCatalog()
+      }
     } catch {
       setHiveFallbackApiKeyError('Не удалось сохранить резервный API-ключ Улья: Core не ответил.')
     } finally {
       setHiveFallbackApiKeyBusy(false)
     }
-  }, [api, hiveFallbackApiKeyDraft, requestSnapshot])
+  }, [api, hiveFallbackApiKeyDraft, hiveFallbackProviderProfile, loadHiveFallbackCatalog, requestSnapshot])
 
   const openHiveChat = useCallback(async (): Promise<void> => {
     if (!api) return
@@ -3461,7 +3473,7 @@ export function HiveDashboard({
                   </label>
                 </div>
                 {hiveCatalogLoading ? <small role="status" className="hive-settings-hint">{translate('Загрузка каталога моделей…')}</small> : null}
-                {hiveCatalogError ? <p role="alert" className="hive-console__error">{translate('Каталог моделей:')}{translate(hiveCatalogError)}</p> : null}
+                {hiveCatalogError ? <p role="alert" className="hive-console__error">{translate('Каталог моделей:')}{' '}{translate(hiveCatalogError)}</p> : null}
                 {hiveProviderError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveProviderError)}</p>
                 ) : hiveProviderSaved ? (
@@ -3592,7 +3604,7 @@ export function HiveDashboard({
                   </label>
                 </div>
                 {hiveFallbackCatalogLoading ? <small role="status" className="hive-settings-hint">{translate('Загрузка каталога моделей…')}</small> : null}
-                {hiveFallbackCatalogError ? <p role="alert" className="hive-console__error">{translate('Каталог резервных моделей:')}{translate(hiveFallbackCatalogError)}</p> : null}
+                {hiveFallbackCatalogError ? <p role="alert" className="hive-console__error">{translate('Каталог резервных моделей:')}{' '}{translate(hiveFallbackCatalogError)}</p> : null}
                 {hiveFallbackProviderError ? (
                   <p role="alert" className="hive-console__error">{translate(hiveFallbackProviderError)}</p>
                 ) : hiveFallbackProviderSaved ? (
