@@ -881,10 +881,12 @@ name = "evohime-hive"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "evohime-desktop-ipc",
  "evohime-hive-contract",
  "evohime-model-gateway",
  "evohime-permissions",
  "evohime-tool-runtime",
+ "prost",
  "serde",
  "serde_json",
  "tempfile",
@@ -892,6 +894,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "uuid",
 ]
 

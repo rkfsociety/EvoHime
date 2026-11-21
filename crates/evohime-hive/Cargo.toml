@@ -8,17 +8,20 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
+evohime-desktop-ipc = { path = "../desktop-ipc" }
 evohime-hive-contract = { path = "../evohime-hive-contract" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-permissions = { path = "../permissions" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 
-tokio = { workspace = true, features = ["fs", "macros", "process", "rt-multi-thread", "sync", "time"] }
+prost = "0.14"
+tokio = { workspace = true, features = ["fs", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
